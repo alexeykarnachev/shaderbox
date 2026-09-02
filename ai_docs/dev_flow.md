@@ -32,7 +32,7 @@ switch the lab worktree's branch.
 
 | Trigger | Shape |
 |---|---|
-| **Small / mechanical change** — bug fix, log line, kwarg, trivial type fix, doc tweak, dep bump, dead-code deletion that touches no public surface, a `.gitignore` edit | Just do it. `make check`. Optionally `/simplify` on the diff. No spec, no review ceremony; a roadmap-banner touch only if it changes "what's next". |
+| **Small / mechanical change** — bug fix, log line, kwarg, trivial type fix, doc tweak, dep bump, dead-code deletion that touches no public surface, a `.gitignore` edit | Just do it. `make gates`. Optionally `/simplify` on the diff. No spec, no review ceremony; a roadmap-banner touch only if it changes "what's next". |
 | **Feature** — new module, a real behavior change, a refactor with blast radius (splitting `ui.py`, collapsing the sticker models, unblocking the render loop), acceptance criteria a quick manual check can't pin | The feature flow below. |
 | **Research / brainstorm** — "let's think about X", "should we do Y", "investigate Z"; output is *knowledge*, not code | Research freely (read code, throwaway scripts). Deliver a chat report; if worth keeping, write `ai_docs/<topic>.md`. **Don't half-start an implementation.** If it seeds a feature, re-enter at the feature flow. |
 
@@ -692,7 +692,7 @@ Why the docs are shaped this way. Short list, kept honest:
   Design decisions`, a commit message). The cold-context check (`/sanitize`'s cold-context step) is the gate.
 - **Docs are living.** User drops a fact that makes a doc stale → update the right file in the same
   wave, don't keep it in chat. Small → do it now and mention it; substantial → confirm first.
-- **Don't trust, verify.** Before "done": run `make check`, check `git status`, read the diff,
+- **Don't trust, verify.** Before "done": run `make gates`, check `git status`, read the diff,
   confirm the behavior in the actual app (run it).
 - **Only change what's asked; show options for trade-offs.** A bug fix doesn't need surrounding
   cleanup. When the user has a decision, show 2-4 options with short snippets — prose is too abstract

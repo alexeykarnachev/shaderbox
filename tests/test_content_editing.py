@@ -201,7 +201,7 @@ def test_rewrite_lib_create_path_invalidates_consumers() -> None:
     lib_path = types.SimpleNamespace(resolve=lambda: "LIB")
     tgt = _CopilotEditTarget(
         kind="lib",
-        lib_path=lib_path,  # type: ignore[arg-type]
+        lib_path=lib_path,
         source="",
         lib_create=True,
         ws_address="lib:new.glsl",
@@ -241,8 +241,8 @@ def test_persist_normalizes_crlf() -> None:
     tgt = _CopilotEditTarget(
         kind="document",
         document_id="n1",
-        document=document,  # type: ignore[arg-type]
-        render_pass=document.render_pass,  # type: ignore[arg-type]
+        document=document,
+        render_pass=document.render_pass,
         source="old",
         ws_address="n1",
         label="document 'X' (n1)",
@@ -279,8 +279,8 @@ def test_persist_force_restores_after_streak_on_real_path() -> None:
     tgt = _CopilotEditTarget(
         kind="document",
         document_id="n1",
-        document=document,  # type: ignore[arg-type]
-        render_pass=document.render_pass,  # type: ignore[arg-type]
+        document=document,
+        render_pass=document.render_pass,
         source="void main() { }",
         ws_address="n1",
         label="document 'X' (n1)",
@@ -477,7 +477,7 @@ def test_lib_write_warns_on_brace_imbalance() -> None:
     # deterministic brace warning instead.
     tgt = _CopilotEditTarget(
         kind="lib",
-        lib_path=types.SimpleNamespace(resolve=lambda: "LIB"),  # type: ignore[arg-type]
+        lib_path=types.SimpleNamespace(resolve=lambda: "LIB"),
         source="float SB_a(float x) {\n    return x;\n}\nfloat SB_b(float x) {\n    return x;\n}",
         ws_address="lib:t.glsl",
         label="lib:t.glsl",
@@ -509,8 +509,8 @@ def test_persist_normalizes_lone_cr() -> None:
     tgt = _CopilotEditTarget(
         kind="document",
         document_id="n1",
-        document=document,  # type: ignore[arg-type]
-        render_pass=document.render_pass,  # type: ignore[arg-type]
+        document=document,
+        render_pass=document.render_pass,
         source="old",
         ws_address="n1",
         label="document 'X' (n1)",

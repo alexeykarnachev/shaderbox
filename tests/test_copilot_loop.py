@@ -586,8 +586,8 @@ def test_stale_shutdown_sentinel_does_not_strand_turn(tmp_path: Path) -> None:
             return iter([LLMTextDelta("hi back"), LLMDone("stop", LLMUsage())])
 
     sess = CopilotSession(
-        _fake_caps(edit_errors=[]),  # type: ignore[arg-type]
-        _PlainClient(),  # type: ignore[arg-type]
+        _fake_caps(edit_errors=[]),
+        _PlainClient(),
         get_project_slug=lambda: "test",
         get_checkpoints_root=lambda: tmp_path / "checkpoints",
     )
@@ -612,8 +612,8 @@ def test_turn_snippet_collects_steps_not_status_lines(tmp_path: Path) -> None:
     from shaderbox.copilot.state import ResultWidget, TurnStats
 
     sess = CopilotSession(
-        _fake_caps(edit_errors=[]),  # type: ignore[arg-type]
-        object(),  # type: ignore[arg-type]  # client unused — we feed events directly
+        _fake_caps(edit_errors=[]),
+        object(),  # client unused — we feed events directly
         get_project_slug=lambda: "test",
         get_checkpoints_root=lambda: tmp_path / "checkpoints",
     )
@@ -659,8 +659,8 @@ def test_errored_turn_leaves_snippet_finished_not_live(tmp_path: Path) -> None:
 
     def _mk() -> CopilotSession:
         return CopilotSession(
-            _fake_caps(edit_errors=[]),  # type: ignore[arg-type]
-            object(),  # type: ignore[arg-type]
+            _fake_caps(edit_errors=[]),
+            object(),
             get_project_slug=lambda: "test",
             get_checkpoints_root=lambda: tmp_path / "checkpoints",
         )

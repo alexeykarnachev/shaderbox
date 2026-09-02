@@ -50,7 +50,7 @@ def test_snapshot_does_not_rebind_live_source(tmp_path: Path) -> None:
     def _save_no_rebind(n: object, dest: Path) -> None:
         shader = dest / "passes/main.frag.glsl"
         shader.parent.mkdir(parents=True, exist_ok=True)
-        shader.write_text(n.text, encoding="utf-8")  # type: ignore[attr-defined]
+        shader.write_text(n.text, encoding="utf-8")
 
     cp = TurnCheckpoint(turn_id="t", root=tmp_path)
     cp.snapshot_document("n1", live, _save_no_rebind)

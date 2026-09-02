@@ -58,7 +58,7 @@ def test_dry_run_does_not_corrupt_live_state(tmp_path: Path) -> None:
     )
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
-    eng.tick("n0", document, types.SimpleNamespace(t=0.0, dt=0.0, frame=0, mouse=None))  # type: ignore[arg-type]
+    eng.tick("n0", document, types.SimpleNamespace(t=0.0, dt=0.0, frame=0, mouse=None))
 
     live_values = dict(document.uniform_values)
     live_driven = eng.script_driven_uniforms("n0")

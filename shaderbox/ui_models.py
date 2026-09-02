@@ -340,7 +340,7 @@ class UIDocument(BaseModel):
 
     model_config = {"arbitrary_types_allowed": True}
 
-    @model_validator(mode="after")  # type: ignore
+    @model_validator(mode="after")
     def _id_validator(self) -> Self:
         if not self.id:
             self.reset_id()

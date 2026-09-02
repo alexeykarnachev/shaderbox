@@ -55,7 +55,7 @@ def app(tmp_path: Path) -> Iterator[Any]:
     project = seed_tmp_project(tmp_path)
     a = App(project_dir=project)
     # No main loop in a test: run every marshalled bridge op INLINE (already on the GL thread).
-    a.copilot.bridge.run_on_main = lambda fn, timeout=None, defer=False: fn()  # type: ignore[method-assign]
+    a.copilot.bridge.run_on_main = lambda fn, timeout=None, defer=False: fn()
     a.set_current_document_id(STARTER_EXAMPLE_ID)
     a.ui_documents[
         STARTER_EXAMPLE_ID

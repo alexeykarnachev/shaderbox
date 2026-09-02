@@ -16,7 +16,7 @@ def test_deferred_op_is_parked_then_runs_at_the_post_swap_point() -> None:
     bridge = CopilotBridge()
     ran: list[str] = []
     op = MainThreadOp(fn=lambda: ran.append("render"), defer=True)
-    bridge._ops.put(op)  # type: ignore[attr-defined]  # the worker normally enqueues via run_on_main
+    bridge._ops.put(op)  # the worker normally enqueues via run_on_main
 
     # drain() (top of frame): the op must be PARKED, not run — so the cue gets the frame to paint.
     bridge.drain()
@@ -35,7 +35,7 @@ def test_non_deferred_op_runs_immediately_no_cue() -> None:
     bridge = CopilotBridge()
     ran: list[str] = []
     op = MainThreadOp(fn=lambda: ran.append("x"), defer=False)
-    bridge._ops.put(op)  # type: ignore[attr-defined]  # the worker normally enqueues via run_on_main
+    bridge._ops.put(op)  # the worker normally enqueues via run_on_main
 
     bridge.drain()
     assert ran == ["x"], "a non-deferred op must run on its first drain"
@@ -50,7 +50,7 @@ def test_cancel_all_releases_a_parked_render_op() -> None:
     # it deadlocks on shutdown.
     bridge = CopilotBridge()
     op = MainThreadOp(fn=lambda: None, defer=True)
-    bridge._ops.put(op)  # type: ignore[attr-defined]
+    bridge._ops.put(op)
     bridge.drain()
     assert bridge.render_pending() is True
 
@@ -79,7 +79,7 @@ def test_run_on_main_defer_parks_and_unblocks_a_real_worker() -> None:
 
     # The op must be in the queue before drain; the worker blocks on done, so spin briefly.
     for _ in range(1000):
-        if not bridge._ops.empty():  # type: ignore[attr-defined]
+        if not bridge._ops.empty():
             break
 
     bridge.drain()  # parks; does NOT run

@@ -6,7 +6,7 @@ run:
 	uv run python ./shaderbox/ui.py
 
 # Verify the BUILT bundle the way a NEW user would: build fresh, unzip, run the
-# launcher with a throwaway data dir — a true fresh first-run (starter node seeded,
+# launcher with a throwaway data dir — a true fresh first-run (starter document seeded,
 # no existing projects). Rebuilds via --allow-dirty so it tests CURRENT source (incl.
 # uncommitted work), never a stale dist/. SHADERBOX_DATA_DIR redirects the app's
 # project/state/log store away from the real one, so this never touches your projects.

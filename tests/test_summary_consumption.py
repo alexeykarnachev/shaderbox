@@ -66,7 +66,7 @@ def test_second_turn_receives_first_turn_summary(tmp_path: Path) -> None:
         [LLMTextDelta("Okay."), LLMDone("stop", LLMUsage())],
     ]
     client = _CapturingClient(scripts)
-    session = CopilotSession(  # type: ignore[arg-type]
+    session = CopilotSession(
         caps,
         client,
         get_project_slug=lambda: "test",

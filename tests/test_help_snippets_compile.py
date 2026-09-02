@@ -39,8 +39,8 @@ def test_there_is_at_least_one_compilable_snippet() -> None:
 def test_a_help_snippet_compiles_and_renders(
     gl: moderngl.Context, tmp_path: Path, section: object
 ) -> None:
-    path = tmp_path / f"{section.key}.frag.glsl"  # type: ignore[attr-defined]
-    path.write_text(section.snippet, encoding="utf-8")  # type: ignore[attr-defined]
+    path = tmp_path / f"{section.key}.frag.glsl"
+    path.write_text(section.snippet, encoding="utf-8")
     document = Document(gl=gl, source=ShaderSource.load(path), canvas_size=(32, 32))
     document.render_pass.compile()
     assert document.render_pass.compile_unit.errors == [], [

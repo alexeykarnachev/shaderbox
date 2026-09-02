@@ -65,7 +65,7 @@ def _write_script(scripts_dir: Path, body: str) -> None:
 
 def _pixel(document: Document) -> tuple[int, int, int, int]:
     data = document.render_pass.canvas.texture.read()
-    return tuple(data[:4])  # type: ignore[return-value]
+    return tuple(data[:4])
 
 
 # A script driving a t-pure scalar + a constant vec2 from ONE instance.

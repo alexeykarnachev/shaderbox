@@ -181,7 +181,7 @@ Rules to avoid it:
 ## 5. Fonts, glyphs, previews
 
 - **`imgui.text` / `text_colored` never wrap** — a long instruction sentence in a fixed-width
-  container (a modal with `set_next_window_size`, a tree-node column) is **clipped at the right edge**,
+  container (a modal with `set_next_window_size`, a tree-document column) is **clipped at the right edge**,
   not folded, and (without the `horizontal_scrollbar` flag) shows no scrollbar — it just vanishes
   mid-word. Wrap it: `push_text_wrap_pos(0.0)` (0.0 = wrap at the content-region right edge) around the
   text, then `pop_text_wrap_pos()`. Standardize as a `wrapped_caption`-style primitive so call sites
@@ -367,7 +367,7 @@ Inline inputs that replace a row when an action starts (Rename, New file):
   / Esc checks. Don't rely on imgui's auto-Esc-closes-popup — it triggers
   even when an input has focus.
 - **Auto-expand the parent**: if the input renders inside a collapsible tree
-  node, and a context menu opens the input on a node that's currently
+  document, and a context menu opens the input on a document that's currently
   collapsed, the input is invisible. Force-open the ancestor chain via
   `set_next_item_open(True, Cond_.always)` when the input target is a
   descendant of the dir being drawn. Without this, "New file here" on a
@@ -399,7 +399,7 @@ sense if the user was actually editing. Three traps, in order of temptation:
 - **A snapshot-at-open of the source's focus is the tempting wrong answer** —
   it's also False, because by the time the open handler runs (e.g. from a menu
   click), focus already moved to the menu/modal. (We tried this; it's wrong.)
-- **A "is there a target at all" proxy (a file is selected, a node exists) is
+- **A "is there a target at all" proxy (a file is selected, a document exists) is
   too lax** — true before the user ever interacted, so the action fires into a
   caret at (0,0).
 
@@ -533,7 +533,7 @@ Library footguns specific to the imgui-bundle Python build (currently
   reverts unless you DRIVE the selection.** imgui owns the selected tab; it does NOT auto-select a
   newly-submitted tab when the bar already has a selection, and it IGNORES a model-side "active index"
   change. So if your draw loop only reads imgui's selected tab back into your model (`if opened and i
-  != active: set_active(i)`), then opening/focusing a tab from code (a button elsewhere, a node
+  != active: set_active(i)`), then opening/focusing a tab from code (a button elsewhere, a document
   select, a jump-to-file) appears to do nothing: the bar shows the new tab but imgui keeps reporting
   the OLD one as opened, and your read-back writes the old index straight back, so the editor/body
   never switches. The fix is a one-shot select-pending flag: set it wherever you assign the active
@@ -543,7 +543,7 @@ Library footguns specific to the imgui-bundle Python build (currently
   (genuine user clicks only). The selection takes effect the FOLLOWING frame. This is invisible to a
   paper/text review — it's frame-timing + draw-order behavior; only running the app (or an agent that
   executes the imgui frame) catches it. (ShaderBox: `App.tab_select_pending` consumed in
-  `tabs/code.py::_draw_tab_row`, mirroring the older `ui.py` node-settings bar that already did this.)
+  `tabs/code.py::_draw_tab_row`, mirroring the older `ui.py` document-settings bar that already did this.)
 
 ---
 
@@ -567,7 +567,7 @@ The only project-coupled facts, consolidated here:
   defocus — Esc / arrow nav / target switch). Gate "is the editor a real interaction target?"
   questions (Insert-at-caret in the lib picker, etc.) on the sticky one; the live flag reads
   False inside a modal, and `current_editor_path is not None` is too lax (a freshly-selected
-  node has a session before any typing happened).
+  document has a session before any typing happened).
 - **Can't screenshot the app on the dev box** (no WM on the display) — §0 applies hard here; hand
   visual checks to the maintainer. Verify everything else headlessly (`make smoke`, or a standalone
   GL+imgui driver). `make check` (ruff + pyright, 0 errors) gates every change; `x` and other

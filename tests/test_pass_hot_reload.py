@@ -96,7 +96,7 @@ def test_editing_a_non_output_pass_reloads_it(
     source_a = ui_document.document.passes["a"].source.path
     os.utime(source_a, (0, 0))  # make the mtime differ for sure
     source_a.write_text(_CONST % "0.4")
-    reload_document_if_changed(app, "doc", ui_document)  # type: ignore[arg-type]
+    reload_document_if_changed(app, "doc", ui_document)
     ui_document.document.render(u_time=0.0)
 
     assert _red(ui_document.document) != before, "editing pass 'a' changed nothing"
@@ -113,7 +113,7 @@ def test_editing_the_output_pass_still_reloads(
     source_b = ui_document.document.passes["b"].source.path
     os.utime(source_b, (0, 0))
     source_b.write_text(_HALVE % "0.25")
-    reload_document_if_changed(app, "doc", ui_document)  # type: ignore[arg-type]
+    reload_document_if_changed(app, "doc", ui_document)
     ui_document.document.render(u_time=0.0)
     assert _red(ui_document.document) == pytest.approx(51, abs=2)  # 0.8 * 0.25
     assert [p for p, _ in app.synced] == [source_b]
@@ -125,7 +125,7 @@ def test_an_unchanged_document_reloads_nothing(
 ) -> None:
     ui_document = _chain_document(gl_ctx, tmp_path)
     app = _FakeApp()
-    reload_document_if_changed(app, "doc", ui_document)  # type: ignore[arg-type]
+    reload_document_if_changed(app, "doc", ui_document)
     assert app.synced == []
     ui_document.document.release()
 
@@ -160,7 +160,7 @@ def test_a_single_pass_document_still_hot_reloads(
     source = ui_document.document.render_pass.source.path
     os.utime(source, (0, 0))
     source.write_text(_CONST % "0.0")
-    reload_document_if_changed(app, "solo", ui_document)  # type: ignore[arg-type]
+    reload_document_if_changed(app, "solo", ui_document)
     ui_document.document.render(u_time=0.0)
     assert _red(ui_document.document) == 0
     ui_document.document.release()
@@ -177,6 +177,6 @@ def test_a_pass_keeps_its_own_program_across_a_siblings_reload(
     source_a = ui_document.document.passes["a"].source.path
     os.utime(source_a, (0, 0))
     source_a.write_text(_CONST % "0.2")
-    reload_document_if_changed(_FakeApp(), "doc", ui_document)  # type: ignore[arg-type]
+    reload_document_if_changed(_FakeApp(), "doc", ui_document)
     assert other.program is program_before
     ui_document.document.release()

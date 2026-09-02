@@ -998,7 +998,7 @@ def test_script_stub_compiles_runs_and_drives_nothing_by_default(
         _u("u_arr", dim=1, n=4),
         _u("u_txt", dim=1, n=8, gl_type=_GL_UNSIGNED_INT),
     ]
-    body = script_stub_for(uniforms)  # type: ignore[arg-type]
+    body = script_stub_for(uniforms)
     _write_script(tmp_path, body)
     document = _FakeDocument(uniforms)
     eng = _engine(tmp_path, document)
@@ -1011,7 +1011,7 @@ def test_script_stub_compiles_runs_and_drives_nothing_by_default(
 def test_script_stub_emits_explicit_import_for_referenced_types(tmp_path: Path) -> None:
     # The stub's import line names ScriptBehavior + Ctx always, plus only the output types the
     # document's uniforms reference. Falsifier: a referenced type missing, or an unreferenced one emitted.
-    body = script_stub_for([_u("u_v3", dim=3)])  # type: ignore[arg-type]
+    body = script_stub_for([_u("u_v3", dim=3)])
     # Scope the assertion to the IMPORT line (the docstring prose mentions Vec2/Vec3/Vec4 generically).
     import_line = next(
         line for line in body.splitlines() if "from shaderbox.scripting import" in line

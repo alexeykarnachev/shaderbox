@@ -32,8 +32,8 @@ and the engine draws it N times per frame, feeding `u_pass_iteration` / `u_pass_
 ping-ponging a self-reading pass BETWEEN iterations — one shader becomes a whole chain. On it: a
 six-pass **Radiance Cascades** example (paint -> seed -> jfa x9 -> df -> cascade x6 ->
 composite) and a tutorial rewriting both source articles for this engine (maintainer-only, never
-shipped). The merge is validated by a NUMBER: `oracle.py` measures 1.0000 merge-off and bounds
-RC's own ~21% near-field overshoot. Spec: `ai_docs/features/068_radiance_cascades/01_spec.md`.
+shipped). The merge is validated by a NUMBER: `oracle.py` measures it against a converged brute-force reference at 3.65% relMAE,
+with the gate mutation-tested (a broken merge scores 98%). Spec: `ai_docs/features/068_radiance_cascades/01_spec.md`.
 
 **067 custom editor: DONE, v0.27.0 on GitHub (not itch).** The vendored editor is now editor-repo
 `e7db554` — five vim gaps fixed upstream, atlas rebaked to the font's full coverage so pasted
@@ -128,6 +128,6 @@ Engine and persistence checks 1-12 pass.
 | — | node_tab_polish | done | Node-tab uniform layout polished + text-uniform crash fix. Spec: commit `62a6644`. |
 | — | editor_unfocused_dim | done | Code editor dims (`style.Alpha`) when it lacks keyboard focus; `EDITOR_UNFOCUSED_ALPHA` token in `theme.py`. Spec: commit `225076a`. |
 | — | hotkeys_extraction | done | Pulled the hotkey block out of `ui.py` into `hotkeys.py::process_hotkeys(app)`. Spec: commit `c7d6359`. |
-| — | smoke_test | done | `scripts/smoke.py` + `make smoke`: 200 headless frames of `update_and_draw`, asserts popup-mutex + `current_node_id` invariants. Spec: commit `92f221a`. |
+| — | smoke_test | done | `scripts/smoke.py` + `make smoke`: 200 headless frames of `update_and_draw`, asserts popup-mutex + `current_document_id` invariants. Spec: commit `92f221a`. |
 | — | pyright_blocking | done | Dropped `\|\| true` from the pyright pre-commit hook — typecheck now blocks on failure; repo at 0 errors. Spec: commit `d1fdf65`. |
 | — | devflow_scaffold | done | Created `CLAUDE.md` cold-start chain + `ai_docs/{dev_flow,todo,conventions}.md` + `/sanitize` skill + `Makefile`. Spec: commit `cd430d1`. |

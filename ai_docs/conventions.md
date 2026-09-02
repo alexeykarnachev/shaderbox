@@ -261,10 +261,10 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   no import; the harness therefore needs imgui-bundle + glfw installed, just never initialized.) `App`
   holds one `self.session` and forwards project state/ops via explicit `@property` accessors (NOT
   `__getattr__` — pyright must see the surface). **UI side effects of a core mutation ride injected
-  `on_*` callbacks the core invokes** (`on_current_node_changed` / `on_node_source_synced` /
-  `on_node_deleted` — the `ShaderLibFileManager` idiom); a return-value seam is WRONG here because the
+  `on_*` callbacks the core invokes** (`on_current_document_changed` / `on_document_source_synced` /
+  `on_document_deleted` — the `ShaderLibFileManager` idiom); a return-value seam is WRONG here because the
   reactions fire mid-copilot-turn on the worker-drain thread with `App` off the call stack. The toast on
-  a document save lives in `App.save_ui_node` (the user-path forwarder), NOT the core — so the copilot's
+  a document save lives in `App.save_ui_document` (the user-path forwarder), NOT the core — so the copilot's
   mid-turn saves don't toast. Imgui-coupled services the core needs (`exporter_registry` because the
   exporters carry panels, `shader_lib_files`) stay App-side, reached via injected getters. A NEW core
   mutation whose UI reaction touches imgui state adds an `on_*` callback (default no-op), never a direct
@@ -292,9 +292,9 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   lineno points at the user source (the 039 ghost removed by construction). A broken script is
   **error-as-data**: the uniform freezes at last-good + records a `ScriptError`, never raising into the
   frame loop (mirrors `shader_errors.ShaderError`). Freeze granularity: a per-KEY coercion mismatch freezes
-  only that key (`(node_id, name)`); a raw throw / non-dict return is behavior-level — freezes every name it
-  drove last frame, records under the sentinel `(node_id, "script.py")`. A key naming an engine-owned
-  (`u_time`…) uniform is dropped SILENTLY; an orphan/typo/sampler key records a soft `(node_id, name)` error
+  only that key (`(document_id, name)`); a raw throw / non-dict return is behavior-level — freezes every name it
+  drove last frame, records under the sentinel `(document_id, "script.py")`. A key naming an engine-owned
+  (`u_time`…) uniform is dropped SILENTLY; an orphan/typo/sampler key records a soft `(document_id, name)` error
   + skip. NaN/Inf is frozen-as-data like a shape error.
   **PLAY/STOP is document-scoped + name-keyed model state, NOT a per-`UIUniform` flag (feature 048).** A uniform
   the dict returns PLAYS (the engine writes it each tick); the user STOPS it to edit by hand. STOP state is
@@ -422,16 +422,16 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   `in_flight` would have been dropped. `tests/test_worker_daemon_contract.py` enumerates the
   spawn sites from the AST, so a new worker defaults INTO the daemon check.
 - **The "current document" is a first-class subject; how a copilot tool addresses a document scales with the
-  side effect's reversibility.** The app has exactly one selected document (`App.current_node_id`); the UI
-  shows it, the editor binds to it; `switch_node` is the one tool whose job is to change it. A NEW
+  side effect's reversibility.** The app has exactly one selected document (`App.current_document_id`); the UI
+  shows it, the editor binds to it; `switch_document` is the one tool whose job is to change it. A NEW
   copilot tool picks its addressing by RISK, not by reflex symmetry:
   - **Reversible / project-internal (read, edit, delete-to-trash, render-to-file)** → take an explicit
-    document id, act WITHOUT switching. `read_shader` / the edit tools / `delete_node` / `render_image` /
+    document id, act WITHOUT switching. `read_shader` / the edit tools / `delete_document` / `render_image` /
     `render_video` all do this: they work across the project (or produce a local file) without
     disturbing the user's view, and the worst case is undoable.
   - **External + irreversible (publish_telegram / publish_youtube)** → operate on the CURRENT document
     ONLY, no document arg. A live post of the wrong shader can't be undone, so it must be the document the user
-    is looking at: the copilot `switch_node`s first (the prompt enforces verify-current-before-publish).
+    is looking at: the copilot `switch_document`s first (the prompt enforces verify-current-before-publish).
   Spraying a document-id arg onto the *publish* tools is the anti-pattern — it lets the agent silently post
   a document the user isn't watching. Revisit the split if a real workflow needs background publish of a
   non-current document often enough that switching first is friction — then add the arg consciously, with a
@@ -519,7 +519,7 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   and resolves through `ToolRegistry` — never a parallel name-keyed dict (feature 029 deleted the two that
   existed, `_TOOL_VERBS` + `_GATE_PROMPTS`). What a tool's RESULT looks like in chat keys on the payload's
   shape (`"errors"` / `"hits"` in payload — `session._tool_card_outcome`), not on the tool's name. The one
-  sanctioned name-key left: `delete_node`'s Recover affordance (n=1; a `recoverable` trait field is
+  sanctioned name-key left: `delete_document`'s Recover affordance (n=1; a `recoverable` trait field is
   speculation). Revisit at a second recoverable tool, or a third payload-shape trigger (then consider an
   explicit payload contract type).
 - **The copilot replay `history` is NATURAL-LANGUAGE ONLY: user messages + one engine-derived turn-summary
@@ -906,16 +906,15 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   has exactly these exceptions — all are missing/wrong annotations in third-party stubs, never our
   own type errors. New markers outside this list are a design smell; fix the design, don't add to
   the list. Re-audit when bumping `moderngl` / `pydantic`.
-  - `moderngl.Uniform.gl_type` — not in moderngl's stub (`uniform_coerce.py`, `ui_models.py`, `util.py`,
-    `copilot/backend.py`). NOTE: the script-engine `exec()` seam (feature 041, redesigning 040) needs
+  - `moderngl.Uniform.gl_type` — not in moderngl's stub (`uniform_coerce.py`, `ui_models.py`,
+    `util.py`). NOT `copilot/backend.py`: it reads the type through the `gl_type_label` wrapper
+    and needs no suppression of its own. NOTE: the script-engine `exec()` seam (feature 041, redesigning 040) needs
     NO suppression — ruff's `S102` (flake8-bandit) isn't in this repo's `select`, and pyright's basic
     mode flags no `Any`-flow on the namespaced `exec`. The exec globals are the REAL builtins
     (feature 045 — a script is plain Python, `import math` works) plus the injected top-level names
     the eager method annotations resolve against (`Ctx`/`MouseState`/`Vec2..4`/`Array`/`Text`); the
     `ScriptBehavior` base is injected too. `__build_class__` is in the real builtins (the class
     statement is satisfied), so no curated `__builtins__` dict is needed.
-  - `@model_validator(mode="after")` on a method returning `Self` — pydantic's decorator stub
-    mistypes the wrapped method.
   - `moderngl.create_standalone_context(backend="egl")` — the stub types `**kwargs` as a single
     `dict`, so a keyword arg trips `arg-type` (`scripts/dogfood/harness.py`, the headless EGL context).
   - `openai`'s `chat.completions.create(messages=, tools=)` rejects plain dict literals (its params

@@ -63,7 +63,7 @@ gotcha already hit, so you don't re-discover them.
 
 The mechanism (feature 027): each turn is its OWN `uv run` process (inherently one blocking call). State
 persists ON DISK — the harness `dump`s the conversation after the turn, and the NEXT process `resume`s it
-via `create(project_dir=...)` with ZERO LLM calls (the conversation is NL-only-serialized; node edits are
+via `create(project_dir=...)` with ZERO LLM calls (the conversation is NL-only-serialized; document edits are
 already on disk). So you read turn N's JSON, think, then write turn N+1's command. No server, no background
 process, no PID.
 
@@ -80,7 +80,7 @@ V3D shader-codegen cost (Pi): the driver compiles the final GPU code lazily at F
 CPU — a heavy shader's first render pays it once (the old code-based glyphs paid ~20s; the
 data-driven glyphs of 032 cut that to ~1s). Warm renders are fast (text 300x300 ~ tens of ms). If
 a render burns 99% CPU for minutes it's first-draw codegen of an oversized shader, not a deadlock;
-for time-sampled stills load the node directly on a standalone EGL context (no bridge timeout).
+for time-sampled stills load the document directly on a standalone EGL context (no bridge timeout).
 
 **Turn 1 (fresh project):**
 ```
@@ -88,7 +88,7 @@ env OPENROUTER_API_KEY=… uv run python -c '
 from pathlib import Path
 from scripts.dogfood import DogfoodHarness
 h = DogfoodHarness.create()                          # seeded project (UV Mango / Media / Text)
-# h = DogfoodHarness.create(seed_examples=False)     # empty -> create_node from scratch
+# h = DogfoodHarness.create(seed_examples=False)     # empty -> create_document from scratch
 h.send("Make the current shader output solid red. Keep it simple.")
 h.drive_until_idle()                                 # pump worker+bridge; STOPS on a gate
 h.render(size=400)                                   # 400x400 PNG (path echoed in the dump)
@@ -120,7 +120,7 @@ in-script after import loses to the already-run `setdefault`. Same for the resum
 mid-turn; the worker dies on process exit and a gated turn is never persisted, so there is no "dump the
 gate, resume, answer it". Decide the gate answer UP FRONT when you compose that turn's command:
 ```python
-h.send("delete the Media node")
+h.send("delete the Media document")
 h.drive_until_idle()                       # stops on the gate
 if h._open_gate() is not None:
     h.decline()                            # or approve() — YOU decide per the scenario
@@ -139,11 +139,11 @@ keeps you honest about reading each reply.)
 
 ## 1a. Tool-coverage discipline — DELIBERATELY route through the cold tools
 
-Run 2 fired only 5 of ~12 reachable tools (`create_node` / `read_shader` / `edit_shader` +
+Run 2 fired only 5 of ~12 reachable tools (`create_document` / `read_shader` / `edit_shader` +
 the since-removed line tools); the whole navigation/value/integration half stayed COLD (`grep`,
-`read_lib`, `set_uniform`, `switch_node`, `delete_node`, `render_image`/`render_video`). A cheap model
-takes the lazy path — it answers "what nodes exist?" from the project map instead of grepping, hard-codes a
-constant instead of adding a tunable uniform, edits the current node instead of switching. So coverage
+`read_lib`, `set_uniform`, `switch_document`, `delete_document`, `render_image`/`render_video`). A cheap model
+takes the lazy path — it answers "what documents exist?" from the project map instead of grepping, hard-codes a
+constant instead of adding a tunable uniform, edits the current document instead of switching. So coverage
 won't happen by accident; YOU (the driver) have to provoke it.
 
 **Before composing each turn, ask: "which cold tool can THIS turn legitimately force?"** Prefer the phrasing
@@ -151,14 +151,14 @@ that routes through an unexercised tool, as long as it stays a natural mission m
 grep" instruction — the agent must have a real reason):
 
 - **`grep` / `read_lib`** — ask the agent to REUSE something it must first LOCATE: a `SB_*` helper by
-  behavior not name ("reuse the library edge helper"), or "which shaders use `u_time`?". A bare "what nodes
+  behavior not name ("reuse the library edge helper"), or "which shaders use `u_time`?". A bare "what documents
   exist?" loses to the project map — make the thing live in the LIBRARY (not in the always-present map) so
   it has to grep + read_lib to find and read it.
 - **`set_uniform`** — demand an ADJUSTABLE look and then DIAL it ("turn the glow up", "make it dimmer").
   A hard-coded constant can't be tuned; the agent must introduce a uniform and `set_uniform` a value.
-- **`switch_node`** — with node A current, ask to edit node B by name. Edits with no target hit the
-  current node, so the agent must `switch_node` to B first.
-- **`delete_node`** — give it a genuine throwaway to remove. It's GATED — decide approve/decline UP FRONT
+- **`switch_document`** — with document A current, ask to edit document B by name. Edits with no target hit the
+  current document, so the agent must `switch_document` to B first.
+- **`delete_document`** — give it a genuine throwaway to remove. It's GATED — decide approve/decline UP FRONT
   when you compose that turn (a gate can't span turns; `/dogfood` §1).
 - **`render_image` / `render_video`** — these are the COPILOT's own gated tools, distinct from the harness
   `h.render()`. Ask the AGENT to save the result to a file ("render this to a PNG"); drive that turn with
@@ -228,7 +228,7 @@ the sweep removes IS the edit-sediment measurement — record its diff.**
 - **`dump` uses its own cursor.** `drive_until_idle` advances the PRINT cursor; `dump` slices on a SEPARATE
   cursor, so `new_messages` reports the turn's output even after the prints. Don't expect `dump` to re-emit
   the restored conversation on a resume — that's already-seen by design.
-- **EGL context is already current after creation** — no `make_current` call; `Node`/`Canvas` pick it up
+- **EGL context is already current after creation** — no `make_current` call; `Document`/`Canvas` pick it up
   via `moderngl.get_context()`. (moderngl's stub mistypes `backend=` — the one sanctioned `# type: ignore`.)
 - **The `GLFWError: not initialized` warning is benign** — `core.py` reads `glfw.get_time()` for the default
   `u_time` (returns 0.0, the static t=0 frame we want). The harness installs a no-op glfw error callback.
@@ -240,24 +240,24 @@ the sweep removes IS the edit-sediment measurement — record its diff.**
   driver quirk (NOT a script-engine or harness bug): rendering to a ≥256px canvas hundreds of times and
   reading the FBO only AT THE END yields a near-empty framebuffer (mean alpha ~7). The engine wrote every
   uniform correctly throughout — it's the accumulated GPU frame that's lost. Fix in a direct-engine driver:
-  call `node.canvas.texture.read()` (or a flush) EACH frame, not just on the frames you keep (mean alpha
+  call `document.canvas.texture.read()` (or a flush) EACH frame, not just on the frames you keep (mean alpha
   jumps to 255). Cheap at the sizes dogfood uses; just don't batch the reads. (Found 2026-06-13 hudgame
   scene, 512px × 330 frames.)
 - **🔴 `GLError 1282 (invalid operation) glUseProgram(0)` is a REAL pipeline bug, not harness noise.** It
-  fires sporadically on bridge-marshalled create_node/write_shader (the persist→render path) under the
-  standalone context — the same headless GL-quirk as node teardown. The copilot RECOVERS (retries), so a
+  fires sporadically on bridge-marshalled create_document/write_shader (the persist→render path) under the
+  standalone context — the same headless GL-quirk as document teardown. The copilot RECOVERS (retries), so a
   run still completes, but log it as a finding (a known headless-GL quirk; record it in the run's report
   §9(a) if it grows). Don't mistake it for a harness fault.
-- **Multi-file read needs an UNSOLVABLE-without-reading task.** "Merge node A and B" is solved from the
+- **Multi-file read needs an UNSOLVABLE-without-reading task.** "Merge document A and B" is solved from the
   model's own knowledge — a cheap model won't bother to `read_shader` the references. To actually exercise
-  multi-file read, the task must REQUIRE the other node's content (e.g. "use the EXACT color/constant from
-  node X"). Otherwise the probe is inconclusive.
+  multi-file read, the task must REQUIRE the other document's content (e.g. "use the EXACT color/constant from
+  document X"). Otherwise the probe is inconclusive.
 - **`session_cost_usd` accumulates across turns**; `state.last_turn` has `context_tokens`/`reply_tokens`/
   `cost_usd` per turn. The trace's `llm_response` events have per-iteration `usage: in=/out=/cost=`.
-- **`h.render()` renders the CURRENT node only**, and `create_node(switch_to=False)` / edit-by-`target`
-  do NOT move current — so after building or editing a node in the background, `h.render()` shows the OLD
-  current node (e.g. you make Square, but the render is still Circle). To eyeball a non-current node
-  WITHOUT spending an LLM turn: `h.session.set_current_node_id("<full-uuid>")` then `h.render()` (both
+- **`h.render()` renders the CURRENT document only**, and `create_document(switch_to=False)` / edit-by-`target`
+  do NOT move current — so after building or editing a document in the background, `h.render()` shows the OLD
+  current document (e.g. you make Square, but the render is still Circle). To eyeball a non-current document
+  WITHOUT spending an LLM turn: `h.session.set_current_document_id("<full-uuid>")` then `h.render()` (both
   GL-free, no `send`). The render path attr is `h._last_render_path` (underscore). NOTE: a uniform value
   set via `set_uniform` is in-memory-only until a project save, so a between-process render shows the
   file's inline default, not the tuned value.
@@ -294,7 +294,7 @@ the sweep removes IS the edit-sediment measurement — record its diff.**
   animates from a clean __init__). The webm `h.render_video()` is the other deliverable; both set
   `_last_render_path`. Keep `seconds`/`size` small on V3D. (A FREE `RenderPreset` yields a stray ffmpeg
   `-s 0x0` broken-pipe — the method uses FIXED_DIMS; don't hand-roll a bare preset.)
-- **A sample-frame STRIP is the cheapest visual motion check — use `h.render_strip(times, node_id)`,
+- **A sample-frame STRIP is the cheapest visual motion check — use `h.render_strip(times, document_id)`,
   never a hand-rolled `render_at` loop.** One call renders each `t`, composites onto (25,25,40), adds
   a `t=` label + 4px gutter, and writes ONE horizontal sheet into the project's renders dir (so
   `dump()`'s `last_render_path` finds it). 🔴 The reason it's a method and not a loop: each sample is a
@@ -303,8 +303,8 @@ the sweep removes IS the edit-sediment measurement — record its diff.**
   (anything using `ctx.dt`) samples a trajectory that never happened — the 05 bounce script only
   survived it by self-deriving dt from `ctx.t`. Canvas size is saved/restored around the calls
   (`render_at`'s `set_size` persists into document.json and would overwrite an agent's `set_canvas_size`).
-- **For NUMBERS, not pixels: `h.script_values(times, node_id)`** — the `ScriptEngine.dry_run`
-  passthrough returning `(t, {uniform: value})` per sample, with the live node left byte-identical.
+- **For NUMBERS, not pixels: `h.script_values(times, document_id)`** — the `ScriptEngine.dry_run`
+  passthrough returning `(t, {uniform: value})` per sample, with the live document left byte-identical.
   That's the logic axis's ground-truth check (a trajectory, a period, a state machine's phase) without
   spending an LLM turn or squinting at a render.
   🔴 But raw values live in whatever coordinate frame the script+shader privately agreed on
@@ -317,7 +317,7 @@ the sweep removes IS the edit-sediment measurement — record its diff.**
   time-faithful pixel source.
   🔴 Third member of the same class, DRIVER-side (2026-07-30): a broken nested-quote substitution
   passed `project_dir="."` on a resume, so the turn ran against an EMPTY root project — and the
-  model's truthful "there aren't any shader nodes" got logged as a hallucination. Before judging a
+  model's truthful "there aren't any shader documents" got logged as a hallucination. Before judging a
   "weird" model claim about project STATE, verify the dump's `project_dir` is the one you think
   you resumed; never build a resume path via nested `$(python3 -c "...")` inside an already-quoted
   `bash -ic` string — read the path in a prior step and paste it literally.
@@ -364,7 +364,7 @@ than the dumps recorded; the pre-wipe text also survives in
 `<project>/copilot/archive/conversation_<stamp>.json`.
 
 **Load-bearing token note:** the `turn_done` `in=` is the CUMULATIVE billed input (the SUM of every
-iteration's input — e.g. 68k on the 4-node read turn); the real per-turn CONTEXT size is the max
+iteration's input — e.g. 68k on the 4-document read turn); the real per-turn CONTEXT size is the max
 per-iteration `in=` (analyze.py's `peak_iter_in_tokens`, ~10k on that turn). Don't report the cumulative
 figure as "context size" — it's the cost driver, the peak is the context-size driver.
 

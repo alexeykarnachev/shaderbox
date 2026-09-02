@@ -69,7 +69,7 @@ def test_engine_driven_set_is_the_documented_set() -> None:
 
 def _lib_manager(root: Path) -> ShaderLibFileManager:
     return ShaderLibFileManager(
-        notifications=types.SimpleNamespace(push=lambda *a, **k: None),  # type: ignore[arg-type]
+        notifications=types.SimpleNamespace(push=lambda *a, **k: None),
         rebuild_index=lambda: None,
         index_getter=ShaderLibIndex.empty,
         on_paths_removed=lambda _paths: None,
@@ -194,7 +194,7 @@ def test_short_ids_are_4_chars_when_no_collision() -> None:
     from shaderbox.copilot.backend import CopilotBackend
 
     stub = _id_stub(["abcd1111", "ef992222", "12345678"])
-    short = CopilotBackend._copilot_short_ids(stub)  # type: ignore[arg-type]
+    short = CopilotBackend._copilot_short_ids(stub)
     assert list(short.values()) == ["abcd", "ef99", "1234"]
     assert all(len(s) == 4 for s in short.values())
 
@@ -204,7 +204,7 @@ def test_short_ids_grow_on_collision() -> None:
 
     # Two ids share the first 5 chars -> ALL grow to the shortest disambiguating length (6).
     stub = _id_stub(["abcde1xxx", "abcde2yyy", "ffff0000"])
-    short = CopilotBackend._copilot_short_ids(stub)  # type: ignore[arg-type]
+    short = CopilotBackend._copilot_short_ids(stub)
     assert short == {"abcde1xxx": "abcde1", "abcde2yyy": "abcde2", "ffff0000": "ffff00"}
     assert len(set(short.values())) == 3
 

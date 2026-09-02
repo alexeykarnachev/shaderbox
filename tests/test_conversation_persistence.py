@@ -325,8 +325,8 @@ def test_drop_turn_skips_commit_but_stop_does_not(tmp_path: Path) -> None:
         from tests.test_copilot_loop import _fake_caps
 
         return CopilotSession(
-            _fake_caps(edit_errors=[]),  # type: ignore[arg-type]
-            _OneTextClient(),  # type: ignore[arg-type]
+            _fake_caps(edit_errors=[]),
+            _OneTextClient(),
             get_project_slug=lambda: "test",
             get_checkpoints_root=lambda: tmp_path / "checkpoints",
         )
@@ -355,8 +355,8 @@ def test_session_save_then_load_restores(tmp_path: Path) -> None:
 
     def _mk() -> CopilotSession:
         return CopilotSession(
-            _fake_caps(edit_errors=[]),  # type: ignore[arg-type]
-            object(),  # type: ignore[arg-type]  # client unused by save/load
+            _fake_caps(edit_errors=[]),
+            object(),  # client unused by save/load
             get_project_slug=lambda: "test",
             get_checkpoints_root=lambda: tmp_path / "checkpoints",
         )
