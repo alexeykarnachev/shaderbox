@@ -8,6 +8,8 @@ orphan key) surface."""
 import types
 from pathlib import Path
 
+from loguru import logger
+
 from shaderbox.scripting import ScriptEngine
 
 _GL_FLOAT = 0x1406
@@ -22,13 +24,30 @@ def _u(name: str, dim: int = 1, n: int = 1) -> types.SimpleNamespace:
     )
 
 
-class _FakeDocument:
+class _FakePass:
     def __init__(self, uniforms: list[types.SimpleNamespace]) -> None:
         self.uniform_values: dict[str, object] = {}
+        self.script_ready = True
         self._uniforms = uniforms
 
     def get_active_uniforms(self) -> list[types.SimpleNamespace]:
         return self._uniforms
+
+
+class _FakeDocument:
+    # The ScriptTarget slice: passes by name. A bare uniform list is the one-pass shorthand.
+    def __init__(
+        self,
+        uniforms: list[types.SimpleNamespace] | dict[str, list[types.SimpleNamespace]],
+    ) -> None:
+        by_pass = {"main": uniforms} if isinstance(uniforms, list) else uniforms
+        self.passes: dict[str, _FakePass] = {
+            name: _FakePass(us) for name, us in by_pass.items()
+        }
+
+    @property
+    def uniform_values(self) -> dict[str, object]:
+        return self.passes["main"].uniform_values
 
 
 def _write_script(tmp: Path, body: str) -> None:
@@ -88,8 +107,8 @@ def test_dry_run_integrator_advances_across_samples(tmp_path: Path) -> None:
     probe = eng.dry_run("n0", document, _SAMPLE_TIMES, _FPS)
 
     assert probe.compile_error is None
-    assert probe.driven == {"u_x"}
-    vals = [s[1]["u_x"] for s in probe.samples]
+    assert probe.driven == {("main", "u_x")}
+    vals = [s[1][("main", "u_x")] for s in probe.samples]
     assert len(vals) == 3
     assert vals[0] < vals[1] < vals[2]  # accumulating, not frozen
     # Each frame (incl. frame 0) ticks dt=1/12, matching the export loop: at the t=1.0 sample (frame
@@ -107,9 +126,9 @@ def test_dry_run_closed_form_motion_captured(tmp_path: Path) -> None:
 
     probe = eng.dry_run("n0", document, _SAMPLE_TIMES, _FPS)
 
-    assert probe.driven == {"u_x", "u_c"}
-    moved = [s[1]["u_x"] for s in probe.samples]
-    held = [s[1]["u_c"] for s in probe.samples]
+    assert probe.driven == {("main", "u_x"), ("main", "u_c")}
+    moved = [s[1][("main", "u_x")] for s in probe.samples]
+    held = [s[1][("main", "u_c")] for s in probe.samples]
     assert moved[0] < moved[2]  # u_x varies with t
     assert held[0] == held[2] == 0.7  # u_c constant
 
@@ -142,15 +161,24 @@ def test_dry_run_orphan_and_per_key_errors(tmp_path: Path) -> None:
     document = _FakeDocument([_u("u_x"), _u("u_v", dim=2)])
     eng = _engine(tmp_path, document)
 
-    probe = eng.dry_run("n0", document, _SAMPLE_TIMES, _FPS)
-
-    assert "u_x" in probe.driven and "u_v" in probe.driven
-    assert any(name == "u_v" for name, _ in probe.per_key_errors)  # bad shape
-    assert any(name == "u_typo" for name, _ in probe.orphan_keys)  # no such uniform
     # The probe surfaces orphans via the RETURN value, never the console: it ticks the script across
-    # ~N frames, so a console warning would spam once per frame (the pong-script regression). warn=False
-    # on the probe path means it never touches the live warn-dedup set.
-    assert eng._documents["n0"].warned == set()
+    # ~N frames, so a console warning would spam once per frame (the pong-script regression). 069
+    # deleted the warning outright, so the sink must stay empty for every caller, not just this one.
+    records: list[str] = []
+    handle = logger.add(lambda m: records.append(str(m)), level="WARNING")
+    try:
+        probe = eng.dry_run("n0", document, _SAMPLE_TIMES, _FPS)
+    finally:
+        logger.remove(handle)
+
+    assert ("main", "u_x") in probe.driven and ("main", "u_v") in probe.driven
+    assert any(
+        (p, name) == ("main", "u_v") for p, name, _ in probe.per_key_errors
+    )  # bad shape
+    assert any(
+        (p, name) == ("", "u_typo") for p, name, _ in probe.orphan_keys
+    )  # no such uniform
+    assert not [r for r in records if "shaderbox.scripting.engine" in r]
 
 
 def test_dry_run_runtime_raise_surfaces(tmp_path: Path) -> None:
@@ -224,7 +252,7 @@ def test_dry_run_transient_per_key_error_surfaces(tmp_path: Path) -> None:
     probe = eng.dry_run("n0", document, _SAMPLE_TIMES, _FPS)
 
     assert any(
-        name == "u_v" for name, _ in probe.per_key_errors
+        (p, name) == ("main", "u_v") for p, name, _ in probe.per_key_errors
     )  # transient bad shape kept
 
 
@@ -249,3 +277,22 @@ def test_dry_run_empty_dict_drives_nothing(tmp_path: Path) -> None:
 
     assert probe.compile_error is None
     assert probe.driven == set()  # the loud no-op fact source
+
+
+def test_dry_run_reports_the_pass_in_orphan_keys(tmp_path: Path) -> None:
+    # The copilot's write feedback is the only place a headless caller learns the ROUTING verdict, so
+    # an orphan inside a pass block must name that pass. Falsifier: report the bare name — the pass
+    # half of the assertion goes red.
+    _write_script(
+        tmp_path,
+        _script(
+            update_body=("        return {'paint': {'u_x': 0.5, 'u_typo': 1.0}}\n")
+        ),
+    )
+    document = _FakeDocument({"paint": [_u("u_x")], "composite": [_u("u_x")]})
+    eng = _engine(tmp_path, document)
+
+    probe = eng.dry_run("n0", document, _SAMPLE_TIMES, _FPS)
+
+    assert probe.driven == {("paint", "u_x")}  # the block drove paint ALONE
+    assert [(p, name) for p, name, _ in probe.orphan_keys] == [("paint", "u_typo")]

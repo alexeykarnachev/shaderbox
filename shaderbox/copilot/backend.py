@@ -100,7 +100,7 @@ from shaderbox.media import (
     media_class_for,
 )
 from shaderbox.pass_graph import clamp_canvas_size
-from shaderbox.paths import DOCUMENT_SCRIPT_BASENAME, shader_lib_root
+from shaderbox.paths import DOCUMENT_SCRIPT_BASENAME, pass_name_of, shader_lib_root
 from shaderbox.render_preset import RenderPreset
 from shaderbox.render_shape import RenderShape, shape_to_preset
 from shaderbox.scripting import (
@@ -238,6 +238,12 @@ class _CopilotEditTarget:
     lib_create: bool = False
 
 
+def _driven_on(driven: set[tuple[str, str]], pass_name: str) -> set[str]:
+    # The uniform NAMES the script drives on one pass, out of the document-scoped (pass, name) set
+    # (069). `_format_uniforms` formats one pass, so it keeps its name-keyed signature.
+    return {name for pass_, name in driven if pass_ == pass_name}
+
+
 def _format_uniforms(render_pass: Pass, driven: set[str]) -> list[str]:
     # "name type = value" rows. Blocks have no scalar value. The shown value comes from the document's
     # uniform_values cache (the same source tabs/document.py reads) — NOT live u.value, which Pass.render()
@@ -298,11 +304,20 @@ def _values_differ(a: object, b: object, eps: float) -> bool:
 
 
 def _uniform_changes(
-    name: str, samples: list[tuple[float, dict[str, object]]], eps: float
+    key: tuple[str, str],
+    samples: list[tuple[float, dict[tuple[str, str], object]]],
+    eps: float,
 ) -> bool:
-    # True when `name`'s value differs by > eps between ANY pair of samples (it animates over t).
-    vals = [s.get(name) for _t, s in samples if name in s]
+    # True when this (pass, uniform)'s value differs by > eps between ANY pair of samples (it
+    # animates over t).
+    vals = [s.get(key) for _t, s in samples if key in s]
     return any(_values_differ(vals[0], v, eps) for v in vals[1:])
+
+
+def _dotted(key: tuple[str, str]) -> str:
+    # `pass.uniform` for the agent to READ (069). Display only — never parsed back, and never a key
+    # grammar (the script addresses a pass by a nested dict, not by a dotted string).
+    return f"{key[0]}.{key[1]}"
 
 
 def _motion_verdict(probe: ScriptProbe, render_line: str, eps: float) -> str:
@@ -315,20 +330,22 @@ def _motion_verdict(probe: ScriptProbe, render_line: str, eps: float) -> str:
         )
     lines = [
         "values@t={:.1f}: {}".format(
-            t, " ".join(f"{n}={s[n]}" for n in sorted(s)) or "(none)"
+            t, " ".join(f"{_dotted(k)}={s[k]}" for k in sorted(s)) or "(none)"
         )
         for t, s in probe.samples
     ]
     changing = sorted(
-        n for n in probe.driven if _uniform_changes(n, probe.samples, eps)
+        k for k in probe.driven if _uniform_changes(k, probe.samples, eps)
     )
     constant = sorted(probe.driven - set(changing))
     if render_line:
         lines.append(render_line)
     if changing:
-        verdict = f"{', '.join(changing)} CHANGE across t (ANIMATING)"
+        verdict = (
+            f"{', '.join(_dotted(k) for k in changing)} CHANGE across t (ANIMATING)"
+        )
         if constant:
-            verdict += f"; {', '.join(constant)} constant"
+            verdict += f"; {', '.join(_dotted(k) for k in constant)} constant"
     else:
         verdict = (
             "values UNCHANGED across t (STATIC) -- the script drives these uniforms with values "
@@ -354,7 +371,7 @@ class CopilotBackend:
         get_shader_lib_files: Callable[[], ShaderLibFileManager],
         get_current_document_id: Callable[[], str],
         get_is_cancelled: Callable[[], bool],
-        get_script_driven_uniforms: Callable[[str], set[str]],
+        get_script_driven_uniforms: Callable[[str], set[tuple[str, str]]],
         get_script_path: Callable[[str], Path],
         get_script_source_view: Callable[[str], tuple[str, ScriptStatus | None]],
         read_script_source: Callable[[str], tuple[str, bool]],
@@ -634,8 +651,14 @@ class CopilotBackend:
                 text = document.render_pass.source.text
                 if kind == "document":
                     self._working_set_add(full_id)
+                # A document-scoped set of (pass, name) pairs (069): this listing formats the
+                # OUTPUT pass, so filter to its own name — a uniform driven only on `paint` is not
+                # driven here.
                 driven = (
-                    self._get_script_driven_uniforms(full_id)
+                    _driven_on(
+                        self._get_script_driven_uniforms(full_id),
+                        pass_name_of(document.render_pass.source.path),
+                    )
                     if kind == "document"
                     else set()
                 )
@@ -718,7 +741,11 @@ class CopilotBackend:
             is_current=(full_id == current),
             is_lib=False,
             uniforms=_format_uniforms(
-                document.render_pass, self._get_script_driven_uniforms(full_id)
+                document.render_pass,
+                _driven_on(
+                    self._get_script_driven_uniforms(full_id),
+                    pass_name_of(document.render_pass.source.path),
+                ),
             ),
             errors=_to_error_infos(document.render_pass.compile_unit.errors),
             script_listing=_number_lines(script_text) if script_text else "",
@@ -752,7 +779,10 @@ class CopilotBackend:
                     name=name,
                     address=pass_address(handle, name),
                     listing=_number_lines(render_pass.source.text),
-                    uniforms=_format_uniforms(render_pass, driven),
+                    # Per PASS (069): the driven set is document-scoped pairs, so each pass gets
+                    # only what the script drives ON IT — the same uniform name on a sibling pass
+                    # keeps its real value rather than a phantom marker.
+                    uniforms=_format_uniforms(render_pass, _driven_on(driven, name)),
                     errors=_to_error_infos(render_pass.compile_unit.errors),
                     is_output=(name == document.graph.output),
                     inputs=inputs,
@@ -876,14 +906,6 @@ class CopilotBackend:
                     error=f"'{name}' is engine-owned (ShaderBox provides its value) — it "
                     "cannot be set; change the shader code if you need different behavior",
                 )
-            if name in self._get_script_driven_uniforms(document_id):
-                # One script per document (048): a driven uniform is always computed by the document script.
-                return SetUniformResult(
-                    ok=False,
-                    error=f"'{name}' is script-driven (the document script computes its value each "
-                    "frame) — a set here would be overwritten next tick; edit it with "
-                    "edit_script/write_script instead",
-                )
             target = self._get_ui_documents()[document_id].document
             uniform = next(
                 (u for u in target.render_pass.get_active_uniforms() if u.name == name),
@@ -894,6 +916,21 @@ class CopilotBackend:
                     ok=False,
                     error=f"document has no active uniform '{name}' — read_shader it to see its "
                     "uniforms",
+                )
+            # The tool addresses the OUTPUT pass, so the reject asks the output PAIR (069): a
+            # uniform of the same name driven on another pass is a legitimate manual edit here. It
+            # sits below the resolution so a name absent from the output pass gets the "no active
+            # uniform" answer rather than the script-driven one.
+            if (
+                pass_name_of(target.render_pass.source.path),
+                name,
+            ) in self._get_script_driven_uniforms(document_id):
+                # One script per document (048): a driven uniform is always computed by the document script.
+                return SetUniformResult(
+                    ok=False,
+                    error=f"'{name}' is script-driven (the document script computes its value each "
+                    "frame) — a set here would be overwritten next tick; edit it with "
+                    "edit_script/write_script instead",
                 )
             label = gl_type_label(uniform)
             if not isinstance(uniform, moderngl.Uniform) or label.startswith("sampler"):
@@ -1847,27 +1884,37 @@ class CopilotBackend:
             return ""
 
     def _script_render_line(
-        self, document: Document, samples: list[tuple[float, dict[str, object]]]
+        self,
+        document: Document,
+        samples: list[tuple[float, dict[tuple[str, str], object]]],
     ) -> str:
         # ONE corroborating render (feature 043): render the mid sample's driven values AT the mid
         # sample's TIME to answer "did the values produce visible ink, or is it FLAT / off-screen / a
         # uniform the shader ignores?" — the honesty case a value-diff alone misses. The render clock IS
         # mid[0] (not wall-clock), so a u_time-reading shader renders the frame the values came from.
-        # Rebinds document.uniform_values to a merged copy (the live dict OBJECT is never mutated; sampler/
-        # Video values are shared and may advance a frame, same as the 033 facts probe), restores it in
-        # finally. Advisory — never raises.
+        # Rebinds EACH pass's uniform_values to a merged copy (the live dict OBJECTs are never
+        # mutated; sampler/Video values are shared and may advance a frame, same as the 033 facts
+        # probe), restores them in finally. Advisory — never raises.
         if not samples or not COPILOT_ENGINE.render_facts_enabled:
             return ""
         mid = samples[len(samples) // 2]
-        saved = document.render_pass.uniform_values
+        saved = {name: p.uniform_values for name, p in document.passes.items()}
         try:
-            document.render_pass.uniform_values = {**saved, **mid[1]}
+            # The sample is keyed by (pass, name) since 069, so the merge is per pass: a value the
+            # script drives on a non-output pass must reach THAT pass for the render to show what
+            # the values describe.
+            for pass_name, render_pass in document.passes.items():
+                render_pass.uniform_values = {
+                    **saved[pass_name],
+                    **{n: v for (p, n), v in mid[1].items() if p == pass_name},
+                }
             return self._render_facts_for(document, t=mid[0])
         except Exception as exc:
             logger.debug(f"copilot script render facts skipped: {exc}")
             return ""
         finally:
-            document.render_pass.uniform_values = saved
+            for pass_name, render_pass in document.passes.items():
+                render_pass.uniform_values = saved[pass_name]
 
     def read_script(self, document: str, /) -> ScriptView:
         def _on_main() -> ScriptView:
@@ -1938,11 +1985,16 @@ class CopilotBackend:
             )
         return ScriptWriteResult(
             ok=True,
-            driven=sorted(probe.driven),
+            driven=sorted(_dotted(k) for k in probe.driven),
             per_key_errors=[
-                f"{name}: {err.message}" for name, err in probe.per_key_errors
+                f"{_dotted((p, name))}: {err.message}"
+                for p, name, err in probe.per_key_errors
             ],
-            orphan_keys=[f"{name}: {err.message}" for name, err in probe.orphan_keys],
+            # A bare key no pass declares carries no pass, so it renders as the bare name.
+            orphan_keys=[
+                f"{_dotted((p, name)) if p else name}: {err.message}"
+                for p, name, err in probe.orphan_keys
+            ],
             motion_facts=motion_facts,
         )
 

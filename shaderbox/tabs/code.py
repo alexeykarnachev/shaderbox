@@ -123,17 +123,37 @@ def _pass_for_tab(app: App, tab: EditorTab) -> Pass | None:
 def _script_errors_for(app: App, tab: EditorTab) -> list[ShaderError]:
     # Adapt the active script tab's engine errors into the shader-error shape so they render through
     # the SAME bottom strip as compile errors (045 decision 7), click-to-jump into the script file.
-    # The document script shows its sentinel + every homeless soft-key error (typo/orphan keys that name
-    # no uniform row).
+    # The script is ONE file, so its tab shows EVERY soft error whatever pass it names — its author
+    # wants all of them — each prefixed with the pass it concerns (069).
     out: list[ShaderError] = []
     status = app.session.get_script_status(tab.document_id)
     if status is not None:
         if status.sentinel_error is not None:
             e = status.sentinel_error
             out.append(ShaderError(tab.path, e.line, e.message))
-        for key, e in status.soft_errors:
-            out.append(ShaderError(tab.path, e.line, f"{key}: {e.message}"))
+        for pass_name, key, e in status.soft_errors:
+            label = f"{pass_name}.{key}" if pass_name else key
+            out.append(ShaderError(tab.path, e.line, f"{label}: {e.message}"))
     return out
+
+
+def _script_errors_for_pass(
+    app: App, tab: EditorTab, pass_name: str
+) -> list[ShaderError]:
+    # The script's soft errors that name THIS shader tab's pass, shown under the pass's own compile
+    # errors (069). No pass prefix — the tab already says which pass it is. The rows carry the SCRIPT
+    # path, not the shader's, because that is where the fix is; the click branch opens it first (a
+    # jump request for a non-current file is discarded as stale). The sentinel stays on the script
+    # tab: it belongs to no pass, and repeating it on every shader tab is noise.
+    status = app.session.get_script_status(tab.document_id)
+    if status is None:
+        return []
+    script_path = app.session.script_path_for(tab.document_id)
+    return [
+        ShaderError(script_path, e.line, f"{key}: {e.message}")
+        for err_pass, key, e in status.soft_errors
+        if err_pass == pass_name
+    ]
 
 
 def _apply_markers(
@@ -200,7 +220,9 @@ def _visible_error_rows(app: App, n: int) -> int:
     return n if app.errors_expanded else min(n, _MAX_ERROR_ROWS)
 
 
-def _draw_error_strip(app: App, errors: list[ShaderError], height: float) -> None:
+def _draw_error_strip(
+    app: App, tab: EditorTab, errors: list[ShaderError], height: float
+) -> None:
     imgui.push_style_color(imgui.Col_.child_bg, COLOR.BG_SURFACE)
     if imgui.begin_child("##shader_errors", size=(0.0, height)):
         n = len(errors)
@@ -217,6 +239,11 @@ def _draw_error_strip(app: App, errors: list[ShaderError], height: float) -> Non
             clicked = imgui.selectable(f"{label}##err{i}", False)[0]
             imgui.pop_style_color(1)
             if clicked and err.line >= 0:
+                # A shader tab's strip can carry a SCRIPT error, whose row points at the script
+                # file. `_consume_jump` discards a request whose path is not the CURRENT tab's, so
+                # open the script first — exactly as the two other cross-file jumps do.
+                if err.path != app.current_editor_path:
+                    app.open_script_for(tab.document_id)
                 app.editor_jump_request = JumpRequest(err.path, err.line, 0)
         if n > _MAX_ERROR_ROWS:
             # Clickable toggle (F6): expand to all errors / collapse back to the cap.
@@ -462,10 +489,13 @@ def draw(app: App) -> None:
 
     # The error strip shows the active tab's errors in ONE place + style: a shader/lib tab's
     # compile errors, or a script tab's engine errors adapted to the same shape (045 decision 7).
+    # Compile errors FIRST: a shader that does not compile is why nothing else works, and the strip
+    # caps its visible rows, so the ordering decides what an unexpanded strip shows.
     errors = (
         _script_errors_for(app, tab)
         if tab.kind == "script"
         else edited.compile_unit.errors
+        + _script_errors_for_pass(app, tab, pass_name_of(tab.path))
         if (edited := _pass_for_tab(app, tab)) is not None
         else ui_document.document.render_pass.compile_unit.errors
     )
@@ -623,5 +653,5 @@ def draw(app: App) -> None:
 
     if errors:
         imgui.push_font(app.font_12, app.font_12.legacy_size)
-        _draw_error_strip(app, errors, strip_height)
+        _draw_error_strip(app, tab, errors, strip_height)
         imgui.pop_font()

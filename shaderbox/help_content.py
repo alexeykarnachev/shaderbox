@@ -136,7 +136,8 @@ def help_sections() -> list[HelpSection]:
                 "\n"
                 "For a value that needs memory between frames (a physics step, an integrator), a "
                 "document can carry a Python script that drives its uniforms — see the Script entry "
-                "point in the Document tab."
+                "point in the Document tab. A script drives a uniform on every pass that declares "
+                "it, or names a pass to drive only that one."
             ),
             snippet=(
                 "uniform float u_radius = 0.35;                     // drag\n"

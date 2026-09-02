@@ -21,6 +21,7 @@ class CommandId(StrEnum):
     HELP = auto()
     DELETE_DOCUMENT = auto()
     TOGGLE_DOCUMENT_PLAY = auto()
+    RESET_FEEDBACK = auto()
     OPEN_SETTINGS = auto()
     OPEN_LIB_PICKER = auto()
     OPEN_PALETTE = auto()
@@ -119,6 +120,12 @@ COMMAND_SPECS: list[CommandSpec] = [
         CommandId.TOGGLE_DOCUMENT_PLAY,
         "Play/stop document script",
         _chord(K.f5),
+        C.DOCUMENT,
+    ),
+    CommandSpec(
+        CommandId.RESET_FEEDBACK,
+        "Clear canvas",
+        _chord(K.f6),
         C.DOCUMENT,
     ),
     CommandSpec(CommandId.OPEN_SHADER, "Open shader", _chord(K.c, K.mod_alt), C.EDITOR),

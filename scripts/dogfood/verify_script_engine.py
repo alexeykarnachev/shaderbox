@@ -94,7 +94,9 @@ def main() -> int:
     h.session.tick(["scripted"], t=0.0, dt=1 / 60, frame=0)
 
     driven = h.session.get_script_driven_uniforms("scripted")
-    assert driven == {"u_wave"}, f"expected u_wave script-driven, got {driven}"
+    assert driven == {("main", "u_wave")}, (
+        f"expected u_wave script-driven on main, got {driven}"
+    )
 
     # Render at two t values where sin(t) differs: t=0 -> 0.5, t=pi/2 -> ~0.95.
     p_a = h.render_at(0.0, "scripted")

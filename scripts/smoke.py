@@ -298,7 +298,7 @@ def main() -> int:
             # Canary (048): the script must have BOUND + ticked (binding is by `script.py` existence).
             engine = app.session.script_engine
             driven = engine.script_driven_uniforms("script_document")
-            assert "u_a" in driven and "u_b" in driven, (
+            assert ("main", "u_a") in driven and ("main", "u_b") in driven, (
                 f"smoke: the document script did not bind/tick (driven={driven}) — script.py wasn't "
                 "discovered/bound"
             )
@@ -308,12 +308,14 @@ def main() -> int:
             script_document_obj = app.ui_documents["script_document"].document
             script_document_obj.render_pass.uniform_values["u_a"] = -999.0
             b_before = script_document_obj.render_pass.uniform_values["u_b"]
-            app.session.set_uniform_stopped("script_document", "u_a", True)
+            app.session.set_uniform_stopped("script_document", "main", "u_a", True)
             app.session.tick(["script_document"], t=1.0, dt=0.5, frame=999)
             assert script_document_obj.render_pass.uniform_values["u_a"] == -999.0, (
                 "smoke: a stopped uniform was overwritten — the tick(stopped=) skip is unwired"
             )
-            assert "u_a" in engine.script_driven_uniforms("script_document"), (
+            assert ("main", "u_a") in engine.script_driven_uniforms(
+                "script_document"
+            ), (
                 "smoke: a stopped uniform fell out of the driven set (its play button would vanish)"
             )
             assert script_document_obj.render_pass.uniform_values["u_b"] != b_before, (

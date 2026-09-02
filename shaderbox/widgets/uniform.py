@@ -13,6 +13,7 @@ from shaderbox.constants import MEDIA_EXTENSIONS
 from shaderbox.core import UniformValue
 from shaderbox.editor_types import HoverMark, JumpRequest
 from shaderbox.media import MediaWithTexture, Video, media_class_for
+from shaderbox.paths import pass_name_of
 from shaderbox.shader_errors import find_uniform_declaration_line
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_models import UIUniform
@@ -146,7 +147,9 @@ def _count_suffix(ui_uniform: UIUniform, current_value: UniformValue) -> str:
     return ""
 
 
-def _draw_play_stop(app: App, name: str, *, driven: bool, playing: bool) -> None:
+def _draw_play_stop(
+    app: App, pass_name: str, name: str, *, driven: bool, playing: bool
+) -> None:
     # The trailing per-row play/stop affordance (048): drawn ONLY for a uniform the script TARGETS
     # (driven — playing OR stopped); a never-scripted MANUAL uniform shows nothing. `stop` (accent)
     # when playing, `play` (dim) when stopped — the toggle flips the document-scoped stopped state.
@@ -165,8 +168,8 @@ def _draw_play_stop(app: App, name: str, *, driven: bool, playing: bool) -> None
         if playing
         else "Resume this uniform"
     )
-    if play_stop_toggle(f"u_{name}", playing, tooltip=tooltip):
-        app.set_uniform_stopped(document_id, name, playing)
+    if play_stop_toggle(f"u_{pass_name}_{name}", playing, tooltip=tooltip):
+        app.set_uniform_stopped(document_id, pass_name, name, playing)
     imgui.end_disabled()
 
 
@@ -175,6 +178,9 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
         return
 
     panel_pass = app.panel_pass(app.current_document_id)
+    # The script drives a uniform ON A PASS (069 D3), so every driven/stopped question is asked
+    # about the pass the panel is showing; `Pass` carries its source path, not its name.
+    panel_pass_name = pass_name_of(panel_pass.source.path)
     current_value: UniformValue = panel_pass.uniform_values[ui_uniform.name]
     new_value = None
     name = ui_uniform.name
@@ -184,8 +190,10 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
     # driven and not stopped (the engine writes it each tick). The value widget stays EDITABLE while
     # playing — grabbing it AUTO-STOPS (below), so the manual edit sticks instead of snapping back.
     document_id = app.current_document_id
-    driven = app.session.uniform_is_driven(document_id, name)
-    playing = driven and not app.session.is_uniform_stopped(document_id, name)
+    driven = app.session.uniform_is_driven(document_id, panel_pass_name, name)
+    playing = driven and not app.session.is_uniform_stopped(
+        document_id, panel_pass_name, name
+    )
 
     draw_input_type_selector(ui_uniform)
     _begin_ctrl(app, name, _count_suffix(ui_uniform, current_value), playing=playing)
@@ -299,10 +307,10 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
     # defuses the per-branch trailing-item hazard (a texture is non-scriptable → never playing). The
     # manual edit then applies + sticks (the slot is no longer written by the tick).
     if playing and imgui.is_item_activated():
-        app.set_uniform_stopped(document_id, name, True)
+        app.set_uniform_stopped(document_id, panel_pass_name, name, True)
         playing = False
 
-    _draw_play_stop(app, name, driven=driven, playing=playing)
+    _draw_play_stop(app, panel_pass_name, name, driven=driven, playing=playing)
 
     # A PLAYING uniform's value is owned by the script's tick — but a manual edit auto-stopped it
     # above (playing is now False), so this write applies + sticks. A still-playing slot is never

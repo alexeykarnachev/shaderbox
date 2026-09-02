@@ -170,3 +170,21 @@ def test_api_doc_reaches_only_for_the_gl_free_half_of_the_package() -> None:
         "shaderbox.scripting.outputs",
     }
     assert not [m for m in reached if "moderngl" in m or "OpenGL" in m]
+
+
+def test_the_contract_bullet_states_both_addressing_forms() -> None:
+    # 069 D3's grammar is what the copilot reads before writing a script, so the block must state
+    # BOTH forms and the precedence. Falsifier: revert the api_doc contract-bullet edit.
+    summary = script_api_summary()
+    assert "EVERY pass declaring it" in summary
+    assert "{pass: {uniform: value}}" in summary
+    assert "WINS over a bare key" in summary
+
+
+def test_the_mouse_gloss_states_the_button_and_the_previous_position() -> None:
+    # A bare field list tells the agent a NAME and not a meaning. Falsifier: revert the mouse-gloss
+    # edit — `down`/`prev_x` still appear as field names (the field-list pin covers that), but the
+    # sentences describing them are gone.
+    summary = script_api_summary()
+    assert "LMB" in summary
+    assert "PREVIOUS cursor position" in summary

@@ -69,8 +69,10 @@ _CTX_GLOSS: dict[str, str] = {
     "dt": "",
     "frame": "",
     "mouse": (
-        f"({_MOUSE_FIELDS} in 0..1, y-up -- FROZEN at {_EXPORT_MOUSE_AT} on export and in the "
-        "headless probe)"
+        f"({_MOUSE_FIELDS} -- FROZEN at {_EXPORT_MOUSE_AT} on export and in the "
+        "headless probe, where down is False and prev equals x/y; x/y and prev_x/prev_y are the "
+        "current and PREVIOUS cursor position in 0..1 y-up, down is True while LMB is held over "
+        "the canvas)"
     ),
 }
 
@@ -118,8 +120,11 @@ def script_api_summary() -> str:
     and the vector API, rendered from `context.py` + `outputs.py`."""
     bullets = [
         "- `class Behavior(ScriptBehavior)`: `__init__(self)` runs once; `update(self, ctx) -> dict` "
-        "runs every frame and returns {uniform_name: value}. State on `self.*` persists across "
-        "frames; a key you omit (or map to None) stays MANUAL.",
+        "runs every frame. A bare key drives that uniform on EVERY pass declaring it: "
+        "{uniform_name: value}. A key whose value is a dict is a PASS BLOCK driving that one pass, "
+        "{pass: {uniform: value}}, and a pass block WINS over a bare key for the same uniform on "
+        "that pass. State on `self.*` persists across frames; a key you omit (or map to None) "
+        "stays MANUAL.",
         f"- ctx: {_ctx_fields()}.",
         f"- Legal value shapes: {_dedup_join(_VALUE_SHAPE_GLOSS.values(), '; ')}. A bare FLAT list "
         "also coerces (a vec, or an exact-length numeric array); a NESTED bare list does not -- that "

@@ -4,7 +4,9 @@ from imgui_bundle import imgui
 
 from shaderbox.commands import (
     COMMAND_SPECS,
+    CommandId,
     CommandScope,
+    chord_needs_modifier,
     chord_to_str,
     route_flag,
     scopes_overlap,
@@ -48,3 +50,13 @@ def test_no_two_specs_share_a_chord_in_overlapping_scopes() -> None:
                     f"{a.id} and {b.id} share {chord_to_str(a.default_chord)} "
                     f"in overlapping scopes ({a.scope} / {b.scope})"
                 )
+
+
+def test_reset_feedback_is_a_legal_standalone_key() -> None:
+    # "Clear canvas" must survive editor focus, so the audit put it on an F-key rather than a
+    # letter (069 W-E rule 3). A bare F-key is legal by DESIGN here, not by accident: the registry
+    # exempts F1-F12 from the modifier requirement. Falsifier: bind it to a bare letter —
+    # chord_needs_modifier returns True and this goes red.
+    spec = next(s for s in COMMAND_SPECS if s.id is CommandId.RESET_FEEDBACK)
+    assert spec.default_chord == int(K.f6)
+    assert not chord_needs_modifier(spec.default_chord)

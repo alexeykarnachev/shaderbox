@@ -2,30 +2,34 @@
 by the headless ProjectSession.
 
 Per document it resolves a single `documents/<id>/scripts/script.py` (the document script) whose
-`update(self, ctx) -> dict[str, value]` drives MANY uniforms from ONE stateful instance. The engine
-compiles it once (cached by `(path, mtime)`, holding its own state instance), and on each `tick` calls
-`update`, fans the returned dict into `(name, value)` pairs, coerces each against the live uniform, and
-writes it into the pass's `uniform_values` BEFORE `Pass.render()` reads them. A broken script never raises
-into the frame loop: the uniform freezes at last-good and a `ScriptError` is recorded.
+`update(self, ctx) -> dict` drives MANY uniforms across MANY passes from ONE stateful instance. The
+engine compiles it once (cached by `(path, mtime)`, holding its own state instance), and on each `tick`
+calls `update`, routes the returned dict per 069 D3, coerces each value against the live uniform of the
+target pass, and writes it into that pass's `uniform_values` BEFORE `Pass.render()` reads them. A broken
+script never raises into the frame loop: the uniform freezes at last-good and a `ScriptError` is recorded.
 
-Play/stop (048): the live tick takes a `stopped: set[str]` of uniform NAMES the user has frozen for
-manual edit — a stopped name still ticks the script (state advances, the name stays "driven") but its
-WRITE is skipped, so the manual value sticks. Export ticks a fresh per-export instance with NO stopped
-set (an export always plays the script).
+Routing (069 D3): the VALUE's type decides. A `dict` value is a PASS BLOCK — `{"paint": {"u_b": v}}`
+drives that pass alone. Any other value is a BROADCAST — a bare key drives that uniform on every pass
+declaring it. Broadcasts apply first and pass blocks second, so specific beats general regardless of the
+author's insertion order. An unknown pass, or a key no target declares, is a soft error the UI's strip
+shows. `coerce_one` rejects a dict outright, which is what keeps the dispatch unambiguous.
 
-The engine imports no imgui/glfw/App and no concrete type — it works against the `EngineNode`
-protocol (the `uniform_values` dict + `get_active_uniforms()`), so it stays in the 025 headless core.
-Under 065 that protocol is satisfied by a `Pass`, which is where uniforms live; callers hand it
-`ui_document.document.render_pass`.
+Play/stop (048, pass-qualified by 069): the live tick takes a `stopped` set of `(pass, name)` keys the
+user has frozen for manual edit — a stopped key still ticks the script (state advances, the key stays
+"driven") but its WRITE is skipped, so the manual value sticks. Export ticks a fresh per-export instance
+with NO stopped set (an export always plays the script).
+
+The engine imports no imgui/glfw/App and no concrete type — it works against the `ScriptTarget`
+protocol (a document's `passes` by name, each a `ScriptPass`), so it stays in the 025 headless core.
+A real `Document` satisfies it structurally.
 """
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, TypeGuard
 
 import moderngl
-from loguru import logger
 from OpenGL.GL import GL_INT, GL_SAMPLER_2D, GL_UNSIGNED_INT
 
 from shaderbox.paths import DOCUMENT_SCRIPT_BASENAME
@@ -37,11 +41,12 @@ from shaderbox.scripting.behavior import (
 )
 from shaderbox.scripting.context import EXPORT_MOUSE, EngineContext
 from shaderbox.scripting.errors import ScriptError
+from shaderbox.scripting.keys import StoppedKey
 from shaderbox.uniform_coerce import is_text_array
 
 # The single document script: one stateful class whose update returns a dict driving many uniforms.
 # One script per document (048 — the per-uniform `u_<name>__<tag>.py` scheme of 044/047 is removed). The
-# error key is `(document_id, _SCRIPT_FILE)`.
+# error key is `(document_id, "", _SCRIPT_FILE)`.
 _SCRIPT_FILE = DOCUMENT_SCRIPT_BASENAME
 
 
@@ -56,11 +61,12 @@ def normalize_script_tabs(text: str) -> str:
 @dataclass(frozen=True)
 class ScriptStatus:
     # The document script's UI-facing state (feature 042's strip). sentinel_error is the script's
-    # compile/run failure (it drives nothing when set); soft_errors are (key, error) for homeless
-    # keys (typo/orphan) that name no real uniform row.
+    # compile/run failure (it drives nothing when set); soft_errors are (pass, key, error) for
+    # homeless keys (typo/orphan) that name no real uniform row. A bare key no pass declares
+    # carries "" as its pass.
     sentinel_error: "ScriptError | None"
     driven_count: int
-    soft_errors: list[tuple[str, "ScriptError"]]
+    soft_errors: list[tuple[str, str, "ScriptError"]]
 
 
 @dataclass(frozen=True)
@@ -69,14 +75,15 @@ class ScriptProbe:
     # live reload verdict (None = clean). The rest come from an ISOLATED dry-tick (the live document + the
     # live engine state are untouched): runtime_error = the script RAN but `update` raised / returned a
     # non-dict at some frame (the uniform freezes from there — distinct from a compile error and from a
-    # per-key shape error); driven = the real uniforms the script drove; per_key_errors = shape/coercion
-    # failures on real uniforms; orphan_keys = keys naming no active uniform (typo); samples =
-    # (t, {name: value}) at each sample time — the motion signal (values differ across t).
+    # per-key shape error); driven = the real (pass, uniform) pairs the script drove; per_key_errors =
+    # shape/coercion failures on real uniforms; orphan_keys = keys naming no active uniform (typo);
+    # samples = (t, {(pass, name): value}) at each sample time — the motion signal (values differ
+    # across t). Both error lists are (pass, key, error), with "" as the pass for a bare key.
     compile_error: "ScriptError | None"
-    driven: set[str]
-    per_key_errors: list[tuple[str, "ScriptError"]]
-    orphan_keys: list[tuple[str, "ScriptError"]]
-    samples: list[tuple[float, dict[str, Any]]]
+    driven: set[tuple[str, str]]
+    per_key_errors: list[tuple[str, str, "ScriptError"]]
+    orphan_keys: list[tuple[str, str, "ScriptError"]]
+    samples: list[tuple[float, dict[tuple[str, str], Any]]]
     runtime_error: "ScriptError | None" = None
 
 
@@ -92,26 +99,51 @@ def is_scriptable(uniform: object) -> TypeGuard[moderngl.Uniform]:
     )
 
 
-class EngineNode(Protocol):
-    # The slice of a render pass the engine touches — nothing GL-program-specific.
+class ScriptPass(Protocol):
+    # The slice of ONE render pass the engine writes into — nothing GL-program-specific.
     uniform_values: dict[str, Any]
+
+    # False only while the pass has NEVER ATTEMPTED a compile: the engine skips it this tick rather
+    # than forcing a compile from inside the script tick (066 D1). True once a compile was attempted,
+    # whether it succeeded (route normally) or FAILED (an empty active map, so its keys take the
+    # ordinary orphan path and the user reads why on the strip). Read-only, so a `Pass` satisfying it
+    # with a property is accepted.
+    @property
+    def script_ready(self) -> bool: ...
 
     def get_active_uniforms(
         self,
     ) -> list[moderngl.Uniform | moderngl.UniformBlock]: ...
 
 
+class ScriptTarget(Protocol):
+    # The slice of a DOCUMENT the engine routes across: its passes by name. The engine reads no
+    # graph, no output notion — which is what makes "what you look at decides what the script
+    # drives" structurally impossible. A read-only Mapping, not a dict: the engine never inserts a
+    # pass, and a mutable dict is invariant in its value, so a real `dict[str, Pass]` would not
+    # satisfy the protocol.
+    @property
+    def passes(self) -> Mapping[str, ScriptPass]: ...
+
+
 def _freeze(
-    names: set[str],
-    document: EngineNode,
-    last_good: dict[str, Any],
-    sink: dict[str, Any] | None = None,
+    keys: set[tuple[str, str]],
+    document: ScriptTarget,
+    last_good: dict[tuple[str, str], Any],
+    sink: dict[tuple[str, str], Any] | None = None,
 ) -> None:
-    # Hold each name at its last-good value (a behavior-level failure freezes its whole slot set).
-    # A dry-run passes a `sink`: writes (and the fallback read) land there, never on the live document.
-    target = document.uniform_values if sink is None else sink
-    for name in names:
-        target[name] = last_good.get(name, document.uniform_values.get(name))
+    # Hold each (pass, name) at its last-good value (a behavior-level failure freezes its whole key
+    # set). A dry-run passes a `sink`: writes (and the fallback read) land there, keyed by the same
+    # pairs, never on the live document.
+    for key in keys:
+        pass_name, name = key
+        render_pass = document.passes.get(pass_name)
+        live = render_pass.uniform_values.get(name) if render_pass is not None else None
+        value = last_good.get(key, live)
+        if sink is not None:
+            sink[key] = value
+        elif render_pass is not None:
+            render_pass.uniform_values[name] = value
 
 
 class DocumentScripts:
@@ -122,19 +154,17 @@ class DocumentScripts:
         self.behavior: PythonBehavior | None = None
         self.mtime: float | None = None
         self.source: str | None = None
-        self.last_good: dict[str, Any] = {}
-        # The uniform names the script drove on its last tick (every key it targeted at a real
-        # scriptable uniform, a coercion-failed key included) — dynamic (the dict keys), cached for
-        # script_driven_uniforms + the behavior-level freeze. Persists across reset() so a reset-time
-        # __init__ failure can still freeze the prior frame's names.
-        self.last_driven: set[str] = set()
-        # Bad script keys (typo/orphan) that recorded a soft (document,name) error on the last tick —
+        self.last_good: dict[tuple[str, str], Any] = {}
+        # The (pass, name) pairs the script drove on its last tick (every key it routed to a real
+        # scriptable uniform, a coercion-failed key included) — dynamic (the routing result), cached
+        # for script_driven_uniforms + the behavior-level freeze. Persists across reset() so a
+        # reset-time __init__ failure can still freeze the prior frame's keys.
+        self.last_driven: set[tuple[str, str]] = set()
+        # Bad script keys (typo/orphan/unknown pass) that recorded a soft error on the last tick —
         # tracked separately from last_driven (a bad key must NOT claim ownership in
-        # script_driven_uniforms) so the stale-clear can pop its error once the key stops being returned.
-        self.last_skipped: set[str] = set()
-        # Orphan/unsupported-key names already warned, so reload (per-frame) logs once on the
-        # transition, not every frame.
-        self.warned: set[str] = set()
+        # script_driven_uniforms) so the stale-clear can pop its error once the key stops being
+        # returned. A bare key no pass declares carries "" as its pass.
+        self.last_skipped: set[tuple[str, str]] = set()
 
 
 def _stub_kind(uniform: moderngl.Uniform) -> tuple[str, str]:
@@ -165,10 +195,12 @@ def _stub_kind(uniform: moderngl.Uniform) -> tuple[str, str]:
 _UPDATE_DOC = (
     '        """Compute this frame\'s uniform values.\n'
     "\n"
-    "        Return a dict mapping uniform NAME -> value. A uniform you return is DRIVEN by the\n"
-    "        script (it PLAYS); a uniform you omit (or map to None) stays MANUAL -- you edit it by\n"
-    "        hand in the panel. Stop a playing uniform (its row's stop button, or just drag it) to\n"
-    "        edit it by hand without deleting it from the dict.\n"
+    "        A bare key drives that uniform on EVERY pass declaring it; a key whose value is a\n"
+    "        dict is a PASS BLOCK driving that one pass, and it wins over a bare key.\n"
+    "        A uniform you return is DRIVEN by the script (it PLAYS); a uniform you omit (or map\n"
+    "        to None) stays MANUAL -- you edit it by hand in the panel. Stop a playing uniform\n"
+    "        (its row's stop button, or just drag it) to edit it by hand without deleting it from\n"
+    "        the dict.\n"
     "\n"
     "        A value that is a pure function of `ctx.t` usually belongs in the shader instead;\n"
     "        this class is for state you keep on `self`.\n"
@@ -177,8 +209,9 @@ _UPDATE_DOC = (
     "            ctx.t: Elapsed seconds since start.\n"
     "            ctx.dt: Delta seconds since the previous frame.\n"
     "            ctx.frame: Frame index.\n"
-    "            ctx.mouse: Cursor over the canvas (x, y in 0..1, y-up; "
-    f"{EXPORT_MOUSE.x:g},{EXPORT_MOUSE.y:g} on export).\n"
+    "            ctx.mouse: Cursor over the canvas (x, y and prev_x, prev_y in 0..1, y-up;\n"
+    "                down = LMB held over the canvas; frozen at "
+    f"{EXPORT_MOUSE.x:g},{EXPORT_MOUSE.y:g} with down=False on export).\n"
     '        """\n'
 )
 _INIT_DOC = (
@@ -198,24 +231,38 @@ def _script_import_line(annotations: Iterable[str]) -> str:
     return f"from shaderbox.scripting import {', '.join(names)}\n"
 
 
-def script_stub_for(uniforms: Iterable[moderngl.Uniform]) -> str:
-    # The ready-to-edit document script (044; 048): one stateful class whose update returns a dict driving
-    # MANY uniforms. update returns an EMPTY dict by default (a fresh script drives nothing — every
-    # uniform stays manual); the document's scriptable uniforms are listed as COMMENTED examples so the
-    # user sees what's available + the shape to return. The annotation is BARE `-> dict` (never
-    # `dict[str, Any]`: `Any` isn't in the exec globals, so the eager annotation eval would freeze it).
-    scriptable = [u for u in uniforms if is_scriptable(u)]
-    kinds = [(u.name, *_stub_kind(u)) for u in scriptable]
-    import_line = _script_import_line(ann for _, ann, _ in kinds)
-    if kinds:
-        examples = "".join(
-            f"            # {name!r}: {default},  # {ann}\n"
-            for name, ann, default in kinds
-        )
+def script_stub_for(uniforms_by_pass: dict[str, list[moderngl.Uniform]]) -> str:
+    # The ready-to-edit document script (044; 048; 069 routes it across passes): one stateful class
+    # whose update returns a dict driving MANY uniforms across MANY passes. update returns an EMPTY
+    # dict by default (a fresh script drives nothing — every uniform stays manual); each pass's
+    # scriptable uniforms are listed as a COMMENTED block so the user sees what's available + the two
+    # addressing forms. The annotation is BARE `-> dict` (never `dict[str, Any]`: `Any` isn't in the
+    # exec globals, so the eager annotation eval would freeze it).
+    kinds_by_pass: dict[str, list[tuple[str, str, str]]] = {
+        pass_name: [(u.name, *_stub_kind(u)) for u in uniforms if is_scriptable(u)]
+        for pass_name, uniforms in uniforms_by_pass.items()
+    }
+    import_line = _script_import_line(
+        ann for kinds in kinds_by_pass.values() for _, ann, _ in kinds
+    )
+    if any(kinds_by_pass.values()):
+        blocks = ""
+        for pass_name, kinds in kinds_by_pass.items():
+            blocks += f"            # {pass_name!r}: {{\n"
+            if kinds:
+                blocks += "".join(
+                    f"            #     {name!r}: {default},  # {ann}\n"
+                    for name, ann, default in kinds
+                )
+            else:
+                blocks += "            #     (no scriptable uniforms)\n"
+            blocks += "            # },\n"
         body = (
             "        return {\n"
-            "            # Uncomment a line + replace the value to drive that uniform:\n"
-            f"{examples}"
+            "            # A bare key drives that uniform on EVERY pass declaring it:\n"
+            '            #     "u_time_scale": 0.5,\n'
+            "            # A pass block drives one pass only, and wins over a bare key:\n"
+            f"{blocks}"
             "        }\n"
         )
     else:
@@ -238,19 +285,20 @@ def script_stub_for(uniforms: Iterable[moderngl.Uniform]) -> str:
 class ScriptEngine:
     def __init__(self, engine_driven: frozenset[str] = frozenset()) -> None:
         self._documents: dict[str, DocumentScripts] = {}
-        # (document_id, name) -> the most recent error, for the UI to surface. The script's
-        # compile/run error keys on (document_id, _SCRIPT_FILE); a per-key shape/orphan error on
-        # (document_id, uniform_name).
-        self.errors: dict[tuple[str, str], ScriptError] = {}
+        # (document_id, pass_name, name) -> the most recent error, for the UI to surface. The
+        # script's compile/run error keys on (document_id, "", _SCRIPT_FILE); a per-key
+        # shape/orphan error on (document_id, pass_name, uniform_name), with "" as the pass for a
+        # document-level error and for a bare key no pass declares.
+        self.errors: dict[tuple[str, str, str], ScriptError] = {}
         # Engine-owned uniform names (u_time/u_aspect/u_resolution + table uniforms) — render()
         # hardcodes these, so a script on one would silently no-op. Passed in by ProjectSession (NOT
         # imported from core, which pulls in glfw — the headless boundary). Empty in a bare test engine.
         self._engine_driven = engine_driven
 
-    def script_driven_uniforms(self, document_id: str) -> set[str]:
-        # The uniform names the script drove on its last tick (decision 10 — only known after a tick).
-        # Used by the copilot set_uniform reject + the UI's play/stop button gate (a name here is
-        # script-targeted: playing or stopped).
+    def script_driven_uniforms(self, document_id: str) -> set[tuple[str, str]]:
+        # The (pass, name) pairs the script drove on its last tick (decision 10 — only known after a
+        # tick). Used by the copilot set_uniform reject + the UI's play/stop button gate (a pair here
+        # is script-targeted: playing or stopped).
         document = self._documents.get(document_id)
         return set(document.last_driven) if document is not None else set()
 
@@ -261,11 +309,11 @@ class ScriptEngine:
         document = self._documents.get(document_id)
         if document is None or document.behavior is None:
             return None
-        sentinel = self.errors.get((document_id, _SCRIPT_FILE))
+        sentinel = self.errors.get((document_id, "", _SCRIPT_FILE))
         soft = [
-            (name, err)
-            for name in sorted(document.last_skipped)
-            if (err := self.errors.get((document_id, name))) is not None
+            (pass_name, name, err)
+            for pass_name, name in sorted(document.last_skipped)
+            if (err := self.errors.get((document_id, pass_name, name))) is not None
         ]
         return ScriptStatus(
             sentinel_error=sentinel,
@@ -278,7 +326,9 @@ class ScriptEngine:
         document = self._documents.get(document_id)
         return document is not None and document.behavior is not None
 
-    def reload(self, document_id: str, scripts_dir: Path, document: EngineNode) -> None:
+    def reload(
+        self, document_id: str, scripts_dir: Path, document: ScriptTarget
+    ) -> None:
         # Discover + (re)compile the document's `script.py` if its mtime changed (a recompile makes a
         # FRESH instance — state resets on edit), drop it if the file vanished. The script binds by
         # EXISTENCE (048 — no active flag; the file IS the binding). Cheap when nothing changed: a stat.
@@ -306,7 +356,7 @@ class ScriptEngine:
         scripts.behavior = behavior
         scripts.mtime = mtime
         scripts.source = body
-        key = (document_id, _SCRIPT_FILE)
+        key = (document_id, "", _SCRIPT_FILE)
         if behavior.error is not None:
             self.errors[key] = behavior.error
         else:
@@ -314,32 +364,35 @@ class ScriptEngine:
 
     def _drop_script(self, document_id: str, scripts: "DocumentScripts") -> None:
         # Tear down a removed script: free its last-good + every per-key error (a coercion-failed key
-        # or a bad-key soft error records under (document_id, name), so popping the sentinel isn't enough)
-        # and clear the cached sets so script_driven_uniforms reports nothing.
+        # or a bad-key soft error records under (document_id, pass, name), so popping the sentinel
+        # isn't enough) and clear the cached sets so script_driven_uniforms reports nothing. The pair
+        # is UNPACKED into the three-tuple error key — composing (document_id, pair) would build a
+        # key that never matches, leaving every per-key error behind.
         scripts.behavior = None
         scripts.mtime = None
         scripts.source = None
-        self.errors.pop((document_id, _SCRIPT_FILE), None)
-        for stale in scripts.last_driven | scripts.last_skipped:
-            scripts.last_good.pop(stale, None)
-            self.errors.pop((document_id, stale), None)
+        self.errors.pop((document_id, "", _SCRIPT_FILE), None)
+        for pass_name, name in scripts.last_driven | scripts.last_skipped:
+            scripts.last_good.pop((pass_name, name), None)
+            self.errors.pop((document_id, pass_name, name), None)
         scripts.last_driven = set()
         scripts.last_skipped = set()
-        scripts.warned = set()
 
     def _binding_reject(
         self,
+        pass_name: str,
         name: str,
         active: dict[str, moderngl.Uniform | moderngl.UniformBlock],
     ) -> str | None:
-        # Why a script key can't bind to `name` (None = it can). An engine-owned key (u_time…) is
-        # dropped SILENTLY upstream (decision 5), so it never reaches this — this covers orphan/typo
-        # and sampler/block keys.
+        # Why a script key can't bind to `name` on `pass_name` (None = it can). An engine-owned key
+        # (u_time…) is dropped SILENTLY upstream (decision 5), so it never reaches this — this covers
+        # orphan/typo and sampler/block keys. The pass is named in the message: the same uniform name
+        # can be legal on one pass and absent on another.
         uniform = active.get(name)
         if uniform is None:
-            return f"no active uniform '{name}' (orphan key)"
+            return f"pass '{pass_name}' has no active uniform '{name}' (orphan key)"
         if not is_scriptable(uniform):
-            return f"'{name}' is a sampler/block — not a scriptable value"
+            return f"pass '{pass_name}': '{name}' is a sampler/block — not a scriptable value"
         return None
 
     def reset(self, document_id: str) -> None:
@@ -351,7 +404,7 @@ class ScriptEngine:
         if scripts is None or scripts.behavior is None:
             return
         scripts.behavior.reset()
-        key = (document_id, _SCRIPT_FILE)
+        key = (document_id, "", _SCRIPT_FILE)
         if scripts.behavior.error is not None:
             self.errors[key] = scripts.behavior.error
         else:
@@ -370,14 +423,15 @@ class ScriptEngine:
     def tick(
         self,
         document_id: str,
-        document: EngineNode,
+        document: ScriptTarget,
         ctx: EngineContext,
-        stopped: frozenset[str] = frozenset(),
+        stopped: frozenset[StoppedKey] = frozenset(),
     ) -> None:
-        # Tick the LIVE script: it writes document.uniform_values[name] before Pass.render() reads it. A
-        # name in `stopped` (the user froze it for manual edit, 048) still ticks the script + counts as
-        # driven, but its WRITE is skipped so the manual value sticks. A runtime/shape error freezes
-        # the uniform at last-good and records a ScriptError; the frame always continues.
+        # Tick the LIVE script: it routes the returned dict across the document's passes and writes
+        # each target pass's uniform_values before Pass.render() reads them. A pair in `stopped` (the
+        # user froze it for manual edit, 048) still ticks the script + counts as driven, but its WRITE
+        # is skipped so the manual value sticks. A runtime/shape error freezes the uniform at last-good
+        # and records a ScriptError; the frame always continues.
         scripts = self._documents.get(document_id)
         if scripts is None or scripts.behavior is None:
             return
@@ -390,20 +444,19 @@ class ScriptEngine:
             self.errors,
             scripts.last_driven,
             scripts.last_skipped,
-            scripts.warned,
             stopped,
         )
 
     def tick_export(
         self,
         document_id: str,
-        document: EngineNode,
+        document: ScriptTarget,
         ctx: EngineContext,
         behavior: PythonBehavior,
     ) -> None:
         # Tick an EXTERNAL script (the export's fresh instance) against the document. EVERY sink is a
-        # per-call throwaway, so an export never touches the live script's recorded error/caches/warn
-        # dedup (structurally isolated). NO stopped set — an export always plays the script.
+        # per-call throwaway, so an export never touches the live script's recorded error/caches
+        # (structurally isolated). NO stopped set — an export always plays the script.
         self._tick_script(
             document_id,
             document,
@@ -413,15 +466,13 @@ class ScriptEngine:
             {},
             set(),
             set(),
-            set(),
             frozenset(),
-            warn=False,
         )
 
     def dry_run(
         self,
         document_id: str,
-        document: EngineNode,
+        document: ScriptTarget,
         sample_times: tuple[float, ...],
         fps: int,
     ) -> ScriptProbe:
@@ -429,9 +480,9 @@ class ScriptEngine:
         # reloaded the file at write time — no reload here, which would mutate live state), then an
         # ISOLATED dry-tick. ONE fresh script is stepped CONTINUOUSLY through the export-clock frames so
         # self.* accumulates (an integrator animates correctly); every write lands in a per-call sink,
-        # so the live document + live engine state are byte-identical afterward. Returns the driven set,
-        # per-key + orphan errors, and the driven uniforms' VALUES at each sample time.
-        compile_error = self.errors.get((document_id, _SCRIPT_FILE))
+        # so the live document + live engine state are byte-identical afterward. Returns the driven
+        # (pass, name) pairs, per-key + orphan errors, and the driven uniforms' VALUES at each sample.
+        compile_error = self.errors.get((document_id, "", _SCRIPT_FILE))
         behavior = self.fresh_behavior_for(document_id)
         if behavior is None or compile_error is not None:
             return ScriptProbe(compile_error, set(), [], [], [])
@@ -443,18 +494,18 @@ class ScriptEngine:
         want: dict[int, float] = {}
         for t in sample_times:
             want.setdefault(round(t * fps), t)
-        sink: dict[str, Any] = {}
-        errors: dict[tuple[str, str], ScriptError] = {}
-        driven: set[str] = set()
-        skipped: set[str] = set()
-        samples: list[tuple[float, dict[str, Any]]] = []
+        sink: dict[tuple[str, str], Any] = {}
+        errors: dict[tuple[str, str, str], ScriptError] = {}
+        driven: set[tuple[str, str]] = set()
+        skipped: set[tuple[str, str]] = set()
+        samples: list[tuple[float, dict[tuple[str, str], Any]]] = []
         # The probe reports "did this EVER fail across the window", not the final-frame snapshot: the
         # live engine's `errors` dict SELF-HEALS (a good tick pops a key), so a TRANSIENT raise/coercion/
         # orphan that recovers before the last sampled frame would be lost. Accumulate each category
         # right after each tick, before the next one can pop it.
-        seen_driven: set[str] = set()
-        seen_skipped: set[str] = set()
-        worst: dict[tuple[str, str], ScriptError] = {}
+        seen_driven: set[tuple[str, str]] = set()
+        seen_skipped: set[tuple[str, str]] = set()
+        worst: dict[tuple[str, str, str], ScriptError] = {}
         for frame in range(max_frame + 1):
             ctx = EngineContext(t=frame * dt, dt=dt, frame=frame)
             self._tick_script(
@@ -466,10 +517,8 @@ class ScriptEngine:
                 errors,
                 driven,
                 skipped,
-                set(),
                 frozenset(),
                 values_sink=sink,
-                warn=False,
             )
             seen_driven |= driven
             seen_skipped |= skipped
@@ -477,23 +526,23 @@ class ScriptEngine:
                 worst.setdefault(key, err)  # first failure across the window wins
             if frame in want:
                 samples.append(
-                    (want[frame], {name: sink[name] for name in driven if name in sink})
+                    (want[frame], {key: sink[key] for key in driven if key in sink})
                 )
 
         per_key = [
-            (name, err)
-            for name in sorted(seen_driven)
-            if (err := worst.get((document_id, name))) is not None
+            (pass_name, name, err)
+            for pass_name, name in sorted(seen_driven)
+            if (err := worst.get((document_id, pass_name, name))) is not None
         ]
         orphan = [
-            (name, err)
-            for name in sorted(seen_skipped)
-            if (err := worst.get((document_id, name))) is not None
+            (pass_name, name, err)
+            for pass_name, name in sorted(seen_skipped)
+            if (err := worst.get((document_id, pass_name, name))) is not None
         ]
         # A behavior-level error seen at ANY frame = `update` raised / returned a non-dict at some point
         # (the script compiled but CRASHES at runtime). Surface it so the verdict isn't a false ANIMATING
         # off the values a recovered-by-the-last-frame crash leaves in the sink.
-        runtime_error = worst.get((document_id, _SCRIPT_FILE))
+        runtime_error = worst.get((document_id, "", _SCRIPT_FILE))
         # The probe is the SINGLE source of truth for the driven set in the headless/copilot path, where
         # no live tick warms DocumentScripts.last_driven. Stash it there so script_driven_uniforms (the
         # working-set marker + the set_uniform reject) agrees with this write's verdict. Safe: last_driven
@@ -510,26 +559,97 @@ class ScriptEngine:
             runtime_error=runtime_error,
         )
 
+    def _active_by_pass(
+        self, document: ScriptTarget
+    ) -> dict[str, dict[str, moderngl.Uniform | moderngl.UniformBlock]]:
+        # One active-uniform map per READY pass, built once per tick. A pass that has never attempted
+        # a compile is ABSENT (not empty): `get_active_uniforms` would compile it from inside the tick,
+        # which 066 D1 forbids, and its keys are HELD for this tick rather than errored — else every
+        # first frame of a multi-pass document would spray orphan errors that clear a frame later. A
+        # pass whose compile FAILED is present-but-empty, so its keys take the ordinary orphan path and
+        # the user reads why beside the compile error.
+        return {
+            pass_name: {u.name: u for u in render_pass.get_active_uniforms()}
+            for pass_name, render_pass in document.passes.items()
+            if render_pass.script_ready
+        }
+
+    def _write_one(
+        self,
+        *,
+        document_id: str,
+        pass_name: str,
+        name: str,
+        value: object,
+        render_pass: ScriptPass,
+        active: dict[str, moderngl.Uniform | moderngl.UniformBlock],
+        errors: dict[tuple[str, str, str], ScriptError],
+        last_good: dict[tuple[str, str], Any],
+        driven: set[tuple[str, str]],
+        stopped: frozenset[StoppedKey],
+        values_sink: dict[tuple[str, str], Any] | None,
+    ) -> None:
+        # Route ONE key at ONE pass: coerce against that pass's own uniform and write, unless the pair
+        # is stopped. The caller has already resolved the pass and checked `_binding_reject`.
+        key = (document_id, pass_name, name)
+        pair = (pass_name, name)
+        uniform = active[name]
+        assert is_scriptable(
+            uniform
+        )  # _binding_reject(None) implies a scriptable uniform
+        frozen = (
+            values_sink.get(
+                pair, last_good.get(pair, render_pass.uniform_values.get(name))
+            )
+            if values_sink is not None
+            else last_good.get(pair, render_pass.uniform_values.get(name))
+        )
+        driven.add(
+            pair
+        )  # driven BEFORE coerce/write, so a stopped/failed key still counts
+        is_stopped = StoppedKey(pass_name=pass_name, name=name) in stopped
+        try:
+            coerced = coerce_one(value, uniform, name)
+        except (
+            _RuntimeScriptError
+        ) as e:  # per-KEY shape mismatch — freeze ONLY this key
+            e.error.pass_name = pass_name
+            errors[key] = e.error
+            # A STOPPED key keeps the user's manual value (don't clobber it with stale last-good);
+            # a playing key freezes at last-good, the freeze-as-data behavior.
+            if not is_stopped:
+                if values_sink is not None:
+                    values_sink[pair] = frozen
+                else:
+                    render_pass.uniform_values[name] = frozen
+            return
+        errors.pop(key, None)
+        last_good[pair] = coerced
+        # Play/stop (048): a STOPPED uniform's value is NOT written (the manual value sticks); the
+        # script still ran + the pair still counts as driven (so the row keeps its play/stop button).
+        if not is_stopped:
+            if values_sink is not None:
+                values_sink[pair] = coerced
+            else:
+                render_pass.uniform_values[name] = coerced
+
     def _tick_script(
         self,
         document_id: str,
-        document: EngineNode,
+        document: ScriptTarget,
         ctx: EngineContext,
         behavior: PythonBehavior,
-        last_good: dict[str, Any],
-        errors: dict[tuple[str, str], ScriptError],
-        last_driven: set[str],
-        last_skipped: set[str],
-        warned: set[str],
-        stopped: frozenset[str],
-        values_sink: dict[str, Any] | None = None,
-        warn: bool = True,
+        last_good: dict[tuple[str, str], Any],
+        errors: dict[tuple[str, str, str], ScriptError],
+        last_driven: set[tuple[str, str]],
+        last_skipped: set[tuple[str, str]],
+        stopped: frozenset[StoppedKey],
+        values_sink: dict[tuple[str, str], Any] | None = None,
     ) -> None:
-        # `values_sink` (the dry-run path): every uniform-value WRITE lands there + the freeze-fallback
-        # READ consults it, so the LIVE document is never written. None = the live tick (write the document).
-        write_target = document.uniform_values if values_sink is None else values_sink
-        active = {u.name: u for u in document.get_active_uniforms()}
-        behavior_key = (document_id, _SCRIPT_FILE)
+        # `values_sink` (the dry-run path): every uniform-value WRITE lands there, keyed by the (pass,
+        # name) pair, + the freeze-fallback READ consults it, so the LIVE document is never written.
+        # None = the live tick (write each target pass).
+        behavior_key = (document_id, "", _SCRIPT_FILE)
         drove_last = set(last_driven)
 
         # cached compile error — freeze, recorded at reload
@@ -556,7 +676,7 @@ class ScriptEngine:
             errors[behavior_key] = ScriptError(
                 _SCRIPT_FILE,
                 "runtime",
-                f"update must return a dict[str, value], got {type(raw).__name__}",
+                f"update must return a dict, got {type(raw).__name__}",
             )
             _freeze(drove_last, document, last_good, values_sink)
             return
@@ -564,61 +684,100 @@ class ScriptEngine:
             behavior_key, None
         )  # the run succeeded; clear a stale behavior-level error
 
-        driven: set[str] = set()
-        skipped: set[str] = set()
-        for name, value in raw.items():
-            key = (document_id, name)
-            frozen = write_target.get(
-                name, last_good.get(name, document.uniform_values.get(name))
-            )
-            uniform = active.get(name)
+        active_by_pass = self._active_by_pass(document)
+        driven: set[tuple[str, str]] = set()
+        skipped: set[tuple[str, str]] = set()
+
+        # 069 D3: the VALUE's type dispatches — a dict is a pass block, anything else broadcasts. Not
+        # "is the key a pass name", which a pass called u_brush would make ambiguous. Broadcasts run
+        # FIRST and blocks SECOND, in two phases rather than one loop, so "specific over general" holds
+        # regardless of the author's insertion order (a dict preserves it, and it is not a precedence
+        # the author meant to express).
+        broadcasts = {k: v for k, v in raw.items() if not isinstance(v, dict)}
+        blocks = {k: v for k, v in raw.items() if isinstance(v, dict)}
+
+        for name, value in broadcasts.items():
             # An engine-owned key (u_time…) is SILENTLY dropped (decision 5): the renderer owns that
             # slot and a script can't be expected to avoid naming it.
             if name in self._engine_driven:
                 continue
-            reason = self._binding_reject(name, active)
-            if reason is not None:
-                # An orphan/typo/sampler key: record a soft error under (document,name) so the UI surfaces
-                # it, warn-once, SKIP with no write. It goes in `skipped` NOT `driven` (it names no
-                # scriptable uniform, so script_driven_uniforms must not claim ownership).
-                errors[key] = ScriptError(name, "runtime", reason)
-                skipped.add(name)
-                if warn and name not in warned:
-                    logger.warning(
-                        f"Document script on document {document_id}: key {reason} — skipped"
+            targets = [
+                (pass_name, active)
+                for pass_name, active in active_by_pass.items()
+                if self._binding_reject(pass_name, name, active) is None
+            ]
+            if not targets:
+                # No READY pass declares it. Homeless: one error under the pass-free key, because the
+                # whole point is that no pass claims it.
+                errors[(document_id, "", name)] = ScriptError(
+                    name, "runtime", f"no pass declares '{name}' (orphan key)"
+                )
+                skipped.add(("", name))
+                continue
+            for pass_name, active in targets:
+                self._write_one(
+                    document_id=document_id,
+                    pass_name=pass_name,
+                    name=name,
+                    value=value,
+                    render_pass=document.passes[pass_name],
+                    active=active,
+                    errors=errors,
+                    last_good=last_good,
+                    driven=driven,
+                    stopped=stopped,
+                    values_sink=values_sink,
+                )
+
+        for pass_name, block in blocks.items():
+            if pass_name not in document.passes:
+                real = ", ".join(sorted(document.passes))
+                errors[(document_id, "", pass_name)] = ScriptError(
+                    pass_name,
+                    "runtime",
+                    f"no pass named '{pass_name}' in this document (passes: {real})",
+                )
+                skipped.add(("", pass_name))
+                continue
+            active = active_by_pass.get(pass_name)
+            if active is None:
+                # Never attempted a compile: HELD for this tick, no error, nothing written. The next
+                # tick recomputes; the first-render sweep admits one such pass per document per frame.
+                continue
+            for name, value in block.items():
+                if name in self._engine_driven:
+                    continue
+                reason = self._binding_reject(pass_name, name, active)
+                if reason is not None:
+                    # An orphan/typo/sampler key: record a soft error so the strip surfaces it on the
+                    # script tab AND on this pass's shader tab, then SKIP with no write. It goes in
+                    # `skipped` NOT `driven` (it names no scriptable uniform, so
+                    # script_driven_uniforms must not claim ownership).
+                    errors[(document_id, pass_name, name)] = ScriptError(
+                        name, "runtime", reason, pass_name=pass_name
                     )
-                    warned.add(name)
-                continue
-            assert is_scriptable(
-                uniform
-            )  # _binding_reject(None) implies a scriptable uniform
-            driven.add(
-                name
-            )  # driven BEFORE coerce/write, so a stopped/failed key still counts
-            try:
-                coerced = coerce_one(value, uniform, name)
-            except (
-                _RuntimeScriptError
-            ) as e:  # per-KEY shape mismatch — freeze ONLY this key
-                errors[key] = e.error
-                # A STOPPED key keeps the user's manual value (don't clobber it with stale last-good);
-                # a playing key freezes at last-good, the freeze-as-data behavior.
-                if name not in stopped:
-                    write_target[name] = frozen
-                continue
-            errors.pop(key, None)
-            last_good[name] = coerced
-            # Play/stop (048): a STOPPED uniform's value is NOT written (the manual value sticks); the
-            # script still ran + the name still counts as driven (so the row keeps its play/stop button).
-            if name not in stopped:
-                write_target[name] = coerced
+                    skipped.add((pass_name, name))
+                    continue
+                self._write_one(
+                    document_id=document_id,
+                    pass_name=pass_name,
+                    name=name,
+                    value=value,
+                    render_pass=document.passes[pass_name],
+                    active=active,
+                    errors=errors,
+                    last_good=last_good,
+                    driven=driven,
+                    stopped=stopped,
+                    values_sink=values_sink,
+                )
 
         # An omitted-after-failing key's stale error: clear any key TOUCHED last frame (driven OR a
         # bad/skipped key) but NOT touched this frame (decision 8 — no zombie; an omitted real key
         # keeps its last value).
         touched = driven | skipped
-        for name in (last_driven | last_skipped) - touched:
-            errors.pop((document_id, name), None)
+        for pass_name, name in (last_driven | last_skipped) - touched:
+            errors.pop((document_id, pass_name, name), None)
         last_driven.clear()
         last_driven.update(driven)
         last_skipped.clear()

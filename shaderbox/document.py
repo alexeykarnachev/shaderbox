@@ -354,6 +354,14 @@ class Document:
         self._feedback[name] = render_pass.canvas
         render_pass.canvas = previous
 
+    @property
+    def has_feedback(self) -> bool:
+        # Whether the GRAPH declares any feedback pass (an entry naming itself as an input). Read
+        # from the plan, never from `_feedback`: that dict is an allocation cache filled on demand
+        # during render() and emptied by release/drop/reset_feedback, so a check over it would be
+        # False before the first frame and False again the instant a clear runs.
+        return bool(plan_passes(self.graph)[0].feedback)
+
     def reset_feedback(self) -> None:
         """Drop every feedback history, so the next frame starts from black.
 

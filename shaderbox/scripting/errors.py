@@ -12,3 +12,6 @@ class ScriptError:
     kind: Literal["compile", "runtime"]
     message: str
     line: int = -1
+    # The pass whose uniform this error is about; "" for a document-level error (the sentinel)
+    # and for a bare key no pass declares.
+    pass_name: str = ""

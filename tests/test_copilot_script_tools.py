@@ -3,8 +3,10 @@ is exercised in test_script_dry_run.py; here the tool LAYER — that each Script
 becomes the right agent-facing fact (compile error, the loud drives-0 no-op, the motion verdict, the
 orphan/per-key lines), and that read_script surfaces the stub."""
 
+import types
 from typing import Any
 
+from shaderbox.copilot.backend import CopilotBackend
 from shaderbox.copilot.capabilities import ScriptView, ScriptWriteResult
 from shaderbox.copilot.tools.registry import ToolRegistry, build_registry
 from tests._caps import minimal_caps
@@ -191,3 +193,45 @@ def test_write_script_unresolved_document_is_error() -> None:
     ok, msg, _ = reg.execute("write_script", {"new_text": "...", "document": "bad"})
     assert ok is False
     assert "no document found" in msg
+
+
+def _fake_pass(name: str, uniforms: list[Any]) -> Any:
+    # The six attributes _pass_views + _format_uniforms read. A SimpleNamespace, NOT the GL-backed
+    # two-pass helper in test_document_graph.py: that one takes a moderngl.Context and skips without
+    # a standalone one, which would put this file's headline assertion behind a GL skip.
+    return types.SimpleNamespace(
+        source=types.SimpleNamespace(text=f"// {name}\n"),
+        compile_unit=types.SimpleNamespace(errors=[]),
+        get_active_uniforms=lambda: uniforms,
+        uniform_values={u.name: 0.25 for u in uniforms},
+    )
+
+
+def _uniform(name: str) -> Any:
+    return types.SimpleNamespace(
+        name=name, dimension=1, array_length=1, gl_type=0x1406, value=0.0
+    )
+
+
+def test_pass_views_marks_driven_only_on_the_pass_that_declares_it() -> None:
+    # The site 069 W-G genuinely fixes: _pass_views loops every pass against ONE document-scoped
+    # driven set, so before the pass filter a uniform driven on `paint` was marked
+    # `<driven by script.py>` on every pass declaring that NAME. Falsifier: keep the document-scoped
+    # set (drop the per-pass filter) — the composite assertion goes red.
+    u = _uniform("u_wave")
+    document = types.SimpleNamespace(
+        passes={
+            "paint": _fake_pass("paint", [u]),
+            "composite": _fake_pass("composite", [u]),
+        },
+        graph=types.SimpleNamespace(passes={}, output="composite"),
+    )
+    stub = types.SimpleNamespace(
+        _get_script_driven_uniforms=lambda _id: {("paint", "u_wave")},
+    )
+    pass_views = CopilotBackend._pass_views.__get__(stub)
+
+    views = {v.name: v for v in pass_views("n0", {}, document)}
+
+    assert views["paint"].uniforms == ["u_wave float = <driven by script.py>"]
+    assert views["composite"].uniforms == ["u_wave float = 0.25"]

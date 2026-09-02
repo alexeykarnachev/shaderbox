@@ -253,6 +253,19 @@ def coerce_one(value: object, uniform: moderngl.Uniform, error_name: str) -> obj
     # one coercion atom, called per key of the document script's returned dict.
     # `error_name` is the uniform NAME a shape mismatch records under (the GLSL-type label for the
     # hint is derived internally). Raises _RuntimeScriptError on a mismatch; the engine freezes.
+    # A dict is never a uniform value — that invariant is what makes the engine's value-type
+    # dispatch between a pass block and a broadcast key unambiguous (069 D3), so it is checked
+    # here rather than left to inspection of normalize_output.
+    if isinstance(value, dict):
+        raise _RuntimeScriptError(
+            ScriptError(
+                error_name,
+                "runtime",
+                "a dict is a PASS BLOCK, not a uniform value — "
+                "{'pass': {'u_name': value}} addresses a pass; a bare key drives every pass "
+                "declaring it",
+            )
+        )
     normalized = normalize_output(value)
     coerced = coerce_uniform_value(normalized, uniform)
     if coerced is None:

@@ -227,6 +227,15 @@ class Pass:
         self.uniform_values.clear()
         self.canvas.release()
 
+    @property
+    def script_ready(self) -> bool:
+        # Whether the script engine may read this pass's uniforms THIS tick (069). False only while
+        # a compile has never been ATTEMPTED — get_active_uniforms would compile it from inside the
+        # frame loop, which 066 D1 forbids, so the engine holds its keys for a tick instead. True
+        # once attempted, whether it succeeded or FAILED: a failed attempt is never retried, so
+        # holding it on `program is None` would silence its keys for the life of the source.
+        return self.program is not None or bool(self.compile_unit.error_raw)
+
     def get_active_uniforms(self) -> list[moderngl.Uniform | moderngl.UniformBlock]:
         # Lazy compile (066 D1): nothing compiles at load, so the first consumer that needs
         # the program pulls it here. A FAILED attempt is not retried — its errors stick in

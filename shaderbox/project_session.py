@@ -51,6 +51,7 @@ from shaderbox.scripting import (
     ScriptEngine,
     ScriptProbe,
     ScriptStatus,
+    StoppedKey,
     is_scriptable,
     normalize_script_tabs,
     script_stub_for,
@@ -427,7 +428,7 @@ class ProjectSession:
             self.script_engine.reload(
                 document_id,
                 self.paths.scripts_dir_for(document_id),
-                ui_document.document.render_pass,
+                ui_document.document,
             )
             self._wire_document_hooks(document_id, ui_document.document)
 
@@ -508,7 +509,7 @@ class ProjectSession:
         self.script_engine.reload(
             document_id,
             self.paths.scripts_dir_for(document_id),
-            ui_document.document.render_pass,
+            ui_document.document,
         )
         self._wire_document_hooks(document_id, ui_document.document)
         for render_pass in ui_document.document.passes.values():
@@ -552,7 +553,7 @@ class ProjectSession:
                 # exported render is deterministic. No stopped set — an export always plays the script.
                 self.script_engine.tick_export(
                     document_id,
-                    document.render_pass,
+                    document,
                     EngineContext(t=t, dt=dt, frame=frame),
                     behavior,
                 )
@@ -574,7 +575,7 @@ class ProjectSession:
             self.script_engine.reload(
                 document_id,
                 self.paths.scripts_dir_for(document_id),
-                ui_document.document.render_pass,
+                ui_document.document,
             )
             self._wire_document_hooks(document_id, ui_document.document)
 
@@ -596,14 +597,14 @@ class ProjectSession:
                 continue
             self.script_engine.tick(
                 document_id,
-                ui_document.document.render_pass,
+                ui_document.document,
                 EngineContext(t=t, dt=dt, frame=frame, mouse=mouse),
                 self._stopped_for(document_id),
             )
 
-    def _stopped_for(self, document_id: str) -> frozenset[str]:
-        # The uniform names frozen for manual edit this frame (048): the document's explicit
-        # `stopped_uniforms` UNION every driven name when the document is `all_stopped`. Built fresh each
+    def _stopped_for(self, document_id: str) -> frozenset[StoppedKey]:
+        # The (pass, uniform) pairs frozen for manual edit this frame (048): the document's explicit
+        # `stopped_uniforms` UNION every driven pair when the document is `all_stopped`. Built fresh each
         # tick (never cached across the tick/draw boundary) and passed to the engine as a param — the
         # engine never learns UIDocumentState (the headless boundary holds, as `engine_driven` does).
         ui_document = self.ui_documents.get(document_id)
@@ -612,7 +613,12 @@ class ProjectSession:
         state = ui_document.ui_state
         stopped = set(state.stopped_uniforms)
         if state.all_stopped:
-            stopped |= self.script_engine.script_driven_uniforms(document_id)
+            stopped |= {
+                StoppedKey(pass_name=pass_name, name=name)
+                for pass_name, name in self.script_engine.script_driven_uniforms(
+                    document_id
+                )
+            }
         return frozenset(stopped)
 
     def get_script_status(self, document_id: str) -> ScriptStatus | None:
@@ -627,19 +633,25 @@ class ProjectSession:
 
     def script_has_error(self, document_id: str) -> bool:
         # Whether the document's script has a recorded compile/run error (the open-script glyph error tint).
-        return (document_id, DOCUMENT_SCRIPT_BASENAME) in self.script_engine.errors
+        return (document_id, "", DOCUMENT_SCRIPT_BASENAME) in self.script_engine.errors
 
-    def _scriptable_uniforms_for(self, document_id: str) -> list[moderngl.Uniform]:
-        # The uniforms a script can drive: scriptable + not engine-owned. The engine silently drops a
-        # script key naming an engine uniform, so listing one as a stub example invites a silent no-op
-        # (the legibility gap 048 targets).
-        return [
-            u
-            for u in self.ui_documents[
-                document_id
-            ].document.render_pass.get_active_uniforms()
-            if is_scriptable(u) and u.name not in ENGINE_DRIVEN_UNIFORMS
-        ]
+    def _scriptable_uniforms_for(
+        self, document_id: str
+    ) -> dict[str, list[moderngl.Uniform]]:
+        # Per PASS, the uniforms a script can drive: scriptable + not engine-owned. The engine
+        # silently drops a script key naming an engine uniform, so listing one as a stub example
+        # invites a silent no-op (the legibility gap 048 targets). This COMPILES every pass, which is
+        # correct here and only here: both callers are user/agent actions (create_script,
+        # read_script_source), never the frame loop 066 D1 constrains.
+        document = self.ui_documents[document_id].document
+        return {
+            pass_name: [
+                u
+                for u in render_pass.get_active_uniforms()
+                if is_scriptable(u) and u.name not in ENGINE_DRIVEN_UNIFORMS
+            ]
+            for pass_name, render_pass in document.passes.items()
+        }
 
     def create_script(self, document_id: str) -> Path:
         # Write the document script `script.py` + return its path; the next reload_scripts binds it (048 —
@@ -680,11 +692,11 @@ class ProjectSession:
         self.script_engine.reload(
             document_id,
             self.paths.scripts_dir_for(document_id),
-            ui_document.document.render_pass,
+            ui_document.document,
         )
         return self.script_engine.dry_run(
             document_id,
-            ui_document.document.render_pass,
+            ui_document.document,
             COPILOT_ENGINE.motion_sample_times,
             COPILOT_ENGINE.motion_fps,
         )
@@ -697,32 +709,41 @@ class ProjectSession:
             return "", None
         return path.read_text(encoding="utf-8"), self.get_script_status(document_id)
 
-    def uniform_is_driven(self, document_id: str, name: str) -> bool:
-        # Whether the script TARGETS this uniform (playing OR stopped) — the gate for showing the row's
-        # play/stop button at all (a never-scripted MANUAL uniform shows nothing). Reads the engine's
-        # last-tick driven set (decision 4/10).
-        return name in self.script_engine.script_driven_uniforms(document_id)
+    def uniform_is_driven(self, document_id: str, pass_name: str, name: str) -> bool:
+        # Whether the script TARGETS this uniform ON THIS PASS (playing OR stopped) — the gate for
+        # showing the row's play/stop button at all (a never-scripted MANUAL uniform shows nothing).
+        # Reads the engine's last-tick driven pairs (decision 4/10).
+        return (pass_name, name) in self.script_engine.script_driven_uniforms(
+            document_id
+        )
 
-    def is_uniform_stopped(self, document_id: str, name: str) -> bool:
-        # Whether the user has STOPPED this uniform (explicitly, or via the document-level all_stopped).
+    def is_uniform_stopped(self, document_id: str, pass_name: str, name: str) -> bool:
+        # Whether the user has STOPPED this uniform on this pass (explicitly, or via the
+        # document-level all_stopped).
         ui_document = self.ui_documents.get(document_id)
         if ui_document is None:
             return False
         state = ui_document.ui_state
-        return state.all_stopped or name in state.stopped_uniforms
+        return state.all_stopped or StoppedKey(pass_name=pass_name, name=name) in set(
+            state.stopped_uniforms
+        )
 
-    def set_uniform_stopped(self, document_id: str, name: str, stopped: bool) -> None:
-        # Add/remove a uniform from the document's stopped set (the row's play/stop toggle + the auto-stop
-        # on manual edit). Document-scoped + name-keyed, so it survives a retype + works before any row
-        # draws (no lazy-row trap). Persists in document.json on the next save.
+    def set_uniform_stopped(
+        self, document_id: str, pass_name: str, name: str, stopped: bool
+    ) -> None:
+        # Add/remove a (pass, uniform) from the document's stopped set (the row's play/stop toggle +
+        # the auto-stop on manual edit). Document-scoped + pair-keyed, so it survives a retype, works
+        # before any row draws (no lazy-row trap), and stopping a name on one pass leaves the same
+        # name on another playing. Persists in document.json on the next save.
         ui_document = self.ui_documents.get(document_id)
         if ui_document is None:
             return
-        names = ui_document.ui_state.stopped_uniforms
-        if stopped and name not in names:
-            names.append(name)
-        elif not stopped and name in names:
-            names.remove(name)
+        keys = ui_document.ui_state.stopped_uniforms
+        key = StoppedKey(pass_name=pass_name, name=name)
+        if stopped and key not in keys:
+            keys.append(key)
+        elif not stopped and key in keys:
+            keys.remove(key)
 
     def set_document_all_stopped(self, document_id: str, stopped: bool) -> None:
         # The whole-document play/stop: freeze/resume every driven uniform's write at once. The script keeps
@@ -735,9 +756,9 @@ class ProjectSession:
             if not stopped:
                 ui_document.ui_state.stopped_uniforms.clear()
 
-    def get_script_driven_uniforms(self, document_id: str) -> set[str]:
-        # The uniform names the script drove on its last tick — the copilot set_uniform reject queries
-        # this so it won't no-op a script-driven uniform.
+    def get_script_driven_uniforms(self, document_id: str) -> set[tuple[str, str]]:
+        # The (pass, uniform) pairs the script drove on its last tick — the copilot set_uniform reject
+        # queries this so it won't no-op a script-driven uniform.
         return self.script_engine.script_driven_uniforms(document_id)
 
     def clear_conversation(self) -> None:

@@ -183,8 +183,10 @@ class WorkingSetView:
     uniforms: list[str]  # "name type = value" rows (document only; [] for a lib)
     errors: list[CompileErrorInfo]
     # The document's scripts/script.py live source (cat -n; "" = no script) + its compile/run error
-    # (feature 043). Appended (defaulted) so existing constructors stay valid; a lib view leaves both
-    # at default. Rendered as a "=== <document> SCRIPT ===" sub-section only when script_listing is set.
+    # (feature 043). One script drives EVERY pass (069 D3), so this listing is document-wide even on
+    # a multi-pass document. Appended (defaulted) so existing constructors stay valid; a lib view
+    # leaves both at default. Rendered as a "=== <document> SCRIPT ===" sub-section only when
+    # script_listing is set.
     script_listing: str = ""
     script_errors: list[CompileErrorInfo] = field(default_factory=list)
     # One entry per pass when the document has MORE THAN ONE (D11): its own listing, uniforms and
@@ -265,9 +267,11 @@ class ScriptView:
 class ScriptWriteResult:
     # write_script result (feature 043). ok=False + error for an unresolvable target. On ok=True the
     # compile/motion facts are the synchronous feedback: compile_error (a Python SyntaxError/etc., the
-    # tool fixes it like a shader compile), driven (the uniforms it now drives — empty = the loud
-    # no-op fact), per_key_errors/orphan_keys (named + why), motion_facts (the value-diff verdict +
-    # the one ink/FLAT render line — the headless "is it animating" signal).
+    # tool fixes it like a shader compile), driven (the uniforms it now drives, each as
+    # `pass.uniform` — empty = the loud no-op fact), per_key_errors/orphan_keys (named + why, in the
+    # same dotted form; a bare key no pass declares stays a bare name), motion_facts (the value-diff
+    # verdict + the one ink/FLAT render line — the headless "is it animating" signal). The dotted
+    # form is for the agent to READ; a script addresses a pass by a nested dict, never by that string.
     ok: bool
     error: str = ""
     compile_error: str = ""

@@ -228,9 +228,12 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   the `ProjectSession` bullet). Feature 025. Owns the `ScriptEngine` (feature 041) + drives its
   `tick`/`reload_scripts`/`reset` + injects each Document's `export_isolation` factory.
 - **`scripting/`** — the headless CPU-script engine (feature 041, redesigning 040; 048 collapsed it to
-  ONE script per document): each document carries at most one `documents/<id>/scripts/script.py` =
-  `class Behavior(ScriptBehavior)` whose `update(self, ctx) -> dict[str, value]` drives MANY uniforms
-  from ONE stateful instance (per-instance `self.*` state persists across frames), bound by EXISTENCE.
+  ONE script per document; 069 routed it across passes): each document carries at most one
+  `documents/<id>/scripts/script.py` = `class Behavior(ScriptBehavior)` whose `update(self, ctx) -> dict`
+  drives MANY uniforms across MANY PASSES from ONE stateful instance (per-instance `self.*` state
+  persists across frames), bound by EXISTENCE. A bare key BROADCASTS to every pass declaring that
+  uniform; a key whose value is a dict is a PASS BLOCK driving that pass alone and winning over a
+  broadcast.
   `context.py` (`EngineContext`/`Ctx`, `t/dt/frame` + `mouse: MouseState` — feature 042,
   `EXPORT_MOUSE`-frozen on export), `errors.py` (`ScriptError`), `outputs.py`
   (the typed returns: `Vec2/3/4` tuple-subclasses + `Array`/`Text` + `normalize_output` → coercion),
@@ -238,8 +241,10 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   `exec` seam, subclass resolve, instance hold, `run`; + the free `coerce_one` coercion atom),
   `engine.py` (`ScriptEngine`: per-document registry, `(path,mtime)` cache + cached source, resolve/orphan-
   warn, `tick`, `dry_run`, `reset`, `fresh_behavior_for`, `script_stub_for`, `script_status`,
-  `is_scriptable`; the UI reads these via `ProjectSession`). Imports no imgui/glfw/App and no concrete `Document`
-  (works against the `EngineNode` protocol). `ProjectSession` owns it; `ui.py` ticks live; export ticks
+  `is_scriptable`), `keys.py` (`StoppedKey`, the persisted `(pass, uniform)` stop key the engine also
+  takes per tick). The UI reads these via `ProjectSession`. Imports no imgui/glfw/App and no concrete `Document`
+  (works against the `ScriptTarget` protocol — a document's passes by name). `ProjectSession` owns it;
+  `ui.py` ticks live; export ticks
   a FRESH per-export instance — structurally, via the injected `Document.export_isolation` factory that
   `Document.render_media` enters around every export (no per-caller opt-in to forget).
 - **`uniform_coerce.py`** — leaf: shapes a Python value to a `moderngl.Uniform`'s `(dim, array_length,

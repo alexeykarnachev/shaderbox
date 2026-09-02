@@ -85,6 +85,11 @@ with `iterations: 1` keeps today's behaviour byte for byte.
 steps, but the artifact is a single document whose passes are the finished stages.
 
 **D7 — Drawing by script. RETRACTED: the engine cannot deliver it.**
+
+**Retraction lifted by 069 (W-G).** The script engine now addresses a named pass and `ctx.mouse`
+carries `down` plus the previous position, which is exactly the trigger this retraction records.
+The tutorial's paint step is rewritten against them in 069 W-H.
+
 *Superseded during the review round (`ac747d6`).* The scene is now built analytically in
 `paint.frag.glsl` from SDFs and `u_time`, with no script — the same shape the Bloom Chain example
 uses.

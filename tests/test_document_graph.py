@@ -682,3 +682,32 @@ def test_an_unchanged_size_pushes_no_notification(gl_ctx: moderngl.Context) -> N
     _apply_canvas_size(app, _ui_document(doc), (16, 16))
     assert app.notifications.pushed == []
     doc.release()
+
+
+def test_has_feedback_reads_the_graph_not_the_allocation_cache(
+    gl_ctx: moderngl.Context,
+) -> None:
+    # `has_feedback` gates the "Clear canvas" button (069 W-G), so it must answer from the GRAPH's
+    # own declaration: True BEFORE any render, and still True right after a clear. Falsifier: derive
+    # it from `_feedback` — that dict is filled on demand during render() and emptied by
+    # reset_feedback itself, so the button would be absent before the first frame and would hide
+    # itself the instant it is clicked.
+    doc = _document(
+        gl_ctx,
+        {"trail": _ACCUMULATE},
+        PassGraph(
+            output="trail",
+            passes={"trail": PassEntry(inputs={"u_prev": "trail"})},
+        ),
+    )
+    assert doc.has_feedback  # before any render
+
+    doc.begin_frame()
+    doc.render(u_time=0.0)
+    doc.reset_feedback()
+    assert doc.has_feedback  # a clear does not retire the declaration
+    doc.release()
+
+    plain = _document(gl_ctx, {"trail": _ACCUMULATE}, PassGraph(output="trail"))
+    assert not plain.has_feedback
+    plain.release()

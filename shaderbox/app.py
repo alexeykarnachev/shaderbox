@@ -525,6 +525,7 @@ class App:
             CommandId.CLOSE_CODE_TAB: self.close_active_tab,
             CommandId.OPEN_PASS_SETTINGS: self.open_pass_settings_for_panel_pass,
             CommandId.ADD_PASS: self.open_add_pass,
+            CommandId.RESET_FEEDBACK: self.reset_current_document_feedback,
         }
 
     # ---- copilot-cluster forwarders (feature 025) ----
@@ -1064,6 +1065,11 @@ class App:
         # export value) until the preview is hovered. One frame stale by construction (tick runs
         # before the preview draws) — harmless, like dt.
         self.script_mouse: MouseState = EXPORT_MOUSE
+        # Whether the LAST preview hit-test found the cursor inside the canvas. The next in-bounds
+        # sample reads it to decide whether prev restarts at the current position (a re-entry) or
+        # chains from the previous one (a continuing stroke) — without it a cursor that leaves at
+        # one edge and returns at another stamps a capsule across the whole canvas.
+        self.script_mouse_inside: bool = False
 
         # Project load (GL-free): paths, lib index, documents + examples, app_state, integrations.
         self.session.load(project_dir)
@@ -1404,12 +1410,15 @@ class App:
             logger.error(f"Failed to open directory {document_dir}: {e}")
 
     # --- Script UI (feature 048): thin App-side wrappers over the headless ProjectSession ---
-    def set_uniform_stopped(self, document_id: str, name: str, stopped: bool) -> None:
+    def set_uniform_stopped(
+        self, document_id: str, pass_name: str, name: str, stopped: bool
+    ) -> None:
         # The per-uniform play/stop toggle + the auto-stop-on-manual-edit (048): freeze/resume the
-        # script's write to this uniform. Frozen mid-copilot-turn (a flag flip races the reload poll).
+        # script's write to this uniform ON THIS PASS. Frozen mid-copilot-turn (a flag flip races
+        # the reload poll).
         if self.copilot_turn_active:
             return
-        self.session.set_uniform_stopped(document_id, name, stopped)
+        self.session.set_uniform_stopped(document_id, pass_name, name, stopped)
 
     def set_document_all_stopped(self, document_id: str, stopped: bool) -> None:
         # The whole-document play/stop toggle (048): freeze/resume every driven uniform at once. Frozen
@@ -1417,6 +1426,13 @@ class App:
         if self.copilot_turn_active:
             return
         self.session.set_document_all_stopped(document_id, stopped)
+
+    def reset_current_document_feedback(self) -> None:
+        # "Clear canvas": drop every feedback history so the next frame starts from black. A
+        # document with no feedback pass has nothing to drop and the call is a no-op.
+        ui_document = self.ui_documents.get(self.current_document_id)
+        if ui_document is not None:
+            ui_document.document.reset_feedback()
 
     def toggle_current_document_play(self) -> None:
         # The hotkey mirror of the document-tab play/stop toggle — a no-op when the current document has no

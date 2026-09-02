@@ -9,16 +9,24 @@ the 048 play/stop model (a stopped uniform's WRITE is skipped while the script k
 always plays).
 """
 
+import ast
 import time
 import types
 from pathlib import Path
+from typing import Any
+
+import pytest
+from loguru import logger
 
 from shaderbox.scripting import (
     EngineContext,
     ScriptEngine,
+    StoppedKey,
+    coerce_one,
     is_scriptable,
     script_stub_for,
 )
+from shaderbox.scripting.behavior import _RuntimeScriptError
 
 _GL_FLOAT = 0x1406
 _GL_UNSIGNED_INT = 0x1405
@@ -35,14 +43,36 @@ def _u(
     )
 
 
-class _FakeDocument:
-    # The EngineNode slice: a uniform_values dict + get_active_uniforms().
-    def __init__(self, uniforms: list[types.SimpleNamespace]) -> None:
+class _FakePass:
+    # The ScriptPass slice: a uniform_values dict + get_active_uniforms() + script_ready.
+    def __init__(
+        self, uniforms: list[types.SimpleNamespace], *, ready: bool = True
+    ) -> None:
         self.uniform_values: dict[str, object] = {}
+        self.script_ready = ready
         self._uniforms = uniforms
 
     def get_active_uniforms(self) -> list[types.SimpleNamespace]:
         return self._uniforms
+
+
+class _FakeDocument:
+    # The ScriptTarget slice: passes by name. A bare uniform list builds the one-pass document most
+    # tests want (069's broadcast rule means their `{"u_x": ...}` scripts need no edit); a dict of
+    # name -> uniforms builds a multi-pass one.
+    def __init__(
+        self,
+        uniforms: list[types.SimpleNamespace] | dict[str, list[types.SimpleNamespace]],
+    ) -> None:
+        by_pass = {"main": uniforms} if isinstance(uniforms, list) else uniforms
+        self.passes: dict[str, _FakePass] = {
+            name: _FakePass(us) for name, us in by_pass.items()
+        }
+
+    @property
+    def uniform_values(self) -> dict[str, object]:
+        # The one-pass shorthand every single-pass test reads through.
+        return self.passes["main"].uniform_values
 
 
 def _write_script(tmp: Path, body: str) -> Path:
@@ -191,7 +221,7 @@ def test_int_scalar_rounds(tmp_path: Path) -> None:
     val = document.uniform_values["u_n"]
     # Falsifier: a float written into an int uniform (or no round).
     assert val == 3 and isinstance(val, int)
-    assert ("n0", "u_n") not in eng.errors
+    assert ("n0", "main", "u_n") not in eng.errors
 
 
 def test_uint_scalar_rounds(tmp_path: Path) -> None:
@@ -331,14 +361,14 @@ def test_export_tick_does_not_touch_live_errors(tmp_path: Path) -> None:
     document.uniform_values["u_x"] = 0.0
     eng = _engine(tmp_path, document)
     eng.tick("n0", document, _ctx(0.0))
-    assert ("n0", "u_x") in eng.errors
+    assert ("n0", "main", "u_x") in eng.errors
 
     fresh = eng.fresh_behavior_for("n0")
     assert fresh is not None
     export_document = _FakeDocument([_u("u_x")])
     export_document.uniform_values["u_x"] = 0.0
     eng.tick_export("n0", export_document, _ctx(0.0), fresh)
-    assert ("n0", "u_x") in eng.errors  # live error UNTOUCHED
+    assert ("n0", "main", "u_x") in eng.errors  # live error UNTOUCHED
 
 
 # ---- errors as data (a broken script never raises into the tick) ----
@@ -353,7 +383,7 @@ def test_compile_error_keys_on_sentinel(tmp_path: Path) -> None:
     )
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
-    err = eng.errors[("n0", "script.py")]
+    err = eng.errors[("n0", "", "script.py")]
     # Falsifier: not a compile error keyed on the sentinel.
     assert err.kind == "compile"
 
@@ -362,7 +392,7 @@ def test_no_subclass_is_compile_error(tmp_path: Path) -> None:
     _write_script(tmp_path, "x = 1\n")  # no ScriptBehavior subclass at all
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
-    assert eng.errors[("n0", "script.py")].kind == "compile"
+    assert eng.errors[("n0", "", "script.py")].kind == "compile"
 
 
 def test_wrong_import_of_injected_type_steers_to_scripting_module(
@@ -379,7 +409,7 @@ def test_wrong_import_of_injected_type_steers_to_scripting_module(
     )
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
-    msg = eng.errors[("n0", "script.py")].message
+    msg = eng.errors[("n0", "", "script.py")].message
     assert "shaderbox.scripting" in msg
     assert "engine injects them" in msg
 
@@ -394,14 +424,14 @@ def test_unrelated_import_error_does_not_get_the_steer(tmp_path: Path) -> None:
     )
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
-    assert "shaderbox.scripting" not in eng.errors[("n0", "script.py")].message
+    assert "shaderbox.scripting" not in eng.errors[("n0", "", "script.py")].message
 
 
 def test_no_update_override_is_compile_error(tmp_path: Path) -> None:
     _write_script(tmp_path, "class Behavior(ScriptBehavior):\n    pass\n")
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
-    assert eng.errors[("n0", "script.py")].kind == "compile"
+    assert eng.errors[("n0", "", "script.py")].kind == "compile"
 
 
 def test_update_missing_self_is_compile_error(tmp_path: Path) -> None:
@@ -413,7 +443,7 @@ def test_update_missing_self_is_compile_error(tmp_path: Path) -> None:
     )
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
-    err = eng.errors[("n0", "script.py")]
+    err = eng.errors[("n0", "", "script.py")]
     assert err.kind == "compile" and "self" in err.message
 
 
@@ -428,7 +458,7 @@ def test_raising_init_is_compile_error(tmp_path: Path) -> None:
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
     # Falsifier: a raising __init__ surfaces as anything but a frozen compile error.
-    assert eng.errors[("n0", "script.py")].kind == "compile"
+    assert eng.errors[("n0", "", "script.py")].kind == "compile"
 
 
 def test_reset_recovers_a_once_failing_init(tmp_path: Path) -> None:
@@ -448,12 +478,14 @@ def test_reset_recovers_a_once_failing_init(tmp_path: Path) -> None:
     document = _FakeDocument([_u("u_x")])
     document.uniform_values["u_x"] = 0.0
     eng = _engine(tmp_path, document)
-    assert eng.errors[("n0", "script.py")].kind == "compile"  # first __init__ raised
+    assert (
+        eng.errors[("n0", "", "script.py")].kind == "compile"
+    )  # first __init__ raised
 
     eng.reset("n0")  # second construct succeeds
     eng.tick("n0", document, _ctx(0.0))
     assert document.uniform_values["u_x"] == 0.7  # unfrozen
-    assert ("n0", "script.py") not in eng.errors  # stale sentinel cleared
+    assert ("n0", "", "script.py") not in eng.errors  # stale sentinel cleared
 
 
 def test_raw_runtime_throw_freezes_all_at_last_good(tmp_path: Path) -> None:
@@ -484,7 +516,7 @@ def test_raw_runtime_throw_freezes_all_at_last_good(tmp_path: Path) -> None:
     assert (
         document.uniform_values["u_x"] == 0.3 and document.uniform_values["u_y"] == 0.6
     )
-    err = eng.errors[("n0", "script.py")]
+    err = eng.errors[("n0", "", "script.py")]
     assert err.kind == "runtime" and "ValueError" in err.message
     assert err.line == 4  # the real user line, NOT -1
 
@@ -503,7 +535,7 @@ def test_runtime_error_records_deepest_user_line(tmp_path: Path) -> None:
     eng = _engine(tmp_path, document)
     eng.tick("n0", document, _ctx(0.0))
     # Falsifier: the recorded line isn't the deepest user frame (3), e.g. -1.
-    assert eng.errors[("n0", "script.py")].line == 3
+    assert eng.errors[("n0", "", "script.py")].line == 3
 
 
 def test_user_raised_builtin_exception_keeps_its_real_error(tmp_path: Path) -> None:
@@ -517,7 +549,7 @@ def test_user_raised_builtin_exception_keeps_its_real_error(tmp_path: Path) -> N
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
     eng.tick("n0", document, _ctx(0.0))
-    err = eng.errors[("n0", "script.py")]
+    err = eng.errors[("n0", "", "script.py")]
     assert err.kind == "runtime" and "ValueError" in err.message
 
 
@@ -528,9 +560,9 @@ def test_non_dict_return_is_clean_sentinel_error(tmp_path: Path) -> None:
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
     eng.tick("n0", document, _ctx(0.0))  # must NOT raise
-    err = eng.errors[("n0", "script.py")]
+    err = eng.errors[("n0", "", "script.py")]
     assert err.kind == "runtime"
-    assert ("n0", "u_x") not in eng.errors
+    assert ("n0", "main", "u_x") not in eng.errors
 
 
 def test_none_value_freezes(tmp_path: Path) -> None:
@@ -548,7 +580,7 @@ def test_none_value_freezes(tmp_path: Path) -> None:
     eng.reload("n0", tmp_path / "scripts", document)
     eng.tick("n0", document, _ctx(0.1))
     assert document.uniform_values["u_x"] == 0.4  # frozen at last-good
-    assert eng.errors[("n0", "u_x")].kind == "runtime"
+    assert eng.errors[("n0", "main", "u_x")].kind == "runtime"
 
 
 def test_per_key_shape_mismatch_freezes_only_that_key(tmp_path: Path) -> None:
@@ -566,8 +598,8 @@ def test_per_key_shape_mismatch_freezes_only_that_key(tmp_path: Path) -> None:
     eng.tick("n0", document, _ctx(0.0))
     assert document.uniform_values["u_a"] == 0.4  # sibling wrote
     assert document.uniform_values["u_b"] == 0.0  # frozen
-    assert eng.errors[("n0", "u_b")].kind == "runtime"
-    assert ("n0", "script.py") not in eng.errors  # NOT the sentinel
+    assert eng.errors[("n0", "main", "u_b")].kind == "runtime"
+    assert ("n0", "", "script.py") not in eng.errors  # NOT the sentinel
 
 
 def test_array_wrong_length_freezes(tmp_path: Path) -> None:
@@ -582,7 +614,7 @@ def test_array_wrong_length_freezes(tmp_path: Path) -> None:
     eng = _engine(tmp_path, document)
     eng.tick("n0", document, _ctx(0.0))
     assert tuple(document.uniform_values["u_vals"]) == (0.0, 0.0, 0.0, 0.0)  # frozen
-    assert eng.errors[("n0", "u_vals")].kind == "runtime"
+    assert eng.errors[("n0", "main", "u_vals")].kind == "runtime"
 
 
 def test_nan_inf_freezes_and_records(tmp_path: Path) -> None:
@@ -602,7 +634,7 @@ def test_nan_inf_freezes_and_records(tmp_path: Path) -> None:
     eng.reload("n0", tmp_path / "scripts", document)
     eng.tick("n0", document, _ctx(0.1))
     assert document.uniform_values["u_x"] == 0.3  # frozen at last-good, NOT inf
-    err = eng.errors[("n0", "u_x")]
+    err = eng.errors[("n0", "main", "u_x")]
     assert err.kind == "runtime" and "finite" in err.message
 
 
@@ -630,13 +662,14 @@ def test_array_accepts_nested_vec_rows(tmp_path: Path) -> None:
     ) not in eng.errors  # no error -- nested rows are accepted now
 
 
-# ---- soft (document,name) errors: orphan/typo + sampler/block keys skipped, not driven ----
+# ---- soft (document,pass,name) errors: orphan/typo + sampler/block keys skipped, not driven ----
 
 
-def test_orphan_key_warns_skips_and_records_soft_error(tmp_path: Path) -> None:
-    # A key naming no active scriptable uniform is warn-once + SKIPPED (never a None write) AND
-    # records a SOFT ScriptError under (document, name). It must NOT claim ownership in
-    # script_driven_uniforms. Falsifier: u_ghost written, or driven, or no soft error.
+def test_orphan_key_skips_and_records_soft_error(tmp_path: Path) -> None:
+    # A BARE key naming no active scriptable uniform on ANY pass is SKIPPED (never a None write) AND
+    # records a SOFT ScriptError under the pass-free key (069: the whole point is that no pass claims
+    # it). It must NOT claim ownership in script_driven_uniforms. Falsifier: u_ghost written, or
+    # driven, or no soft error.
     _write_script(
         tmp_path,
         _script(update_body="        return {'u_a': 0.5, 'u_ghost': 0.9}\n"),
@@ -646,28 +679,31 @@ def test_orphan_key_warns_skips_and_records_soft_error(tmp_path: Path) -> None:
     eng.tick("n0", document, _ctx(0.0))
     assert document.uniform_values["u_a"] == 0.5
     assert "u_ghost" not in document.uniform_values  # NOT written as None
-    err = eng.errors[("n0", "u_ghost")]
+    err = eng.errors[("n0", "", "u_ghost")]
     assert err.kind == "runtime" and "orphan" in err.message
-    assert "u_ghost" not in eng.script_driven_uniforms("n0")  # claims no ownership
-    assert "u_ghost" in eng._documents["n0"].warned
-    eng.tick("n0", document, _ctx(0.1))  # second tick: warn-once
-    assert eng._documents["n0"].warned == {"u_ghost"}
+    assert "no pass declares" in err.message
+    assert err.pass_name == ""
+    assert ("", "u_ghost") not in eng.script_driven_uniforms(
+        "n0"
+    )  # claims no ownership
 
 
 def test_sampler_key_records_soft_error_and_is_skipped(tmp_path: Path) -> None:
-    # A key naming a sampler (non-scriptable) records a soft (document,name) error + is skipped (not
-    # driven). Falsifier: the sampler is driven, or no soft error.
+    # A key naming a sampler (non-scriptable) inside a PASS BLOCK records a soft (document, pass,
+    # name) error naming the pass + is skipped (not driven). Falsifier: the sampler is driven, or no
+    # soft error.
     _write_script(
         tmp_path,
-        _script(update_body="        return {'u_a': 0.5, 'u_tex': 0.1}\n"),
+        _script(update_body="        return {'u_a': 0.5, 'main': {'u_tex': 0.1}}\n"),
     )
     document = _FakeDocument([_u("u_a"), _u("u_tex", gl_type=_GL_SAMPLER_2D)])
     eng = _engine(tmp_path, document)
     eng.tick("n0", document, _ctx(0.0))
     assert document.uniform_values["u_a"] == 0.5
-    err = eng.errors[("n0", "u_tex")]
+    err = eng.errors[("n0", "main", "u_tex")]
     assert err.kind == "runtime" and "sampler" in err.message
-    assert "u_tex" not in eng.script_driven_uniforms("n0")
+    assert err.pass_name == "main"
+    assert ("main", "u_tex") not in eng.script_driven_uniforms("n0")
 
 
 def test_orphan_key_error_clears_when_key_fixed(tmp_path: Path) -> None:
@@ -680,7 +716,7 @@ def test_orphan_key_error_clears_when_key_fixed(tmp_path: Path) -> None:
     document = _FakeDocument([_u("u_a")])
     eng = _engine(tmp_path, document)
     eng.tick("n0", document, _ctx(0.0))
-    assert ("n0", "u_ghost") in eng.errors
+    assert ("n0", "", "u_ghost") in eng.errors
 
     time.sleep(0.01)
     path.write_text(
@@ -688,7 +724,7 @@ def test_orphan_key_error_clears_when_key_fixed(tmp_path: Path) -> None:
     )
     eng.reload("n0", tmp_path / "scripts", document)
     eng.tick("n0", document, _ctx(0.1))
-    assert ("n0", "u_ghost") not in eng.errors  # zombie cleared
+    assert ("n0", "", "u_ghost") not in eng.errors  # zombie cleared
 
 
 # ---- engine-owned key dropped SILENTLY (no error, not driven) ----
@@ -708,8 +744,10 @@ def test_engine_owned_key_dropped_silently(tmp_path: Path) -> None:
     eng.reload("n0", tmp_path / "scripts", document)
     eng.tick("n0", document, _ctx(0.0))
     assert document.uniform_values["u_a"] == 0.5
-    assert "u_time" not in eng.script_driven_uniforms("n0")  # no false ownership
-    assert ("n0", "u_time") not in eng.errors  # silently dropped
+    assert ("main", "u_time") not in eng.script_driven_uniforms(
+        "n0"
+    )  # no false ownership
+    assert ("n0", "main", "u_time") not in eng.errors  # silently dropped
     assert document.uniform_values["u_time"] == 1.23  # renderer value untouched
 
 
@@ -747,7 +785,7 @@ def test_script_binds_by_existence(tmp_path: Path) -> None:
     eng.tick("n0", document, _ctx(0.0))
     # Falsifier: the script didn't bind despite script.py existing on disk.
     assert eng.has_script("n0")
-    assert "u_x" in eng.script_driven_uniforms("n0")
+    assert ("main", "u_x") in eng.script_driven_uniforms("n0")
 
 
 def test_removed_script_drops_script(tmp_path: Path) -> None:
@@ -755,11 +793,11 @@ def test_removed_script_drops_script(tmp_path: Path) -> None:
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
     eng.tick("n0", document, _ctx(0.0))
-    assert "u_x" in eng.script_driven_uniforms("n0")
+    assert ("main", "u_x") in eng.script_driven_uniforms("n0")
     path.unlink()
     eng.reload("n0", tmp_path / "scripts", document)
     assert not eng.has_script("n0")
-    assert "u_x" not in eng.script_driven_uniforms("n0")
+    assert ("main", "u_x") not in eng.script_driven_uniforms("n0")
 
 
 def test_no_script_file_is_no_op_tick(tmp_path: Path) -> None:
@@ -853,7 +891,7 @@ def test_script_status_reflects_sentinel_and_soft_errors(tmp_path: Path) -> None
     assert status is not None
     assert status.driven_count == 1  # only u_a
     assert status.sentinel_error is None
-    assert [name for name, _ in status.soft_errors] == ["u_ghost"]
+    assert [(p, name) for p, name, _ in status.soft_errors] == [("", "u_ghost")]
 
 
 def test_script_status_none_without_script(tmp_path: Path) -> None:
@@ -872,9 +910,9 @@ def test_drop_document_clears_state_and_errors(tmp_path: Path) -> None:
     )  # compile err
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
-    assert ("n0", "script.py") in eng.errors
+    assert ("n0", "", "script.py") in eng.errors
     eng.drop_document("n0")
-    assert ("n0", "script.py") not in eng.errors
+    assert ("n0", "", "script.py") not in eng.errors
     assert eng.script_driven_uniforms("n0") == set()
     assert not eng.has_script("n0")
 
@@ -889,7 +927,7 @@ def test_non_utf8_file_does_not_crash_reload(tmp_path: Path) -> None:
     document = _FakeDocument([_u("u_x")])
     eng = ScriptEngine()
     eng.reload("n0", scripts_dir, document)  # must NOT raise
-    assert "u_x" not in eng.script_driven_uniforms("n0")
+    assert ("main", "u_x") not in eng.script_driven_uniforms("n0")
 
 
 def test_unreadable_rewrite_mid_edit_keeps_cached_script(tmp_path: Path) -> None:
@@ -920,7 +958,7 @@ def test_import_math_works(tmp_path: Path) -> None:
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
     eng.tick("n0", document, _ctx(0.0))
-    assert ("n0", "u_x") not in eng.errors
+    assert ("n0", "main", "u_x") not in eng.errors
     assert abs(document.uniform_values["u_x"] - 1.0) < 1e-9
 
 
@@ -937,7 +975,7 @@ def test_explicit_import_line_resolves(tmp_path: Path) -> None:
     document = _FakeDocument([_u("u_off", dim=2)])
     eng = _engine(tmp_path, document)
     eng.tick("n0", document, _ctx(0.0))
-    assert ("n0", "script.py") not in eng.errors
+    assert ("n0", "", "script.py") not in eng.errors
     assert document.uniform_values["u_off"] == (0.1, 0.2)
 
 
@@ -955,7 +993,7 @@ def test_super_and_containers_resolve(tmp_path: Path) -> None:
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
     eng.tick("n0", document, _ctx(2.0))
-    assert ("n0", "script.py") not in eng.errors  # super + list + sum resolved
+    assert ("n0", "", "script.py") not in eng.errors  # super + list + sum resolved
     assert document.uniform_values["u_x"] == 2.0
 
 
@@ -971,7 +1009,7 @@ def test_chr_ord_available_for_codepoint_text(tmp_path: Path) -> None:
     eng.tick("n0", document, _ctx(0.0))
     val = document.uniform_values["u_t"]
     assert val[0] == ord("A") and val[1] == ord("B")
-    assert ("n0", "u_t") not in eng.errors
+    assert ("n0", "main", "u_t") not in eng.errors
 
 
 # ---- is_scriptable + script_stub_for ----
@@ -998,7 +1036,7 @@ def test_script_stub_compiles_runs_and_drives_nothing_by_default(
         _u("u_arr", dim=1, n=4),
         _u("u_txt", dim=1, n=8, gl_type=_GL_UNSIGNED_INT),
     ]
-    body = script_stub_for(uniforms)
+    body = script_stub_for({"main": uniforms})
     _write_script(tmp_path, body)
     document = _FakeDocument(uniforms)
     eng = _engine(tmp_path, document)
@@ -1011,7 +1049,7 @@ def test_script_stub_compiles_runs_and_drives_nothing_by_default(
 def test_script_stub_emits_explicit_import_for_referenced_types(tmp_path: Path) -> None:
     # The stub's import line names ScriptBehavior + Ctx always, plus only the output types the
     # document's uniforms reference. Falsifier: a referenced type missing, or an unreferenced one emitted.
-    body = script_stub_for([_u("u_v3", dim=3)])
+    body = script_stub_for({"main": [_u("u_v3", dim=3)]})
     # Scope the assertion to the IMPORT line (the docstring prose mentions Vec2/Vec3/Vec4 generically).
     import_line = next(
         line for line in body.splitlines() if "from shaderbox.scripting import" in line
@@ -1036,11 +1074,16 @@ def test_stopped_uniform_write_skipped_but_still_driven_and_sibling_advances(
     document = _FakeDocument([_u("u_x"), _u("u_y")])
     document.uniform_values["u_x"] = 0.42  # the user's frozen manual value
     eng = _engine(tmp_path, document)
-    eng.tick("n0", document, _ctx(0.0, dt=1.0, frame=0), stopped=frozenset({"u_x"}))
+    eng.tick(
+        "n0",
+        document,
+        _ctx(0.0, dt=1.0, frame=0),
+        stopped=frozenset({StoppedKey(pass_name="main", name="u_x")}),
+    )
     assert (
         document.uniform_values["u_x"] == 0.42
     )  # frozen at the manual value, NOT self.v (==1.0)
-    assert "u_x" in eng.script_driven_uniforms("n0")  # still driven
+    assert ("main", "u_x") in eng.script_driven_uniforms("n0")  # still driven
     assert (
         document.uniform_values["u_y"] == 2.0
     )  # sibling advanced (self.v*2 with self.v==1.0)
@@ -1058,7 +1101,12 @@ def test_stopped_script_keeps_ticking_then_resumes_advanced(tmp_path: Path) -> N
 
     document.uniform_values["u_x"] = 99.0  # the user's manual value while stopped
     for i in range(1, 4):  # three stopped ticks: self.v advances 2,3,4 but no write
-        eng.tick("n0", document, _ctx(0.0, dt=1.0, frame=i), stopped=frozenset({"u_x"}))
+        eng.tick(
+            "n0",
+            document,
+            _ctx(0.0, dt=1.0, frame=i),
+            stopped=frozenset({StoppedKey(pass_name="main", name="u_x")}),
+        )
     assert document.uniform_values["u_x"] == 99.0  # never written while stopped
 
     eng.tick("n0", document, _ctx(0.0, dt=1.0, frame=4))  # resume (not stopped)
@@ -1077,7 +1125,12 @@ def test_export_always_plays_a_live_stopped_uniform(tmp_path: Path) -> None:
     eng = _engine(tmp_path, document)
     eng.tick("n0", document, _ctx(0.0, dt=1.0, frame=0))
     document.uniform_values["u_x"] = 99.0
-    eng.tick("n0", document, _ctx(0.0, dt=1.0, frame=1), stopped=frozenset({"u_x"}))
+    eng.tick(
+        "n0",
+        document,
+        _ctx(0.0, dt=1.0, frame=1),
+        stopped=frozenset({StoppedKey(pass_name="main", name="u_x")}),
+    )
     assert document.uniform_values["u_x"] == 99.0  # frozen live
 
     fresh = eng.fresh_behavior_for("n0")
@@ -1086,3 +1139,234 @@ def test_export_always_plays_a_live_stopped_uniform(tmp_path: Path) -> None:
     eng.tick_export("n0", export_document, _ctx(0.0, dt=1.0, frame=0), fresh)
     # The export plays: a fresh instance ticks once -> self.v == 1.0, WRITTEN (not the frozen 99.0).
     assert export_document.uniform_values["u_x"] == 1.0
+
+
+# ---- 069 D3: routing across passes ----
+
+
+def _two_pass() -> _FakeDocument:
+    # `paint` declares u_a AND u_b; `composite` declares u_a only — the shape every routing case
+    # below needs: a name on both passes, a name on one, and a name on neither.
+    return _FakeDocument(
+        {
+            "paint": [_u("u_a"), _u("u_b")],
+            "composite": [_u("u_a")],
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    ("returned", "written", "error_key", "error_fragment"),
+    [
+        # bare key, BOTH passes declare it -> both written, no error
+        ("{'u_a': 1.0}", {"paint": {"u_a": 1.0}, "composite": {"u_a": 1.0}}, None, ""),
+        # bare key, ONE pass declares it -> that pass only; the sibling is untouched
+        ("{'u_b': 1.0}", {"paint": {"u_b": 1.0}, "composite": {}}, None, ""),
+        # bare key, NO pass declares it -> nothing written, one pass-free soft error
+        (
+            "{'u_z': 1.0}",
+            {"paint": {}, "composite": {}},
+            ("n0", "", "u_z"),
+            "no pass declares 'u_z'",
+        ),
+        # pass block, declared there -> that pass only
+        (
+            "{'paint': {'u_a': 1.0}}",
+            {"paint": {"u_a": 1.0}, "composite": {}},
+            None,
+            "",
+        ),
+        # pass block, NOT declared on that pass -> nothing written, an error naming the pass
+        (
+            "{'composite': {'u_b': 1.0}}",
+            {"paint": {}, "composite": {}},
+            ("n0", "composite", "u_b"),
+            "pass 'composite' has no active uniform 'u_b'",
+        ),
+        # pass block naming NO pass -> nothing written, an error listing the real passes
+        (
+            "{'nope': {'u_a': 1.0}}",
+            {"paint": {}, "composite": {}},
+            ("n0", "", "nope"),
+            "no pass named 'nope' in this document (passes: composite, paint)",
+        ),
+    ],
+)
+def test_the_routing_table(
+    tmp_path: Path,
+    returned: str,
+    written: dict[str, dict[str, float]],
+    error_key: tuple[str, str, str] | None,
+    error_fragment: str,
+) -> None:
+    # The (bare, nested) x (declared in one pass, in two, in none) matrix (069 D3). Falsifier: route
+    # every key to one pass (the pre-069 output-only behaviour) — rows 1/2/4/5 go red on the write
+    # side and rows 3/6 on the error side, so no single wrong implementation passes the table.
+    _write_script(tmp_path, _script(update_body=f"        return {returned}\n"))
+    document = _two_pass()
+    eng = _engine(tmp_path, document)
+    eng.tick("n0", document, _ctx(0.0))
+    for pass_name, expected in written.items():
+        assert document.passes[pass_name].uniform_values == expected
+    if error_key is None:
+        assert not any(k[0] == "n0" for k in eng.errors)
+    else:
+        assert error_fragment in eng.errors[error_key].message
+
+
+def test_a_pass_block_beats_a_broadcast_on_that_pass(tmp_path: Path) -> None:
+    # Specific over general, and INDEPENDENT of the author's insertion order — that is what the
+    # two-phase (broadcasts, then blocks) shape buys. Falsifier: collapse the phases into one loop
+    # over raw.items(); the second half goes red because insertion order then decides the winner.
+    for returned in (
+        "{'u_a': 1.0, 'paint': {'u_a': 2.0}}",
+        "{'paint': {'u_a': 2.0}, 'u_a': 1.0}",
+    ):
+        _write_script(tmp_path, _script(update_body=f"        return {returned}\n"))
+        document = _two_pass()
+        eng = _engine(tmp_path, document)
+        eng.tick("n0", document, _ctx(0.0))
+        assert document.passes["paint"].uniform_values["u_a"] == 2.0
+        assert document.passes["composite"].uniform_values["u_a"] == 1.0
+
+
+def test_an_unknown_pass_names_the_pass_and_lists_the_real_ones(tmp_path: Path) -> None:
+    # One key's failure must not cost its siblings (the freeze-granularity rule). Falsifier: raise on
+    # an unknown pass instead of recording — the sibling half goes red (nothing is driven) and the
+    # message half with it.
+    _write_script(
+        tmp_path,
+        _script(update_body="        return {'nope': {'u_a': 1.0}, 'u_b': 3.0}\n"),
+    )
+    document = _two_pass()
+    eng = _engine(tmp_path, document)
+    eng.tick("n0", document, _ctx(0.0))
+    message = eng.errors[("n0", "", "nope")].message
+    assert "'nope'" in message and "composite" in message and "paint" in message
+    assert (
+        document.passes["paint"].uniform_values["u_b"] == 3.0
+    )  # the sibling still drove
+
+
+def test_a_not_yet_compiled_pass_is_held_not_errored(tmp_path: Path) -> None:
+    # A pass that has NEVER attempted a compile is skipped for the tick with NO error — else the
+    # first frame of a multi-pass document sprays orphan errors that clear a frame later (066 D1 is
+    # what forbids compiling one from inside the tick). Falsifier: treat a not-ready pass as absent;
+    # the no-error assertion goes red.
+    _write_script(
+        tmp_path, _script(update_body="        return {'paint': {'u_a': 1.0}}\n")
+    )
+    document = _FakeDocument({"paint": [_u("u_a")]})
+    document.passes["paint"].script_ready = False
+    eng = _engine(tmp_path, document)
+    eng.tick("n0", document, _ctx(0.0))
+    assert not any(k[0] == "n0" for k in eng.errors)
+    assert document.passes["paint"].uniform_values == {}
+
+    document.passes["paint"].script_ready = True
+    eng.tick("n0", document, _ctx(0.1))
+    assert document.passes["paint"].uniform_values["u_a"] == 1.0
+    assert not any(k[0] == "n0" for k in eng.errors)
+
+
+def test_coerce_one_rejects_a_dict(tmp_path: Path) -> None:
+    # The invariant D3's value-type dispatch rests on, made a CHECKED property of the coercion atom
+    # rather than an inspection of normalize_output. Falsifier: delete the isinstance(value, dict)
+    # branch — the direct call goes red immediately.
+    with pytest.raises(_RuntimeScriptError) as excinfo:
+        coerce_one({"x": 1}, _u("u_a"), "u_a")
+    assert "PASS BLOCK" in excinfo.value.error.message
+
+    # And through the engine: one level too deep freezes that key at last-good and records the
+    # grammar error, rather than an unhelpful shape hint about a float.
+    path = _write_script(tmp_path, _script(update_body="        return {'u_a': 1.0}\n"))
+    document = _FakeDocument({"paint": [_u("u_a")]})
+    eng = _engine(tmp_path, document)
+    eng.tick("n0", document, _ctx(0.0))
+    time.sleep(0.01)
+    path.write_text(
+        _script(update_body="        return {'paint': {'u_a': {'x': 0.5}}}\n"),
+        encoding="utf-8",
+    )
+    eng.reload("n0", tmp_path / "scripts", document)
+    eng.tick("n0", document, _ctx(0.1))
+    assert "PASS BLOCK" in eng.errors[("n0", "paint", "u_a")].message
+    assert document.passes["paint"].uniform_values["u_a"] == 1.0  # frozen at last-good
+
+
+def test_the_stub_has_one_block_per_pass() -> None:
+    # One commented block per pass, each listing that pass's own scriptable uniforms, plus the
+    # bare-key rule. Falsifier: emit only the first pass's block — the composite/u_b assertions go
+    # red; the ast.parse half falsifies emitting comment text that is not valid Python.
+    body = script_stub_for(
+        {
+            "paint": [_u("u_a"), _u("u_b")],
+            "composite": [_u("u_a")],
+            "empty": [],
+        }
+    )
+    assert "'paint': {" in body
+    assert "'composite': {" in body
+    assert "'empty': {" in body
+    assert "(no scriptable uniforms)" in body
+    assert "EVERY pass declaring it" in body
+    paint_block = body.split("'paint': {")[1].split("'composite': {")[0]
+    composite_block = body.split("'composite': {")[1].split("'empty': {")[0]
+    assert "u_b" in paint_block and "u_b" not in composite_block
+
+    ast.parse(body)  # the comments are comments, not broken code
+    namespace: dict[str, object] = {}
+    exec(compile(body, "stub", "exec"), namespace)
+    behavior_class: Any = namespace["Behavior"]
+    behavior = behavior_class()
+    assert behavior.update(_ctx(0.0)) == {}
+
+
+def test_a_document_with_no_scriptable_uniforms_keeps_the_bare_return() -> None:
+    # Falsifier: emit a block per pass unconditionally — an empty document would grow comment blocks
+    # naming nothing.
+    body = script_stub_for({"paint": [], "composite": []})
+    assert "return {}" in body
+
+
+def test_the_orphan_warning_no_longer_reaches_the_console(tmp_path: Path) -> None:
+    # #29's own last sentence: the orphan becomes a VISIBLE strip error, not a console line. The sink
+    # must be a real loguru one — this repo logs through loguru, which does not propagate into the
+    # stdlib tree pytest's caplog reads, so a caplog assertion would pass vacuously with the
+    # logger.warning still in place. Falsifier: restore the logger.warning; the first half goes red.
+    records: list[str] = []
+    handle = logger.add(lambda m: records.append(str(m)), level="WARNING")
+    try:
+        _write_script(
+            tmp_path,
+            _script(update_body="        return {'u_a': 0.5, 'u_ghost': 0.9}\n"),
+        )
+        document = _FakeDocument([_u("u_a")])
+        eng = _engine(tmp_path, document)
+        eng.tick("n0", document, _ctx(0.0))
+    finally:
+        logger.remove(handle)
+    assert not [r for r in records if "shaderbox.scripting.engine" in r]
+    status = eng.script_status("n0")
+    assert status is not None
+    assert [(p, name) for p, name, _ in status.soft_errors] == [("", "u_ghost")]
+
+
+def test_a_stopped_pair_freezes_only_that_pass(tmp_path: Path) -> None:
+    # The defect the pass-qualified stop set exists to prevent. Falsifier: key the stopped set by
+    # NAME — paint freezes too and the first assertion goes red.
+    _write_script(tmp_path, _INTEGRATOR.replace("u_x", "u_a"))
+    document = _two_pass()
+    eng = _engine(tmp_path, document)
+    stopped = frozenset({StoppedKey(pass_name="composite", name="u_a")})
+    eng.tick("n0", document, _ctx(0.0, dt=1.0, frame=0), stopped=stopped)
+    document.passes["composite"].uniform_values["u_a"] = 99.0
+    eng.tick("n0", document, _ctx(1.0, dt=1.0, frame=1), stopped=stopped)
+
+    assert document.passes["paint"].uniform_values["u_a"] == 2.0  # advanced
+    assert (
+        document.passes["composite"].uniform_values["u_a"] == 99.0
+    )  # manual value held
+    # BOTH keep their play/stop button: a stopped pair still counts as driven.
+    driven = eng.script_driven_uniforms("n0")
+    assert ("paint", "u_a") in driven and ("composite", "u_a") in driven

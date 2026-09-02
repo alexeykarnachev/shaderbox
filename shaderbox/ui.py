@@ -1,5 +1,6 @@
 import time
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 
 import glfw
@@ -36,6 +37,7 @@ from shaderbox.tabs import share as share_tab
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_primitives import (
     fps_overlay,
+    ghost_button,
     item_normalized_mouse,
     rendering_overlay,
     toggle_button,
@@ -605,6 +607,15 @@ def _draw_document_image(
     # Current document image
     cursor_pos = imgui.get_cursor_screen_pos()
 
+    # Last frame's sample, read before either branch clears it. The hit test below chains `prev`
+    # from it only when the cursor was already inside; a re-entry starts a fresh stroke.
+    previous_mouse = app.script_mouse
+    was_inside = app.script_mouse_inside
+    # Clear the button + inside flag BEFORE either branch, so a document closed or switched mid-drag
+    # cannot leave `down` latched: the empty-state branch below runs no hit test at all.
+    app.script_mouse = replace(app.script_mouse, down=False)
+    app.script_mouse_inside = False
+
     if app.current_document_id in app.ui_documents:
         ui_document = app.ui_documents[app.current_document_id]
         min_image_height = 100
@@ -635,14 +646,28 @@ def _draw_document_image(
             imgui.color_convert_float4_to_u32(COLOR.VIEWER_BORDER),
             thickness=1.0,
         )
-        # Feed the cursor over the preview into the script tick as ctx.mouse (feature 042).
-        # image_with_bg submits no interactive item, so hit-test the captured rect explicitly.
+        # Feed the cursor over the preview into the script tick as ctx.mouse (feature 042; the
+        # button and the previous position are 069's). image_with_bg submits no interactive item,
+        # so hit-test the captured rect explicitly.
         hit = item_normalized_mouse(
             img_min,
             imgui.ImVec2(img_min.x + image_width, img_min.y + image_height),
         )
+        # No hit (or imgui's invalid-mouse sentinel) leaves the pre-branch clear standing: the
+        # position holds at the last in-bounds sample and the button is already False, so a stroke
+        # that leaves the canvas ends there rather than resuming as one long line.
         if hit is not None and hit[2]:
-            app.script_mouse = MouseState(hit[0], hit[1])
+            app.script_mouse = MouseState(
+                x=hit[0],
+                y=hit[1],
+                down=imgui.is_mouse_down(0),
+                # A re-entry starts a NEW stroke: prev is the current position, so the capsule the
+                # shader stamps has zero length instead of spanning the gap the cursor travelled
+                # off-canvas.
+                prev_x=previous_mouse.x if was_inside else hit[0],
+                prev_y=previous_mouse.y if was_inside else hit[1],
+            )
+            app.script_mouse_inside = True
     else:
         # Same height budget as the with-document branch (incl. its gap slack) — an
         # oversized empty-state area overflows the panel into a phantom scrollbar.
@@ -683,6 +708,20 @@ def _draw_app_panel(app: App) -> None:
             target_fps=app.app_state.global_target_fps,
             is_open=app.fps_details_open,
         )
+        # "Clear canvas" over the preview's top-LEFT — the opposite corner from the FPS chip, so the
+        # two never collide whatever the canvas aspect. Drawn only for a document that DECLARES a
+        # feedback pass; clearing nothing is a control that does nothing. The chord stays live
+        # either way.
+        if app.ui_documents[app.current_document_id].document.has_feedback:
+            imgui.set_cursor_screen_pos(
+                (cursor_pos.x + float(SPACE.MD), cursor_pos.y + float(SPACE.MD))
+            )
+            if ghost_button("Clear"):
+                app.reset_current_document_feedback()
+            if imgui.is_item_hovered():
+                imgui.set_tooltip(
+                    f"Clear canvas  {_hint(app, CommandId.RESET_FEEDBACK)}"
+                )
 
     imgui.set_cursor_screen_pos(
         (cursor_pos.x, cursor_pos.y + image_height + float(SPACE.MD))

@@ -288,16 +288,21 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
 - **The CPU-script engine is headless `ProjectSession` code; scripts are project DATA; a document has ONE
   STATEFUL-class script; a new script LANGUAGE is a `Behavior` backend, not an engine-loop change (feature
   041→048).** A document carries at most ONE script, `documents/<id>/scripts/script.py` (the document script), a
-  user-finalized CLASS subclassing `ScriptBehavior` with `update(self, ctx) -> dict[str, value]` driving
-  MANY uniforms from one instance (feature 048 collapsed the 044/047 second per-uniform path — `u_*.py`,
+  user-finalized CLASS subclassing `ScriptBehavior` with `update(self, ctx) -> dict` driving
+  MANY uniforms across MANY PASSES from one instance (069 D3: a key whose value is a `dict` is a PASS BLOCK
+  driving that pass alone; any other value BROADCASTS to every pass declaring that uniform; a pass block
+  wins over a broadcast, applied as two ordered phases so precedence does not depend on the author's
+  insertion order. The value-type dispatch rests on ONE invariant `coerce_one` asserts — no uniform value
+  is ever a `dict` — and an unknown pass, or a key no target declares, is a soft error the strip shows) (feature 048 collapsed the 044/047 second per-uniform path — `u_*.py`,
   the `(name,type)` tag binding, the copy-content selector, the two-pass script-vs-per-uniform override — to
   this single path; per-uniform private HELPER METHODS inside `update` cover the per-value case). **Per-
   instance state (`self.*`) persists across frames — the reason CPU scripting exists** (a stateless
   `sin(t)` belongs in the shader). Each dict value is validated against the live uniform via the shared
   `uniform_coerce` (a bare number for a scalar; `Vec2/3/4`/`Array`/`Text` for the shaped kinds). The engine
   (`shaderbox/scripting/`) is repo code owned by `ProjectSession`, imports no imgui/glfw and no concrete
-  `Document` type (it works against the `EngineNode` protocol — `uniform_values` + `get_active_uniforms()`), so
-  it stays in the 025 headless core. **Binding is by EXISTENCE**: `script.py` on disk IS the binding — no
+  `Document` type (it works against the `ScriptTarget` protocol — a document's `passes` by name, each a
+  `ScriptPass` of `uniform_values` + `get_active_uniforms()` + `script_ready`), so it stays in the 025
+  headless core. **Binding is by EXISTENCE**: `script.py` on disk IS the binding — no
   active flag, no activate step (`is_script_active`/`is_brain_active` retired in 048). **The body is `exec`'d
   VERBATIM** (no AST surgery; the file IS a class def). A script is plain Python — `import math`, the stdlib,
   AND a real `from shaderbox.scripting import Vec2, Vec3, …` all work (the exec `__builtins__` carries
@@ -307,21 +312,28 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   lineno points at the user source (the 039 ghost removed by construction). A broken script is
   **error-as-data**: the uniform freezes at last-good + records a `ScriptError`, never raising into the
   frame loop (mirrors `shader_errors.ShaderError`). Freeze granularity: a per-KEY coercion mismatch freezes
-  only that key (`(document_id, name)`); a raw throw / non-dict return is behavior-level — freezes every name it
-  drove last frame, records under the sentinel `(document_id, "script.py")`. A key naming an engine-owned
-  (`u_time`…) uniform is dropped SILENTLY; an orphan/typo/sampler key records a soft `(document_id, name)` error
-  + skip. NaN/Inf is frozen-as-data like a shape error.
-  **PLAY/STOP is document-scoped + name-keyed model state, NOT a per-`UIUniform` flag (feature 048).** A uniform
-  the dict returns PLAYS (the engine writes it each tick); the user STOPS it to edit by hand. STOP state is
-  `UIDocumentState.stopped_uniforms: list[str]` + a document-wide `all_stopped: bool` (stored as a LIST, not a set —
-  `UIDocument.save`→`model_dump()`→`json.dump` raises on a Python set; coerced to a set per-frame). Document-scoped
-  name-keyed state survives a retype (the name is stable) and is reachable before any row draws — this is
+  only that key (`(document_id, pass, name)`); a raw throw / non-dict return is behavior-level — freezes every
+  pair it drove last frame, records under the sentinel `(document_id, "", "script.py")` (`""` is the
+  absent-pass marker a document-level error uses). A key naming an engine-owned (`u_time`…) uniform is dropped
+  SILENTLY; an orphan/typo/sampler key inside a pass block records a soft `(document_id, pass, name)` error +
+  skip, and a bare key NO pass declares records under `(document_id, "", name)`. The strip shows a
+  pass-attributed error on the script tab AND on that pass's shader tab; a bare-key or sentinel error is the
+  script tab's alone. NaN/Inf is frozen-as-data like a shape error.
+  **PLAY/STOP is document-scoped + `(pass, name)`-keyed model state, NOT a per-`UIUniform` flag (feature 048,
+  pass-qualified by 069).** A uniform the dict returns PLAYS (the engine writes it each tick); the user STOPS it
+  to edit by hand. STOP state is `UIDocumentState.stopped_uniforms: list[StoppedKey]` + a document-wide
+  `all_stopped: bool`. The key is a PAIR because the same uniform name on two passes is two independently
+  stoppable rows — a name-keyed set would freeze it on every pass at once. `StoppedKey` lives in
+  `scripting/keys.py`, the engine's own leaf, because the engine takes a `frozenset[StoppedKey]` per tick and
+  may not import `ui_models` (which pulls in the concrete `Document`). Stored as a LIST, not a set —
+  `UIDocument.save`→`model_dump()`→`json.dump` raises on a Python set; coerced to a frozenset per-frame. Document-scoped
+  pair-keyed state survives a retype (the pair is stable) and is reachable before any row draws — this is
   the deliberate avoidance of the lazy-row law (a per-`UIUniform` flag would re-trip the 047 ROOT-2 trap).
   The engine learns STOP via a fresh per-frame `tick(stopped=…)` param (`ProjectSession._stopped_for` builds
   it; the headless boundary holds — the engine never learns `UIDocumentState`, intent flows through a param like
-  `engine_driven`): a stopped name STILL ticks the script (state advances) + STILL counts as driven (so its
-  play button shows), but its WRITE is skipped — `driven.add(name)` precedes the coerce/write, and BOTH the
-  success-write and the coercion-failure-freeze are guarded `if name not in stopped` so a stopped uniform's
+  `engine_driven`): a stopped pair STILL ticks the script (state advances) + STILL counts as driven (so its
+  play button shows), but its WRITE is skipped — `driven.add((pass, name))` precedes the coerce/write, and BOTH
+  the success-write and the coercion-failure-freeze are guarded on the pair's absence from `stopped` so a stopped uniform's
   manual value is never clobbered. Document-STOP freezes WRITES, NOT ticking (else a later document-PLAY would resume
   from stale `self.*`); the UI auto-STOPs a playing uniform when the user grabs its widget
   (`is_item_activated()`, gated on PLAYING). **Determinism is SCOPED**: a `ctx.t`-pure `update` is identical

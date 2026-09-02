@@ -133,6 +133,10 @@ The headline still holds — no new tools — but this is a shape change to `Wor
 **D12. One script per PASS, keyed `(document, pass)`.** Corrected during review; the first draft
 said one script per document and that was wrong.
 
+**Superseded by 069 D3.** One script per DOCUMENT, addressing passes by name in the returned dict.
+The addressing hole this decision names is real and is closed by the dict's shape rather than by a
+file per pass; the per-pass file was never implemented.
+
 The engine resolves a script's returned dict against a flat name map --
 `active = {u.name: u for u in node.get_active_uniforms()}` -- and rejects an unmatched key as an
 "orphan key". With D4 making every uniform pass-scoped, a document-scoped script has **no way to

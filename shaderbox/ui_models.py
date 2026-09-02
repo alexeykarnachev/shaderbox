@@ -30,6 +30,7 @@ from shaderbox.paths import (
     pass_name_of,
     pass_shader_name,
 )
+from shaderbox.scripting.keys import StoppedKey
 from shaderbox.ui_regions import DocumentTab
 from shaderbox.util import get_uniform_hash
 
@@ -157,11 +158,12 @@ class UIDocumentState(BaseModel):
         default=DEFAULT_TEMPORAL_SIGMA, gt=0.0
     )
 
-    # Play/stop (feature 048): the uniform NAMES the user has STOPPED — frozen for manual edit. A
-    # stopped uniform's script value is not applied (the script still ticks; the manual value sticks).
-    # Stored as a LIST, not a set: UIDocument.save serializes via model_dump() -> json.dump, which raises
-    # on a Python set. Coerced to a set per-frame in ProjectSession.tick.
-    stopped_uniforms: list[str] = []
+    # Play/stop (feature 048; pass-qualified by 069): the (pass, uniform) pairs the user has STOPPED
+    # — frozen for manual edit. A stopped pair's script value is not applied (the script still ticks;
+    # the manual value sticks). Stored as a LIST, not a set: UIDocument.save serializes via
+    # model_dump() -> json.dump, which raises on a Python set. Coerced to a frozenset per-frame in
+    # ProjectSession._stopped_for.
+    stopped_uniforms: list[StoppedKey] = []
     # Document-level stop: freezes EVERY driven uniform's write at once (the script keeps ticking, so a
     # later document-play resumes from advanced state, not stale state). Born False.
     all_stopped: bool = False
@@ -490,11 +492,10 @@ class UIDocument(BaseModel):
         return dir
 
 
-def load_document_from_dir(document_dir: Path) -> UIDocument:
-    document, meta = Document.load_from_dir(document_dir)
-    dir_name = document_dir.name
-
-    ui_state_dict = meta.get("ui_state", {})
+def _load_ui_state(ui_state_dict: dict[str, Any], dir_name: str) -> UIDocumentState:
+    # The GL-free half of the document load: prune unknown keys, then salvage per KEY. Its own
+    # function so the salvage rules are testable without a GL context (the loader below builds a
+    # real Document and needs one).
     fields = UIDocumentState.model_fields
 
     invalid_keys = [k for k in ui_state_dict if k not in fields]
@@ -513,7 +514,13 @@ def load_document_from_dir(document_dir: Path) -> UIDocument:
     # input_type); this covers every field including the ones nobody has
     # thought to add yet.
     drop_invalid(UIDocumentState, filtered_ui_state, f"document '{dir_name}'")
-    ui_state = UIDocumentState(**filtered_ui_state)
+    return UIDocumentState(**filtered_ui_state)
+
+
+def load_document_from_dir(document_dir: Path) -> UIDocument:
+    document, meta = Document.load_from_dir(document_dir)
+    dir_name = document_dir.name
+    ui_state = _load_ui_state(meta.get("ui_state", {}), dir_name)
 
     return UIDocument(
         id=dir_name,

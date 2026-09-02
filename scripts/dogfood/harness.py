@@ -529,7 +529,7 @@ class DogfoodHarness:
                     for frame in range(round(t * fps) + 1):
                         engine.tick_export(
                             target,
-                            document.render_pass,
+                            document,
                             EngineContext(t=frame * dt, dt=dt, frame=frame),
                             behavior,
                         )
@@ -576,16 +576,19 @@ class DogfoodHarness:
             print(f"    [script_values FAILED: no document '{target}']")
             return []
         probe = self.session.script_engine.dry_run(
-            target, ui_document.document.render_pass, tuple(times), fps
+            target, ui_document.document, tuple(times), fps
         )
         if probe.compile_error is not None:
             print(f"    [script_values: compile error {probe.compile_error.message}]")
         if probe.runtime_error is not None:
             print(f"    [script_values: runtime error {probe.runtime_error.message}]")
-        for name, err in probe.per_key_errors:
-            print(f"    [script_values: '{name}' shape error {err.message}]")
-        for name, err in probe.orphan_keys:
-            print(f"    [script_values: orphan key '{name}' {err.message}]")
+        for pass_name, name, err in probe.per_key_errors:
+            print(
+                f"    [script_values: '{pass_name}.{name}' shape error {err.message}]"
+            )
+        for pass_name, name, err in probe.orphan_keys:
+            label = f"{pass_name}.{name}" if pass_name else name
+            print(f"    [script_values: orphan key '{label}' {err.message}]")
         if not probe.driven:
             print("    [script_values: the script drove NO uniform]")
         for t, values in probe.samples:
