@@ -133,6 +133,9 @@ class _ColorBag:
     # enough that an opaque render is not framed by a texture.
     CHECKER_LIGHT: tuple[float, float, float, float] = _P["bg_2"]
     CHECKER_DARK: tuple[float, float, float, float] = _P["bg_1"]
+    # The viewer's 1px canvas outline. Two steps above CHECKER_LIGHT, so it reads against
+    # both checker greys AND the panel -- BORDER is bg_2, which IS one of them.
+    VIEWER_BORDER: tuple[float, float, float, float] = _P["bg_4"]
 
     FG_PRIMARY: tuple[float, float, float, float] = _P["fg_1"]
     FG_SECONDARY: tuple[float, float, float, float] = _P["fg_2"]
@@ -231,7 +234,10 @@ class SIZE:
     SORT_COMBO_W: int = 150
     TAB_MIN_W: int = 72
     NAME_INPUT_W: int = 180
-    RES_COMBO_W: int = 200
+    # The Document tab's canvas cluster: two dimension fields, a separator and the presets
+    # dropdown. 56 holds a four-digit number (4096 is the clamp's ceiling) inside its padding.
+    CANVAS_FIELD_W: int = 56
+    CANVAS_PRESETS_W: int = 64
 
     LABEL_W: int = 64
     RENDER_CTRL_W: int = 200

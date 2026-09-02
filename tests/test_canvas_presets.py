@@ -8,6 +8,7 @@ silently altered by the clamp on its way through `_apply_canvas_size`.
 Needs a real GL context, like every other module that builds a Document.
 """
 
+import json
 import os
 from collections.abc import Iterator
 from pathlib import Path
@@ -16,16 +17,22 @@ import moderngl
 import pytest
 from PIL import Image as PILImage
 
+from shaderbox.constants import DEFAULT_CANVAS_SIZE
 from shaderbox.core import Pass
 from shaderbox.document import DEFAULT_PASS_NAME, Document
 from shaderbox.media import Image
 from shaderbox.pass_graph import PassEntry, PassGraph, clamp_canvas_size
 from shaderbox.paths import shader_lib_root
 from shaderbox.render_preset import resolve_dims
-from shaderbox.render_shape import MENU_SHAPES, SHAPE_TABLE, RenderShape, shape_to_preset
+from shaderbox.render_shape import (
+    MENU_SHAPES,
+    SHAPE_TABLE,
+    RenderShape,
+    shape_to_preset,
+)
 from shaderbox.shader_lib import ShaderLibIndex, set_active
 from shaderbox.tabs.document import _canvas_presets
-from shaderbox.ui_models import UIDocument
+from shaderbox.ui_models import UIDocument, load_document_from_dir
 
 _PLAIN = """#version 460 core
 in vec2 vs_uv;
@@ -85,6 +92,21 @@ def _presets(doc: Document) -> list[tuple[str, tuple[int, int]]]:
 
 def _one_pass(gl: moderngl.Context, size: tuple[int, int] = (8, 8)) -> Document:
     return _document(gl, {DEFAULT_PASS_NAME: _PLAIN}, PassGraph(), size=size)
+
+
+def _loaded_document(root: Path, size: tuple[int, int]) -> UIDocument:
+    """A document built the way the app builds one: written to disk, read back by the loader.
+
+    `document.json` stores `canvas_size` as a JSON LIST, so a document constructed in-test from
+    a literal tuple cannot see the class of bug an unconverted list causes downstream.
+    """
+    document_dir = root / "document"
+    (document_dir / "passes").mkdir(parents=True, exist_ok=True)
+    (document_dir / "passes" / f"{DEFAULT_PASS_NAME}.frag.glsl").write_text(_PLAIN)
+    (document_dir / "document.json").write_text(
+        json.dumps({"canvas_size": list(size), "uniforms": {}, "ui_state": {}})
+    )
+    return load_document_from_dir(document_dir)
 
 
 def test_the_square_presets_include_512(gl_ctx: moderngl.Context) -> None:
@@ -175,6 +197,38 @@ def test_building_the_presets_compiles_nothing(gl_ctx: moderngl.Context) -> None
 
 def test_no_preset_duplicates_the_current_size(gl_ctx: moderngl.Context) -> None:
     # Picking the current size is a no-op the early return swallows, which reads as a dead item.
-    doc = _one_pass(gl_ctx, size=(512, 512))
-    assert (512, 512) not in [size for _, size in _presets(doc)]
-    doc.release()
+    # Both loops that can produce the current size are covered: 512x512 is a SQUARE and 1280x720
+    # is a VIDEO SHAPE, and only the square half was exercised while the shape loop was broken.
+    for size in ((512, 512), (1280, 720)):
+        doc = _one_pass(gl_ctx, size=size)
+        assert size not in [preset for _, preset in _presets(doc)], size
+        doc.release()
+
+
+def test_a_disk_loaded_document_opens_its_presets(
+    gl_ctx: moderngl.Context, tmp_path: Path
+) -> None:
+    # `document.json` stores canvas_size as a JSON list. Unconverted it is unhashable, so
+    # `seen = {current}` raises inside the imgui frame body and takes the app down; and being
+    # never equal to a tuple, it also lets the current size through as a dead menu entry.
+    ui_document = _loaded_document(tmp_path, (1280, 960))
+    assert ui_document.document.canvas_size == (1280, 960)
+    presets = _canvas_presets(ui_document)
+    assert (1280, 960) not in [size for _, size in presets]
+    ui_document.document.release()
+
+
+def test_a_malformed_canvas_size_falls_back_to_the_default(
+    gl_ctx: moderngl.Context, tmp_path: Path
+) -> None:
+    # A hand-edited document.json never passes a widget; a bad pair costs the default, not a raise.
+    document_dir = tmp_path / "document"
+    (document_dir / "passes").mkdir(parents=True, exist_ok=True)
+    (document_dir / "passes" / f"{DEFAULT_PASS_NAME}.frag.glsl").write_text(_PLAIN)
+    (document_dir / "document.json").write_text(
+        json.dumps({"canvas_size": [1280], "uniforms": {}, "ui_state": {}})
+    )
+    ui_document = load_document_from_dir(document_dir)
+    assert ui_document.document.canvas_size == DEFAULT_CANVAS_SIZE
+    _canvas_presets(ui_document)
+    ui_document.document.release()

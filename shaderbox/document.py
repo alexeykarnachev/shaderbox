@@ -61,6 +61,23 @@ from shaderbox.shader_source import ShaderSource
 DEFAULT_PASS_NAME = "main"
 
 
+def _as_canvas_size(size: object) -> tuple[int, int] | None:
+    """Coerce a loaded `canvas_size` to a tuple, or None if it is not a usable pair.
+
+    `document.json` stores this as a JSON LIST, and a list is unhashable and never equals a
+    tuple -- so an unconverted value breaks every `size in seen` membership test and every
+    unchanged-size guard downstream, on disk-loaded documents only. A pair that is malformed
+    (wrong length, a non-integer) degrades to the default rather than raising, like every other
+    field this loader reads.
+    """
+    if not isinstance(size, (list, tuple)) or len(size) != 2:
+        return None
+    w, h = size
+    if not isinstance(w, int) or not isinstance(h, int):
+        return None
+    return (w, h)
+
+
 def _keyed_entry_fields() -> dict[str, type[BaseModel]]:
     """PassGraph's `dict[str, <Model>]` fields, as {field name: element model}."""
     fields: dict[str, type[BaseModel]] = {}
@@ -213,9 +230,15 @@ class Document:
         canvas_size: tuple[int, int] | None = None,
     ) -> None:
         self._gl = gl or moderngl.get_context()
-        self.canvas_size: tuple[int, int] = canvas_size or DEFAULT_CANVAS_SIZE
+        # Normalized here and in `set_canvas_size` -- the field's only two writers -- so every
+        # reader downstream gets a hashable, comparable pair whatever the loader handed in.
+        self.canvas_size: tuple[int, int] = (
+            _as_canvas_size(canvas_size) or DEFAULT_CANVAS_SIZE
+        )
         self.passes: dict[str, Pass] = {
-            DEFAULT_PASS_NAME: Pass(gl=self._gl, source=source, canvas_size=canvas_size)
+            DEFAULT_PASS_NAME: Pass(
+                gl=self._gl, source=source, canvas_size=self.canvas_size
+            )
         }
         self.graph: PassGraph = PassGraph(
             output=DEFAULT_PASS_NAME, passes={DEFAULT_PASS_NAME: PassEntry()}
@@ -289,8 +312,8 @@ class Document:
         did — left this field stale, so the rest of the graph kept sizing off the old dimensions
         and the output sampled mismatched targets.
         """
-        self.canvas_size = size
-        self.render_pass.canvas.set_size(size)
+        self.canvas_size = _as_canvas_size(size) or DEFAULT_CANVAS_SIZE
+        self.render_pass.canvas.set_size(self.canvas_size)
 
     def begin_frame(self, frame: int | None = None) -> None:
         """Advance feedback history to `frame`, at most once per frame.
@@ -507,7 +530,7 @@ class Document:
                 document.passes[name] = Pass(
                     gl=document._gl,
                     source=ShaderSource.load(shader_path),
-                    canvas_size=metadata.get("canvas_size"),
+                    canvas_size=document.canvas_size,
                     target=entry.target if entry is not None else None,
                 )
             except OSError as e:

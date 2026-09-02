@@ -215,7 +215,9 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   `with_target` / `with_output` rather than `model_copy`) plus the planner — `plan_passes` (topological order,
   cycle detection per pass, feedback marking, unresolved inputs), `evaluation_order` (the passes one
   output actually needs; `plan_for_output` returns that order AND the errors, so a renderer plans
-  once per frame) and `assert_plan_invariants` (the draw-once guard both run on every plan). Pure
+  once per frame) and `assert_plan_invariants` (the draw-once guard both run on every plan). Also
+  the canvas-dimension bounds `MIN_CANVAS_PX` / `MAX_CANVAS_PX` and the `clamp_canvas_size` both
+  entry points funnel through (the Document tab's fields and the copilot's `set_canvas_size`). Pure
   data: no GL, no imgui, importable anywhere.
 
 - **`project_session.py`** — `ProjectSession`: the headless project + copilot CORE (paths, documents,

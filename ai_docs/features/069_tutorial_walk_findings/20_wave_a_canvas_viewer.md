@@ -198,8 +198,11 @@ combo's clothes, and the current size is item 0 purely so that picking it is a n
 in the same row position (`imgui.same_line(combo_offset)` after the document-name input):
 
 ```python
-    if not app.canvas_size_editing:
-        app.canvas_size_buf = ui_document.document.canvas_size
+    doc_w, doc_h = ui_document.document.canvas_size
+    if not app.canvas_w_editing:
+        app.canvas_size_buf = (doc_w, app.canvas_size_buf[1])
+    if not app.canvas_h_editing:
+        app.canvas_size_buf = (app.canvas_size_buf[0], doc_h)
 
     imgui.set_next_item_width(_CANVAS_FIELD_W)
     entered_w, buf_w = imgui.input_int(
@@ -227,47 +230,67 @@ in the same row position (`imgui.same_line(combo_offset)` after the document-nam
     committed_h = entered_h or imgui.is_item_deactivated_after_edit()
     app.canvas_size_buf = (app.canvas_size_buf[0], buf_h)
 
-    app.canvas_size_editing = active_w or active_h
+    app.canvas_w_editing = active_w
+    app.canvas_h_editing = active_h
 
+    if committed_w:
+        _apply_canvas_size(
+            app, ui_document, (app.canvas_size_buf[0], ui_document.document.canvas_size[1])
+        )
+    if committed_h:
+        _apply_canvas_size(
+            app, ui_document, (ui_document.document.canvas_size[0], app.canvas_size_buf[1])
+        )
     if committed_w or committed_h:
-        _apply_canvas_size(app, ui_document, app.canvas_size_buf)
         app.canvas_size_buf = ui_document.document.canvas_size
 ```
 
 Six properties, each load-bearing:
 
-- **The pending edit lives on `App`, as two fields: `canvas_size_buf: tuple[int, int] = (0, 0)`
-  and `canvas_size_editing: bool = False`.** They have to be on `App` and not module globals:
-  `tabs/*.py` are free `draw(app)` functions with no state of their own (`conventions.md`: "Tab
-  state goes on `App` directly"), and the buffer must survive the frame in which the user types.
-  The initial `(0, 0)` is never displayed, because the first frame is by definition a non-editing
-  one and overwrites it before the first `input_int` reads it.
+- **The pending edit lives on `App`, as three fields: `canvas_size_buf: tuple[int, int] = (0, 0)`,
+  `canvas_w_editing: bool = False` and `canvas_h_editing: bool = False`.** They have to be on `App`
+  and not module globals: `tabs/*.py` are free `draw(app)` functions with no state of their own
+  (`conventions.md`: "Tab state goes on `App` directly"), and the buffer must survive the frame in
+  which the user types. The initial `(0, 0)` is never displayed, because the first frame is by
+  definition a non-editing one and overwrites both halves before either `input_int` reads them.
 
-- **The buffer MIRRORS the document on every frame in which neither field is active, and holds
-  only while one is.** `canvas_size_editing` is the OR of `imgui.is_item_active()` read on the
-  line after each `input_int`, and it is written at the END of the row, so the mirror check at the
-  TOP of the next frame reads the previous frame's verdict. The frame-by-frame rule, which is what
-  makes manual verification item 11 true:
+- **ONLY the active field holds a pending value; the other half mirrors the document every
+  frame.** Each flag is `imgui.is_item_active()` read on the line after ITS OWN `input_int`, and
+  both are written at the END of the row, so the mirror check at the TOP of the next frame reads
+  the previous frame's verdict. On commit, the committing field's pending value is paired with the
+  document's CURRENT other half, re-read at that moment rather than taken from the buffer.
 
-  | Frame | `canvas_size_editing` at the top | What the fields show |
-  |---|---|---|
-  | Idle, nothing focused | `False` | `document.canvas_size`, re-read this frame |
-  | The user clicks into W | `False` (set True at the end of this frame) | `document.canvas_size` |
-  | The user is typing in W | `True` | the half-typed buffer, document ignored |
-  | Focus leaves W | `True` (set False at the end) | commit fires; buffer re-read from the document |
-  | The frame after | `False` | `document.canvas_size`, re-read |
-  | The copilot writes the size while nothing is focused | `False` | the NEW `document.canvas_size`, on the next frame, unclicked |
+  A whole-buffer version of this rule (one `canvas_size_editing` flag, the mirror gated on it, the
+  commit taking both halves from the buffer) shipped in `78bd1bf` and is wrong: it freezes the
+  half the user is NOT in, so an external write to that axis is reverted on the next commit. The
+  two traces below are the ones that decide the design; both were run against the real row in a
+  headless imgui frame (`tests/test_canvas_fields.py`).
 
-  A `| None` sentinel meaning "not editing" was the drafted shape and is wrong: nothing ever set it
-  back to `None`, so after the first frame the document's field was never read again and an
-  externally-set size (the copilot's `set_canvas_size`, a `document.json` edit the per-frame sync
-  picks up) could never reach the fields. The active-item rule has no such latch, because it is
-  re-derived from imgui every frame rather than stored across them.
+  **Trace A -- a copilot write lands while W is active** (the case that was broken). Start
+  1280x960; the user focuses W and types `8`; at f4 `set_canvas_size((800, 600))` runs; at f5
+  focus moves off W.
+
+  | Frame | buffer | `canvas_w_editing` | document | note |
+  |---|---|---|---|---|
+  | f1 | (1280, 960) | True | (1280, 960) | W focused |
+  | f3 | (8, 960) | True | (1280, 960) | the digit is in W's half only |
+  | f4 | (8, **600**) | True | (800, 600) | H mirrors the write AT ONCE -- it is not the active field |
+  | f6 | (16, 600) | False | (16, **600**) | commit = (clamped 8, the document's live 600) |
+
+  Under the whole-buffer rule f4's buffer stays `(8, 960)` and f6 commits `(16, 960)`, reverting
+  the copilot's height. Manual verification item 11 is this trace with no typing.
+
+  **Trace B -- the user tabs from W to H.** Leaving W fires its deactivate-after-edit, which
+  commits `(new_w, document_h)` and resizes on that frame; the buffer is re-read from the document,
+  so H shows the live height with the caret now in it; editing H and leaving commits
+  `(document_w, new_h)`, where `document_w` is the width the first commit just wrote. Two resizes,
+  both correct, and neither carries a value from the field the user was not in.
 
 - **A document switch re-arms the mirror, in `App._on_current_document_changed`.** One line:
 
   ```python
-          self.canvas_size_editing = False
+          self.canvas_w_editing = False
+          self.canvas_h_editing = False
   ```
 
   beside the `editor_was_ever_focused = False` already there. It does not clear the buffer; it
@@ -289,7 +312,7 @@ Six properties, each load-bearing:
   consumed-chord set, the editor and copilot focus flags and an open modal, with no "an input is
   active" term. So Ctrl+N (and the non-modal command palette, same shape) fires with a canvas field
   focused, `create_document_from_example` switches the document, and without this line
-  `canvas_size_editing` stays `True` from the previous frame: the fields would show one document's
+  `canvas_w_editing` stays `True` from the previous frame: the fields would show one document's
   half-typed width against another, and a later tab-out would commit that pair to the NEW document.
 - **Both fields commit as ONE `set_canvas_size` call.** `_apply_canvas_size` takes the whole pair
   from the buffer, so whichever field the user leaves, the size that lands is
@@ -344,36 +367,40 @@ forbids and which the `x`-separated pair now carries in the controls). The two f
 `##`-only ids, so no visible label. No `help_marker`: `Canvas` beside two number fields separated
 by `x` is unambiguous, and D1 says a clear label gets no marker at all.
 
-**Layout, and the arithmetic that fixes both numbers.** The cluster must fit the
-`SIZE.RES_COMBO_W` width the row already reserves (`theme.py`, `RES_COMBO_W: int = 200`), which is
-what the old combo occupied. Budget:
+**`step=0` is load-bearing for D11, not only cosmetic.** With `step > 0` imgui submits the `-`
+and `+` buttons AFTER the input, so `is_item_active()` and `is_item_deactivated_after_edit()` --
+which read the LAST submitted item -- would report on a button rather than on the field, and the
+commit rule would silently key off the wrong widget. The four extra buttons in a row sized for two
+fields and a menu, and the per-click commits D11 exists to avoid, are the secondary reasons.
+
+**Layout, and the arithmetic that fixes both numbers.** The cluster occupies the width the old
+combo did. Budget:
 
 ```
-_CANVAS_FIELD_W  56
-SPACE.SM          4
-"x" glyph        ~7   (one char at the default frame font)
-SPACE.SM          4
-_CANVAS_FIELD_W  56
-SPACE.MD          8
-_CANVAS_PRESETS_W 64
-                ---
-                199  <= SIZE.RES_COMBO_W (200)
+SIZE.CANVAS_FIELD_W    56
+SPACE.SM                4
+"x" glyph              ~7   (one char at the default frame font)
+SPACE.SM                4
+SIZE.CANVAS_FIELD_W    56
+SPACE.MD                8
+SIZE.CANVAS_PRESETS_W  64
+                      ---
+                      199
 ```
 
-The first draft put `_CANVAS_FIELD_W` at 62, which leaves 53px for the dropdown. A `presets`
+An earlier draft put the field width at 62, which leaves 53px for the dropdown. A `presets`
 preview string is roughly 42px of text plus 8-12px of frame padding, so 53 does not reliably
 close. **The field width is what gives:** 56px still holds a four-digit number comfortably (about
 26px of digits inside 12px of padding, so 44px of the 56 is used, and 4096 is the largest value
-the clamp admits), while 64px is a comfortable dropdown. Both are module constants in
-`tabs/document.py` beside the existing row constants rather than `SIZE` tokens, because both are
-derived arithmetic against `RES_COMBO_W`, not independent design choices.
+the clamp admits), while 64px is a comfortable dropdown.
 
-`SIZE.RES_COMBO_W` is kept and is what the whole cluster is measured against;
-`SIZE.NAME_INPUT_W` and the `combo_offset` computation are unchanged. (If a reviewer prefers
-tokens, the counter-argument is `/imgui-ui § 6`'s "a token used by exactly one panel still belongs
-in the token bag". This is the one call where the two rules point opposite ways, and the deciding
-fact is that both numbers are consequences of `RES_COMBO_W` rather than choices. Promote them if a
-second panel ever needs a canvas-dimension field.)
+**Both live in `theme.py` as `SIZE.CANVAS_FIELD_W` and `SIZE.CANVAS_PRESETS_W`**, per
+`/imgui-ui § 6`'s "a token used by exactly one panel still belongs in the token bag".
+`SIZE.RES_COMBO_W` is DELETED: the `set_next_item_width(SIZE.RES_COMBO_W)` that read it went with
+the combo, and a token nothing reads is a token that drifts. The sum above is therefore a design
+fact recorded here, not a constraint any code enforces -- there is no longer a reserved width to
+measure against, only the two tokens and the row that draws them. `SIZE.NAME_INPUT_W` and the
+`combo_offset` computation are unchanged.
 
 ### 4. The presets menu is a `begin_combo` dropdown
 
@@ -410,8 +437,8 @@ entries are actions reads as a menu, while `imgui.combo` with a hardcoded index 
 selection that is silently broken.
 
 `ComboFlags_.no_arrow_button` drops the arrow so the control reads as a button-sized affordance
-rather than a wide field. `_CANVAS_PRESETS_W: float = 64.0`, the last term in item 3's row budget
-(56 + 4 + 7 + 4 + 56 + 8 + 64 = 199, inside `SIZE.RES_COMBO_W`'s 200).
+rather than a wide field. `SIZE.CANVAS_PRESETS_W = 64`, the last term in item 3's row budget
+(56 + 4 + 7 + 4 + 56 + 8 + 64 = 199).
 
 The buffer is re-synced after a preset the same way it is after a field commit, so a preset picked
 while a half-typed number sits in a field replaces it rather than being overwritten by the stale
@@ -445,7 +472,7 @@ row holds the only two controls that do not, and BOTH race a copilot write:
 Adding the gate brings the row in line with its siblings rather than inventing a rule.
 
 When the gate is on, the fields are dimmed and neither `is_item_active()` nor
-`is_item_deactivated_after_edit()` fires on them, so `canvas_size_editing` reads `False` throughout
+`is_item_deactivated_after_edit()` fires on them, so both editing flags read `False` throughout
 a turn and the mirror rule keeps the buffer tracking the document. A canvas the copilot sets
 mid-turn is therefore already on screen while the gate is still up, not merely when it lifts.
 
@@ -584,53 +611,54 @@ the `image_with_bg` call:
 
 ```python
         img_min = imgui.get_cursor_screen_pos()
-        _draw_canvas_backdrop(img_min, image_width, image_height)
+        _draw_canvas_backdrop(app.checker_texture, img_min, image_width, image_height)
         imgui.image_with_bg(...)
 ```
 
 and after it, the border. One module-level free function in `ui.py`:
 
 ```python
-def _draw_canvas_backdrop(origin: imgui.ImVec2, width: float, height: float) -> None:
-    dl = imgui.get_window_draw_list()
-    tile = float(SIZE.CHECKER_TILE)
-    dl.add_rect_filled(
+def _draw_canvas_backdrop(
+    checker: moderngl.Texture, origin: imgui.ImVec2, width: float, height: float
+) -> None:
+    pair = 2.0 * float(SIZE.CHECKER_TILE)
+    imgui.get_window_draw_list().add_image(
+        imgui.ImTextureRef(checker.glo),
         (origin.x, origin.y),
         (origin.x + width, origin.y + height),
-        imgui.color_convert_float4_to_u32(COLOR.CHECKER_LIGHT),
+        (0.0, 0.0),
+        (width / pair, height / pair),
     )
-    dark = imgui.color_convert_float4_to_u32(COLOR.CHECKER_DARK)
-    rows = int(height // tile) + 1
-    cols = int(width // tile) + 1
-    for row in range(rows):
-        for col in range(cols):
-            if (row + col) % 2 == 0:
-                continue
-            x0 = origin.x + col * tile
-            y0 = origin.y + row * tile
-            dl.add_rect_filled(
-                (x0, y0),
-                (min(x0 + tile, origin.x + width), min(y0 + tile, origin.y + height)),
-                dark,
-            )
 ```
 
-**Draw-list primitives, not a texture.** `add_rect_filled` on the window draw list is the idiom
-this codebase already uses for every drawn background (`ui_primitives.py::_code_chip`,
-`preview_cell`'s stale wash, `widgets/cheatsheet.py`'s panel), and it needs no GL object, no
-lifetime, and no release path. The alternative the finding mentions, "a tiny 2x2 texture at
-repeat", would add a moderngl texture to `App` that has to be created after the context, released
-on shutdown, and kept out of the export path; that is real machinery for a backdrop.
+**ONE repeating image, not a rect per cell.** The 2x2 texture holds the two `COLOR.CHECKER_*`
+greys, filters `NEAREST` so a cell has a hard edge at any size, and repeats on both axes; uv1
+counts CELL PAIRS across the rect, so one cell lands on exactly `SIZE.CHECKER_TILE` px. The
+`add_image` rect IS the image rect, so the pattern cannot bleed into the panel and no per-tile
+clip is needed -- the wrap does the tiling the loop used to do by hand.
 
-**Cost.** The preview is capped by the panel, so at the widest realistic layout (roughly 1200 x 900
-logical pixels) a 12px tile is about 100 x 75 cells, of which half are drawn: some 3700
-`add_rect_filled` calls per frame. That is well inside imgui's per-frame budget for filled rects
-(they are two triangles each, batched into one draw call by the shared draw list, with no state
-change between them). If it ever measures badly, the fix is a bigger tile, not a texture.
+**Cost, measured.** A per-cell `add_rect_filled` loop was the first implementation and shipped in
+`78bd1bf`; a post-implementation review measured it and it does not survive the number. Timed over
+five frames per size, on this box, at `SIZE.CHECKER_TILE = 12`:
 
-**The `min(...)` on each tile's far corner** clips the last row and column to the image rect, so
-the checkerboard never bleeds past the preview into the panel. The finding's own framing is that
-the checkerboard marks the canvas EXTENT, which a bleeding edge would destroy.
+| Viewer size | per-cell loop | one `add_image` |
+|---|---|---|
+| 800x600 | 1.11 ms/frame | 0.005 ms/frame |
+| 1600x900 | 3.41 ms/frame | 0.002 ms/frame |
+| 2560x1400 | 8.56 ms/frame | 0.002 ms/frame |
+
+(The reviewer's independent numbers for the loop were 1.32 / 3.83 / 9.76 ms on the same sizes.)
+The loop issues one Python-to-C++ call per dark cell -- 5,092 at 1600x900 and 12,519 at 2560x1400
+-- every frame, whether or not the output has any transparency at all, which is 23% and 58% of a
+60fps budget spent on pixels an opaque shader covers completely. The single image is flat in the
+viewer size because it is one call regardless.
+
+**The texture is App-owned**, created by `_make_checker_texture()` beside `preview_canvas` in
+`App._init` and released beside it in `App.release()` -- the existing pattern for an App-owned GL
+object, so it needs no new lifetime rule. The original argument for rects was that they need "no
+GL object, no lifetime, no release path"; that is true and is worth about 3.4 ms a frame, which
+is the wrong trade. Nothing in the export path can see it: it is a draw-list image inside one
+imgui frame in `ui.py`.
 
 **The border**, after `image_with_bg` so it draws over the image's outermost pixel row:
 
@@ -643,9 +671,15 @@ the checkerboard marks the canvas EXTENT, which a bleeding edge would destroy.
         )
 ```
 
-`COLOR.BORDER` is the existing token (`_P["bg_2"]`, `#3c3836`) and the finding names it: "a 1px
-`COLOR.BORDER`-tier rect". No new token, and `add_rect`'s default `thickness=1.0` is stated
-explicitly for the same reason `ui_primitives.py`'s outline states it.
+**The border needs its OWN token, `COLOR.VIEWER_BORDER` (`_P["bg_4"]`, `#665c54`).** The finding
+asks for "a 1px `COLOR.BORDER`-tier rect", and `COLOR.BORDER` is `_P["bg_2"]` -- which is exactly
+`COLOR.CHECKER_LIGHT`, so on a transparent output the border would vanish along every light
+square it crosses, dashing itself. `bg_3` (`#504945`) is one step above the light square and
+reads faintly; `bg_4` is two steps above it and four above `CHECKER_DARK`, which is the first
+palette entry that reads as a continuous line against BOTH checker greys while staying a neutral
+chrome grey rather than a foreground tone (`FG_DIM`, `#928374`, reads as text against a
+background). `add_rect`'s default `thickness=1.0` is stated explicitly for the same reason
+`ui_primitives.py`'s outline states it.
 
 **The two greys are new `theme.py` tokens**, in the neutrals block beside `BG_FRAME` and `BORDER`,
 each mapping to a `_P` entry rather than a literal (the theme's own rule: `_P` is the only home for
@@ -684,10 +718,12 @@ where no document exists; there is no canvas there to mark the extent of.
 
 ### 8. What happens to every place that reads `render_pass` for the size
 
-Seven sites read the OUTPUT pass's canvas texture where a document size is in question, enumerated
-from `grep -n 'render_pass.canvas.texture.size' shaderbox/`. Each is resolved deliberately, not
-swept. The test is whether the site is asking "how big is this document" (read the field) or "how
-big is the texture I am about to blit or fit to" (read the texture):
+**Fourteen** sites read a canvas texture's size, enumerated from
+`git grep -n "render_pass.canvas.texture.size" 73e65ac -- shaderbox` (the pre-wave tree). An
+earlier draft said seven, having listed only the ones it went on to discuss. Each is resolved
+deliberately, not swept. The test is whether the site is asking "how big is this document" (read
+the field) or "how big is the texture I am about to blit, thumbnail or fit to" (read the texture);
+only THREE are the former:
 
 | Site | Verdict |
 |---|---|
@@ -698,6 +734,12 @@ big is the texture I am about to blit or fit to" (read the texture):
 | `ui.py::_draw_document_image`, `image_aspect = np.divide(*ui_document.document.render_pass.canvas.texture.size)` | **Unchanged, deliberately.** Same reasoning: the viewer fits the texture it is about to blit, whose size is the authority on its own aspect. |
 | `copilot/backend.py::_copilot_document_working_view`, `canvas=f"{...texture.size[0]}x{...texture.size[1]}"` | **Changed to `document.canvas_size`.** This string tells the MODEL how big the document is, which is a document-size question; it should read the field the copilot's own `set_canvas_size` writes, not the texture that happens to mirror it. One-line change, no behaviour difference once the funnel holds, and it removes the last place a stale output canvas could report a wrong size to the agent. |
 | `copilot/backend.py::_render_facts_for`, `cw, ch = document.render_pass.canvas.texture.size`, sizing the probe canvas to match the document's aspect | **Unchanged, deliberately.** Its own comment says it matches the canvas ASPECT so `u_aspect` lays out as the preview does; that is the same fit-the-texture question `ui.py` asks, and the preview it must agree with reads the texture too. Changing one and not the other would be the only way to make them disagree. |
+| `document.py::render`, `if render_pass.canvas.texture.size != wanted` | **Unchanged.** The comparison that DRIVES the per-pass fixup: it asks whether the texture already is the wanted size. Reading the field here would compare the field to itself. |
+| `document.py::render_media`, `resolve_dims(preset, self.render_pass.canvas.texture.size)` | **Unchanged.** The source size an export preset scales FROM is the texture being rendered. |
+| `exporters/youtube.py`, `resolve_dims(self.render_preset(), ...texture.size)` | **Unchanged.** Same question as `render_media`: it computes the dims an artifact is expected to have, from the texture that produced it, and compares against `artifact.size`. |
+| `widgets/details.py` x3 (the `full_w`/`half_w` preset buttons and the media-details `aspect`) | **Unchanged.** The Render tab's resolution presets offer the CURRENT output texture's dims and half of them; that is a readout of the thing being rendered, not the document's declared size. |
+| `widgets/document_grid.py`, `texture_size=...texture.size` | **Unchanged.** Paired with `texture_glo` in the same `preview_cell` call: the size OF the texture being blitted. Reading the field would let the two disagree for a frame after a resize. |
+| `widgets/pass_list.py`, `texture_size=render_pass.canvas.texture.size` | **Unchanged.** Same `preview_cell` pairing, and it is a NON-output pass's own texture, which is scaled by `TargetConfig.scale` and legitimately is not the canvas size at all. |
 
 ## Files touched
 
@@ -706,7 +748,7 @@ big is the texture I am about to blit or fit to" (read the texture):
 | `shaderbox/pass_graph.py` | `MIN_CANVAS_PX` / `MAX_CANVAS_PX` constants and the `clamp_canvas_size` free function, moved from `copilot/backend.py`. |
 | `shaderbox/copilot/backend.py` | `_MIN_CANVAS_PX` / `_MAX_CANVAS_PX` deleted; `set_canvas_size` calls `clamp_canvas_size`; `_copilot_document_working_view` reports `document.canvas_size`. |
 | `shaderbox/tabs/document.py` | The Resolution combo and its whole build block (`standard_resolutions`, `current_size`, the `get_active_uniforms` sampler scan, `resolution_items` / `resolution_sizes`, `resolution_label`) are replaced by the `W x H` `input_int` pair plus the presets dropdown, inside a `begin_disabled(app.copilot_turn_active)` scope; new module-level `_apply_canvas_size` and `_canvas_presets` free functions, `_SQUARE_PRESETS`, `_CANVAS_FIELD_W` and `_CANVAS_PRESETS_W` constants. |
-| `shaderbox/app.py` | Two fields: `canvas_size_buf: tuple[int, int] = (0, 0)` and `canvas_size_editing: bool = False`; `_on_current_document_changed` clears the editing flag so a keyboard document switch re-arms the mirror (§ Design decisions item 3). |
+| `shaderbox/app.py` | Three fields: `canvas_size_buf: tuple[int, int] = (0, 0)`, `canvas_w_editing: bool = False` and `canvas_h_editing: bool = False`; `_on_current_document_changed` clears both flags so a keyboard document switch re-arms the mirror (§ Design decisions item 3). Plus `checker_texture` and its `_make_checker_texture()` factory, created beside `preview_canvas` and released with it (item 7). |
 | `shaderbox/popups/pass_settings.py` | `_draw_target` wraps the scale slider in `begin_disabled(is_output)` / `end_disabled`. No string changes. |
 | `shaderbox/ui.py` | `_draw_canvas_backdrop` free function; `_draw_document_image` calls it before `image_with_bg` and draws the 1px border after. |
 | `shaderbox/theme.py` | `COLOR.CHECKER_LIGHT` / `COLOR.CHECKER_DARK`; `SIZE.CHECKER_TILE`. |
@@ -743,15 +785,18 @@ exactly. All three assertions go red.
 
 Calls `_apply_canvas_size` with `(99999, 4)` and asserts `doc.canvas_size == (4096, 16)`.
 
-**The test asserts the FIELD and does not render afterwards.** Under the bug it names the document
-holds `(99999, 4)`, and a render at that size fails to complete the framebuffer, so a trailing
-`doc.render()` would turn a clean assertion failure into a GL error that names nothing. The
-assertion is the whole test.
+**The test asserts the FIELD and does not render afterwards.** A trailing `doc.render()` would
+add nothing: the failure already happens before the assertion (below), and a render would only
+add a second GL error on top of it.
 
 **Falsifier:** the parent spec's constraint is that the clamp applies on BOTH paths. Without the
 clamp in `_apply_canvas_size` (the failure mode being "the copilot clamps, the UI does not"), the
-document takes `(99999, 4)` and the assertion goes red. This is the test that pins the second half
-of the shared constant, the first half being `test_document_ops.py`'s existing clamp assertion.
+test goes red -- though NOT at the assertion, which an earlier draft of this section predicted.
+`Document.set_canvas_size` resizes the output canvas as part of writing the field, so the
+unclamped `(99999, 4)` raises `_moderngl.Error: the framebuffer is not complete` inside
+`_apply_canvas_size` itself, one step before the assertion is reached. Red under its named bug
+either way, and this is the test that pins the second half of the shared constant, the first half
+being `test_document_ops.py`'s existing clamp assertion.
 
 ### `tests/test_document_graph.py::test_an_unchanged_size_pushes_no_notification`
 
@@ -841,6 +886,45 @@ Sets the canvas to a size that a bound texture also has, and asserts no preset c
 
 **Falsifier:** without the skip, the menu shows an item whose selection does nothing (the early
 return in `_apply_canvas_size` swallows it), which reads as a broken menu.
+
+### `tests/test_canvas_presets.py::test_a_disk_loaded_document_opens_its_presets`
+
+Writes a `document.json` carrying `"canvas_size": [1280, 960]`, loads it through
+`load_document_from_dir`, and asserts the field is the TUPLE `(1280, 960)` and that no preset
+carries it.
+
+**Falsifier:** drop the normalization in `Document.__init__` and the field is the JSON list. The
+list is unhashable, so `seen = {current}` raises `TypeError` inside the imgui frame body -- every
+disk-loaded document takes the app down on the first click of the presets menu -- and being never
+equal to a tuple it also lets the current size through as a dead entry and defeats
+`_apply_canvas_size`'s early return. `tests/test_canvas_presets.py`'s other documents are built
+from literal tuples, which is why the whole class was invisible; the fixture now goes through the
+real load path so it cannot come back.
+
+### `tests/test_canvas_presets.py::test_a_malformed_canvas_size_falls_back_to_the_default`
+
+A `document.json` whose `canvas_size` is `[1280]` loads with `DEFAULT_CANVAS_SIZE` rather than
+raising, and its presets build.
+
+**Falsifier:** a normalization that coerces without checking the arity passes the one-element pair
+to `gl.texture`, which raises `TypeError: argument 1 must be sequence of length 2` from
+`Document.__init__` -- an app that will not open the document, over a hand edit. Fail-soft per key
+is the repo's posture for every other loaded field.
+
+### `tests/test_canvas_fields.py` (two, through a real imgui frame)
+
+`test_a_write_during_an_active_field_survives_the_commit` focuses W, types a digit, lands
+`set_canvas_size((800, 600))` while W is still active, then moves focus off it, and asserts the
+document ends at `(16, 600)` -- the clamped edit on the axis the user touched, the external write
+intact on the axis they did not. `test_the_active_field_keeps_its_own_pending_digits` runs the
+same frames with no external write and asserts `(16, 960)`, so the mirror is shown not to steal
+the digits it is being trusted not to steal.
+
+**Falsifier:** the whole-buffer rule that shipped in `78bd1bf` (one editing flag, the mirror gated
+on it, the commit taking both halves from the buffer) makes the first assert `(16, 960)` -- the
+copilot's height reverted. Both drive `tabs/document.py::draw` in a headless imgui frame per
+`/imgui-ui § 0`, the rig `tests/test_lib_files.py` established; focus index 1, because the row's
+first submitted item is the document-name input.
 
 ### The disabled slider, the pair's commit, and the checkerboard: manual
 
@@ -940,14 +1024,14 @@ the checkerboard"), expanded to one falsifiable step per item.
     field, type `10` without leaving it, then press Ctrl+N. Expect: the new document appears and its
     canvas fields show ITS OWN size, not `10` and the previous document's height. Fails if the stale
     pair is displayed, which is the case `_on_current_document_changed`'s
-    `canvas_size_editing = False` exists for: Ctrl+N is a GLOBAL Ctrl-chord that imgui routes
+    editing-flag reset exists for: Ctrl+N is a GLOBAL Ctrl-chord that imgui routes
     through an active text input, so the mouse-only reasoning that a switch always deactivates the
     field does not hold.
 
 14. **A half-typed number is not stolen by the mirror.** Click into the width field and type `12`
     without leaving it, then wait several seconds. Expect: the field keeps showing `12` rather than
     snapping back to the document's width. Fails if the digits vanish, which would mean
-    `canvas_size_editing` is not being set from `is_item_active()` and the mirror is overwriting an
+    `canvas_w_editing` is not being set from `is_item_active()` and the mirror is overwriting an
     active field.
 
 ## Verified / corrected premises
@@ -1024,11 +1108,12 @@ Each carries a robust default, marked as such; none blocks implementation.
    maintainer reports the same "where is the canvas" confusion on the strip; the change would be a
    flag on `preview_cell` calling the same `_draw_canvas_backdrop`, promoted to `ui_primitives.py`.
 
-3. **Where should `_CANVAS_FIELD_W` and `_CANVAS_PRESETS_W` live, module constants or `SIZE`
-   tokens?** Default, taken: **module constants in `tabs/document.py`**, because both are
-   arithmetic derived from `SIZE.RES_COMBO_W` (two fields plus a separator plus a dropdown inside
-   the reserved row width), not independent design choices, and `theme.py` is the home for choices.
-   Promote them to `SIZE` the moment a second panel needs a canvas-dimension field.
+3. **Where should the two canvas widths live, module constants or `SIZE` tokens?**
+   **Resolved after implementation: `SIZE` tokens.** The draft answer was module constants in
+   `tabs/document.py`, on the grounds that both were arithmetic derived from `SIZE.RES_COMBO_W`.
+   That premise died with the combo: nothing reads `RES_COMBO_W` any more, so the two numbers are
+   independent design choices after all, and `/imgui-ui § 6` puts those in the token bag.
+   `SIZE.CANVAS_FIELD_W` / `SIZE.CANVAS_PRESETS_W` are the home; `RES_COMBO_W` is deleted.
 
 4. **Should `_apply_canvas_size` save the document?** Default, taken: **no.** The copilot's
    `set_canvas_size` calls `_save_ui_document` because a copilot turn must leave disk consistent
@@ -1114,6 +1199,41 @@ pending-edit buffer that carries both halves of a pair, and it is the deliberate
 3's "Both fields commit as ONE `set_canvas_size` call" bullet: suppressing it would need the
 touched-field ledger that bullet rejects. Its trigger is a hand edit of `document.json` landing
 inside a typing window, which D2 declassifies as a workflow. Recorded, not fixed.
+**Overturned in round 3** -- the same shape fires on the ordinary copilot path, and the per-field
+mirror fixes it without the ledger this paragraph assumed was the only cure. Kept here as the
+record of a verdict that rested on the rarest of its triggers.
+
+**Round 3, post-implementation review of `78bd1bf`** (two reviewers: code correctness, and spec
+fidelity). Three FAIL areas and nine findings, all fixed in the working tree before the wave was
+handed over. The two that changed a locked decision:
+
+- **The buffer's mirror rule is now PER FIELD, reversing round 2's "accepted inherent
+  consequence".** Round 2 traced the case where a `Document` is replaced mid-edit, found that the
+  buffer's untouched half carries a pre-write value into the commit, and recorded it as inherent to
+  any pending-edit buffer that holds both halves of a pair -- "Recorded, not fixed", on the grounds
+  that suppressing it would need the touched-field ledger decision 3 rejects. The post-impl review
+  reproduced it against real frames on the ordinary copilot path (not the exotic disk-sync one),
+  which makes it a live defect rather than a corner: a `set_canvas_size` during an active field is
+  silently reverted, INCLUDING the axis the user never edited. The fix needs no ledger, which is
+  what makes it available: mirror each half on its own field's active flag, and pair a commit with
+  the document's live other half. The rejected alternative stands rejected -- there is still no
+  record of which field was "touched"; the active flag imgui already owns is doing the work.
+  Decision 3's frame table is replaced by the two traces, and the false trail is retired.
+- **The checkerboard is one repeating texture, not a rect per cell.** Decision 7 argued rects on
+  lifetime grounds and asserted the cost was "well inside imgui's per-frame budget" without
+  measuring it. Measured, the loop costs 3.4 ms/frame at 1600x900 and 8.6 ms at 2560x1400, paid
+  every frame under an opaque render that covers all of it. The lifetime argument was sound and
+  the cost claim was not; decision 7 now carries the table.
+
+The other seven, each fixed where it was found: the `canvas_size` list-vs-tuple crash on every
+disk-loaded document and the spurious toast it also caused (one normalization at the `Document`
+funnel closes both); the video-shape loop bypassing `seen`, plus the guarding test being pointed at
+a square, which is the one size that loop cannot produce; `SIZE.RES_COMBO_W` left dead, now
+replaced by the two `SIZE.CANVAS_*` tokens; the border sharing `_P["bg_2"]` with `CHECKER_LIGHT`,
+now `COLOR.VIEWER_BORDER`; item 8's site count (seven, really fourteen); the clamp test's stated
+falsification path (the framebuffer error fires inside `_apply_canvas_size`, not at the assertion);
+and `pass_graph.py`'s docstring plus `dev_flow.md`'s module map, neither of which mentioned the
+clamp that moved in.
 
 **Post-implementation correction: `_canvas_presets` lost its `app` parameter.** Both rounds carried
 the signature `(app: App, ui_document: UIDocument)`, and implementation showed the body never reads

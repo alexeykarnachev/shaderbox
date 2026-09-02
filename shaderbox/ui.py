@@ -587,34 +587,23 @@ def _draw_splitter(app: App, total_width: float, height: float) -> None:
             app.app_state.editor_split_fraction = max(0.15, min(0.85, fraction))
 
 
-def _draw_canvas_backdrop(origin: imgui.ImVec2, width: float, height: float) -> None:
-    """Alpha checkerboard under the preview, clipped to the image rect.
+def _draw_canvas_backdrop(
+    checker: moderngl.Texture, origin: imgui.ImVec2, width: float, height: float
+) -> None:
+    """Alpha checkerboard under the preview, as ONE repeating image.
 
-    Draw-list rects rather than a repeating texture: no GL object, no lifetime, no release
-    path. `image_with_bg`'s bg_col default is fully transparent, so this shows through
-    wherever the output's own alpha is below 1.
+    The 2x2 texture repeats, so uv1 counts CELL PAIRS across the rect and one cell lands on
+    `SIZE.CHECKER_TILE` px. `image_with_bg`'s bg_col default is fully transparent, so this
+    shows through wherever the output's own alpha is below 1.
     """
-    dl = imgui.get_window_draw_list()
-    tile = float(SIZE.CHECKER_TILE)
-    dl.add_rect_filled(
+    pair = 2.0 * float(SIZE.CHECKER_TILE)
+    imgui.get_window_draw_list().add_image(
+        imgui.ImTextureRef(checker.glo),
         (origin.x, origin.y),
         (origin.x + width, origin.y + height),
-        imgui.color_convert_float4_to_u32(COLOR.CHECKER_LIGHT),
+        (0.0, 0.0),
+        (width / pair, height / pair),
     )
-    dark = imgui.color_convert_float4_to_u32(COLOR.CHECKER_DARK)
-    rows = int(height // tile) + 1
-    cols = int(width // tile) + 1
-    for row in range(rows):
-        for col in range(cols):
-            if (row + col) % 2 == 0:
-                continue
-            x0 = origin.x + col * tile
-            y0 = origin.y + row * tile
-            dl.add_rect_filled(
-                (x0, y0),
-                (min(x0 + tile, origin.x + width), min(y0 + tile, origin.y + height)),
-                dark,
-            )
 
 
 def _draw_document_image(
@@ -646,7 +635,7 @@ def _draw_document_image(
         # On compile failure the last-good program stays bound — kept bright; the error
         # surfaces in the editor pane strip.
         img_min = imgui.get_cursor_screen_pos()
-        _draw_canvas_backdrop(img_min, image_width, image_height)
+        _draw_canvas_backdrop(app.checker_texture, img_min, image_width, image_height)
         imgui.image_with_bg(
             imgui.ImTextureRef(ui_document.document.render_pass.canvas.texture.glo),
             image_size=(image_width, image_height),
@@ -657,7 +646,7 @@ def _draw_document_image(
         imgui.get_window_draw_list().add_rect(
             (img_min.x, img_min.y),
             (img_min.x + image_width, img_min.y + image_height),
-            imgui.color_convert_float4_to_u32(COLOR.BORDER),
+            imgui.color_convert_float4_to_u32(COLOR.VIEWER_BORDER),
             thickness=1.0,
         )
         # Feed the cursor over the preview into the script tick as ctx.mouse (feature 042).

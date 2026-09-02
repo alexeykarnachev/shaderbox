@@ -665,8 +665,7 @@ def test_a_ui_resize_moves_every_pass_together(gl_ctx: moderngl.Context) -> None
 
 
 def test_the_ui_resize_clamps_both_ends(gl_ctx: moderngl.Context) -> None:
-    # Both entry points clamp through the same constant. Asserts the FIELD and does not render:
-    # under the bug the document holds (99999, 4), which no framebuffer completes.
+    # Both entry points clamp through the same constant.
     doc = _document(gl_ctx, {DEFAULT_PASS_NAME: _CONST % "1.0"}, PassGraph())
     _apply_canvas_size(_AppStub(), _ui_document(doc), (99999, 4))
     assert doc.canvas_size == (4096, 16)

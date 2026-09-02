@@ -10,6 +10,10 @@ Everything here is engine-level machinery persisted in `graph.json`, never parse
 and everything here is GL-free pure data: the model, the topological order, the cycle check and the
 feedback marking are unit-testable with no context and importable from anywhere without a cycle.
 
+It also owns the canvas-dimension bounds (`MIN_CANVAS_PX` / `MAX_CANVAS_PX`) and the
+`clamp_canvas_size` both entry points funnel through, beside `TargetConfig.scale`'s bound, which
+is the sibling constraint on the same quantity.
+
 Two rules the rest of the engine leans on:
 
 - **A pass reading itself is FEEDBACK, not a cycle.** It consumes the previous frame, so it

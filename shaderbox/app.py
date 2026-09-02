@@ -107,6 +107,24 @@ def _create_dir_if_needed(path: Path | str) -> Path:
     return path
 
 
+def _make_checker_texture() -> moderngl.Texture:
+    """The viewer's alpha checkerboard as a 2x2 NEAREST/repeat texture.
+
+    One `add_image` per frame instead of one `add_rect_filled` per cell: the per-cell loop
+    measured 3.8 ms/frame at 1600x900 and 9.8 ms at 2560x1400, paid whether or not the output
+    has any transparency.
+    """
+    light = bytes(round(c * 255) for c in COLOR.CHECKER_LIGHT)
+    dark = bytes(round(c * 255) for c in COLOR.CHECKER_DARK)
+    texture = moderngl.get_context().texture(
+        size=(2, 2), components=4, data=light + dark + dark + light, dtype="f1"
+    )
+    texture.filter = (moderngl.NEAREST, moderngl.NEAREST)
+    texture.repeat_x = True
+    texture.repeat_y = True
+    return texture
+
+
 class App:
     def __init__(self, project_dir: Path | None = None, headless: bool = False) -> None:
         # headless: create the glfw window hidden (the smoke test + any offscreen driver) so it
@@ -215,6 +233,9 @@ class App:
         self.font_emoji = self.get_emoji_font(24)
 
         self.preview_canvas: Canvas
+        # 2x2 alpha checkerboard, drawn as ONE repeating image behind the viewer. Created
+        # beside preview_canvas and released with it.
+        self.checker_texture: moderngl.Texture
 
         self.exporter_registry = ExporterRegistry()
         self.exporter_registry.register(TelegramExporter())
@@ -283,12 +304,13 @@ class App:
             on_pass_renamed=self._on_pass_renamed,
         )
 
-        # The Document tab's canvas W x H pair. The buffer mirrors `document.canvas_size` on
-        # every frame in which neither field is active, so an externally-set size (the copilot,
-        # a disk sync) reaches the fields unclicked; while one is active it holds the pending
-        # digits. Never a `| None` latch -- nothing would clear it.
+        # The Document tab's canvas W x H pair. Each half of the buffer mirrors
+        # `document.canvas_size` on every frame in which ITS OWN field is not active, so only
+        # the field the user is actually in holds a pending value and an external write (the
+        # copilot, a disk sync) reaches the other half at once.
         self.canvas_size_buf: tuple[int, int] = (0, 0)
-        self.canvas_size_editing: bool = False
+        self.canvas_w_editing: bool = False
+        self.canvas_h_editing: bool = False
 
         # The pass list's inline add input (name a new pass).
         self.pass_add: InlineInput = InlineInput()
@@ -545,8 +567,9 @@ class App:
         # session starts fresh; insertions would land at (0,0) until the user clicks into it.
         self.editor_was_ever_focused = False
         # Ctrl+N is a GLOBAL chord imgui routes through an active text input, so a switch CAN
-        # land mid-edit; re-arm the mirror or the new document draws the old one's half-typed pair.
-        self.canvas_size_editing = False
+        # land mid-edit; re-arm both mirrors or the new document draws the old one's half-typed pair.
+        self.canvas_w_editing = False
+        self.canvas_h_editing = False
         if new_id:
             self.ensure_shader_tab(new_id)
 
@@ -1105,6 +1128,7 @@ class App:
         self.release()
 
         self.preview_canvas = Canvas()
+        self.checker_texture = _make_checker_texture()
 
         self.frame_idx = 0
         # Wall-clock of the previous script-engine tick (feature 040), for the per-frame dt.
@@ -1634,6 +1658,9 @@ class App:
 
         if hasattr(self, "preview_canvas"):
             self.preview_canvas.release()
+
+        if hasattr(self, "checker_texture"):
+            self.checker_texture.release()
 
     def open_project(self) -> None:
         if self._copilot_busy_blocked("Opening a project"):

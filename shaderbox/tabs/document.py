@@ -28,12 +28,6 @@ from shaderbox.util import format_auto_value, get_resolution_str, get_uniform_ha
 from shaderbox.widgets import pass_list
 from shaderbox.widgets.uniform import draw_ui_uniform, uniform_name_label
 
-# The canvas row must fit SIZE.RES_COMBO_W, which is what the row already reserves:
-# 56 + SPACE.SM + the "x" glyph + SPACE.SM + 56 + SPACE.MD + 64 = 199. Both are arithmetic
-# against RES_COMBO_W rather than independent design choices, so they stay module constants.
-_CANVAS_FIELD_W: float = 56.0
-_CANVAS_PRESETS_W: float = 64.0
-
 _SQUARE_PRESETS: tuple[int, ...] = (256, 512, 1024, 2048)
 
 
@@ -74,8 +68,10 @@ def _canvas_presets(ui_document: UIDocument) -> list[tuple[str, tuple[int, int]]
             ),
             current,
         )
-        presets.append((SHAPE_TABLE[shape].menu_label, size))
+        if size in seen:
+            continue
         seen.add(size)
+        presets.append((SHAPE_TABLE[shape].menu_label, size))
 
     for render_pass in ui_document.document.passes.values():
         for uniform_name, value in sorted(render_pass.uniform_values.items()):
@@ -137,10 +133,15 @@ def draw(app: App) -> None:
 
     imgui.same_line(combo_offset)
 
-    if not app.canvas_size_editing:
-        app.canvas_size_buf = ui_document.document.canvas_size
+    # Each half mirrors the document unless ITS OWN field is active, so a field the user is not
+    # in never holds a stale number to carry over an external write.
+    doc_w, doc_h = ui_document.document.canvas_size
+    if not app.canvas_w_editing:
+        app.canvas_size_buf = (doc_w, app.canvas_size_buf[1])
+    if not app.canvas_h_editing:
+        app.canvas_size_buf = (app.canvas_size_buf[0], doc_h)
 
-    imgui.set_next_item_width(_CANVAS_FIELD_W)
+    imgui.set_next_item_width(float(SIZE.CANVAS_FIELD_W))
     entered_w, buf_w = imgui.input_int(
         "##canvas_w",
         app.canvas_size_buf[0],
@@ -155,7 +156,7 @@ def draw(app: App) -> None:
     imgui.text_colored(COLOR.FG_DIM, "x")
     imgui.same_line(spacing=float(SPACE.SM))
 
-    imgui.set_next_item_width(_CANVAS_FIELD_W)
+    imgui.set_next_item_width(float(SIZE.CANVAS_FIELD_W))
     entered_h, buf_h = imgui.input_int(
         "##canvas_h",
         app.canvas_size_buf[1],
@@ -166,14 +167,28 @@ def draw(app: App) -> None:
     committed_h = entered_h or imgui.is_item_deactivated_after_edit()
     app.canvas_size_buf = (app.canvas_size_buf[0], buf_h)
 
-    app.canvas_size_editing = active_w or active_h
+    app.canvas_w_editing = active_w
+    app.canvas_h_editing = active_h
 
+    # The committing field's pending value against the document's CURRENT other half, re-read
+    # here rather than taken from the buffer: an external write during the edit stands.
+    if committed_w:
+        _apply_canvas_size(
+            app,
+            ui_document,
+            (app.canvas_size_buf[0], ui_document.document.canvas_size[1]),
+        )
+    if committed_h:
+        _apply_canvas_size(
+            app,
+            ui_document,
+            (ui_document.document.canvas_size[0], app.canvas_size_buf[1]),
+        )
     if committed_w or committed_h:
-        _apply_canvas_size(app, ui_document, app.canvas_size_buf)
         app.canvas_size_buf = ui_document.document.canvas_size
 
     imgui.same_line(spacing=float(SPACE.MD))
-    imgui.set_next_item_width(_CANVAS_PRESETS_W)
+    imgui.set_next_item_width(float(SIZE.CANVAS_PRESETS_W))
     if imgui.begin_combo(
         "##canvas_presets", "presets", imgui.ComboFlags_.no_arrow_button
     ):
