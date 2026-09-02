@@ -14,9 +14,9 @@
 in vec2 vs_uv;
 out vec4 fs_color;
 
-uniform sampler2D u_scene;
+uniform sampler2D u_paint;
 
 void main() {
-    float alpha = texture(u_scene, vs_uv).a;
+    float alpha = texture(u_paint, vs_uv).a;
     fs_color = vec4(vs_uv * alpha, 0.0, 1.0);
 }

@@ -34,6 +34,14 @@ void main() { fs_color = texture(u_src, vs_uv) * 0.5; }
 """
 
 
+_NAMED = """#version 460 core
+in vec2 vs_uv;
+uniform sampler2D u_scene;
+out vec4 fs_color;
+void main() { fs_color = texture(u_scene, vs_uv) * 0.5; }
+"""
+
+
 def _two_pass(app: Any) -> str:
     """A document with exactly two passes named `scene` and `composite`.
 
@@ -149,9 +157,25 @@ def test_a_pass_s_wiring_is_shown_including_what_is_unwired(app: Any) -> None:
     views, _ = app.copilot_backend.read_working_set()
     view = next(v for v in views if not v.is_lib)
     composite = next(p for p in view.passes if p.name == "composite")
-    # An unwired input reads black (D3), which is silent on screen — so it is stated here.
-    assert composite.inputs == ["u_src <- (nothing; reads BLACK)"]
+    # An unwired input reads black (D3), which is silent on screen — so it is stated here. An
+    # explicit none reads differently from an undecided one: the model can respect the first and
+    # should fill the second.
+    assert composite.inputs == ["u_src <- (none; reads BLACK)"]
     assert "reads BLACK" in render_working_set(views, [])[0].content
+
+
+def test_a_pass_wired_only_by_its_uniform_name_is_shown_as_filled(app: Any) -> None:
+    # 069 D9: `u_scene` beside a pass `scene` is filled by the renderer with no stored edge, so
+    # telling the model it reads BLACK would be a false fact on the channel it acts from.
+    document_id = _two_pass(app)
+    document = app.ui_documents[document_id].document
+    app.session.unwire_pass_input(document_id, "composite", "u_src")
+    document.passes["composite"].release_program(_NAMED)
+    document.passes["composite"].compile()
+    views, _ = app.copilot_backend.read_working_set()
+    view = next(v for v in views if not v.is_lib)
+    composite = next(p for p in view.passes if p.name == "composite")
+    assert composite.inputs == ["u_scene <- scene"]
 
 
 def test_a_single_pass_document_renders_exactly_as_before(app: Any) -> None:

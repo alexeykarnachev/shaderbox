@@ -868,10 +868,14 @@ class ProjectSession:
     def wire_pass_input(
         self, document_id: str, consumer: str, uniform: str, producer: str
     ) -> str:
-        """Fill `consumer`'s `uniform` from `producer`, or unwire it when `producer` is empty.
+        """Fill `consumer`'s `uniform` from `producer`, or store an explicit none when empty.
 
         A closed set by construction: the caller picks `producer` from the document's own pass
         names, which is what makes SHADERed's positional-slot footgun impossible here.
+
+        An empty `producer` is a DECISION -- "this sampler reads black" -- and it survives a
+        reload, so the name rule (069 D9) does not re-wire it. `unwire_pass_input` is what
+        returns the sampler to undecided.
         """
         ui_document = self.ui_documents.get(document_id)
         if ui_document is None:
@@ -882,6 +886,18 @@ class ProjectSession:
         if producer and producer not in document.passes:
             return f"no such pass '{producer}'"
         document.graph = document.graph.with_input(consumer, uniform, producer)
+        self.save_ui_document(ui_document)
+        return ""
+
+    def unwire_pass_input(self, document_id: str, consumer: str, uniform: str) -> str:
+        """Return `consumer`'s `uniform` to undecided, so the name rule fills it again."""
+        ui_document = self.ui_documents.get(document_id)
+        if ui_document is None:
+            return f"no such document '{document_id}'"
+        document = ui_document.document
+        if consumer not in document.passes:
+            return f"no such pass '{consumer}'"
+        document.graph = document.graph.without_input(consumer, uniform)
         self.save_ui_document(ui_document)
         return ""
 

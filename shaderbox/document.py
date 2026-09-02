@@ -19,6 +19,7 @@ import imageio
 import moderngl
 import numpy as np
 from loguru import logger
+from OpenGL.GL import GL_SAMPLER_2D
 from pydantic import BaseModel, ValidationError
 
 from shaderbox.constants import (
@@ -35,7 +36,9 @@ from shaderbox.core import Canvas, Pass
 from shaderbox.media import (
     Image,
     MediaDetails,
+    MediaWithTexture,
     Video,
+    is_default_image,
     media_class_for,
     texture_to_pil,
     texture_to_rgba8,
@@ -45,6 +48,7 @@ from shaderbox.pass_graph import (
     GraphError,
     PassEntry,
     PassGraph,
+    effective_inputs,
     plan_for_output,
     plan_passes,
 )
@@ -215,6 +219,13 @@ def _load_uniform_value(gl: moderngl.Context, document_dir: Path, value: Any) ->
     raise ValueError("unknown uniform dict format")
 
 
+def _is_user_bound(value: object) -> bool:
+    # Not "is a MediaWithTexture": `Pass._default_uniform_value` seeds EVERY unbound sampler with
+    # the shipped default image, so that test alone would call every sampler bound and disable
+    # auto-wiring outright.
+    return isinstance(value, MediaWithTexture) and not is_default_image(value)
+
+
 class Document:
     """A document: several passes forming a DAG, one of them the output.
 
@@ -360,7 +371,10 @@ class Document:
         # from the plan, never from `_feedback`: that dict is an allocation cache filled on demand
         # during render() and emptied by release/drop/reset_feedback, so a check over it would be
         # False before the first frame and False again the instant a clear runs.
-        return bool(plan_passes(self.graph)[0].feedback)
+        # The EFFECTIVE graph (069 D9): a `u_prev` sampler with no stored edge reads the pass's
+        # own previous frame, so a document wired by name alone has feedback the raw graph cannot
+        # see -- and the Clear canvas button it gates would never appear.
+        return bool(plan_passes(self.effective_graph())[0].feedback)
 
     def reset_feedback(self) -> None:
         """Drop every feedback history, so the next frame starts from black.
@@ -421,6 +435,45 @@ class Document:
             canvas.set_size(live.texture.size)
         return canvas
 
+    def _sampler_names(self, render_pass: Pass) -> list[str]:
+        # Compiled passes only: get_active_uniforms() COMPILES a never-attempted pass (066 D1),
+        # so asking it here would compile the whole document on frame one. The live loop's
+        # first-render sweep is what brings each pass online, one per frame.
+        program = render_pass.program
+        if program is None:
+            return []
+        return [
+            name
+            for name in program
+            if isinstance(program[name], moderngl.Uniform)
+            and getattr(program[name], "gl_type", None) == GL_SAMPLER_2D
+        ]
+
+    def effective_graph(self) -> PassGraph:
+        """`self.graph` with every sampler's effective source filled in (069 D9).
+
+        The planner must see the auto edges or it cannot order the draw, and it cannot detect a
+        cycle a name default creates. Built from COMPILED passes only, so it grows as the sweep
+        brings passes online rather than compiling them to find out.
+        """
+        names = set(self.passes)
+        entries: dict[str, PassEntry] = {}
+        for name, entry in self.graph.passes.items():
+            render_pass = self.passes.get(name)
+            if render_pass is None:
+                entries[name] = entry
+                continue
+            samplers = self._sampler_names(render_pass)
+            bound = [
+                uniform
+                for uniform in samplers
+                if _is_user_bound(render_pass.uniform_values.get(uniform))
+            ]
+            entries[name] = entry.model_copy(
+                update={"inputs": effective_inputs(entry, samplers, names, name, bound)}
+            )
+        return self.graph.with_passes(entries)
+
     def render(
         self,
         u_time: float | None = None,
@@ -438,12 +491,13 @@ class Document:
         """
         if canvas is None and target is None:
             self.first_render_done = True
+        resolved_graph = self.effective_graph()
         resolved = target if target is not None else self.graph.output_pass
         output = self.graph.output_pass
         if resolved is None or resolved not in self.passes:
-            self._graph_errors = plan_passes(self.graph)[1]
+            self._graph_errors = plan_passes(resolved_graph)[1]
             return
-        planned, self._graph_errors = plan_for_output(self.graph, resolved)
+        planned, self._graph_errors = plan_for_output(resolved_graph, resolved)
         order = [name for name in planned if name in self.passes]
         if not order:
             # A cycle, or an output nothing can reach: draw the output alone so a half-built
@@ -460,7 +514,8 @@ class Document:
                 continue
             render_pass.drawn_frame = self._frame
             render_pass.first_render_done = True
-            entry = self.graph.passes.get(name, PassEntry())
+            entry = resolved_graph.passes.get(name, PassEntry())
+            stored_inputs = self.graph.passes.get(name, PassEntry()).inputs
             # The document owns the canvas size, so it applies each pass's scale — a pass cannot
             # size itself from a number it does not hold, and doing it in both places would fight.
             # The OUTPUT keeps full size: it is what the preview and export read.
@@ -480,7 +535,15 @@ class Document:
             for iteration in range(entry.iterations):
                 last = iteration + 1 == entry.iterations
                 draw_into = canvas if (name == output and last) else None
-                inputs: dict[str, moderngl.Texture] = {}
+                inputs: dict[str, moderngl.Texture] = {
+                    # An explicit none (069 D9) is a DECISION that this sampler reads black, and
+                    # `effective_inputs` drops it so the planner never sees a `""` source. Left
+                    # unbound it would fall through to the seeded default photo, which is the
+                    # mis-wire-shows-a-picture failure D3 exists to prevent.
+                    uniform: self._black_texture()
+                    for uniform, source_name in stored_inputs.items()
+                    if source_name == ""
+                }
                 for uniform, source_name in entry.inputs.items():
                     if source_name == name:
                         inputs[uniform] = self._feedback_canvas(name).texture

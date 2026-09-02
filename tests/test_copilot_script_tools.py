@@ -225,6 +225,9 @@ def test_pass_views_marks_driven_only_on_the_pass_that_declares_it() -> None:
             "composite": _fake_pass("composite", [u]),
         },
         graph=types.SimpleNamespace(passes={}, output="composite"),
+        # `_pass_views` reads the effective graph (069 D9), which a real Document derives from
+        # its compiled programs; this stub has no GL, so it hands back an empty wiring.
+        effective_graph=lambda: types.SimpleNamespace(passes={}),
     )
     stub = types.SimpleNamespace(
         _get_script_driven_uniforms=lambda _id: {("paint", "u_wave")},

@@ -22,7 +22,7 @@
 in vec2 vs_uv;
 out vec4 fs_color;
 
-uniform sampler2D u_scene;
+uniform sampler2D u_paint;
 uniform sampler2D u_df;
 uniform sampler2D u_prev;
 uniform float u_pass_iteration;
@@ -41,7 +41,7 @@ vec4 march(vec2 o, vec2 d, float t0, float t1) {
         if (p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0) return vec4(0.0, 0.0, 0.0, 1.0);
         float h = texture(u_df, p).r;
         if (h < 0.0012) {
-            vec4 hit = texture(u_scene, p);
+            vec4 hit = texture(u_paint, p);
             // Solid: emit its colour and STOP. A wall is solid and black, which is how a
             // shadow happens -- the ray is consumed and contributes nothing.
             return vec4(hit.rgb, 1.0);

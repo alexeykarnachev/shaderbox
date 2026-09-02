@@ -208,6 +208,21 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   gone or renamed pass reads black and says nothing, so both verbs rewrite every edge, the output
   choice and the open editor tab together. Revisit if a "no input" state ever needs to be visibly
   distinct from "black input" (then it is an error state, not a default).
+  **An input uniform's NAME is its default wire, and the resolution happens at render time (069
+  D9).** A sampler called `u_<pass>` is filled from the pass called `<pass>` when the graph stores
+  no decision for it; `u_prev` reads the pass's own previous frame, and a name without the `u_`
+  prefix names no pass. One pure function resolves it (`pass_graph.effective_inputs`) and
+  `Document.effective_graph` is the one thing every consumer reads — the renderer, the planner,
+  the strip's order and its stale wash, `has_feedback`, the gear's combo, the copilot's working
+  set — which is
+  what makes "the renderer draws it" and "the strip says it is live" the same claim. What is
+  SAVED stays only what the user DECIDED: an absent key means the name decides, `""` is an
+  explicit none the rule must not undo, a name is that pass. A resolved edge never reaches disk,
+  because it would then be indistinguishable from a chosen one the next time the rule changed.
+  Sampler names come from a pass's COMPILED program, never from `get_active_uniforms()` (that
+  would compile the whole document on frame one and invert 066 D1), and a user-bound texture is
+  never auto-wired. Revisit if a second naming shape is wanted — then the rule is a table, not
+  one function.
 
 - **A pass compiles when something first NEEDS its program — never at load (feature 066).**
   `Document.load_from_dir` builds passes, graph and uniform VALUES with zero compiles (the values

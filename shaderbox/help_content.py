@@ -172,6 +172,11 @@ def help_sections() -> list[HelpSection]:
             key="pass_settings",
             title="Passes",
             body=(
+                "An input uniform is named after the pass it reads: `u_blur` reads the pass "
+                "called `blur`, and the gear fills it in for you. `u_prev` is the one "
+                "exception — it reads this pass's own previous frame. Pick a different source, "
+                "or none, in the gear.\n"
+                "\n"
                 "`smooth` blends between pixels when another pass reads this one — the right "
                 "choice for a blur or an upscale; off gives hard pixel edges.\n"
                 "\n"

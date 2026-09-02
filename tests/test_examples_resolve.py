@@ -36,6 +36,23 @@ def test_examples_resolve_clean() -> None:
         assert not errors, f"{path.parent.name}: {[e.message for e in errors]}"
 
 
+def test_every_example_input_uniform_names_its_source() -> None:
+    # 069 D9: an input uniform is named after the pass it reads (`u_<pass>`), and feedback is
+    # `u_prev`. A shipped example that reintroduces a role name (`u_src`, `u_lit`) teaches the
+    # opposite of what the engine now does, so the examples are the gate.
+    graphs = sorted(DOCUMENT_EXAMPLES_DIR.glob("*/graph.json"))
+    assert graphs, "no shipped example graphs found"
+    for path in graphs:
+        passes = json.loads(path.read_text(encoding="utf-8")).get("passes", {})
+        for consumer, entry in passes.items():
+            for uniform, source in (entry.get("inputs") or {}).items():
+                expected = "u_prev" if source == consumer else f"u_{source}"
+                assert uniform == expected, (
+                    f"{path.parent.name}: {consumer}.{uniform} reads '{source}' but D9 names "
+                    f"it '{expected}'"
+                )
+
+
 def test_shader_lib_api_lock() -> None:
     index = ShaderLibIndex.build(SHADER_LIB_SEED_DIR)
     live = {name: fn.signature for name, fn in sorted(index.functions.items())}

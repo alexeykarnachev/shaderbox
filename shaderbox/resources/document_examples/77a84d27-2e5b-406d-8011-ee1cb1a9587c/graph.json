@@ -14,7 +14,7 @@
         },
         "seed": {
             "inputs": {
-                "u_scene": "paint"
+                "u_paint": "paint"
             },
             "target": {
                 "scale": 1.0,
@@ -51,7 +51,7 @@
         },
         "cascade": {
             "inputs": {
-                "u_scene": "paint",
+                "u_paint": "paint",
                 "u_df": "df",
                 "u_prev": "cascade"
             },
@@ -65,8 +65,8 @@
         },
         "composite": {
             "inputs": {
-                "u_light": "cascade",
-                "u_scene": "paint"
+                "u_cascade": "cascade",
+                "u_paint": "paint"
             },
             "target": {
                 "scale": 1.0,

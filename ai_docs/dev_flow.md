@@ -203,16 +203,21 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   the graph.
 - **`widgets/pass_list.py`** — the Document tab's pass strip (feature 065): one live `preview_cell`
   thumbnail per pass in `plan_passes` topological order, blind to the output choice. A tile click
-  sets the graph OUTPUT and opens that pass in the editor; off-plan tiles wash toward grey. The
+  sets the graph OUTPUT and opens that pass in the editor; off-plan tiles wash toward grey. Both
+  the order and the wash plan `Document.effective_graph()`, never `document.graph` — a pass wired
+  only by its uniform's name has no stored edge, and the raw graph would wash live ancestors and
+  hand the strip sorted-name order. A tile is a picture and a name: the wiring lives in the gear. The
   six verbs of D15 are reachable from the strip (gear overlay / context menu); holds no state of
   its own beyond `App.pass_add`.
 - **`popups/pass_settings.py`** — the pass-settings modal (feature 065), in the `PopupState`
-  mutex: one pass's input wiring (closed-set combos over the document's own pass names), its
+  mutex: one pass's input wiring (closed-set combos over the document's own pass names, plus
+  `auto: <x>` for the name rule's own answer and `(none)` for an explicit black), its
   target controls, and the rename row. Opens from a tile's gear, its context menu, or
   automatically on `add pass` — set-up-once choices live here, off the strip.
 - **`pass_graph.py`** — leaf, GL-free (feature 065): the `graph.json` model (`PassGraph` /
   `PassEntry` / `TargetConfig` / `PassLayout`, edited through `with_passes` / `with_input` /
-  `with_target` / `with_output` rather than `model_copy`) plus the planner — `plan_passes` (topological order,
+  `without_input` / `with_target` / `with_output` rather than `model_copy`), `effective_inputs`
+  (which pass fills each sampler, stored edges and name defaults together) plus the planner — `plan_passes` (topological order,
   cycle detection per pass, feedback marking, unresolved inputs), `evaluation_order` (the passes one
   output actually needs; `plan_for_output` returns that order AND the errors, so a renderer plans
   once per frame) and `assert_plan_invariants` (the draw-once guard both run on every plan). Also

@@ -32,6 +32,20 @@ from shaderbox.ui_models import load_document_from_dir
 from shaderbox.widgets import pass_list
 from shaderbox.widgets.pass_list import _strip_order
 
+_SAMPLER_ON = """#version 460 core
+in vec2 vs_uv;
+uniform sampler2D u_%s;
+out vec4 fs_color;
+void main() { fs_color = texture(u_%s, vs_uv); }
+"""
+
+
+def _sampler_on(source: str) -> str:
+    return _SAMPLER_ON % (source, source)
+
+
+_SAMPLER_ON_A = _sampler_on("a")
+
 _SAMPLER = """#version 460 core
 in vec2 vs_uv;
 uniform sampler2D u_src;
@@ -169,14 +183,23 @@ def test_wiring_is_a_closed_set(app: Any) -> None:
     assert document.graph.passes["sink"].inputs == {}
 
 
-def test_unwiring_is_an_empty_producer(app: Any) -> None:
+def test_unwiring_stores_an_explicit_none_and_unwire_forgets_it(app: Any) -> None:
+    # An empty producer is a DECISION -- this sampler reads black -- and it must survive a
+    # reload, or the name rule (069 D9) re-wires what the user un-wired. `unwire_pass_input` is
+    # the separate verb that returns the sampler to undecided.
     document_id = _document_id(app)
     app.session.add_pass(document_id, "src")
     app.session.add_pass(document_id, "sink")
     app.session.wire_pass_input(document_id, "sink", "u_src", "src")
     assert app.session.wire_pass_input(document_id, "sink", "u_src", "") == ""
     document = app.ui_documents[document_id].document
-    assert document.graph.passes["sink"].inputs == {}
+    assert document.graph.passes["sink"].inputs == {"u_src": ""}
+    assert _reload(app, document_id).document.graph.passes["sink"].inputs == {
+        "u_src": ""
+    }
+
+    assert app.session.unwire_pass_input(document_id, "sink", "u_src") == ""
+    assert app.ui_documents[document_id].document.graph.passes["sink"].inputs == {}
     assert _reload(app, document_id).document.graph.passes["sink"].inputs == {}
 
 
@@ -466,3 +489,80 @@ def test_closing_the_gear_on_a_retired_pass_stays_silent(app: Any) -> None:
     assert pushed == [], pushed
     assert app.popup_state == PopupState.CLOSED
     assert name in app.ui_documents[document_id].document.passes
+
+
+# ----------------------------------------------------------------
+# The strip: what a tile shows, and which graph it plans (069 W-D).
+
+
+def test_the_strip_draws_no_sublines(app: Any, monkeypatch: Any) -> None:
+    # A tile is a picture and a name. The wiring lines were truncated to nothing and the error
+    # line was a second spelling of the border, so both go; the gear carries the wiring.
+    document_id = _document_id(app)
+    app.session.add_pass(document_id, "src")
+    app.session.add_pass(document_id, "sink")
+    app.session.wire_pass_input(document_id, "sink", "u_src", "src")
+
+    captured: list[Any] = []
+    real = pass_list.preview_cell
+
+    def spy(*a: Any, **kw: Any) -> Any:
+        captured.append(kw.get("sublines", ()))
+        return real(*a, **kw)
+
+    monkeypatch.setattr(pass_list, "preview_cell", spy)
+    _imgui_frame(lambda: pass_list.draw(app, document_id, lambda _: None))
+    assert captured and all(subs == () for subs in captured), captured
+
+
+def test_an_auto_wired_ancestor_is_not_washed_stale(app: Any, monkeypatch: Any) -> None:
+    # The wash says "the renderer is not drawing this". Planning the RAW graph makes it lie about
+    # every pass a name default feeds, because a name-wired document has no stored edges at all.
+    document_id = _document_id(app)
+    document = app.ui_documents[document_id].document
+    app.session.rename_pass(document_id, next(iter(document.passes)), "a")
+    app.session.add_pass(document_id, "b")
+    document.passes["b"].release_program(_SAMPLER_ON_A)
+    document.passes["b"].compile()
+    app.session.set_output_pass(document_id, "b")
+    for frame in range(4):
+        document.begin_frame(frame)
+        document.render()
+
+    stale_by_name: dict[str, bool] = {}
+    real = pass_list._draw_pass_tile
+
+    def spy(
+        app_: Any,
+        document_id_: str,
+        name: str,
+        render_pass: Any,
+        open_pass: Any,
+        stale: bool,
+    ) -> None:
+        stale_by_name[name] = stale
+        real(app_, document_id_, name, render_pass, open_pass, stale)
+
+    monkeypatch.setattr(pass_list, "_draw_pass_tile", spy)
+    _imgui_frame(lambda: pass_list.draw(app, document_id, lambda _: None))
+    assert stale_by_name["a"] is False, stale_by_name
+
+
+def test_the_strip_orders_a_name_wired_document_topologically(app: Any) -> None:
+    # The names disagree with alphabetical order in every position, so a sorted-name fallback
+    # (what the raw graph yields on a document with no stored edges) cannot pass by accident.
+    document_id = _document_id(app)
+    document = app.ui_documents[document_id].document
+    app.session.rename_pass(document_id, next(iter(document.passes)), "zeta")
+    app.session.add_pass(document_id, "alpha")
+    app.session.add_pass(document_id, "mid")
+    document.passes["alpha"].release_program(_sampler_on("zeta"))
+    document.passes["alpha"].compile()
+    document.passes["mid"].release_program(_sampler_on("alpha"))
+    document.passes["mid"].compile()
+
+    assert _strip_order(document.passes, document.effective_graph()) == [
+        "zeta",
+        "alpha",
+        "mid",
+    ]

@@ -62,7 +62,9 @@ WORKING SET (your live view)
   one of them the output. When it does, the block shows a `=== PASS <name> (edit as: <id>#<name>) ===`
   sub-section per pass instead of one listing; edit a pass by its own `<id>#<name>` address, and a
   bare `<id>` still means the output pass. A pass's `inputs:` rows say which pass fills each of its
-  samplers — an unfilled one reads BLACK, it is not an error.
+  samplers — an unfilled one reads BLACK, it is not an error. A sampler named `u_<pass>` is
+  filled from that pass automatically, so naming an input after the pass it reads is how you wire
+  it; `u_prev` reads the pass's own previous frame.
 
 EDITING
 - `edit_shader` vs `write_shader`: edit_shader for ANY localized change; write_shader only for a

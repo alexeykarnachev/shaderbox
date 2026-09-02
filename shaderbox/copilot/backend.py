@@ -269,6 +269,20 @@ def _format_uniforms(render_pass: Pass, driven: set[str]) -> list[str]:
     return rows
 
 
+def _input_row(uniform: str, wired: dict[str, str], stored: dict[str, str]) -> str:
+    """One `inputs:` row: which pass fills `uniform`, and why it is black when it is.
+
+    Whether a filled edge was chosen or derived from the name is not the model's business; an
+    EMPTY one is, because "the user chose black" and "nothing decided yet" call for different
+    actions.
+    """
+    if uniform in wired:
+        return f"{uniform} <- {wired[uniform]}"
+    if stored.get(uniform) == "":
+        return f"{uniform} <- (none; reads BLACK)"
+    return f"{uniform} <- (nothing; reads BLACK)"
+
+
 def _sampler_uniform_names(render_pass: Pass) -> list[str]:
     return [
         u.name
@@ -763,15 +777,17 @@ class CopilotBackend:
             return []
         handle = short.get(full_id, full_id)
         driven = self._get_script_driven_uniforms(full_id)
+        # The EFFECTIVE graph (069 D9): a sampler the name rule fills has no stored edge, and
+        # telling the model it reads BLACK while the renderer fills it is a false fact.
+        resolved = document.effective_graph()
         views: list[PassView] = []
         for name in sorted(document.passes):
             render_pass = document.passes[name]
-            entry = document.graph.passes.get(name)
-            wired = entry.inputs if entry is not None else {}
+            effective = resolved.passes.get(name)
+            wired = effective.inputs if effective is not None else {}
+            stored = document.graph.passes.get(name)
             inputs = [
-                f"{uniform} <- {wired[uniform]}"
-                if uniform in wired
-                else f"{uniform} <- (nothing; reads BLACK)"
+                _input_row(uniform, wired, stored.inputs if stored is not None else {})
                 for uniform in _sampler_uniform_names(render_pass)
             ]
             views.append(

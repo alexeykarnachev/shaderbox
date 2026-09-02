@@ -25,6 +25,7 @@ Two rules the rest of the engine leans on:
   `evaluation_order` runs it on the path that actually draws.
 """
 
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -174,15 +175,26 @@ class PassGraph(BaseModel):
         return self.model_copy(update=update)
 
     def with_input(self, consumer: str, uniform: str, producer: str) -> "PassGraph":
-        """Fill `consumer`'s `uniform` from `producer`, or unwire it when `producer` is empty."""
+        """Fill `consumer`'s `uniform` from `producer`, or store an explicit none when empty.
+
+        `""` is a DECISION, not an absence: `effective_inputs` fills an absent key from the
+        uniform's name (069 D9) and must not undo a user who chose nothing. `without_input`
+        is how a key goes back to undecided.
+        """
         entry = self.passes.get(consumer, PassEntry())
-        inputs = dict(entry.inputs)
-        if producer:
-            inputs[uniform] = producer
-        else:
-            inputs.pop(uniform, None)
+        inputs = {**entry.inputs, uniform: producer}
         # model_copy, never a field-by-field rebuild: an entry gains fields (`iterations`, 068),
         # and a constructor call here silently resets every one it does not name.
+        return self.with_passes(
+            {**self.passes, consumer: entry.model_copy(update={"inputs": inputs})}
+        )
+
+    def without_input(self, consumer: str, uniform: str) -> "PassGraph":
+        """Forget `consumer`'s decision about `uniform`, so the name rule decides again."""
+        entry = self.passes.get(consumer, PassEntry())
+        if uniform not in entry.inputs:
+            return self
+        inputs = {u: src for u, src in entry.inputs.items() if u != uniform}
         return self.with_passes(
             {**self.passes, consumer: entry.model_copy(update={"inputs": inputs})}
         )
@@ -208,6 +220,61 @@ class PassGraph(BaseModel):
         if len(self.passes) == 1:
             return next(iter(self.passes))
         return None
+
+
+_AUTO_PREFIX = "u_"
+_FEEDBACK_UNIFORM = "u_prev"
+
+
+def _auto_source(uniform: str, consumer: str) -> str:
+    """The pass `uniform`'s NAME points at, or `""` when the name says nothing (069 D9).
+
+    `u_prev` reads the consumer itself -- the feedback exception D9 writes down, which wins over
+    a sibling pass that happens to be called `prev`. A name without the `u_` prefix names no
+    pass: D9's rule is about `u_<pass>`, and a bare `tex` is outside it.
+    """
+    if uniform == _FEEDBACK_UNIFORM:
+        return consumer
+    if not uniform.startswith(_AUTO_PREFIX):
+        return ""
+    return uniform[len(_AUTO_PREFIX) :]
+
+
+def effective_inputs(
+    entry: PassEntry,
+    samplers: Sequence[str],
+    passes: Collection[str],
+    consumer: str = "",
+    bound: Collection[str] = (),
+) -> dict[str, str]:
+    """Which pass fills each of `consumer`'s samplers, stored edges and name defaults together.
+
+    Three states per sampler, and they are distinct on purpose:
+
+    - a name in `entry.inputs` -> that pass, when it exists (a stale name is left in place; the
+      planner reports it as unresolved and the renderer binds black);
+    - `""` in `entry.inputs`   -> nothing, explicitly. The user picked "(none)" and the default
+      rule must not undo it;
+    - no key at all            -> undecided, so the NAME decides: `u_<x>` fills from pass `<x>`
+      when a pass called `<x>` exists, and `u_prev` from `consumer` itself.
+
+    A sampler named in `bound` never auto-wires: its value is a texture the user bound, and the
+    name rule would silently replace it.
+
+    Every stored edge is carried through whether or not `samplers` names it: `samplers` comes
+    from a COMPILED program, and a pass that has not compiled yet must not lose the wiring
+    `graph.json` holds for it.
+
+    GL-free: `samplers` are NAMES, so nothing here compiles, binds or touches a context.
+    """
+    resolved = {u: src for u, src in entry.inputs.items() if src}
+    for uniform in samplers:
+        if uniform in entry.inputs or uniform in bound:
+            continue
+        source = _auto_source(uniform, consumer)
+        if source and source in passes:
+            resolved[uniform] = source
+    return resolved
 
 
 @dataclass(frozen=True)

@@ -4,6 +4,9 @@ The graph is edited as a LIST, not a canvas — a spatial editor is a separate f
 to open that pass in the editor; its wiring and target live in the pass-settings modal
 (`popups/pass_settings.py`), reached from the tile's gear, its context menu, or automatically on
 `add pass` — set-up-once choices don't get an always-open block of panel space.
+
+A tile is a picture and a name, nothing else: the wiring lines it used to carry were ellipsized to
+nothing at this width, and the error line was a second spelling of the red border already drawn.
 """
 
 from collections.abc import Callable, Iterable
@@ -12,7 +15,7 @@ from imgui_bundle import imgui
 
 from shaderbox.app import App
 from shaderbox.core import Pass
-from shaderbox.pass_graph import PassEntry, PassGraph, evaluation_order, plan_passes
+from shaderbox.pass_graph import PassGraph, evaluation_order, plan_passes
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_primitives import (
     context_menu_style,
@@ -97,14 +100,6 @@ def _draw_pass_tile(
         if imgui.is_item_hovered():
             imgui.set_tooltip("Pass settings")
 
-    # The wiring reads INSIDE the card, under the title — not as a hover tooltip. A tile-wide
-    # tooltip fires whenever the pointer is anywhere over the tile, including on the gear and
-    # the delete-X, so it covered the tooltips those buttons wanted to show.
-    wired = document.graph.passes.get(name, PassEntry()).inputs
-    sublines = [f"{uniform} <- {src}" for uniform, src in sorted(wired.items())]
-    if errors:
-        sublines.append("has compile errors")
-
     result = preview_cell(
         id_=f"pass_{name}",
         cell_w=float(SIZE.PASS_THUMB),
@@ -114,7 +109,6 @@ def _draw_pass_tile(
         armed=app.pass_delete_armed == name,
         border_color=border,
         footer=name,
-        sublines=sublines,
         overlay=_settings_overlay,
         stale=stale,
     )
@@ -154,15 +148,19 @@ def draw(app: App, document_id: str, open_pass: Callable[[str], None]) -> None:
     # `or {output}` mirrors the renderer's cycle fallback: with no plannable order it still
     # draws the output alone, so the output tile must not dim.
     output = document.graph.output
+    # The EFFECTIVE graph, not `document.graph`: a pass wired only by its uniform's name (069 D9)
+    # has no stored edge, so planning the raw graph would wash live ancestors grey and hand the
+    # strip sorted-name order instead of a topological one.
+    resolved = document.effective_graph()
     live = (
-        set(evaluation_order(document.graph, output)) or {output}
+        set(evaluation_order(resolved, output)) or {output}
         if output in document.passes
         else set(document.passes)
     )
     avail = imgui.get_content_region_avail().x
     step = float(SIZE.PASS_THUMB) + float(SPACE.MD)
     per_row = max(1, int(avail // step))
-    for i, name in enumerate(_strip_order(document.passes, document.graph)):
+    for i, name in enumerate(_strip_order(document.passes, resolved)):
         if i % per_row:
             imgui.same_line(spacing=float(SPACE.MD))
         _draw_pass_tile(

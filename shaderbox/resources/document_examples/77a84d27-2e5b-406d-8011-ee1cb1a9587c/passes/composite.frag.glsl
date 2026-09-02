@@ -10,16 +10,16 @@
 in vec2 vs_uv;
 out vec4 fs_color;
 
-uniform sampler2D u_light;
-uniform sampler2D u_scene;
+uniform sampler2D u_cascade;
+uniform sampler2D u_paint;
 uniform float u_exposure = 0.35;  // slider: brighter or dimmer overall
 
 void main() {
-    vec3 light = texture(u_light, vs_uv).rgb * u_exposure;
+    vec3 light = texture(u_cascade, vs_uv).rgb * u_exposure;
     // Reinhard: light/(1+light) maps any brightness into 0-1 without clipping the highlights
     // to flat white, which matters because emitters here are far above 1.
     vec3 mapped = light / (1.0 + light);
-    vec4 scene = texture(u_scene, vs_uv);
+    vec4 scene = texture(u_paint, vs_uv);
     // A solid texel draws itself: an emitter its colour, a wall its black. Without this the
     // walls would be lit by the light in front of them and stop reading as occluders.
     vec3 rgb = mix(mapped, scene.rgb / (1.0 + scene.rgb), scene.a);

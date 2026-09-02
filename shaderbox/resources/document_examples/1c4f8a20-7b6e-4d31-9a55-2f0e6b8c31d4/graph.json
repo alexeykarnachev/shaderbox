@@ -13,7 +13,7 @@
         },
         "bright": {
             "inputs": {
-                "u_src": "scene"
+                "u_scene": "scene"
             },
             "target": {
                 "scale": 0.5,
@@ -24,7 +24,7 @@
         },
         "blur": {
             "inputs": {
-                "u_src": "bright"
+                "u_bright": "bright"
             },
             "target": {
                 "scale": 0.5,
@@ -35,7 +35,7 @@
         },
         "trail": {
             "inputs": {
-                "u_src": "scene",
+                "u_scene": "scene",
                 "u_prev": "trail"
             },
             "target": {
@@ -47,8 +47,8 @@
         },
         "composite": {
             "inputs": {
-                "u_lit": "scene",
-                "u_glow": "blur",
+                "u_scene": "scene",
+                "u_blur": "blur",
                 "u_trail": "trail"
             },
             "target": {

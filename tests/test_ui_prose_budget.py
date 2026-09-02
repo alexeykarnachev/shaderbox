@@ -235,7 +235,7 @@ _UNMEASURABLE: dict[tuple[str, str], str] = {
         "shaderbox/widgets/document_grid.py",
         "draw_document_preview_button",
     ): "the document's own name",
-    ("shaderbox/widgets/pass_list.py", "_draw_pass_tile"): "the pass's name and wiring",
+    ("shaderbox/widgets/pass_list.py", "_draw_pass_tile"): "the pass's own name",
     ("shaderbox/widgets/uniform.py", "uniform_name_label"): "the uniform's own name",
     ("shaderbox/widgets/uniform.py", "draw_ui_uniform"): "the uniform's live value",
 }
