@@ -1,12 +1,12 @@
 #version 460 core
 
-// PASS 2 of 4 — the bright pass. Keeps only what is brighter than a threshold, so the blur
+// PASS 2 of 4 -- the bright pass. Keeps only what is brighter than a threshold, so the blur
 // downstream smears the highlights rather than the whole image. Its target is HALF size
 // (scale 0.5 in the pass panel), which is both cheaper and a wider blur for the same radius.
 
 in vec2 vs_uv;
 
-// Filled by `scene` — see the pass list's inputs, or graph.json. An unfilled input reads black.
+// Filled by `scene` -- see the pass list's inputs, or graph.json. An unfilled input reads black.
 uniform sampler2D u_src;
 
 uniform float u_threshold = 0.75;

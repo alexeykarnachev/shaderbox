@@ -263,7 +263,7 @@ float step_caption(int i, vec2 p) {
 }
 
 void main() {
-    vec2 tp = flame_space(vs_uv, u_aspect); // text space (UNscaled — captions stay put)
+    vec2 tp = flame_space(vs_uv, u_aspect); // text space (UNscaled -- captions stay put)
     vec2 p = tp * max(u_scale, 0.01);       // flame space (global shrink applies here)
     float t = u_time;
 
@@ -296,7 +296,7 @@ void main() {
     // Step 4: cross-fade greyscale heat into the temperature ramp (colour).
     color = mix(color, fire_ramp(heat), w4);
 
-    // (Step 5 already folded into `heat` via w5 — the shape starts moving/fraying.)
+    // (Step 5 already folded into `heat` via w5 -- the shape starts moving/fraying.)
 
     // Step 6+7: add the glow (step 6), which begins to breathe once flicker is in (7).
     color += round_glow(p, n, light) * w6;
@@ -306,7 +306,7 @@ void main() {
     color += vec3(1.0, 0.85, 0.6) * smoothstep(0.8, 1.05, heat) * 0.35 * w8;
 
     // Step 9: the depth layer behind the flame fades in. It reads as a second flame
-    // further back, so it must appear ONLY where the front flame body isn't — added
+    // further back, so it must appear ONLY where the front flame body isn't -- added
     // into the surrounding dark, never subtracted from the already-built front.
     vec2 bp = vec2(p.x * 1.12 + 0.16, p.y * 1.05 + 0.05);
     float bn = interior_field(bp, t + 7.3);

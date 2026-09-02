@@ -227,7 +227,7 @@ vec3 window_light_color(float r) {
     else               return u_win_cool_color;
 }
 
-// pure emissive light from a lit window (0 outside the glass) — wall is drawn separately.
+// pure emissive light from a lit window (0 outside the glass) -- wall is drawn separately.
 vec3 draw_window(vec2 uv, vec2 size, vec3 light_color, bool has_curtains) {
     vec2 p = 0.5 * (uv * 2.0 - 1.0);
     bool is_inside = (abs(p.x) <= 0.5 * size.x) && (abs(p.y) <= 0.5 * size.y);
@@ -245,7 +245,7 @@ vec3 draw_window(vec2 uv, vec2 size, vec3 light_color, bool has_curtains) {
     return color;
 }
 
-// textured concrete wall — varied per building (bldg_seed), gentle so it doesn't stand out.
+// textured concrete wall -- varied per building (bldg_seed), gentle so it doesn't stand out.
 vec3 wall_color(vec2 facade_uv, vec2 bldg_seed) {
     float bh = hash(vec3(bldg_seed, 5.0));
     vec3 base = mix(u_wall_grey_lo, u_wall_grey_hi, bh);

@@ -1,7 +1,7 @@
 import math
 import re
 import webbrowser
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 
@@ -948,6 +948,7 @@ def preview_cell(
     border_color: tuple[float, float, float, float] | None = None,
     bg_color: tuple[float, float, float, float] | None = None,
     footer: str = "",
+    sublines: Sequence[str] = (),
     overlay: Callable[[float], None] | None = None,
     nav_flatten: bool = False,
     stale: bool = False,
@@ -968,8 +969,13 @@ def preview_cell(
     `stale` marks a texture that is no longer being rendered — the image washes toward grey
     (desaturated, not darkened) and the footer dims, so a frozen picture cannot be read as a
     live one.
+
+    `sublines` are dim detail lines under the footer, each ellipsized to the cell width. They
+    are part of the card rather than a hover tooltip: a tooltip on the tile competes with the
+    tooltips its own overlay buttons want to show.
     """
-    footer_h: float = imgui.get_text_line_height_with_spacing() if footer else 0.0
+    line_h: float = imgui.get_text_line_height_with_spacing()
+    footer_h: float = (line_h if footer else 0.0) + line_h * len(sublines)
     cell_h: float = cell_w + footer_h
     result = PreviewCellResult()
     n_styles = 0
@@ -1039,6 +1045,12 @@ def preview_cell(
                 imgui.text_colored(COLOR.FG_DIM, label)
             else:
                 imgui.text(label)
+        for i, sub in enumerate(sublines):
+            text: str = _ellipsize(sub, avail.x)
+            sw = imgui.calc_text_size(text)
+            sy: float = origin.y + img_h + (line_h if footer else 0.0) + line_h * i
+            imgui.set_cursor_screen_pos((origin.x + (avail.x - sw.x) / 2, sy))
+            imgui.text_colored(COLOR.FG_DIM, text)
 
         if selected and armed:
             choice: bool | None = cell_delete_confirm(

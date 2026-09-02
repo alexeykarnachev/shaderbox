@@ -1,6 +1,6 @@
 #version 460 core
 
-// PASS 1 of 4 — the scene. Three orbiting blobs on a dark ground, written to this pass's own
+// PASS 1 of 4 -- the scene. Three orbiting blobs on a dark ground, written to this pass's own
 // render target. Nothing here knows about the passes downstream; they read this target by name.
 
 in vec2 vs_uv;

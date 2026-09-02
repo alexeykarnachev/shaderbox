@@ -1,6 +1,6 @@
 #version 460 core
 
-// PASS 3 of 4 — the blur. A 13-tap Gaussian in ONE pass for clarity; a separable
+// PASS 3 of 4 -- the blur. A 13-tap Gaussian in ONE pass for clarity; a separable
 // horizontal+vertical pair would be two passes and cheaper, which is a good exercise: add a
 // pass, wire it in between, and watch the cost drop with the look unchanged.
 

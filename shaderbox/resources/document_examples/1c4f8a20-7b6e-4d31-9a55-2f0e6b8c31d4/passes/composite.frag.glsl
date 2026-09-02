@@ -1,6 +1,6 @@
 #version 460 core
 
-// PASS 4 of 4 — the output. Adds the three upstream targets and tonemaps once, at the end. This
+// PASS 4 of 4 -- the output. Adds the three upstream targets and tonemaps once, at the end. This
 // is the pass the preview and the export show; the others exist only to feed it.
 
 in vec2 vs_uv;

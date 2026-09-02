@@ -97,6 +97,14 @@ def _draw_pass_tile(
         if imgui.is_item_hovered():
             imgui.set_tooltip("Pass settings — what it reads, what it draws into")
 
+    # The wiring reads INSIDE the card, under the title — not as a hover tooltip. A tile-wide
+    # tooltip fires whenever the pointer is anywhere over the tile, including on the gear and
+    # the delete-X, so it covered the tooltips those buttons wanted to show.
+    wired = document.graph.passes.get(name, PassEntry()).inputs
+    sublines = [f"{uniform} <- {src}" for uniform, src in sorted(wired.items())]
+    if errors:
+        sublines.append("has compile errors")
+
     result = preview_cell(
         id_=f"pass_{name}",
         cell_w=float(SIZE.PASS_THUMB),
@@ -106,16 +114,10 @@ def _draw_pass_tile(
         armed=app.pass_delete_armed == name,
         border_color=border,
         footer=name,
+        sublines=sublines,
         overlay=_settings_overlay,
         stale=stale,
     )
-    if imgui.is_item_hovered():
-        wired = document.graph.passes.get(name, PassEntry()).inputs
-        lines = [name]
-        lines += [f"{uniform} <- {src}" for uniform, src in sorted(wired.items())]
-        if errors:
-            lines.append("has compile errors")
-        imgui.set_tooltip("\n".join(lines))
     _draw_context_menu(app, document_id, name)
 
     if result.clicked:

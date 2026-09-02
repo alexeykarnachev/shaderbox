@@ -20,6 +20,6 @@ float SB_op_smooth_union(float a, float b, float k) {
 /// Round/dilate: grow the shape outward by r (r < 0 shrinks).
 float SB_op_round(float d, float r) { return d - r; }
 
-/// Onion: the concentric shell of half-thickness t, as an SDF — the way to draw
+/// Onion: the concentric shell of half-thickness t, as an SDF -- the way to draw
 /// an outline / contour / ring / annulus: SB_fill_aa(SB_op_onion(d, t)).
 float SB_op_onion(float d, float t) { return abs(d) - t; }

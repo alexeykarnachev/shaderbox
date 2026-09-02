@@ -9,14 +9,14 @@ vec2 SB_hash22(vec2 p) {
                           dot(p, vec2(269.5, 183.3)))) * 43758.5453123);
 }
 
-/// Triangle wave in [0,1], period 1 — a folded sawtooth for symmetric ramps
+/// Triangle wave in [0,1], period 1 -- a folded sawtooth for symmetric ramps
 /// (flicker, seams) without the cost of sin.
 float SB_tri_wave(float x) {
     return abs(fract(x) * 2.0 - 1.0);
 }
 
 /// Fractal Brownian motion in [0,1]: `octaves` of SB_value_noise summed at
-/// doubling frequency + halving amplitude — the base cloud/terrain/marble field.
+/// doubling frequency + halving amplitude -- the base cloud/terrain/marble field.
 /// SCALE the input (p*4..16 over centered uv) like SB_value_noise. octaves 4..6
 /// typical (capped at 8). Animate by scrolling p over time along the flow axis.
 float SB_fbm(vec2 p, int octaves) {
@@ -37,7 +37,7 @@ float SB_fbm(vec2 p, int octaves) {
 /// twice so the field CURLS into flame/smoke/marble/liquid structure instead of
 /// soft isotropic clouds. THE single biggest "reads as alive" lever for organic
 /// and fluid effects. Returns [0,1]; scale the input like SB_fbm. Heavy (fbm x5)
-/// — reach for it deliberately.
+/// -- reach for it deliberately.
 float SB_domain_warp(vec2 p, int octaves) {
     vec2 q = vec2(SB_fbm(p, octaves),
                   SB_fbm(p + vec2(5.2, 1.3), octaves));

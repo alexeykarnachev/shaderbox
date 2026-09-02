@@ -500,10 +500,10 @@ class App:
             CommandId.TOGGLE_COPILOT: self.toggle_copilot,
             CommandId.CYCLE_COPILOT_LAYOUT: self.cycle_copilot_layout,
             CommandId.OPEN_SHADER: lambda: self.ensure_shader_tab(
-                self.current_document_id
+                self.current_document_id, focus_editor=True
             ),
             CommandId.OPEN_SCRIPT: lambda: self.open_script_for(
-                self.current_document_id
+                self.current_document_id, focus_editor=True
             ),
             CommandId.CYCLE_CODE_TAB: self.cycle_code_tab,
             CommandId.CLOSE_CODE_TAB: self.close_active_tab,
@@ -1133,7 +1133,7 @@ class App:
             return None
         return self.editor_tabs[self.active_tab_index]
 
-    def _focus_or_add_tab(self, tab: EditorTab) -> None:
+    def _focus_or_add_tab(self, tab: EditorTab, focus_editor: bool = False) -> None:
         # Focus the tab with this path if already open, else append + focus it. Path is the tab's
         # identity (one tab per file), so reopening an open file just re-focuses it.
         for i, existing in enumerate(self.editor_tabs):
@@ -1145,6 +1145,15 @@ class App:
             self.active_tab_index = len(self.editor_tabs) - 1
         self.tab_select_pending = True
         self.editor_was_ever_focused = False
+        if focus_editor:
+            # The user ASKED for the editor (a keyboard command, an `open` button). Route through
+            # the region so the nav model agrees with where the keys now go; a popup open at the
+            # time is handled by reconcile_popup_focus on its close.
+            if not self.any_popup_open():
+                self._set_region(ActiveRegion.EDITOR)
+            else:
+                self.editor_focus_requested = True
+            return
         # Summoning a tab must not move keyboard focus: when a non-editor region
         # owns focus, yield the editor back to it. Skipped while a popup is open — the region latch's
         # set_next_window_focus would force-close the modal (/imgui-ui section 8) — and the
@@ -1152,7 +1161,9 @@ class App:
         if self.active_region != ActiveRegion.EDITOR and not self.any_popup_open():
             self._yield_editor_to_region()
 
-    def ensure_shader_tab(self, document_id: str, pass_name: str = "") -> None:
+    def ensure_shader_tab(
+        self, document_id: str, pass_name: str = "", focus_editor: bool = False
+    ) -> None:
         # On document-select: focus (or open) a pass's shader tab so selecting a document shows a
         # shader, the pre-045 default. Other open tabs (scripts / libs / other documents' passes)
         # stay. `pass_name` empty means the OUTPUT pass, which is what a document opens on.
@@ -1163,7 +1174,8 @@ class App:
         self._focus_or_add_tab(
             EditorTab(
                 path=render_pass.source.path, kind="shader", document_id=document_id
-            )
+            ),
+            focus_editor=focus_editor,
         )
 
     def set_active_tab(self, index: int) -> None:
@@ -1219,7 +1231,7 @@ class App:
         self._focus_or_add_tab(EditorTab(path=source.path, kind="lib"))
         return session
 
-    def open_script_for(self, document_id: str) -> None:
+    def open_script_for(self, document_id: str, focus_editor: bool = False) -> None:
         # Open the document's `script.py` in a tab, lazily creating it if absent (048 — one script per
         # document). The next reload_scripts binds it. Frozen mid-copilot-turn (a write races the reload).
         if self.copilot_turn_active:
@@ -1236,7 +1248,8 @@ class App:
             return
         self.get_session(ShaderSource.load(path))
         self._focus_or_add_tab(
-            EditorTab(path=path, kind="script", document_id=document_id)
+            EditorTab(path=path, kind="script", document_id=document_id),
+            focus_editor=focus_editor,
         )
 
     def get_session(self, source: ShaderSource) -> EditorSession:

@@ -166,7 +166,7 @@ _UPDATE_DOC = (
     '        """Compute this frame\'s uniform values.\n'
     "\n"
     "        Return a dict mapping uniform NAME -> value. A uniform you return is DRIVEN by the\n"
-    "        script (it PLAYS); a uniform you omit (or map to None) stays MANUAL — you edit it by\n"
+    "        script (it PLAYS); a uniform you omit (or map to None) stays MANUAL -- you edit it by\n"
     "        hand in the panel. Stop a playing uniform (its row's stop button, or just drag it) to\n"
     "        edit it by hand without deleting it from the dict.\n"
     "\n"
@@ -182,7 +182,7 @@ _UPDATE_DOC = (
     '        """\n'
 )
 _INIT_DOC = (
-    '        """Set up state (runs ONCE — at app start, before the first render, and on'
+    '        """Set up state (runs ONCE -- at app start, before the first render, and on'
     ' reload)."""\n'
 )
 

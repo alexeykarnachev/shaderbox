@@ -4,7 +4,7 @@ float SB_hash21(vec2 p) {
 }
 
 /// Bilinear value noise in [0,1]; feature size = 1 unit, so SCALE the input
-/// (SB_value_noise(p * 8.0) — over centered uv try x4..x16, else it looks flat).
+/// (SB_value_noise(p * 8.0) -- over centered uv try x4..x16, else it looks flat).
 float SB_value_noise(vec2 p) {
     vec2 i = floor(p);
     vec2 f = fract(p);

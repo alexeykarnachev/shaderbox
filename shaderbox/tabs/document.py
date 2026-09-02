@@ -224,11 +224,12 @@ def _draw_entry_points(app: App) -> None:
 
     imgui.dummy((0, float(SPACE.MD)))
     imgui.begin_disabled(app.copilot_turn_active)
-    small_caption(app.font_12, "Entry points")
 
+    # ONE row, no section caption: a document has exactly one script (048), so a heading over a
+    # single control said the word twice and cost a line the panel could not spare.
     _entry_row_label(script_active, "Script")
     open_tooltip = (
-        "Document script error — click to open and fix"
+        "Document script error -- click to open and fix"
         if error
         else "Open the document script (drives many uniforms)"
         if present
@@ -236,7 +237,7 @@ def _draw_entry_points(app: App) -> None:
     )
     open_color = COLOR.STATE_ERROR if error else COLOR.FG_SECONDARY
     if ghost_button("open##entry_script", text_color=open_color):
-        app.open_script_for(document_id)
+        app.open_script_for(document_id, focus_editor=True)
     if imgui.is_item_hovered():
         imgui.set_tooltip(open_tooltip)
     if present:
