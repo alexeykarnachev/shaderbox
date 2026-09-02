@@ -35,13 +35,12 @@ from shaderbox.tabs import render as render_tab
 from shaderbox.tabs import share as share_tab
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_primitives import (
-    active_region_outline,
     fps_overlay,
     item_normalized_mouse,
     rendering_overlay,
     toggle_button,
 )
-from shaderbox.ui_regions import ActiveRegion, DocumentTab
+from shaderbox.ui_regions import DocumentTab
 from shaderbox.util import adjust_size
 from shaderbox.watch import maybe_rebuild_lib_index, reload_document_if_changed
 from shaderbox.widgets import cheatsheet, copilot_chat
@@ -400,19 +399,6 @@ def update_and_draw(app: App) -> None:
                 ed_pos = imgui.get_window_pos()
                 ed_size = imgui.get_window_size()
                 app.editor_rect = (ed_pos.x, ed_pos.y, ed_size.x, ed_size.y)
-                # Adopt EDITOR as the active region from live focus (App.region_derive_allowed
-                # owns the "is this legal now" guard — chord move / chat focus).
-                if (
-                    imgui.is_window_focused(imgui.FocusedFlags_.child_windows)
-                    and app.region_derive_allowed()
-                ):
-                    app.active_region = ActiveRegion.EDITOR
-                # The editor is a focus-stop, not a sticky region: its outline tracks LIVE focus
-                # (incl. a pending chord-move into it, matching the unfocused-dim in code.py) so
-                # clicking the render canvas dims AND un-outlines it, not leaving a stale outline.
-                editor_lit = app.editor_focused or app.editor_focus_requested
-                if editor_lit and app.region_outline_visible(ActiveRegion.EDITOR):
-                    active_region_outline()
                 code_tab.draw(app)
 
             _draw_copilot_bar(app, editor_width)
@@ -731,12 +717,6 @@ _NODE_TABS: list[tuple[str, DocumentTab, Callable[[App], None]]] = [
 
 
 def _draw_document_settings(app: App) -> None:
-    panel_active = app.active_region == ActiveRegion.PANEL
-    # Consume region_focus_pending only when this region is active — clearing it
-    # unconditionally would eat a request the grid set later this same frame.
-    focus_panel = app.region_focus_pending and panel_active
-    if focus_panel:
-        app.region_focus_pending = False
     # Capture the jump target NOW — the loop rewrites active_document_tab from the visible tab,
     # which would clobber the target before set_selected reads it (takes effect next frame).
     tab_select_target = (
@@ -744,41 +724,30 @@ def _draw_document_settings(app: App) -> None:
     )
     app.document_tab_select_pending = False
 
-    if focus_panel:
-        imgui.set_next_window_focus()
-    panel_flags = (
-        imgui.WindowFlags_.none if panel_active else imgui.WindowFlags_.no_nav_inputs
-    )
-    with imgui_ctx.begin_child(
-        "document_settings",
-        child_flags=imgui.ChildFlags_.borders,
-        window_flags=panel_flags,
+    with (
+        imgui_ctx.begin_child(
+            "document_settings",
+            child_flags=imgui.ChildFlags_.borders,
+            window_flags=imgui.WindowFlags_.no_nav_inputs,
+        ),
+        imgui_ctx.begin_tab_bar("document_settings_tabs") as bar,
     ):
-        # Adopt PANEL as the active region from live focus. See the editor pane.
-        if (
-            imgui.is_window_focused(imgui.FocusedFlags_.child_windows)
-            and app.region_derive_allowed()
-        ):
-            app.active_region = ActiveRegion.PANEL
-        if app.region_outline_visible(ActiveRegion.PANEL):
-            active_region_outline()
-        with imgui_ctx.begin_tab_bar("document_settings_tabs") as bar:
-            if bar:
-                visible_tab = app.active_document_tab
-                for label, tab_id, draw_tab in _NODE_TABS:
-                    # set_selected drives the tab the frame after a Ctrl+digit jump.
-                    flags = (
-                        imgui.TabItemFlags_.set_selected
-                        if tab_select_target == tab_id
-                        else imgui.TabItemFlags_.none
-                    )
-                    with imgui_ctx.begin_tab_item(label, flags=flags) as tab:
-                        if tab:
-                            visible_tab = tab_id
-                            draw_tab(app)
-                # Commit the visible tab after the loop so the mid-loop write can't
-                # clobber the jump target read above.
-                app.active_document_tab = visible_tab
+        if bar:
+            visible_tab = app.active_document_tab
+            for label, tab_id, draw_tab in _NODE_TABS:
+                # set_selected drives the tab the frame after a Ctrl+digit jump.
+                flags = (
+                    imgui.TabItemFlags_.set_selected
+                    if tab_select_target == tab_id
+                    else imgui.TabItemFlags_.none
+                )
+                with imgui_ctx.begin_tab_item(label, flags=flags) as tab:
+                    if tab:
+                        visible_tab = tab_id
+                        draw_tab(app)
+            # Commit the visible tab after the loop so the mid-loop write can't
+            # clobber the jump target read above.
+            app.active_document_tab = visible_tab
 
 
 def main() -> None:

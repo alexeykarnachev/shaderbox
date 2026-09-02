@@ -201,6 +201,7 @@ class EditorSettings(BaseModel):
     # widget, because a hand-edited or half-written file reaches the loader without passing
     # any widget — and a per-key salvage turns an out-of-range value into "that one setting
     # resets", instead of a value the UI could never have produced.
+    keymap: Literal["vim", "standard"] = "vim"
     show_whitespace: bool = False
     show_line_numbers: bool = True
     show_matching_brackets: bool = True
@@ -229,8 +230,7 @@ class UIAppState(BaseModel):
     copilot_input_h: float = Field(default=48.0, ge=0.0)
 
     # Persisted UI layout prefs (the App holds the live copies; synced at load/save).
-    # NOT active_region / copilot_focused — those are transient-by-design (focus on
-    # launch is a separate UX decision; see todo.md feature-019 deferral).
+    # NOT copilot_focused — that one is transient-by-design.
     active_document_tab: DocumentTab = DocumentTab.DOCUMENT
     is_copilot_open: bool = False
     copilot_layout: CopilotLayout = CopilotLayout.CORNER

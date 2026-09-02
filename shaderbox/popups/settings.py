@@ -1,4 +1,5 @@
 from enum import StrEnum
+from typing import Literal
 
 from imgui_bundle import imgui
 
@@ -47,6 +48,7 @@ class SettingsField(StrEnum):
 
 
 _LABEL = "Settings##popup"
+_KEYMAPS: tuple[Literal["vim", "standard"], ...] = ("vim", "standard")
 
 
 def draw_settings(app: App) -> None:
@@ -97,6 +99,11 @@ def _draw_body(app: App) -> bool:
     )[1]
 
     imgui.dummy((0.0, SPACE.SM))
+    label_row(app.font_12, "Keymap", ctrl_w, label_w)
+    keymap_idx = _KEYMAPS.index(settings.keymap)
+    changed, keymap_idx = imgui.combo("##keymap", keymap_idx, list(_KEYMAPS))
+    if changed:
+        settings.keymap = _KEYMAPS[keymap_idx]
     label_row(app.font_12, "Font size", ctrl_w, label_w)
     settings.font_size = imgui.drag_int(
         "##font_size",

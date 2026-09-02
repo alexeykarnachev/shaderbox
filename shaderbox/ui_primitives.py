@@ -11,37 +11,6 @@ from loguru import logger
 
 from shaderbox.theme import COLOR, OVERLAY_ALPHA, SIZE, SPACE, fade
 
-_REGION_OUTLINE_THICKNESS: float = 2.0
-
-
-def active_region_outline(foreground: bool = False) -> None:
-    """Stroke the accent around the CURRENT window (the active-region / focused cue).
-    Call from INSIDE the window — reads its own rect (`get_item_rect_*` after `end` can
-    report a collapsed rect).
-
-    Default (`foreground=False`): the child's OWN window draw list, which is clipped to the
-    content region — fine for the borderless region children (content == full rect), and it
-    z-orders beneath any later floating window so it can't punch through.
-
-    `foreground=True`: the foreground draw list, for a TOP-MOST window WITH a title bar (the
-    copilot chat) — the content clip would cut the title-bar row off the outline, and being
-    topmost it has nothing above it to leak over (a modal is gated by the caller)."""
-    pos = imgui.get_window_pos()
-    size = imgui.get_window_size()
-    inset = _REGION_OUTLINE_THICKNESS
-    style = imgui.get_style()
-    rounding = style.window_rounding if foreground else style.child_rounding
-    dl = (
-        imgui.get_foreground_draw_list() if foreground else imgui.get_window_draw_list()
-    )
-    dl.add_rect(
-        (pos.x + inset, pos.y + inset),
-        (pos.x + size.x - inset, pos.y + size.y - inset),
-        imgui.color_convert_float4_to_u32(COLOR.ACCENT_PRIMARY),
-        rounding=rounding,
-        thickness=_REGION_OUTLINE_THICKNESS,
-    )
-
 
 def _ellipsize(text: str, max_width: float) -> str:
     if imgui.calc_text_size(text).x <= max_width:
@@ -510,16 +479,11 @@ def labeled_combo(
 
 def focus_field(should_focus: bool) -> None:
     """Direct keyboard focus + scroll-into-view to the NEXT-submitted item when
-    `should_focus`. Call immediately before the widget. Focusing routes through the
-    nav system, so the accent nav-cursor outline lands on the field exactly as arrow-nav
-    does (/imgui-ui §8). `set_nav_cursor_visible(True)` is required: the MOUSE click that
-    triggered this (the gate's "Open Settings") auto-HIDES the nav cursor, so without it the
-    focus is set but no outline draws — invisible on a button (a text input still shows its
-    caret). The caller owns the one-shot: pass True only on the frame the request should fire."""
+    `should_focus`. Call immediately before the widget. The caller owns the one-shot: pass
+    True only on the frame the request should fire."""
     if should_focus:
         imgui.set_keyboard_focus_here()
         imgui.set_scroll_here_y()
-        imgui.set_nav_cursor_visible(True)
 
 
 def unconnected_gate(
@@ -950,7 +914,6 @@ def preview_cell(
     footer: str = "",
     sublines: Sequence[str] = (),
     overlay: Callable[[float], None] | None = None,
-    nav_flatten: bool = False,
     stale: bool = False,
 ) -> PreviewCellResult:
     """A bordered preview tile: a `cell_w`-wide square image + whole-cell click
@@ -961,10 +924,6 @@ def preview_cell(
     shown alongside the delete-✕ only while `selected` and not `armed`. The whole tile
     is its own child window so the overlays' absolute cursor moves can't perturb the
     parent (no jitter / SetCursorPos assert).
-
-    `nav_flatten` lets keyboard-nav cross the per-tile child border so a grid traverses
-    as one ring; the click target is a `selectable` (a nav stop, unlike an
-    `invisible_button`) with a transparent fill so the image/border carries the visual.
 
     `stale` marks a texture that is no longer being rendered — the image washes toward grey
     (desaturated, not darkened) and the footer dims, so a frozen picture cannot be read as a
@@ -985,13 +944,10 @@ def preview_cell(
     if bg_color is not None:
         imgui.push_style_color(imgui.Col_.child_bg, bg_color)
         n_styles += 1
-    child_flags = imgui.ChildFlags_.borders
-    if nav_flatten:
-        child_flags |= imgui.ChildFlags_.nav_flattened
     with imgui_ctx.begin_child(
         f"##preview_cell_{id_}",
         size=imgui.ImVec2(cell_w, cell_h),
-        child_flags=child_flags,
+        child_flags=imgui.ChildFlags_.borders,
         window_flags=imgui.WindowFlags_.no_scrollbar
         | imgui.WindowFlags_.no_scroll_with_mouse,
     ):
@@ -1022,8 +978,8 @@ def preview_cell(
                     imgui.color_convert_float4_to_u32(COLOR.STALE_WASH),
                 )
 
-        # selectable (not invisible_button) so keyboard-nav can land on the cell;
-        # transparent fill; allow_overlap so the buttons drawn on top win the click.
+        # allow_overlap so the buttons drawn on top win the click; the transparent
+        # header colours leave the image/border carrying the visual.
         imgui.push_style_color(imgui.Col_.header, COLOR.TRANSPARENT)
         imgui.push_style_color(imgui.Col_.header_hovered, COLOR.TRANSPARENT)
         imgui.push_style_color(imgui.Col_.header_active, COLOR.TRANSPARENT)

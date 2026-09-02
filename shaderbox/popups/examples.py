@@ -98,7 +98,6 @@ def _draw_grid(app: App) -> str:
             ui_document_example,
             border,
             preview_size,
-            nav_flatten=True,
             # An example still queued for its first render (066 D2) has nothing drawn yet.
             stale=not ui_document_example.document.first_render_done,
         ).clicked:

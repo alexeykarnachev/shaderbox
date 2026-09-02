@@ -13,7 +13,6 @@ from typing import Any
 
 from shaderbox.paths import pass_shader_name
 from shaderbox.tabs.code import tab_label
-from shaderbox.ui_regions import ActiveRegion
 
 _GREEN = """#version 460 core
 in vec2 vs_uv;
@@ -170,28 +169,21 @@ def test_a_script_tab_is_unaffected_by_the_pass_count(app: Any) -> None:
     assert tab_label(app, app.active_tab).endswith("(script)")
 
 
-def test_a_summon_from_a_non_editor_region_yields_the_editor_back(app: Any) -> None:
-    # The tab's TextEditor auto-grabs keyboard focus on its FIRST render, so a tile click moved
-    # focus into the code field only when the tab had never rendered — an inconsistency. The
-    # summoner yields the editor back to whichever non-editor region owns focus.
+def test_a_summon_does_not_focus_the_editor(app: Any) -> None:
     document_id = _two_pass(app)
-    app.active_region = ActiveRegion.PANEL
-    app.editor_defocus_requested = False
-    app.region_focus_pending = False
+    app.editor_focus_requested = False
     app.ensure_shader_tab(document_id, "second")
-    assert app.editor_defocus_requested and app.region_focus_pending, (
-        "the summoned tab's first render will steal the panel's focus"
+    assert not app.editor_focus_requested, (
+        "summoning a tab must not move keyboard focus; only an explicit "
+        "focus_editor=True does"
     )
 
 
-def test_a_summon_from_the_editor_region_keeps_editor_focus(app: Any) -> None:
+def test_an_explicit_focus_request_focuses_the_editor(app: Any) -> None:
     document_id = _two_pass(app)
-    app.active_region = ActiveRegion.EDITOR
-    app.editor_defocus_requested = False
-    app.ensure_shader_tab(document_id, "second")
-    assert not app.editor_defocus_requested, (
-        "a summon while editing must not kick the user out of the editor"
-    )
+    app.editor_focus_requested = False
+    app.ensure_shader_tab(document_id, "second", focus_editor=True)
+    assert app.editor_focus_requested
 
 
 def test_pass_for_tab_matches_by_path_not_output(app: Any) -> None:

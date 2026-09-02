@@ -306,9 +306,9 @@ class YouTubeExporter(Exporter):
         #   key, not connected -> Client loaded + Connect + Clear (no Load)
         #   connected          -> just status + Disconnect (below)
         if not connected_now and not have_key:
-            # The credential is loaded via a file pick, not typed — so a focus request lands the
-            # nav outline on the primary Load button (not the hidden paste box). focus_field
-            # (one-shot) is owned by the caller via the `focus` flag.
+            # The credential is loaded via a file pick, not typed — so a focus request lands
+            # on the primary Load button, not the hidden paste box. focus_field (one-shot) is
+            # owned by the caller via the `focus` flag.
             focus_field(focus)
             if primary_button("Load client_secret.json..."):
                 self._pick_client_secret()

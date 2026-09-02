@@ -113,6 +113,8 @@ requirement that follows: modal bindings must not collide with the global hotkey
    `editor_defocus_requested` / `editor_was_ever_focused` keep their meanings. The child
    gets `no_nav_inputs | no_scrollbar | no_scroll_with_mouse`. The TextEditor
    first-render-focus-grab quirk disappears.
+   *(069 W-E: app-wide nav is off, so `no_nav_inputs` here now suppresses Tab
+   traversal rather than confining a region.)*
 8. **Clipboard: Ctrl+C/X/V host-wired, UNIFIED with the editor's unnamed register**
    (editor commit 4befeaf gave the keymap one register — dd/yy/x/cw write it, p/P paste
    it). One slot, never two clipboards that disagree: the drain syncs OS→register before
@@ -148,7 +150,9 @@ requirement that follows: modal bindings must not collide with the global hotkey
     flag`, `tab_size → ed_set_tab_width`, `line_spacing → ed_set_line_spacing`.
     **`font_size` is NOT a mapping:** it reaches the editor only as `ed_layout`'s
     `px_per_em` through the render path, and takes effect via the redraw-gate tuple —
-    the settings funnel is no longer its application point. Language:
+    the settings funnel is no longer its application point.
+    *(069 W-E adds a sixth, `keymap → ed_set_style`, which must run FIRST: it replaces
+    the whole chrome with the style's defaults, discarding any chrome flag set before it.)* Language:
     `ed_language_for_path`, falling back to GLSL when unknown (host policy per the
     editor's feature 004).
 12. **Copilot lock: `ed_set_read_only` per frame** from `copilot_turn_active`.
@@ -201,7 +205,10 @@ requirement that follows: modal bindings must not collide with the global hotkey
     Ctrl+N/P/J/H as line/left motions, Ctrl+R/O) do the vim motion or nothing.
     The FULL reserved set is `_VIM_RESERVED_CHORDS` = d u f b e y r o w n p h j,
     with ONE carve-out: NORMAL-mode Ctrl+W falls through to CLOSE_CODE_TAB (vim's
-    own normal Ctrl+W is only a window prefix and no windows exist). Ex commands
+    own normal Ctrl+W is only a window prefix and no windows exist).
+    *(069 W-E: `_handle_vim_chord` is now `_handle_reserved_chord` and the set is
+    `_RESERVED_CHORDS`, keyed by `EditorSettings.keymap` — `o` out, `m` in, standard's
+    half empty — and a test asserts it against the vendored `vim_coverage.md`.)* Ex commands
     whose object is the FILE arrive via `ed_take_host_command` (editor c5fabc8;
     parser-validated, force+arg included): `:w` saves through `App.save` — the one
     funnel with the copilot busy gate and a real DISK write (a memory-only flush

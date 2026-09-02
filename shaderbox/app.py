@@ -35,6 +35,7 @@ from shaderbox.core import Canvas, Pass
 from shaderbox.editor.ffi import (
     ChromeFlag,
     Editor,
+    Style,
     ViewFlag,
     language_for_path,
 )
@@ -73,17 +74,10 @@ from shaderbox.ui_models import (
     UIDocumentState,
     load_document_from_dir,
 )
-from shaderbox.ui_regions import ActiveRegion, DocumentTab
+from shaderbox.ui_regions import DocumentTab
 from shaderbox.util import (
     open_in_file_manager,
     pfd_block,
-)
-
-# Region-cycle order for the keyboard-nav command.
-_REGION_CYCLE: tuple[ActiveRegion, ...] = (
-    ActiveRegion.EDITOR,
-    ActiveRegion.GRID,
-    ActiveRegion.PANEL,
 )
 
 
@@ -199,19 +193,12 @@ class App:
         # rather than imgui's slower built-in (275ms / 20/s) — held-backspace feels native.
         imgui.get_io().key_repeat_delay = 0.5
         imgui.get_io().key_repeat_rate = 0.03
-        # App-wide keyboard navigation. Confined per-region via no_nav_inputs in ui.py.
-        imgui.get_io().config_flags |= imgui.ConfigFlags_.nav_enable_keyboard
-        # Esc must NOT clear the nav highlight: by default Esc steps the nav cursor out one
-        # window-containment level per press (cell -> grid -> control_panel -> main),
-        # reading as "the border climbs the hierarchy". Keep it pinned; region/widget
-        # changes are driven by our chords.
-        imgui.get_io().config_nav_escape_clear_focus_item = False
         apply_theme(imgui.get_style())
         self.window = window
         self.imgui_renderer = GlfwRenderer(window)
-        # imgui #8059: keyboard-nav cancel climbs the child-window hierarchy with a
-        # highlight on Esc, no clean off-switch in this binding. Our glfw key callback
-        # sits in front of the renderer's and swallows Esc when it has no app job.
+        # Our glfw key callback sits in front of the renderer's: it keeps Esc away from
+        # imgui while the editor is focused (the keymap owns the modal key) and swallows an
+        # Esc with no app job.
         self._install_escape_filter()
 
         # glfw cursors driven directly — imgui cursors are no-op in this backend (conventions.md ## Known quirks)
@@ -374,14 +361,9 @@ class App:
         # A settings-field key (see popups.settings.SettingsField) to expand + focus when the
         # Settings modal next opens; "" = none. Consumed one-shot by the field's focus_field call.
         self.settings_focus: str = ""
-        # Which of the three regions owns nav. Transient (reset each launch). Start on the
-        # grid (the initial editor_defocus_requested below keeps the editor unfocused).
-        self.active_region: ActiveRegion = ActiveRegion.GRID
         self.active_document_tab: DocumentTab = DocumentTab.DOCUMENT
-        # One-shots: a region-switch / tab-jump requested this frame. The owning draw fn
-        # latches focus (set_next_window_focus) / drives the tab (set_selected), then clears
-        # the flag. Start pending so the grid grabs focus on the first frame.
-        self.region_focus_pending: bool = True
+        # One-shot: a tab-jump requested this frame. The panel's draw fn drives the tab
+        # (set_selected), then clears the flag.
         self.document_tab_select_pending: bool = False
         self.emoji_picker_query: str = ""
         # Where a picked emoji is delivered (set by whoever opens the picker).
@@ -522,7 +504,6 @@ class App:
             CommandId.QUIT: self.request_quit,
             CommandId.JUMP_NEXT_ERROR: self.jump_to_next_error,
             CommandId.TOGGLE_CHEATSHEET: self.toggle_cheatsheet,
-            CommandId.CYCLE_REGION: self.cycle_region,
             CommandId.FOCUS_TAB_DOCUMENT: lambda: self.focus_document_tab(
                 DocumentTab.DOCUMENT
             ),
@@ -780,10 +761,6 @@ class App:
             return True
         return False
 
-    def cycle_region(self) -> None:
-        idx = _REGION_CYCLE.index(self.active_region)
-        self._set_region(_REGION_CYCLE[(idx + 1) % len(_REGION_CYCLE)])
-
     def cycle_code_tab(self) -> None:
         # Forward-only cycle through the open editor tabs (set_active_tab drives imgui's
         # selection via tab_select_pending). No-op with 0/1 tabs.
@@ -801,59 +778,8 @@ class App:
     def focus_document_tab(self, tab: DocumentTab) -> None:
         self.active_document_tab = tab
         self.document_tab_select_pending = True
-        self._set_region(ActiveRegion.PANEL)
-
-    def focus_move_in_flight(self) -> bool:
-        # A chord-driven region focus move hasn't landed yet (the latch takes effect a frame
-        # later). While in flight the live-focus derive of active_region must NOT run — focus
-        # still reads the OLD region for a frame, reverting the chord's target and breaking
-        # cycling. Mouse-click changes have no pending flag, so the derive corrects them.
-        return self.region_focus_pending or self.editor_focus_requested
-
-    def region_derive_allowed(self) -> bool:
-        # May a region adopt itself as active_region from its OWN live focus this frame? No during
-        # a chord move (focus reads the old region for a frame — would revert the chord), and no
-        # while the floating chat owns focus (a separate window, not a region). The region still
-        # ANDs its own is_window_focused; this is the shared "is the derive legal now" guard, so
-        # ui.py / document_grid.py don't each name copilot_focused.
-        return not self.focus_move_in_flight() and not self.copilot_focused
-
-    def region_outline_visible(self, region: ActiveRegion) -> bool:
-        # The active-region nav cue shows only for the region that owns focus right now: the
-        # sticky active_region, BUT suppressed when a modal or the floating chat has focus
-        # instead (each draws its own cue — a stale region outline alongside it reads as two
-        # "active" windows). Regions call this; the focus-owner policy stays here.
-        return (
-            self.active_region == region
-            and not self.any_popup_open()
-            and not self.copilot_focused
-        )
-
-    def _yield_editor_to_region(self) -> None:
-        # Defocus the editor + re-latch the
-        # currently-active non-editor region. The pair used both when leaving the editor via a
-        # chord and when a document switch re-renders the editor under a grid that owns focus.
-        self.editor_defocus_requested = True
-        self.region_focus_pending = True
-
-    def _set_region(self, region: ActiveRegion) -> None:
-        # Editor uses its own focus machinery (the editor_focus_requested latch,
-        # consumed in ui.py); the other regions latch via set_next_window_focus in
-        # their draw fn.
-        leaving_editor = (
-            self.active_region == ActiveRegion.EDITOR and region != ActiveRegion.EDITOR
-        )
-        self.active_region = region
-        if region == ActiveRegion.EDITOR:
-            self.editor_focus_requested = True
-        elif leaving_editor:
-            self._yield_editor_to_region()
-        else:
-            self.region_focus_pending = True
 
     def select_document(self, document_id: str) -> None:
-        # The summoned tab cannot steal the grid's focus: _focus_or_add_tab yields the editor
-        # back to any non-editor region that owns focus.
         if self._copilot_busy_blocked("Switching documents"):
             return
         self.set_current_document_id(document_id)
@@ -1170,7 +1096,6 @@ class App:
         if first_run:
             self.open_examples()
         # Restore persisted layout prefs into the live attrs (save() mirrors them back).
-        # active_region stays transient.
         self.active_document_tab = self.app_state.active_document_tab
         self.is_copilot_open = self.app_state.is_copilot_open
         if self.is_copilot_open:
@@ -1235,20 +1160,7 @@ class App:
         self.tab_select_pending = True
         self.editor_was_ever_focused = False
         if focus_editor:
-            # The user ASKED for the editor (a keyboard command, an `open` button). Route through
-            # the region so the nav model agrees with where the keys now go; a popup open at the
-            # time is handled by reconcile_popup_focus on its close.
-            if not self.any_popup_open():
-                self._set_region(ActiveRegion.EDITOR)
-            else:
-                self.editor_focus_requested = True
-            return
-        # Summoning a tab must not move keyboard focus: when a non-editor region
-        # owns focus, yield the editor back to it. Skipped while a popup is open — the region latch's
-        # set_next_window_focus would force-close the modal (/imgui-ui section 8) — and the
-        # popup's own close hands focus back via reconcile_popup_focus.
-        if self.active_region != ActiveRegion.EDITOR and not self.any_popup_open():
-            self._yield_editor_to_region()
+            self.editor_focus_requested = True
 
     def ensure_shader_tab(
         self, document_id: str, pass_name: str = "", focus_editor: bool = False
@@ -1382,9 +1294,12 @@ class App:
         return self.get_session_for_path(path)
 
     def _apply_editor_settings_to(self, editor: Editor) -> None:
-        # Five settings flow through here; font_size does NOT — it reaches the
+        # Every editor setting but font_size flows through here; font_size reaches the
         # editor only as ed_layout's px_per_em via the render path (feature 067).
         settings: EditorSettings = self.app_state.editor_settings
+        # First: set_style replaces the whole chrome with that style's defaults, so a
+        # set_chrome_flag before it would be discarded.
+        editor.set_style(Style.VIM if settings.keymap == "vim" else Style.STANDARD)
         editor.set_show_whitespace(settings.show_whitespace)
         editor.set_chrome_flag(ChromeFlag.LINE_NUMBERS, settings.show_line_numbers)
         editor.set_view_flag(

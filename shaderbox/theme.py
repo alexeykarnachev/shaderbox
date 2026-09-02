@@ -199,13 +199,13 @@ COLOR = _ColorBag()
 _accent_primaries: set[tuple[float, float, float, float]] = {
     primary for primary, _active, _alpha in _ACCENTS.values()
 }
-# SELECT's outline nests inside accent-outlined regions, so it must differ from every
+# SELECT outlines a tile inside an accent-chromed panel, so it must differ from every
 # accent primary AND every state hue. State colors are status TEXT, not nested
 # outlines, so they may share an accent hue.
 assert COLOR.SELECT not in _accent_primaries, (
     f"theme invariant: SELECT={COLOR.SELECT} collides with an accent preset's "
     f"primary — pick a hue no accent uses, or the selection outline merges with the "
-    f"active-region accent outline when that accent is selected."
+    f"accent chrome around the panel it sits in."
 )
 assert COLOR.SELECT not in {
     COLOR.STATE_OK,

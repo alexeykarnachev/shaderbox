@@ -169,6 +169,7 @@ def _drain_app(editor: Editor, focused: bool = True, popup: bool = False) -> Any
         save=lambda: None,
         flush_current_editor=None,
         notifications=SimpleNamespace(push=lambda *_a, **_k: None),
+        app_state=SimpleNamespace(editor_settings=SimpleNamespace(keymap="vim")),
         editor_tabs=[],
         active_tab_index=0,
         close_tab=lambda _i: None,
@@ -330,14 +331,18 @@ def test_ctrl_f_b_move_cursor_and_e_y_request_view_scroll() -> None:
     e.close()
 
 
-def test_ctrl_o_is_consumed_noop_while_focused() -> None:
+def test_ctrl_o_reaches_the_app_while_focused() -> None:
+    # 069 W-E: Ctrl+O is in NEITHER keymap's chord list, so the ownership rule gives it to
+    # OPEN_PROJECT in all three states; the host consuming it would be inventing a binding.
     e = _editor()
     app = _drain_app(e)
     app.editor_key_events = [_ctrl("o")]
     _drain_editor_input(app)
     assert e.get_text() == "one\ntwo\nthree\n"
-    assert (int(imgui.Key.o) | int(imgui.Key.mod_ctrl)) in app.editor_consumed_chords, (
-        "the jump-back reflex must not open the project dialog"
+    assert (
+        int(imgui.Key.o) | int(imgui.Key.mod_ctrl)
+    ) not in app.editor_consumed_chords, (
+        "Ctrl+O belongs to no keymap; the host must not swallow it"
     )
     e.close()
 

@@ -1,18 +1,10 @@
-"""The two keyboard/navigation enums shared by the command registry, the persisted UI state and
-the draw layer. A leaf on purpose: `ActiveRegion` and `DocumentTab` are plain names with no imgui in
-them, and `ui_models.py` persists `active_document_tab` — so keeping them beside the imgui-evaluating
+"""The settings-panel tab enum shared by the command registry, the persisted UI state and the
+draw layer. A leaf on purpose: `DocumentTab` is a plain name with no imgui in it, and
+`ui_models.py` persists `active_document_tab` — so keeping it beside the imgui-evaluating
 command table would drag imgui into the headless model layer (`commands.py` builds `K = imgui.Key`
 at module scope, so importing it really does load the library)."""
 
 from enum import StrEnum, auto
-
-
-class ActiveRegion(StrEnum):
-    # The three keyboard-nav focus regions; CYCLE_REGION moves between them and
-    # nav operates within the focused one.
-    EDITOR = auto()
-    GRID = auto()
-    PANEL = auto()
 
 
 class DocumentTab(StrEnum):

@@ -156,6 +156,26 @@ def test_out_of_range_editor_settings_reset_only_themselves(tmp_path: Path) -> N
     assert state.global_target_fps == 144
 
 
+def test_an_unknown_keymap_resets_only_the_keymap(tmp_path: Path) -> None:
+    state = UIAppState.load(
+        _write(
+            tmp_path,
+            {
+                **_POPULATED,
+                "editor_settings": {
+                    "keymap": "emacs",
+                    "font_size": 22,
+                    "tab_size": 8,
+                },
+            },
+        )
+    )
+    assert state.editor_settings.keymap == "vim"
+    assert state.editor_settings.font_size == 22
+    assert state.editor_settings.tab_size == 8
+    assert state.current_document_id == "abc-123"
+
+
 def test_a_bad_nested_value_does_not_cost_the_block_around_it() -> None:
     # drop_invalid validates a nested block AS A WHOLE, so without descending into it first,
     # one malformed row takes every sibling with it — here, the real bot token sitting beside

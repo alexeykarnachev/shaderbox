@@ -59,21 +59,23 @@ def _drain_editor_input(app: App) -> None:
             # Esc is vim's modal key — the editor owns it UNCONDITIONALLY while
             # focused (maintainer decision, 067 manual pass); the glfw filter
             # already keeps the press away from imgui. Defocus lives on
-            # CYCLE_REGION and the mouse, never on Esc.
+            # the mouse, never on Esc.
             editor.key(KeyCode.ESCAPE)
             continue
         if _handle_clipboard(app, editor, event):
             continue
         consumed = editor.key(event.code, event.mods, event.text)
-        if not consumed and _handle_vim_chord(app, editor, event):
+        if not consumed and _handle_reserved_chord(app, editor, event):
             continue
         if consumed and event.imgui_chord:
             app.editor_consumed_chords.add(event.imgui_chord)
-            # An insert-mode Ctrl+N is the deliberate completion ask — the keymap
+            # An insert-mode Ctrl+N is the deliberate completion ask — the vim keymap
             # consumes it but opens nothing (host_completion); code.draw offers.
             # Only when the popup is CLOSED: with it open the keymap advances the
             # selection itself (editor 3f3a11b), and queuing an offer here would
-            # re-push the list and reset that selection to zero on every press.
+            # re-push the list and reset that selection to zero on every press. The
+            # closed-popup conjunct is also what self-gates standard, whose own Ctrl+N
+            # opens the popup on the same frame — no keymap check needed.
             if (
                 event.text == "n"
                 and event.mods == KeyMod.CTRL
@@ -125,17 +127,19 @@ def _serve_host_command(app: App, session: EditorSession) -> None:
             app.close_tab(app.active_tab_index)
 
 
-# Vim-reserved Ctrl chords while the editor is focused: each either does the vim
-# thing or nothing — NEVER an app command. FALLBACK ONLY: runs after ed_key
-# returned unconsumed, so the day the keymap grows a real Ctrl+D motion (with
-# cursor semantics — asked for), the host approximation yields automatically.
-# Scroll steps are in visible rows; the app half of each chord (DELETE_DOCUMENT on
-# Ctrl+D, OPEN_SHADER on Ctrl+E, OPEN_PROJECT on Ctrl+O) stays reachable unfocused.
-# The full reserved set: the six scrolls + redo + jumplist + word/line kills +
-# completion nav + left/down. NORMAL-mode Ctrl+W is the one deliberate carve-out
-# (see _handle_vim_chord). The app half of every reserved chord stays reachable
-# while the editor is unfocused.
-_VIM_RESERVED_CHORDS: frozenset[str] = frozenset("dufbeyrownphj")
+# The HOST's approximation half, per keymap — NOT the keymap's chord list. FALLBACK
+# ONLY: runs after ed_key returned unconsumed, so the day the keymap grows a real
+# Ctrl+D motion the host approximation yields automatically. The keymap's own list is
+# the vendored doc (shaderbox/resources/editor/), which tests/test_keymap_disjoint.py
+# asserts this is a subset of, `w` excepted: Ctrl+W is in neither keymap and is here
+# because the HOST implements insert-mode word-delete (_delete_word_back), with
+# NORMAL-mode Ctrl+W falling through to CLOSE_CODE_TAB (see _handle_reserved_chord).
+_RESERVED_CHORDS: dict[str, frozenset[str]] = {
+    "vim": frozenset("dufbeyrwnphjm"),
+    # Standard consumes every chord it owns inside ed_key and returns false for the
+    # rest, so the host approximates nothing.
+    "standard": frozenset(),
+}
 
 _WORD_CHARS: str = "_"
 
@@ -165,11 +169,12 @@ def _delete_word_back(editor: Editor) -> None:
     editor.delete_range((pos.line, i), (pos.line, pos.column))
 
 
-def _handle_vim_chord(app: App, editor: Editor, event: KeyEvent) -> bool:
+def _handle_reserved_chord(app: App, editor: Editor, event: KeyEvent) -> bool:
     if event.code != KeyCode.CHAR or event.mods != KeyMod.CTRL:
         return False
+    keymap = app.app_state.editor_settings.keymap
     ch = event.text
-    if ch not in _VIM_RESERVED_CHORDS:
+    if ch not in _RESERVED_CHORDS[keymap]:
         return False
     mode = editor.get_mode()
     insert = mode == Mode.INSERT
@@ -196,8 +201,8 @@ def _handle_vim_chord(app: App, editor: Editor, event: KeyEvent) -> bool:
             editor.key(KeyCode.BACKSPACE)
         elif ch == "j":
             editor.key(KeyCode.ENTER)
-        # d/f/b/e/y/r/o/n: vim meanings we don't implement — consume-noop so no
-        # app command fires mid-typing (Ctrl+R = OPEN_SCRIPT was reachable here).
+        # d/f/b/e/y/r/n/m: vim meanings we don't implement — consume-noop so no
+        # app command fires mid-typing.
     else:
         # NORMAL/VISUAL, unconsumed by the keymap. The six scrolls are keymap
         # motions in BOTH modes as of editor 3f3a11b (visual extends the
@@ -208,7 +213,7 @@ def _handle_vim_chord(app: App, editor: Editor, event: KeyEvent) -> bool:
             editor.key(KeyCode.UP)
         elif ch == "h":
             editor.key(KeyCode.LEFT)
-        # r (visual), o: consume-noop, so no app command fires.
+        # r (visual), m: consume-noop, so no app command fires.
     if event.imgui_chord:
         app.editor_consumed_chords.add(event.imgui_chord)
     return True

@@ -6,10 +6,8 @@ from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_models import UIDocument
 from shaderbox.ui_primitives import (
     PreviewCellResult,
-    active_region_outline,
     preview_cell,
 )
-from shaderbox.ui_regions import ActiveRegion
 
 
 def draw_document_preview_button(
@@ -18,7 +16,6 @@ def draw_document_preview_button(
     size: float,
     selected: bool = False,
     armed: bool = False,
-    nav_flatten: bool = False,
     stale: bool = False,
 ) -> PreviewCellResult:
     return preview_cell(
@@ -30,34 +27,17 @@ def draw_document_preview_button(
         armed=armed,
         border_color=border_color,
         footer=ui_document.ui_state.ui_name,
-        nav_flatten=nav_flatten,
         stale=stale,
     )
 
 
 def draw_document_preview_grid(app: App, width: float, height: float) -> None:
-    grid_active = app.active_region == ActiveRegion.GRID
-    # Consume (read + clear) the grid's own focus latch — see _draw_document_settings.
-    if app.region_focus_pending and grid_active:
-        imgui.set_next_window_focus()
-        app.region_focus_pending = False
-    grid_flags = (
-        imgui.WindowFlags_.none if grid_active else imgui.WindowFlags_.no_nav_inputs
-    )
     with imgui_ctx.begin_child(
         "document_preview_grid",
         size=imgui.ImVec2(width, height),
         child_flags=imgui.ChildFlags_.borders,
-        window_flags=grid_flags,
+        window_flags=imgui.WindowFlags_.no_nav_inputs,
     ):
-        # Adopt GRID as the active region from live focus. See the editor pane in ui.py.
-        if (
-            imgui.is_window_focused(imgui.FocusedFlags_.child_windows)
-            and app.region_derive_allowed()
-        ):
-            app.active_region = ActiveRegion.GRID
-        if app.region_outline_visible(ActiveRegion.GRID):
-            active_region_outline()
         # Document create/switch/delete are frozen while a copilot turn runs (§15 A); disable the
         # affordances so the freeze is visible (the verbs also hard-refuse, for non-grid paths).
         imgui.begin_disabled(app.copilot_turn_active)
@@ -99,7 +79,6 @@ def draw_document_preview_grid(app: App, width: float, height: float) -> None:
                 preview_size,
                 selected=id == app.current_document_id,
                 armed=app.document_delete_armed == id,
-                nav_flatten=True,
                 # Mirrors the render gate in ui.py: with "Render all" off, a non-current
                 # document stops ticking and its texture is a photograph of the past — and a
                 # document still waiting for its first render (066 D2) has none at all.

@@ -251,12 +251,11 @@ def draw(app: App) -> None:
         document_ui_state.uniform_sort_desc,
     )
 
-    # nav_flattened: Tab/arrows reach the sliders without an Enter/Esc window boundary.
     # auto_resize_y: the child grows to its content so the WHOLE tab scrolls as one surface —
     # a fixed-size child here put a scrollbar on just the uniforms pane.
     with imgui_ctx.begin_child(
         "ui_uniforms",
-        child_flags=imgui.ChildFlags_.nav_flattened | imgui.ChildFlags_.auto_resize_y,
+        child_flags=imgui.ChildFlags_.auto_resize_y,
     ):
         for hash in sorted_hashes:
             draw_ui_uniform(app, ui_uniforms[hash])

@@ -20,7 +20,6 @@ from shaderbox.copilot.tools.registry import ToolRegistry
 from shaderbox.popups.settings import SettingsField
 from shaderbox.theme import COLOR, SIZE, SPACE, fade
 from shaderbox.ui_primitives import (
-    active_region_outline,
     caption_text,
     copy_icon_button,
     danger_button,
@@ -43,8 +42,8 @@ from shaderbox.util import open_in_file_manager
 
 # Floating top-level window (NOT a tab/region), drawn after the main window so it floats on
 # top. no_nav_focus keeps it out of Ctrl+Tab (does NOT block click-to-focus); no_collapse
-# stops it collapsing into an unrecoverable title-bar strip. no_nav_inputs stops the nav
-# outline on the programmatically-focused input (still typeable; /imgui-ui §8).
+# stops it collapsing into an unrecoverable title-bar strip. no_nav_inputs stops Tab
+# traversing to the input, which imgui runs regardless of nav_enable_keyboard.
 # no_move is layout-conditional (added in _apply_layout): the fixed presets force pos+size
 # every frame so no_move just stops a drag fighting the snap; FREE must stay draggable.
 _WINDOW_FLAGS = (
@@ -144,11 +143,6 @@ def draw(app: App) -> None:
             imgui.set_window_focus(None)
             app.copilot_defocus_requested = False
             app.copilot_focused = False
-        # Focus outline on the foreground list so it covers the title bar (the content clip
-        # would cut it). Skipped under a modal — foreground would render over the popup.
-        if app.copilot_focused and not app.any_popup_open():
-            active_region_outline(foreground=True)
-
         _draw_top_bar(app)
 
         if not app.integrations_store.copilot.openrouter_key:

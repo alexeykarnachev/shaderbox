@@ -340,21 +340,12 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   only; `update()` runs *before* imgui draws, for GL/canvas/mtime work outside the frame body. Tab
   state goes on `App` directly; a state-only sibling module (e.g. `tabs/share_state.py`) may hold
   its dataclass to keep `app.py` import-cycle-free. Revisit when a 4th tab module exists.
-- **App-wide keyboard nav is region-confined (`nav_enable_keyboard` ON).** imgui nav is scoped to the
-  one focused region via `WindowFlags_.no_nav_inputs` on the *inactive* region `begin_child`s; a
-  caret-owning pane (the code editor) carries it *permanently* (it's a focus stop, not a nav surface).
-  So a new top-level focusable region MUST flag itself `no_nav_inputs` when not the active region, and
-  a new caret/text-edit pane MUST carry it always — else nav leaks across borders or fights the caret.
-  Region focus moves via `set_next_window_focus()` before the target `begin_child` (the
-  `set_window_focus(name)` overload segfaults — `/imgui-ui` skill §8). Mechanics + the
-  clean-vs-flat-chain fallback: `ai_docs/features/019_keyboard_navigation.md`. Revisit if a region is
-  added/removed or the confinement model changes.
 - **Color roles are SWAPPABLE accent vs FIXED semantic; fixed hues must not collide with any accent
   preset.** `theme.py`: `_P` (palette, the only home for literal colors) → `_ACCENTS` (presets; the one
   user-chosen "active/interactive" hue, rewritten by `apply_theme`) → `_ColorBag` role tokens (each
   maps to a `_P` entry, never a literal). A role is swappable (`ACCENT_*`) or fixed (`SELECT` /
   `STATE_*` / `TAG` / ...). The fixed role whose cue shares spatial context with the accent — `SELECT`
-  (its outline nests inside the accent's region outline) — MUST use a hue no accent preset and no state
+  (its outline nests inside the accent-chromed panel it sits in) — MUST use a hue no accent preset and no state
   color uses, or the two cues merge under some accent. Enforced by an import-time assertion in
   `theme.py`. A new theme supplies its own `_P` + `_ACCENTS` + role mapping; the assertion validates
   the `SELECT` choice. Revisit if a new fixed role gains accent-adjacent *outline* context (add it to
@@ -372,7 +363,8 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   a separate bool — non-modal, coexists with any modal. No popup classes. Revisit if a popup grows
   internal state that doesn't belong on `App`.
 - **Inline editor state lives on `App`; disk is the source of truth; one libeditor instance per
-  opened FILE.** The code editor is the maintainer's own vim-modal library (feature 067):
+  opened FILE.** The code editor is the maintainer's own library, vim-modal or standard per
+  `EditorSettings.keymap` (features 067, 069):
   `shaderbox/editor/` binds the vendored `libeditor.so` over ctypes (`ffi.py`), renders its
   primitive array through a moderngl MTSDF pass (`render.py`, presented via `imgui.image`), and
   pumps glfw key events into it (`input.py` translation + the `hotkeys.py` drain, focused-only).
@@ -388,8 +380,8 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   watcher re-syncs every open session from disk on external change (disk wins). A document's editors close
   with the document (lib tabs survive); a renamed file re-keys its session in place. The vendored
   binary + rebuild procedure live in `## Known quirks`. Revisit if a tab needs durable per-tab state
-  beyond its open files (e.g. persisting the open-tab set across restart), a 4th editable `kind`
-  lands, or a non-modal keymap ships editor-side.
+  beyond its open files (e.g. persisting the open-tab set across restart) or a 4th editable `kind`
+  lands.
 - **`InlineInput` dataclass for mutually-exclusive inline editors.** A picker / panel hosting
   multiple inline text-input affordances (rename / new-file / new-dir) uses one `InlineInput`
   instance per kind — `target: Path | None`, `buf: str`, `needs_focus: bool` with

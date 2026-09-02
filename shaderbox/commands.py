@@ -27,7 +27,6 @@ class CommandId(StrEnum):
     QUIT = auto()
     JUMP_NEXT_ERROR = auto()
     TOGGLE_CHEATSHEET = auto()
-    CYCLE_REGION = auto()
     FOCUS_TAB_DOCUMENT = auto()
     FOCUS_TAB_RENDER = auto()
     FOCUS_TAB_SHARE = auto()
@@ -105,26 +104,25 @@ COMMAND_SPECS: list[CommandSpec] = [
     CommandSpec(CommandId.SAVE, "Save", _chord(K.s, K.mod_ctrl), C.FILE),
     CommandSpec(CommandId.QUIT, "Quit", _chord(K.q, K.mod_ctrl), C.FILE),
     CommandSpec(
-        CommandId.NEW_DOCUMENT, "New document", _chord(K.n, K.mod_ctrl), C.DOCUMENT
+        CommandId.NEW_DOCUMENT,
+        "New document",
+        _chord(K.n, K.mod_ctrl, K.mod_shift),
+        C.DOCUMENT,
     ),
     CommandSpec(
         CommandId.DELETE_DOCUMENT,
         "Delete document",
-        _chord(K.d, K.mod_ctrl),
+        _chord(K.d, K.mod_alt),
         C.DOCUMENT,
     ),
     CommandSpec(
         CommandId.TOGGLE_DOCUMENT_PLAY,
         "Play/stop document script",
-        _chord(K.space, K.mod_ctrl),
+        _chord(K.f5),
         C.DOCUMENT,
     ),
-    CommandSpec(
-        CommandId.OPEN_SHADER, "Open shader", _chord(K.e, K.mod_ctrl), C.EDITOR
-    ),
-    CommandSpec(
-        CommandId.OPEN_SCRIPT, "Open script", _chord(K.r, K.mod_ctrl), C.EDITOR
-    ),
+    CommandSpec(CommandId.OPEN_SHADER, "Open shader", _chord(K.c, K.mod_alt), C.EDITOR),
+    CommandSpec(CommandId.OPEN_SCRIPT, "Open script", _chord(K.r, K.mod_alt), C.EDITOR),
     # Ctrl+Tab is free for us because WindowFlags_.no_nav_focus on the main window
     # (ui.py) suppresses imgui's built-in window-cycle.
     CommandSpec(
@@ -150,13 +148,7 @@ COMMAND_SPECS: list[CommandSpec] = [
         CommandId.FOCUS_TAB_SHARE, "Share tab", _chord(K._3, K.mod_ctrl), C.VIEW
     ),
     CommandSpec(
-        CommandId.CYCLE_REGION,
-        "Cycle region",
-        _chord(K.grave_accent, K.mod_ctrl),
-        C.VIEW,
-    ),
-    CommandSpec(
-        CommandId.TOGGLE_COPILOT, "Toggle copilot", _chord(K.j, K.mod_ctrl), C.VIEW
+        CommandId.TOGGLE_COPILOT, "Toggle copilot", _chord(K.j, K.mod_alt), C.VIEW
     ),
     CommandSpec(
         CommandId.CYCLE_COPILOT_LAYOUT,
@@ -166,7 +158,7 @@ COMMAND_SPECS: list[CommandSpec] = [
         scope=CommandScope.COPILOT,
     ),
     CommandSpec(
-        CommandId.OPEN_LIB_PICKER, "Shader library", _chord(K.p, K.mod_ctrl), C.TOOLS
+        CommandId.OPEN_LIB_PICKER, "Shader library", _chord(K.l, K.mod_alt), C.TOOLS
     ),
     CommandSpec(
         CommandId.OPEN_PALETTE,

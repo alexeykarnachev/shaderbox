@@ -599,9 +599,16 @@ The only project-coupled facts, consolidated here:
   it must not import `App`. Worker-thread vs render-thread affinity is enforced in `exporters/base.py`.
 - **imgui-bundle build quirks** — version-pinned workarounds live in §8 above (which carries the
   build version). Read §8 before working around a footgun yourself.
+- **ShaderBox runs with `nav_enable_keyboard` OFF** (feature 069 removed the region/arrow-nav
+  layer), which §8's two nav bullets are written against the ON case for. What nav-off buys: no
+  nav cursor and no arrow traversal, so a programmatic `set_keyboard_focus_here` leaves no accent
+  rectangle. What it does NOT buy: imgui runs basic Tab and Ctrl+Tab regardless of the flag, so
+  `WindowFlags_.no_nav_inputs` (every container hosting a focusable widget) and
+  `no_nav_focus` (the main window + the chat, keeping Ctrl+Tab for the app) stay load-bearing and
+  must not be swept away on a name match.
 - **Two editor-focus flags on App:** `editor_focused` (live; flickers False whenever any popup /
   menu / picker steals focus) and `editor_was_ever_focused` (sticky; cleared only by explicit
-  defocus — Esc / arrow nav / target switch). Gate "is the editor a real interaction target?"
+  defocus — Esc / target switch). Gate "is the editor a real interaction target?"
   questions (Insert-at-caret in the lib picker, etc.) on the sticky one; the live flag reads
   False inside a modal, and `current_editor_path is not None` is too lax (a freshly-selected
   document has a session before any typing happened).

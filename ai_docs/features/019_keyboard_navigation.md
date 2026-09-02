@@ -1,5 +1,13 @@
 # 019 — keyboard_navigation
 
+> **REMOVED by 069 W-E (D4).** The region system is gone: no `ActiveRegion`, no region-cycle
+> chord, no active-region outline, and `nav_enable_keyboard` is OFF app-wide.
+> What survives: `DocumentTab` + the `FOCUS_TAB_*` commands (they select the panel tab and
+> nothing else), the editor's own `editor_focused` / `editor_was_ever_focused` focus stop, and
+> the `no_nav_inputs` / `no_nav_focus` flags — imgui runs basic Tab and Ctrl+Tab regardless of
+> `nav_enable_keyboard`, so those flags stayed and are what keep Tab from traversing.
+> The body below is the record of what was built; do not implement it again.
+
 The **focus/navigation layer** — the deferred second half of the keyboard story (feature 018 shipped
 the *command* layer: named-verb dispatch). This adds mouse-less **widget interaction**: a two-level
 focus model where an explicit chord cycles between three regions (code editor / node grid / settings

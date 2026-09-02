@@ -33,7 +33,7 @@ from shaderbox.logging_setup import configure_logging
 from shaderbox.pass_graph import PassEntry, PassGraph
 from shaderbox.paths import PASSES_DIR_NAME, pass_shader_name
 from shaderbox.ui import update_and_draw
-from shaderbox.ui_regions import ActiveRegion, DocumentTab
+from shaderbox.ui_regions import DocumentTab
 
 N_FRAMES: int = 200
 
@@ -143,10 +143,6 @@ def _check_invariants(app: App, frame_idx: int) -> None:
     # Feature 018: the registry must be populated + dispatched every frame (the
     # cheatsheet overlay draws here too, exercising its no-assert path headlessly).
     assert app.effective_bindings, f"frame {frame_idx}: effective_bindings empty"
-    # Feature 019: nav focus model stays in valid enum states.
-    assert app.active_region in ActiveRegion, (
-        f"frame {frame_idx}: bad active_region={app.active_region!r}"
-    )
     assert app.active_document_tab in DocumentTab, (
         f"frame {frame_idx}: bad active_document_tab={app.active_document_tab!r}"
     )
@@ -211,11 +207,11 @@ def main() -> int:
             )
             if app.ui_documents:
                 app.set_current_document_id(next(iter(app.ui_documents)))
-            # Feature 019: nav_enable_keyboard is set in __init__, before any frame —
-            # check it here (get_io() reads are frame-context-sensitive mid-loop).
-            assert (
+            # 069 W-E: nav is OFF app-wide (D4). Checked here for the same reason the
+            # old assertion was: get_io() reads are frame-context-sensitive mid-loop.
+            assert not (
                 imgui.get_io().config_flags & imgui.ConfigFlags_.nav_enable_keyboard
-            ), "nav_enable_keyboard not set"
+            ), "nav_enable_keyboard is set; D4 removed app-wide nav"
             feedback_document = _arm_feedback_canary(app)
             canary_id = app.current_document_id
             for frame_idx in range(N_FRAMES):
@@ -268,8 +264,6 @@ def main() -> int:
                     app.popup_state = PopupState.CLOSED
                     app.pass_settings_name = ""
                     app.set_current_document_id(canary_id)
-                if frame_idx == 50:
-                    app.cycle_region()
                 if frame_idx == 60:
                     app.focus_document_tab(DocumentTab.RENDER)
                 # Open the Examples browser for a stretch so its draw path (grid + desc slot +
