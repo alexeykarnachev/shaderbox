@@ -21,7 +21,6 @@ Two rules the rest of the engine leans on:
   `evaluation_order` runs it on the path that actually draws.
 """
 
-import math
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -89,6 +88,12 @@ class PassEntry(BaseModel):
     # cascade level. A self-reading iterated pass ping-pongs BETWEEN iterations, not between
     # frames. Bounded for the reason every number here is: `graph.json` type-checks nothing,
     # and an unbounded count is a frame-time bomb.
+    #
+    # The count is the AUTHOR'S and the engine does not second-guess it. A resize can leave a
+    # chain short (a base-2 jump flood spans 2^N, so 512 wants 9 runs and 1024 wants 10) -- but
+    # the engine cannot tell a base-2 chain from the base-4 cascade stack beside it, and a check
+    # assuming one warns falsely on the other. The shader's author knows its base; the engine
+    # only knows the number.
     iterations: int = Field(default=1, ge=1, le=MAX_ITERATIONS)
 
 
@@ -207,39 +212,6 @@ class GraphError:
 
     pass_name: str
     message: str
-
-
-def iteration_shortfalls(
-    graph: PassGraph, canvas_size: tuple[int, int]
-) -> list[GraphError]:
-    """Passes whose `iterations` no longer spans the canvas, as warnings.
-
-    A doubling chain (JFA, a cascade stack) needs its count tied to resolution: 512 wants 9
-    halvings, 1024 wants 10. The count is a number the author sets (D3), so a canvas resize
-    silently leaves the chain one step short -- and the render stays PLAUSIBLE while being
-    wrong, which is the exact failure 063 spent a review discovering ("a plausible render is not
-    a numerical check"). Reported rather than auto-corrected: the engine does not know whether a
-    given pass is a doubling chain, only that one COULD not span this canvas.
-
-    Not part of `plan_passes`: that is pure graph data and takes no canvas.
-    """
-    longest = max(canvas_size) if canvas_size else 0
-    if longest <= 1:
-        return []
-    needed = math.ceil(math.log2(longest))
-    return [
-        GraphError(
-            pass_name=name,
-            message=(
-                f"'{name}' iterates {entry.iterations}x, which spans "
-                f"{2**entry.iterations}px; this canvas is {longest}px and a doubling chain "
-                f"needs {needed}. If this pass halves an offset per iteration (JFA, a cascade "
-                f"stack) it is now one or more steps short and the result is subtly wrong."
-            ),
-        )
-        for name, entry in sorted(graph.passes.items())
-        if 1 < entry.iterations < needed
-    ]
 
 
 def _cycle_message(trail: list[str], name: str) -> str:

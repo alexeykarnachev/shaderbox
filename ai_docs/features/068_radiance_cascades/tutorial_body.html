@@ -630,24 +630,34 @@ void main() {
   things:
 </p>
 
-<pre><code>merge off, level 0 alone vs 4 rays:   1.0000
-merge on,  2 cascades vs   16 rays:   1.0432
-merge on,  3 cascades vs   64 rays:   1.1241
-merge on,  4 cascades vs  256 rays:   1.2087</code></pre>
+<pre><code>bounced texels in the reference: 239331
+  4 cascades: energy ratio 1.0134, relMAE  3.65%
+  5 cascades: energy ratio 1.0134, relMAE  3.65%
+  6 cascades: energy ratio 1.0134, relMAE  3.65%</code></pre>
 
 <p>
-  The first isolates the marching and interval arithmetic with the merge switched off — it is
-  exact, and it is what a porting mistake would move. The second shows a real ~21% energy
-  overshoot that grows per merge hop and then saturates: the near-field over-sampling that
-  bilinear probe interpolation introduces, the same family as the ringing. It is <em>not</em> a
-  wiring bug, which you can prove by turning the merge off and watching it return to 1.0000.
+  3.65% against a converged 16&nbsp;384-ray reference, scored over bounced light only. That
+  matches the 4.5% an earlier corrected implementation of this algorithm measured — and the
+  number means something because the gate is <b>mutation-tested</b>: disabling the merge scores
+  98%, and a transposed slot address scores 30%, almost exactly the 30.3% that earlier broken
+  version measured for that same bug.
 </p>
 
+<div class="warn">
+  <b>Two ways to measure this wrong, both of which produced confident numbers here.</b> Testing
+  emission for "strictly inside a surface" while the marcher reports a hit slightly
+  <em>outside</em> one loses nearly all direct light: the reference goes dark, and the apparent
+  "21% overshoot" it produced was entirely a bug in the measuring harness, not the algorithm.
+  And scoring the whole frame rather than only the bounced texels measures the emitters — which
+  both methods write identically — so a stack computing <em>no</em> global illumination at all
+  scored inside the passing band.
+</div>
+
 <div class="note">
-  <b>Match your comparison or it measures nothing.</b> A 6-level stack resolves 4⁶ directions and
-  marches 16.4 UV. Compare it against 1024 rays capped at 2.0 and you get a 580% "error" that is
-  entirely the reference being coarser and shorter — that misread cost real time here. Level
-  <code>n</code> equals <code>4ⁿ</code> rays over the stack's own reach.
+  <b>Match your comparison or it measures nothing.</b> A stack of <code>n</code> levels resolves
+  <code>4ⁿ</code> directions and marches only as far as its own intervals reach. Compare it
+  against a coarser, shorter reference and you get a large "error" that is entirely the
+  reference — a 580% figure that cost real time here was exactly that.
 </div>
 
 <hr>

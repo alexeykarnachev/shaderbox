@@ -1,48 +1,47 @@
 #version 460 core
 
-// PAINT -- the drawable canvas, and the only pass that remembers anything.
-//
-// It reads ITSELF (u_prev), so whatever was here last frame is still here this frame: the graph
-// calls that feedback, and it is what makes a canvas accumulate instead of flashing. The script
-// beside this document (scripts/script.py) feeds the cursor in through u_brush, so dragging the
-// mouse over the preview lays down light or walls.
+// PAINT -- the scene the light bounces around in.
 //
 // RGB is emitted colour, ALPHA is "this texel is solid". A wall is opaque and black; a light is
-// opaque and bright. Everything the rest of the document does keys off that alpha.
+// opaque and bright. Everything downstream keys off that alpha: the seed pass marks the solid
+// texels, and a ray stops at the first one it reaches.
+//
+// Built analytically from SDFs and u_time, so it carries no state and needs no script. The
+// engine's script engine binds to a document's OUTPUT pass, so a script could not reach a
+// brush uniform declared here anyway -- and a scene that redraws itself every frame is what
+// lets the two lights drift and the shadows follow.
 
 in vec2 vs_uv;
 out vec4 fs_color;
 
-uniform sampler2D u_prev;
-uniform vec4 u_brush;      // xy = cursor in UV, z = radius, w = 0 off / 1 painting
-uniform vec3 u_brush_color;
-uniform float u_brush_emissive;  // 1 = a light, 0 = a wall
-uniform float u_clear;
+uniform float u_time;
+uniform float u_drift = 0.06;        // how far the warm light wanders
+uniform float u_wall_height = 0.15;
+uniform float u_light_radius = 0.035;
 
-// Squared distance from p to the segment a-b. Squared, so no sqrt in the inner test -- the
-// article's sdfLineSquared. A segment rather than a dot because a fast drag skips pixels
-// between frames, and a dot brush would lay down beads instead of a stroke.
-float sd_seg_sq(vec2 p, vec2 a, vec2 b) {
-    vec2 pa = p - a, ba = b - a;
-    float len_sq = max(dot(ba, ba), 1e-9);
-    float t = clamp(dot(pa, ba) / len_sq, 0.0, 1.0);
-    vec2 d = pa - ba * t;
-    return dot(d, d);
+float sd_circle(vec2 p, float r) { return length(p) - r; }
+
+float sd_box(vec2 p, vec2 b) {
+    vec2 q = abs(p) - b;
+    return length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0);
 }
 
 void main() {
-    vec4 current = texture(u_prev, vs_uv);
-    if (u_clear > 0.5) {
-        fs_color = vec4(0.0);
-        return;
-    }
-    if (u_brush.w > 0.5) {
-        // The script hands over one point per frame; the segment is that point to itself until
-        // the script starts sending the previous one too. Radius is in UV.
-        float r = u_brush.z;
-        if (sd_seg_sq(vs_uv, u_brush.xy, u_brush.xy) <= r * r) {
-            current = vec4(u_brush_color * u_brush_emissive, 1.0);
-        }
-    }
-    fs_color = current;
+    vec2 p = vs_uv;
+
+    // Two emitters. The warm one drifts, so the shadows move and you can see the lighting is
+    // recomputed every frame rather than baked once.
+    vec2 warm_at = vec2(0.28, 0.70 + u_drift * sin(u_time * 0.7));
+    float warm = sd_circle(p - warm_at, u_light_radius);
+    float cool = sd_circle(p - vec2(0.80, 0.80), 0.030);
+
+    // Two occluders: a wall between the lights, and a round one low-left.
+    float wall = sd_box(p - vec2(0.50, 0.50), vec2(0.008, u_wall_height));
+    float blob = sd_circle(p - vec2(0.22, 0.26), 0.055);
+
+    if (warm < 0.0) { fs_color = vec4(4.0, 3.3, 2.0, 1.0); return; }
+    if (cool < 0.0) { fs_color = vec4(0.5, 1.2, 4.0, 1.0); return; }
+    // Solid and black: stops a ray and emits nothing, which is what casts a shadow.
+    if (min(wall, blob) < 0.0) { fs_color = vec4(0.0, 0.0, 0.0, 1.0); return; }
+    fs_color = vec4(0.0);
 }

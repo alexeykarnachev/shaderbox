@@ -15,7 +15,13 @@ from typing import Any
 
 import pytest
 
-from shaderbox.pass_graph import DTYPES, PassEntry, PassGraph, TargetConfig
+from shaderbox.pass_graph import (
+    DTYPES,
+    MAX_ITERATIONS,
+    PassEntry,
+    PassGraph,
+    TargetConfig,
+)
 from shaderbox.paths import PASSES_DIR_NAME, pass_shader_name
 from shaderbox.popups.pass_settings import _FORMAT_CODES, _FORMATS
 from shaderbox.ui_models import load_document_from_dir
@@ -306,3 +312,23 @@ def test_every_target_format_has_a_human_label() -> None:
     assert not any(label in DTYPES for _, label, _ in _FORMATS), (
         "a menu label is still a raw dtype string"
     )
+
+
+def test_set_pass_iterations_writes_persists_and_rejects(app: Any) -> None:
+    # The verb the pass-settings slider calls. Untested until a review pointed it out, which
+    # matters because it is the only writer of `iterations` outside a hand-edited graph.json.
+    document_id = app.current_document_id
+    name = next(iter(app.ui_documents[document_id].document.passes))
+
+    assert app.session.set_pass_iterations(document_id, name, 9) == ""
+    assert app.ui_documents[document_id].document.graph.passes[name].iterations == 9
+
+    # Out of range is REJECTED, not clamped: the slider cannot produce one, so a bad value came
+    # from a hand-edit or a tool, and quietly substituting a different number would hide it.
+    for bad in (0, MAX_ITERATIONS + 1):
+        error = app.session.set_pass_iterations(document_id, name, bad)
+        assert error, f"{bad} was accepted"
+        assert app.ui_documents[document_id].document.graph.passes[name].iterations == 9
+
+    assert app.session.set_pass_iterations("no-such-document", name, 2)
+    assert app.session.set_pass_iterations(document_id, "no-such-pass", 2)

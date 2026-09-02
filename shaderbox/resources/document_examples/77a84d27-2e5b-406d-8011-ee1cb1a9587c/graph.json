@@ -3,15 +3,13 @@
     "output": "composite",
     "passes": {
         "paint": {
-            "inputs": {
-                "u_prev": "paint"
-            },
+            "inputs": {},
             "target": {
                 "scale": 1.0,
                 "dtype": "f2",
                 "filter_linear": false,
                 "wrap": false,
-                "persist": true
+                "persist": false
             },
             "iterations": 1
         },

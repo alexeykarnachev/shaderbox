@@ -592,3 +592,29 @@ def test_an_iterated_output_pass_lands_its_last_iteration_on_the_canvas(
     doc.render(canvas=external)
     assert _red_of(external) == pytest.approx(204, abs=3)
     external.release()
+
+
+def test_an_iterated_feedback_chain_keeps_advancing_across_frames(
+    gl_ctx: moderngl.Context,
+) -> None:
+    # Every other 068 engine test renders ONE frame, so the multi-frame region -- where the
+    # per-frame swap in `begin_frame` composes with the N-1 per-iteration swaps -- held by luck
+    # of parity rather than by assertion. Three frames of +0.1 x 3 iterations must reach 0.9,
+    # and each frame must add exactly 3 steps.
+    # Falsifier: a parity bug in the swap composition makes frame 2 restart or double-count.
+    graph = PassGraph(
+        output="acc",
+        passes={"acc": PassEntry(inputs={"u_prev": "acc"}, iterations=3)},
+    )
+    doc = _document(gl_ctx, {"acc": _ITERATED_ACCUMULATE}, graph)
+    seen: list[int] = []
+    for frame in range(3):
+        doc.begin_frame(frame)
+        doc.render()
+        seen.append(_red_of(doc.render_pass.canvas))
+    # 0.3, 0.6, 0.9 -> 77, 153, 230 at 8-bit.
+    assert seen == [
+        pytest.approx(77, abs=3),
+        pytest.approx(153, abs=3),
+        pytest.approx(230, abs=3),
+    ], f"the chain did not advance 3 steps per frame: {seen}"

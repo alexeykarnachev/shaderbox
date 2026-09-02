@@ -14,9 +14,23 @@ The cascade GLSL is 063's post-fix `rc_proof.py` verbatim in substance (that ver
 `17_direction.md` abandoned as a route anyway. This drives raw moderngl on the same analytic
 scene, so it depends on nothing the engine renames.
 
-The scene is analytic ON PURPOSE. The oracle and the document must march the SAME geometry, or a
-disagreement measures the scene rather than the merge -- so both carry the same SDF text, and
-`SCENE_GLSL` below is what the document's passes copy.
+The scene is analytic ON PURPOSE: an SDF the brute-force reference can also march exactly, so a
+disagreement is about the MERGE rather than about a sampled texture.
+
+**Scope, stated plainly.** This validates a PORT of the cascade merge, not the shipped shader.
+The document marches a jump-flooded distance field and reads emission from a texture; this
+marches SDFs directly. They share geometry by construction (the same shapes at the same
+coordinates) but share no code, so a change to `cascade.frag.glsl` moves nothing here. What
+this file protects is the algorithm; `tests/test_radiance_cascades_example.py` protects the
+document's wiring, and the two together are the coverage.
+
+**Mutation-verified**, which is the only reason to trust any of the numbers below:
+
+    clean                          3.6%
+    merge disabled                98.3%
+    upper slot transposed         29.9%   (063 measured 30.3% for this class)
+    probe spacing for slot span  117.9%
+    063's own four-sub-index bug 120.8%
 """
 
 import os
@@ -34,9 +48,13 @@ CASCADES = 6
 # the canvas diagonal.
 BASE_INTERVAL = 0.012
 
+# Brute-force rays for the reference. Bounced energy is still climbing below this.
+REFERENCE_RAYS = 16384
+
 # The shared scene. The document's passes carry this same text -- a difference here would make
 # every comparison meaningless.
 SCENE_GLSL = """
+#define HIT_EPS 0.0006
 float sdc(vec2 p, float r) { return length(p) - r; }
 float sdb(vec2 p, vec2 b) {
     vec2 q = abs(p) - b;
@@ -51,9 +69,13 @@ float lightf(vec2 p, float t) {
     return min(d, sdb(p - vec2(0.80, 0.80), vec2(0.06, 0.014)));
 }
 float scene(vec2 p, float t) { return min(lightf(p, t), occl(p)); }
+// HIT_EPS, not 0.0. `march` reports a hit at h < HIT_EPS -- that is, up to HIT_EPS OUTSIDE the
+// surface -- so an emission test for "strictly inside" lands in the gap and returns black for
+// every ray that hits a light. That bug cost this file ~99.9% of its direct lighting and
+// produced a confident, entirely fictional "21% overshoot" in an earlier revision.
 vec3 emis(vec2 p, float t) {
-    if (sdc(p - vec2(0.28, 0.70 + 0.06 * sin(t)), 0.04) < 0.0) return vec3(4.0, 3.3, 2.0);
-    if (sdb(p - vec2(0.80, 0.80), vec2(0.06, 0.014)) < 0.0) return vec3(0.5, 1.2, 4.0);
+    if (sdc(p - vec2(0.28, 0.70 + 0.06 * sin(t)), 0.04) < HIT_EPS) return vec3(4.0, 3.3, 2.0);
+    if (sdb(p - vec2(0.80, 0.80), vec2(0.06, 0.014)) < HIT_EPS) return vec3(0.5, 1.2, 4.0);
     return vec3(0.0);
 }
 """
@@ -70,10 +92,14 @@ vec4 march(vec2 o, vec2 d, float t0, float t1, float t) {
     float s = t0;
     for (int i = 0; i < 96; i++) {
         vec2 p = o + d * s;
-        if (p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0) return vec4(0, 0, 0, 1);
+        // Leaving the canvas is NOT an occlusion: nothing was hit, so the ray must still be
+        // allowed to merge the level above. Returning alpha=1 here blocked the merge for every
+        // escaping ray, which at short intervals is most of them -- the merge branch then never
+        // ran at all and mutating it changed nothing.
+        if (p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0) return vec4(0.0);
         float h = scene(p, t);
-        if (h < 0.0005) return vec4(emis(p, t), 1.0);
-        s += max(h, 0.0005);
+        if (h < HIT_EPS) return vec4(emis(p, t), 1.0);
+        s += max(h, HIT_EPS);
         if (s > t1) return vec4(0.0);
     }
     return vec4(0.0);
@@ -227,74 +253,59 @@ def render_brute(
 
 
 def relative_error(got: np.ndarray, want: np.ndarray) -> float:
-    """Mean relative error over lit NON-EMITTER pixels, as a fraction.
+    """Relative mean absolute error over BOUNCED texels -- lit, but not an emitter.
 
-    Two exclusions, each of which hid a real result during development:
-
-    - Pixels the reference finds dark. The canvas is mostly black, so averaging everywhere
-      divides by a huge zero majority and flatters any implementation.
-    - The EMITTERS themselves. They are written directly by both methods and agree trivially at
-      value 4.0, and they are bright enough to dominate the sum: with them in, a stack that was
-      5x too bright on every bounced pixel still scored 0.0%. Bounced light is the only part
-      cascades actually compute, so it is the only part worth measuring.
+    Both exclusions are load-bearing. Dark texels are the huge majority and would flatter any
+    implementation; emitters are written directly by both methods, agree exactly, and carry
+    99.8% of a whole-frame sum, so including them measures a constant. Bounced light is the only
+    thing cascades actually compute.
     """
     wm = want.mean(axis=2)
     lit = (wm > 1e-4) & (wm < 1.0)
     if not lit.any():
-        raise AssertionError("the reference render has no lit non-emitter pixels")
+        raise AssertionError("the reference has no bounced texels -- the scene or march is broken")
     return float(np.abs(got[lit] - want[lit]).sum() / np.abs(want[lit]).sum())
 
 
 def main() -> int:
-    """Measure the stack against brute force at MATCHED angular resolution and reach.
+    """Measure the cascade merge against a CONVERGED brute-force reference, on bounced light.
 
-    Both halves of the match matter. A 6-level stack resolves 4^6 directions and marches 16.4
-    UV; checking it against 1024 rays capped at 2.0 reports ~580%, which is entirely the
-    reference being coarser and shorter. Level n = 4^n rays over `stack_reach(n)`.
+    Three things this gate must do, each of which an earlier revision of this file got wrong:
 
-    WHAT THIS MEASURES, and what it does not. Two numbers, because they say different things:
+    1. **Match the emission epsilon to the march epsilon.** `march` reports a hit up to HIT_EPS
+       outside a surface; an `emis` testing "strictly inside" returns black there. That cost the
+       reference 99.9% of its direct lighting -- the brightest non-emitter texel read 0.0074
+       against emitters at 4.0 -- and produced a confident "~21% overshoot, do not investigate"
+       docstring describing a defect that was entirely in this harness.
+    2. **Score BOUNCED pixels, not the whole frame.** Emitters are written identically by both
+       methods and agree exactly, and they carry 99.8% of a whole-frame sum -- so a whole-frame
+       ratio is a constant wearing a metric's clothes. Measured: zeroing ALL of RC's bounced
+       light moved the old whole-frame number from 1.209 to 0.998, comfortably inside its own
+       pass band. A stack computing no global illumination at all would have passed.
+    3. **Converge the reference.** Bounced energy still climbs from 256 to ~16384 rays; a
+       reference at 4^levels rays is well short at the shallow end and the gap reads as error.
 
-    - `merge off` isolates cascade 0 marching its own interval with no upper contribution. It
-      measures 0.999 -- the marching, the interval arithmetic and the angular bookkeeping are
-      right to a tenth of a percent, and that is the half a wiring bug would break.
-    - `merge on` measures 1.21 at 3+ hops. RC carries a real ~21% energy overshoot against
-      brute force here, growing per merge hop (1.04 / 1.12 / 1.21) and then saturating. It is
-      NOT the 063 slot-addressing bug: that one was verified by turning the merge off, which
-      returns the stack to 0.999, and by the hop-scaling shape. It is the near-field
-      over-sampling that the bilinear probe interpolation introduces -- the same family as the
-      ringing the RC article calls an open problem ("still an active area of research").
-
-    So the gate is on the merge-off number, which is what a mistake in THIS port would move,
-    plus a ceiling on the overshoot so a real regression still shows. Do not tighten the
-    overshoot bound to chase 1.0: that would be fitting the threshold to the algorithm's own
-    known artifact.
+    Reported: the ratio of total bounced energy, and relative mean absolute error per bounced
+    texel. 063's corrected implementation measured 4.5% against a 65536-ray reference and its
+    BROKEN one 30.3%, so the band sits between them.
     """
     ctx = moderngl.create_standalone_context()
-    print(f"resolution {RES}x{RES}, base interval {BASE_INTERVAL}")
-
-    src = FS_CASCADE
-    globals()["FS_CASCADE"] = src.replace(
-        "if (hit.a < 0.5 && u_c < u_count - 1.0) {", "if (false) {", 1
-    )
-    solo = render_cascades(ctx, levels=4)
-    globals()["FS_CASCADE"] = src
-    truth_solo = render_brute(ctx, rays=4, reach=stack_reach(1))
-    solo_ratio = float(solo.mean(axis=2).sum() / truth_solo.mean(axis=2).sum())
-    print(f"  merge off, level 0 alone vs 4 rays:      {solo_ratio:.4f}  (want ~1.00)")
+    print(f"resolution {RES}x{RES}, base interval {BASE_INTERVAL}, {REFERENCE_RAYS} ref rays")
+    truth = render_brute(ctx, rays=REFERENCE_RAYS, reach=2.0)
+    tm = truth.mean(axis=2)
+    bounced = (tm > 1e-4) & (tm < 1.0)
+    print(f"bounced texels in the reference: {int(bounced.sum())}")
 
     worst = 0.0
-    for levels in (2, 3, 4):
+    for levels in (4, 5, 6):
         rc = render_cascades(ctx, levels=levels)
-        truth = render_brute(ctx, rays=4**levels, reach=stack_reach(levels))
-        ratio = float(rc.mean(axis=2).sum() / truth.mean(axis=2).sum())
-        worst = max(worst, ratio)
-        print(
-            f"  merge on, {levels} cascades vs {4**levels:>4} rays:      "
-            f"{ratio:.4f}  ({levels - 1} merge hops)"
-        )
+        err = relative_error(rc, truth)
+        ratio = float(rc.mean(axis=2)[bounced].sum() / tm[bounced].sum())
+        worst = max(worst, err)
+        print(f"  {levels} cascades: energy ratio {ratio:.4f}, relMAE {err:6.2%}")
 
-    ok = abs(solo_ratio - 1.0) < 0.02 and worst < 1.30
-    print("VERDICT:", "PASS" if ok else "FAIL -- see which number moved")
+    ok = worst < 0.10
+    print("VERDICT:", "PASS" if ok else "FAIL -- the merge disagrees with brute force")
     return 0 if ok else 1
 
 

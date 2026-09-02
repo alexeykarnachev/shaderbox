@@ -20,7 +20,6 @@ from shaderbox.pass_graph import (
     TargetConfig,
     assert_plan_invariants,
     evaluation_order,
-    iteration_shortfalls,
     plan_passes,
 )
 
@@ -293,22 +292,6 @@ def test_iterations_are_bounded() -> None:
         PassEntry(iterations=0)
     with pytest.raises(ValidationError):
         PassEntry(iterations=MAX_ITERATIONS + 1)
-
-
-def test_a_short_iteration_count_warns_after_a_resize() -> None:
-    # The D3 warning: 9 halvings span 512, so the same graph is clean at 512 and short at 1024.
-    graph = PassGraph(output="jfa", passes={"jfa": PassEntry(iterations=9)})
-    assert iteration_shortfalls(graph, (512, 512)) == []
-    shortfalls = iteration_shortfalls(graph, (1024, 1024))
-    assert [e.pass_name for e in shortfalls] == ["jfa"]
-    assert "one or more steps short" in shortfalls[0].message
-
-
-def test_a_non_iterated_pass_never_warns() -> None:
-    # iterations=1 is "not a chain", not "a chain of length 1" -- every ordinary pass in every
-    # document would otherwise warn on any canvas above 2px.
-    graph = PassGraph(output="plain", passes={"plain": PassEntry()})
-    assert iteration_shortfalls(graph, (4096, 4096)) == []
 
 
 def test_graph_edits_preserve_fields_they_do_not_name() -> None:

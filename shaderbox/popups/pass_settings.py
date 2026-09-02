@@ -16,12 +16,7 @@ from OpenGL.GL import GL_SAMPLER_2D
 
 from shaderbox.app import App, PopupState
 from shaderbox.core import Pass
-from shaderbox.pass_graph import (
-    MAX_ITERATIONS,
-    PassEntry,
-    PassGraph,
-    iteration_shortfalls,
-)
+from shaderbox.pass_graph import MAX_ITERATIONS, PassEntry
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_primitives import (
     ghost_button,
@@ -257,9 +252,7 @@ def _draw_repeat(
         if error:
             app.notifications.push(error)
 
-    # The D3 warning, shown where the number is SET and against the live canvas: a count that
-    # spanned the old canvas goes quietly short after a resize, and the render stays plausible.
-    for shortfall in iteration_shortfalls(PassGraph(passes={name: entry}), canvas_size):
-        imgui.push_text_wrap_pos(0.0)
-        imgui.text_colored(COLOR.STATE_WARN, shortfall.message)
-        imgui.pop_text_wrap_pos()
+    # No engine-side "your count is short" warning: the engine cannot tell a base-2 jump flood
+    # from the base-4 cascade stack beside it, so a check assuming one warns falsely on the
+    # other -- it fired on this repo's own shipped cascade pass at its shipped size. The help
+    # text explains the number; the shader's author owns it.
