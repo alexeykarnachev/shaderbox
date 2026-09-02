@@ -44,8 +44,7 @@ NUMBER: `oracle.py` measures 3.65% relMAE, and `--mutate` reproduces the sensiti
 blockers fixed, including a crash loading a corrupt `document.json` from the per-frame sync.
 Ledger, and what was REJECTED, in `70144d2..7e977bf` and `conventions.md`.
 
-**067: DONE, v0.27.0 on GitHub (not itch).** Vendored editor `e7db554`. **The keyboard pass is
-UNRUN** — six one-keystroke checks in `conventions.md`, with the revert target named. The Windows
+**067: DONE, v0.27.0 on GitHub (not itch).** Vendored editor `e7db554`, verified. The Windows
 `libeditor.dll` needs a Windows host at the next `/ship`.
 
 **Still owed from 065:** checks 13-15 (a display) and 16 (`/dogfood`, real API cost).

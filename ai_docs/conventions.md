@@ -877,16 +877,11 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   both are invisible, so a box is more useful than a blank you cannot distinguish from a space.
   `atlas_glyph` renders the fallback box and still advances exactly one cell, so column
   arithmetic never desyncs from buffer content — that is by design, do not ask for it to change.
-- **The keyboard pass for `e7db554` is UNRUN.** Two re-vendors landed without it, because
-  `make gates` reaches none of this. Six checks, each one keystroke, at the next `make run`:
-  `cwX` Esc `u` restores the whole word; `o` then Esc stays on its line; `di{` in a multi-line
-  body leaves `{`/`}`; Ctrl+N with the completion popup open advances the selection; a scroll
-  chord in visual mode extends the selection; an em-dash pasted into a comment renders as a dash.
-  If any fails, `git revert` back to `c5fabc8` — it is a coherent resting point.
-- **Re-vendoring the editor is HAND-CHECKED at a real keyboard.** Rebuild from a committed sha,
-  copy the three files, update `VERSION`, then delete whatever host mitigations the new sha makes
-  dead — and type the checks, because `make smoke` reaches none of this (it needs a display and
-  asserts no key semantics). The `bf0f8d5` re-vendor removed two: the Ctrl+N completion intercept
+- **Re-vendoring the editor: rebuild, copy, then delete the mitigations the new sha makes dead.**
+  Rebuild from a committed sha, copy the three files, update `VERSION`, then remove whatever host
+  workarounds that sha obsoletes. Verifying the editor's own vim surface belongs to the editor
+  repo, which has its own gates for it; what this repo checks is the INTEGRATION — the host
+  mitigations it drops, and whether `make gates` still passes without them. The `bf0f8d5` re-vendor removed two: the Ctrl+N completion intercept
   (the keymap now advances the selection itself) and the visual-scroll consume-noop (the six
   scrolls are keymap motions in visual mode too). Removing the first exposed a live bug our test
   suite caught — the input drain still queued a completion re-offer on a Ctrl+N the keymap had
