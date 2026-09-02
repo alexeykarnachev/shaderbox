@@ -83,7 +83,9 @@ def _is_container_call(node: ast.AST) -> str | None:
     return None
 
 
-def _resolve_flags(node: ast.AST, assignments: dict[str, ast.AST], depth: int = 0) -> str:
+def _resolve_flags(
+    node: ast.AST, assignments: dict[str, ast.AST], depth: int = 0
+) -> str:
     """Flatten a flags expression to source-ish text, following a Name through the
     module's own assignments — three of the eight containers reach their flag through a
     variable (`panel_flags`, `grid_flags`, the chat's `flags = _WINDOW_FLAGS | ...`), so a
@@ -109,9 +111,12 @@ def _module_assignments(tree: ast.Module) -> dict[str, ast.AST]:
             for target in node.targets:
                 if isinstance(target, ast.Name):
                     out[target.id] = node.value
-        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-            if node.value is not None:
-                out[node.target.id] = node.value
+        elif (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.value is not None
+        ):
+            out[node.target.id] = node.value
     return out
 
 

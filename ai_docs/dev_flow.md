@@ -517,6 +517,12 @@ Three things it does that a hand-rolled `make check && make test && make smoke` 
 
 Judge it by the exit code, captured unpiped: `make gates > /tmp/gates.log 2>&1; echo $?`.
 
+**Stage new files before running it.** `make check` is `pre-commit run --all-files`, and
+pre-commit only sees files git tracks: an UNTRACKED module is skipped by ruff, formatter and
+pyright alike, so a wave that adds a test file gets a green gate on a tree whose new file was
+never linted, and the commit that stages it is red. Two 069 commits landed exactly that way.
+`git add` every new file (or `git add -N` it) before the gate, then judge the exit code.
+
 ### `make check`
 The single canonical lint/typecheck command — delegates to `uv run pre-commit run --all-files`:
 ruff fix, ruff format, then **pyright** (chosen over mypy on purpose — fewer false positives, less

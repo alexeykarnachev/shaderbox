@@ -94,7 +94,9 @@ def test_the_vim_doc_still_parses() -> None:
     assert len(chords) >= _VIM_FLOOR, (
         f"vim_coverage.md parsed {len(chords)} chords; format changed?"
     )
-    assert _to_chord(["Ctrl"], "d") in chords, "the half-page scroll row stopped parsing"
+    assert _to_chord(["Ctrl"], "d") in chords, (
+        "the half-page scroll row stopped parsing"
+    )
 
 
 def test_the_standard_doc_still_parses() -> None:
