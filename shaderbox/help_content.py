@@ -182,7 +182,12 @@ def help_sections() -> list[HelpSection]:
                 "`u_pass_iterations` how many there are.\n"
                 "\n"
                 "**size** is the pass's share of the canvas. Half size is a quarter of the "
-                "pixels, which is the usual choice for a blur; the output pass always draws full."
+                "pixels, which is the usual choice for a blur; the output pass always draws full.\n"
+                "\n"
+                "**format** is how much each pixel can hold. `8-bit` clamps to 0-1 and is right "
+                "for a final image; `16-bit float` holds values above 1, which is what bloom and "
+                "feedback need, and is the default; `32-bit float` costs twice the memory and is "
+                "rarely worth it."
             ),
         ),
         _shortcuts_section(),

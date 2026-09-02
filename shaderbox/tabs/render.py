@@ -71,6 +71,6 @@ def _draw_render_button(app: App, details: MediaDetails) -> MediaDetails:
 
     if not has_path:
         imgui.same_line()
-        caption_text(f"Select an output file to render the {media_type}")
+        caption_text(f"no output {media_type} file")
 
     return details

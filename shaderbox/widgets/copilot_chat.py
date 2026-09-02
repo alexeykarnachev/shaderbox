@@ -158,7 +158,7 @@ def draw(app: App) -> None:
             app.copilot_focus_pending = False
             unconnected_gate(
                 not_connected_msg="Copilot is not set up.",
-                hint="Add your OpenRouter API key in Settings to enable the copilot.",
+                hint="Add your OpenRouter API key in Settings",
                 action_label="Open Settings",
                 on_action=lambda: app.open_settings(focus=SettingsField.COPILOT_KEY),
             )

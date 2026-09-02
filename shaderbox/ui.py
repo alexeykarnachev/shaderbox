@@ -473,7 +473,7 @@ def update_and_draw(app: App) -> None:
     # before the encode freezes the loop.
     run_render_now = app.render_defer.ready_to_fire()
     if app.copilot.bridge.render_pending() or app.render_defer.has_request():
-        rendering_overlay("Rendering... the app pauses while it encodes.")
+        rendering_overlay("Rendering...")
     imgui.pop_font()
 
     # ----------------------------------------------------------------

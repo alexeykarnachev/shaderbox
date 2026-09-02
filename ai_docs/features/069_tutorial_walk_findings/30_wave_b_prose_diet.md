@@ -142,6 +142,31 @@ contributed **zero rows** to the first census. So the call set is the six plus e
 `ui_primitives` function whose signature takes a `tooltip` / `label` / `text` / `footer` /
 `sublines` parameter carrying authored copy, each read at that parameter.
 
+**SUPERSEDED IN PART by post-implementation review (F2, spec finding 2): the call set is DERIVED,
+not hand-listed.** Fixing the argument-READING narrowing while leaving the call TABLE hand-written
+left the same defect one rung up: a new `ui_primitives` helper taking authored copy was outside the
+gate, and its callers' strings with it. Measured, a `badge_chip(id_, *, tooltip="", label="")`
+helper drawing its own tooltip plus a caller passing a 9-word `tooltip=` left the suite fully
+green. Reflection over the real signatures found **23 copy-bearing helpers outside `_SCORED`**,
+including `caption_text`, `wrapped_caption`, `unconnected_gate` and every button tier — and live
+over-budget copy already sitting there (`popups/examples.py`'s 13-word semicolon-joined caption).
+
+So `_SCORED` is now built by reflection: every public function in `shaderbox/ui_primitives.py`
+whose signature carries a parameter named in `_PARAMETER_BUDGETS` (`tooltip`/`label`/`title`/
+`footer` → 2-5, `text`/`caption`/`message`/`sublines` → 4, `hint` → 8), scored at that parameter,
+with the positional index read from `inspect.signature` so a positional caller is scored too. Only
+the three `imgui.*` calls and `help_marker` stay explicit rows — imgui has no signature to reflect
+over, and `help_marker`'s budget is 8 rather than the 4 its `text` parameter name would give it.
+A BUTTON label gets 3 (`_BUTTON_LABEL_BUDGET`): § 2's table has no row for one, and an action
+phrase is not the noun a control label is (`Add to pack`, `Open a copy`). Two tests hold the
+domain shut: `test_every_copy_bearing_helper_is_in_the_domain` fails on any helper outside it, and
+`test_every_scored_row_matches_the_real_signature` generalizes the argument-index check from three
+helpers to all sixteen derived rows — the spec review's finding 2, that `draw_copyable_text.tooltip`
+and `preview_cell`'s two parameters were read by keyword only while being positionally reachable.
+
+The `##id` suffix is stripped before scoring: imgui treats everything after `##` as the widget ID,
+not visible text, so `f"x##cancel_{path}"` is one word, not four.
+
 **How a call matches.** A call matches when `node.func` is an `ast.Name` whose `id` is in the set,
 or an `ast.Attribute` whose `attr` is in the set. The module qualifier is **not** checked, so
 `imgui.set_tooltip` and a bare `set_tooltip` both match, and an aliased import
@@ -403,14 +428,36 @@ rect from the content each frame and the height passed to `set_next_window_size`
 `0.0` is the honest value to pass rather than a number that no longer means anything. The width is
 still honoured, which is what keeps the control column stable.
 
-`no_scrollbar` rides along as belt-and-braces, per § 3's own advice ("Add `WindowFlags_.no_scrollbar`
-to a pure display box as belt-and-suspenders"). With auto-resize on, a scrollbar cannot appear; with
-the flag, a future content change that somehow could produce one clips instead of silently
-reintroducing #7's overlap.
+**REVERSED by post-implementation review (F3, F4).** Two claims above are wrong, both measured:
+
+`always_auto_resize` does NOT keep the seeded width. It ignores `set_next_window_size` on BOTH
+axes, so the popup settled at **323px** while `PASS_SETTINGS_W = 440` sat in the call, inert — the
+next reader would change 440 and see nothing move. The width holds only through a size
+CONSTRAINT, so the call site now pins the axis the user reads across before entering the modal:
+
+```python
+    display_h = imgui.get_io().display_size.y
+    width = float(SIZE.PASS_SETTINGS_W)
+    imgui.set_next_window_size_constraints(
+        (width, 0.0), (width, max(1.0, display_h - float(SIZE.PASS_SETTINGS_MARGIN)))
+    )
+```
+
+Measured through the real modal in a headless frame: 323px without the constraint, 440px with it.
+`tests/test_pass_settings_layout.py::test_the_gear_keeps_its_width_token_under_auto_resize` pins
+it, so an inert token cannot come back silently.
+
+`no_scrollbar` is DROPPED, not kept. The claim "with auto-resize on, a scrollbar cannot appear" is
+false: imgui clamps an auto-resized window at the viewport, and past **20 Reads rows** on a 768px
+display the Close button sits below the clamp — reachable by wheel, with the flag removing the only
+cue that anything continues. Auto-resize plus the height constraint already delivers "sizes to its
+content" at every normal size; the scrollbar can now appear ONLY in the clamped case, which is
+exactly when the user needs telling. `SIZE.PASS_SETTINGS_MARGIN = 24` is the gap the constraint
+leaves below the display's bottom edge.
 
 `SIZE.PASS_SETTINGS_H: int = 400` is **deleted** from `theme.py`. It has exactly one reader, the
 call site above, and a token nothing reads is the kind of leftover `/sanitize` deletes. `theme.py`
-keeps `PASS_SETTINGS_W: int = 440`.
+keeps `PASS_SETTINGS_W: int = 440` and gains `PASS_SETTINGS_MARGIN: int = 24`.
 
 **This is a chosen alternative, and the rejected one is worth recording.** The parent allows either
 ("`modal_window` with auto-resize or a computed height"). `popups/examples.py` computes its height
@@ -634,10 +681,16 @@ and is the same algorithm the gate ships. Round 1 found eight invented and two m
 hand-written first draft, whose aggregates nonetheless matched because the errors cancelled; nothing
 here is typed by hand.
 
-Run at `3910900`. **Totals: 106 sites. 71 measurable, 35 unmeasurable.
-17 over the word budget, 9 failing the clause check, 18 distinct sites
+Run at `3910900`, over the ORIGINAL hand-listed call set. **Totals: 106 sites. 71 measurable, 35
+unmeasurable. 17 over the word budget, 9 failing the clause check, 18 distinct sites
 violating one or both.** Of those 18, **13 are cut here** and **5 get an `_OVER_BUDGET` entry** with
-a reason. One further site is cut without being a violation: `separator_text("Reads (?)")` at 2
+a reason.
+
+**Superseded by the derived domain (§ Design decisions 2, post-review).** With the domain built
+from `ui_primitives` signatures the walk sees **239 sites: 173 measurable, 66 unmeasurable** —
+against 106/71/35 before, so the hand-listed table was covering under half its own domain. The
+tables below are the SHIPPED-AT-`ccd446b` record and stay as written; the widened run's own numbers
+are in § The widened census. One further site is cut without being a violation: `separator_text("Reads (?)")` at 2
 words is in budget, and its `(?)` marker goes because the tooltip it advertises does (§ Design
 decisions 9).
 
@@ -843,6 +896,38 @@ on its own.
 | `draw_video_filters` :19 | `row_label` `label` (pos) | Window | 1 | unchanged | 1 |
 | `draw_video_filters` :27 | `row_label` `label` (pos) | Sigma | 1 | unchanged | 1 |
 \n
+### The widened census (post-review, the derived domain)
+
+Run by the shipped collector after § Design decisions 2's reflection change.
+
+| Figure | Hand-listed set (`ccd446b`) | Derived set | Note |
+|---|---|---|---|
+| scored (call, parameter) rows | 16 | **36** | 4 explicit + 32 reflected |
+| sites | 106 | **239** | the hand-listed table covered 44% of its domain |
+| measurable | 71 | **173** | |
+| unmeasurable | 35 | **66** | every new one is a forwarder or a live value |
+| over budget, pre-cut | 17 | **20** | after `##id` stripping and the button budget |
+| clause failures, pre-cut | 9 | **2** | the shipped cuts already closed seven |
+| `_UNMEASURABLE` entries | 30 | **47** | |
+| `_OVER_BUDGET` entries | 5 | **8** | |
+| violations remaining | 0 | **0** | the 8 remaining ARE the `_OVER_BUDGET` set |
+
+Six sites the widened domain exposed are **cut**, none of which any earlier run could see:
+
+| Site | Before | W | After | W |
+|---|---|---|---|---|
+| `popups/examples.py::_draw_description_slot` | `Pick an example to read about it; open a copy to dig in.` | 13 +clause | `Pick an example` | 3 |
+| `tabs/render.py::_draw_render_button` | `Select an output file to render the {media_type}` | 8 | `no output {media_type} file` | 4 |
+| `ui.py::update_and_draw` | `Rendering... the app pauses while it encodes.` | 7 | `Rendering...` | 1 |
+| `exporters/youtube.py::_draw_controls` | `Uploads land privately on your channel.` | 6 | `uploads land privately` | 3 |
+| `widgets/copilot_chat.py::draw` | `Add your OpenRouter API key in Settings to enable the copilot.` | 11 | `Add your OpenRouter API key in Settings` | 7 |
+| `popups/settings.py::_draw_library_reset` | `Reset library to shipped...` | 4 | `Reset library...` | 3 |
+
+Three get an `_OVER_BUDGET` entry instead: the copilot revert modal's 20-word confirm body (a
+destructive-confirm explanation, which § 2's table has no row for and a 4-word fragment cannot
+state without misleading), and the two `_draw_turn_snippet` readouts, which are derived figures
+around two and three authored words.
+
 ### Census reconciliation with the parent spec and with round 1
 
 | Figure | Parent | Draft 1 | This run | Verdict |
@@ -895,7 +980,10 @@ Reads tooltip (31), its empty state (10), its size label (6) and the strip's gea
 | `shaderbox/widgets/uniform.py` | the three-branch `play_stop_toggle(tooltip=...)` cut to `Whole script is stopped` / `Stop this uniform` / `Resume this uniform`. |
 | `shaderbox/help_content.py` | `ENGINE_UNIFORM_DOCS["u_pass_iteration"]`'s text becomes `"which run this is, 0-based (see Runs)"`; `help_sections()` gains a `key="pass_settings"` section carrying the two facts the deleted `sampling` / `edges` markers held. |
 | `shaderbox/theme.py` | `SIZE.PASS_SETTINGS_H` deleted; `SIZE.AUTO_NAME_W: int = 128` added beside `CANVAS_FIELD_W`. `PASS_SETTINGS_W` stays. |
-| `tests/test_ui_prose_budget.py` | new: the gate. |
+| `tests/test_ui_prose_budget.py` | new: the gate, its domain derived from `ui_primitives` signatures. |
+| `tests/test_pass_settings_layout.py` | new (post-review): the gear's width-under-auto-resize and the engine-uniform column, both measured in a headless frame because neither is an AST fact. |
+| `ai_docs/conventions.md` | a `## Code rules` bullet stating the UI-string budget and naming its gate. |
+| `shaderbox/popups/examples.py`, `shaderbox/tabs/render.py`, `shaderbox/ui.py`, `shaderbox/exporters/youtube.py`, `shaderbox/widgets/copilot_chat.py`, `shaderbox/popups/settings.py` | post-review: the six cuts the widened domain exposed (§ The widened census). |
 | `.claude/skills/imgui-ui/SKILL.md` | § 2's budget table gains a pointer line naming `tests/test_ui_prose_budget.py` as the enforcer, so the skill's reader learns the rule is checked. No budget changes; § 2 already carries D1. |
 
 `ui_primitives.py` is **not** touched. The parent's Files line lists it for "`modal_window`
@@ -1094,12 +1182,17 @@ Imports `ENGINE_DRIVEN_UNIFORMS` from `shaderbox.core` and `SIZE.AUTO_NAME_W` fr
 asserts every name in the set (minus `TABLE_UNIFORMS`, which never gets a row) is at most **19**
 characters.
 
-The bound is `floor(SIZE.AUTO_NAME_W / 6.5508)` for the 12px monospace face: the app loads
-`AnonymousPro-Regular.ttf`, whose advance is 1118/2048 em, so one character at 12px is 6.5508px and
-`128 / 6.5508 = 19.54`. 19 characters is 124.5px and fits; 20 is 131.0px and does not. (The font
-metric is round 1's measurement, taken with fontTools against the shipped file; this session has no
-fontTools installed and did not re-derive it. It is recorded as a relayed number, and the test
-carries the division rather than a bare 19 so the arithmetic is visible at the assertion.)
+**REPLACED by post-implementation review (F5): the bound is MEASURED, not derived from an em
+ratio.** The relayed metric was wrong in the unsafe direction — the rasterized 12px face advances
+**7.0px**, not 6.5508, so only 18 characters fit where the arithmetic claimed 19, and a
+19-character name passed the test while visibly truncating. That is precisely the defect the test
+says it prevents, in the test itself.
+
+The check now lives in `tests/test_pass_settings_layout.py` and measures the real thing inside a
+headless frame with the app font pushed: `imgui.calc_text_size(name).x <= SIZE.AUTO_NAME_W` AND
+`_ellipsize(name, SIZE.AUTO_NAME_W) == name` for every engine uniform. Asserting against
+`_ellipsize` cannot drift from the renderer because it IS the renderer. Verified in both
+directions: a 19-character name goes red, an 18-character one passes.
 
 **Falsifier:** add a 20-character engine uniform to `ENGINE_DRIVEN_UNIFORMS` and this goes red. The
 first draft set the bound at 20, which admits a name that does not fit, and named the wrong failure
@@ -1333,6 +1426,25 @@ Each carries a robust default, marked as such; none blocks implementation.
 ---
 
 ## Review history
+
+**Round 2, post-implementation review of `ccd446b`** (`reviews/wave_b_post_code.md` — code
+correctness, **FAIL**; `reviews/wave_b_post_spec.md` — spec fidelity, **PARTIAL**). Both reproduced
+their findings by measurement rather than by reading. Every finding accepted; none disputed.
+
+| # | Finding | Resolution |
+|---|---|---|
+| F1 | The commit ships a RED `make gates`: the new gate file fails ruff SIM102 and `ruff format`. The wave whose thesis is "a budget with no check is a wish" committed a checker that does not pass the repo's own gate — the sixteen mutations were run against `pytest`, never against the gate. | The nested `if` collapsed, the file formatted, `make check` run twice and `make gates` judged by its unpiped exit code. The process failure was mine: I read a `make check` run that pre-commit had auto-fixed mid-run and did not re-run it afterwards. |
+| F2 + spec 2 | The gate narrows its own DOMAIN: `_SCORED` was hand-listed, so a new copy-bearing helper and its callers were invisible (measured: a helper drawing its own tooltip left the suite fully green). 23 copy-bearing helpers sat outside it, with live over-budget copy among them. Separately, three rows were read by keyword only while being positionally reachable. | § Design decisions 2 rewritten: the table is DERIVED from `ui_primitives` signatures, indices read from `inspect.signature`. Two new tests hold it shut. Census 106 → 239 sites; six new cuts, three new `_OVER_BUDGET` entries. |
+| F3 | `always_auto_resize` discards the seeded width — measured 323px against a 440 token, so `PASS_SETTINGS_W` was inert. | A size CONSTRAINT pins the width; a new headless test measures it (323 without, 440 with). § Design decisions 7 records the reversal. |
+| F4 | `no_scrollbar` removes the only cue that clamped content continues — past 20 Reads rows the Close button is off-screen with no scrollbar. | The flag is dropped; auto-resize plus the height constraint gives the same behaviour at every normal size, and the bar now appears only in the clamped case. |
+| F5 | The `AUTO_NAME_W` bound is off by one in the UNSAFE direction: the face advances 7.0px, not the assumed 6.5508, so a 19-character name passes and truncates. A checker admitting its own defect. | Replaced with a measurement against `calc_text_size` and `_ellipsize` in a headless frame. Falsified at 19 (red) and 18 (green). |
+| F6 | The `format` control's choosing criterion was deleted and documented nowhere. | One sentence added to the `pass_settings` Help section naming when each format is wanted. |
+| spec 3 | D1 is enforced by a repo test but stated only in the skill, so the rule is undiscoverable from the repo alone. | A bullet in `conventions.md ## Code rules` states the budget and names the test as its gate. |
+
+**What the round changed, in one line.** The gate went from measuring 44% of its domain to
+measuring it (F2); two layout claims that were asserted rather than measured turned out false and
+are now pinned by headless tests (F3, F4, F5); and the rule the whole wave enforces is finally
+written where a reader without the skill can find it (spec 3).
 
 **Round 1, pre-implementation review** (`reviews/wave_b_pre.md`, one reviewer, correctness & design
 plus verification & blast radius; opus, because the deliverable was judgement about a gate's domain

@@ -114,7 +114,7 @@ def _draw_grid(app: App) -> str:
 def _draw_description_slot(app: App, selected: str) -> None:
     if imgui.begin_child("##example_desc", size=(0.0, _DESC_SLOT_H)):
         if selected not in app.ui_document_examples:
-            caption_text("Pick an example to read about it; open a copy to dig in.")
+            caption_text("Pick an example")
         else:
             imgui.push_text_wrap_pos(
                 0.0

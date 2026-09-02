@@ -175,7 +175,7 @@ def _draw_library_reset(app: App) -> None:
     # Factory reset of the shipped shader library. Armed confirm (one extra click);
     # the index rebuild rides the mtime watcher, no explicit poke needed.
     if not app.lib_reset_armed:
-        if danger_button("Reset library to shipped..."):
+        if danger_button("Reset library..."):
             app.lib_reset_armed = True
         return
     imgui.push_text_wrap_pos(0.0)

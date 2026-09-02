@@ -54,6 +54,18 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   module; an imgui+theme draw helper reused across modules goes in `ui_primitives.py`, a non-UI
   helper in `util.py` (or the relevant leaf). Same bar for `@classmethod` unless it's a genuine
   alternate constructor (`cls(...)`).
+- **Every fixed UI string has a word budget, and `tests/test_ui_prose_budget.py` is its gate.**
+  A control label is 1-2 words (a button's action phrase up to 3); an icon or button tooltip is
+  the control's NAME, at most 5 words; a `help_marker` is ONE clause of at most 8 words and only
+  where the label is ambiguous; an empty-state line is at most 4. A derived value goes in the
+  CONTROL, never the label — a label column is fixed-width, so a `label_row` label carrying an
+  interpolation is rejected outright. Anything longer is documentation and belongs in the Help
+  panel or the tutorial, where a reader chose to read. The gate derives its domain from
+  `ui_primitives` signatures by reflection, so a new copy-bearing helper defaults INTO it; a
+  string it cannot read, or one that stays over budget, needs a written entry with a reason and
+  cannot rot (an entry whose site is gone turns the suite red). Revisit a budget only by changing
+  it in one place — the number in the test — not by exempting sites one at a time.
+
 - **UI authoring rules live in the `/imgui-ui` skill, not here.** Button tiers, jitter-free
   overlays, "don't repeat a widget", the SetCursorPos assert, modal chrome, context menus,
   imgui-bundle quirks — all in `.claude/skills/imgui-ui/SKILL.md`. Read it at the start of any

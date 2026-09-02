@@ -505,7 +505,7 @@ class YouTubeExporter(Exporter):
                 want: str = "Short" if short_now else "Long-form"
                 imgui.text_colored(COLOR.STATE_INFO, f"Re-render for {want}.")
             else:
-                caption_text("Uploads land privately on your channel.")
+                caption_text("uploads land privately")
 
     def _artifact_matches_shape(
         self, artifact: RenderedArtifact | None, current_document: UIDocument

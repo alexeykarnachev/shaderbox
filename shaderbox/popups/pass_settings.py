@@ -45,10 +45,20 @@ _FORMAT_CODES = [code for code, _, _ in _FORMATS]
 def draw_pass_settings(app: App) -> None:
     if app.popup_state != PopupState.PASS_SETTINGS:
         return
+    # `always_auto_resize` IGNORES set_next_window_size, so the width token only holds
+    # through a constraint: min and max both PASS_SETTINGS_W pins the axis the user reads
+    # across, while the height follows the content up to the display. The scrollbar is left
+    # enabled deliberately -- it can only appear once content exceeds the display, which is
+    # exactly when the user needs to be told the panel continues.
+    display_h = imgui.get_io().display_size.y
+    width = float(SIZE.PASS_SETTINGS_W)
+    imgui.set_next_window_size_constraints(
+        (width, 0.0), (width, max(1.0, display_h - float(SIZE.PASS_SETTINGS_MARGIN)))
+    )
     with modal_window(
         _LABEL,
-        (float(SIZE.PASS_SETTINGS_W), 0.0),
-        flags=imgui.WindowFlags_.always_auto_resize | imgui.WindowFlags_.no_scrollbar,
+        (width, 0.0),
+        flags=imgui.WindowFlags_.always_auto_resize,
     ) as visible:
         if not visible:
             return
