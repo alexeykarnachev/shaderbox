@@ -179,9 +179,14 @@ Each lists: findings folded, the shape, the files, what pins it (test or check).
   either example (verified from both `graph.json`s). The rename is per-file and exact-token,
   limited to the two multi-pass examples: unrelated single-pass examples declare `u_light_*`
   (`8d454b7b…/passes/main.frag.glsl:56-60`) and `u_glow_*` (`0b0d16bb…:12-13`) uniforms whose
-  values persist in their `document.json`; a prefix-blind replace corrupts them. Verify by
-  loading every example headlessly after the rename (the resolve-clean example test). Rule stated in the Help panel's pass section and the copilot prompt's
-  pass block; the api-lock tests for examples updated.
+  values persist in their `document.json`; a prefix-blind replace corrupts them. Exact-token
+  matching, not file scoping, is what makes it safe: a third trap (`u_light_radius`) sits inside
+  the Radiance Cascades example itself. Rule stated in the Help panel's pass section and the
+  copilot prompt's pass block. The rename's gate is both multi-pass examples compiling every
+  pass plus a D9 naming gate over every shipped `graph.json` — **no api-lock file is involved**
+  (`70_wave_d_wiring_naming.md § Verified / corrected premises` 15 refutes an earlier claim here
+  that one was; the resolve-clean test runs the `SB_*` include resolver and never invokes GLSL,
+  so it cannot see a uniform rename at all).
 - Default wiring by name is a RESOLUTION rule, not a stored edge. Two facts force that: the
   hot-reload seam (`watch.py::_reload_pass_if_changed`) has no graph and no compile — it
   `invalidate()`s and the samplers are unknowable there (forcing a compile inverts 066 D1); and

@@ -5,8 +5,8 @@ to open that pass in the editor; its wiring and target live in the pass-settings
 (`popups/pass_settings.py`), reached from the tile's gear, its context menu, or automatically on
 `add pass` — set-up-once choices don't get an always-open block of panel space.
 
-A tile is a picture and a name, nothing else: the wiring lines it used to carry were ellipsized to
-nothing at this width, and the error line was a second spelling of the red border already drawn.
+A tile is a picture and a name, nothing else. Compile errors show as a red border rather than as
+text, and the wiring lives in the gear.
 """
 
 from collections.abc import Callable, Iterable

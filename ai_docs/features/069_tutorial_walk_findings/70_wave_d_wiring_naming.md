@@ -89,10 +89,19 @@ def effective_inputs(
     """
 ```
 
-The body is a dict comprehension over `samplers` with the three branches above, plus the `bound`
-skip; `_auto_source(uniform, consumer)` strips the `u_` prefix and maps `u_prev` to `consumer`.
-A sampler that resolves to nothing is simply absent from the returned dict, which is exactly the
-shape `PassEntry.inputs` already has and every consumer already handles.
+The body carries every stored edge through first (`{u: src for u, src in entry.inputs.items() if
+src}`) and then loops `samplers`, applying the name rule to the keys the entry does not decide and
+skipping those in `bound`; `_auto_source(uniform, consumer)` strips the `u_` prefix and maps
+`u_prev` to `consumer`. A sampler that resolves to nothing is simply absent from the returned
+dict, which is exactly the shape `PassEntry.inputs` already has and every consumer already
+handles.
+
+**Carrying stored edges through is required, not stylistic.** `samplers` comes from a COMPILED
+program, so a freshly loaded document passes `[]` for every pass -- and a body that only looped
+`samplers` would return `{}` there, losing every edge `graph.json` holds and planning a document
+with no wiring at all. The consequence to know: a stored edge on a uniform the program does not
+declare survives into the effective graph. That is harmless, because `core.py` binds by declared
+uniform, and it is the same tolerance `unresolved_inputs` already extends to a stale name.
 
 Two things it deliberately does NOT do. It does not read `PassGraph` - it takes one entry and the
 set of pass names, so a caller that has only a subgraph (the planner building an effective graph
@@ -225,11 +234,12 @@ skip, which is per-frame by construction - so a pass whose auto edge first appea
 drawn once in frame k and skipped by the sweep in that same frame. A between-frame order change
 is outside the domain of every assertion in the module, by design rather than by accident.
 
-The five consumers of the resolution are therefore: `Document.render` (the binder), the planner
+The SIX consumers of the resolution are therefore: `Document.render` (the binder), the planner
 via `plan_for_output` on the effective graph, the gear (decision 6), the strip's two planner calls
-(decision 11), and `copilot/backend.py::_pass_views` (decision 7). All five read the same
-`effective_graph`, which is what makes "the renderer draws it" and "the strip says it is live"
-the same claim.
+(decision 11 - the tile order and the stale wash), `copilot/backend.py::_pass_views` (decision 7),
+and `Document.has_feedback`, which gates the Clear canvas button and would otherwise miss a
+`u_prev` pass wired by name alone. All six read the same `effective_graph`, which is what makes
+"the renderer draws it" and "the strip says it is live" the same claim.
 
 ### 4. The media-bound exclusion lives at the resolution seam, not the render seam
 
@@ -554,11 +564,13 @@ Two edits, both by hand, no migration code, per `CLAUDE.md`'s hard rule and
   `border = COLOR.STATE_ERROR if errors else ...`, which is drawn before and independent of the
   sublines, so removing the text loses no signal - the border was always the primary marker and
   the line was a second spelling of it.
-- `preview_cell` keeps its `sublines` parameter. It is the only such helper in `ui_primitives`
-  and `tests/test_ui_prose_budget.py` derives its domain from the live signature, scoring
-  `sublines` at 4 words; removing the parameter would change that test's derived rows for no
-  gain, and 070 will want the parameter back. Nothing else in `shaderbox/` passes it - verified by
-  grep at `d2ade88`: `pass_list.py` is the sole caller.
+- `preview_cell` LOSES its `sublines` parameter, with its docstring paragraph, its term in
+  `footer_h` and its render loop. `pass_list.py` was its only caller in `shaderbox/`, so the
+  parameter would otherwise be surface with no consumer that still has to be taught and
+  maintained; 070's graph view is not a `preview_cell`. `tests/test_ui_prose_budget.py` derives
+  its scored domain from the live signature, so the `sublines` row leaves with the parameter
+  rather than needing an edit. (This reverses the draft's decision to keep it; round 2's code F4
+  is why.)
 
 **`draw` and `_strip_order` both plan the EFFECTIVE graph, not `document.graph`.** This is the
 half of decision 3 the strip needs, and it is a real consumer of `effective_inputs` rather than a
@@ -1040,9 +1052,10 @@ five corrected, one refuted.
 **Two premises this spec adds that the parent does not state.**
 
 16. `copilot/backend.py::_pass_views` reads `entry.inputs` raw to build the working set's `inputs:`
-    rows. It is a fifth consumer of the resolution - the parent names four (render, planner, gear,
-    strip) - and left alone it would tell the model a sampler reads BLACK while the renderer fills
-    it. Decision 7 covers it.
+    rows. It is a consumer of the resolution beyond the four the parent names (render, planner,
+    gear, strip), and left alone it would tell the model a sampler reads BLACK while the renderer
+    fills it. Decision 7 covers it. (`has_feedback` is a sixth, found at implementation time -
+    see § Landed deviations.)
 17. `widgets/pass_list.py` is the ONLY caller of `preview_cell`'s `sublines` in `shaderbox/`
     (verified by grep at `d2ade88`), and `tests/test_ui_prose_budget.py` derives its scored domain
     from `ui_primitives`' live signatures, scoring `sublines` at 4 words. So decision 11 keeps the
@@ -1088,6 +1101,62 @@ Each carries the robust default this wave implements if the maintainer says noth
    own entry (it is a render-time rule, not a model rule), it moves. **Default: one bullet in the
    pass-graph entry**, phrased as what the mechanism IS rather than as what this wave changed.
    Marked: doc placement only.
+
+## Landed deviations
+
+What the implementation does that this document did not say, each with why it was forced. The
+decisions above are edited in place where the change is the decided shape; this section is the
+record of what MOVED, so a reader of the spec and a reader of the code see the same design.
+
+1. **`effective_inputs` carries stored edges through unconditionally.** Decision 1 said "a dict
+   comprehension over `samplers`", which returns `{}` for an uncompiled pass and would lose every
+   edge `graph.json` holds on a freshly loaded document. Decision 1 now carries the real shape and
+   the reason. Second-order: a stored edge on a uniform the program does not declare survives into
+   the effective graph, which is harmless because `core.py` binds by declared uniform.
+
+2. **`Document.has_feedback` is a sixth consumer.** It gates the Clear canvas button and planned
+   the RAW graph, so a pass declaring `u_prev` with no stored edge was invisible to it and the
+   button never appeared. Decision 3's list and `conventions.md` both say six.
+   `test_a_u_prev_pass_has_feedback_without_a_stored_edge` pins it.
+
+3. **Every declared sampler is bound BLACK before the resolved edges overwrite it.** Decision 4
+   said `core.py` keeps binding what the document hands it, and the worked example asserts the
+   `(none)` case renders black - but an unbound sampler falls through to `uniform_values`, which
+   holds the seeded default PHOTO. Two surfaces this wave shipped assert otherwise (the gear's
+   `auto: none`, the copilot's `reads BLACK`), and 065 D3 says an unfilled input reads black. So
+   `Document.render` seeds `inputs` from `sampler_names(render_pass)` with the 1x1 black texture
+   and lets resolved edges overwrite. This covers the stored-`""` case, the name-matched-nothing
+   case and the no-`u_`-prefix case with one rule. The fall-through was pre-existing, not a W-D
+   regression; W-D is what made a large population of samplers legitimately resolve to nothing.
+
+4. **`_pass_views` resolves AFTER the compile that discovers the samplers.**
+   `_sampler_uniform_names` goes through `get_active_uniforms`, which compiles - so resolving
+   first sees `program is None` for every pass and reports every name-wired sampler as BLACK. The
+   sampler names are gathered for all passes first, then the graph resolves once. (On the live
+   path `_copilot_document_working_view` already compiles before it calls here, so the defect is
+   reachable only through a direct `_pass_views` call; the test asserts there.)
+
+5. **`preview_cell`'s `sublines` parameter is deleted, not kept.** Decision 11 kept it for 070 and
+   for the prose-budget gate's derived row. With the strip no longer passing it the parameter had
+   zero production callers, which is speculative surface that must be taught and maintained; 070's
+   graph view is not a `preview_cell`. The gate's derived row follows the signature, so dropping
+   the parameter drops the row.
+
+6. **`_sampler_names` is a module-level `sampler_names`, and `_is_user_bound` is `is_user_bound`.**
+   The first took `self` and never used it (a free function by the `@staticmethod` rule); the
+   second is read by `popups/pass_settings.py`, and a name two modules share is not private.
+   `popups/pass_settings.py` keeps its OWN `_sampler_names`, which calls `get_active_uniforms` on
+   purpose - opening the gear is a user asking to see this pass's inputs, so it pays the compile.
+
+7. **`_pass_views` binds `effective_graph()` once above the loop**, where decision 7's snippet put
+   it inside. Same answer, N program scans instead of N².
+
+8. **A shim in `tests/test_copilot_script_tools.py`.** Its hand-built `SimpleNamespace` document
+   gained `effective_graph`, since `_pass_views` now calls it.
+
+9. **Two module docstrings** (`widgets/pass_list.py`, `popups/pass_settings.py`) gained a paragraph
+   stating what the surface now IS. Their first drafts narrated the change instead and were
+   rewritten.
 
 ## Review history
 
@@ -1155,3 +1224,41 @@ over all seven examples' `graph.json` - nine edges fail today, zero after the ta
 closed open questions were reviewed and all four defaults agreed with.
 
 **Nothing rejected**, and no finding escalated to the maintainer.
+
+**Round 2, post-implementation** (`reviews/wave_d_post_code.md`, correctness; `wave_d_post_spec.md`,
+spec fidelity and architecture. Commit under review `f18a7d3`). Both ran `make gates` unpiped and
+both report GREEN. Resolution rule, effective graph, planner-across-frames, gear, renames and
+`has_feedback` all PASS in the code review; findings closure and renames PASS in the spec review.
+Eight findings between them, all accepted; nothing escalated.
+
+- **The FAIL, found twice** (code F1, spec F8). A sampler with an ABSENT key that resolves to
+  nothing rendered the shipped 960x1280 photograph, while the gear said `auto: none` and the
+  copilot said `reads BLACK` about the same sampler in the same frame. The wave applied the
+  black-bind reasoning to the `""` case and stopped there. The maintainer's ruling: an unresolved
+  sampler reads black exactly like a stored `""`. Landed deviation 3.
+- **Code F3.** `test_u_df_beside_df_renders_without_the_gear` asserted only `max(rgb) > 0`, so the
+  render-seam falsifier (plan the RAW graph) stayed GREEN - the photo it fell through to is also
+  non-black. This is the checker-narrows-its-own-domain shape: the test's subject was "the
+  distance field rendered" and it verified "something non-black rendered". It now compares the
+  `edge` canvas against `df`'s own canvas texel for texel, and the falsifier goes red.
+  `test_an_unresolved_sampler_renders_black` covers the other half.
+- **Code F2 / spec F1.** `_pass_views` ordering. Landed deviation 4.
+- **Code F4.** `preview_cell`'s `sublines` had zero production callers. Landed deviation 5.
+- **Code F5 / spec F5.** `_sampler_names` took an unused `self`; `_is_user_bound` crossed a module
+  boundary under a private name. Landed deviation 6.
+- **Spec F2 / F4 / F3 / F7.** This spec had no post-implementation record (now § Landed
+  deviations and this round), two docstrings narrated development history (rewritten), the parent
+  spec's refuted "api-lock tests for examples updated" claim still stood (corrected in place at
+  `01_spec.md § W-D`, pointing at premise 15), and the roadmap banner was two waves behind
+  (rewritten).
+- **Spec F6.** `_black_texture`'s lifetime checked and clean: one lazily-built 1x1 texture per
+  document, released on the document's own path, so the new binding allocates nothing.
+
+**Confirmed by the reviewers, independently of this spec:** the twelve-cell resolution matrix plus
+seven extra cases (a bare `u_`, a bound `u_prev`, `u_edge` on pass `edge`, a stale edge on an
+uncompiled pass); a six-pass twelve-frame planner trace with `assert_plan_invariants` on every
+frame, converging at f3 with no pass drawn twice and one predicted out-of-order turn at f2; the
+media-exclusion collision case constructed by adding a pass named `image` to the Media Input
+example (the user's PNG survives); `""` surviving both `_graph_renamed` and `_graph_without`;
+`effective_graph` measured at 0.021 ms for six passes, ~0.5% of a 60 fps budget across a frame's
+four calls; and all eighteen rename tokens with the three prefix traps intact.

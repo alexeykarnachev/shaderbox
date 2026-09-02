@@ -212,17 +212,19 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   D9).** A sampler called `u_<pass>` is filled from the pass called `<pass>` when the graph stores
   no decision for it; `u_prev` reads the pass's own previous frame, and a name without the `u_`
   prefix names no pass. One pure function resolves it (`pass_graph.effective_inputs`) and
-  `Document.effective_graph` is the one thing every consumer reads — the renderer, the planner,
-  the strip's order and its stale wash, `has_feedback`, the gear's combo, the copilot's working
-  set — which is
+  `Document.effective_graph` is the one thing all SIX consumers read — the renderer's binder, the
+  planner, the strip's tile order, the strip's stale wash, `has_feedback`, the gear's combo and
+  the copilot's working set — which is
   what makes "the renderer draws it" and "the strip says it is live" the same claim. What is
   SAVED stays only what the user DECIDED: an absent key means the name decides, `""` is an
   explicit none the rule must not undo, a name is that pass. A resolved edge never reaches disk,
   because it would then be indistinguishable from a chosen one the next time the rule changed.
   Sampler names come from a pass's COMPILED program, never from `get_active_uniforms()` (that
   would compile the whole document on frame one and invert 066 D1), and a user-bound texture is
-  never auto-wired. Revisit if a second naming shape is wanted — then the rule is a table, not
-  one function.
+  never auto-wired. Every sampler a pass DECLARES starts bound to the 1x1 black texture and a
+  resolved edge overwrites it, so an unfilled input reads black exactly as D3 says rather than
+  falling through to its own seeded default photo. Revisit if a second naming shape is wanted —
+  then the rule is a table, not one function.
 
 - **A pass compiles when something first NEEDS its program — never at load (feature 066).**
   `Document.load_from_dir` builds passes, graph and uniform VALUES with zero compiles (the values

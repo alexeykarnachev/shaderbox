@@ -178,12 +178,47 @@ def test_u_df_beside_df_renders_without_the_gear(
     _render_until_online(document, len(document.passes) + 4)
 
     assert document.effective_graph().passes["edge"].inputs == {"u_df": "df"}
-    image = texture_to_rgba8(document.passes["edge"].canvas.texture)
-    assert int(np.asarray(image)[:, :, :3].max()) > 0, (
-        "the auto-wired distance field rendered black"
+    # The PICTURE, not merely a non-black one: `edge` passes `df`'s texel straight through, so
+    # the two canvases must agree. Asserting brightness alone cannot tell the distance field from
+    # the seeded default PHOTO an unbound sampler used to fall through to -- both are non-black.
+    drawn = np.asarray(texture_to_rgba8(document.passes["edge"].canvas.texture))[
+        :, :, :3
+    ]
+    produced = np.asarray(texture_to_rgba8(document.passes["df"].canvas.texture))[
+        :, :, :3
+    ]
+    assert drawn.shape == produced.shape
+    assert int(np.abs(drawn.astype(int) - produced.astype(int)).max()) <= 1, (
+        "`edge` did not render what `df` produced"
     )
+    assert int(drawn.max()) > 0, "the distance field itself came out black"
     # The rule stores nothing: `graph.json` still holds only what the user decided.
     assert document.graph.passes["edge"].inputs == {}
+
+
+def test_an_unresolved_sampler_renders_black(
+    gl: moderngl.Context, tmp_path: Path
+) -> None:
+    # 065 D3: an input the graph does not fill reads BLACK. Left unbound the sampler falls
+    # through to its own seeded default photo, which is what makes the gear's `auto: none` and
+    # the copilot's `reads BLACK` false about the same sampler in the same frame.
+    document_dir = tmp_path / "document"
+    shutil.copytree(_RC, document_dir)
+    (document_dir / "passes" / "edge.frag.glsl").write_text(
+        _EDGE.replace("u_df", "u_nosuchpass"), encoding="utf-8"
+    )
+    document = load_document_from_dir(document_dir).document
+    document.graph = document.graph.with_output("edge")
+
+    _render_until_online(document, len(document.passes) + 4)
+
+    assert document.effective_graph().passes["edge"].inputs == {}
+    drawn = np.asarray(texture_to_rgba8(document.passes["edge"].canvas.texture))[
+        :, :, :3
+    ]
+    assert int(drawn.max()) == 0, (
+        "an unresolved sampler rendered the seeded default image"
+    )
 
 
 def test_a_stored_empty_string_stays_black_across_a_reload(

@@ -44,7 +44,6 @@ _PARAMETER_BUDGETS: dict[str, int] = {
     "text": 4,
     "caption": 4,
     "message": 4,
-    "sublines": 4,
     "hint": 8,
 }
 

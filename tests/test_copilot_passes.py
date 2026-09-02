@@ -178,6 +178,25 @@ def test_a_pass_wired_only_by_its_uniform_name_is_shown_as_filled(app: Any) -> N
     assert composite.inputs == ["u_scene <- scene"]
 
 
+def test_pass_views_resolves_after_the_compile_that_finds_the_samplers(
+    app: Any,
+) -> None:
+    # `_sampler_uniform_names` goes through `get_active_uniforms`, which COMPILES a
+    # never-attempted pass -- and the effective graph resolves from compiled programs. Resolving
+    # first therefore sees no program and reports every name-wired sampler as BLACK, a false fact
+    # on the channel the model acts from. `read_working_set` compiles before it reaches here, so
+    # the ordering is asserted on `_pass_views` itself, where the defect lives.
+    document_id = _two_pass(app)
+    app.session.unwire_pass_input(document_id, "composite", "u_src")
+    document = app.ui_documents[document_id].document
+    document.passes["composite"].release_program(_NAMED)
+    assert document.passes["composite"].program is None
+
+    views = app.copilot_backend._pass_views(document_id, {}, document)
+    composite = next(v for v in views if v.name == "composite")
+    assert composite.inputs == ["u_scene <- scene"]
+
+
 def test_a_single_pass_document_renders_exactly_as_before(app: Any) -> None:
     # The ordinary case must not change: no PASS sub-sections, and the member keeps its own
     # listing / uniforms / errors.

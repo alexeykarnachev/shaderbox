@@ -495,24 +495,27 @@ def test_closing_the_gear_on_a_retired_pass_stays_silent(app: Any) -> None:
 # The strip: what a tile shows, and which graph it plans (069 W-D).
 
 
-def test_the_strip_draws_no_sublines(app: Any, monkeypatch: Any) -> None:
-    # A tile is a picture and a name. The wiring lines were truncated to nothing and the error
-    # line was a second spelling of the border, so both go; the gear carries the wiring.
+def test_the_strip_draws_a_picture_and_a_name_only(app: Any, monkeypatch: Any) -> None:
+    # A tile carries the pass's name and nothing under it: the wiring lines were ellipsized to
+    # nothing at this width, and the error line said what the red border already says.
     document_id = _document_id(app)
     app.session.add_pass(document_id, "src")
     app.session.add_pass(document_id, "sink")
     app.session.wire_pass_input(document_id, "sink", "u_src", "src")
 
-    captured: list[Any] = []
+    captured: list[dict[str, Any]] = []
     real = pass_list.preview_cell
 
     def spy(*a: Any, **kw: Any) -> Any:
-        captured.append(kw.get("sublines", ()))
+        captured.append(dict(kw))
         return real(*a, **kw)
 
     monkeypatch.setattr(pass_list, "preview_cell", spy)
     _imgui_frame(lambda: pass_list.draw(app, document_id, lambda _: None))
-    assert captured and all(subs == () for subs in captured), captured
+    assert captured
+    for kwargs in captured:
+        assert "sublines" not in kwargs, kwargs
+        assert kwargs["footer"] in ("main", "src", "sink"), kwargs
 
 
 def test_an_auto_wired_ancestor_is_not_washed_stale(app: Any, monkeypatch: Any) -> None:

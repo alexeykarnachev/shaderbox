@@ -219,11 +219,32 @@ def _load_uniform_value(gl: moderngl.Context, document_dir: Path, value: Any) ->
     raise ValueError("unknown uniform dict format")
 
 
-def _is_user_bound(value: object) -> bool:
-    # Not "is a MediaWithTexture": `Pass._default_uniform_value` seeds EVERY unbound sampler with
-    # the shipped default image, so that test alone would call every sampler bound and disable
-    # auto-wiring outright.
+def is_user_bound(value: object) -> bool:
+    """Whether a sampler's value is a texture the USER chose, so the name rule must not replace it.
+
+    Not "is a MediaWithTexture": `Pass._default_uniform_value` seeds EVERY unbound sampler with
+    the shipped default image, so that test alone would call every sampler bound and disable
+    auto-wiring outright.
+    """
     return isinstance(value, MediaWithTexture) and not is_default_image(value)
+
+
+def sampler_names(render_pass: Pass) -> list[str]:
+    """The `sampler2D` uniforms a COMPILED pass declares; empty while its program is None.
+
+    Reads the program rather than `get_active_uniforms()`, which COMPILES a never-attempted pass
+    (066 D1) -- asking that here would compile the whole document on frame one. The live loop's
+    first-render sweep is what brings each pass online, one per frame.
+    """
+    program = render_pass.program
+    if program is None:
+        return []
+    return [
+        name
+        for name in program
+        if isinstance(program[name], moderngl.Uniform)
+        and getattr(program[name], "gl_type", None) == GL_SAMPLER_2D
+    ]
 
 
 class Document:
@@ -435,20 +456,6 @@ class Document:
             canvas.set_size(live.texture.size)
         return canvas
 
-    def _sampler_names(self, render_pass: Pass) -> list[str]:
-        # Compiled passes only: get_active_uniforms() COMPILES a never-attempted pass (066 D1),
-        # so asking it here would compile the whole document on frame one. The live loop's
-        # first-render sweep is what brings each pass online, one per frame.
-        program = render_pass.program
-        if program is None:
-            return []
-        return [
-            name
-            for name in program
-            if isinstance(program[name], moderngl.Uniform)
-            and getattr(program[name], "gl_type", None) == GL_SAMPLER_2D
-        ]
-
     def effective_graph(self) -> PassGraph:
         """`self.graph` with every sampler's effective source filled in (069 D9).
 
@@ -463,11 +470,11 @@ class Document:
             if render_pass is None:
                 entries[name] = entry
                 continue
-            samplers = self._sampler_names(render_pass)
+            samplers = sampler_names(render_pass)
             bound = [
                 uniform
                 for uniform in samplers
-                if _is_user_bound(render_pass.uniform_values.get(uniform))
+                if is_user_bound(render_pass.uniform_values.get(uniform))
             ]
             entries[name] = entry.model_copy(
                 update={"inputs": effective_inputs(entry, samplers, names, name, bound)}
@@ -515,7 +522,6 @@ class Document:
             render_pass.drawn_frame = self._frame
             render_pass.first_render_done = True
             entry = resolved_graph.passes.get(name, PassEntry())
-            stored_inputs = self.graph.passes.get(name, PassEntry()).inputs
             # The document owns the canvas size, so it applies each pass's scale — a pass cannot
             # size itself from a number it does not hold, and doing it in both places would fight.
             # The OUTPUT keeps full size: it is what the preview and export read.
@@ -535,14 +541,13 @@ class Document:
             for iteration in range(entry.iterations):
                 last = iteration + 1 == entry.iterations
                 draw_into = canvas if (name == output and last) else None
+                # Every declared sampler starts BLACK and a resolved edge overwrites it (065
+                # D3). Left unbound a sampler falls through to its own seeded default photo, so
+                # an input the graph does not fill would show a picture -- and the gear's
+                # `auto: none` and the copilot's `reads BLACK` would both be lying about it.
                 inputs: dict[str, moderngl.Texture] = {
-                    # An explicit none (069 D9) is a DECISION that this sampler reads black, and
-                    # `effective_inputs` drops it so the planner never sees a `""` source. Left
-                    # unbound it would fall through to the seeded default photo, which is the
-                    # mis-wire-shows-a-picture failure D3 exists to prevent.
                     uniform: self._black_texture()
-                    for uniform, source_name in stored_inputs.items()
-                    if source_name == ""
+                    for uniform in sampler_names(render_pass)
                 }
                 for uniform, source_name in entry.inputs.items():
                     if source_name == name:

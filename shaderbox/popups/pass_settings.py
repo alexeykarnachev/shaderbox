@@ -12,8 +12,7 @@ building toward rather than a typo you cannot see.
 
 The combo carries two synthetic items ahead of the names (069 D9): `auto: <x>` is what the
 uniform's own NAME resolves to and stores no key, `(none)` stores an explicit black the name rule
-must not undo. Three stored states, three distinct readings -- a combo that showed one label for
-a working wire and a black one is what this replaced.
+must not undo. Three stored states, three distinct readings.
 """
 
 from imgui_bundle import imgui
@@ -21,7 +20,7 @@ from OpenGL.GL import GL_SAMPLER_2D
 
 from shaderbox.app import App, PopupState
 from shaderbox.core import Pass
-from shaderbox.document import _is_user_bound
+from shaderbox.document import is_user_bound
 from shaderbox.pass_graph import MAX_ITERATIONS, PassEntry, effective_inputs
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_primitives import (
@@ -151,7 +150,7 @@ def _draw_inputs(app: App, document_id: str, name: str, render_pass: Pass) -> No
     bound = [
         uniform
         for uniform in samplers
-        if _is_user_bound(render_pass.uniform_values.get(uniform))
+        if is_user_bound(render_pass.uniform_values.get(uniform))
     ]
     for uniform in samplers:
         undecided = entry.model_copy(

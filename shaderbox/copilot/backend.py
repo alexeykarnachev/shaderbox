@@ -777,6 +777,14 @@ class CopilotBackend:
             return []
         handle = short.get(full_id, full_id)
         driven = self._get_script_driven_uniforms(full_id)
+        # Sampler names FIRST, and only then the effective graph: `_sampler_uniform_names` goes
+        # through `get_active_uniforms`, which compiles a never-attempted pass -- and the graph
+        # resolves from COMPILED programs, so resolving first would see none of them and report
+        # every name-wired sampler as BLACK on the first read of a freshly opened document.
+        samplers = {
+            name: _sampler_uniform_names(render_pass)
+            for name, render_pass in sorted(document.passes.items())
+        }
         # The EFFECTIVE graph (069 D9): a sampler the name rule fills has no stored edge, and
         # telling the model it reads BLACK while the renderer fills it is a false fact.
         resolved = document.effective_graph()
@@ -788,7 +796,7 @@ class CopilotBackend:
             stored = document.graph.passes.get(name)
             inputs = [
                 _input_row(uniform, wired, stored.inputs if stored is not None else {})
-                for uniform in _sampler_uniform_names(render_pass)
+                for uniform in samplers[name]
             ]
             views.append(
                 PassView(
