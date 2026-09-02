@@ -21,13 +21,6 @@ from shaderbox.util import format_auto_value
 
 _MAX_ERROR_ROWS = 3
 
-_MODE_BADGES: dict[Mode, tuple[str, tuple[float, float, float, float]]] = {
-    Mode.NORMAL: ("NORMAL", COLOR.FG_DIM),
-    Mode.INSERT: ("INSERT", COLOR.STATE_OK),
-    Mode.VISUAL: ("VISUAL", COLOR.SELECT),
-    Mode.VISUAL_LINE: ("V-LINE", COLOR.SELECT),
-}
-
 
 def _is_script_tab(tab: EditorTab | None) -> bool:
     return tab is not None and tab.kind == "script"
@@ -170,12 +163,21 @@ def _apply_markers(
     app.editor_marker_state[current_path] = fingerprint
     editor.clear_markers()
     # Marker fills are translucent by necessity — they draw behind the glyphs.
-    err_fill = fade(COLOR.STATE_ERROR, 0.35)
+    # STATE_ERROR and SYN_KEYWORD are the same palette entry, so the text colour
+    # is replaced rather than left to the lexer: red on red is unreadable.
+    err_fill = fade(COLOR.STATE_ERROR, 0.20)
     for line, message in fingerprint[0]:
-        editor.add_marker(line, err_fill, err_fill, message)
+        editor.add_marker(
+            line,
+            fill=err_fill,
+            gutter=COLOR.STATE_ERROR,
+            text=COLOR.FG_PRIMARY,
+            gutter_glyph="E",
+            tooltip=message,
+        )
     if hover_line is not None:
         accent = fade(COLOR.ACCENT_PRIMARY, 0.15)
-        editor.add_marker(hover_line, accent, accent)
+        editor.add_marker(hover_line, fill=accent, gutter=accent)
     return fingerprint
 
 
@@ -339,43 +341,10 @@ def _offer_completion(app: App, editor: Editor, tab: EditorTab) -> None:
     app.editor_completion_prefix = prefix
 
 
-def _draw_gutter(editor: Editor, origin: imgui.ImVec2, height: float) -> None:
-    # ed_layout draws no furniture: line numbers are the host's, placed with the
-    # layout's own cell metrics so row N's number sits at row N's y.
-    text_x, _text_y = editor.get_text_origin()
-    if text_x <= 0.0:
-        return
-    cell_w, cell_h = editor.get_cell_size()
-    if cell_h <= 0.0:
-        return
-    draw_list = imgui.get_window_draw_list()
-    draw_list.push_clip_rect(
-        origin, imgui.ImVec2(origin.x + text_x, origin.y + height), True
-    )
-    first = editor.get_scroll()
-    rows = int(height / cell_h) + 1
-    line_count = editor.get_line_count()
-    current = editor.get_current_cursor_position().line
-    dim = imgui.get_color_u32(COLOR.FG_DIM)
-    lit = imgui.get_color_u32(COLOR.FG_SECONDARY)
-    right_pad = cell_w * 0.5
-    for row in range(rows):
-        line = first + row
-        if line >= line_count:
-            break
-        label = str(line + 1)
-        label_w = imgui.calc_text_size(label).x
-        pos = imgui.ImVec2(
-            origin.x + text_x - right_pad - label_w,
-            origin.y + row * cell_h + (cell_h - imgui.get_text_line_height()) * 0.5,
-        )
-        draw_list.add_text(pos, lit if line == current else dim, label)
-    draw_list.pop_clip_rect()
-
-
 def draw_chrome(app: App) -> None:
-    # The editor's status chrome — mode badge + caret + the vim command line, then the
-    # active tab's file + dirty/compiled state + Open dir.
+    # Host things only: the active tab's file + dirty/compiled state + Open dir.
+    # The mode badge, the ruler and the `:`/`/`/`?` line are drawn by the library
+    # inside the editor rect (feature 069 W-F).
     tab = app.active_tab
     if tab is None:
         imgui.text_colored(COLOR.FG_DIM, "No file open")
@@ -383,27 +352,6 @@ def draw_chrome(app: App) -> None:
     if app.current_document_id not in app.ui_documents:
         imgui.text_colored(COLOR.FG_DIM, "No document selected")
         return
-    session = app.editor_sessions.get(tab.path)
-    if session is not None:
-        editor = session.editor
-        badge, badge_color = _MODE_BADGES[editor.get_mode()]
-        imgui.text_colored(badge_color, badge)
-        imgui.same_line()
-        cursor = editor.get_current_cursor_position()
-        imgui.text_colored(COLOR.FG_DIM, f"{cursor.line + 1}:{cursor.column + 1}")
-        imgui.same_line(spacing=float(SPACE.MD))
-        # The `:`/`/`/`?` line renders here — the editor owns the state, the host
-        # the pixels (feature 067).
-        command = editor.get_command_line()
-        if command is not None:
-            prompt = editor.get_command_line_prompt() or ""
-            imgui.text_colored(COLOR.ACCENT_PRIMARY, f"{prompt}{command}")
-            imgui.same_line(spacing=float(SPACE.MD))
-        else:
-            message = editor.get_command_message()
-            if message:
-                imgui.text_colored(COLOR.FG_DIM, message)
-                imgui.same_line(spacing=float(SPACE.MD))
     if tab.kind == "shader":
         edited_pass = _pass_for_tab(app, tab)
         full_file_path = (
@@ -556,14 +504,10 @@ def draw(app: App) -> None:
 
     # Layout runs every visible frame (hit tests + scroll clamping answer against
     # it); the GL redraw below is gated.
-    # The text origin is the host-chosen gutter width: the layout reserves
-    # nothing itself (the reference UI offsets the same way). Width converges a
-    # frame behind the line count — cell metrics answer against the last layout.
-    cell_w, cell_h = editor.get_cell_size()
-    gutter_px = (
-        editor.get_gutter_cells() * cell_w if settings.show_line_numbers else 0.0
-    )
-    app.editor_visible_rows = int(size_px[1] / cell_h) if cell_h > 0 else 0
+    cell_h = editor.get_cell_size()[1]
+    # Minus one row for the status line the library draws on the widget's bottom
+    # edge: a cursor behind it is off-screen for the cursor-follow below.
+    app.editor_visible_rows = max(0, int(size_px[1] / cell_h) - 1) if cell_h > 0 else 0
     # The interaction surface FIRST: every editor mutation (mouse, wheel) must
     # precede this frame's layout, or the redraw gate records a state the
     # painted texture doesn't show and the next frame skips the repaint. Hit
@@ -598,9 +542,7 @@ def draw(app: App) -> None:
             if not (first <= cursor.line < first + rows):
                 editor.scroll_to_line(cursor.line, align_middle=False)
     _drive_completion(app, editor, tab)
-    editor.layout(
-        (float(size_px[0]), float(size_px[1])), px_per_em, origin=(gutter_px, 0.0)
-    )
+    editor.layout((float(size_px[0]), float(size_px[1])), px_per_em)
 
     settings_fingerprint = (
         settings.show_whitespace,
@@ -614,7 +556,7 @@ def draw(app: App) -> None:
         current_path,
         size_px,
         px_per_em,
-        gutter_px,
+        editor.get_text_origin(),
         app.editor_completion_prefix,
         marker_fingerprint,
         settings_fingerprint,
@@ -642,10 +584,6 @@ def draw(app: App) -> None:
             imgui.ImVec2(1, 1),
             imgui.get_color_u32((1.0, 1.0, 1.0, alpha)),
         )
-    if settings.show_line_numbers:
-        imgui.push_font(app.font_12, app.font_12.legacy_size)
-        _draw_gutter(editor, editor_pos, float(size_px[1]))
-        imgui.pop_font()
 
     app.editor_focused = focused
     if app.editor_focused:

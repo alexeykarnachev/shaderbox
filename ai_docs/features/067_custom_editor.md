@@ -29,7 +29,8 @@ requirement that follows: modal bindings must not collide with the global hotkey
   OS clipboard. Named registers / the numbered ring stay editor-side out of scope.
 - **Caret blink** — steady caret; revisit only if it reads badly in dogfood.
 - **imgui-side font of the gutter matching the atlas font** — gutter numbers render in the
-  app UI font. Revisit if misalignment reads badly.
+  app UI font. CLOSED by 069 W-F: the gutter is drawn by `ed_layout` itself, in atlas glyphs
+  on the text's own cell grid, so there is no second font to mismatch.
 
 ## Design decisions
 
@@ -162,7 +163,10 @@ requirement that follows: modal bindings must not collide with the global hotkey
     first `Editor` construction (a `ctypes.CDLL` load is milliseconds; no GL needed).
     Rebuild procedure documented in `conventions.md ## Known quirks` (build in the editor
     repo: `odin build ffi -build-mode:shared -no-entry-point -out:libeditor.so`, copy the
-    three files, update `VERSION`).
+    files, update `VERSION`) — that entry, not this one, carries the current vendored set,
+    which has since grown to seven files. 069 W-F re-vendored `c5c6ae230a51ece5` and, with
+    `ed_set_draw_chrome` on, the library draws the gutter and the status row itself: the host
+    `_draw_gutter` and the bottom bar's vim half are gone.
 14. **Completion: host-driven on the deliberate-offer rule (editor commit f57e8d0).**
     First landed against a misread of `ed_complete_prefix` (it reports the buffer
     prefix whether or not the popup is open — feeding on it armed an invisible popup

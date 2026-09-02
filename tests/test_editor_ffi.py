@@ -1,6 +1,10 @@
 """Feature 067: the libeditor binding, the input translation, the drain gates,
 and the redraw-gate domain. All headless — the .so needs no GL."""
 
+import ast
+import ctypes
+import shutil
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -11,7 +15,18 @@ import pytest
 from imgui_bundle import imgui
 
 from shaderbox.commands import COMMAND_SPECS, CommandId
-from shaderbox.editor.ffi import Editor, KeyCode, KeyMod, Kind, Language, Mode
+from shaderbox.editor.ffi import (
+    _SIG,
+    EDITOR_RESOURCES_DIR,
+    ChromeFlag,
+    Editor,
+    KeyCode,
+    KeyMod,
+    Kind,
+    Language,
+    Mode,
+    Prim,
+)
 from shaderbox.editor.input import KeyEvent, translate_char, translate_key
 from shaderbox.editor.render import (
     PRIM_DTYPE,
@@ -403,7 +418,7 @@ def _state(e: Editor, **overrides: Any) -> tuple:
         "identity": Path("/tmp/x.glsl"),
         "size": (640, 480),
         "px_per_em": 16.0,
-        "gutter_px": 0.0,
+        "text_origin": (0.0, 0.0),
         "completion_prefix": None,
         "marker_fingerprint": (),
         "settings_fingerprint": (),
@@ -444,9 +459,17 @@ def test_render_state_reacts_to_every_editor_dimension() -> None:
     e.key(KeyCode.ESCAPE)
     base = _state(e)
 
+    # The command MESSAGE: the library draws it into the status row, and the
+    # line itself is closed again by the time the frame is gated.
+    e.feed(":zzz<CR>")
+    s = _state(e)
+    assert e.get_command_line() is None
+    assert should_redraw(base, s), "a failed ex command must repaint the status row"
+    base = s
+
     assert should_redraw(base, _state(e, size=(320, 480)))
     assert should_redraw(base, _state(e, px_per_em=18.0))
-    assert should_redraw(base, _state(e, gutter_px=40.0))
+    assert should_redraw(base, _state(e, text_origin=(40.0, 0.0)))
     assert should_redraw(base, _state(e, completion_prefix="SB_"))
     assert should_redraw(base, _state(e, marker_fingerprint=((3, "boom"),)))
     assert should_redraw(base, _state(e, settings_fingerprint=(True,)))
@@ -812,4 +835,117 @@ def test_drain_clears_the_consumed_set_each_frame() -> None:
     assert 12345 not in app.editor_consumed_chords, (
         "a stale chord from last frame would suppress a live command forever"
     )
+    e.close()
+
+
+def _upstream_sig(path: Path) -> dict[str, tuple[object, list[object]]]:
+    # Parsed, never imported: the vendored probe opens a session at import time.
+    # `Prim` comes from our own module so POINTER(Prim) memoizes to one object.
+    tree = ast.parse(path.read_text())
+    node = next(
+        n.value
+        for n in tree.body
+        if isinstance(n, ast.Assign)
+        and any(getattr(t, "id", None) == "_SIG" for t in n.targets)
+    )
+    assert isinstance(node, ast.Dict)
+    namespace: dict[str, object] = {"ctypes": ctypes, "Prim": Prim}
+    out: dict[str, tuple[object, list[object]]] = {}
+    for key, value in zip(node.keys, node.values, strict=True):
+        assert key is not None
+        restype, argtypes = eval(
+            compile(ast.Expression(value), str(path), "eval"), namespace
+        )
+        out[ast.literal_eval(key)] = (restype, list(argtypes))
+    return out
+
+
+def test_the_binding_mirrors_every_export_of_the_vendored_binary() -> None:
+    # The mirror rule, in both directions: an unbound export is the rule's own
+    # violation, a bound-but-absent name is the re-vendor regression, named here
+    # instead of surfacing as an AttributeError out of the binding loop.
+    lib_path = EDITOR_RESOURCES_DIR / "libeditor.so"
+    if not lib_path.exists() or shutil.which("nm") is None:
+        pytest.skip("vendored binary or nm unavailable")
+    out = subprocess.run(
+        ["nm", "-D", "--defined-only", str(lib_path)],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    exported = {
+        parts[2]
+        for line in out.splitlines()
+        if len(parts := line.split()) == 3
+        and parts[1] == "T"
+        and parts[2].startswith("ed_")
+    }
+    assert exported == set(_SIG), (
+        f"unbound: {sorted(exported - set(_SIG))}; "
+        f"bound but absent: {sorted(set(_SIG) - exported)}"
+    )
+
+
+def test_the_binding_mirrors_the_upstream_signature_table() -> None:
+    # Names are the easy half. A short or wrong argtype is silent: ctypes pushes
+    # what the binding declares and the callee reads its tail off the stack.
+    probe = EDITOR_RESOURCES_DIR / "abi_probe.py"
+    if not probe.exists():
+        pytest.skip("vendored abi_probe.py unavailable")
+    upstream = _upstream_sig(probe)
+    ours = {
+        name: (restype, list(argtypes)) for name, (restype, argtypes) in _SIG.items()
+    }
+    assert ours == upstream
+
+
+def test_a_marker_follows_a_line_inserted_above_it() -> None:
+    # Markers anchor like nvim extmarks, so an error band tracks its code
+    # between compiles instead of pointing at the line the code used to be on.
+    e = _editor("\n".join(f"line {i}" for i in range(20)))
+    e.add_marker(9, fill=(1.0, 0.0, 0.0, 0.2))
+    e.set_cursor(6, 0)
+    e.feed("O")
+    e.feed("x")
+    e.key(KeyCode.ESCAPE)
+    marked = [line for line in range(25) if e.get_marker_gutter(line) is not None]
+    assert marked == [10], f"marker should have moved down to 10, found {marked}"
+    e.close()
+
+
+def test_draw_chrome_adds_a_gutter_and_a_status_frame() -> None:
+    # A GLYPH-count comparison is NOT a valid falsifier here: the gutter narrows
+    # the text viewport, so a wide buffer emits FEWER glyphs under chrome.
+    e = _editor("\n".join(f"line {i}" for i in range(20)))
+    e.set_chrome_flag(ChromeFlag.LINE_NUMBERS, True)
+    e.layout((600.0, 300.0), 16.0)
+    off = [p.kind for p in e.prims_list()]
+    assert int(Kind.FRAME) not in off
+    assert e.get_text_origin()[0] == 0.0
+
+    e.set_draw_chrome(True)
+    e.layout((600.0, 300.0), 16.0)
+    on = [p.kind for p in e.prims_list()]
+    assert on.count(int(Kind.FRAME)) == 1, "the status row is one Frame"
+    assert on.count(int(Kind.POPUP_GLYPH)) > 0, "the status row draws its text"
+    cell_w, _cell_h = e.get_cell_size()
+    text_x = e.get_text_origin()[0]
+    assert text_x > 0.0
+    assert text_x == e.get_gutter_cells() * cell_w
+    e.close()
+
+
+def test_text_origin_moves_right_by_the_gutter_under_chrome() -> None:
+    # The host passes the WHOLE widget to ed_layout now; double-offsetting by a
+    # host-computed gutter would break this identity.
+    e = _editor("\n".join(f"line {i}" for i in range(20)))
+    e.set_chrome_flag(ChromeFlag.LINE_NUMBERS, True)
+    e.layout((600.0, 300.0), 16.0)
+    assert e.get_text_origin() == (0.0, 0.0)
+    e.set_draw_chrome(True)
+    e.layout((600.0, 300.0), 16.0)
+    cell_w, _cell_h = e.get_cell_size()
+    x, _y = e.get_text_origin()
+    assert x > 0.0
+    assert x == e.get_gutter_cells() * cell_w
     e.close()

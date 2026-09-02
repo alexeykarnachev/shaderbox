@@ -117,6 +117,11 @@ class ChromeFlag(IntEnum):
     STATUS_SHOWS_RULER = 4
 
 
+class Style(IntEnum):
+    VIM = 0
+    STANDARD = 1
+
+
 class KeyCode(IntEnum):
     CHAR = 1
     ESCAPE = 2
@@ -219,7 +224,7 @@ _SIG: dict[str, tuple[object, Sequence[object]]] = {
     "ed_add_marker": (
         None,
         [ctypes.c_void_p, ctypes.c_int32]
-        + [ctypes.c_float] * 8
+        + [ctypes.c_float] * 12
         + [ctypes.c_int32, ctypes.c_char_p],
     ),
     "ed_marker_tooltip": (
@@ -301,6 +306,69 @@ _SIG: dict[str, tuple[object, Sequence[object]]] = {
     "ed_set_show_whitespace": (None, [ctypes.c_void_p, ctypes.c_bool]),
     "ed_set_line_spacing": (None, [ctypes.c_void_p, ctypes.c_float]),
     "ed_set_tab_width": (None, [ctypes.c_void_p, ctypes.c_int32]),
+    "ed_tab_width": (ctypes.c_int32, [ctypes.c_void_p]),
+    "ed_primitive": (ctypes.c_bool, [ctypes.c_void_p, ctypes.c_int32, _P(Prim)]),
+    "ed_host_completion": (ctypes.c_bool, [ctypes.c_void_p]),
+    "ed_paste": (ctypes.c_bool, [ctypes.c_void_p, ctypes.c_bool, ctypes.c_int32]),
+    "ed_find": (
+        ctypes.c_bool,
+        [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_bool, ctypes.c_bool],
+    ),
+    "ed_find_next": (ctypes.c_bool, [ctypes.c_void_p, ctypes.c_bool]),
+    "ed_find_count": (
+        ctypes.c_int32,
+        [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_bool],
+    ),
+    "ed_replace_at_cursor": (
+        ctypes.c_bool,
+        [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_bool],
+    ),
+    "ed_replace_all": (
+        ctypes.c_int32,
+        [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_bool],
+    ),
+    "ed_color": (
+        ctypes.c_bool,
+        [ctypes.c_void_p, ctypes.c_int32] + [_P(ctypes.c_float)] * 4,
+    ),
+    "ed_reset_theme": (None, [ctypes.c_void_p]),
+    "ed_marker_count": (ctypes.c_int32, [ctypes.c_void_p]),
+    "ed_marker_gutter": (
+        ctypes.c_bool,
+        [ctypes.c_void_p, ctypes.c_int32, ctypes.c_int32]
+        + [_P(ctypes.c_float)] * 4
+        + [_P(ctypes.c_int32)],
+    ),
+    "ed_insert_at": (
+        None,
+        [ctypes.c_void_p, ctypes.c_int32, ctypes.c_int32, ctypes.c_char_p],
+    ),
+    "ed_set_line_selection": (
+        None,
+        [ctypes.c_void_p, ctypes.c_int32, ctypes.c_int32],
+    ),
+    "ed_view_flag": (
+        ctypes.c_bool,
+        [ctypes.c_void_p, ctypes.c_int32, _P(ctypes.c_bool)],
+    ),
+    "ed_line_spacing": (ctypes.c_float, [ctypes.c_void_p]),
+    "ed_chrome_flag": (
+        ctypes.c_bool,
+        [ctypes.c_void_p, ctypes.c_int32, _P(ctypes.c_bool)],
+    ),
+    "ed_set_number_width": (None, [ctypes.c_void_p, ctypes.c_int32]),
+    "ed_set_filler_glyph": (None, [ctypes.c_void_p, ctypes.c_int32]),
+    "ed_filler_glyph": (ctypes.c_int32, [ctypes.c_void_p]),
+    "ed_set_chrome_style": (ctypes.c_bool, [ctypes.c_void_p, ctypes.c_int32]),
+    "ed_set_draw_chrome": (None, [ctypes.c_void_p, ctypes.c_bool]),
+    "ed_draw_chrome": (ctypes.c_bool, [ctypes.c_void_p]),
+    "ed_set_style": (ctypes.c_bool, [ctypes.c_void_p, ctypes.c_int32]),
+    "ed_style": (ctypes.c_int32, [ctypes.c_void_p]),
+    "ed_language": (ctypes.c_int32, [ctypes.c_void_p]),
+    "ed_class_at": (
+        ctypes.c_int32,
+        [ctypes.c_void_p, ctypes.c_int32, ctypes.c_int32],
+    ),
 }
 
 
@@ -467,10 +535,46 @@ class Editor:
         line: int,
         fill: tuple[float, float, float, float],
         gutter: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0),
+        text: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0),
+        gutter_glyph: str = "",
         tooltip: str = "",
     ) -> None:
+        """A line mark. `text` at alpha 0 leaves the syntax colours alone; a
+        non-zero alpha replaces every glyph colour on the line. `gutter_glyph`
+        draws only in a gutter the layout reserved."""
         self._lib.ed_add_marker(
-            self._h, line, *fill, *gutter, 0, tooltip.encode() if tooltip else None
+            self._h,
+            line,
+            *fill,
+            *gutter,
+            *text,
+            ord(gutter_glyph) if gutter_glyph else 0,
+            tooltip.encode() if tooltip else None,
+        )
+
+    def get_marker_gutter(
+        self, line: int, index: int = 0
+    ) -> tuple[tuple[float, float, float, float], str] | None:
+        """The Nth marker on a line as (gutter rgba, glyph), or None when the
+        line has fewer than index+1. Markers anchor to their line and move with
+        edits, so this reads where a mark is NOW."""
+        r, g, b, a = (ctypes.c_float() for _ in range(4))
+        glyph = ctypes.c_int32()
+        found = self._lib.ed_marker_gutter(
+            self._h,
+            line,
+            index,
+            ctypes.byref(r),
+            ctypes.byref(g),
+            ctypes.byref(b),
+            ctypes.byref(a),
+            ctypes.byref(glyph),
+        )
+        if not found:
+            return None
+        codepoint = glyph.value
+        return (r.value, g.value, b.value, a.value), (
+            chr(codepoint) if codepoint else ""
         )
 
     # --- scrolling --------------------------------------------------------
@@ -590,6 +694,19 @@ class Editor:
         if not self._lib.ed_set_chrome_flag(self._h, int(flag), on):
             raise ValueError(f"unknown chrome flag: {flag}")
 
+    def set_draw_chrome(self, on: bool) -> None:
+        """Whether ed_layout emits the gutter and status row itself."""
+        self._lib.ed_set_draw_chrome(self._h, on)
+
+    def set_style(self, style: Style) -> None:
+        """Switches the keymap AND replaces the whole chrome with that style's
+        defaults — call it BEFORE any set_chrome_flag the host wants to keep."""
+        if not self._lib.ed_set_style(self._h, int(style)):
+            raise ValueError(f"unknown keymap style: {style}")
+
+    def get_style(self) -> Style:
+        return Style(self._lib.ed_style(self._h))
+
     def set_view_flag(self, flag: ViewFlag, on: bool) -> None:
         if not self._lib.ed_set_view_flag(self._h, int(flag), on):
             raise ValueError(f"unknown view flag: {flag}")
@@ -646,9 +763,10 @@ class Editor:
         wrap: bool = False,
     ) -> int:
         """Lay the buffer out and pull the primitive array in one crossing.
-        `origin` is where the TEXT starts in widget space — the host passes its
-        gutter width as origin.x (ed_layout reserves nothing itself; the
-        reference UI does the same). Returns the primitive count."""
+        `origin` is the WIDGET's origin in widget space — (0, 0) for a host that
+        composites the panel at its own top-left. Where the text starts is the
+        library's answer (`get_text_origin`), right of the gutter it reserved.
+        Returns the primitive count."""
         n = self._lib.ed_layout(
             self._h, origin[0], origin[1], size[0], size[1], px_per_em, wrap
         )

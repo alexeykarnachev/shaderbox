@@ -26,7 +26,7 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-02 (069 in progress: W-C and W-A landed, W-B spec in review). -->
+<!-- As of 2026-09-02 (069 in progress: W-C, W-A and W-F landed; W-B spec in review). -->
 **NEXT SESSION: continue 069, wave by wave.** The maintainer walked the 068 tutorial and filed
 37 findings; eight workstreams and twelve locked decisions are in
 `ai_docs/features/069_tutorial_walk_findings/01_spec.md` (ledger `00_findings.md`; scripting
@@ -35,12 +35,13 @@ design `01_design_scripting.md`). Each wave gets its own spec in that directory 
 (`a246a19` + `d3338d4`: rename crash, commit-on-deactivate at six sites, add-pass activation,
 Alt+P / Alt+A, first-render sweep, feedback-swap guard). **W-A is DONE** (`78bd1bf` ..
 `1a72478`: canvas `W x H` fields + presets through the `set_canvas_size` funnel, shared clamp,
-checkerboard viewer, per-document widget ids). **W-B next** (`30_wave_b_prose_diet.md`, pre-review
-converging), then W-F, W-E, W-G, W-D, W-H per 01_spec § Order. The editor
-session already delivered the W-F re-vendor: `65264dc` is committed; the successor `c5c6ae2`
-(all four editor findings fixed, `ed_add_marker` re-signed, chrome emitted through the ABI) is
-parked outside the tree until W-F binds the new ABI; the maintainer wants no editor GitHub
-issues. The graph view of the pass strip is feature 070, direction fixed in 069 § Out of scope.
+checkerboard viewer, per-document widget ids). **W-F is DONE**
+(`40_wave_f_editor_chrome.md`): `c5c6ae2` vendored, all 93 exports bound behind a names test and
+an argtypes test against upstream's `abi_probe.py`, `set_draw_chrome(True)` per session, and the
+host's gutter, mode badge and command line deleted for the library's own. **W-B next**
+(`30_wave_b_prose_diet.md`, pre-review converging), then W-E, W-G, W-D, W-H per 01_spec § Order.
+The maintainer wants no editor GitHub issues. The graph view of the pass strip is feature 070,
+direction fixed in 069 § Out of scope.
 
 **068 radiance cascades: DONE**, and its tutorial is being rewritten under 069 W-H (template,
 generated pass cards, spliced code). `oracle.py` measures 3.65% relMAE. Spec:
@@ -48,7 +49,7 @@ generated pass cards, spliced code). `oracle.py` measures 3.65% relMAE. Spec:
 D7 (mouse `down` + previous position in the script context).
 
 **067: DONE, v0.27.0 on GitHub (not itch).** The Windows `libeditor.dll` needs a Windows host at
-the next `/ship`. 069 W-F re-vendors the Linux `.so` (standard keymap, visual-paste fix).
+the next `/ship` — 069 W-F re-vendored the Linux `.so` only.
 
 **Still owed from 065:** checks 13-15 (a display) and 16 (`/dogfood`, real API cost).
 

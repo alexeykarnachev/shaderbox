@@ -860,13 +860,19 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
     field with a written reason is a decision.
   - `editor/ffi.py`'s unused methods, flag members and `PRIM_STRIDE`: that module is a ctypes
     MIRROR of the vendored C ABI. Completeness against the ABI is the point; deleting the unused
-    half would make the binding lie about the library's surface.
+    half would make the binding lie about the library's surface. Two tests in
+    `tests/test_editor_ffi.py` hold it to that rather than leaving it a claim: one compares `_SIG`'s
+    keys to `nm -D` on the vendored `.so`, the other compares every restype and argtype to the
+    vendored `abi_probe.py`. The second is the one that matters — a wrong argtype is silent, since
+    ctypes pushes what the binding declares and the callee reads its tail off the stack.
   - `PassGraph.version`: round-trip-only by design. A schema version's whole job is to already be
     there when a reader finally needs it.
 - **The vendored editor binary (`shaderbox/resources/editor/`) rebuilds from a COMMITTED editor-repo
-  sha, never a dirty tree.** `libeditor.so` + `atlas.{png,json}` + `VERSION` (the sha) ship together
-  (feature 067). Rebuild: in the editor repo at that sha, `odin build ffi -build-mode:shared
-  -no-entry-point -out:libeditor.so`, copy the three files, update `VERSION`. The binary is
+  sha, never a dirty tree.** SEVEN files ship together (feature 067): `libeditor.so`, `atlas.png`,
+  `atlas.json`, `VERSION` (the sha), `vim_coverage.md`, `standard_keymap.md`, `abi_probe.py`
+  (upstream's `ffi/probe.py`, the ABI signature table the binding is gated against). Rebuild: in the
+  editor repo at that sha, `odin build ffi -build-mode:shared -no-entry-point -out:libeditor.so`,
+  copy the seven files, update `VERSION`. The binary is
   linux-x86_64 only — `build.sh` strips it from the Windows stage and `verify_clean` aborts a
   Windows bundle carrying it; a Windows `.dll` is a ship-time prerequisite. MEASURED (editor repo
   feature 004, its commit b787987): the code is fully portable (`odin check` passes for
@@ -893,8 +899,9 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   `atlas_glyph` renders the fallback box and still advances exactly one cell, so column
   arithmetic never desyncs from buffer content — that is by design, do not ask for it to change.
 - **Re-vendoring the editor: rebuild, copy, then delete the mitigations the new sha makes dead.**
-  Rebuild from a committed sha, copy the three files, update `VERSION`, then remove whatever host
-  workarounds that sha obsoletes. Verifying the editor's own vim surface belongs to the editor
+  Rebuild from a committed sha, copy the seven files (including `ffi/probe.py` as `abi_probe.py`,
+  which is what makes the binding's argtypes gate track the new ABI), update `VERSION`, then remove
+  whatever host workarounds that sha obsoletes. Verifying the editor's own vim surface belongs to the editor
   repo, which has its own gates for it; what this repo checks is the INTEGRATION — the host
   mitigations it drops, and whether `make gates` still passes without them. The `bf0f8d5` re-vendor removed two: the Ctrl+N completion intercept
   (the keymap now advances the selection itself) and the visual-scroll consume-noop (the six
@@ -905,6 +912,11 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   the c-family undo bug that `0143217` fixed: the trigger is a HOST CURSOR JUMP mid-insert, not a
   keystroke — reproduced through the C ABI alone (`Vc`, type, `ed_set_cursor(0,0)`, type, undo).
   Our completion path and jump-to-error both move the cursor mid-insert.
+  The `c5c6ae2` re-vendor (069 W-F) removed three, all of them second derivations of furniture
+  `ed_layout` now emits behind `ed_set_draw_chrome`: the host `_draw_gutter` (imgui line numbers in
+  the app UI font), the bottom bar's vim half (mode badge, `line:col` ruler, the `:`/`/`/`?` line),
+  and the marker's fill-only error mark (the ABI gained a text colour, so the glyphs on an error
+  line stop being red on red).
 - **A live moderngl context must exist before constructing `Image` / `Video` / `Font` / `Canvas` /
   `Document`** — they call `moderngl.get_context()` lazily. In the app,
   `glfw.make_context_current(window)` handles it.

@@ -542,7 +542,9 @@ def editor_palette() -> dict["editor_ffi.Slot", tuple[float, float, float, float
         slot.GUTTER_TEXT: COLOR.FG_DIM,
         slot.GUTTER_CURRENT: COLOR.FG_SECONDARY,
         slot.FILLER: COLOR.FG_DIM,
-        slot.STATUS_BG: COLOR.BG_SURFACE,
+        # One step off the editor ground (also BG_SURFACE), so the status row
+        # reads as a band rather than as text on an unbroken field.
+        slot.STATUS_BG: _P["bg_0"],
         slot.STATUS_TEXT: COLOR.FG_SECONDARY,
         slot.STATUS_ACCENT: COLOR.ACCENT_PRIMARY,
         slot.POPUP_PANEL: COLOR.BG_POPUP,

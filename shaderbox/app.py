@@ -1352,6 +1352,9 @@ class App:
             editor.set_language(language_for_path(source.path))
             editor.set_palette(editor_palette())
             editor.set_host_completion(True)
+            # Not a setting: nothing toggles it, and a fresh handle draws no
+            # gutter or status row until it is told to.
+            editor.set_draw_chrome(True)
             # saved_undo reads AFTER construction seeded the text (revision rises
             # across every set).
             session = EditorSession(

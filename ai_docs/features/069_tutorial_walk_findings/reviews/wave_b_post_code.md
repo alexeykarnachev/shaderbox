@@ -314,3 +314,213 @@ spec files:
 ```
 
 `git diff --quiet` over tracked files passes: every probe edit was restored.
+
+---
+
+# Round 2 (closure)
+
+Narrow closure round against `0ce84f8` ("069 W-B fixes: derive the gate's domain, pin the
+gear"). Every measurement below was taken in an isolated `git worktree` detached at
+`0ce84f8`, so nothing in this round touched the main working tree (other waves were
+editing it concurrently).
+
+## Per-finding verdicts
+
+| # | Verdict | The line or measurement |
+|---|---|---|
+| F1 | **CLOSED** | `uv run ruff check .` -> `All checks passed!`; `ruff format --check .` -> `234 files already formatted`; `xvfb-run -a make gates` unpiped -> `EXIT=0`, `gates: GREEN -- check passed, test passed, smoke passed` |
+| F2 | **CLOSED** | Mutation h2, fully green at `ccd446b`, now fails on the CALLER: `badge_chip.tooltip` and `badge_chip.label` at `pass_list.py::_settings_overlay:100` |
+| F3 | **CLOSED** | Settled width `440.0` at 4, 20 and 40 rows with the constraint; `323.0`/`337.0` without it |
+| F4 | **CLOSED** | At 60 rows the content region narrows 440.0 -> 410.0 (bar drawn); with `no_scrollbar` it stays 424.0 (bar suppressed) |
+| F5 | **CLOSED** | Green at 18 characters, **red at 19** and at 21 — the real `_ellipsize` boundary. The old check passed at 19. |
+| F6 | **CLOSED** | The `pass_settings` Help body now carries "`16-bit float` holds values above 1, which is what bloom and feedback need, and is the default" |
+
+**Round 2 overall: PASS.**
+
+### F1 — the gate is green, and the environmental caveat is real
+
+On a clean checkout of `0ce84f8`, both ruff halves pass and the unpiped gate exits 0 with
+all three stages green. The coordinator's note about this box checks out independently:
+`glfw.get_monitors()` returns `monitors: 0`, and without a virtual display `make gates`
+dies at `tests/test_canvas_fields.py Fatal Python error: Segmentation fault` -> `gates: RED
+(exit 2)`. I confirmed that is not this diff by checking out `6a85564` — the commit BEFORE
+either W-B commit — where the same test segfaults identically. Environmental, pre-existing,
+correctly diagnosed.
+
+The fix-up's commit message also names the mechanism behind the original miss: the
+`make check` that was read had been auto-fixed by pre-commit mid-run. That is the
+conventions.md "run it twice, judge by exit code" rule catching itself, and naming it is
+the right resolution — the mechanism changed, not just the symptom.
+
+### F2 — the domain is derived, and the hole I demonstrated is shut
+
+`_SCORED` is now `_IMGUI_ROWS + _derived_rows()`, where `_derived_rows` reflects over
+`vars(ui_primitives)`, selects any parameter named in `_PARAMETER_BUDGETS`, and reads the
+positional index from `inspect.signature` so a positional caller is scored too. Census:
+**239 sites / 173 measurable / 66 unmeasurable**, against 106/71/35 at `ccd446b` — the
+shipped table was covering 44% of its own domain, as the commit message says.
+
+Both variants of mutation (h) re-run:
+
+| Variant | At `ccd446b` | At `0ce84f8` |
+|---|---|---|
+| h1 — helper forwards to `set_tooltip` | RED, but only on the helper's own forwarding call; caller's copy uncollected | RED on `badge_chip.tooltip` AND `badge_chip.label` at the caller, plus the forwarding site |
+| h2 — helper draws its own tooltip via `begin_tooltip` | **222 passed, fully green** | **RED** on `badge_chip.tooltip` and `badge_chip.label` at the caller |
+
+h2 is the one that matters: the shape that was completely invisible now fails at the
+caller, which is where the authored copy lives.
+
+I also probed the new escape hatch, since a derived domain with a by-name exemption list
+can be widened by writing a name into it. Adding `"clickable_label"` to `_NOT_UI_COPY` does
+not go quietly green — it goes red on
+`test_every_unmeasurable_entry_still_names_a_real_site[...::uniform_name_label]`, because
+suppressing the helper strands an allowlist entry that no longer names a readable site. The
+exemption list cannot be used to hide a live helper without tripping something.
+
+`test_a_helper_drawing_its_own_tooltip_is_still_measured_at_its_callers` anchors the
+regression to `help_marker`, which genuinely IS that shape (it draws via
+`begin_tooltip`/`text_unformatted`), and asserts it stays that shape. That is an anchor to a
+real artifact rather than a fixture, which is the right construction.
+
+### F3 — the width token is load-bearing again
+
+Independent probe replicating the shipped call sequence
+(`set_next_window_size_constraints((W,0),(W,display_h-MARGIN))` then
+`begin_popup_modal(flags=always_auto_resize)`), reading `get_window_size()` on a settled
+frame:
+
+```
+   n  constraint   width  height  scroll_max
+   4       False   323.0   412.0         0.0
+   4        True   440.0   412.0         0.0
+  20       False   337.0   762.0        18.0
+  20        True   440.0   744.0        36.0
+  40       False   337.0   762.0       478.0
+  40        True   440.0   744.0       496.0
+```
+
+Width is exactly the token at every content size, and the height still follows content
+(412 at 4 rows) rather than being pinned. The stronger check: changing
+`SIZE.PASS_SETTINGS_W` to 520 settles the window at **520.0px**, so the token now moves the
+window — which was the whole complaint in F3, since at `ccd446b` a reader would have
+changed 440 and seen nothing happen.
+
+`tests/test_pass_settings_layout.py` pins this with a real app-fixture frame, and its
+falsifier holds: deleting the `set_next_window_size_constraints` call fails with
+`AssertionError: the gear settled at 323.0px wide, not the 440 token` — the same 323 my own
+Round 1 probe measured.
+
+### F4 — the scrollbar appears exactly in the clamped case
+
+`no_scrollbar` is dropped. `scroll_max_y` alone does not distinguish the two flag settings
+(the window scrolls either way — imgui's own stub says "window can still scroll with mouse
+or programmatically"), so I measured whether the bar is DRAWN, via the content region:
+
+```
+ rows  scrollbar_flag   win_w  content_avail  scroll_max  bar drawn?
+    5            True   440.0          424.0         0.0  no
+    5           False   440.0          424.0         0.0  no
+   60            True   440.0          410.0       307.0  YES
+   60           False   440.0          424.0       307.0  no
+```
+
+With the shipped flags the content region narrows by 14px once content exceeds the display,
+and is full-width when it does not. So the bar appears only in the clamped case, which is
+what the code comment claims and what F4 asked for. The height also now stops at 744
+(`display_h - PASS_SETTINGS_MARGIN`) rather than jamming against the viewport at 762.
+
+### F5 — the bound is measured, and off-by-one in the SAFE direction now
+
+The arithmetic bound is gone, replaced by `calc_text_size` plus an assertion against
+`_ellipsize` itself inside a headless frame. Boundary, by injecting names into
+`ENGINE_DRIVEN_UNIFORMS` and running the check:
+
+```
+  len=18 u_pass_iterationss   -> 1 passed
+  len=19 u_pass_iterations_x  -> 1 failed
+  len=20 u_pass_iterations_xx -> 1 failed
+```
+
+19 is the character count that passed the old test while `_ellipsize` truncated it; it is
+now red. Asserting against `_ellipsize` cannot drift from the renderer, because it is the
+renderer — the right shape, not just the right number.
+
+### F6 — the criterion is back
+
+The `pass_settings` Help body gains: "**format** is how much each pixel can hold. `8-bit`
+clamps to 0-1 and is right for a final image; `16-bit float` holds values above 1, which is
+what bloom and feedback need, and is the default; `32-bit float` costs twice the memory and
+is rarely worth it." That restores all three choosing criteria, including the "what bloom
+and feedback need" phrase F6 named as lost. The tooltips stay cut, so the budget holds and
+the documentation moved to where a reader chose to read it — which is § 2's own prescription.
+
+## The two implementer calls
+
+### A 3-word budget for button labels: SOUND
+
+The skill's § 2 table genuinely has no row for a button label, so a number had to be chosen
+rather than looked up. Three is defensible on the evidence, not on taste.
+
+Distribution over the 72 measured button-label sites: `{0: 2, 1: 45, 2: 18, 3: 7}`. Nothing
+reaches 4, so the budget is not accommodating a long tail — it is drawing the line exactly
+one word above the mass of the data.
+
+Setting `_BUTTON_LABEL_BUDGET = 2` and re-running fails 7 sites. Three are real authored
+labels that would have to be cut: `"Add to pack"`, `"Open a copy"`, `"Insert at caret"`
+(twice). Those are § 1's own tier examples in form — an action phrase with a verb and its
+object — and shortening them costs meaning ("Insert" does not say where). The other four
+are f-string artifacts of the scorer, not prose: `f'{full_w}x{full_h}'` renders as
+`1080x1080`, one visible token, but scores 3 because each `FormattedValue` counts as a
+word. A budget of 2 would therefore reject four dimension labels that contain no authored
+copy at all.
+
+So 2 is not viable without either damaging working labels or special-casing the scorer, and
+3 admits nothing a reader would call a sentence (longest button label overall is 26
+characters, `"Load client_secret.json..."`). The reasoning is also written at the constant
+with § 1's examples cited, which is where the next reader will look.
+
+The one honest wrinkle, and it is not a blocker: the f-string scoring means a button label
+of three interpolations sits exactly at budget while carrying no authored words. That is a
+property of the whole scorer (`FormattedValue` = 1 word), not of this budget, and it errs
+toward rejecting rather than admitting prose.
+
+### Keeping `always_auto_resize` with a width constraint, rather than deleting `PASS_SETTINGS_W`: SOUND
+
+My Round 1 finding offered two exits and said the half-state was the bad one: keep the flag
+and delete the inert token, or drop the flag. The implementer took a third, and it satisfies
+the actual complaint better than either.
+
+The complaint was that the token was inert — passed in and discarded, so a reader changing
+it would see nothing move. That is now measurably false: 440 -> 440.0, 520 -> 520.0. The
+token is load-bearing, and the mechanism by which it binds is written at the call site.
+
+Deleting `PASS_SETTINGS_W` (my suggestion) would have let the width free-float at 323 and
+follow content. That is worse against the skill's § 3 jitter rule: a width that tracks
+content varies with the widest row, and at `ccd446b` the width only happened to be stable
+because the rows use `same_line(absolute x)` — an accident of the row layout, not a
+guarantee. Pinning the width and letting only the height follow content is the combination
+that gives finding #7 what it asked for (no scrolling in the ordinary case) while keeping
+the axis the user reads across fixed.
+
+The call is also pinned by a test with a working falsifier, so it cannot silently regress to
+the inert state it came from. Judging by outcome rather than by which of my two options was
+taken: this is the better design.
+
+## Round 2 coverage and tree state
+
+Measured, not read: ruff both halves and the unpiped gate on a clean checkout; the
+pre-existing segfault reproduced at `6a85564`; mutations h1 and h2 re-run; a bogus
+`_NOT_UI_COPY` entry probed; the census counted from the shipped collector; gear width at 3
+content sizes x constraint on/off; `PASS_SETTINGS_W` retuned to 520; the constraint deleted;
+scrollbar visibility via content-region width at 2 content sizes x flag on/off; the
+`AUTO_NAME_W` boundary at 18/19/21 characters; the button-label distribution and a budget of
+2; the Help body rendered through `help_sections()`.
+
+Not covered: the appearance of any of this in the running app. Every claim here is a
+headless measurement, which per skill § 0 settles geometry and crash-freedom, not aesthetics.
+
+All Round 2 work ran in a throwaway worktree at `0ce84f8`; every probe edit inside it was
+restored and verified with `git diff --quiet` before the next ran, and the worktree ended
+clean. The main working tree carries another wave's in-flight edits (the editor FFI and
+`theme.py` editor tokens, wave F) plus other agents' untracked spec files — none of them
+files this round touched.

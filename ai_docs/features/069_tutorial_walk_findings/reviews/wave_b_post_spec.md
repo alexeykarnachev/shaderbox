@@ -417,3 +417,229 @@ sibling agent's working-tree edit.
 have. I checked each step's code precondition from the diff instead and say so above. In
 particular the step-2 precedence question — whether `always_auto_resize` overrides an
 ini-restored rect — remains open, as the spec itself flags.
+
+---
+
+# Round 2 (closure) — against `0ce84f8`
+
+Narrow closure round on `0ce84f8` ("069 W-B fixes: derive the gate's domain, pin the gear"),
+checking round 1's three findings, re-running the widened census independently, and
+re-walking the amended spec.
+
+## Verdict
+
+| Item | Verdict |
+|---|---|
+| Finding 1 (red `make gates`) | **CLOSED** |
+| Finding 2 (keyword-only rows / narrowed domain) | **CLOSED** |
+| Finding 3 (D1 undiscoverable from the repo) | **CLOSED** |
+| Finding 4 (stale roadmap banner) | **NOT CLOSED** — unchanged, and still not yet due |
+| Widened census reproduces | **CLOSED** — every claimed figure exact |
+| Amended spec describes the landed code | **CLOSED** |
+
+**Overall: PASS.**
+
+## Per-item closure
+
+### Finding 1 — the commit shipped a red `make gates`. CLOSED.
+
+`tests/test_ui_prose_budget.py` at `0ce84f8` passes both hooks that failed before:
+`ruff check` gives "All checks passed!", `ruff format --check` gives "1 file already
+formatted". The SIM102 nest is collapsed into one condition at `_collect`'s keyword branch
+(`tests/test_ui_prose_budget.py:490-491`):
+
+```python
+                    # A call that omits an optional parameter carries no string.
+                    if arg is None and not _supplies(node, parameter, index):
+                        continue
+```
+
+Full gate, run in a clean `git worktree` at `0ce84f8` under xvfb, exit code captured
+unpiped: **EXIT=0**, `== gates: GREEN -- check passed, test passed, smoke passed ==`. All
+three stages ran, smoke included.
+
+One note on how to reproduce it. Run in the live repo the gate is currently RED, but for
+reasons outside this wave: a sibling W-F agent has `shaderbox/editor/ffi.py`,
+`shaderbox/tabs/code.py` and an untracked `shaderbox/resources/editor/abi_probe.py` in the
+tree, and pre-commit runs `--all-files`, so pyright reports 4 errors in those files. None
+is in a file `0ce84f8` touches. The clean-worktree run above is the one that carries a
+verdict on this commit.
+
+The commit message's note about app-fixture segfaults is accurate as far as it goes — the
+box reports zero monitors and `glfw.get_video_mode` segfaults in `App.__init__`,
+reproduced at `ccd446b^` — but under xvfb the full suite is green at `0ce84f8`
+(1545 passed, 4 skipped), so the note describes a box condition, not a limit on what was
+verified.
+
+### Finding 2 — three rows positionally reachable but read by keyword only. CLOSED.
+
+The fix goes further than the finding asked: rather than correcting the three rows,
+`_SCORED` is now derived from `ui_primitives` signatures by reflection
+(`tests/test_ui_prose_budget.py:63-88`, `_derived_rows`), with the positional index read
+off `inspect.signature`:
+
+```python
+            positional = None if parameter.kind is parameter.KEYWORD_ONLY else index
+```
+
+The three rows now carry their real indices: `draw_copyable_text.tooltip` index 3,
+`preview_cell.footer` index 8, `preview_cell.sublines` index 9. My round-1 demonstration
+inverts:
+
+```
+draw_copyable_text('p','v',None,'a b c d e f g')  ->  [('label',1), ('tooltip',7)]
+```
+
+Seven words against a budget of 5, where round 1 produced no tooltip row at all.
+
+Mutation-tested, each red before restore, all run in the repo the editable install
+actually resolves to:
+
+- **My finding-2 shape**, a positional over-budget tooltip at a live site: red at
+  `test_every_measured_site_is_within_budget[shaderbox/widgets/details.py::draw_file_details:44 draw_copyable_text.tooltip]`.
+- **The code review's h2 shape**, a NEW helper drawing its own tooltip through
+  `begin_tooltip`/`text_unformatted` plus a caller passing a 9-word `tooltip=`: red at
+  `...[shaderbox/widgets/details.py::draw_file_details:44 badge_chip.tooltip]`. This is the
+  case that was fully green at `ccd446b`; the helper is now pulled into the domain by its
+  signature without anyone listing it.
+- **A row whose index no longer matches the signature** (`help_marker` moved to index 2):
+  red across several tests.
+- **A stale `_NOT_UI_COPY` entry**: red at
+  `test_every_domain_exemption_still_names_a_copy_bearing_helper[no_such_helper]`.
+- **Every row forced keyword-only** (the round-1 defect reintroduced wholesale): red at
+  `test_every_scored_row_matches_the_real_signature` with
+  `button.label is reachable positionally at 0 but the row reads it by keyword only, so a positional caller is skipped.`
+
+That last message is the round-1 finding stated as an assertion, which is the right place
+for it.
+
+### Finding 3 — D1 enforced by a repo test but stated only in the skill. CLOSED.
+
+`ai_docs/conventions.md ## Code rules` gains a bullet opening
+"**Every fixed UI string has a word budget, and `tests/test_ui_prose_budget.py` is its
+gate.**" It states each budget (label 1-2, button 3, tooltip 5, `help_marker` 8 one clause,
+empty state 4), the derived-value rule, the reflection property, and the anti-rot
+condition. The test's own docstring now cites `ai_docs/conventions.md ## Code rules`
+alongside the skill, so the pointer is bidirectional.
+
+The bullet references no path outside the repo — no `.claude`, no skill, no `~/` — so it
+reads correctly on a fresh clone or a CI runner, which was the finding's whole point.
+
+### Finding 4 — stale roadmap banner. NOT CLOSED.
+
+`ai_docs/roadmap.md:29` still reads "W-B spec in review" and `:38` still reads "W-B next".
+Unchanged by `0ce84f8`. As round 1 said, `dev_flow.md` step 9 places the roadmap flip after
+the review pass, so this is not yet overdue — recorded so the step is not skipped.
+
+## The widened census, re-run independently
+
+I wrote a second collector from the AMENDED spec's decision 2 prose (the derived-domain
+rules: every public `ui_primitives` function with a parameter in the budget map, index from
+the signature, `##id` stripped, button labels at 3), independent of the shipped test, and
+ran it against a clean `git archive` of `0ce84f8`.
+
+| Figure | Commit claims | My collector | Verdict |
+|---|---|---|---|
+| scored (call, parameter) rows | 36 (4 explicit + 32 derived) | 36 (4 + 32) | matches |
+| sites | 239 | 239 | matches |
+| measurable | 173 | 173 | matches |
+| unmeasurable | 66 | 66 | matches |
+| `_UNMEASURABLE` entries | 47 | 47 keys | matches |
+| `_OVER_BUDGET` entries | 8 | 8 violations | matches |
+| violations outside the exemptions | 0 | 0 | matches |
+
+Reconciled both directions: `in gate not mine: []`, `in mine not gate: []` on the 47
+unmeasurable keys, and my 8 violating `(module, function, words)` triples are exactly the
+8 `_OVER_BUDGET` keys — `telegram/_draw_status_slot 9`, `youtube/_draw_controls 4`,
+`help/_draw_body 15`, `lib_picker/_draw_body 11`, `settings/_draw_body` (clause),
+`copilot_chat/_draw_revert_modal 20`, `copilot_chat/_draw_turn_snippet 5` and `9`. Nothing
+uncovered on either side.
+
+The three newly exempted sites are the ones the commit names, at the counts it names. The
+six new cuts landed verbatim (`Pick an example`, `no output {media_type} file`,
+`Rendering...`, `uploads land privately`, `Add your OpenRouter API key in Settings`,
+`Reset library...`), and each superseded string is gone from `shaderbox/`. The one
+remaining hit for `"Reset library to shipped"` is a code comment in `shader_lib/seed.py`,
+not UI copy.
+
+## The amended spec against the landed code
+
+**Decision 2 — superseded in part.** The section carries an explicit
+"**SUPERSEDED IN PART by post-implementation review (F2, spec finding 2): the call set is
+DERIVED, not hand-listed**" block that states the reflection rule, the budget map, the
+`help_marker`-at-8 and button-at-3 exceptions, the `##id` stripping, and names both new
+tests. The original prose is left in place above it rather than rewritten, so the reasoning
+history is readable. Matches `tests/test_ui_prose_budget.py:37-88` exactly.
+
+**Decision 7 — reversed.** The section carries "**REVERSED by post-implementation review
+(F3, F4)**" and states both halves: the width holds only through a size constraint (measured
+323px without, 440px with), and `no_scrollbar` is dropped because imgui clamps an
+auto-resized window at the viewport. The landed code matches
+(`popups/pass_settings.py:49-61`): `set_next_window_size_constraints` with min and max
+width both `PASS_SETTINGS_W`, height bounded by `display_h - PASS_SETTINGS_MARGIN`, and
+`flags=imgui.WindowFlags_.always_auto_resize` alone. `theme.py:278-280` carries
+`PASS_SETTINGS_W: int = 440` and `PASS_SETTINGS_MARGIN: int = 24`.
+
+Both new layout claims are now measured rather than asserted, and both falsify. Removing
+the constraint gives
+`AssertionError: the gear settled at 323.0px wide, not the 440 token; always_auto_resize ignores set_next_window_size, so the constraint is what pins it.`
+— the exact number the commit claims. Adding a 19-character engine uniform gives
+`AssertionError: u_aaaaaaaaaaaaaaaaa renders 133.0px wide against a 128px column`, which the
+old `6.5508`-per-character arithmetic would have passed. That closes the round-1 concern
+that the auto-resize half of finding #7 was ungated: it is gated now, in
+`tests/test_pass_settings_layout.py`, measured in a headless frame.
+
+**§ The widened census** reports 36 rows / 239 sites / 173 measurable / 66 unmeasurable /
+47 / 8 / 0 — every figure reproduced above. It keeps the `ccd446b` tables as the shipped-at
+record and adds the widened run beside them rather than overwriting, which is the honest
+shape.
+
+**§ Review history round 2** records all seven findings (F1-F6 plus spec 3) with their
+resolutions, states both reviews' verdicts (code FAIL, spec PARTIAL), and says none was
+disputed. Accurate against what landed.
+
+**F6** landed as one sentence in the `pass_settings` Help section
+(`help_content.py:187-190`), naming when each format is wanted, in the same voice as the
+four sentences beside it.
+
+## Findings
+
+None. Everything checked in this round closes.
+
+Two cosmetic doc-drift items, recorded rather than raised, because neither misleads a
+reader who follows the section that owns the fact:
+
+- The Files-touched row for `shaderbox/theme.py` still reads
+  "`SIZE.PASS_SETTINGS_H` deleted; `SIZE.AUTO_NAME_W: int = 128` added … `PASS_SETTINGS_W`
+  stays" and does not mention `PASS_SETTINGS_MARGIN`. Decision 7 states the token twice,
+  including "keeps `PASS_SETTINGS_W: int = 440` and gains `PASS_SETTINGS_MARGIN: int = 24`".
+- The Files-touched row for `help_content.py` says the new section carries "the two facts
+  the deleted `sampling` / `edges` markers held"; it now carries five. § 9a and the round-2
+  history table both say so.
+
+## False trails
+
+- **`make gates` red in the live repo.** A sibling W-F agent's in-flight `editor/ffi.py`, `tabs/code.py` and untracked `abi_probe.py` produce 4 pyright errors under `--all-files`. Clean worktree at `0ce84f8` is exit 0.
+- **My mutation B appearing green.** `uv run --project /home/akarnachev/src/shaderbox` inside a throwaway worktree resolves the editable install to the MAIN repo, so the worktree mutation was never imported. Re-run in the real tree, it goes red. My harness, not the gate.
+- **App-fixture segfaults at `glfw.get_video_mode`.** Real, pre-existing (reproduces at `ccd446b^`), and absent under xvfb. Not this wave's.
+- **`"Reset library to shipped"` still matching.** A comment in `shader_lib/seed.py`; the button string is cut.
+- **The round-1 history table naming `HelpSection(key="passes")`.** The landed key is `pass_settings`; § 9a records the deviation and its reason. A history table describing what round 1 asked for is not a claim about what shipped.
+- **The `insertable=True` default on a snippet-less Help section.** Still inert; the Insert button is gated on `section.snippet`.
+
+## Coverage statement
+
+I read the full `0ce84f8` diff across all 15 files, the amended decision 2, decision 7,
+§ The widened census and § Review history in the spec, the new
+`tests/test_pass_settings_layout.py`, and the `conventions.md` bullet.
+
+I re-derived the widened census with a second independent collector written from the
+amended spec's prose and reconciled both allowlists in both directions. I ran five
+mutations against the gate and two against the layout tests, each red before restore, in
+the tree the editable install actually resolves to. I ran `make gates` unpiped in a clean
+worktree at `0ce84f8` (exit 0, GREEN through smoke) and the full test suite under xvfb
+(1545 passed, 4 skipped), and confirmed the live-repo redness belongs to a sibling agent's
+files. All working-tree mutations were restored; `git status` shows none of mine.
+
+**Not verified:** the twelve manual steps still need a live window this box lacks. Two of
+them — the gear's width and the engine-uniform column — are now covered by headless tests
+that did not exist in round 1, which shrinks the unverified surface but does not close it.

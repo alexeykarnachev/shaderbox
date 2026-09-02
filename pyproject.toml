@@ -89,5 +89,8 @@ venvPath = "."
 venv = ".venv"
 pythonVersion = "3.12"
 include = ["shaderbox"]
+# The vendored ABI probe is upstream's bytes, compared byte-for-byte by
+# tests/test_editor_ffi.py; house rules do not apply to it.
+exclude = ["shaderbox/resources/editor/abi_probe.py"]
 # basic mode (default) — pyright over mypy here on purpose: fewer false positives,
 # less friction. Tighten to "standard"/"strict" later if it earns it.
