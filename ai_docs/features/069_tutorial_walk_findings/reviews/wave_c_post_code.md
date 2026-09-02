@@ -277,3 +277,189 @@ unread so this review's findings are independently derived).
 
 Verified before finishing: `git status --short` shows no modified files — only the two untracked
 wave-A documents that predate this review.
+
+---
+
+# Round 2 (closure) — against `d3338d4`
+
+Narrow closure round on the fix-up commit `d3338d4` ("069 W-C fixes: strobe, cancel, sweep
+re-arm"). Scope: the two round-1 findings, the new feedback-swap guard (a HIGH item from the
+spec-fidelity review that lands squarely in this reviewer's domain), and the conftest isolation.
+Late-round rule applied: a preference is recorded as a false trail, not a finding.
+
+**Overall: PASS.** All four items CLOSED. No new defect found; nothing was reopened.
+
+| # | Item | Verdict |
+|---|---|---|
+| 1 | Lib picker `x` cancel | **CLOSED** |
+| 2 | `invalidate()` clears `first_render_done` | **CLOSED** |
+| 3 | Feedback swap guard | **CLOSED** |
+| 4 | `SHADERBOX_DATA_DIR` isolation | **CLOSED** |
+
+`make test`: **1012 passed**, exit 0 (captured unpiped).
+
+## 1. Lib picker cancel — CLOSED
+
+Both `tree.py` sites now carry the capture-then-apply shape, with the commit moved below both
+cancel affordances.
+
+- `_draw_inline_new_input`: `wants_commit` captured at `tree.py:224`; Escape drops it at
+  `tree.py:231`; the `x` branch drops it at `tree.py:238`; the commit runs at `tree.py:239-242`,
+  below both.
+- `_draw_file_rename_input`: captured at `tree.py:304`; Escape drop at `tree.py:307`; `x` drop at
+  `tree.py:314`; commit at `tree.py:315-316`.
+
+Verified structurally across all three transactional inline inputs — for each, the `x` button is
+submitted before the commit, and each has exactly two `wants_commit = False` drops (Escape and
+`x`):
+
+```
+$ uv run pytest tests/test_zz_r2.py -q
+3 passed
+```
+
+The exemption claimed for `preview.py::_draw_function_tag_editor` checks out: its only post-input
+control is `+ Add`, which is a third commit path rather than a cancel, so there is nothing for a
+click to wrongly trigger. Confirmed by inspecting the source after the `input_text` call — no
+cancel affordance follows it.
+
+## 2. `invalidate()` clears `first_render_done` — CLOSED
+
+`core.py:201` sets `self.first_render_done = False` inside `invalidate()`.
+
+Every caller enumerated independently (`grep -rn "\.invalidate()" shaderbox/`) — four sites, all
+edit-triggered, none per-frame:
+
+| Site | Gate |
+|---|---|
+| `core.py:194` (`release_program`) | Only runs on a source change. |
+| `watch.py:50` (lib mtime changed) | Past `if disk_mtime == src.mtime: continue`. |
+| `watch.py:87` (lib index rebuilt) | Past `if current == cached: return False`. |
+| `copilot/backend.py:2278` (`invalidate_lib_consumers`) | Called after a copilot lib edit. |
+
+`set_target` does **not** call `invalidate` (read end-to-end at `core.py:173-189`), so the
+per-frame resize path that would have made the sweep re-elect every frame does not exist — the
+commit's claim holds.
+
+Behaviour verified on the bloom example with `output = "blur"` (leaving `composite` off-chain):
+after the sweep drained, a `release_program` edit re-armed the pass, and the next frame elected it
+exactly once before going quiet again:
+
+```
+after edit: first_render_done = False
+elections after the edit: ['composite', None, None, None, None, None, None, None, None, None]
+composite drew: 1 times;  recompiled: True
+```
+
+That is the bounded "at most once per invalidate" termination property, not an unbounded
+re-election.
+
+## 3. The feedback swap guard — CLOSED
+
+`document.py:308-318`: `begin_frame` captures `previous_frame` **before** reassigning `self._frame`,
+then swaps a history only when that pass's `drawn_frame == previous_frame`. The comparison is
+sound because a pass stamps `drawn_frame` with the frame it drew in, so a pass that drew during
+frame N carries N while `begin_frame(N+1)` holds `previous_frame == N`.
+
+All three traces confirmed by instrumenting `_swap_feedback` and counting per frame.
+
+**(a) On-chain iterated feedback (`iterations=3`), frames 0..4** — advances exactly once per frame
+at the boundary, unchanged from before the fix:
+
+```
+ frame 0: elected=composite  bright swaps total=2  drawn_frame=0
+ frame 1: elected=None       bright swaps total=3  drawn_frame=1
+ frame 2: elected=None       bright swaps total=3  drawn_frame=2
+```
+
+Frame 0 shows 2 (both intra-iteration; the history did not exist yet at `begin_frame` time).
+Frames 1+ show 3 = one frame-boundary swap plus the two intra-iteration swaps, which run inside
+the render loop and are untouched by the guard.
+
+**(b) Off-chain feedback pass elected by the sweep, then never again** — this is the sub-question
+of whether a pass that drew via a *target* render on frame N still gets its frame N+1 advance. It
+does:
+
+```
+ frame 0: elected=composite  trail swaps=0  drawn_frame=0
+ frame 1: elected=None       trail swaps=1  drawn_frame=0
+ frame 2: elected=None       trail swaps=0  drawn_frame=0
+ ... zero for every frame thereafter
+```
+
+One swap on frame 1 (presenting what frame 0's target render wrote), then silence. No pass that
+drew fails to advance, and the strobe is gone.
+
+**(c) Export path** — `reset_feedback()` clears `_feedback` outright, so frame 0 has nothing to
+swap; each subsequent export frame advances exactly once, because the output pass stamps
+`drawn_frame` every frame:
+
+```
+ after reset_feedback: _frame = -1  feedback entries = []
+ export frame 0: _frame=0  trail swaps=0  drawn_frame=0
+ export frame 1: _frame=1  trail swaps=1  drawn_frame=1
+ export frame 2: _frame=2  trail swaps=1  drawn_frame=2
+```
+
+**Examples-popup documents: unaffected.** They call `render()` only, never `begin_frame`, so
+`_frame` stays -1 and the swap loop never runs at all — identical before and after the fix:
+
+```
+EXAMPLES PATH (render() only, no begin_frame):
+  _frame: -1  swaps: []  drawn_frame: -1
+```
+
+Summary of the invariant: every feedback pass that draws advances exactly once per frame, and no
+pass that draws fails to advance.
+
+## 4. `SHADERBOX_DATA_DIR` isolation — CLOSED
+
+`tests/conftest.py:57` sets the env var; the `App` import is at line 58 and construction at line
+61, so the override precedes both. The ordering is in fact stronger than the comment claims:
+`paths.app_data_dir()` reads `os.environ` at call time (`paths.py:33`) and `shader_lib_root()`
+derives from it per call (`paths.py:43`), so neither caches an import-time value.
+
+Verified from inside a real `app`-fixture test:
+
+```
+ENV:               /tmp/pytest-of-akarnachev/pytest-132/.../data
+app_data_dir():    /tmp/pytest-of-akarnachev/pytest-132/.../data
+shader_lib_root(): /tmp/pytest-of-akarnachev/pytest-132/.../data/shader_lib
+seeded lib files under tmp: 10
+```
+
+`shader_lib_root()` resolves under `tmp_path` and not under `~/.local/share/shaderbox`, and the
+library really is seeded there (10 files). A full `make test` run left the developer's real
+library byte-identical: file count 16 before and after, and `.seed_manifest.json` diffed
+`IDENTICAL`.
+
+## False trails (round 2)
+
+- *`begin_frame`'s `render_pass is not None` conjunct falls through to a swap when a feedback entry
+  outlives its pass.* Reachable only if a history survives its pass, which cannot happen:
+  `delete_pass` and `rename_pass` both call `drop_feedback`. Preferring an explicit skip there is a
+  defensive-shape preference, not a defect.
+- *A full `make test` run appeared once to touch `.seed_manifest.json` in the real library.* Did not
+  reproduce on a controlled re-run, and the file's content was unchanged — a stat/mtime artifact of
+  an idempotent seed check, not a write.
+- *`x.glsl` and the seed manifest carry today's date in the real library.* Timestamped 21:24, before
+  the fix landed at 21:39 — residue of the pre-existing harness defect this commit fixes (round 1's
+  own probe wrote there at 21:23), not evidence the isolation leaks now.
+
+## Coverage (round 2)
+
+Read end-to-end at `d3338d4`: `shaderbox/popups/lib_picker/tree.py`, `shaderbox/core.py`
+(`invalidate`, `set_target`, `release_program`), `shaderbox/document.py::begin_frame`,
+`tests/conftest.py`, `shaderbox/paths.py` (`app_data_dir`, `shader_lib_root`), plus the three
+non-`core` `invalidate` call sites with their surrounding gates (`watch.py`,
+`copilot/backend.py::invalidate_lib_consumers`). `shaderbox/app.py::close_pass_settings` read for
+the liveness conjunct, which is correct but belongs to the spec reviewer's item.
+
+Not re-checked: the round-1 areas the fix-up did not touch (the sweep skip conjuncts, the export
+functions, the command wiring) — they are unchanged at `d3338d4` and their round-1 verdicts stand.
+
+Note on tree state: during this round another agent was editing eight unrelated files in the same
+working tree. The four files these verdicts rest on — `tree.py`, `core.py`, `document.py`,
+`conftest.py` — were each confirmed to match `HEAD` exactly (`git diff HEAD -- <file>` empty), so
+every finding here describes committed code at `d3338d4`. All probe files written during this
+round were removed; no file was modified by this review other than this report.

@@ -26,14 +26,19 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-02 (the maintainer walked the 068 tutorial; 069 spec written and reviewed). -->
-**NEXT SESSION: implement 069, wave by wave.** The maintainer walked the 068 tutorial and filed
-37 findings; they are grouped into eight workstreams with twelve locked decisions in
-`ai_docs/features/069_tutorial_walk_findings/01_spec.md` (ledger: `00_findings.md`; scripting
-design: `01_design_scripting.md`; three review rounds under `reviews/`). Start at wave 1 (W-C:
-the rename crash, commit-on-deactivate, add-pass activation, Alt+P / Alt+A, first render of every
-pass) and follow § Order. Each wave gets its own pre/post review per `dev_flow.md`. The graph view
-of the pass strip is feature 070, direction fixed in 069 § Out of scope.
+<!-- As of 2026-09-02 (069 in progress: W-C landed, W-A implementing). -->
+**NEXT SESSION: continue 069, wave by wave.** The maintainer walked the 068 tutorial and filed
+37 findings; eight workstreams and twelve locked decisions are in
+`ai_docs/features/069_tutorial_walk_findings/01_spec.md` (ledger `00_findings.md`; scripting
+design `01_design_scripting.md`). Each wave gets its own spec in that directory (`10_wave_c_*`,
+`20_wave_a_*`, ...) with pre/post reviews under `reviews/`, per `dev_flow.md`. **W-C is DONE**
+(`a246a19` + `d3338d4`: rename crash, commit-on-deactivate at six sites, add-pass activation,
+Alt+P / Alt+A, first-render sweep, feedback-swap guard). **W-A is being implemented** against
+`20_wave_a_canvas_viewer.md`. Then W-B, W-F, W-E, W-G, W-D, W-H per 01_spec § Order. The editor
+session already delivered the W-F re-vendor: `65264dc` is committed; the successor `c5c6ae2`
+(all four editor findings fixed, `ed_add_marker` re-signed, chrome emitted through the ABI) is
+parked outside the tree until W-F binds the new ABI; the maintainer wants no editor GitHub
+issues. The graph view of the pass strip is feature 070, direction fixed in 069 § Out of scope.
 
 **068 radiance cascades: DONE**, and its tutorial is being rewritten under 069 W-H (template,
 generated pass cards, spliced code). `oracle.py` measures 3.65% relMAE. Spec:
