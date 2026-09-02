@@ -48,7 +48,10 @@ CASCADES = 6
 # the canvas diagonal.
 BASE_INTERVAL = 0.012
 
-# Brute-force rays for the reference. Bounced energy is still climbing below this.
+# Brute-force rays for the reference. MEASURED, not assumed: bounced energy moves 0.001% between
+# 256 and 32768 rays on this scene, so the reference is converged well below this and the number
+# buys margin rather than accuracy. (An earlier revision claimed the energy "was still climbing"
+# here -- it was not, and the claim was never checked.)
 REFERENCE_RAYS = 16384
 
 # The shared scene. The document's passes carry this same text -- a difference here would make
@@ -282,8 +285,10 @@ def main() -> int:
        ratio is a constant wearing a metric's clothes. Measured: zeroing ALL of RC's bounced
        light moved the old whole-frame number from 1.209 to 0.998, comfortably inside its own
        pass band. A stack computing no global illumination at all would have passed.
-    3. **Converge the reference.** Bounced energy still climbs from 256 to ~16384 rays; a
-       reference at 4^levels rays is well short at the shallow end and the gap reads as error.
+    3. **Converge the reference, and check that it IS converged.** Measured here: bounced energy
+       moves 0.001% between 256 and 32768 rays, so 16384 is amply converged. Worth measuring
+       rather than asserting -- an earlier revision of this docstring claimed the opposite
+       without checking.
 
     Reported: the ratio of total bounced energy, and relative mean absolute error per bounced
     texel. 063's corrected implementation measured 4.5% against a 65536-ray reference and its
@@ -291,18 +296,25 @@ def main() -> int:
     """
     ctx = moderngl.create_standalone_context()
     print(f"resolution {RES}x{RES}, base interval {BASE_INTERVAL}, {REFERENCE_RAYS} ref rays")
-    truth = render_brute(ctx, rays=REFERENCE_RAYS, reach=2.0)
-    tm = truth.mean(axis=2)
-    bounced = (tm > 1e-4) & (tm < 1.0)
-    print(f"bounced texels in the reference: {int(bounced.sum())}")
 
+    # Each depth is scored against a reference marched to THAT depth's reach. A shallow stack
+    # genuinely cannot see light the full-canvas reference finds, and calling that "error" would
+    # be the matched-comparison mistake again, one level down. Depths 2/3/4 rather than 4/5/6:
+    # stack_reach(4) is 1.02 UV against a 1.414 diagonal, so 5 and 6 render BIT-IDENTICALLY to 4
+    # -- printing them reads as three confirmations and is one measurement repeated.
     worst = 0.0
-    for levels in (4, 5, 6):
+    for levels in (2, 3, 4):
+        truth = render_brute(ctx, rays=REFERENCE_RAYS, reach=stack_reach(levels))
+        tm = truth.mean(axis=2)
+        bounced = (tm > 1e-4) & (tm < 1.0)
         rc = render_cascades(ctx, levels=levels)
         err = relative_error(rc, truth)
         ratio = float(rc.mean(axis=2)[bounced].sum() / tm[bounced].sum())
         worst = max(worst, err)
-        print(f"  {levels} cascades: energy ratio {ratio:.4f}, relMAE {err:6.2%}")
+        print(
+            f"  {levels} cascades (reach {stack_reach(levels):.3f}, "
+            f"{int(bounced.sum()):6d} bounced texels): ratio {ratio:.4f}, relMAE {err:6.2%}"
+        )
 
     ok = worst < 0.10
     print("VERDICT:", "PASS" if ok else "FAIL -- the merge disagrees with brute force")

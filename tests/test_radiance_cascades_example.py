@@ -46,24 +46,16 @@ def test_the_example_is_registered() -> None:
 
 
 def _render(ctx: moderngl.Context, frames: int = 24):
+    """Render the shipped document through the real load path, driving nothing.
+
+    Nothing is injected on purpose. An earlier version of this helper wrote `u_brush*` onto the
+    `paint` pass to simulate a script -- and that is exactly what hid the bug it should have
+    caught: the shipped script drove uniforms the engine could never deliver (it binds to the
+    OUTPUT pass), so the example rendered BLACK in the app while these tests passed. The scene is
+    analytic now, so the honest test is to load it and render it exactly as the app does.
+    """
     doc, _ = Document.load_from_dir(_DOC, ctx)
-    paint = doc.passes["paint"]
-    # The script drives the brush in the app; here the same strokes are fed directly, so the
-    # test needs no ScriptEngine and still paints the document's own scene.
-    strokes = (
-        [(0.28, 0.70, 1.0, (4.0, 3.3, 2.0)), (0.80, 0.80, 1.0, (0.5, 1.2, 4.0))]
-        + [(0.50, 0.36 + 0.02 * i, 0.0, (0.0, 0.0, 0.0)) for i in range(15)]
-        + [(0.22, 0.26, 0.0, (0.0, 0.0, 0.0))]
-    )
-    for frame, (x, y, emissive, colour) in enumerate(strokes):
-        paint.uniform_values["u_brush"] = (x, y, 0.035 if emissive else 0.02, 1.0)
-        paint.uniform_values["u_brush_color"] = colour
-        paint.uniform_values["u_brush_emissive"] = emissive
-        paint.uniform_values["u_clear"] = 0.0
-        doc.begin_frame(frame)
-        doc.render(u_time=frame / 30.0)
-    paint.uniform_values["u_brush"] = (0.0, 0.0, 0.0, 0.0)
-    for frame in range(len(strokes), len(strokes) + frames):
+    for frame in range(frames):
         doc.begin_frame(frame)
         doc.render(u_time=frame / 30.0)
     return doc

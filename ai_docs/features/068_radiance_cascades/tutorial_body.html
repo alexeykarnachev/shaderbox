@@ -630,13 +630,14 @@ void main() {
   things:
 </p>
 
-<pre><code>bounced texels in the reference: 239331
-  4 cascades: energy ratio 1.0134, relMAE  3.65%
-  5 cascades: energy ratio 1.0134, relMAE  3.65%
-  6 cascades: energy ratio 1.0134, relMAE  3.65%</code></pre>
+<pre><code>  2 cascades (reach 0.060,  13881 bounced texels): ratio 1.0090, relMAE  9.57%
+  3 cascades (reach 0.252, 116572 bounced texels): ratio 1.0102, relMAE  4.39%
+  4 cascades (reach 1.020, 239331 bounced texels): ratio 1.0134, relMAE  3.65%</code></pre>
 
 <p>
-  3.65% against a converged 16&nbsp;384-ray reference, scored over bounced light only. That
+  3.65% at full depth against a converged 16&nbsp;384-ray reference, scored over bounced light
+  only, with each depth measured against a reference marched to that depth's own reach. The error
+  falls as the stack deepens, which is the shape you want. That
   matches the 4.5% an earlier corrected implementation of this algorithm measured — and the
   number means something because the gate is <b>mutation-tested</b>: disabling the merge scores
   98%, and a transposed slot address scores 30%, almost exactly the 30.3% that earlier broken
