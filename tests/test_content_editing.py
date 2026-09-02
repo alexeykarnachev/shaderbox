@@ -444,9 +444,16 @@ def test_applied_result_compile_errors_keep_note() -> None:
 # ---- tool-layer behavior through the loop ----
 
 
-def _run(scripts: list[list[LLMStreamEvent]], text: str = "vec3 p = u_pos;") -> list:
+def _run(
+    scripts: list[list[LLMStreamEvent]], text: str = "vec3 p = u_pos;"
+) -> tuple[list, types.SimpleNamespace]:
+    """The turn's events AND the capabilities it ran against.
+
+    The caps come back so a caller can read the result out of the document instead of trusting
+    the tool card: a card reporting ok says the handler returned, not that the text landed.
+    """
     caps = _fake_caps(edit_errors=[[]] * 20, text=text)
-    return list(
+    events = list(
         run_turn(
             _FakeClient(scripts),
             build_registry(caps),
@@ -458,10 +465,15 @@ def _run(scripts: list[list[LLMStreamEvent]], text: str = "vec3 p = u_pos;") -> 
             cancel=threading.Event(),
         )
     )
+    return events, caps
 
 
 def test_write_shader_applies_through_loop() -> None:
-    events = _run(
+    # Reads the text back rather than trusting the card: `ok` says the handler returned, not
+    # that the rewrite reached the document. This test passed with the capability's write
+    # deleted until it asserted the listing, which is what its sibling
+    # `test_write_shader_arg_order_pinned_through_loop` already did.
+    events, caps = _run(
         [
             _tool_call("c1", "write_shader", '{"new_text": "// rewritten whole file"}'),
             [LLMTextDelta("done"), LLMDone("stop")],
@@ -470,6 +482,7 @@ def test_write_shader_applies_through_loop() -> None:
     card = next(e for e in events if isinstance(e, AgentToolCard))
     assert card.name == "write_shader"
     assert card.ok is True
+    assert "// rewritten whole file" in caps.read_shaders([])[0].listing
 
 
 def test_lib_write_warns_on_brace_imbalance() -> None:

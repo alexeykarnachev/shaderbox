@@ -43,13 +43,9 @@ _TORN_STREAM_MSG = "The connection dropped mid-reply — try again. Any actions 
 
 
 def _final_reply_nudge(cause: str, facts: str = "") -> str:
-    # The closing no-tools nudge at a FORCED turn-end. `cause` names the ENGINE limit that ended
-    # the turn (NOT a user pause) so the reply owns the stop ("I hit my own limit and stopped")
-    # instead of crediting the user with a pause they didn't make (feature 050: the "you're right
-    # to pause now" misattribution). `facts` is a fresh measurement of the frame the turn leaves
-    # behind ("" when the turn authored no render or the probe failed) — without it the forced
-    # reply summarizes from intentions alone. Stays plain ASCII - it is engine text injected as
-    # the user.
+    # `cause` names the ENGINE limit that ended the turn, never a user pause, so the reply owns
+    # the stop. `facts` measures the frame the turn leaves behind ("" when there is none). Plain
+    # ASCII: this is engine text injected as the user.
     return (
         f"[engine] {cause} (this is an engine limit, NOT a pause the user asked for). The turn "
         "is ending now. Reply to the USER, plain text: tell them you hit your own limit and "
@@ -125,13 +121,9 @@ def _document_arg(args: dict[str, object]) -> str:
 
 
 def _edit_target_key(name: str, args: dict[str, object]) -> tuple[str, str]:
-    # The per-FILE key for the clean-edit streak: (artifact kind, raw target) — a document's GLSL and
-    # its script.py are two files and must not share a streak. Empty target = the current document,
-    # keyed to a stable sentinel so consecutive no-target edits count as ONE file. The key holds
-    # the RAW target string, not a resolved document id (run_turn has no resolver in scope), so editing
-    # one document both by-empty and by-its-id splits the streak across two keys and the brake counts
-    # slower for that file. Harmless: it only DELAYS the brake (never disables it), and a real
-    # spree uses one addressing style throughout.
+    # (artifact kind, RAW target): a document's GLSL and its script.py are two files and must not
+    # share a streak. The target is raw rather than a resolved id -- run_turn has no resolver in
+    # scope -- so addressing one document two ways splits its streak, which only DELAYS the brake.
     kind = "script" if name in _SCRIPT_EDIT_TOOLS else "shader"
     return kind, _document_arg(args) or "<current>"
 
@@ -978,25 +970,17 @@ def run_turn(
             # legend stays model-only.
             msg = splice_facts_legend(msg)
 
-            # Self-correction cap: a model stuck on an edit (an old_str that keeps not matching, a
-            # line range that keeps not resolving) would otherwise retry to the max_iterations
-            # ceiling. Count CONSECUTIVE failed shader-EDIT tools (not all mutating tools — a failed
-            # render/publish is non-convergence, not a stuck edit). A non-mutating tool (a read)
-            # carries no new edit information, so it does NOT reset the streak — else a read between
-            # two failed edits would let a 3-strikes loop stretch indefinitely. Only a success or a
-            # genuine state change (any mutating tool) resets it.
+            # Consecutive failed EDIT tools only: a failed render is non-convergence, not a stuck
+            # edit. A read carries no new edit information and deliberately does NOT reset the
+            # streak, or a read between two failures would stretch the cap indefinitely.
             if registry.is_edit_tool(tc.name) and not ok:
                 consecutive_failed_edits += 1
             elif registry.is_edit_tool(tc.name) or registry.is_mutating(tc.name):
                 consecutive_failed_edits = 0
 
-            # Applies-but-broken thrash: an edit that APPLIES (ok=True) but leaves compile errors
-            # resets the failed-edit cap above, so a model that keeps producing broken-but-applying
-            # edits would loop to max_iterations. Count those separately and, at the cap, splice a
-            # rewrite nudge onto THIS edit's tool message — not a giveup; the model usually recovers.
-            # The latch fires the nudge ONCE per thrash run; a non-thrash step re-arms it (so a fresh
-            # thrash run after a clean edit nudges again, but a model ignoring it isn't re-nudged
-            # every max_compile_failures steps).
+            # An edit that APPLIES but leaves compile errors resets the failed-edit cap above, so
+            # it needs its own counter. The latch fires the nudge once per thrash run; a non-thrash
+            # step re-arms it.
             applied_with_errors = (
                 registry.is_edit_tool(tc.name)
                 and ok
@@ -1016,16 +1000,10 @@ def run_turn(
                 compile_nudge_sent = True
                 tr.event("compile_thrash_nudge", iteration=iteration)
 
-            # Render-blind spree brake (per FILE): clean edit_shader edits never trip either
-            # counter above, so a model iterating on AESTHETICS can stack them unbounded with the
-            # user seeing nothing. A clean edit_shader on a file increments its streak; a CLEAN
-            # write_shader (the sanctioned whole-file convergence) RESETS it — finishing in one
-            # write must never be the straw that trips the hard stop. (A write that applies WITH
-            # errors isn't clean, so it neither counts nor resets — the turn is thrash-exempt while
-            # a compile is broken anyway.) While a broken compile is in flight the turn stays exempt
-            # (fixing comes first — those count toward the thrash nudge). At the soft threshold an
-            # escalating fact rides every result; at the hard threshold the turn force-ends (the lone
-            # soft nudge was blown past in a 16-edit spree).
+            # Per-FILE brake on clean edits, which trip neither counter above and so could stack
+            # unbounded with the user seeing nothing. A clean write_shader RESETS it: finishing in
+            # one write must never be the straw that trips the stop. A broken compile in flight is
+            # exempt -- fixing comes first, and those count toward the thrash nudge instead.
             clean_edit = (
                 registry.is_edit_tool(tc.name) and ok and not applied_with_errors
             )

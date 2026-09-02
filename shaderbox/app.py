@@ -259,6 +259,12 @@ class App:
         # fresh box, follows shipped updates on pristine files, never touches edits.
         sync_shipped_lib(SHADER_LIB_SEED_DIR, shader_lib_root())
 
+        # The long flat run of attribute declarations below stays INLINE rather than moving
+        # to a `_init_state` helper: `ProjectSession` is constructed here with lambdas that
+        # close over `shader_lib_files`, which is assigned after them, so the block brackets a
+        # forward reference. Extracting the middle would separate it from its resolution and
+        # buy nothing -- there is no control flow in it to simplify.
+
         # The headless project core (feature 025): owns the pure-core project state (documents,
         # app_state, lib index + cross-project stores, working set) AND the copilot cluster
         # (CopilotSession/CopilotBackend/RevertExecutor, built in its own __init__). App forwards
@@ -1009,6 +1015,36 @@ class App:
     def set_document_delete_armed(self, id: str = "") -> None:
         self.document_delete_armed = id
 
+    def _rewire_exporters(self) -> None:
+        """Point the exporter registry at the project just loaded.
+
+        Order matters: `set_integrations` first (the store was loaded by `session.load`), then
+        `rebind`, which reads it. The exporters carry imgui panels, so the registry and this
+        wiring stay App-side rather than moving into ProjectSession.
+        """
+        # Wire exporter registry to project state: set_integrations (the store was loaded by
+        # session.load), THEN rebind (which reads the store). The exporters carry imgui panels,
+        # so the registry + this wiring stay App-side.
+        scratch_dir = _create_dir_if_needed(self.project_dir / "exporter_scratch")
+        if self.share_tab_state is None:
+            self.share_tab_state = share_state.make_state(scratch_dir=scratch_dir)
+        else:
+            self.share_tab_state.release()
+            self.share_tab_state.scratch_dir = scratch_dir
+
+        self.exporter_registry.set_integrations(self.integrations_store)
+        for eid in self.exporter_registry.ids():
+            exporter = self.exporter_registry.get(eid)
+            if exporter is not None:
+                exporter.set_media_dir(self.paths.media_dir)
+        self.exporter_registry.rebind(self.app_state.exporter_settings)
+        if self.app_state.active_exporter_id:
+            self.exporter_registry.set_active(self.app_state.active_exporter_id)
+
+        telegram = self.exporter_registry.get("telegram")
+        if isinstance(telegram, TelegramExporter):
+            telegram.set_default_pack(self.app_state.telegram_default_pack)
+
     def _init(
         self,
         project_dir: Path,
@@ -1071,29 +1107,7 @@ class App:
         # fires while this one-shot is set (else imgui defaults to the first tab).
         self.document_tab_select_pending = True
 
-        # ----------------------------------------------------------------
-        # Wire exporter registry to project state: set_integrations (the store was loaded by
-        # session.load), THEN rebind (which reads the store). The exporters carry imgui panels,
-        # so the registry + this wiring stay App-side.
-        scratch_dir = _create_dir_if_needed(self.project_dir / "exporter_scratch")
-        if self.share_tab_state is None:
-            self.share_tab_state = share_state.make_state(scratch_dir=scratch_dir)
-        else:
-            self.share_tab_state.release()
-            self.share_tab_state.scratch_dir = scratch_dir
-
-        self.exporter_registry.set_integrations(self.integrations_store)
-        for eid in self.exporter_registry.ids():
-            exporter = self.exporter_registry.get(eid)
-            if exporter is not None:
-                exporter.set_media_dir(self.paths.media_dir)
-        self.exporter_registry.rebind(self.app_state.exporter_settings)
-        if self.app_state.active_exporter_id:
-            self.exporter_registry.set_active(self.app_state.active_exporter_id)
-
-        telegram = self.exporter_registry.get("telegram")
-        if isinstance(telegram, TelegramExporter):
-            telegram.set_default_pack(self.app_state.telegram_default_pack)
+        self._rewire_exporters()
 
         # Reset, then restore the INCOMING project's conversation (the outgoing one was
         # saved in release() at the top of _init). The client reads the reloaded

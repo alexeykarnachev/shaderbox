@@ -150,7 +150,17 @@ def run(app: App) -> None:
     app.release()
 
 
-def update_and_draw(app: App) -> None:
+def _tick_frame_state(app: App) -> list[str] | None:
+    """Everything that happens BEFORE any drawing: reconcile disk, advance the clocks, tick
+    the script engine, and decide which documents this frame renders.
+
+    Split from `update_and_draw` because it is the half with no imgui in it at all -- the
+    returned list is the one value the drawing half needs back.
+
+    Returns None to ABORT the frame: a document file that vanished mid-edit pumps the OS queue
+    and skips this frame entirely rather than drawing against half-loaded state. The caller must
+    return on None -- that is what the early `return` did when this was inline.
+    """
     # ----------------------------------------------------------------
     # Rebuild the lib index if any lib file changed.
     maybe_rebuild_lib_index(app)
@@ -185,7 +195,7 @@ def update_and_draw(app: App) -> None:
             # The poll queued key events but no drain runs this frame; drop them, or
             # they replay in one burst on the recovery frame.
             app.editor_key_events.clear()
-            return
+            return None
         reload_document_if_changed(app, name, ui_document)
 
     # ----------------------------------------------------------------
@@ -234,6 +244,14 @@ def update_and_draw(app: App) -> None:
     # would advance a feedback pass at 2x.
     for document_id in tick_documents:
         app.ui_documents[document_id].document.begin_frame(app.frame_idx)
+
+    return tick_documents
+
+
+def update_and_draw(app: App) -> None:
+    tick_documents = _tick_frame_state(app)
+    if tick_documents is None:
+        return
 
     # ----------------------------------------------------------------
     # Render previews
@@ -554,9 +572,15 @@ def _draw_splitter(app: App, total_width: float, height: float) -> None:
             app.app_state.editor_split_fraction = max(0.15, min(0.85, fraction))
 
 
-def _draw_app_panel(app: App) -> None:
-    control_panel_min_height = SIZE.PANEL_CTRL_MINH
+def _draw_document_image(
+    app: App, control_panel_min_height: float
+) -> tuple[imgui.ImVec2, float, float]:
+    """Draw the current document's preview, or the empty-state prompt in its place.
 
+    Returns the anchor and the image size, which the FPS overlay and the control panel below
+    both need to position themselves -- that shared geometry is why this is a return rather
+    than a self-contained draw.
+    """
     # ----------------------------------------------------------------
     # Current document image
     cursor_pos = imgui.get_cursor_screen_pos()
@@ -613,6 +637,16 @@ def _draw_app_panel(app: App) -> None:
             imgui.color_convert_float4_to_u32(COLOR.STATE_WARN),
             message,
         )
+
+    return cursor_pos, image_width, image_height
+
+
+def _draw_app_panel(app: App) -> None:
+    control_panel_min_height = SIZE.PANEL_CTRL_MINH
+
+    cursor_pos, image_width, image_height = _draw_document_image(
+        app, control_panel_min_height
+    )
 
     if app.current_document_id in app.ui_documents:
         app.fps_details_open = fps_overlay(
