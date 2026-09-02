@@ -104,6 +104,7 @@ def render_state(
         editor.get_mode(),
         editor.get_selection(),
         editor.get_command_line(),
+        editor.get_command_line_prompt(),
         editor.get_command_message(),
         editor.complete_open(),
         editor.complete_selected(),

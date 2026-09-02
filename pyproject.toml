@@ -48,8 +48,9 @@ dev = [
 target-version = "py312"
 line-length = 88
 # Research artifacts under ai_docs/ are preserved verbatim as evidence, not maintained as
-# source -- reformatting them to project style would obscure what was actually run.
-extend-exclude = ["ai_docs/"]
+# source -- reformatting them to project style would obscure what was actually run. The
+# vendored ABI probe is upstream's bytes, compared byte-for-byte by the argtypes gate.
+extend-exclude = ["ai_docs/", "shaderbox/resources/editor/abi_probe.py"]
 
 [tool.ruff.lint]
 # Cyrillic glyph data/docs legitimately contain Cyrillic letters (gen_glyphs.py).

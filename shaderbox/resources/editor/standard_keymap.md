@@ -2,7 +2,7 @@
 
 The non-modal keymap: typing inserts, Shift with a movement selects, a few
 Ctrl chords cover undo, redo, select-all and word deletion. A host picks it
-with `ed_set_style(h, 1)`; the reference editor takes `--standard`. The vim
+with `ed_set_style(h, 1)`; the reference editor takes `--standard`, and F6 switches at runtime. The vim
 keymap is `docs/vim_coverage.md`; the decisions behind this one, with the
 editor each rule comes from, are in `docs/features/005_standard_keymap/`.
 

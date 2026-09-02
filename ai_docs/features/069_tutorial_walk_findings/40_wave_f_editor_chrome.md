@@ -100,9 +100,20 @@ and `P` does" not). The manual pass verifies it.
 
 ## Design decisions
 
-### 1. Re-vendor `c5c6ae2`: two files change, not five
+### 1. Re-vendor `22df77e`: three files change, not five
 
-The parked build is at
+**Landed at `22df77e`, not `c5c6ae2`.** The post-implementation spec review found that at
+`c5c6ae2` a marker's text colour skipped the glyph at COLUMN 0 (the recolour pass tested each
+glyph's left edge against the text origin, and the first glyph's ink overhangs its cell to the
+left), so finding #14's own example word `vec3` still showed one red keyword. The editor session
+fixed it at `22df77e` — "Recolour a marked line's column 0 too" — with NO ABI delta: `ffi.odin` is
+byte-identical between the two shas and `nm -D` reports the same 93 names. So the wave re-vendors
+the successor instead of recording the defect, and the pin is a test (§ Tests 7) rather than a note
+for the next re-vendor. THREE files change over `c5c6ae2`, since that commit also touched
+`ffi/probe.py` (a column-0 case added to the probe's own checks) and `docs/standard_keymap.md` (one
+sentence about F6): `libeditor.so`, `abi_probe.py`, `standard_keymap.md`, plus `VERSION`.
+
+The parked build referenced below is at
 `/tmp/claude-1000/-home-akarnachev-src-shaderbox/6d39c1c7-0520-4c0a-8808-186ecbf60c39/scratchpad/editor_c5c6ae2/`.
 Six files are vendored today: `libeditor.so`, `atlas.png`, `atlas.json`, `VERSION`,
 `vim_coverage.md`, `standard_keymap.md` (`git ls-files shaderbox/resources/editor/`). **Two of them
@@ -599,6 +610,21 @@ alpha with an `E` glyph, which is what the parent's "the marker's gutter mark (a
 never drawn) draws in `STATE_ERROR` in the gutter" asked for, and it is now actually drawn, in the
 gutter's separator cell, because the library draws the gutter.
 
+**The override reaches column 0, and only from `22df77e`.** At `c5c6ae2` the recolour pass tested
+each glyph's LEFT EDGE against the text origin, and the first glyph's ink overhangs its cell to the
+left — so the column-0 glyph kept its syntax colour on every line not starting with a space. With
+`SYN_KEYWORD` in that cell the contrast on the `#44221e` band is 4.10, the exact figure the table
+above labels the unreadable case. `22df77e` tests the glyph's CENTRE instead. § Tests 7 pins it,
+and is red against the `c5c6ae2` binary for that reason.
+
+**Marker tooltips are write-only, by design.** `_apply_markers` passes `tooltip=message` and the ABI
+copies the string in, but no host code reads it back: there is no `Editor` tooltip getter and
+`ed_marker_tooltip` is bound without a caller, which is the mirror rule's shape, not an oversight.
+The error strip below the editor is where an error's text is read — it holds N messages, each
+clickable and each jumping to its line, which one library-owned string could not carry. The argument
+stays at the call site so a future hover-readback has it already crossing; nothing in this wave
+claims the tooltip is visible.
+
 **The `E` is drawn only while `ChromeFlag.LINE_NUMBERS` is on.** `ed_layout` draws a marker's
 gutter mark only in a gutter it reserved (README § Line markers: "`ed_layout` draws the gutter mark
 only when it draws the gutter"), and with line numbers off `ed_gutter_cells` is 0 and there is no
@@ -803,9 +829,12 @@ two are the mirror-rule gate: one for names, one for types.
    20-line buffer, `add_marker` on line 9, then `set_cursor(6, 0)`, `feed("O")`, `feed("x")` to open
    a line above it, then walk `ed_marker_gutter(line, 0)` from 0 upward and assert the first line
    that answers is 10.
-   *Falsifier:* the pre-`c5c6ae2` binary answers 9, which is finding #15's repro verbatim. So this
-   test fails on the old binary and passes on the new one, which makes it the pin on the re-vendor
-   rather than only on the host code. Measured both ways.
+   *Falsifier:* assert the pre-`c5c6ae2` answer of 9 against the new binary and the test goes red
+   (`assert [10] == [9]`), which is finding #15's repro verbatim. The old-binary SWAP is not an
+   available falsifier: `ensure_loaded` `getattr`s every `_SIG` name at load, and `_SIG` now binds
+   `ed_set_draw_chrome` and `ed_draw_chrome`, which the 91-export `65264dc` binary does not have, so
+   the swap raises `AttributeError` out of the binding loop before the test body runs. That failure
+   is the bound-but-absent half of § Tests 1 working.
 
 4. **`test_draw_chrome_adds_a_gutter_and_a_status_frame`** (item 10). Lay a buffer out at a fixed
    size with chrome OFF and bucket `prims_list()` by `kind`: no `Kind.FRAME`, and
@@ -834,6 +863,21 @@ two are the mirror-rule gate: one for names, one for types.
    *Falsifier:* omit the `get_command_message()` member from `render_state` and the case fails.
    Measured that it is currently a real gap: the failing command changes the drawn primitives (9
    `Popup_Glyph` to 18) while every existing member holds still.
+
+7. **`test_a_marker_text_colour_reaches_the_glyph_at_column_0`** (decision 7, added at round 3).
+   With chrome on and a marker carrying a text colour on `vec3 c = fn(x);`, every `Glyph` primitive
+   on the row — column 0 included — carries the marker colour, and the first glyph's `x0` is left of
+   the text origin, which is what made a left-edge test skip it.
+   *Falsifier:* the `c5c6ae2` binary reports `column 0 kept its syntax colour: (39.47, (0.78, 0.57,
+   0.92))` — `SYN_KEYWORD` purple against the rest of the line's override. Measured both ways, so
+   this test pins the re-vendor and not only the host call.
+
+8. **`test_the_status_band_sits_below_the_interactive_height`** (code review finding 1). The status
+   `Frame`'s `y0` is at or below `widget_h - cell_h`, which is what makes the host's one-cell shrink
+   of `invisible_button` sufficient; and the band, probed directly, DOES answer
+   `is_mouse_pos_over_glyph`, which is what makes the shrink necessary.
+   *Falsifier:* comparing against the unshrunk height reports `status band starts at 279.0, inside
+   the interactive 300.0`.
 
 The existing suite covers the rest of the surface unchanged: nothing in it asserts a host gutter or
 a bottom-bar badge, so no test is deleted with the code. `make gates` is the exit-code judge, per
@@ -1016,6 +1060,24 @@ gate compares against. The wave adds it to the config's existing top-level `excl
 carries the same precedent for a vendored data file. Recorded as premise 45.
 
 Nothing was rejected. No finding escalated to "should not land".
+
+**Round 3, post-implementation (`d2ade88`), two reviewers on opus: a code review and a spec
+review.** Nine findings, all nine fixed in the working tree. The code review's four: the status bar
+was a live hit-test surface, since the library's hit tests extrapolate rows past the last drawn one
+and the host's `invisible_button` spanned the whole widget, so a click on the mode badge placed the
+caret on a hidden line (fixed by shrinking the interactive rect one cell, image unchanged); the
+prompt rune was missing from `render_state`, so `:a` to `/a` painted different glyphs behind an
+identical gate tuple; marker tooltips are write-only, now said so here rather than implied
+otherwise; and `STATUS_BG` reached past the role layer into `_P` for a value `COLOR.BG_APP` already
+holds. The spec review's five: the column-0 recolour defect (F1, closed by re-vendoring `22df77e`
+rather than by recording it — see decision 1); the argtypes gate lending upstream its own `Prim`,
+so a diverged struct compared equal (F2, now exec'd out of the same AST with a `ctypes.sizeof`
+assertion, falsified by adding a field upstream: "vendored Prim is 56 bytes, ours is 52"); test 3's
+falsifier being the unreachable one (F3); the roadmap banner calling W-B next when W-B had landed
+two commits earlier (F4); and `ruff check` disagreeing with `make check` on the vendored probe (F5,
+`extend-exclude`). Two of the nine were defects the implementation created rather than inherited —
+the hit-test surface and the prompt member — and both are the same class the wave already closed
+once for `command_message`.
 
 **Round 2, closure: PASS, all ten closed.** One residual, on the round-1 fix rather than on the
 original spec: decision 2c had left pyright as a conditional ("confirms pyright is clean on it or

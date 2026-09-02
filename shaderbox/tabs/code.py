@@ -512,8 +512,15 @@ def draw(app: App) -> None:
     # precede this frame's layout, or the redraw gate records a state the
     # painted texture doesn't show and the next frame skips the repaint. Hit
     # tests answer against LAST frame's layout — same widget geometry.
+    # It stops one row ABOVE the image's bottom: the library's status band is
+    # opaque chrome, and the hit tests extrapolate rows past the last drawn one,
+    # so a click on the mode badge would otherwise place the caret on a line
+    # hidden behind it.
     imgui.set_cursor_screen_pos(editor_pos)
-    imgui.invisible_button("##editor_surface", editor_size)
+    imgui.invisible_button(
+        "##editor_surface",
+        imgui.ImVec2(editor_size.x, max(1.0, editor_size.y - cell_h)),
+    )
     hovering = imgui.is_item_hovered()
     if imgui.is_item_activated():
         app.editor_was_ever_focused = True

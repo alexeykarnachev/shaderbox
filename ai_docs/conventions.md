@@ -912,11 +912,19 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   the c-family undo bug that `0143217` fixed: the trigger is a HOST CURSOR JUMP mid-insert, not a
   keystroke — reproduced through the C ABI alone (`Vc`, type, `ed_set_cursor(0,0)`, type, undo).
   Our completion path and jump-to-error both move the cursor mid-insert.
-  The `c5c6ae2` re-vendor (069 W-F) removed three, all of them second derivations of furniture
+  The `22df77e` re-vendor (069 W-F) removed three, all of them second derivations of furniture
   `ed_layout` now emits behind `ed_set_draw_chrome`: the host `_draw_gutter` (imgui line numbers in
   the app UI font), the bottom bar's vim half (mode badge, `line:col` ruler, the `:`/`/`/`?` line),
   and the marker's fill-only error mark (the ABI gained a text colour, so the glyphs on an error
-  line stop being red on red).
+  line stop being red on red). MEASURED, and the reason the wave landed `22df77e` rather than its
+  parent `c5c6ae2`: at `c5c6ae2` the text-colour override skipped the glyph at COLUMN 0, because the
+  recolour pass tested each glyph's LEFT EDGE against the text origin and the first glyph's ink
+  overhangs its cell to the left. `22df77e` tests the centre instead; there is no ABI delta between
+  the two (`ffi.odin` byte-identical, the same 93 `nm -D` names), and
+  `tests/test_editor_ffi.py::test_a_marker_text_colour_reaches_the_glyph_at_column_0` pins it — red
+  against the older binary, so the next re-vendor cannot silently reintroduce it. That commit also
+  touched `ffi/probe.py` and `docs/standard_keymap.md`, which is why a "no ABI delta" re-vendor
+  still copied three files plus `VERSION`: the vendored set is the whole set, always.
 - **A live moderngl context must exist before constructing `Image` / `Video` / `Font` / `Canvas` /
   `Document`** — they call `moderngl.get_context()` lazily. In the app,
   `glfw.make_context_current(window)` handles it.

@@ -671,6 +671,22 @@ def main() -> int:
             marks.append(int((p.x0 + p.x1) * 0.5 / cw.value))
     check("the gutter mark is drawn, in the separator cell", marks, [lib.ed_gutter_cells(h) - 1])
     lib.ed_clear_markers(h)
+    # A text colour reaches COLUMN 0 behind the gutter: the first glyph's ink
+    # overhangs its cell to the left, and shaderbox measured column 0 keeping
+    # its syntax colour on every line not starting with a space.
+    lib.ed_set_text(h, b"int x;\nvec3 c = fn(x);\nAAAA")
+    lib.ed_add_marker(h, 1, 0.8, 0.1, 0.1, 0.2, 0.0, 0.0, 0.0, 0.0, 0.92, 0.86, 0.70, 1.0, 0, None)
+    n = lib.ed_layout(h, 0.0, 0.0, W, H, 16.0, False)
+    row = []
+    for i in range(n):
+        lib.ed_primitive(h, i, ctypes.byref(p))
+        if KINDS[p.kind] == "Glyph" and ch.value <= (p.y0 + p.y1) * 0.5 < 2 * ch.value and p.x1 > ox.value:
+            row.append((p.x0, (round(p.r, 2), round(p.g, 2), round(p.b, 2))))
+    row.sort()
+    check("the first glyph overhangs the origin", row[0][0] < ox.value, True)
+    check("and takes the marker colour with the rest", sorted({c for _, c in row}), [(0.92, 0.86, 0.7)])
+    check("every glyph of the line is there", len(row), len("vec3 c = fn(x);".replace(" ", "")))
+    lib.ed_clear_markers(h)
     # Hit testing answers against the offset text, not the rect's corner.
     line, col = ctypes.c_int32(), ctypes.c_int32()
     lib.ed_pixel_to_cursor(h, ox.value + cw.value * 0.5, ch.value * 0.5, ctypes.byref(line), ctypes.byref(col))

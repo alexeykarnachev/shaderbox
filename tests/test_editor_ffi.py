@@ -467,6 +467,20 @@ def test_render_state_reacts_to_every_editor_dimension() -> None:
     assert should_redraw(base, s), "a failed ex command must repaint the status row"
     base = s
 
+    # The command PROMPT rune: the bar text is prompt + input, so two different
+    # prompts over the same input paint different glyphs.
+    e.key(KeyCode.CHAR, 0, ":")
+    e.key(KeyCode.CHAR, 0, "a")
+    colon = _state(e)
+    e.key(KeyCode.ESCAPE)
+    e.key(KeyCode.CHAR, 0, "/")
+    e.key(KeyCode.CHAR, 0, "a")
+    slash = _state(e)
+    assert e.get_command_line() == "a"
+    assert should_redraw(colon, slash), "':a' and '/a' paint different bars"
+    e.key(KeyCode.ESCAPE)
+    base = _state(e)
+
     assert should_redraw(base, _state(e, size=(320, 480)))
     assert should_redraw(base, _state(e, px_per_em=18.0))
     assert should_redraw(base, _state(e, text_origin=(40.0, 0.0)))
@@ -840,8 +854,21 @@ def test_drain_clears_the_consumed_set_each_frame() -> None:
 
 def _upstream_sig(path: Path) -> dict[str, tuple[object, list[object]]]:
     # Parsed, never imported: the vendored probe opens a session at import time.
-    # `Prim` comes from our own module so POINTER(Prim) memoizes to one object.
+    # Upstream's OWN `Prim` is exec'd out of the same AST rather than ours being
+    # substituted: POINTER memoizes per type object, so lending them our class
+    # would make the two POINTER(Prim) entries compare against themselves and a
+    # diverged struct — a stride mismatch across the whole array — read as equal.
     tree = ast.parse(path.read_text())
+    namespace: dict[str, Any] = {"ctypes": ctypes}
+    prim_def = next(
+        n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "Prim"
+    )
+    exec(compile(ast.Module([prim_def], []), str(path), "exec"), namespace)
+    their_prim: type[ctypes.Structure] = namespace["Prim"]
+    assert ctypes.sizeof(their_prim) == ctypes.sizeof(Prim), (
+        f"vendored Prim is {ctypes.sizeof(their_prim)} bytes, "
+        f"ours is {ctypes.sizeof(Prim)} — the primitive stride diverged"
+    )
     node = next(
         n.value
         for n in tree.body
@@ -849,15 +876,24 @@ def _upstream_sig(path: Path) -> dict[str, tuple[object, list[object]]]:
         and any(getattr(t, "id", None) == "_SIG" for t in n.targets)
     )
     assert isinstance(node, ast.Dict)
-    namespace: dict[str, object] = {"ctypes": ctypes, "Prim": Prim}
     out: dict[str, tuple[object, list[object]]] = {}
     for key, value in zip(node.keys, node.values, strict=True):
         assert key is not None
         restype, argtypes = eval(
             compile(ast.Expression(value), str(path), "eval"), namespace
         )
-        out[ast.literal_eval(key)] = (restype, list(argtypes))
+        out[ast.literal_eval(key)] = (
+            _normalise(restype, their_prim),
+            [_normalise(a, their_prim) for a in argtypes],
+        )
     return out
+
+
+def _normalise(ctype: object, prim: type[ctypes.Structure]) -> object:
+    """POINTER(Prim) is a different object per Prim class, so the two tables can
+    only be compared once each side's pointer-to-Prim is named the same thing.
+    The struct itself is compared by size in `_upstream_sig`."""
+    return "POINTER(Prim)" if ctype is ctypes.POINTER(prim) else ctype
 
 
 def test_the_binding_mirrors_every_export_of_the_vendored_binary() -> None:
@@ -894,7 +930,11 @@ def test_the_binding_mirrors_the_upstream_signature_table() -> None:
         pytest.skip("vendored abi_probe.py unavailable")
     upstream = _upstream_sig(probe)
     ours = {
-        name: (restype, list(argtypes)) for name, (restype, argtypes) in _SIG.items()
+        name: (
+            _normalise(restype, Prim),
+            [_normalise(a, Prim) for a in argtypes],
+        )
+        for name, (restype, argtypes) in _SIG.items()
     }
     assert ours == upstream
 
@@ -948,4 +988,56 @@ def test_text_origin_moves_right_by_the_gutter_under_chrome() -> None:
     x, _y = e.get_text_origin()
     assert x > 0.0
     assert x == e.get_gutter_cells() * cell_w
+    e.close()
+
+
+def test_a_marker_text_colour_reaches_the_glyph_at_column_0() -> None:
+    # Finding #14's own repro: a keyword in the first cell of an error line.
+    # STATE_ERROR and SYN_KEYWORD are one palette entry, so a column-0 glyph
+    # left at its syntax colour is the exact red-on-red case the override fixes.
+    marker_rgb = (0.92, 0.86, 0.70)
+    e = _editor("vec3 c = fn(x);")
+    e.set_language(Language.GLSL)
+    e.set_chrome_flag(ChromeFlag.LINE_NUMBERS, True)
+    e.set_draw_chrome(True)
+    e.add_marker(0, fill=(0.8, 0.1, 0.1, 0.2), text=(*marker_rgb, 1.0))
+    e.layout((600.0, 300.0), 16.0)
+    origin_x = e.get_text_origin()[0]
+    row = sorted(
+        (p.x0, (round(p.r, 2), round(p.g, 2), round(p.b, 2)))
+        for p in e.prims_list()
+        if p.kind == int(Kind.GLYPH) and p.x1 > origin_x
+    )
+    assert len(row) == len("vec3 c = fn(x);".replace(" ", ""))
+    # The first glyph's ink overhangs its cell to the left, past the origin —
+    # which is what made a left-edge test skip it.
+    assert row[0][0] < origin_x
+    assert {colour for _, colour in row} == {marker_rgb}, (
+        f"column 0 kept its syntax colour: {row[0]}"
+    )
+    e.close()
+
+
+def test_the_status_band_sits_below_the_interactive_height() -> None:
+    # The host shrinks its invisible_button by one cell so clicks and hovers on
+    # the status bar never reach the editor. That is only correct while the band
+    # really is the bottom cell: the hit tests extrapolate rows past the last
+    # drawn one, so any part of the band left inside the rect answers with a
+    # line hidden behind it.
+    e = _editor("\n".join(f"uAA{i}" for i in range(40)))
+    e.set_chrome_flag(ChromeFlag.LINE_NUMBERS, True)
+    e.set_draw_chrome(True)
+    e.layout((600.0, 300.0), 16.0)
+    cell_h = e.get_cell_size()[1]
+    band = [p for p in e.prims_list() if p.kind == int(Kind.FRAME)]
+    assert len(band) == 1
+    interactive_h = 300.0 - cell_h
+    assert band[0].y0 >= interactive_h, (
+        f"status band starts at {band[0].y0}, inside the interactive {interactive_h}"
+    )
+    # And the band really does over-reach: probed directly, it answers glyphs.
+    origin_x = e.get_text_origin()[0]
+    assert e.is_mouse_pos_over_glyph((origin_x + 1.0, band[0].y0 + 1.0)), (
+        "the band answering no glyph would make the host's shrink unnecessary"
+    )
     e.close()

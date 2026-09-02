@@ -164,7 +164,7 @@ requirement that follows: modal bindings must not collide with the global hotkey
     Rebuild procedure documented in `conventions.md ## Known quirks` (build in the editor
     repo: `odin build ffi -build-mode:shared -no-entry-point -out:libeditor.so`, copy the
     files, update `VERSION`) — that entry, not this one, carries the current vendored set,
-    which has since grown to seven files. 069 W-F re-vendored `c5c6ae230a51ece5` and, with
+    which has since grown to seven files. 069 W-F re-vendored `22df77ec746db09c` and, with
     `ed_set_draw_chrome` on, the library draws the gutter and the status row itself: the host
     `_draw_gutter` and the bottom bar's vim half are gone.
 14. **Completion: host-driven on the deliberate-offer rule (editor commit f57e8d0).**
