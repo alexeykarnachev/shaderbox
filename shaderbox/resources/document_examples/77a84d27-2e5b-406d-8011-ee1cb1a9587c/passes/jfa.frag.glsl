@@ -2,20 +2,18 @@
 
 // JFA -- the jump flood, and the pass this whole feature exists for.
 //
-// ONE shader, run 9 times. Set "Runs per frame" to 9 in this pass's settings and the engine
-// draws it nine times in a row, handing each run its index in u_pass_iteration and feeding
-// each run the previous run's output through u_prev (the pass reads ITSELF).
+// ONE shader, run 12 times. The offset follows the canvas, so 12 runs cover every canvas size
+// the app allows. The engine draws it twelve times in a row, handing each run its index in
+// u_pass_iteration and feeding each run the previous run's output through u_prev (the pass
+// reads ITSELF).
 //
-// Each run samples 8 neighbours at a HALVING offset -- 256 texels away, then 128, 64 ... 1 --
-// and keeps whichever seed is nearest. Big jumps first spread coordinates across the canvas;
-// small jumps refine. After ceil(log2(512)) = 9 runs every texel holds the UV of its nearest
-// solid texel.
+// Each run samples 8 neighbours at a HALVING offset derived from the canvas -- at 512 that is
+// 256 texels, then 128, 64 ... 1. Big jumps first spread coordinates across the canvas; small
+// jumps refine. After ceil(log2(max side)) runs every texel holds the UV of its nearest solid
+// texel; the runs past that copy their input forward.
 //
-// The offset is derived from the index, not handed over: the engine's job is to say WHICH run
-// this is, and the algorithm's job is to know what that means.
-//
-// Resize note: 9 runs spans 512px. A 1024px canvas needs 10, and the pass settings panel warns
-// you when the number no longer reaches -- because a short chain still renders, just wrong.
+// The offset is derived from the index and the canvas, not handed over: the engine's job is to
+// say WHICH run this is, and the algorithm's job is to know what that means.
 
 in vec2 vs_uv;
 out vec4 fs_color;
@@ -23,11 +21,15 @@ out vec4 fs_color;
 uniform sampler2D u_prev;
 uniform sampler2D u_seed;
 uniform float u_pass_iteration;
-uniform float u_pass_iterations;
 uniform vec2 u_resolution;
 
 void main() {
-    float offset = pow(2.0, u_pass_iterations - u_pass_iteration - 1.0);
+    float offset = exp2(ceil(log2(max(u_resolution.x, u_resolution.y))) - 1.0 - u_pass_iteration);
+    // Runs past the end of the chain have nothing left to spread; pass the buffer through.
+    if (offset < 1.0) {
+        fs_color = u_pass_iteration < 0.5 ? texture(u_seed, vs_uv) : texture(u_prev, vs_uv);
+        return;
+    }
     // Run 0 reads the SEED; every later run reads what the run before it wrote. An iterated
     // pass that read only itself would never receive the seed at all -- the chain has to be
     // started from outside, and this is the seam where that happens.

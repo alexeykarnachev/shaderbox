@@ -70,6 +70,19 @@ stays dumb, and the dangerous half is fixed instead: silently-wrong output becom
 warning. The failure 063 warned about is precisely this shape — "a plausible render is not a
 numerical check."
 
+**069 W-H made the offset canvas-derived in the shipped shader and set the count to
+`ceil(log2(MAX_CANVAS_PX))`, so it is now correct at every canvas the app can make rather than at
+512 alone.** `jfa.frag.glsl` computes
+`exp2(ceil(log2(max(u_resolution.x, u_resolution.y))) - 1.0 - u_pass_iteration)` and copies its
+input forward on a surplus run, so `iterations: 12` covers 4096 and costs three pass-through
+draws at 512. The tutorial paragraph this replaced is kept here as the record of what it said:
+
+> **Resize changes the answer.** 9 runs spans 512px; a 1024px canvas needs 10. Come up short and
+> it still renders — just with a subtly wrong distance field and no error anywhere. Nothing warns
+> you: an engine-side check was built and then retracted, because it cannot tell a base-2 jump
+> flood from the base-4 cascade stack in the next pass, and a check assuming one is wrong for the
+> other. The count is yours to keep right.
+
 **D4 — Bounded, like every other `graph.json` number.** `iterations: int = Field(default=1, ge=1,
 le=64)`. `TargetConfig` already documents why: these knobs live in a file where nothing
 type-checks them, and an unbounded count is a frame-time bomb. 64 covers JFA at 2^64 and every
@@ -103,6 +116,21 @@ buttons, so "drag to paint, right-drag for walls" was never expressible.
 This also cost the feature its "stress the scripting path" goal, which is worth stating plainly
 rather than quietly dropping. *Trigger to revisit: a script engine that can address a named pass
 rather than only the output.*
+
+The tutorial carried this retraction as a warn block until 069 W-H replaced it with the paint
+subsection that teaches the script. Kept here as the record of what it said:
+
+> **Why this is not painted with the mouse.** The obvious design — a canvas that reads itself for
+> feedback while a script feeds it the cursor — was built here and **renders black**. Two
+> independent reasons, both worth knowing before you reach for a script in this engine:
+> ShaderBox's script engine binds to a document's **OUTPUT** pass, so a uniform declared on any
+> other pass is silently dropped as an orphan key; and `ctx.mouse` carries position only, no
+> buttons, so there is no click to gate a brush on. An analytic scene sidesteps both, and a
+> drifting light demonstrates the same thing a brush would.
+
+`paint.frag.glsl`'s header carried the same claim in its second paragraph and W-H removed it, for
+the same reason: the tutorial splices that header verbatim into step 1, directly above the
+subsection whose whole content is a script reaching a brush uniform declared in that file.
 
 ## Files touched
 
@@ -162,6 +190,19 @@ Both articles were read in full after 063's summary. Three things the spec now r
    convincing shadows. **Build the merge from `rc_proof.py`.** *Corrected during the review
    round: the article's SHIPPED demo source agrees with this implementation — only its base-16
    prose differs. An earlier draft of this spec accused it of a bug it does not contain.*
+   The tutorial carried this as its one `CORRECTION` callout until 069 W-H, which kept the FACT in
+   step 5's "The merge" explanation and dropped the label and the article's-bug history. The
+   callout said:
+
+   > **CORRECTION — Do the bilinear blend by hand, and keep the target unsmoothed.** The article
+   > leans on the GPU's linear filter for "nearly free smoothing". That is wrong at this texture
+   > layout: neighbouring texels are *different directions of the same probe*, not neighbouring
+   > positions, so hardware filtering blends unrelated angles. The four taps sample the **same
+   > slot** in four **neighbouring probes**, which is the quantity you actually want. Leave
+   > **smooth** off on this target.
+
+   The tutorial's lede also claimed there were TWO such callouts while carrying one; W-H replaced
+   that sentence with a pointer to step 5 and to `oracle.py`.
 2. **The GI article supplies the stages RC assumes** and is not optional reading: the drawing
    surface (`sdfLineSquared`), the seed pass (`vec4(vUv * alpha, 0, 1)`), the JFA 3x3 kernel, the
    distance-field pass, and naive raymarching as the pedagogical control. The tutorial covers all

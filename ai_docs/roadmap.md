@@ -26,26 +26,33 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-02 (069 in progress: W-C, W-A, W-B, W-F and W-E landed; W-G next). -->
-**NEXT SESSION: continue 069, wave by wave.** The maintainer walked the 068 tutorial and filed
-37 findings; eight workstreams and twelve locked decisions are in
+<!-- As of 2026-09-03 (069 complete: all eight waves landed; W-H closed it). -->
+**NEXT SESSION: 069 is done — the maintainer walks the rewritten tutorial.** The maintainer walked
+the 068 tutorial and filed 37 findings; eight workstreams and twelve locked decisions are in
 `ai_docs/features/069_tutorial_walk_findings/01_spec.md` (ledger `00_findings.md`; scripting
-design `01_design_scripting.md`). Each wave gets its own spec in that directory (`10_wave_c_*`,
+design `01_design_scripting.md`). Each wave has its own spec in that directory (`10_wave_c_*`,
 `20_wave_a_*`, ...) with pre/post reviews under `reviews/`, per `dev_flow.md`. **Landed: W-C**
 (rename crash, commit-on-deactivate at six sites, add-pass activation, Alt+P / Alt+A), **W-A**
 (canvas `W x H` + presets through the `set_canvas_size` funnel, checkerboard viewer), **W-B** (UI
 prose cut to budget and gated), **W-F** (editor `22df77e` vendored, all 93 exports bound behind
 a names gate and an argtypes gate against upstream's own `abi_probe.py`, `set_draw_chrome(True)`
-per session, the host's gutter, mode badge and command line deleted for the library's own), and
+per session, the host's gutter, mode badge and command line deleted for the library's own),
 **W-E** (019's region system removed whole, `nav_enable_keyboard` off, the keymap a Setting, seven
 chords moved to the Alt / F-key tier so no chord means two things — pinned by a test reading both
-vendored keymap docs). **W-G next** (`60_wave_g_scripting.md`), then W-D, W-H per 01_spec § Order. The maintainer wants no editor GitHub
+vendored keymap docs), **W-G** (a script drives many uniforms across many passes through a nested
+dict, mouse `down` + previous position in the context), **W-D** (a sampler's name is its default
+wire), and **W-H** (the tutorial rewritten: six pass steps whose cards and code are GENERATED from
+the shipped example, four interludes, a paint-with-the-mouse script, and a `jfa` offset derived
+from the canvas). The remaining verification is the maintainer's own walk
+(`80_wave_h_tutorial.md § Manual verification`). The maintainer wants no editor GitHub
 issues. The graph view of the pass strip is feature 070, direction fixed in 069 § Out of scope.
 
-**068 radiance cascades: DONE**, and its tutorial is being rewritten under 069 W-H (template,
-generated pass cards, spliced code). `oracle.py` measures 3.65% relMAE. Spec:
-`ai_docs/features/068_radiance_cascades/01_spec.md` — D3 and D7 are RETRACTED in place; 069 lifts
-D7 (mouse `down` + previous position in the script context).
+**068 radiance cascades: DONE**, and 069 W-H rewrote its tutorial (six pass steps whose cards and
+code blocks are generated from the shipped example by `build_tutorial.py`, gated by
+`tests/test_tutorial_build.py`). `oracle.py` measures 3.65% relMAE. Spec:
+`ai_docs/features/068_radiance_cascades/01_spec.md` — D3 and D7 are RETRACTED in place; 069 lifted
+both (W-G gave the script context mouse `down` + previous position; W-H made the `jfa` offset
+canvas-derived, so the run count is right at every canvas rather than at 512).
 
 **067: DONE, v0.27.0 on GitHub (not itch).** The Windows `libeditor.dll` needs a Windows host at
 the next `/ship` — 069 W-F re-vendored the Linux `.so` only.
@@ -56,9 +63,9 @@ the next `/ship` — 069 W-F re-vendored the Linux `.so` only.
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 069 | tutorial_walk_findings | spec | The maintainer's walk of the 068 tutorial, 37 findings grouped into eight workstreams (canvas size, UI prose diet, pass verbs, naming + default wiring, keyboard ownership incl. the removal of 019's regions, editor chrome + lib re-vendor, scripting across passes via a nested dict, the tutorial rewrite), twelve decisions locked during the walk. Spec: `ai_docs/features/069_tutorial_walk_findings/01_spec.md`. |
+| 069 | tutorial_walk_findings | done | The maintainer's walk of the 068 tutorial, 37 findings grouped into eight workstreams (canvas size, UI prose diet, pass verbs, naming + default wiring, keyboard ownership incl. the removal of 019's regions, editor chrome + lib re-vendor, scripting across passes via a nested dict, the tutorial rewrite), twelve decisions locked during the walk. All eight waves landed; W-H closed it by regenerating the tutorial from the shipped example. Spec: `ai_docs/features/069_tutorial_walk_findings/01_spec.md`. |
 | — | repo_sweep | done | A ten-agent sweep over the defect classes this repo's history keeps producing (incomplete fix-sweeps, unwired mechanisms, tests that cannot fail, docs that drift from code): four blockers fixed — a crash loading a corrupt `document.json` from the per-frame sync, and three feedback-lifecycle bugs in the 068 machinery, one silently corrupting output — plus two skills that would crash a reader following them literally. What was REJECTED, and why, is in `conventions.md`. Spec: commits `70144d2..7e977bf`. |
-| 068 | radiance_cascades | done | A pass may declare `iterations` and the engine draws it N times per frame (`u_pass_iteration` / `u_pass_iterations`, per-iteration ping-pong), plus a six-pass Radiance Cascades example built on it and a tutorial rewriting both source articles for this engine. Spec: `ai_docs/features/068_radiance_cascades/01_spec.md`. |
+| 068 | radiance_cascades | done | A pass may declare `iterations` and the engine draws it N times per frame (`u_pass_iteration` / `u_pass_iterations`, per-iteration ping-pong), plus a six-pass Radiance Cascades example built on it and a tutorial rewriting both source articles for this engine. 069 W-H rewrote that tutorial to generate every pass card and code block from the example itself. Spec: `ai_docs/features/068_radiance_cascades/01_spec.md`. |
 | 066 | perf_and_test_diet | done | Lazy pass compilation (no load-time warm-up; compile+seed on first need; one first-render per frame in the live loop), lazy openai/google seams, starter-only test fixture, and an 18-test falsifier-criterion cull — startup 3.66s -> 0.67s, suite 39.2s -> ~16s / 925 tests. Spec: `ai_docs/features/066_perf_and_test_diet/01_spec.md`. |
 | 067 | custom_editor | done | The code panel runs the maintainer's own vim-modal editor (vendored `libeditor.so`, C ABI, host-rendered MTSDF primitives) instead of imgui's TextEditor — modal keymap with vim-reserved hotkeys, register-unified clipboard, host-drawn chrome, host-fed completion, host-served ex commands. Spec: `ai_docs/features/067_custom_editor.md`. |
 | 065 | pass_graph | partial | A document holds several passes forming a DAG, each pass its own `.glsl` file with its own `main()` and render target; "node" is retired for `document` + `pass`. All nine stages landed: the GL-free graph model + planner, the `Pass`/`Document` split, chain evaluation with feedback and cold exports, the `passes/` + `graph.json` + per-pass-asset layout, the `node` -> `document` rename across the package and on-disk paths, per-pass hot reload, the pass-list panel with D15's six verbs, the copilot's `<id>#<pass>` address with a pass-aware working set, and a five-pass "Bloom Chain" example. Checks 13-16 need a display and a dogfood run. Spec: `ai_docs/features/065_pass_graph/01_spec.md`. |

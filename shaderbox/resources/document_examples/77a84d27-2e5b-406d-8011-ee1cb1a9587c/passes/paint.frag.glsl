@@ -6,10 +6,9 @@
 // opaque and bright. Everything downstream keys off that alpha: the seed pass marks the solid
 // texels, and a ray stops at the first one it reaches.
 //
-// Built analytically from SDFs and u_time, so it carries no state and needs no script. The
-// engine's script engine binds to a document's OUTPUT pass, so a script could not reach a
-// brush uniform declared here anyway -- and a scene that redraws itself every frame is what
-// lets the two lights drift and the shadows follow.
+// Built analytically from SDFs and u_time, so it carries no state and the shipped example needs
+// no script: a scene that redraws itself every frame is what lets the two lights drift and the
+// shadows follow.
 
 in vec2 vs_uv;
 out vec4 fs_color;

@@ -6,7 +6,7 @@
     "uniforms": {},
     "ui_state": {
         "ui_name": "Radiance Cascades",
-        "description": "Real-time 2D global illumination in six passes. Two lights drift behind a wall; the light bounces and casts soft shadows with no ray tracing and no noise. Two passes run many times per frame: the jump flood builds a distance field in 9 runs, and the cascade stack computes light in 6, coarse to fine. Open a pass settings to see its Runs per frame.",
+        "description": "Real-time 2D global illumination in six passes. Two lights drift behind a wall; the light bounces and casts soft shadows with no ray tracing and no noise. Two passes run many times per frame: the jump flood builds a distance field in 12 runs, and the cascade stack computes light in 6, coarse to fine. Open a pass settings to see its Runs per frame.",
         "render_media_details": {
             "is_video": true,
             "file_details": {

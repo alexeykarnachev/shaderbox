@@ -131,7 +131,9 @@ def test_no_hand_written_fragment_names_an_absent_uniform(body: str) -> None:
     allowed = shipped | _BRUSH_UNIFORMS
     for block in _hand_written_code_blocks(body):
         for token in re.findall(r"\bu_[a-z_]+", html.unescape(block)):
-            assert token in allowed, f"hand-written fragment names absent uniform {token}"
+            assert token in allowed, (
+                f"hand-written fragment names absent uniform {token}"
+            )
 
 
 _INSTRUCTION_VERBS = (
@@ -197,7 +199,9 @@ def test_no_add_the_script_instruction_anywhere(body: str) -> None:
     )
     for where, text in surfaces.items():
         assert not add_script.search(text), f"{where} instructs adding a script"
-        assert not creation.search(text), f"{where} instructs creating scripts/script.py"
+        assert not creation.search(text), (
+            f"{where} instructs creating scripts/script.py"
+        )
 
 
 def test_the_generator_defaults_match_the_engine() -> None:
@@ -205,7 +209,7 @@ def test_the_generator_defaults_match_the_engine() -> None:
     assert _BUILD._DEFAULT_DTYPE == DEFAULT_DTYPE
     assert _BUILD._DEFAULT_FILTER_LINEAR == DEFAULT_FILTER_LINEAR
     assert _BUILD._DEFAULT_WRAP == DEFAULT_WRAP
-    assert _BUILD._DEFAULT_ITERATIONS == PassEntry().iterations
+    assert PassEntry().iterations == _BUILD._DEFAULT_ITERATIONS
     assert set(_BUILD._DTYPE_LABELS) == set(DTYPES)
 
 
@@ -221,7 +225,9 @@ def test_the_jfa_run_count_covers_every_reachable_canvas(graph: dict[str, Any]) 
 def test_the_tutorial_names_no_chord_the_command_table_does_not_have(body: str) -> None:
     known = {chord_to_str(s.default_chord) for s in COMMAND_SPECS if s.default_chord}
     prose = html.unescape(re.sub(r"<[^>]+>", " ", body))
-    quoted = set(re.findall(r"\b(?:Ctrl|Alt|Shift)(?:\+(?:Ctrl|Alt|Shift))*\+\w+", prose))
+    quoted = set(
+        re.findall(r"\b(?:Ctrl|Alt|Shift)(?:\+(?:Ctrl|Alt|Shift))*\+\w+", prose)
+    )
     quoted |= set(re.findall(r"\bF(?:[1-9]|1[0-2])\b", prose))
     for chord in sorted(quoted):
         assert chord in known, f"tutorial quotes {chord}, which no CommandSpec binds"

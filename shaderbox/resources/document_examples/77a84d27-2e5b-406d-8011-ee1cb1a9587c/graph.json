@@ -35,7 +35,7 @@
                 "filter_linear": false,
                 "wrap": false
             },
-            "iterations": 9
+            "iterations": 12
         },
         "df": {
             "inputs": {
