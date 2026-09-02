@@ -11,9 +11,11 @@ from pathlib import Path
 from typing import Any
 
 import moderngl
+import numpy as np
 import pytest
 
 from shaderbox.core import ENGINE_DRIVEN_UNIFORMS, Canvas
+from shaderbox.media import texture_to_rgba8
 from shaderbox.pass_graph import evaluation_order
 from shaderbox.paths import shader_lib_root
 from shaderbox.shader_lib import ShaderLibIndex, set_active
@@ -274,3 +276,101 @@ def test_the_skip_does_not_fire_without_a_frame_counter(
     document.render(target="composite")
     document.render(target="composite")
     assert counts["composite"] == 2
+
+
+_RC = _EXAMPLES / "77a84d27-2e5b-406d-8011-ee1cb1a9587c"
+
+
+def test_a_swept_feedback_pass_holds_still(
+    gl: moderngl.Context, tmp_path: Path
+) -> None:
+    # `begin_frame` swaps every feedback history each frame. A self-reading pass the sweep drew
+    # ONCE and never again would then alternate between its two canvases forever — a tile
+    # strobing at frame rate. Radiance Cascades' `cascade` reads itself and sits off the chain
+    # when the output is `df`.
+    document_dir = tmp_path / "document"
+    shutil.copytree(_RC, document_dir)
+    document = load_document_from_dir(document_dir).document
+    document.graph.output = "df"
+    foreign = Canvas(gl=gl, size=(64, 64))
+
+    frames: list[Any] = []
+    for frame in range(8):
+        document.begin_frame(frame)
+        document.render(canvas=foreign)
+        document.render()
+        pending = next(
+            (
+                name
+                for name, render_pass in document.passes.items()
+                if not render_pass.first_render_done
+            ),
+            None,
+        )
+        if pending is not None:
+            document.render(target=pending)
+        frames.append(
+            texture_to_rgba8(document.passes["cascade"].canvas.texture).copy()
+        )
+    foreign.release()
+
+    # The last swap lands the frame AFTER the sweep drew it; from there the tile is byte-stable.
+    settled = frames[3:]
+    for i, image in enumerate(settled[1:], start=1):
+        assert np.array_equal(image, settled[0]), (
+            f"cascade changed {int(np.abs(image.astype(int) - settled[0].astype(int)).mean())} "
+            f"per pixel on settled frame {i} — the feedback history is strobing"
+        )
+
+
+def test_an_on_chain_feedback_pass_still_advances_every_frame(
+    gl: moderngl.Context, tmp_path: Path
+) -> None:
+    # The other half of the guard: a feedback pass the output chain draws every frame must keep
+    # advancing, or the trail freezes.
+    document_dir = tmp_path / "document"
+    shutil.copytree(_RC, document_dir)
+    document = load_document_from_dir(document_dir).document
+    swaps: list[str] = []
+    real_swap = document._swap_feedback
+
+    def counted(name: str) -> None:
+        swaps.append(name)
+        real_swap(name)
+
+    document._swap_feedback = counted
+    for frame in range(4):
+        document.begin_frame(frame)
+        document.render()
+        assert document.passes["jfa"].drawn_frame == frame
+    # jfa runs 9 iterations, so it swaps 8 times inside the frame plus once at each boundary.
+    boundary_swaps = sum(1 for name in swaps if name == "jfa")
+    assert boundary_swaps > 0, "the on-chain feedback pass stopped advancing"
+
+
+def test_an_edited_off_chain_pass_is_swept_once_more(
+    gl: moderngl.Context, tmp_path: Path
+) -> None:
+    # A hot reload of a pass the output chain does not draw must reach its tile. `invalidate`
+    # re-admits it to the sweep; the election budget stays bounded at one per edit, not one
+    # per frame, so the sweep still drains and then stops.
+    document = _bloom_with_output(tmp_path, "blur")
+    for frame in range(len(document.passes)):
+        _sweep_frame(document, frame)
+    assert all(p.first_render_done for p in document.passes.values())
+
+    source = (tmp_path / "document/passes/composite.frag.glsl").read_text()
+    document.passes["composite"].release_program(source)
+    assert not document.passes["composite"].first_render_done
+
+    counts = _count_draws(document)
+    elected: list[str] = []
+    base = len(document.passes)
+    for frame in range(base, base + 5):
+        pending = _sweep_frame(document, frame)
+        if pending is not None:
+            elected.append(pending)
+    assert elected == ["composite"], f"the edit was swept {elected}, not once"
+    assert counts["composite"] == 1, (
+        "the edited pass drew more than once after its edit"
+    )

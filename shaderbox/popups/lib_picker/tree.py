@@ -221,19 +221,24 @@ def _draw_inline_new_input(
         flags=imgui.InputTextFlags_.enter_returns_true,
     )
     # Read on the line after the input: the item-scoped queries see the LAST submitted item.
-    if changed or imgui.is_item_deactivated_after_edit():
-        created = commit()
-        if created is not None and on_create is not None:
-            on_create(created)
+    wants_commit = changed or imgui.is_item_deactivated_after_edit()
     # Esc cancels whenever the input is OPEN, not only while focused: a user who clicked away (input
     # open but unfocused) would otherwise find Esc dead — inline_input_owns_esc routes Esc here, but
     # the global handler leaves the picker open. Only one inline input is ever open at a time
     # (mutually-exclusive targets), so this can't double-consume.
     if imgui.is_key_pressed(imgui.Key.escape, repeat=False):
         cancel()
+        wants_commit = False
     imgui.same_line()
     if ghost_button(f"x##cancel_{id_prefix}_{dir_rel}"):
+        # The cancel click IS what deactivated the input, so the commit it raised would create
+        # the very thing the user just cancelled.
         cancel()
+        wants_commit = False
+    if wants_commit:
+        created = commit()
+        if created is not None and on_create is not None:
+            on_create(created)
     imgui.unindent(float(SPACE.MD))
 
 
@@ -296,16 +301,19 @@ def _draw_file_rename_input(app: App, path: Path) -> None:
         flags=imgui.InputTextFlags_.enter_returns_true,
     )
     # Read on the line after the input: the item-scoped queries see the LAST submitted item.
-    commit = changed or imgui.is_item_deactivated_after_edit()
+    wants_commit = changed or imgui.is_item_deactivated_after_edit()
     # Esc cancels whenever the rename input is OPEN, not only while focused (see the new-input note).
     if imgui.is_key_pressed(imgui.Key.escape, repeat=False):
         app.shader_lib_files.cancel_file_rename()
-        commit = False
-    if commit:
-        app.shader_lib_files.rename_file(path, app.shader_lib_files.file_rename.buf)
+        wants_commit = False
     imgui.same_line()
     if ghost_button(f"x##cancel_ren_{path}"):
+        # The cancel click IS what deactivated the input, so the commit it raised would perform
+        # the very rename the user just cancelled.
         app.shader_lib_files.cancel_file_rename()
+        wants_commit = False
+    if wants_commit:
+        app.shader_lib_files.rename_file(path, app.shader_lib_files.file_rename.buf)
     imgui.unindent(float(SPACE.MD))
 
 

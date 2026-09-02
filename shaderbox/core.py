@@ -161,7 +161,8 @@ class Pass:
         # Bumped whenever the target format changes, so a Document can tell that a cached
         # feedback canvas built from this pass predates the change (core cannot see the Document).
         self.target_generation: int = 0
-        # The document frame this pass last drew in; -1 means never.
+        # The document frame this pass last drew in; -1 means never. Read both by the sweep's
+        # skip and by begin_frame, which advances a feedback history only for a pass that drew.
         self.drawn_frame: int = -1
         self.first_render_done: bool = False
         self.uniform_values: dict[str, Any] = {}
@@ -195,6 +196,10 @@ class Pass:
     def invalidate(self) -> None:
         # Drop the cached GL program + compile unit without touching `self.source`;
         # next compile() re-reads included lib files via the resolver.
+        # Clearing first_render_done re-admits an off-chain pass to the first-render sweep, so
+        # an edit to a pass the output does not need still reaches its tile. Every caller is
+        # edit-triggered (a source or lib file changed), never per frame.
+        self.first_render_done = False
         self.compile_unit = CompileUnit.empty(self.source)
         if self.program:
             self.program.release()

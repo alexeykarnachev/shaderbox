@@ -204,9 +204,12 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   compiles a never-attempted pass (a FAILED attempt sticks until `invalidate()` — a source or lib
   change — so a broken shader is not re-driven per consumer), and `UIDocument.save` compiles every
   program-less pass before rebuilding the uniform block (a still-broken pass carries its on-disk
-  rows forward). The live loop bounds the relocated cost: first renders are admitted one document
-  per frame (`Document.first_render_done`, set on attempt), so neither frame 0 nor the Examples
-  popup pays every compile at once. Revisit if a consumer appears that needs the uniform SET
+  rows forward). The live loop bounds the relocated cost on both axes, each by admitting ONE
+  never-rendered thing per frame, both flags set on ATTEMPT so a pass whose compile fails is
+  still counted and cannot be re-admitted forever: one DOCUMENT (`Document.first_render_done`),
+  and inside each ticked document one PASS off the output chain (`Pass.first_render_done`, the
+  first-render sweep), so neither frame 0, nor the Examples popup, nor a reopened multi-pass
+  document pays every compile at once. Revisit if a consumer appears that needs the uniform SET
   without being allowed to touch GL — that consumer must read the source, not the program.
 
 - **Heavy SDKs import lazily behind exactly two seams (feature 066).** `openai` lives at the top of

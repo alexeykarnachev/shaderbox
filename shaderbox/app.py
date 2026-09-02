@@ -907,7 +907,17 @@ class App:
         document_id = self.current_document_id
         name = self.pass_settings_name
         buf = self.pass_settings_name_buf.strip()
-        if name and buf and buf != name and document_id in self.ui_documents:
+        ui_document = self.ui_documents.get(document_id)
+        # `name` can already be retired — the disk sync runs every frame, popup or not — and
+        # renaming a pass that is gone would push a "no such pass" toast at a person who only
+        # closed a modal.
+        if (
+            name
+            and buf
+            and buf != name
+            and ui_document is not None
+            and name in ui_document.document.passes
+        ):
             error = self.session.rename_pass(document_id, name, buf)
             if error:
                 self.notifications.push(error)

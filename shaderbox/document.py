@@ -306,8 +306,15 @@ class Document:
         """
         if frame is not None and frame == self._frame:
             return
+        previous_frame = self._frame
         self._frame = frame if frame is not None else self._frame + 1
         for name in list(self._feedback):
+            render_pass = self.passes.get(name)
+            # Only a pass that DREW last frame has a new history to advance to. A pass the
+            # sweep drew once and never again would otherwise alternate between its two
+            # canvases every frame, strobing a tile that should hold still.
+            if render_pass is not None and render_pass.drawn_frame != previous_frame:
+                continue
             self._swap_feedback(name)
 
     def _swap_feedback(self, name: str) -> None:

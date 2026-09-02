@@ -45,11 +45,16 @@ def seed_extra_document(app: Any, new_id: str) -> str:
 
 
 @pytest.fixture
-def app(tmp_path: Path) -> Iterator[Any]:
+def app(monkeypatch: Any, tmp_path: Path) -> Iterator[Any]:
     glfw = pytest.importorskip("glfw")
     if not glfw.init():
         pytest.skip("no GL")
     glfw.window_hint(glfw.VISIBLE, glfw.FALSE)
+    # app_data_dir() is where the shader library, the favorites and integrations.json live, and
+    # App.__init__ SEEDS the library there. Without the override every test that builds an App
+    # writes into the developer's own ~/.local/share/shaderbox. Set before the App import, since
+    # the paths are read at call time but the seed runs in the constructor.
+    monkeypatch.setenv("SHADERBOX_DATA_DIR", str(tmp_path / "data"))
     from shaderbox.app import App
 
     project = seed_tmp_project(tmp_path)

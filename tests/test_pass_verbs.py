@@ -447,3 +447,22 @@ def test_add_pass_activates_the_new_pass(app: Any) -> None:
     assert app.popup_state == PopupState.PASS_SETTINGS
     assert app.pass_settings_name == "z"
     assert not app.pass_add.is_open
+
+
+def test_closing_the_gear_on_a_retired_pass_stays_silent(app: Any) -> None:
+    # The disk sync runs every frame with no popup gate, so the pass the gear targets can be
+    # gone by the time the modal closes. Closing must not push a "no such pass" toast at
+    # someone who only pressed Escape.
+    document_id = _document_id(app)
+    name = next(iter(app.ui_documents[document_id].document.passes))
+    app.open_pass_settings(name)
+    app.pass_settings_name_buf = "renamed"
+    app.pass_settings_name = "gone"
+
+    pushed: list[str] = []
+    app.notifications.push = lambda text, *a, **kw: pushed.append(text)
+    app.close_pass_settings()
+
+    assert pushed == [], pushed
+    assert app.popup_state == PopupState.CLOSED
+    assert name in app.ui_documents[document_id].document.passes

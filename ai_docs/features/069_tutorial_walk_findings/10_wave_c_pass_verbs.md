@@ -209,6 +209,12 @@ Call order at the two sites:
   existing `app.popup_state = PopupState.CLOSED` line runs as today. The lib-picker's
   `inline_input_owns_esc` guard above it is untouched.
 
+The conjunction also checks that `name` is still a live pass, not only that the document exists:
+`sync_documents_from_disk` runs every frame with no popup gate, so the pass the gear targets can
+be retired while the modal is open, and renaming a pass that is gone would push a "no such pass"
+notification at someone who only pressed Escape. (Found by the post-implementation review; pinned
+by `test_closing_the_gear_on_a_retired_pass_stays_silent`.)
+
 `close_pass_settings` is idempotent against a name that did not change and against a rename that
 already landed this frame via item 2 (after which `pass_settings_name` and `pass_settings_name_buf`
 are both the new name, so `buf == name`). The `buf != name` guard is a cheap short-circuit rather
@@ -477,11 +483,14 @@ Four conjuncts, each load-bearing:
   it alone. This is what stops an iterated feedback pass from advancing twice in one frame, since
   the whole iteration loop is skipped, not just one draw.
 - `self._frame >= 0` — `_frame` starts at `-1` and only `begin_frame` advances it. The example
-  documents in `app.ui_document_examples` are rendered by `ui.py:308-310` and NEVER passed to
-  `begin_frame` (verified: the only `begin_frame` call sites in `shaderbox/` are `ui.py:246` and the
-  two export loops), so their `_frame` is `-1` forever. The guard makes `-1 == -1` not a skip. It is
-  belt-and-braces given that the examples popup issues no target renders, but it costs one
-  comparison and removes a whole class of "why is this frozen" from the design.
+  documents in `app.ui_document_examples` are NEVER passed to `begin_frame`, so their `_frame` is
+  `-1` forever and the guard makes `-1 == -1` not a skip.
+  **What actually protects the examples popup is the conjunct above it**, corrected by the
+  post-implementation review: that branch calls `render()` with no `target`, so `target is not
+  None` is already False and the skip cannot fire there whatever `_frame` holds. The `>= 0`
+  conjunct is redundant defence against a future caller that issues a target render on an
+  un-begun document — one comparison, kept and pinned by its own test, but it is not the
+  mechanism.
 
 **Where the stamps are written.** Immediately after the skip check, before the size fixup, in the
 same loop body:
@@ -504,6 +513,34 @@ it is now, and `first_render_done` needs none because the name says it. The reas
 `>= 0`, and the whole story of why the setter moved out of `Pass.render`, live in this spec and in
 the commit message — not in `core.py`, per `conventions.md ## Code rules` (a comment states the now
 and never narrates development history).
+
+**`begin_frame` advances a feedback history only for a pass that drew last frame.** Found by the
+post-implementation review, which measured it: with the Radiance Cascades example's output moved to
+`df`, the off-chain self-reading `cascade` pass — drawn ONCE by the sweep — then alternated between
+its two canvases every frame at a mean absolute difference of 45.34 with 64% of pixels changing per
+frame. `begin_frame` swaps every entry in `self._feedback` unconditionally, which is right for a
+pass the output chain redraws every frame and wrong for one the sweep drew once: the swap presents
+a history no writer is refreshing, so the tile strobes rather than holding a still picture.
+
+The guard reads the same `drawn_frame` stamp the skip does, and the comparison follows from
+`begin_frame`'s own order of assignment — it sets `self._frame` to the NEW frame **before** the
+swap loop runs, so a pass that drew in the frame just ending carries `drawn_frame == ` the
+PREVIOUS value of `_frame`, captured before the assignment:
+
+```python
+        previous_frame = self._frame
+        self._frame = frame if frame is not None else self._frame + 1
+        for name in list(self._feedback):
+            render_pass = self.passes.get(name)
+            if render_pass is not None and render_pass.drawn_frame != previous_frame:
+                continue
+            self._swap_feedback(name)
+```
+
+An on-chain feedback pass is unaffected: the output render draws it every frame, so its stamp is
+always `previous_frame` and it swaps exactly once per frame as before — pinned by
+`test_an_on_chain_feedback_pass_still_advances_every_frame`. The intra-iteration swap of an
+iterated pass is untouched; it runs inside the render loop, not here.
 
 **`Document.first_render_done` narrows by one conjunct** (`document.py:392-393`):
 
@@ -589,18 +626,20 @@ literally about), so the skill documents shipped behaviour rather than an intent
 | File | What changes |
 |---|---|
 | `shaderbox/popups/pass_settings.py` | `_draw_name` returns `bool` and commits on deactivate-after-edit via a new `_commit_pass_name` free function; `_draw_body` skips `_draw_inputs` / `_draw_target` on a rename while still drawing the Close row; the close branch calls `app.close_pass_settings()`. |
-| `shaderbox/popups/lib_picker/tree.py` | `_draw_inline_new_input` (new file / new dir, one shared function) and `_draw_file_rename_input` commit on deactivate-after-edit as well as Enter; the existing Escape-cancel and `x` branches are unchanged. |
+| `shaderbox/popups/lib_picker/tree.py` | `_draw_inline_new_input` (new file / new dir, one shared function) and `_draw_file_rename_input` commit on deactivate-after-edit as well as Enter, under the SAME capture-then-apply shape as `_draw_add_input`: the deactivate is captured into a local and the `x` branch, drawn above the commit, drops it. The `x` branches are NOT unchanged — an earlier draft of this row said they were, and that stopped being true the moment the deactivate commit landed beside them, because the cancel click is itself what deactivates the input (open question 3 works the hazard out; the post-implementation review found it shipped un-applied at both sites). |
 | `shaderbox/popups/lib_picker/preview.py` | `_draw_function_tag_editor` commits on deactivate-after-edit as well as Enter and the `+ Add` button; the `picker_tag_input_focused` write keeps its position and meaning. |
 | `shaderbox/widgets/pass_list.py` | `_draw_add_input` takes `open_pass`, commits on deactivate-after-edit as well as Enter, and on success activates the new pass (tab + output) before opening the gear; `draw` passes `open_pass` through. |
 | `shaderbox/commands.py` | Two `CommandId` members (`OPEN_PASS_SETTINGS`, `ADD_PASS`) and their two `CommandSpec` entries on Alt+P / Alt+A in `C.TOOLS`. |
 | `shaderbox/app.py` | `close_pass_settings`, `open_pass_settings_for_panel_pass` and `open_add_pass` methods; two entries in `_build_command_callbacks`. |
 | `shaderbox/hotkeys.py` | `_handle_escape` routes a PASS_SETTINGS close through `app.close_pass_settings()`. |
-| `shaderbox/core.py` | `Pass.drawn_frame: int = -1` and `Pass.first_render_done: bool = False` in `__init__`. |
-| `shaderbox/document.py` | `render` gains `target: str | None = None`; the iteration loop's `target` local is renamed `draw_into`; `resolved` feeds the guard / planner / cycle fallback while `output` keeps the two `name == output` comparisons; the target-only skip and the two per-pass stamps at the top of the loop body; `first_render_done` gains the `and target is None` conjunct. |
+| `shaderbox/core.py` | `Pass.drawn_frame: int = -1` and `Pass.first_render_done: bool = False` in `__init__`; `invalidate()` clears `first_render_done` (open question 2, reversed after review). |
+| `shaderbox/document.py` | `begin_frame` swaps a feedback history only for a pass whose `drawn_frame` is the frame just ending; `render` gains `target: str | None = None`; the iteration loop's `target` local is renamed `draw_into`; `resolved` feeds the guard / planner / cycle fallback while `output` keeps the two `name == output` comparisons; the target-only skip and the two per-pass stamps at the top of the loop body; `first_render_done` gains the `and target is None` conjunct. |
 | `shaderbox/ui.py` | The document-render block elects at most one pass with `first_render_done == False` per document per frame and renders it with `render(target=name)`. |
 | `.claude/skills/imgui-ui/SKILL.md` | § 7.5's Pattern bullet rewritten to the commit-on-deactivate rule. |
 | `tests/test_pass_verbs.py` | The headless rename-through-the-popup test, the `_commit_pass_name` return test, and the add-pass-activates test. |
-| `tests/test_lib_files.py` | New module: the picker inline-input commit-on-click-away test, driven through the imgui rig with an injected keystroke. |
+| `tests/test_lib_files.py` | New module: the picker inline-input commit-on-click-away test, driven through the imgui rig with an injected keystroke, plus the two cancel-button tests (a rename and a new file) the post-implementation review's finding 1 asked for. |
+| `tests/conftest.py` | The shared `app` fixture points `SHADERBOX_DATA_DIR` at a tmp dir before importing `App`. Without it every App-building test seeded and wrote the developer's own `shader_lib` — a pre-existing harness defect the review surfaced, fixed here because this wave is what added a test that RENAMES files in that directory. |
+| `ai_docs/conventions.md` | 066 D1's compile-budget sentence states both axes now: one never-rendered document per frame AND one off-chain pass per ticked document, both stamped on attempt. |
 | `tests/test_lazy_compile.py` | The frame-accounting tests for the sweep, including the two-output-renders-in-one-frame sibling and the broken-pass stamp case. |
 | `tests/test_help_content.py` | The Help table pickup assertion. |
 | `shaderbox/help_content.py` | No change — `_shortcuts_section` reads `COMMAND_SPECS`. Listed so a reviewer knows it was checked. |
@@ -749,6 +788,54 @@ and assert the elected pass drew both times.
 
 **Falsifier:** dropping the `self._frame >= 0` conjunct makes `-1 == -1` a skip, and the second
 render draws nothing. This is the example-document freeze the round-3 review found.
+
+### `tests/test_lazy_compile.py::test_a_swept_feedback_pass_holds_still`
+
+Loads the Radiance Cascades example with the output moved to `df`, which leaves the self-reading
+`cascade` pass off the chain, and runs eight frames of the full live shape (`begin_frame`, the
+preview render, the own-canvas render, the sweep election), reading `cascade`'s canvas back with
+`texture_to_rgba8` each frame. Asserts the tile is byte-identical across every frame from the one
+after the sweep drew it.
+
+**Falsifier:** without the `drawn_frame != previous_frame` guard in `begin_frame`, `cascade`
+alternates between its two canvases forever — the review measured 45.34 mean absolute difference
+with 64% of pixels changing per frame; the guardless run here measures 30.30 and 95.5%.
+
+### `tests/test_lazy_compile.py::test_an_on_chain_feedback_pass_still_advances_every_frame`
+
+The other half: a feedback pass the output chain draws every frame must keep swapping, or its
+trail freezes. Asserts the boundary swap still fires for `jfa` over four frames.
+
+### `tests/test_lazy_compile.py::test_an_edited_off_chain_pass_is_swept_once_more`
+
+After the sweep has drained, `release_program` on an off-chain pass; asserts the sweep elects it
+exactly once over the next five frames and that it draws exactly once.
+
+**Falsifier:** without `invalidate()` clearing `first_render_done` the pass is never re-elected
+and the assertion goes red — the review's "10 frames after the edit, composite drew: 0 times".
+
+### `tests/test_lib_files.py::test_the_cancel_button_cancels_instead_of_committing` and `::test_the_new_file_cancel_button_creates_nothing`
+
+Drive the rename input and the shared new-input through the rig with a real edit, then press the
+row's `x` on the frame after the focus move. Assert the file did not move / was not created and
+the input closed.
+
+The cancel press is injected at the button rather than at the mouse: imgui's hover test never
+fires for a synthetic mouse position in a headless context (`/imgui-ui § 0` — focus, nav and
+layout geometry read differently headless), measured here as `is_item_hovered()` staying False
+with the cursor inside the button's own rect. The drawn function still runs its real branches in
+their real order against a real deactivate, which is what the finding is about.
+
+**Falsifier:** with the commit left above the `x` branch — the shape that shipped — the cancel
+click performs the rename / creates the file, and both tests go red.
+
+### `tests/test_pass_verbs.py::test_closing_the_gear_on_a_retired_pass_stays_silent`
+
+Point `pass_settings_name` at a pass that is not in the document, close the gear, assert no
+notification was pushed.
+
+**Falsifier:** without the `name in ui_document.document.passes` conjunct, `rename_pass` returns
+its "no such pass" error and the funnel pushes it.
 
 ### `tests/test_command_routing.py` — chord uniqueness, no edit
 
@@ -928,18 +1015,26 @@ Each carries a robust default, marked as such; none blocks implementation.
    document and the two are identical; with it on, a per-document sweep converges N documents in
    `max(passes)` frames instead of `sum(passes)`, and the cost is bounded by the same set the frame
    already renders. Revisit if a project with many render-all documents stutters on load.
-2. **Does the sweep need to re-arm after a hot reload of a not-live pass?** Default, taken:
-   **no.** `watch.py::_reload_pass_if_changed` calls `release_program`, which calls `invalidate()`;
-   neither clears `first_render_done`, so an edited off-chain pass keeps its last picture until it
-   is next drawn. Finding #36's option A mentions "after add pass / hot reload of a not-live pass" as sweep
-   triggers; add pass is covered by D10 (the new pass becomes the output and draws immediately), and
-   the hot-reload case shows a stale picture under the stale wash rather than a black tile — which
-   is the state the wash already means. Clearing `first_render_done` in `invalidate()` is the
-   alternative and it is one line — but it is a **behaviour** change, not a cosmetic one: it breaks
-   the sweep's termination property from "each pass is elected at most once" to "at most once per
-   invalidate", so an off-chain pass being actively edited re-enters the sweep on every save. That is
-   still bounded (one election per save) and probably fine, but a later wave must not take it as
-   free.
+2. **Does the sweep need to re-arm after a hot reload of a not-live pass?** Default reversed by
+   the post-implementation review: **yes — `invalidate()` clears `first_render_done`.** The
+   original default was "no", on the reading that a stale picture under the stale wash is the
+   state the wash already means. The review demonstrated what that costs: with the stamp never
+   cleared, the sweep elects an off-chain pass exactly once **per process lifetime**, so editing
+   its shader never reaches its tile again — `10 frames after the edit, composite drew: 0 times`.
+   The wash says "was drawn, is no longer live", not "is older than the file you are editing",
+   so the picture stops matching the source with nothing saying so.
+
+   The cost is the one the original entry named: the termination property moves from "each pass
+   is elected at most once" to "at most once per invalidate". That is bounded because every
+   caller of `invalidate()` is EDIT-triggered, never per frame — enumerated:
+   `Pass.release_program` (a source changed), `watch.py`'s two sites (a pass file or a lib file
+   changed on disk, both behind an mtime-equality early return), and
+   `copilot/backend.py`'s post-edit invalidate. `set_target` does NOT call it, so the resize path
+   that would have made this per-frame does not exist.
+   `test_the_steady_state_draws_only_the_output_chain` is the gate: it asserts the sweep elects
+   nothing in a settled frame, so a caller that ever became per-frame would turn it red.
+   `test_an_edited_off_chain_pass_is_swept_once_more` pins the re-election itself — exactly one,
+   then the sweep drains again.
 3. **Should `_draw_add_input`'s deactivate-commit fire when the user clicks the `x` cancel
    button?** Default, taken: **no.** The cancel button's own branch calls `app.pass_add.close()`,
    and because the button is drawn after the input, the deactivate would fire on the same frame and
