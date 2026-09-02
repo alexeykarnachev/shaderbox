@@ -265,3 +265,110 @@ passed), including W-E's `test_no_help_prose_quotes_a_chord_the_table_does_not_b
 **Not covered.** The rendered tutorial's visual layout in a browser, and the maintainer's own
 walk (`80_wave_h_tutorial.md § Manual verification`), which the roadmap already names as the
 remaining verification.
+
+---
+
+# Round 2 (closure)
+
+Commit under review: `7440c1d` ("069 W-H fixes: gate the generated file too"), read via
+`git show 7440c1d:<path>` and exercised in an isolated worktree at that commit. The live tree
+was never touched.
+
+**Overall: PASS.**
+
+| Finding | Verdict | The line |
+|---|---|---|
+| 1. `tutorial.html` had no freshness gate | **CLOSED** | `tests/test_tutorial_build.py::test_the_committed_tutorial_is_a_fresh_build` |
+| 2. `format` row could print a label the gear does not show | **CLOSED** | `assert {code: label for code, label, _ in _FORMATS} == _BUILD._DTYPE_LABELS` |
+| 3. `reads` row read the raw graph | **CLOSED** | `build_tutorial.py::_resolved_inputs` + `test_a_card_resolves_the_same_reads_the_engine_does` |
+| 4. Chord test blind to a punctuation-key chord | **CLOSED** | `_BODY_CHORD = re.compile(r"<code>((?:Ctrl\|Alt\|Shift)\+[^<]+\|F[0-9]{1,2})</code>")` |
+| 5. Three sites stated the retired offset formula | **CLOSED** | `01_spec.md` D2, `core.py::Pass.render` docstring, `pass_graph.py::PassEntry.iterations` comment |
+| 6. Unreachable splice filter | **NOT CLOSED, as advised** | left in place per Round 1's recommendation |
+
+`make gates` is GREEN at `7440c1d` (exit 0, captured unpiped; check passed, test passed, smoke
+**passed**). `tests/test_tutorial_build.py` is 11 tests to 13. The committed `tutorial.html`
+regenerates **byte-identical** (md5 `c5e087f0c31c979f482d30ee4a6b68ff` both sides).
+
+## The three green-stays-green probes, re-run
+
+Each was `11 passed` at `fdc7841`. Each now goes red, restored and verified restored
+(`git checkout` + `git diff --quiet`) after every mutation.
+
+**Finding 1, both directions.** Editing the committed output alone
+(`<td>runs</td><td>12</td>` to `9`): `FAILED test_the_committed_tutorial_is_a_fresh_build`,
+`1 failed, 12 passed`. Appending a paragraph to the body without rebuilding: same test red,
+`1 failed, 12 passed`. Both halves of the class are now gated.
+
+**Finding 2.** Drifting `"f2": "16-bit float"` to `"half float"` with the key set untouched:
+`FAILED test_the_generator_defaults_match_the_engine` (and the freshness test, correctly, since
+the output no longer matches). `2 failed, 11 passed`.
+
+**Finding 3** needed a different probe than Round 1's, because the Round 1 probe measured the
+defect and the defect is gone. Dropping `u_jfa` from `df`'s stored inputs now renders
+`<code>u_jfa</code> from <b>jfa</b>` instead of `nothing`, and the suite is correctly green —
+that is the fix working, not a miss. So I falsified the generator's new rule instead, twice:
+
+- reverting `_resolved_inputs` to stored-keys-only (`for uniform in []`), which is exactly the
+  original defect: `FAILED test_a_card_resolves_the_same_reads_the_engine_does`;
+- breaking the self-read branch (`_FEEDBACK_UNIFORM = "u_never_matches"`): same test red.
+
+The parity test's non-vacuousness is measurable: it drives **21 cases across the six passes, 15
+of them with at least one key dropped** (paint 1, seed 2, jfa 4, df 2, cascade 8, composite 4).
+The commit's account of its first version being vacuous is consistent with what I measured — with
+every key present both rules agree trivially, and the `for uniform in []` mutation above would
+have passed such a test.
+
+## Finding 4, falsified end to end
+
+The regex now catches all eight shapes I probed at Round 1, including the three that were
+invisible (`Alt+/`, `Ctrl+;`, `F13`). End to end in the body:
+
+- `<code>Ctrl+;</code>` (unbound, punctuation — the exact shape that was invisible at `fdc7841`):
+  `FAILED test_the_tutorial_names_no_chord_the_command_table_does_not_have`;
+- `<code>Alt+/</code>` (bound): the chord test **passes**, so the widening did not turn a real
+  chord into a false positive;
+- `<code>Ctrl+E</code>` (unbound, plain): still red, so the original coverage did not regress.
+
+(In all three the unrelated `test_every_script_instruction_carries_the_chord` also fires, because
+the substitution removes `Alt+R` from a script sentence. Expected, and identical across the
+three, so it does not confound the comparison.)
+
+## Finding 5, verified as true rather than merely changed
+
+`grep -rn "pow(2.0"` over `01_spec.md`, `core.py` and `pass_graph.py` now returns nothing. The
+replacements are factually correct against the shipped shaders: `cascade.frag.glsl:59` is
+`float level = u_pass_iterations - 1.0 - u_pass_iteration;`, which is the shape all three sites
+now attribute to the cascade stack, and `jfa.frag.glsl:27` is the canvas-derived
+`exp2(ceil(log2(max(...))) - 1.0 - u_pass_iteration)`. D2 also keeps a pointer to the W-H note
+rather than deleting the history.
+
+## Two fixes beyond my findings, checked
+
+Both come from the sibling review and both are real, so I verified rather than took them on
+report.
+
+- `cascade.frag.glsl`'s header said `Set "Runs per frame" to 6`. The gear draws
+  `separator_text("Runs")` and `label_row(..., "runs", ...)`, so the label was stale, and
+  `{{CODE:cascade}}` splices that header verbatim into step 5 — a shipped shader's own prose
+  riding into the tutorial. `grep -rn "Runs per frame"` over `shaderbox/` and the feature
+  directory now returns nothing. `document.json` carried the same label and is fixed with it.
+- "Then open the **Passes** strip" is gone. `tabs/document.py:306` calls `pass_list.draw(...)`
+  with no guard, so the strip is always drawn and there was nothing to open.
+
+Both example-directory edits are comment and description prose only, no GLSL logic, and
+`git diff fdc7841 7440c1d -- .../passes/jfa.frag.glsl` is empty. I re-ran the JFA probe anyway
+and got the Round 1 figures unchanged: 11 runs at 4096 leaves `12582912 / 16777216` unreached,
+12 runs completes at 4096 and at 512.
+
+## Coverage and non-findings
+
+Read the full diff of `build_tutorial.py`, `tests/test_tutorial_build.py`, `01_spec.md`,
+`core.py`, `pass_graph.py`, `tutorial_body.html` and both example files. Ran the tutorial suite
+(13 passed), eight mutations across the five findings, the JFA spot-check, and `make gates`.
+
+Per the late-round rule I am not raising preferences. Two things I looked at and am explicitly
+not filing: `_resolved_inputs` restates D9's name rule rather than importing it, which is forced
+by the module's stated decision not to import `shaderbox` and is closed by the parity test that
+drives the engine's own `effective_inputs` (both falsifiers bite); and `_SAMPLER_RE` parses
+declarations by regex rather than from a compiled program, which the docstring justifies and
+which the same parity test covers, since a missed sampler would drop a row the engine resolves.

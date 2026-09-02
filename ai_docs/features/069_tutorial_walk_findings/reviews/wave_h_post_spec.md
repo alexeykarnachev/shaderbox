@@ -361,3 +361,82 @@ offset table at 16, 512, 1024, 2048 and 4096. Ran `uv run pytest tests/test_tuto
 
 Not verified: the rendered pictures against a running app, which needs the maintainer's walk;
 `oracle.py`'s numbers, unchanged by this wave.
+
+---
+
+# Round 2 (closure) — against `7440c1d`
+
+Narrow closure round on `7440c1d` ("069 W-H fixes: gate the generated file too"), read via
+`git show 7440c1d:<path>`, with the regenerated `tutorial.html` re-read for app nouns.
+
+## Verdicts
+
+| # | Finding | Verdict | Line |
+|---|---|---|---|
+| 1 | Step 5 instructs "Runs per frame"; the gear says "runs" | **CLOSED** | `cascade.frag.glsl:9` now reads `// Set "runs" to 6 in this pass's gear.`; `tutorial.html:721` carries it as `Set &quot;runs&quot; to 6 in this pass&#x27;s gear.` |
+| 6 | `document.json`'s description carried the same stale label | **CLOSED** | The description now ends "Open a pass's settings to see its runs." `git grep 'Runs per frame' 7440c1d -- shaderbox/ ai_docs/features/068_radiance_cascades/` returns nothing |
+| 2 | "Then open the Passes strip" names an action the app does not offer | **CLOSED** | The sentence is gone from `tutorial_body.html` and from the generated file; the "Before you start" note now runs "…steps 2 to 6 each add one. Each pass step opens with a **card**: …" with no seam |
+| 3 | `Verifying it` became a fifth "Nothing to build here" section, unrecorded | **CLOSED** | Recorded as **four**, and the count is correct — see the judgement below |
+| 4 | Manual step 11 said the tutorial quotes no `F6` | **CLOSED** | Step 11 now reads "`F6` appears twice descriptively (the nothing-to-clear note and the persistent-canvas suggestion) and is pressed at step 6, not here". Verified: the body's only `F6` sites are lines 253 and 687, and manual step 6 is where it is pressed |
+| 5 | The worked `jfa` card contradicted the spec's own sorting rule | **CLOSED** | The text sample, the HTML sample and the summary row all show `u_prev` above `u_seed`. Byte-compared: the spec's HTML sample is **identical** to `_card_html("jfa", graph)`'s output in the committed `tutorial.html` |
+
+## The FOUR-vs-five judgement
+
+**The implementer's reading is right, and it is not a dodge.** § decision 4's table carries five
+rows marked `interlude`, but one of them, `The merge`, has the body cell "the one trap, folded
+INTO step 5's explanation, **not a step**". It is an `<h3>` inside step 5, not an `<h2>` section:
+the generated file's `<h2>` list is `paint, naive, seed, jfa, df, march, idea, cascade,
+composite, verify, What you built`, and `The merge` is not among them. So the sections that build
+nothing are four — `naive`, `march`, `idea`, `verify` — which is exactly the count of
+"Nothing to build here" in the body (lines 261, 435, 462, 612).
+
+The amended text does not merely change a number; it names the four and explains the fifth row:
+decision 4's counting sentence now reads "six numbered plus four unnumbered sections that build
+nothing — Naive global illumination, Sphere marching, The cascade idea and **Verifying it**",
+with a parenthetical stating that the table's fifth `interlude` row is a row rather than a
+section. Manual step 12 enumerates the same four by name, so a maintainer walking it counts what
+the page shows.
+
+## Also landed, verified
+
+Not my findings, but they change the gate this wave leaves behind and I checked them:
+
+- **`test_the_committed_tutorial_is_a_fresh_build`** closes the one real hole in the wave's own
+  premise. Before it, the tracked `tutorial.html` had no freshness gate: a body edit that was
+  never rebuilt, or an edit to the generated file alone, both left the suite green. Mutation-tested
+  here — appending `<!-- drift -->` to the committed file turns it red with the rebuild command in
+  the message; restored, and `git status` on the directory is clean.
+- **`_DTYPE_LABELS` is now pinned to the mapping**, not the key set, so the one card value that is
+  a copied string cannot drift into naming a format the combo does not show.
+- **`test_a_card_resolves_the_same_reads_the_engine_does`** drives every subset of each pass's
+  stored keys removed and compares against the engine's own `effective_inputs`. This matters for
+  D9: an absent key is the preferred on-disk state, and a card built from stored keys alone would
+  print `nothing` for an edge the engine binds. The commit message records that the first version
+  of this test proved nothing (every sampler carries an explicit key today, so both rules agreed
+  trivially and two falsifiers went green) — the subset drive is what gave it teeth.
+- **`_BODY_CHORD`** replaced `\w+` after the final `+` with "anything but the closing tag", so
+  `Alt+/` — a chord `COMMAND_SPECS` actually binds — is checked rather than skipped.
+
+## App nouns, re-checked against the regenerated file
+
+Every quoted UI string in the whole file (code blocks included) is now `"runs"`, which matches
+`pass_settings.py`'s `label_row(app.font_12, "runs", …)` under `separator_text("Runs")`. The
+lowercase bolded nouns in the prose are `presets` and `smooth`, both verified in round 1 against
+`tabs/document.py`'s presets combo and the gear's checkbox caption. The five distinct chords the
+body quotes — `Ctrl+Shift+N`, `Alt+P`, `Alt+A`, `Alt+R`, `F6` — are each a live `CommandSpec`
+default. No noun was introduced that the app does not have.
+
+`uv run pytest tests/test_tutorial_build.py` → **13 passed**.
+
+## Overall
+
+**PASS.** All six findings closed, each by a line I can point at, and none by weakening a check.
+The three fixes that touch shipped source (`cascade.frag.glsl`, `document.json`, the deleted
+sentence) are the minimum change that removes the symptom. The freshness gate added alongside
+closes the wave's own remaining drift path, which was the premise the whole wave rests on: the
+generated file is now provably what the generator produces.
+
+The only thing left is the maintainer's walk (`80_wave_h_tutorial.md § Manual verification`),
+which no review can stand in for. `make gates` remains RED on this box at
+`tests/test_canvas_fields.py`'s glfw `get_video_mode` segfault, unrelated to W-H and unchanged by
+this commit.
