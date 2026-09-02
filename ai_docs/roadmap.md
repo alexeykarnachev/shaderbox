@@ -26,15 +26,17 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-02 (069 in progress: W-C landed, W-A implementing). -->
+<!-- As of 2026-09-02 (069 in progress: W-C and W-A landed, W-B spec in review). -->
 **NEXT SESSION: continue 069, wave by wave.** The maintainer walked the 068 tutorial and filed
 37 findings; eight workstreams and twelve locked decisions are in
 `ai_docs/features/069_tutorial_walk_findings/01_spec.md` (ledger `00_findings.md`; scripting
 design `01_design_scripting.md`). Each wave gets its own spec in that directory (`10_wave_c_*`,
 `20_wave_a_*`, ...) with pre/post reviews under `reviews/`, per `dev_flow.md`. **W-C is DONE**
 (`a246a19` + `d3338d4`: rename crash, commit-on-deactivate at six sites, add-pass activation,
-Alt+P / Alt+A, first-render sweep, feedback-swap guard). **W-A is being implemented** against
-`20_wave_a_canvas_viewer.md`. Then W-B, W-F, W-E, W-G, W-D, W-H per 01_spec § Order. The editor
+Alt+P / Alt+A, first-render sweep, feedback-swap guard). **W-A is DONE** (`78bd1bf` ..
+`1a72478`: canvas `W x H` fields + presets through the `set_canvas_size` funnel, shared clamp,
+checkerboard viewer, per-document widget ids). **W-B next** (`30_wave_b_prose_diet.md`, pre-review
+converging), then W-F, W-E, W-G, W-D, W-H per 01_spec § Order. The editor
 session already delivered the W-F re-vendor: `65264dc` is committed; the successor `c5c6ae2`
 (all four editor findings fixed, `ed_add_marker` re-signed, chrome emitted through the ABI) is
 parked outside the tree until W-F binds the new ABI; the maintainer wants no editor GitHub
