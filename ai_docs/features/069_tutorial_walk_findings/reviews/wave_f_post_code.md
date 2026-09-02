@@ -336,3 +336,181 @@ belonging to other agents:
 
 (plus `reviews/wave_f_post_spec.md`, which appeared mid-review from the parallel
 spec reviewer). No tracked file is modified.
+
+---
+
+# Round 2 (closure) — against `41bce30`
+
+Narrow closure round: my four findings, the ABI re-verification at `22df77e`, and
+one independent run of the new column-0 probe. Nothing else re-reviewed.
+
+**Overall: PASS.**
+
+`make gates` GREEN on `41bce30`, judged by exit code captured unpiped
+(`EXIT=0`), smoke line reads `smoke passed`.
+
+## Per-finding verdicts
+
+### Finding 1 — status bar as a live hit-test surface: **CLOSED**
+
+`tabs/code.py` now sizes the interactive rect
+`imgui.ImVec2(editor_size.x, max(1.0, editor_size.y - cell_h))`, and `cell_h` is
+read three lines above the call, so the ordering is sound. The presented image is
+still built from the full `size_px`, so the bar draws.
+
+The shrink is exact, not approximate. Swept across every height and both gutter
+states, the band's `y0` equals `H - cell_h` on the nose:
+
+```
+H      cell_h  FRAME.y0  H-cell_h   band fully outside button
+ 60.0   21.0      39.0      39.0    True
+100.0   21.0      79.0      79.0    True
+300.0   21.0     279.0     279.0    True
+320.0   21.0     299.0     299.0    True
+400.0   21.0     379.0     379.0    True
+ 21.5   21.0       0.5       0.5    True
+ALL HEIGHTS COVERED: True
+```
+
+One correction to the closure brief's expected measurement, which does not change
+the verdict. The brief says "probe y inside the FRAME band answers no glyph". It
+does not, and it should not:
+
+```
+probes INSIDE the FRAME band (600x300, cell_h 21):
+  y=279.5  over_glyph=True  word='uAA13'
+  y=290.0  over_glyph=True  word='uAA13'
+  y=299.0  over_glyph=True  word='uAA14'   <- row 14 is never drawn
+```
+
+The library's extrapolation past the last drawn row is unchanged by this commit,
+and fixing it was never the plan. The fix works by denying the host those
+coordinates, not by changing the library's answer. `41bce30`'s own test asserts
+this correctly — `test_the_status_band_sits_below_the_interactive_height` pins the
+sufficient half (`band.y0 >= 300 - cell_h`) and then asserts the band *does* answer
+`over_glyph`, commented "the band answering no glyph would make the host's shrink
+unnecessary". The commit understood the shape; the brief's phrasing inverted it.
+
+Falsified: rewriting `interactive_h = 300.0 - cell_h` to `interactive_h = 300.0`
+turns that test red at the band assertion.
+
+### Finding 2 — command-line prompt missing from the redraw gate: **CLOSED**
+
+`render_state` gains `editor.get_command_line_prompt()` beside
+`get_command_line()`. The exact round-1 collision now fires:
+
+```
+after ':a'  line='a' prompt=':'
+after '/a'  line='a' prompt='/'
+should_redraw = True        (was False in round 1)
+```
+
+`test_render_state_reacts_to_every_editor_dimension` gains a case building the
+same `:a` / `/a` pair and asserting `should_redraw(colon, slash)`.
+
+Falsified: deleting the member turns that test red at the prompt assertion
+(`tests/test_editor_ffi.py:480`), with the two tuples differing in no position.
+
+A note on how that falsifier had to be run, because the first two attempts
+produced a false green. This repo's `.venv` holds an editable install pinned to
+`/home/akarnachev/src/shaderbox`, so a `git worktree` checkout with a symlinked
+`.venv` imports `shaderbox` from the MAIN repo, not from the worktree — confirmed
+by printing `shaderbox.editor.render.__file__` from inside the test, which reported
+the main path while the worktree copy on disk had the member stripped. A mutation
+applied in a worktree is therefore invisible to pytest run there, and reads as the
+test failing to catch it. The real falsifier has to mutate the main checkout. Worth
+knowing before the next agent tries to isolate a mutation from concurrent work by
+branching a worktree: it does not isolate, it silently no-ops.
+
+### Finding 3 — marker tooltips write-only: **CLOSED (as stated)**
+
+`40_wave_f_editor_chrome.md` now carries it explicitly: the tooltip crosses the ABI
+and no host code reads it back, `ed_marker_tooltip` is bound without a caller as
+the mirror rule's shape rather than an oversight, the error strip is where an
+error's text is read because it holds N clickable jumping rows that one
+library-owned string could not carry, and the argument stays at the call site so a
+future hover-readback has it already crossing. That is the decision I asked for,
+recorded rather than implied. No code change, correctly.
+
+### Finding 4 — `STATUS_BG` reaching past the role layer: **CLOSED**
+
+`slot.STATUS_BG: COLOR.BG_APP`. Verified identical pixels and a clean map:
+
+```
+STATUS_BG == COLOR.BG_APP:      True
+STATUS_BG == old _P["bg_0"]:    True
+raw _P entries in editor_palette: 0
+palette entries:                  23
+```
+
+## ABI re-verification at `22df77e`
+
+`ffi.odin` is byte-identical between `c5c6ae2` and `22df77e` (`diff -q` clean), so
+the "no ABI delta" claim holds at the source. Re-ran my own 93-entry normalising
+comparator against `ffi.odin@22df77e`:
+
+```
+odin exports: 93   _SIG entries: 93
+in odin not in _SIG: []
+in _SIG not in odin: []
+mismatches: 0
+```
+
+This round I also resolved the two `FFI_Primitive` pointer entries that round 1
+left showing as unmapped in my own table rather than as real mismatches — mapped
+them and confirmed the struct is `{i32 kind; f32 x0..a}` at `22df77e`, 52 bytes,
+against `ctypes.sizeof(Prim) == 52` with 13 fields. So the zero is now a genuine
+93-for-93, with nothing set aside.
+
+`nm -D --defined-only` on the new binary yields 93 `ed_*` names, `diff`-clean
+against both the `c5c6ae2` binary's name list and the `22df77e` source's export
+list — same 93 names, as claimed.
+
+Vendored set at `22df77e`: `abi_probe.py`, `vim_coverage.md` and
+`standard_keymap.md` all md5-match upstream at that sha. The atlas pair is
+untouched by `41bce30` (only `VERSION`, `abi_probe.py`, `libeditor.so` and
+`standard_keymap.md` changed), consistent with a no-ABI-delta re-vendor that still
+copies the whole set.
+
+## The column-0 test, run independently
+
+Ran the probe myself rather than reading the test's word for it. Against the
+`22df77e` binary, `vec3 c = fn(x);` with a marker text colour on line 0:
+
+```
+text_origin.x = 40.0
+glyph count = 12 (expected 12)
+first glyph x0 = 39.467   overhangs origin: True
+colours present: [(0.92, 0.86, 0.7)]
+ALL GLYPHS RECOLOURED: True
+```
+
+The `v` at column 0 starts at x0 39.467, left of the 40.0 origin — the ink overhang
+that a left-edge test skips. Against the `c5c6ae2` binary, extracted from `d2ade88`
+and loaded through a redirected `EDITOR_RESOURCES_DIR`:
+
+```
+OLD BINARY colours: [(0.78, 0.57, 0.92), (0.92, 0.86, 0.7)]
+first glyph: (39.47, (0.78, 0.57, 0.92))
+ALL RECOLOURED: False
+```
+
+The column-0 glyph kept its syntax colour on the old binary and is recoloured on
+the new one. The defect was real, the re-vendor fixes it, and the test is a genuine
+falsifier rather than a tautology against the binary that ships with it.
+
+## Round-2 coverage and tree state
+
+Read: the `41bce30` diff for `tabs/code.py`, `editor/render.py`, `theme.py`,
+`pyproject.toml`, the two new tests and the spec's tooltip decision. Probes: five
+against the live `22df77e` binary plus one against the extracted `c5c6ae2` binary,
+and the comparator re-run. Two falsifiers (the band assertion, the prompt member),
+both restored.
+
+Every probe restored. `shaderbox/editor/render.py`, `editor/ffi.py`,
+`tabs/code.py` and `tests/test_editor_ffi.py` all `git diff --quiet` clean against
+HEAD, the temporary worktree is removed and pruned, and the three tests re-run
+green after restoration. `shaderbox/theme.py` shows as modified in the working
+tree, but that is another agent's reword of the `SELECT` invariant's comment and
+assertion message — `slot.STATUS_BG: COLOR.BG_APP` is intact. The main checkout
+carries a dozen files under concurrent edit by the wave D/E/G agents; none is mine.

@@ -357,3 +357,153 @@ anchoring, the text-colour override across four buffers, filler-row emission, an
 
 Not verified: the seven manual steps as the maintainer sees them in the running app (no display in
 this shell) — four have headless proxies that passed, and the error-line step is where F1 was found.
+
+---
+
+# Round 2 (closure)
+
+Anchor: `41bce30` ("069 W-F fixes: confine the hit tests, re-vendor 22df77e"), against the five
+findings of Round 1 and the amended `40_wave_f_editor_chrome.md`.
+
+**Overall: PASS.** All five findings closed, each demonstrated. The vendored set re-verified at
+`22df77e`. F2's implementer call is sufficient, and falsified in both directions.
+
+## Per-finding verdicts
+
+### F1 — column-0 recolour — **CLOSED**
+
+Closed by re-vendoring rather than by recording, which is the stronger of the two fixes Round 1
+offered. `shaderbox/resources/editor/VERSION:1` = `22df77ec746db09c0aa3562ea898373adf4689e5`;
+`git -C ~/src/editor log -1 22df77e` is "Recolour a marked line's column 0 too".
+
+Round 1's exact probe, re-run against the landed binary:
+
+```
+Language.GLSL, 'vec3 c = brokenfn(x);'
+  no marker  : [(-0.5, (0.78,0.57,0.92)), (10.0, (0.78,0.57,0.92)), ...]
+  with marker: [(-0.5, (0.92,0.86,0.70)), (10.0, (0.92,0.86,0.70)), ...]
+```
+
+The first glyph now takes the override. All four of Round 1's control buffers agree: `'int x;'`,
+`'AAAA'`, `'zzzz'` and `'  indented'` are recoloured from their first glyph on (every column-0 `r`
+reads 0.92, against 0.88 before). So the 4.10-contrast `SYN_KEYWORD` cell the finding measured is
+gone.
+
+The pin is `tests/test_editor_ffi.py:990` `test_a_marker_text_colour_reaches_the_glyph_at_column_0`.
+Falsified here, not taken on report: swapping the `c5c6ae2` binary in and running that test alone
+gives
+
+```
+E  Extra items in the left set:
+E  (0.78, 0.57, 0.92)
+tests/test_editor_ffi.py:1015: AssertionError
+```
+
+which is `SYN_KEYWORD` purple surviving on the row — red on the old binary, green on the new, so the
+test pins the re-vendor and not only the host call. The tree was restored to the `22df77e` binary
+afterwards (`git status --porcelain shaderbox/resources/editor/` clean).
+
+The test also asserts `row[0][0] < origin_x`, which pins the mechanism the fix turned on (the first
+glyph's ink overhangs its cell to the left, which is what made a left-edge test skip it) rather than
+only the symptom.
+
+### F2 — the argtypes gate lending upstream our `Prim` — **CLOSED, and the implementer call is sufficient**
+
+`tests/test_editor_ffi.py:860-869` now `exec`s upstream's own `class Prim` out of the same AST into
+a namespace holding only `ctypes`, then asserts `ctypes.sizeof` agreement before comparing
+signatures. `_normalise` (`:920`) maps each side's `POINTER(<its own Prim>)` to the string
+`"POINTER(Prim)"` so the two tables still compare structurally.
+
+Judged sufficient, on two falsifications run here rather than on the reasoning:
+
+1. **The struct is now covered.** Adding a thirteenth float to the vendored probe's `Prim` and
+   running the gate alone:
+   ```
+   E  AssertionError: vendored Prim is 56 bytes, ours is 52 — the primitive stride diverged
+   ```
+   This is exactly the case Round 1 showed the old gate could not see.
+
+2. **The normalisation does not hide a real pointer change.** Swapping `ctypes.POINTER(Prim)` for
+   `ctypes.c_void_p` on `ed_primitive` in the vendored probe still fails the dict comparison at
+   `:939`. `_normalise` marks only the one object `ctypes.POINTER(their_prim)`, so every other
+   ctype passes through untouched — the normalisation is narrow enough to be safe.
+
+The probe file was restored byte-identical after each falsification (md5
+`29f87f5e90c36f73445d46dd2b4b4c66` both times).
+
+One residual, stated as a bound rather than a defect: `sizeof` catches a size change, so a
+same-size field reordering upstream (swapping two `c_float` names) would still compare equal. That
+is a narrower hole than the one closed, it needs no ABI signature to express it, and Round 1 did not
+raise it — noting the gate's edge, not asking for more.
+
+### F3 — test 3's unreachable falsifier — **CLOSED**
+
+`40_wave_f_editor_chrome.md` § Tests 3 now reads: "assert the pre-`c5c6ae2` answer of 9 against the
+new binary and the test goes red (`assert [10] == [9]`)", followed by the reason the swap is
+unavailable — `ensure_loaded` `getattr`s every `_SIG` name at load and the 91-export binary lacks
+`ed_set_draw_chrome` and `ed_draw_chrome`. That matches Round 1's measurement exactly, and the
+amendment goes one step further than the finding asked by naming the `AttributeError` as the
+bound-but-absent half of Tests 1 doing its job.
+
+### F4 — the stale roadmap banner — **CLOSED**
+
+`ai_docs/roadmap.md:29` now reads "069 in progress: W-C, W-A, W-B and W-F landed; W-E next", and
+`:34-41` lists W-B among the landed waves and names **W-E next**, with the blocker note ("W-F
+removed its blocker by landing `Style` in `editor/ffi.py`"). Accurate against `git log`: `ccd446b`
+and `0ce84f8` are W-B, both before `d2ade88`. The banner also carries the new sha, `22df77e`.
+
+### F5 — `ruff check` disagreeing with `make check` — **CLOSED**
+
+`pyproject.toml` `[tool.ruff] extend-exclude = ["ai_docs/", "shaderbox/resources/editor/abi_probe.py"]`.
+`uv run ruff check shaderbox/` now reports "All checks passed!", where Round 1 measured 6 errors.
+`make check` still exits 0.
+
+## Vendored set at `22df77e`
+
+| Item | Result |
+|---|---|
+| `VERSION` | `22df77ec746db09c0aa3562ea898373adf4689e5` |
+| `nm -D --defined-only` `ed_*` T-symbols | **93**; `_SIG` entries **93** |
+| `abi_probe.py` vs `git show 22df77e:ffi/probe.py` | **byte-identical** (`29f87f5e90c36f73445d46dd2b4b4c66`) |
+| `standard_keymap.md` vs `22df77e:docs/standard_keymap.md` | **byte-identical** (`ce7f4359fb9c85f9ebb8a1e8e626b8a7`) |
+| `vim_coverage.md` | unchanged since `d2ade88`, and byte-identical to `22df77e:docs/vim_coverage.md` (`debd97b5…`) |
+| `atlas.png` / `atlas.json` | unchanged since `d2ade88`, and byte-identical to `22df77e:assets/atlas.*` |
+| Files changed by the re-vendor | `libeditor.so`, `abi_probe.py`, `standard_keymap.md`, `VERSION` — the four the amended decision 1 names |
+
+`git diff --stat d2ade88 41bce30 -- atlas.png atlas.json vim_coverage.md` is empty, confirming the
+"three files change" claim rather than taking it.
+
+The "no ABI delta" claim checks out independently: `diff` of `git show c5c6ae2:ffi/ffi.odin` against
+`git show 22df77e:ffi/ffi.odin` is empty, and both binaries export the same 93 names. So the
+argtypes and names gates could not have caught this defect, which is why a behavioural test was the
+right pin.
+
+## Amended-spec fidelity to `41bce30`
+
+| Section | Verdict |
+|---|---|
+| Decision 1 (retitled "Re-vendor `22df77e`: three files change") | **Faithful.** Names the column-0 defect, its mechanism (left-edge vs centre test), the no-ABI-delta finding, the three changed files plus `VERSION`, and why the pin is a test rather than a note. All six claims verified above |
+| Decision 7 (column-0 paragraph) | **Faithful.** The 4.10 figure matches Round 1's independent computation on the `#44221e` band |
+| Decision 7 (marker tooltips write-only) | **Faithful.** `grep` confirms `ed_marker_tooltip` is bound at `ffi.py` with no caller and no `Editor` getter; the paragraph now says so rather than leaving Round 1's false trail implied |
+| Tests 3 (falsifier rewritten) | **Faithful**, see F3 |
+| Tests 7 (new, column-0) | **Faithful.** The recorded falsifier output matches what was reproduced here |
+| Tests 8 (new, status band) | **Faithful.** `code.py:522` shrinks the interactive rect by `cell_h` while the image stays full size; the test asserts both halves (sufficient and necessary) |
+| Review history, Round 3 | **Faithful.** All five spec-review findings recorded with their closures, and the two implementation-created defects named as such |
+
+## Gates
+
+`make check` exit **0**. `tests/test_editor_ffi.py` **55 passed** (up from 53: the column-0 and
+status-band tests). The 641 tests in modules that do not take the `app` fixture all pass. `make gates`
+remains unjudgeable in this shell for the display reason established in Round 1, unchanged by this
+commit. Working tree clean apart from other agents' untracked wave specs.
+
+## False trails this round
+
+- **The `sizeof`-only struct check missing a same-size field reorder.** A real bound on the gate,
+  but narrower than what was closed and outside the finding. Not a defect.
+- **`ed_marker_tooltip` still having no caller.** Now a written decision in the spec, which is what
+  Round 1 listed it as.
+- **Four items in the commit that no Round 1 finding raised** (the hit-test shrink, the prompt rune,
+  `STATUS_BG` → `COLOR.BG_APP`, the tooltip paragraph) come from the parallel code review. Spot-checked
+  and consistent: `COLOR.BG_APP` is `_P["bg_0"]` (`theme.py:125`), so the pixels are identical to
+  Round 1's measurement and the palette is back inside the role layer. Not this review's scope.
