@@ -1,0 +1,26 @@
+{
+    "canvas_size": [
+        512,
+        512
+    ],
+    "uniforms": {},
+    "ui_state": {
+        "ui_name": "Radiance Cascades",
+        "description": "Real-time 2D global illumination in six passes. Drag on the preview to paint light, right-drag to paint walls; the light bounces and casts soft shadows with no ray tracing and no noise. Two of the passes run many times per frame: the jump flood builds a distance field in 9 runs, and the cascade stack computes light in 6, coarse to fine. Open a pass's settings to see its Runs per frame.",
+        "render_media_details": {
+            "is_video": true,
+            "file_details": {
+                "path": "",
+                "size": 0
+            },
+            "resolution_details": {
+                "width": 0,
+                "height": 0
+            },
+            "duration": 6.0,
+            "fps": 30,
+            "quality": 0
+        },
+        "ui_uniforms": {}
+    }
+}

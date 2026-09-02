@@ -1,0 +1,89 @@
+{
+    "version": 1,
+    "output": "composite",
+    "passes": {
+        "paint": {
+            "inputs": {
+                "u_prev": "paint"
+            },
+            "target": {
+                "scale": 1.0,
+                "dtype": "f2",
+                "filter_linear": false,
+                "wrap": false,
+                "persist": true
+            },
+            "iterations": 1
+        },
+        "seed": {
+            "inputs": {
+                "u_scene": "paint"
+            },
+            "target": {
+                "scale": 1.0,
+                "dtype": "f4",
+                "filter_linear": false,
+                "wrap": false,
+                "persist": false
+            },
+            "iterations": 1
+        },
+        "jfa": {
+            "inputs": {
+                "u_seed": "seed",
+                "u_prev": "jfa"
+            },
+            "target": {
+                "scale": 1.0,
+                "dtype": "f4",
+                "filter_linear": false,
+                "wrap": false,
+                "persist": false
+            },
+            "iterations": 9
+        },
+        "df": {
+            "inputs": {
+                "u_jfa": "jfa"
+            },
+            "target": {
+                "scale": 1.0,
+                "dtype": "f2",
+                "filter_linear": false,
+                "wrap": false,
+                "persist": false
+            },
+            "iterations": 1
+        },
+        "cascade": {
+            "inputs": {
+                "u_scene": "paint",
+                "u_df": "df",
+                "u_prev": "cascade"
+            },
+            "target": {
+                "scale": 1.0,
+                "dtype": "f2",
+                "filter_linear": false,
+                "wrap": false,
+                "persist": false
+            },
+            "iterations": 6
+        },
+        "composite": {
+            "inputs": {
+                "u_light": "cascade",
+                "u_scene": "paint"
+            },
+            "target": {
+                "scale": 1.0,
+                "dtype": "f1",
+                "filter_linear": true,
+                "wrap": false,
+                "persist": false
+            },
+            "iterations": 1
+        }
+    },
+    "layout": {}
+}

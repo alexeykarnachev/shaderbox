@@ -34,6 +34,7 @@ def test_catalogue_has_all_prefixed_unique_examples(app: Any) -> None:
         "Fire",
         "Night City",
         "Bloom Chain",
+        "Radiance Cascades",
     }
 
 
