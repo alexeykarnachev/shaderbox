@@ -12,6 +12,7 @@ from shaderbox import pass_graph
 from shaderbox.pass_graph import (
     DEFAULT_DTYPE,
     DTYPES,
+    MAX_ITERATIONS,
     GraphError,
     PassEntry,
     PassGraph,
@@ -19,6 +20,7 @@ from shaderbox.pass_graph import (
     TargetConfig,
     assert_plan_invariants,
     evaluation_order,
+    iteration_shortfalls,
     plan_passes,
 )
 
@@ -277,3 +279,49 @@ def test_an_empty_graph_plans_to_nothing() -> None:
     plan, errors = _plan(PassGraph())
     assert plan.order == [] and errors == []
     assert PassGraph().output_pass is None
+
+
+# --- 068: iteration count -------------------------------------------------------------
+
+
+def test_iterations_are_bounded() -> None:
+    # Same reason every graph.json number is bounded: nothing type-checks this file, and an
+    # unbounded count is a frame-time bomb.
+    assert PassEntry().iterations == 1
+    assert PassEntry(iterations=MAX_ITERATIONS).iterations == MAX_ITERATIONS
+    with pytest.raises(ValidationError):
+        PassEntry(iterations=0)
+    with pytest.raises(ValidationError):
+        PassEntry(iterations=MAX_ITERATIONS + 1)
+
+
+def test_a_short_iteration_count_warns_after_a_resize() -> None:
+    # The D3 warning: 9 halvings span 512, so the same graph is clean at 512 and short at 1024.
+    graph = PassGraph(output="jfa", passes={"jfa": PassEntry(iterations=9)})
+    assert iteration_shortfalls(graph, (512, 512)) == []
+    shortfalls = iteration_shortfalls(graph, (1024, 1024))
+    assert [e.pass_name for e in shortfalls] == ["jfa"]
+    assert "one or more steps short" in shortfalls[0].message
+
+
+def test_a_non_iterated_pass_never_warns() -> None:
+    # iterations=1 is "not a chain", not "a chain of length 1" -- every ordinary pass in every
+    # document would otherwise warn on any canvas above 2px.
+    graph = PassGraph(output="plain", passes={"plain": PassEntry()})
+    assert iteration_shortfalls(graph, (4096, 4096)) == []
+
+
+def test_graph_edits_preserve_fields_they_do_not_name() -> None:
+    # with_input/with_target once REBUILT the entry field-by-field, so wiring an input reset
+    # iterations 9 -> 1 and a JFA chain silently degraded. The falsifier is any edit verb that
+    # constructs a PassEntry instead of copying one.
+    graph = PassGraph(
+        output="jfa",
+        passes={"jfa": PassEntry(iterations=9, target=TargetConfig(dtype="f4"))},
+    )
+    wired = graph.with_input("jfa", "u_src", "jfa")
+    assert wired.passes["jfa"].iterations == 9
+    assert wired.passes["jfa"].target.dtype == "f4"
+    retargeted = graph.with_target("jfa", TargetConfig(dtype="f1"))
+    assert retargeted.passes["jfa"].iterations == 9
+    assert retargeted.passes["jfa"].inputs == {}

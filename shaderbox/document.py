@@ -276,12 +276,22 @@ class Document:
         if frame is not None and frame == self._frame:
             return
         self._frame = frame if frame is not None else self._frame + 1
-        for name, previous in self._feedback.items():
-            render_pass = self.passes.get(name)
-            if render_pass is None:
-                continue
-            self._feedback[name] = render_pass.canvas
-            render_pass.canvas = previous
+        for name in list(self._feedback):
+            self._swap_feedback(name)
+
+    def _swap_feedback(self, name: str) -> None:
+        """Exchange `name`'s live canvas with its history, so reads see what writes just made.
+
+        The one place the swap happens: per frame from `begin_frame`, and between iterations of
+        an iterated pass (068 D5). A pass with no feedback history is a no-op, which is what lets
+        the iteration loop call it unconditionally.
+        """
+        previous = self._feedback.get(name)
+        render_pass = self.passes.get(name)
+        if previous is None or render_pass is None:
+            return
+        self._feedback[name] = render_pass.canvas
+        render_pass.canvas = previous
 
     def reset_feedback(self) -> None:
         """Drop every feedback history, so the next frame starts from black.
@@ -346,19 +356,44 @@ class Document:
                 wanted = entry.target.target_size(self.canvas_size)
                 if render_pass.canvas.texture.size != wanted:
                     render_pass.canvas.set_size(wanted)
-            inputs: dict[str, moderngl.Texture] = {}
-            for uniform, source_name in entry.inputs.items():
-                if source_name == name:
-                    inputs[uniform] = self._feedback_canvas(name).texture
-                elif source_name in self.passes:
-                    inputs[uniform] = self.passes[source_name].canvas.texture
-                else:
-                    # An input naming a pass that does not exist reads BLACK (D3), which is what
-                    # keeps a half-built graph usable. Leaving it unbound would fall through to
-                    # the sampler's own default photo, so a mis-wire would show an image.
-                    inputs[uniform] = self._black_texture()
-            target = canvas if name == output else None
-            render_pass.render(u_time=u_time, canvas=target, inputs=inputs)
+            # An iterated pass draws N times HERE, inside its one turn in the order (068 D1) --
+            # never by appearing N times in `order`, which would mean weakening the draw-once
+            # invariant that exists to catch a bug reading as slow rather than wrong.
+            #
+            # An ITERATED OUTPUT pass draws its early iterations into its OWN canvas and only the
+            # last one into `canvas`: the chain advances by swapping `render_pass.canvas`, so
+            # aiming every iteration at the external target would write somewhere the swap never
+            # touches and the chain would silently not advance. RC's final cascade is exactly
+            # this shape.
+            for iteration in range(entry.iterations):
+                last = iteration + 1 == entry.iterations
+                target = canvas if (name == output and last) else None
+                inputs: dict[str, moderngl.Texture] = {}
+                for uniform, source_name in entry.inputs.items():
+                    if source_name == name:
+                        inputs[uniform] = self._feedback_canvas(name).texture
+                    elif source_name in self.passes:
+                        inputs[uniform] = self.passes[source_name].canvas.texture
+                    else:
+                        # An input naming a pass that does not exist reads BLACK (D3), which is
+                        # what keeps a half-built graph usable. Leaving it unbound would fall
+                        # through to the sampler's own default photo, so a mis-wire would show
+                        # an image.
+                        inputs[uniform] = self._black_texture()
+                render_pass.render(
+                    u_time=u_time,
+                    canvas=target,
+                    inputs=inputs,
+                    iteration=iteration,
+                    iterations=entry.iterations,
+                )
+                if not last:
+                    # Swap BETWEEN iterations so the next one reads what this one just wrote
+                    # (068 D5). `begin_frame` swaps once per FRAME, which is right for a
+                    # frame-to-frame trail and would leave every iteration reading the same
+                    # stale texture -- the chain would never advance. No-op unless this pass
+                    # actually reads itself.
+                    self._swap_feedback(name)
 
     @classmethod
     def load_from_dir(

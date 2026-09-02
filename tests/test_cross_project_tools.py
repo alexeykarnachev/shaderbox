@@ -60,6 +60,8 @@ def test_engine_driven_set_is_the_documented_set() -> None:
         "u_time",
         "u_aspect",
         "u_resolution",
+        "u_pass_iteration",
+        "u_pass_iterations",
         "SBT_SPANS",
         "SBT_STROKES",
     } == ENGINE_DRIVEN_UNIFORMS

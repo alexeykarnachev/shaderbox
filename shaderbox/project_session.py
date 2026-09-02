@@ -35,7 +35,7 @@ from shaderbox.core import ENGINE_DRIVEN_UNIFORMS, Pass
 from shaderbox.document import Document
 from shaderbox.exporters.registry import ExporterRegistry
 from shaderbox.integrations import IntegrationsStore
-from shaderbox.pass_graph import PassEntry, PassGraph, TargetConfig
+from shaderbox.pass_graph import MAX_ITERATIONS, PassEntry, PassGraph, TargetConfig
 from shaderbox.paths import (
     DOCUMENT_JSON_BASENAME,
     DOCUMENT_SCRIPT_BASENAME,
@@ -866,6 +866,25 @@ class ProjectSession:
             return f"no such pass '{name}'"
         document.graph = document.graph.with_target(name, target)
         document.passes[name].set_target(target)
+        self.save_ui_document(ui_document)
+        return ""
+
+    def set_pass_iterations(self, document_id: str, name: str, iterations: int) -> str:
+        """How many times `name` draws per frame (068). Rejects an out-of-range count rather
+        than clamping: the slider cannot produce one, so a bad value came from a hand-edited
+        `graph.json` or a tool, and silently substituting a different number would hide it."""
+        ui_document = self.ui_documents.get(document_id)
+        if ui_document is None:
+            return f"no such document '{document_id}'"
+        document = ui_document.document
+        if name not in document.passes:
+            return f"no such pass '{name}'"
+        if not 1 <= iterations <= MAX_ITERATIONS:
+            return f"runs must be between 1 and {MAX_ITERATIONS}, not {iterations}"
+        entry = document.graph.passes.get(name, PassEntry())
+        entries = dict(document.graph.passes)
+        entries[name] = entry.model_copy(update={"iterations": iterations})
+        document.graph = document.graph.with_passes(entries)
         self.save_ui_document(ui_document)
         return ""
 

@@ -21,6 +21,7 @@ Two rules the rest of the engine leans on:
   `evaluation_order` runs it on the path that actually draws.
 """
 
+import math
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -37,6 +38,10 @@ DEFAULT_WRAP = False
 DEFAULT_SCALE = 1.0
 
 GRAPH_JSON_VERSION = 1
+
+# 64 doublings covers a 2^64 canvas, so this bounds the frame cost without bounding any real
+# effect: JFA needs ceil(log2(max_dim)) and a cascade stack ceil(log4(diagonal)) + 1.
+MAX_ITERATIONS = 64
 
 
 class TargetConfig(BaseModel):
@@ -79,6 +84,12 @@ class PassEntry(BaseModel):
 
     inputs: dict[str, str] = {}
     target: TargetConfig = TargetConfig()
+    # Draw this pass N times in sequence within one frame, feeding `u_pass_iteration` /
+    # `u_pass_iterations` so one shader can be the whole chain -- JFA's halving offset, a
+    # cascade level. A self-reading iterated pass ping-pongs BETWEEN iterations, not between
+    # frames. Bounded for the reason every number here is: `graph.json` type-checks nothing,
+    # and an unbounded count is a frame-time bomb.
+    iterations: int = Field(default=1, ge=1, le=MAX_ITERATIONS)
 
 
 class PassLayout(BaseModel):
@@ -142,14 +153,16 @@ class PassGraph(BaseModel):
             inputs[uniform] = producer
         else:
             inputs.pop(uniform, None)
+        # model_copy, never a field-by-field rebuild: an entry gains fields (`iterations`, 068),
+        # and a constructor call here silently resets every one it does not name.
         return self.with_passes(
-            {**self.passes, consumer: PassEntry(inputs=inputs, target=entry.target)}
+            {**self.passes, consumer: entry.model_copy(update={"inputs": inputs})}
         )
 
     def with_target(self, name: str, target: "TargetConfig") -> "PassGraph":
         entry = self.passes.get(name, PassEntry())
         return self.with_passes(
-            {**self.passes, name: PassEntry(inputs=entry.inputs, target=target)}
+            {**self.passes, name: entry.model_copy(update={"target": target})}
         )
 
     def with_output(self, name: str) -> "PassGraph":
@@ -194,6 +207,39 @@ class GraphError:
 
     pass_name: str
     message: str
+
+
+def iteration_shortfalls(
+    graph: PassGraph, canvas_size: tuple[int, int]
+) -> list[GraphError]:
+    """Passes whose `iterations` no longer spans the canvas, as warnings.
+
+    A doubling chain (JFA, a cascade stack) needs its count tied to resolution: 512 wants 9
+    halvings, 1024 wants 10. The count is a number the author sets (D3), so a canvas resize
+    silently leaves the chain one step short -- and the render stays PLAUSIBLE while being
+    wrong, which is the exact failure 063 spent a review discovering ("a plausible render is not
+    a numerical check"). Reported rather than auto-corrected: the engine does not know whether a
+    given pass is a doubling chain, only that one COULD not span this canvas.
+
+    Not part of `plan_passes`: that is pure graph data and takes no canvas.
+    """
+    longest = max(canvas_size) if canvas_size else 0
+    if longest <= 1:
+        return []
+    needed = math.ceil(math.log2(longest))
+    return [
+        GraphError(
+            pass_name=name,
+            message=(
+                f"'{name}' iterates {entry.iterations}x, which spans "
+                f"{2**entry.iterations}px; this canvas is {longest}px and a doubling chain "
+                f"needs {needed}. If this pass halves an offset per iteration (JFA, a cascade "
+                f"stack) it is now one or more steps short and the result is subtly wrong."
+            ),
+        )
+        for name, entry in sorted(graph.passes.items())
+        if 1 < entry.iterations < needed
+    ]
 
 
 def _cycle_message(trail: list[str], name: str) -> str:

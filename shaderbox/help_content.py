@@ -39,6 +39,8 @@ ENGINE_UNIFORM_DOCS: dict[str, tuple[str, str]] = {
     "u_time": ("float", "seconds since launch — the animation clock"),
     "u_aspect": ("float", "canvas width / height"),
     "u_resolution": ("vec2", "canvas size in pixels"),
+    "u_pass_iteration": ("float", "which run this is, 0-based (see Runs per frame)"),
+    "u_pass_iterations": ("float", "how many runs this pass makes per frame"),
 }
 
 

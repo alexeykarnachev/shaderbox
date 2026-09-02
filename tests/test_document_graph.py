@@ -518,3 +518,77 @@ def test_a_resize_moves_every_pass_together(gl_ctx: moderngl.Context) -> None:
         255, abs=2
     )  # 1.0 + 0.5, tonemapped by nothing -> clamps
     doc.release()
+
+
+# --- 068: iterated passes -------------------------------------------------------------
+
+# Writes the iteration index normalized by the total, so ONE read proves the engine both ran the
+# loop and fed the right pair of uniforms.
+_ITERATION_INDEX = """#version 460 core
+in vec2 vs_uv;
+uniform float u_pass_iteration;
+uniform float u_pass_iterations;
+out vec4 fs_color;
+void main() {
+    fs_color = vec4(u_pass_iteration / u_pass_iterations, 0.0, 0.0, 1.0);
+}
+"""
+
+# Adds a fixed step to ITSELF. With a per-iteration swap the value advances once per iteration;
+# with only a per-frame swap every iteration reads the same stale texture and it lands on one step.
+_ITERATED_ACCUMULATE = """#version 460 core
+in vec2 vs_uv;
+uniform sampler2D u_prev;
+out vec4 fs_color;
+void main() { fs_color = vec4(texture(u_prev, vs_uv).r + 0.1, 0.0, 0.0, 1.0); }
+"""
+
+
+def test_an_iterated_pass_runs_every_iteration(gl_ctx: moderngl.Context) -> None:
+    # Falsifier: with the loop not run, the last (only) draw is iteration 0 and this reads 0.0.
+    graph = PassGraph(output="counter", passes={"counter": PassEntry(iterations=4)})
+    doc = _document(gl_ctx, {"counter": _ITERATION_INDEX}, graph)
+    doc.begin_frame(0)
+    doc.render()
+    # The LAST iteration is 3 of 4 -> 0.75. 255 * 0.75 = 191.
+    assert _red_of(doc.render_pass.canvas) == pytest.approx(191, abs=2)
+
+
+def test_iterations_default_to_one_draw(gl_ctx: moderngl.Context) -> None:
+    # The unchanged path: an ordinary pass still draws once and sees iteration 0 of 1.
+    graph = PassGraph(output="counter", passes={"counter": PassEntry()})
+    doc = _document(gl_ctx, {"counter": _ITERATION_INDEX}, graph)
+    doc.begin_frame(0)
+    doc.render()
+    assert _red_of(doc.render_pass.canvas) == 0
+
+
+def test_feedback_advances_once_per_iteration(gl_ctx: moderngl.Context) -> None:
+    # The D5 check, and the one that fails loudest if the swap stays per-frame: 8 iterations of
+    # +0.1 reach 0.8, while a per-FRAME swap leaves every iteration reading black and lands 0.1.
+    graph = PassGraph(
+        output="acc",
+        passes={"acc": PassEntry(inputs={"u_prev": "acc"}, iterations=8)},
+    )
+    doc = _document(gl_ctx, {"acc": _ITERATED_ACCUMULATE}, graph)
+    doc.begin_frame(0)
+    doc.render()
+    assert _red_of(doc.render_pass.canvas) == pytest.approx(204, abs=3)
+
+
+def test_an_iterated_output_pass_lands_its_last_iteration_on_the_canvas(
+    gl_ctx: moderngl.Context,
+) -> None:
+    # An iterated OUTPUT pass advances by swapping its own canvas, so only the LAST iteration may
+    # aim at the external target. Falsifier: aim every iteration there and the swap never touches
+    # what was written -- the chain stalls at one step (0.1 -> 26) instead of reaching 0.8.
+    graph = PassGraph(
+        output="acc",
+        passes={"acc": PassEntry(inputs={"u_prev": "acc"}, iterations=8)},
+    )
+    doc = _document(gl_ctx, {"acc": _ITERATED_ACCUMULATE}, graph)
+    external = Canvas(gl=gl_ctx, size=(8, 8), dtype="f2")
+    doc.begin_frame(0)
+    doc.render(canvas=external)
+    assert _red_of(external) == pytest.approx(204, abs=3)
+    external.release()

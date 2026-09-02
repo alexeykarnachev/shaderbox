@@ -16,7 +16,12 @@ from OpenGL.GL import GL_SAMPLER_2D
 
 from shaderbox.app import App, PopupState
 from shaderbox.core import Pass
-from shaderbox.pass_graph import PassEntry
+from shaderbox.pass_graph import (
+    MAX_ITERATIONS,
+    PassEntry,
+    PassGraph,
+    iteration_shortfalls,
+)
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_primitives import (
     ghost_button,
@@ -221,3 +226,40 @@ def _draw_target(app: App, document_id: str, name: str) -> None:
         error = app.session.set_pass_target(document_id, name, new_target)
         if error:
             app.notifications.push(error)
+
+    _draw_repeat(app, document_id, name, entry, document.canvas_size)
+
+
+def _draw_repeat(
+    app: App,
+    document_id: str,
+    name: str,
+    entry: PassEntry,
+    canvas_size: tuple[int, int],
+) -> None:
+    # How many times this pass draws per frame (068). Named for what it does to the picture --
+    # "runs" of the same shader, each seeing the one before it -- not for the model field.
+    imgui.separator_text("Runs per frame")
+
+    label_row(app.font_12, "runs", _CTRL_W, _ROW_LABEL_W)
+    changed, runs = imgui.slider_int(
+        f"##iterations_{name}", entry.iterations, 1, MAX_ITERATIONS
+    )
+    imgui.same_line()
+    help_marker(
+        "How many times this pass draws each frame, each run reading what the one before it "
+        "wrote. One is an ordinary pass. More builds a chain inside a single shader -- a jump "
+        "flood, a cascade stack -- with u_pass_iteration telling the shader which run it is "
+        "and u_pass_iterations how many there are."
+    )
+    if changed and runs != entry.iterations:
+        error = app.session.set_pass_iterations(document_id, name, runs)
+        if error:
+            app.notifications.push(error)
+
+    # The D3 warning, shown where the number is SET and against the live canvas: a count that
+    # spanned the old canvas goes quietly short after a resize, and the render stays plausible.
+    for shortfall in iteration_shortfalls(PassGraph(passes={name: entry}), canvas_size):
+        imgui.push_text_wrap_pos(0.0)
+        imgui.text_colored(COLOR.STATE_WARN, shortfall.message)
+        imgui.pop_text_wrap_pos()

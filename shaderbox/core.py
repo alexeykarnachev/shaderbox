@@ -34,7 +34,8 @@ _PROCESS_START: float = time.monotonic()
 # from time/canvas, and the program-resident glyph tables Pass.compile() writes once
 # (TABLE_UNIFORMS — render() skips those entirely).
 ENGINE_DRIVEN_UNIFORMS: frozenset[str] = frozenset(
-    {"u_time", "u_aspect", "u_resolution"} | TABLE_UNIFORMS.keys()
+    {"u_time", "u_aspect", "u_resolution", "u_pass_iteration", "u_pass_iterations"}
+    | TABLE_UNIFORMS.keys()
 )
 
 
@@ -326,6 +327,8 @@ class Pass:
         u_time: float | None = None,
         canvas: Canvas | None = None,
         inputs: dict[str, moderngl.Texture] | None = None,
+        iteration: int = 0,
+        iterations: int = 1,
     ) -> None:
         """Draw this pass into `canvas`, or into its own target.
 
@@ -333,6 +336,11 @@ class Pass:
         THIS draw only and never enter `uniform_values`: the graph owns those bindings, the pass
         owns the ones the user set, and a document-owned texture persisted into a pass's state
         would be saved and then released underneath it.
+
+        `iteration` / `iterations` reach the shader as `u_pass_iteration` / `u_pass_iterations`
+        (068). The INDEX is handed over, never a value derived from it -- a `u_jfa_offset` would
+        be one algorithm wearing an engine uniform's name, and the shader's own
+        `pow(2.0, iterations - iteration - 1.0)` is one line.
         """
         canvas = canvas or self.canvas
         inputs = inputs or {}
@@ -388,6 +396,14 @@ class Pass:
 
             elif uniform.name == "u_resolution":
                 value = canvas.texture.size
+                value_for_program = value
+
+            elif uniform.name == "u_pass_iteration":
+                value = float(iteration)
+                value_for_program = value
+
+            elif uniform.name == "u_pass_iterations":
+                value = float(iterations)
                 value_for_program = value
 
             else:
