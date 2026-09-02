@@ -2,6 +2,8 @@
 rather than the prose: a new engine uniform or a new command category must not ship undocumented.
 GL-free (no App, no imgui)."""
 
+import re
+
 from shaderbox.commands import CATEGORY_ORDER, COMMAND_SPECS, chord_to_str
 from shaderbox.help_content import (
     ENGINE_UNIFORM_DOCS,
@@ -49,3 +51,25 @@ def test_shortcuts_section_lists_every_bound_command() -> None:
             continue
         assert spec.label in section.snippet, spec.label
         assert chord_to_str(spec.default_chord) in section.snippet, spec.label
+
+
+# A backticked chord in hand-written prose: `Ctrl+P`, `Alt+/`, `F8`, `Ctrl+Shift+N`.
+_PROSE_CHORD = re.compile(r"`((?:Ctrl|Alt|Shift)\+[^`]+|F[0-9]{1,2})`")
+
+
+def test_no_help_prose_quotes_a_chord_the_table_does_not_bind() -> None:
+    # The generated shortcuts table follows COMMAND_SPECS for free, so a chord move updates it
+    # silently — but a chord typed into a section BODY does not move with it, and the user
+    # reads that body. 069 W-E shipped `Ctrl+P` for the library one commit after the chord
+    # became Alt+L. Every hand-written chord must be one the table currently binds.
+    bound = {
+        chord_to_str(spec.default_chord) for spec in COMMAND_SPECS if spec.default_chord
+    }
+    stale: list[str] = []
+    for section in help_sections():
+        for quoted in _PROSE_CHORD.findall(section.body):
+            if quoted not in bound:
+                stale.append(f"{section.key}: {quoted}")
+    assert stale == [], (
+        f"help prose names chords no CommandSpec binds (bound: {sorted(bound)}): {stale}"
+    )

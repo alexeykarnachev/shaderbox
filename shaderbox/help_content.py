@@ -152,7 +152,7 @@ def help_sections() -> list[HelpSection]:
                 "your source for `SB_` names, pulls in the ones you used plus everything they "
                 "depend on, and splices them above your code.\n"
                 "\n"
-                "Press `Ctrl+P` to browse the library with a live preview of each function's source, "
+                "Press `Alt+L` to browse the library with a live preview of each function's source, "
                 "and insert a name at the caret. The library is yours to edit: add your own helpers, "
                 "and restore the shipped set any time from **Settings**.\n"
                 "\n"

@@ -532,9 +532,8 @@ Library footguns specific to the imgui-bundle Python build (currently
   `not app.any_popup_open()`** — the modal owns focus while it's up. Caught live: the copilot
   chat's focus-pending latch (`copilot_chat.py`) re-grabbed focus every frame on the no-key
   gate path (its usual consumer — the transcript's `set_keyboard_focus_here` — never ran
-  without a key), so clicking "Open Settings" dimmed everything and showed nothing. The sibling
-  `active_region_outline` draw in the same window already carried this `any_popup_open()` guard;
-  the focus grab just hadn't. Diagnosing the class: a `print` of `is_popup_open(label)` next to
+  without a key), so clicking "Open Settings" dimmed everything and showed nothing. The same window's own
+  foreground draw already carried this `any_popup_open()` guard; the focus grab had not. Diagnosing the class: a `print` of `is_popup_open(label)` next to
   `begin_popup_modal`'s visibility — False-while-visible is the fingerprint.
 - **An `invisible_button` is NOT a keyboard-nav stop** — with `nav_enable_keyboard`
   on, nav never lands on it, so Space/Enter can't activate it (you can't reach it
@@ -608,7 +607,7 @@ The only project-coupled facts, consolidated here:
   must not be swept away on a name match.
 - **Two editor-focus flags on App:** `editor_focused` (live; flickers False whenever any popup /
   menu / picker steals focus) and `editor_was_ever_focused` (sticky; cleared only by explicit
-  defocus — Esc / target switch). Gate "is the editor a real interaction target?"
+  defocus, or by a tab or document switch). Gate "is the editor a real interaction target?"
   questions (Insert-at-caret in the lib picker, etc.) on the sticky one; the live flag reads
   False inside a modal, and `current_editor_path is not None` is too lax (a freshly-selected
   document has a session before any typing happened).

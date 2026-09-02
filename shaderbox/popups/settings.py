@@ -1,5 +1,5 @@
 from enum import StrEnum
-from typing import Literal
+from typing import get_args
 
 from imgui_bundle import imgui
 
@@ -19,6 +19,7 @@ from shaderbox.constants import SHADER_LIB_SEED_DIR
 from shaderbox.paths import shader_lib_root
 from shaderbox.shader_lib.seed import reset_to_shipped
 from shaderbox.theme import COLOR, SIZE, SPACE
+from shaderbox.ui_models import EditorKeymap
 from shaderbox.ui_primitives import (
     caption_text,
     chord_row,
@@ -48,7 +49,7 @@ class SettingsField(StrEnum):
 
 
 _LABEL = "Settings##popup"
-_KEYMAPS: tuple[Literal["vim", "standard"], ...] = ("vim", "standard")
+_KEYMAPS: tuple[EditorKeymap, ...] = get_args(EditorKeymap)
 
 
 def draw_settings(app: App) -> None:

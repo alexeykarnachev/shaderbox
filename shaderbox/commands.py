@@ -123,8 +123,9 @@ COMMAND_SPECS: list[CommandSpec] = [
     ),
     CommandSpec(CommandId.OPEN_SHADER, "Open shader", _chord(K.c, K.mod_alt), C.EDITOR),
     CommandSpec(CommandId.OPEN_SCRIPT, "Open script", _chord(K.r, K.mod_alt), C.EDITOR),
-    # Ctrl+Tab is free for us because WindowFlags_.no_nav_focus on the main window
-    # (ui.py) suppresses imgui's built-in window-cycle.
+    # Ctrl+Tab is ours: imgui's built-in window-cycle needs nav_enable_keyboard, which is
+    # off app-wide (069 W-E D4). WindowFlags_.no_nav_focus on the main window and the chat
+    # keeps it that way if nav is ever turned back on.
     CommandSpec(
         CommandId.CYCLE_CODE_TAB, "Cycle code tab", _chord(K.tab, K.mod_ctrl), C.EDITOR
     ),

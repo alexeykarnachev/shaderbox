@@ -491,8 +491,8 @@ def draw(app: App) -> None:
     # Jump/focus requests latch for the upcoming layout; must run before it.
     jumped = _consume_jump(app, editor, current_path)
     if app.editor_focus_requested and not app.any_popup_open():
-        # ui.py consumed the imgui half (set_next_window_focus before the child);
-        # clear the latch here so the outline saw it this frame.
+        # ui.py consumed the imgui half (set_next_window_focus before the child), so the
+        # latch has done its job and is cleared here.
         app.editor_focus_requested = False
         app.editor_was_ever_focused = True
 

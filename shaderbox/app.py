@@ -373,12 +373,12 @@ class App:
         self.editor_focused: bool = False
         # Sticky variant: stays True while the editor is a real interaction target (even
         # after focus is lost to a transient popup / menu / picker). Cleared ONLY by explicit
-        # defocus (Esc, arrow nav). The lib picker gates Insert-at-caret on it — `editor_focused`
+        # defocus, and by a tab or document switch. The lib picker gates Insert-at-caret on it — `editor_focused`
         # is False while the picker holds focus, and `current_editor_path is not None` is too
         # lax (a freshly-selected document has a session the user never typed into -> insert at (0,0)).
         self.editor_was_ever_focused: bool = False
-        # Start in navigation mode: an initial defocus request (consumed by the first
-        # focus) so arrows navigate documents.
+        # Start unfocused: an initial defocus request, consumed by the first draw, so the
+        # app opens with the caret in no buffer.
         self.editor_defocus_requested: bool = True
         # One-shot focus request (mirror of defocus): after a lib-function insert the picker
         # closes and the editor must re-grab focus, caret where the insert ended. tabs/code.py
@@ -547,7 +547,7 @@ class App:
         # Switching documents invalidates the "user has been typing" sticky bit — the new document's
         # session starts fresh; insertions would land at (0,0) until the user clicks into it.
         self.editor_was_ever_focused = False
-        # Ctrl+N is a GLOBAL chord imgui routes through an active text input, so a switch CAN
+        # Ctrl+Shift+N is a GLOBAL chord imgui routes through an active text input, so a switch CAN
         # land mid-edit; re-arm both mirrors or the new document draws the old one's half-typed pair.
         self.canvas_w_editing = False
         self.canvas_h_editing = False

@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 from imgui_bundle import imgui
 
-from shaderbox.commands import COMMAND_SPECS, CommandId
+from shaderbox.commands import SPEC_BY_ID, CommandId
 from shaderbox.editor.ffi import (
     _SIG,
     EDITOR_RESOURCES_DIR,
@@ -187,7 +187,9 @@ def test_unfocused_editor_receives_nothing() -> None:
     e.close()
 
 
-def test_focused_editor_consumes_and_records_chords() -> None:
+def test_a_reserved_chord_the_editor_consumes_is_recorded_in_registry_space() -> None:
+    # Ctrl+R redoes and is recorded, but after 069 W-E no command owns Ctrl+R (OPEN_SCRIPT is
+    # Alt+R), so this half no longer exercises the double-dispatch guard.
     e = _editor()
     e.feed("dd")  # something to redo after undo
     e.undo()
@@ -197,14 +199,30 @@ def test_focused_editor_consumes_and_records_chords() -> None:
     app.editor_key_events = [ctrl_r]
     _drain_editor_input(app)
     assert e.get_text() == "two\nthree\n", "Ctrl+R must redo"
-    open_script_chord = next(
-        int(imgui.Key.r) | int(imgui.Key.mod_ctrl)
-        for s in COMMAND_SPECS
-        if s.id == CommandId.OPEN_SCRIPT
+    assert int(imgui.Key.r) | int(imgui.Key.mod_ctrl) in app.editor_consumed_chords
+
+
+def test_insert_ctrl_w_strikes_the_command_that_owns_the_chord() -> None:
+    # The live instance of the double-dispatch guard (067 D15): insert-mode Ctrl+W is the
+    # host's word-delete AND Ctrl+W is CLOSE_CODE_TAB's chord, so the consumed-set entry is
+    # the only thing stopping one press from both deleting a word and closing the tab. The
+    # chord is READ FROM THE SPEC, so a future move breaks this test instead of passing
+    # against a hand-built int the filter never constrained.
+    spec = SPEC_BY_ID[CommandId.CLOSE_CODE_TAB]
+    e = Editor("hello world foo")
+    e.set_language(Language.GLSL)
+    e.feed("A")  # append: insert mode, caret at end of line
+    app = _drain_app(e)
+    ctrl_w = translate_key(glfw.KEY_W, glfw.PRESS, glfw.MOD_CONTROL)
+    assert ctrl_w is not None
+    app.editor_key_events = [ctrl_w]
+    _drain_editor_input(app)
+    assert e.get_text() == "hello world ", (
+        "insert-mode Ctrl+W must delete the word back"
     )
-    assert open_script_chord in app.editor_consumed_chords, (
-        "the consumed chord must be recorded in registry space — it is the ONLY "
-        "guard against Ctrl+R double-dispatch (decision 5)"
+    assert spec.default_chord in app.editor_consumed_chords, (
+        "the consumed chord must be recorded in registry space, or the same press also "
+        "fires CLOSE_CODE_TAB"
     )
     e.close()
 

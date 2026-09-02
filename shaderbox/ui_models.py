@@ -38,6 +38,7 @@ UIUniformInputType = Literal[
 ]
 
 UniformSortKey = Literal["code", "name", "type"]
+EditorKeymap = Literal["vim", "standard"]
 
 _TYPE_SORT_ORDER: dict[UIUniformInputType, int] = {
     "auto": 0,
@@ -201,7 +202,7 @@ class EditorSettings(BaseModel):
     # widget, because a hand-edited or half-written file reaches the loader without passing
     # any widget — and a per-key salvage turns an out-of-range value into "that one setting
     # resets", instead of a value the UI could never have produced.
-    keymap: Literal["vim", "standard"] = "vim"
+    keymap: EditorKeymap = "vim"
     show_whitespace: bool = False
     show_line_numbers: bool = True
     show_matching_brackets: bool = True

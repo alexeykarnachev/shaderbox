@@ -217,8 +217,8 @@ def main() -> int:
             for frame_idx in range(N_FRAMES):
                 update_and_draw(app)
                 _check_invariants(app, frame_idx)
-                # Exercise the region-cycle + tab-jump wiring (a callback throw surfaces
-                # via the except below); nav *behavior* is un-headless-able.
+                # Exercise the tab-jump wiring (a callback throw surfaces via the except
+                # below).
                 # The pass list's non-default draw paths: a second pass, the settings modal
                 # (its input combos + target controls), and both inline inputs. None of them
                 # draw by default, and none can be screenshotted on this box, so the frame

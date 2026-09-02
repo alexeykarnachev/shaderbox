@@ -1,4 +1,4 @@
-"""Shader-library picker (Ctrl+P).
+"""Shader-library picker (Alt+L).
 
 Unified tree-on-the-left + preview-on-the-right modal:
   - Left column = `/` root + nested dirs + files + function leaves, all

@@ -35,8 +35,8 @@ def dispatch_commands(app: App) -> None:
 def _drain_editor_input(app: App) -> None:
     # Feed the frame's queued glfw key events into the focused editor. The focus gate
     # reads LAST frame's editor_focused (written after the editor draws); the
-    # newly-focused-deaf-one-frame direction is safe, and the defocus direction is
-    # closed by dropping the queue remainder once Esc decides to defocus.
+    # newly-focused-deaf-one-frame direction is safe, and the defocus direction is closed
+    # by the gate below dropping the whole queue on a frame the editor does not hold focus.
     app.editor_consumed_chords.clear()
     events = app.editor_key_events
     app.editor_key_events = []
@@ -69,13 +69,12 @@ def _drain_editor_input(app: App) -> None:
             continue
         if consumed and event.imgui_chord:
             app.editor_consumed_chords.add(event.imgui_chord)
-            # An insert-mode Ctrl+N is the deliberate completion ask — the vim keymap
-            # consumes it but opens nothing (host_completion); code.draw offers.
-            # Only when the popup is CLOSED: with it open the keymap advances the
-            # selection itself (editor 3f3a11b), and queuing an offer here would
-            # re-push the list and reset that selection to zero on every press. The
-            # closed-popup conjunct is also what self-gates standard, whose own Ctrl+N
-            # opens the popup on the same frame — no keymap check needed.
+            # An insert-mode Ctrl+N is the deliberate completion ask. BOTH keymaps consume
+            # it and open nothing, because get_session sets host_completion(True) on every
+            # handle, so this branch needs no keymap check: code.draw makes the offer.
+            # Only when the popup is CLOSED — with the host's popup up the keymap advances
+            # the selection itself (editor 3f3a11b), and queuing an offer here would re-push
+            # the list and reset that selection to zero on every press.
             if (
                 event.text == "n"
                 and event.mods == KeyMod.CTRL

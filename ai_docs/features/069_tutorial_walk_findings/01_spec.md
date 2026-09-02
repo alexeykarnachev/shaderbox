@@ -228,7 +228,11 @@ Each lists: findings folded, the shape, the files, what pins it (test or check).
   `focus_move_in_flight`, `region_derive_allowed`, `region_outline_visible`,
   `_yield_editor_to_region`), the derive blocks, `CYCLE_REGION`, and all FOUR `no_nav_inputs`
   sites (`ui.py`: editor child, the copilot bar child at `:553`, the panel child;
-  `copilot_chat.py:53`) — with nav off the flag is inert everywhere, so all four go. The
+  `copilot_chat.py:53`) — with nav off the flag is inert everywhere, so all four go.
+  **SUPERSEDED: the flags STAY, all five of them** (the census was four, and the fifth is
+  `document_grid.py`). imgui runs basic Tab traversal regardless of `nav_enable_keyboard`, so
+  the flag is not region machinery — only the region CONDITION goes. Measurement, ruling and
+  the count are in `50_wave_e_keyboard.md § Design decisions item 1`. The
   `nav_flatten` machinery goes with it: `preview_cell`'s `nav_flatten` parameter and docstring
   paragraph (`ui_primitives.py`), its call sites (`widgets/document_grid.py` ×2,
   `popups/examples.py:101`), and `tabs/document.py`'s `ChildFlags_.nav_flattened` plus its

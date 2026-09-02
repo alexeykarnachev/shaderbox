@@ -247,7 +247,7 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   `copilot/backend.py::set_uniform` + `scripting/behavior.py::coerce_one` (the script `update` return is
   coerced against the live uniform; feature 040 hoist).
 - **`app.py`** — `App` class: the UI/glfw/imgui owner + lifecycle wrapper (windowing, GL context,
-  editor sessions, popup-state, nav, exporter panels). Owns one `self.session: ProjectSession` +
+  editor sessions, popup-state, exporter panels). Owns one `self.session: ProjectSession` +
   forwards project state/ops via `@property` accessors. No UI drawing. Imported by `ui.py`, `widgets/`,
   `popups/`, `tabs/`. Holds `self.shader_lib_files: ShaderLibFileManager`; the picker reads its CRUD +
   inline state directly via `app.shader_lib_files.*` (no `App` forwarding facade).
@@ -266,7 +266,8 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   block: registry-driven `imgui.shortcut()` dispatch reading `app.effective_bindings`, the bespoke ESC
   handler, and the document-creator arrow/Enter nav). The split exists because `imgui.shortcut()` asserts
   outside an active frame.
-- **`editor/`** — the embedded vim-modal code editor (feature 067): `ffi.py` (ctypes binding over
+- **`editor/`** — the embedded keymap-selectable code editor, vim or standard per
+  `EditorSettings.keymap` (features 067, 069): `ffi.py` (ctypes binding over
   the vendored `libeditor.so` in `shaderbox/resources/editor/`; leaf, no imgui/moderngl),
   `render.py` (the moderngl MTSDF primitive pass + the redraw gate's `render_state`/`should_redraw`
   free functions), `input.py` (pure glfw→`ed_key` translation; the drain that consumes the events
@@ -340,8 +341,8 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   the tree+preview shader-library browser with right-click file/dir/function context menus).
 - **The small leaves** — one concept each, imported across packages:
   **`theme.py`** (the ONLY home for colour/size/spacing tokens: `COLOR` / `SIZE` / `SPACE`; every
-  UI module reads these, nothing hard-codes a literal) / **`ui_regions.py`** (`ActiveRegion` +
-  `DocumentTab` — the nav/tab enums, kept out of `commands.py` so the persisted model layer doesn't
+  UI module reads these, nothing hard-codes a literal) / **`ui_regions.py`** (`DocumentTab` — the
+  settings-panel tab enum, kept out of `commands.py` so the persisted model layer doesn't
   pull in imgui) / **`render_preset.py`** (the pydantic `RenderPreset` value type) /
   **`render_shape.py`** (the shape/aspect table shared by the Share tab + the copilot) /
   **`render_defer.py`** (the one-frame render latch `ui.py` reads) / **`render_job.py`**

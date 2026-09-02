@@ -380,10 +380,10 @@ def update_and_draw(app: App) -> None:
         # button (a reserved region the floating chat anchors above, never covers).
         editor_height = split_region.y - _COPILOT_BAR_H
         with imgui_ctx.begin_group():
-            # A latched focus request targets the editor child itself (067): the
-            # one-shot grab must precede its begin_child; code.draw clears the flag
-            # after the outline read. Gated on no-popup — a background focus grab
-            # force-closes an open modal (imgui-ui skill §8).
+            # A latched focus request targets the editor child itself (067): the one-shot
+            # grab must precede its begin_child, and code.draw clears the flag once this
+            # has consumed it. Gated on no-popup — a background focus grab force-closes an
+            # open modal (imgui-ui skill §8).
             if app.editor_focus_requested and not app.any_popup_open():
                 imgui.set_next_window_focus()
             with imgui_ctx.begin_child(

@@ -625,7 +625,7 @@ _RESERVED_CHORDS: dict[str, frozenset[str]] = {
     # Vim: the letters the host still approximates after ed_key declines them.
     # The keymap's own chord list is vim_coverage.md; this is the host's fallback
     # half, which is smaller and is asserted to be a subset of it.
-    "vim": frozenset("dufbeyrnphjm"),
+    "vim": frozenset("dufbeyrwnphjm"),
     # Standard consumes every chord it owns inside ed_key and returns false for
     # the rest, so the host approximates nothing.
     "standard": frozenset(),
@@ -633,7 +633,8 @@ _RESERVED_CHORDS: dict[str, frozenset[str]] = {
 ```
 
 Two edits to the letters themselves, both forced by the audit and both recorded in
-`02_keybindings.md § _VIM_RESERVED_CHORDS under the rule`:
+`02_keybindings.md § _VIM_RESERVED_CHORDS under the rule` (`w` is neither of them: it stays,
+see the third bullet and § Review history round 3):
 
 - **`o` is removed.** `vim_coverage.md` lists no `CTRL-O` in either notation (verified by grep for
   `CTRL-O` and `<C-o>`: no match). It was in the host set to consume-noop so `OPEN_PROJECT` could
@@ -924,7 +925,7 @@ semantic") carries the same sentence and gets the same correction, see § Docs t
 | `tests/test_region_system_is_gone.py` | New: the banned-name grep AND the positive test that every child hosting a focusable widget still carries `no_nav_inputs` (item 1). |
 | `tests/test_keymap_disjoint.py` | New: the parse, the two format canaries, the disjointness assertion, the scope-exemption pin, the reserved-subset assertion (items 5, 7). |
 | `shaderbox/exporters/youtube.py` | The `:310-312` comment loses its nav-outline clause (item 1). |
-| `tests/test_editor_ffi.py` | No change. The style round-trip belongs to W-F, which writes the methods (§ Tests). |
+| `tests/test_editor_ffi.py` | Two forced edits the first draft did not foresee, neither visible to pyright: `_drain_app`'s `SimpleNamespace` App stub gains `app_state.editor_settings.keymap`, which `_handle_reserved_chord` now reads; and `test_ctrl_o_is_consumed_noop_while_focused` is INVERTED to `test_ctrl_o_reaches_the_app_while_focused`, since item 5's `o` removal retires exactly the behaviour it pinned. `test_focused_editor_consumes_and_records_chords` is also retargeted (its `CommandId` filter was inert once `OPEN_SCRIPT` left Ctrl+R); the live double-dispatch guard is Ctrl+W under vim NORMAL. The style round-trip still belongs to W-F, which writes the methods (§ Tests). |
 | `tests/test_command_routing.py` | No change, `test_no_two_specs_share_a_chord_in_overlapping_scopes` loops `COMMAND_SPECS`. Listed because the seven moves are exactly the kind of half-finished edit it exists to catch. |
 | `ai_docs/features/019_keyboard_navigation.md` | The removed-by-069 banner (§ Docs touched). |
 | `ai_docs/features/067_custom_editor.md` | The keymap-routing note (§ Docs touched). |
@@ -1393,3 +1394,63 @@ what is new is that the block now names W-F as the owner of the method whose ord
 The dependency is therefore a hard edge, not a soft one: W-E cannot begin until `Style` exists in
 `shaderbox/editor/ffi.py`. The parent spec's § Order already places W-F before W-E for the `.so`;
 this adds a second reason, and it is a compile-time one.
+
+**Round 3, post-implementation** (three reviewers: `reviews/wave_e_post_code.md`,
+`wave_e_post_arch.md`, `wave_e_post_spec.md`). The gate was RED at the reviewed commit — ruff
+rejected both new test modules, which were untracked when `make gates` ran and pre-commit sees
+tracked files only. Fixed in `7bd7a1d`; the durable lesson is `git add` a new file BEFORE the
+gate, which is now `dev_flow.md`'s. Six findings changed code:
+
+1. **Item 5's literal contradicted its own prose, and the prose won.** The spec prescribed
+   `frozenset("dufbeyrnphjm")` while its third bullet said "`w` stays" for the host's insert-mode
+   word-delete. Dropping `w` would have made `_delete_word_back` dead code and silently retired a
+   067 D15 behaviour, so the landed set is `frozenset("dufbeyrwnphjm")` and the literal above is
+   corrected. The subset test carries `w` as `_HOST_OWNED`, one named letter with its reason —
+   falsified: emptying `_HOST_OWNED` turns the test red, so the exemption cannot absorb a second
+   letter unnoticed. Ctrl+W is in NEITHER keymap's list, so the ownership rule is untouched: the
+   app owns the chord (`CLOSE_CODE_TAB`), the host owns a behaviour on it in insert mode only.
+
+2. **The positive Tab test was vacuous on `ui.py`.** It matched only widget calls written inline
+   in a `with` body, and none of `ui.py`'s six containers writes one — every widget is drawn in a
+   called free function, so deleting all three `ui.py` flags left the suite green. The check now
+   follows calls transitively into any module under `shaderbox/`, through `ui_primitives` wrappers
+   (derived by AST, not listed) and through callees parked in a module-level table (`_NODE_TABS`
+   is the only route from `document_settings` to the uniform sliders), stopping at a callee that
+   opens its own top-level window or popup.
+
+3. **The domain was wrong, and the measurement corrected the spec's own claim.** Item 1 argued the
+   grid's flag was earned because "`preview_cell`'s `selectable` is a real Tab stop". Measured on a
+   headless rig with `nav_enable_keyboard` OFF: Tab lands ONLY on text-entry widgets. `button`,
+   `checkbox`, `combo` and `selectable` are nav-on stops and are NOT Tab stops here. So the
+   flags are earned by the panel's sliders and the chat's input, not by the tiles. Of the five
+   sites, deleting `document_settings`'s or the chat's turns the test red; `code_editor`,
+   `copilot_bar` and `document_preview_grid` stay green because none contains a Tab stop today
+   (a rendered image, buttons only, a `selectable`). Those three flags are defensive and the test
+   starts guarding them the day an input lands there; the test's docstring says so rather than
+   implying a coverage it does not have.
+
+4. **`Ctrl+N`'s self-gate comment stated a mechanism that does not run.** It claimed standard's
+   Ctrl+N opens the popup on the same frame. It does not: `get_session` sets
+   `set_host_completion(True)` on every handle, so BOTH keymaps consume and open nothing, and the
+   real gate is the `not editor.complete_open()` conjunct vim already used.
+
+5. **Stale prose the removal left behind**, each rewritten to the now: `app.py`'s "Esc, arrow nav"
+   defocus list (the survivors are an explicit defocus and a tab/document switch), the drain's "once
+   Esc decides to defocus", the two comments naming an outline read that no longer happens
+   (`ui.py`, `tabs/code.py`), `commands.py`'s `no_nav_focus` rationale for Ctrl+Tab (nav-off is
+   what frees it now; the flag is the belt-and-braces), the imgui skill's §8 sibling sentence and
+   §9 defocus list, `scripts/smoke.py`'s region-cycle comment, and `dev_flow.md`'s module map
+   (`ui_regions.py`, `app.py`'s "nav", `editor/`'s "vim-modal").
+
+6. **A user-facing stale chord.** The Help panel still told the user to press `Ctrl+P` for the
+   library one commit after the chord became Alt+L — the generated shortcuts table follows
+   `COMMAND_SPECS` for free, but a chord typed into a section BODY does not.
+   `tests/test_help_content.py` now parses every backticked chord out of every section body and
+   requires it to be one the table currently binds; falsified by reverting the string.
+
+Two findings were declined. Renaming `ui_regions.py` to `ui_tabs.py` (arch 8) is a preference the
+reviewer itself marked optional, and the module's docstring already carries the correct meaning.
+The `_RESERVED_CHORDS` string keys restating the keymap vocabulary (arch 3, third home) stay:
+the `Literal` plus `model_salvage` make an out-of-domain key structurally unreachable, which the
+reviewer confirmed. The vocabulary's other two homes were merged — `ui_models.EditorKeymap` is
+now the alias and `settings.py` derives its combo options with `get_args`.
