@@ -26,27 +26,31 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-01 (067 done + v0.27.0 tagged and GitHub-released; itch NOT shipped). -->
-**067 custom editor: DONE, released as v0.27.0 on GitHub (not itch).** The code panel runs the
-maintainer's own vim-modal editor (`shaderbox/editor/` over the vendored `libeditor.so` @
-editor-repo `c5fabc8`; spec: `ai_docs/features/067_custom_editor.md`). Three review rounds
-closed everything found (spec `## Review history` is the ledger); the maintainer live-tested
-the vim surface. Residuals, each with its home: the Windows `libeditor.dll` must be built ON a
-Windows host at the next `/ship` (conventions.md, the vendored-editor quirk — the v0.27.0
-Windows zip's editor cannot load); six editor-side vim gaps (dot-repeat, c-family double undo,
-di{ linewise, visual-mode scrolls, sticky :message, insert Ctrl+R) are filed in the editor
-repo's feature 004 and re-vendor here when fixed; 065's display checks 13-16 below.
+<!-- As of 2026-09-02 (068 landed: iterated passes + radiance cascades; review round in flight). -->
+**068 radiance cascades: code landed, review round running.** A pass can declare `iterations`
+and the engine draws it N times per frame, feeding `u_pass_iteration` / `u_pass_iterations` and
+ping-ponging a self-reading pass BETWEEN iterations — one shader becomes a whole chain. On it: a
+six-pass **Radiance Cascades** example (paint -> seed -> jfa x9 -> df -> cascade x6 ->
+composite) and a tutorial rewriting both source articles for this engine (maintainer-only, never
+shipped). The merge is validated by a NUMBER: `oracle.py` measures 1.0000 merge-off and bounds
+RC's own ~21% near-field overshoot. Spec: `ai_docs/features/068_radiance_cascades/01_spec.md`.
 
-**NEXT: the maintainer picks.** Nothing is specced beyond 067.
+**067 custom editor: DONE, v0.27.0 on GitHub (not itch).** The vendored editor is now editor-repo
+`e7db554` — five vim gaps fixed upstream, atlas rebaked to the font's full coverage so pasted
+punctuation renders. **Unrun: the keyboard pass** (`cwX`/Esc/`u`, `o`+Esc, `di{`, Ctrl+N with the
+popup open, a visual scroll chord, an em-dash in a comment) — `make gates` reaches none of it.
+The Windows `libeditor.dll` still needs building ON a Windows host at the next `/ship`.
 
-**Still owed from 065: spec checks 13-15** (a display — the error strip's file+line and click-to-jump, a
-rename re-pointing an open tab, the six examples loading) **and 16** (`/dogfood`, real API cost —
-the copilot authoring a two-pass document). Engine and persistence checks 1-12 pass.
+**NEXT: the maintainer picks.** Nothing is specced beyond 068.
+
+**Still owed from 065: spec checks 13-15** (a display) **and 16** (`/dogfood`, real API cost).
+Engine and persistence checks 1-12 pass.
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 068 | radiance_cascades | done | A pass may declare `iterations` and the engine draws it N times per frame (`u_pass_iteration` / `u_pass_iterations`, per-iteration ping-pong), plus a six-pass Radiance Cascades example built on it and a tutorial rewriting both source articles for this engine. Spec: `ai_docs/features/068_radiance_cascades/01_spec.md`. |
 | 066 | perf_and_test_diet | done | Lazy pass compilation (no load-time warm-up; compile+seed on first need; one first-render per frame in the live loop), lazy openai/google seams, starter-only test fixture, and an 18-test falsifier-criterion cull — startup 3.66s -> 0.67s, suite 39.2s -> ~16s / 925 tests. Spec: `ai_docs/features/066_perf_and_test_diet/01_spec.md`. |
 | 067 | custom_editor | done | The code panel runs the maintainer's own vim-modal editor (vendored `libeditor.so`, C ABI, host-rendered MTSDF primitives) instead of imgui's TextEditor — modal keymap with vim-reserved hotkeys, register-unified clipboard, host-drawn chrome, host-fed completion, host-served ex commands. Spec: `ai_docs/features/067_custom_editor.md`. |
 | 065 | pass_graph | partial | A document holds several passes forming a DAG, each pass its own `.glsl` file with its own `main()` and render target; "node" is retired for `document` + `pass`. All nine stages landed: the GL-free graph model + planner, the `Pass`/`Document` split, chain evaluation with feedback and cold exports, the `passes/` + `graph.json` + per-pass-asset layout, the `node` -> `document` rename across the package and on-disk paths, per-pass hot reload, the pass-list panel with D15's six verbs, the copilot's `<id>#<pass>` address with a pass-aware working set, and a five-pass "Bloom Chain" example. Checks 13-16 need a display and a dogfood run. Spec: `ai_docs/features/065_pass_graph/01_spec.md`. |
