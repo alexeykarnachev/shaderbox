@@ -310,3 +310,227 @@ on this box) — the mouse verdict rests on reading the branch structure plus th
 the scratchpad, and each of the six mutations (four falsifiers plus two GPU-test
 direction checks) was restored and verified with `git diff --quiet` before the next
 command ran.
+
+---
+
+# Round 2 (closure) — `a873ace`
+
+Narrow closure round on the two findings round 1 returned FAIL for, plus the routing
+matrix and the GPU-test `finish()`. W-D is being implemented concurrently, so every
+probe ran against a tree materialized from the commit
+(`git archive a873ace | tar -x`), verified by hash against
+`git show a873ace:shaderbox/scripting/engine.py`
+(`9623859806e0f6…`) and by each probe printing the engine `__file__` it actually
+imported. Nothing was read from the dirty working tree.
+
+## Verdicts
+
+| Item | Verdict |
+|---|---|
+| Finding 1 — broadcast held for an uncompiled pass | **CLOSED** |
+| Finding 1 — cold `dry_run` | **CLOSED** |
+| Finding 2 — compile-failed pass attribution | **CLOSED** |
+| 14-case routing matrix | **2 rows changed, both intended; 12 byte-identical** |
+| `finish()` for the GPU-test flake | **CORRECT — diagnosis and primitive both confirmed by measurement** |
+
+**Overall: PASS.**
+
+## Finding 1a — frame-0 broadcast. CLOSED
+
+Same reproduction as round 1: two passes, neither compiled, the app's own order
+(tick then render), script `return {'u_wave': ctx.t}`.
+
+```
+engine from: …/scratchpad/a873ace/shaderbox/scripting/engine.py
+script_ready before any render: {'seed': False, 'out': False}
+frame0 errors: {}
+frame0 driven: set()
+frame0 soft_errors (STRIP ROWS): []
+frame1 errors: {}
+frame1 driven: {('out', 'u_wave'), ('seed', 'u_wave')}
+frame1 soft_errors: []
+```
+
+Frame 0 is silent — no error, no strip row, nothing written — and frame 1 drives both
+passes. Round 1 had `frame0 errors: {('n','','u_wave'): "no pass declares 'u_wave'"}`
+with a strip row that cleared a frame later.
+
+The hold is gated: mutating `if not_ready:` to `if False:` turns
+`test_a_broadcast_is_held_for_a_not_yet_compiled_pass` red. Restored, verified against
+`git show a873ace:…` with `diff -q`.
+
+## Finding 1b — cold `dry_run`. CLOSED
+
+Single never-rendered pass, three sample times:
+
+```
+script_ready before probe: {'main': False}
+COLD dry_run driven:  {('main', 'u_wave')}
+COLD dry_run orphan:  []
+COLD dry_run per_key: []
+COLD dry_run samples: [(0.0, {('main','u_wave'): 0.0}),
+                       (0.5, {('main','u_wave'): 0.5}),
+                       (1.0, {('main','u_wave'): 1.0})]
+```
+
+All three false facts are gone: the driven set is real, no orphan names a uniform the
+shader declares, and the values move across t, so the agent reads ANIMATING rather than
+STATIC. Round 1 returned `driven: set()`, an orphan row, and three empty sample dicts.
+
+The pre-compile does not cost the probe its isolation. Warming the document the way the
+live app does (two tick/render pairs) and then probing:
+
+```
+probe driven: {('main', 'u_wave')}
+uniform_values UNCHANGED by probe: True  {'main': {'u_wave': 0.7}} -> {'main': {'u_wave': 0.7}}
+last_skipped UNCHANGED: True
+errors UNCHANGED: True
+```
+
+The byte-identical invariant holds. On a COLD document the pre-compile does seed
+`uniform_values` from `{}` to `{'u_wave': 0.0}`, but that is `get_active_uniforms`'s
+documented seeding (`core.py`: "Seeding rides the compile so every consumer keeps the
+invariant that a returned uniform has a value"), not a probe write — the same thing the
+first render would have done a moment later.
+
+## Finding 2 — the compile-failed pass is named. CLOSED
+
+Sole pass with a deliberately broken shader, three frames:
+
+```
+frame0 ready=True  soft=[]
+frame1 ready=True  soft=[('main','u_wave',"no pass declares 'u_wave' (orphan key) — pass 'main' does not compile")]
+frame2 ready=True  soft=[('main','u_wave',"no pass declares 'u_wave' (orphan key) — pass 'main' does not compile")]
+error keys: [('n', 'main', 'u_wave')]
+```
+
+The row is keyed on the pass, so `_script_errors_for_pass`'s `err_pass == pass_name`
+filter now puts it on `main`'s shader tab, beside the compile error that is the real
+cause — the exact gap round 1 named. (Frame 0 is empty because the compile has not been
+attempted until the first render; the hold covers it, correctly.)
+
+The genuinely-homeless case is not over-attributed. A single pass that compiles cleanly
+and simply does not declare the key:
+
+```
+soft: [('', 'u_wave', "no pass declares 'u_wave' (orphan key)")]  keys: [('n','','u_wave')]
+```
+
+still pass-free, as it must be. And with a broken pass beside a good one that does not
+declare the key, once the broken pass is on the output chain and has attempted its
+compile:
+
+```
+frame1..3 soft=[('zzz_broken','u_wave',"no pass declares 'u_wave' (orphan key) — pass 'zzz_broken' does not compile")]
+```
+
+Gated: replacing `broken = self._broken_pass_for(document)` with `broken = None` turns
+`test_a_broadcast_names_the_broken_pass_that_would_have_declared_it` red. Restored and
+diffed clean.
+
+**`_broken_pass_for` does not reintroduce the 066 D1 hazard.** It calls
+`get_active_uniforms()`, but behind `render_pass.script_ready and …`, which
+short-circuits, and it is only reached after `if not_ready:` has already returned. Pinned
+with a stub that raises if the engine ever pulls uniforms from a not-ready pass:
+
+```
+not-ready pass get_active_uniforms calls: 0 (must be 0)
+errors: {} (must be empty: held)
+after both ready, errors: {('n','broken','u_wave'): "… — pass 'broken' does not compile"}
+```
+
+Zero calls across three ticks; the attribution fires only once every pass is ready.
+
+## Routing matrix — 2 of 14 rows changed, both intended
+
+Re-ran the round-1 matrix unchanged against both trees (each materialized from its own
+commit, each printing the engine file it loaded) and diffed. Only two rows differ, and
+they are the two the fix targets:
+
+- **case 9** (`{'paint': {'u_a': 1.0}, 'u_b': 5.0}`, `paint` not ready): the bare `u_b`
+  was `("", 'u_b')` "no pass declares" with a strip row; now `errors = {}`,
+  `last_skipped = set()`, held.
+- **case 14** (every pass not ready, bare key): same change.
+
+The other twelve are byte-identical, including the broadcast-plus-block interaction
+(broadcast still reaches `paint` while `composite`'s block records its own error), the
+double-nesting rejection, both sampler cases, the unknown-pass listing, and the
+empty-document case. **case 10** (pass block on a compile-FAILED pass) is deliberately
+unchanged at `pass 'paint' has no active uniform 'u_a'` — the block phase already named
+the pass, so `_broken_pass_for`, which fires only on the broadcast branch, correctly does
+not touch it.
+
+## The GPU-test flake — `finish()` judged, not taken on faith
+
+The commit's causal claim is that `texture.read()` raced the GPU and llvmpipe returned
+the previous frame's mapping, and that the fingerprint is reading *exactly* the other
+sample's value. Both halves reproduce. Rendering the same two samples 200 times with no
+barrier, on the same f2 targets the fixed test uses:
+
+```
+seed canvas dtype: f2
+  MISMATCH it=56 t=0.25 read=255 expected~64
+  MISMATCH it=57 t=0.25 read=255 expected~64
+  MISMATCH it=58 t=0.25 read=255 expected~64
+no-finish mismatches over 400 reads:   22
+with-finish mismatches over 400 reads:  0
+```
+
+22 of 400 reads wrong, every one returning precisely the *other* sample's value, never
+an intermediate or arbitrary number — a stale mapping, exactly as claimed, and not
+something a routing error could produce. `finish()` takes it to 0. The diagnosis is
+measured, not guessed. (My reproduction fails in the mirror direction from the one the
+commit describes — t=0.25 reading the t=1.0 value rather than the reverse — which is the
+same mechanism reading whichever sample ran previously.)
+
+**`finish()` vs `glFlush` is settled by measurement, not preference.** Swapping the
+barrier for `glFlush()` over the same 400 reads:
+
+```
+no-finish mismatches over 400 reads:   35
+with-flush  mismatches over 400 reads: 21
+```
+
+`glFlush` leaves 21 of 400 wrong; `glFinish` leaves 0. That is the specified difference —
+`glFlush` only guarantees commands are *issued*, while `glFinish` blocks until they have
+*completed*, which is what a host-side read-back requires. `finish()` is the correct
+primitive here, not merely the heavier one. `moderngl.Context.finish()` is a direct
+`glFinish` (`self.mglo.finish()`).
+
+The test itself is stable in situ: `tests/test_script_engine_gl.py` run five times
+consecutively under xvfb gives `7 passed` every time.
+
+## Gates
+
+`tests/test_script_engine.py`, `test_script_dry_run.py`, `test_script_engine_gl.py`,
+`test_script_error_strip.py`, `test_ui_models.py`, `test_command_routing.py` on the live
+tree: **113 passed**. Ruff clean and `ruff format --check` clean; pyright reports
+**0 errors** on the whole tree and on `scripting/engine.py` alone.
+
+`make gates` on the live repo is RED at `check`, and it is **not** this commit's doing:
+pyright prints `0 errors, 7 warnings`, and the hook fails on "files were modified by this
+hook" from the concurrent W-D work — `ai_docs/conventions.md` and
+`tests/test_ui_prose_budget.py` appeared in `git status` mid-run.
+`git diff --stat` over the five files `a873ace` owns is empty, so nothing the hook
+rewrote belongs to this fix. Recorded rather than reported as green, since the gate's own
+rule is to judge it by the exit code; a clean re-run belongs to whoever lands W-D.
+
+## Late-round discipline
+
+Nothing is filed here as a preference. The two items I checked hardest for a
+false-positive both came back as correct-by-measurement rather than as taste: the
+`finish` / `glFlush` choice (settled by 21-vs-0 wrong reads, not by "finish is safer"),
+and `_broken_pass_for`'s `get_active_uniforms()` call, which looked like a reintroduced
+066 D1 violation on reading and is provably zero calls on a not-ready pass. One probe
+result that looked like a defect — a broken pass beside a good one producing no error at
+all — was my own harness leaving the broken pass unwired from the graph, so it was never
+drawn, never attempted a compile, and was correctly held forever. That is the hold
+working, not a gap.
+
+## Probe hygiene
+
+Every probe lives in the scratchpad. Both engine mutations (the dropped `not_ready` hold,
+the disabled attribution) were applied to the scratchpad copy only, never the repo, and
+each was restored and verified with `diff -q` against `git show a873ace:…` before the
+next command ran. `git status --short` in the repo shows no file I created or modified
+apart from this review.

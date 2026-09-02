@@ -448,3 +448,187 @@ rewrite the 068 D7 note promises.
 `shaderbox/scripting/engine.py` (a `[:1]` slice on the broadcast target list, left over from an
 earlier session's falsification round) was found mid-review and restored with `git checkout --`;
 the tree is clean and matches `928c231`. Every measurement above was re-run on the restored tree.
+
+---
+
+# Round 2 (closure)
+
+Narrow closure round against `a873ace` ("069 W-G fixes: hold a broadcast for an uncompiled pass").
+Files read via `git show a873ace:<path>` throughout, because W-D is being implemented concurrently
+and `shaderbox/{document,pass_graph,project_session}.py` were modified in the working tree during
+this round. None of those are W-G files; nothing in this round's verdicts rests on the working tree.
+
+## Verdicts
+
+### Finding 1 - `dev_flow.md` "orphan-warn": **CLOSED**
+
+```
+$ git show a873ace:ai_docs/dev_flow.md | grep -n orphan
+243:  orphan-report (an error-strip row, never a log line), `tick`, `dry_run`, `reset`,
+```
+
+The replacement is better than the fix I asked for: I proposed dropping the stale word, and the
+parenthetical now states what replaced the mechanism, so a reader who remembers the log line learns
+where it went. `grep -rn "orphan-warn" ai_docs/` returns only feature specs 041 and 047, which are
+historical records of when the log line existed and are correctly untouched.
+
+### Finding 2 - `verify_script_engine.py` dead since 065: **CLOSED**
+
+The seed path now goes through the same constants the loader reads, so the two cannot drift again:
+
+```python
+passes = document / PASSES_DIR_NAME
+(passes / pass_shader_name("main")).write_text(_SHADER, encoding="utf-8")
+```
+
+That is stronger than the literal `passes/main.frag.glsl` I proposed - a future rename of either
+constant carries the dogfood script with it rather than silently re-breaking it.
+
+**Run myself, under xvfb with the MESA overrides, on the tree at `a873ace`:**
+
+```
+$ env MESA_GL_VERSION_OVERRIDE=4.6 MESA_GLSL_VERSION_OVERRIDE=460 \
+      GLCONTEXT_LINUX_LIBGL=libGL.so.1 xvfb-run -a \
+      uv run python scripts/dogfood/verify_script_engine.py
+  luma @t=0: 127.0  @t=pi/2: 242.0
+  export isolation: cold 4.0  live-warmed value 1.000  export 4.0
+  PASS: animated across t, deterministic at fixed t, export-isolated, broken script froze
+EXIT=0
+```
+
+**Exit code 0.** The output confirms the four assertions ran against real pixels rather than passing
+vacuously: 127.0 vs 242.0 is a real animation across t (two zeros would be the false-green shape),
+and export isolation shows cold 4.0 == export 4.0 against a live-warmed 1.000, which is the
+three-number form that can only pass if the isolation seam works.
+
+The two extra breakages running it surfaced are both real and both fixed in the same commit: the
+stale two-tuple sentinel key `("scripted", "script.py")` - a tenth `.render_pass`-era seam the
+wave's re-key missed, now `("scripted", "", "script.py")` - and the driven check reading the set
+after a single tick, which the new hold correctly makes empty on a never-rendered pass. The file now
+follows the live tick-render-tick order and says why in a comment. This is the case for running a
+script rather than grepping it: neither breakage was visible without execution.
+
+## What the fix-up commit found that round 1 missed
+
+Two defects in the broadcast phase - code I read end-to-end and passed. Both verified by
+reproduction, not by reading the commit message.
+
+**1. Frame 0 of a never-rendered multi-pass document recorded a spurious orphan.** The hold was
+implemented in the pass-block phase only. `_active_by_pass` OMITS a not-ready pass, so the broadcast
+branch could not distinguish "absent because it has not compiled yet" from "absent because no pass
+declares it". Reproduced against a `928c231` worktree:
+
+```
+928c231 frame 0 errors: {('n0', '', 'u_wave'): "no pass declares 'u_wave' (orphan key)"}
+```
+
+and against `a873ace`:
+
+```
+a873ace frame 0 errors: (none - HELD)
+a873ace frame 1 errors: (none)
+a873ace frame 1 driven: [('composite', 'u_wave'), ('paint', 'u_wave')]
+```
+
+This is exactly the orphan-that-clears-a-frame-later the hold exists to prevent, landing on the
+addressing form 069 introduced and the one the design leans on - `01_design_scripting.md` says case
+1, the brush on `paint`, needs no pass block at all, so the broadcast is the path the tutorial takes.
+My round-1 note "a never-attempted pass is absent from `_active_by_pass` and its keys are held
+silently" was true of the block phase and I did not check that the broadcast phase shared it.
+
+**2. A broadcast whose only declaring pass has a FAILED compile said "no pass declares it",
+pass-free and permanently.** Pass-free means the strip's own filter put it on no shader tab - the one
+tab carrying the cause. `_broken_pass_for` now names it:
+
+```
+broken-pass row: {('n1', 'paint', 'u_wave'):
+    "no pass declares 'u_wave' (orphan key) — pass 'paint' does not compile"}
+```
+
+Its inference is sound and stated: a ready pass with an EMPTY active map has attempted a compile and
+failed, since a working program always reports the engine's own uniforms. It is derived from the
+active map rather than from a compile-error member, so `ScriptPass` stays the minimal slice round 1
+passed it as. It guards on `script_ready` before calling `get_active_uniforms`, so it triggers no
+compile and 066 D1 still holds by construction.
+
+**Root cause of the miss, for the record.** Round 1 checked that the two-phase split produced the
+right precedence and that the block phase held correctly, and did not ask the same three-way question
+of the broadcast phase. The two phases are not symmetric - a block phase resolves one named pass, a
+broadcast phase scans all of them - so "the block phase handles this" was not evidence about the
+broadcast phase. A protocol whose members I confirmed were all read is not the same as a protocol
+whose members are read correctly on every path that reads them.
+
+## The `dry_run` pre-compile
+
+Correctly scoped, checked rather than assumed. `dry_run` has exactly one caller:
+
+```
+$ grep -n "dry_run" shaderbox/**/*.py | grep -v scripting/engine.py
+shaderbox/project_session.py:697:        return self.script_engine.dry_run(
+```
+
+That is `write_script_source`, the synchronous copilot tool path on the main thread - not the frame
+loop 066 D1 constrains, and the same context `_scriptable_uniforms_for` already compiles in and says
+so. The bug it fixes was the expensive one: a cold probe returned an empty driven set, an orphan
+naming a uniform the shader does declare, and STATIC from empty samples - three false facts at once,
+each of which would send the agent to debug a correct script.
+
+## The `Pass.script_ready` GL-free pin - falsified, not taken on trust
+
+The commit claims the inverted expression "left the GL-free suite fully green and failed only under
+xvfb", so the wave's most-discussed hazard could ship green on a display-less box. I inverted the
+property in `shaderbox/core.py` and ran the GL-free suite with **no xvfb and no GL context**:
+
+```
+$ # return self.program is None and not bool(self.compile_unit.error_raw)
+$ uv run pytest tests/test_script_engine.py -q -p no:randomly
+FAILED tests/test_script_engine.py::test_script_ready_matches_its_truth_table
+FAILED tests/test_script_engine.py::test_script_ready_never_compiles
+2 failed, 78 passed
+```
+
+The pin works: both tests bind the real property via `Pass.script_ready.fget` onto a two-attribute
+stub, so an inversion is caught without a GL context. `test_script_ready_never_compiles` also proves
+the property triggers no compile by asserting an empty call log on a probe that records every call -
+which is what makes 066 D1 hold by construction rather than by an engine-side exception handler.
+
+**Restore verified before anything else ran**, per the mutation-test rule: `shaderbox/core.py` was
+restored from a pre-mutation copy, `git diff --quiet shaderbox/core.py` passes, the file is
+byte-identical to `git show a873ace:shaderbox/core.py`, and the suite is back to 80 passed. No
+tracked file was left modified by this review.
+
+## Gate
+
+Run on the tree at `a873ace`, unpiped, exit code read before anything else:
+
+```
+== gates: check passed ==
+== gates: test passed ==     1605 passed, 4 skipped   (1599 before; +6 new tests)
+== gates: FAILED at smoke (exit 139)
+```
+
+`smoke` segfaults under xvfb/llvmpipe in this reviewer's shell, as it did in round 1 and for the same
+reason - a `#version 460` compile on llvmpipe, the hazard the `Makefile` comment names. It is an
+environment artifact, not a code fault; the implementer's log shows all three green on the real
+display. A skipped or environment-failed smoke is not a pass, so this is reported as what it is
+rather than folded into the verdict.
+
+## Overall
+
+**PASS.**
+
+Both round-1 findings are closed, each with a fix stronger than the one proposed - the doc says what
+replaced the mechanism rather than merely dropping the stale word, and the dogfood seed goes through
+the loader's own constants rather than a literal path. `verify_script_engine.py` exits 0 under my own
+run with all four assertions doing real work.
+
+The two defects the fix-up commit found in the broadcast phase were mine to catch in round 1 and I
+did not; they are now fixed, reproduced-and-verified here against both commits, and pinned by tests
+whose falsifiers are named. The `script_ready` pin closes a real hole - a green GL-free suite over an
+inverted expression - and I confirmed it by inverting the property rather than by reading the claim.
+
+No new findings. Nothing in this round is a preference.
+
+**Tracked files edited by this review: none.** `shaderbox/core.py` was mutated for the falsification
+above and restored, verified byte-identical to `a873ace`. The `shaderbox/{document,pass_graph,project_session}.py`
+modifications in the working tree are W-D's concurrent implementation, untouched by me.

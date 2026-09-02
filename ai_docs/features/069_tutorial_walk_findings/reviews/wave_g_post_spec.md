@@ -198,3 +198,90 @@ clean by `git status`).
 Not verified: the seven manual-verification steps, which require the app on a real display (paint stroke
 continuity, the re-entry traverse, the Clear button's appearance, export determinism, the copilot round
 trip), and the smoke gate step, which segfaults on this box independently of the commit.
+
+---
+
+# Round 2 (closure) — against `a873ace`
+
+Narrow closure round on the four findings above, plus a re-walk of the twelve `## Landed deviations`
+rows against the diff of `928c231` + `a873ace`. Read via `git show a873ace:<path>` throughout: W-D is
+being implemented concurrently and the working tree carries its in-flight edits.
+
+**Overall: PASS.** All four findings closed. The twelve rows are complete and each is supported by the
+diff. Round 3's routing change is a real correctness fix, not a preference — I reproduced the defect it
+names against `928c231` and confirmed the fix against `a873ace`.
+
+## Finding verdicts
+
+| # | Finding | Verdict | Line |
+|---|---|---|---|
+| 1 | Wave spec records no landed deviations | **CLOSED** | `60_wave_g_scripting.md:1372` `## Landed deviations`, twelve rows at `:1382-1393`; the four copyable code blocks corrected — `script_ready` as a `@property` (`:139-142`, and item 1's block at `:95-99`), `passes` as a read-only `Mapping` (`:99`), `class StoppedKey(BaseModel, frozen=True)` (`:366`), and `else edited.compile_unit.errors` (`:491`) with `_to_pass_errors` gone from the block. |
+| 2 | Parent's refuted salvage-line claim stands with no pointer | **CLOSED** | `01_spec.md:327-328` now reads "**no salvage line appears** … `stopped_uniforms`" citing `60_wave_g_scripting.md` item 13 and its § Manual verification step 6; the W-G manual bullet at `:435-436` likewise. Both sites now reference the wave spec, which the parent had never cited. |
+| 3 | `script_ready` inversion caught only by GL-gated tests | **CLOSED** | `tests/test_script_engine.py:1454` `test_script_ready_matches_its_truth_table` and `:1468` `test_script_ready_never_compiles`, both binding `Pass.script_ready.fget` onto a two-attribute `SimpleNamespace`. **Falsified:** with the property monkeypatched to the inverted form in a scratchpad `conftest.py` (working tree untouched), `DISPLAY= pytest -k script_ready` gives `2 failed`; unpatched the same GL-free file gives `80 passed`. The hazard is now red on a display-less box. |
+| 4 | Stub emits single-quoted pass keys | **CLOSED** | `engine.py:253` `blocks += f'            # "{pass_name}": {{\n'` — double quotes, matching the bare-key example in the same block and the design note. |
+
+## The twelve landed-deviation rows, re-walked
+
+Each checked against the combined diff. None missing; none overstated.
+
+| Row | Claim | Supported by |
+|---|---|---|
+| 1 | `StoppedKey` in `scripting/keys.py`, not `ui_models.py` | `scripting/keys.py:12`; `ui_models.py` imports it |
+| 2 | `frozen=True` in the class args | `keys.py:12` `class StoppedKey(BaseModel, frozen=True)` |
+| 3 | `script_ready` a read-only property | `engine.py:112` |
+| 4 | `passes` a read-only `Mapping` | `engine.py:126` |
+| 5 | `_to_pass_errors` never existed | `tabs/code.py:497` `else edited.compile_unit.errors` |
+| 6 | `_draw_error_strip` takes the `tab` | `tabs/code.py:223`, reaching `open_script_for` at `:246` |
+| 7 | **nine** seams plus a tenth stale key | `harness.py`'s two; and the tenth confirmed by diff: `928c231:verify_script_engine.py:160-162` asserts the two-tuple `("scripted", "script.py")`, `a873ace:169-175` the three-tuple `("scripted", "", "script.py")`. The wave's own re-key had missed it. |
+| 8 | `test_motion_verdict.py` in the blast radius | 13 tests, pair-keyed, green |
+| 9 | `verify_script_engine.py` is NOT in `make gates` | `Makefile`'s `gates` runs `check`, `test`, `scripts/smoke.py` only. Its 065 breakage also fixed: `928c231:34` wrote `shader.frag.glsl` at the document root; `a873ace:38` writes `passes/` + `pass_shader_name("main")`. **Ran it: exits 0**, printing "animated across t, deterministic at fixed t, export-isolated, broken script froze". Dead for four features, now live. |
+| 10 | `test_script_error_strip.py` + the `test_document_graph.py` row shipped | 4 and 1 tests |
+| 11 | `_load_ui_state` split; GPU test absolute-pixel; round-3 `gl_ctx.finish()` | `ui_models.py:495`; `test_script_engine_gl.py` diff carries the `finish()` |
+| 12 | Broadcast gives the block phase's three-way answer; `dry_run` compiles first | `engine.py:573-577` `_active_by_pass -> tuple[..., set[str]]`; the broadcast branch's `if not_ready: continue`, then `_broken_pass_for`, then the pass-free row. `dry_run` pre-compiles at `:492-494` with the 066-D1 distinction stated. |
+
+### Row 12 is a defect fix, not a preference — demonstrated
+
+I ran the same three-case probe against both commits with a two-pass fake.
+
+At `928c231` (extracted via `git archive`), all three cases collapsed to one answer:
+
+```
+A cold/not-ready      -> soft: [('', 'u_wave', "no pass declares 'u_wave' (orphan key)")]
+B one broken          -> soft: [('', 'u_wave', "no pass declares 'u_wave' (orphan key)")]
+C genuinely homeless  -> soft: [('', 'u_wave', "no pass declares 'u_wave' (orphan key)")]
+```
+
+Case A is the orphan-that-clears-a-frame-later the hold exists to prevent, landing on frame 0 of a
+never-rendered document via the one addressing form 069 introduced. Case B named neither the pass nor
+the failure and, being pass-free, reached no shader tab.
+
+At `a873ace` the three separate correctly:
+
+```
+A cold/not-ready      -> soft: []   driven: []                      (HELD)
+B one broken          -> soft: [('paint', 'u_wave', "... — pass 'paint' does not compile")]
+C genuinely homeless  -> soft: [('', 'u_wave', "no pass declares 'u_wave' (orphan key)")]
+```
+
+**This is a defect my round-1 audit missed.** I walked the broadcast branch and read it as matching
+item 2's wording ("a bare key that NO pass declares is a soft error"), without asking what "no pass
+declares" means while a pass has not compiled yet. The block phase distinguishes the two with a named
+lookup; the broadcast phase had nothing to look up. Reading the branch against the spec's sentence
+passed it; running frame 0 of a cold document would have caught it.
+
+**Falsified:** replacing `if not_ready:` with `if False:` in an isolated `git archive` copy turns
+`test_a_broadcast_is_held_for_a_not_yet_compiled_pass` red (`1 failed, 2 passed`).
+
+## Verification run
+
+- Full suite on a clean tree at `a873ace` under xvfb: **1605 passed, 4 skipped** (was 1599 at `928c231`; six new tests).
+- The worked example and both misspelling cases re-executed: byte-identical to round 1, so row 12 is behaviour-preserving for the all-ready case.
+- `scripts/dogfood/verify_script_engine.py`: exits 0.
+- Two falsifiers run in isolated copies, working tree never modified.
+- `make gates` at `a873ace` is not measurable here: W-D began editing `pass_graph.py`, `pass_list.py`, `pass_settings.py`, `document.py`, `backend.py` and `project_session.py` mid-run, and every failure in the log sits in those files (`test_copilot_passes.py:153`, `test_lazy_compile.py:246`, `test_pass_hot_reload.py:118`) — none on W-G's surface. The clean-tree suite run above is the valid measurement.
+
+## False trails this round
+
+- *The stub's double-quote change alters behaviour.* It does not; the emitted comment is valid Python either way. It was filed as cosmetic and closed as cosmetic.
+- *Row 9 contradicts the wave spec's Files-touched table, which calls `verify_script_engine.py` a gate file.* It does, and that is the row's point — the deviation is recorded rather than silently corrected.
+- *The `## Landed deviations` preamble undercounts by saying "rows 1-11 landed with the implementation commit".* Checked: row 7's tenth-seam clause and row 11's `gl_ctx.finish()` clause are both round-3 work folded into rows that began at `928c231`, and the preamble names row 12 as round 3's. The split is accurate at row granularity.
