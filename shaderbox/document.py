@@ -133,6 +133,34 @@ def load_graph(path: Path) -> PassGraph:
         return PassGraph()
 
 
+def _load_document_metadata(path: Path) -> dict[str, Any]:
+    """Read `document.json`, degrading to defaults rather than raising.
+
+    Symmetric with `load_graph` beside it, and for the same reason: this runs from the live
+    per-frame sync (`ProjectSession.sync_documents_from_disk`), so a raise here escapes into the
+    imgui frame loop and takes the app down -- the same shape as the crash that shipped when a
+    `relative_to` raised inside a draw call. A document whose metadata is unreadable still opens
+    with its shader files intact, which is what makes it fixable; nothing else recovers a
+    document whose loader refused to run.
+    """
+    if not path.is_file():
+        return {}
+    try:
+        with path.open() as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        logger.warning(
+            f"Unreadable {path.name} ({e}); the document loads with defaults"
+        )
+        return {}
+    if not isinstance(data, dict):
+        logger.warning(
+            f"Malformed {path.name} (not an object); the document loads with defaults"
+        )
+        return {}
+    return data
+
+
 def _uniforms_by_pass(metadata: dict[str, Any]) -> dict[str, dict[str, Any]]:
     # `uniforms` is keyed by pass name, then by uniform name: each pass owns its uniforms (D4),
     # so two passes may legitimately both declare `u_tex` with different values.
@@ -197,6 +225,8 @@ class Document:
         # loop draws the current document twice per frame and the copilot probe twice back to
         # back, so a per-call swap would advance the history at 2x.
         self._feedback: dict[str, Canvas] = {}
+        # Which Pass.target_generation each history was built from.
+        self._feedback_generation: dict[str, int] = {}
         self._black: moderngl.Texture | None = None
         self._frame: int = -1
         self._graph_errors: list[GraphError] = []
@@ -246,6 +276,7 @@ class Document:
         for canvas in self._feedback.values():
             canvas.release()
         self._feedback.clear()
+        self._feedback_generation.clear()
         if self._black is not None:
             self._black.release()
             self._black = None
@@ -302,6 +333,7 @@ class Document:
         for canvas in self._feedback.values():
             canvas.release()
         self._feedback.clear()
+        self._feedback_generation.clear()
         self._frame = -1
 
     def _black_texture(self) -> moderngl.Texture:
@@ -310,11 +342,33 @@ class Document:
             self._black = self._gl.texture((1, 1), 4, data=b"\x00\x00\x00\xff")
         return self._black
 
+    def drop_feedback(self, name: str) -> None:
+        """Release `name`'s feedback history. Call when a pass is deleted or renamed.
+
+        The history is keyed by pass NAME and lives here, not on the `Pass` -- so releasing the
+        pass does not release its history, and renaming one leaves the history stranded under
+        the old key while the next render allocates a second canvas under the new one.
+        """
+        canvas = self._feedback.pop(name, None)
+        self._feedback_generation.pop(name, None)
+        if canvas is not None:
+            canvas.release()
+
     def _feedback_canvas(self, name: str) -> Canvas:
         # Born matching its pass's target, so the first frame reads black at the right size
         # rather than sampling a stale or mis-sized texture.
         canvas = self._feedback.get(name)
         live = self.passes[name].canvas
+        # A target change reallocates the pass's LIVE canvas, and the next `begin_frame` SWAPS
+        # it into the history -- so after one frame the pair holds one canvas of each format and
+        # the pass samples its previous frame through the wrong one. Silent: no error, no crash,
+        # wrong numbers. Comparing formats cannot resolve it (after the swap neither side is
+        # obviously right), so the PASS counts its own format changes and the history is dropped
+        # whenever it predates one.
+        generation = self.passes[name].target_generation
+        if canvas is not None and self._feedback_generation.get(name) != generation:
+            self.drop_feedback(name)
+            canvas = None
         if canvas is None:
             canvas = Canvas(
                 gl=self._gl,
@@ -324,6 +378,7 @@ class Document:
                 wrap=live.wrap,
             )
             self._feedback[name] = canvas
+            self._feedback_generation[name] = generation
         elif canvas.texture.size != live.texture.size:
             canvas.set_size(live.texture.size)
         return canvas
@@ -408,8 +463,7 @@ class Document:
         opens with its shaders intact, which is what makes it fixable.
         """
         document_dir = Path(document_dir)
-        with (document_dir / DOCUMENT_JSON_BASENAME).open() as f:
-            metadata = json.load(f)
+        metadata = _load_document_metadata(document_dir / DOCUMENT_JSON_BASENAME)
 
         document = Document(gl=gl, canvas_size=metadata.get("canvas_size"))
         graph = load_graph(document_dir / GRAPH_JSON_BASENAME)
@@ -444,13 +498,8 @@ class Document:
             )
         # One entry per pass FILE: the files are the passes, so a graph entry with no file is
         # dropped (above) and a file with no entry gets defaults.
-        document.graph = PassGraph(
-            version=graph.version,
-            output=graph.output,
-            passes={
-                name: graph.passes.get(name, PassEntry()) for name in document.passes
-            },
-            layout=graph.layout,
+        document.graph = graph.with_passes(
+            {name: graph.passes.get(name, PassEntry()) for name in document.passes}
         )
 
         for pass_name, render_pass in document.passes.items():

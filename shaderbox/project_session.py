@@ -794,6 +794,9 @@ class ProjectSession:
         if len(document.passes) == 1:
             return "a document needs at least one pass"
         document.passes.pop(name).release()
+        # The feedback history is keyed by NAME and owned by the Document, so releasing the pass
+        # does not release it -- without this it outlives every reference to it.
+        document.drop_feedback(name)
         # Every edge that named it goes too: an input left pointing at a deleted pass would read
         # black (D3), which is silent — the panel's own delete must not leave that behind.
         document.graph = _graph_without(document.graph, name, document.passes)
@@ -821,6 +824,10 @@ class ProjectSession:
         old_path.replace(new_path)
         render_pass.source = replace(render_pass.source, path=new_path)
         document.passes[new] = render_pass
+        # The history is keyed by the OLD name; left in place it strands one canvas forever and
+        # the next render allocates a second under the new name. Dropped rather than re-keyed:
+        # one frame from black is invisible next to a leak plus a duplicate.
+        document.drop_feedback(old)
         document.graph = _graph_renamed(document.graph, old, new)
         self._on_pass_renamed(old_path, new_path)
         self.save_ui_document(ui_document)

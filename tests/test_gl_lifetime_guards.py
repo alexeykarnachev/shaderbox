@@ -12,8 +12,9 @@ import moderngl
 import pytest
 
 from shaderbox.copilot.checkpoint import TurnCheckpoint
-from shaderbox.core import Canvas
+from shaderbox.core import Canvas, Pass
 from shaderbox.document import Document
+from shaderbox.pass_graph import PassEntry, PassGraph, TargetConfig
 from shaderbox.paths import DOCUMENT_SCRIPT_BASENAME, shader_lib_root
 from shaderbox.shader_lib import ShaderLibIndex, set_active
 
@@ -132,14 +133,86 @@ def test_document_release_frees_uniform_held_media(gl: moderngl.Context) -> None
     # The 060 fix, pinned from the other side: the uniform values own textures/captures, and
     # every reload releases the document.
     document, _ = Document.load_from_dir(_EXAMPLE)
+    # A texture is PUT there rather than hoped for. The shipped example this loads holds only
+    # float uniforms, so the release loop below ran zero times and the test passed no matter
+    # what `Pass.release()` did -- found by a sweep, and it is the reason the assertion count is
+    # asserted too.
+    document.render_pass.uniform_values["u_probe"] = gl.texture((2, 2), 4)
     held = [
         v
         for v in document.render_pass.uniform_values.values()
         if isinstance(v, moderngl.Texture)
     ]
+    assert held, "nothing texture-shaped to release -- the check would be vacuous"
 
     document.release()
 
     assert document.render_pass.uniform_values == {}
     for texture in held:
         assert _released(texture), "a uniform-held texture outlived Document.release()"
+
+
+# --- feedback-history lifecycle (068 machinery, found by the repo-wide sweep) ---
+
+
+def _feedback_document(gl: moderngl.Context) -> Document:
+    # One self-feeding pass, which is what allocates a feedback history at all.
+    src = (
+        "#version 460 core\nin vec2 vs_uv;\nuniform sampler2D u_prev;\nout vec4 fs_color;\n"
+        "void main(){ fs_color = texture(u_prev, vs_uv) + vec4(0.1, 0.0, 0.0, 1.0); }\n"
+    )
+    doc = Document(gl=gl, canvas_size=(8, 8))
+    for existing in list(doc.passes.values()):
+        existing.release()
+    doc.passes = {}
+    render_pass = Pass(gl=gl, canvas_size=(8, 8), target=TargetConfig(dtype="f1"))
+    render_pass.release_program(src)
+    render_pass.compile()
+    doc.passes["fb"] = render_pass
+    doc.graph = PassGraph(
+        output="fb",
+        passes={
+            "fb": PassEntry(inputs={"u_prev": "fb"}, target=TargetConfig(dtype="f1"))
+        },
+    )
+    doc.begin_frame(0)
+    doc.render()
+    return doc
+
+
+def test_dropping_a_pass_releases_its_feedback_history(gl: moderngl.Context) -> None:
+    # The history is keyed by NAME and owned by the Document, so releasing the Pass does not
+    # release it. Falsifier: remove the drop_feedback call in delete_pass and the canvas stays
+    # in the dict, reachable by nothing, for the life of the document.
+    doc = _feedback_document(gl)
+    assert "fb" in doc._feedback
+    doc.drop_feedback("fb")
+    assert "fb" not in doc._feedback
+    doc.release()
+
+
+def test_a_target_format_change_never_leaves_the_pair_disagreeing(
+    gl: moderngl.Context,
+) -> None:
+    # The one that corrupts rather than leaks. A target change reallocates the pass's LIVE
+    # canvas; `begin_frame` then SWAPS it into the history, so the pair ends up holding one
+    # canvas of each format and the pass samples its own previous frame through the wrong one --
+    # no error, no crash, wrong numbers. The invariant is that the two never disagree, which is
+    # what a shader reading `u_prev` depends on. Asserting a specific dtype would be asserting
+    # which side of the swap won, which is not the property that matters.
+    #
+    # Falsifier: drop the target_generation check in `_feedback_canvas` and the pair splits
+    # f1/f2 on the frame after the change.
+    doc = _feedback_document(gl)
+    assert doc._feedback["fb"].dtype == doc.passes["fb"].canvas.dtype
+
+    doc.passes["fb"].set_target(TargetConfig(dtype="f2"))
+    for frame in range(1, 4):
+        doc.begin_frame(frame)
+        doc.render()
+        assert doc._feedback["fb"].dtype == doc.passes["fb"].canvas.dtype, (
+            f"frame {frame}: history {doc._feedback['fb'].dtype} vs live "
+            f"{doc.passes['fb'].canvas.dtype} -- the pass reads its history through the "
+            f"wrong format"
+        )
+    doc.release()

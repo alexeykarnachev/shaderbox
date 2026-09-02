@@ -9,6 +9,7 @@ The GL-backed half needs a real context; the salvage half is pure and always run
 
 import json
 import os
+import shutil
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -370,3 +371,32 @@ def test_an_unreadable_asset_costs_that_uniform_not_the_pass(
     loaded = load_document_from_dir(document_dir)
     assert loaded.document.render_pass.uniform_values["u_amount"] == 0.5
     loaded.document.release()
+
+
+@pytest.mark.parametrize(
+    "corrupt", ["not json at all {", "[1, 2, 3]", "null", "42", ""]
+)
+def test_a_corrupt_document_json_costs_its_metadata_not_the_document(
+    gl_ctx: moderngl.Context, tmp_path: Path, corrupt: str
+) -> None:
+    # `Document.load_from_dir` runs from the LIVE per-frame sync, so a raise here escapes into
+    # the imgui frame loop and takes the app down -- the same shape as the shipped crash where a
+    # `relative_to` raised inside a draw call. The app's own saves are not atomic, so it can
+    # produce exactly this file by dying mid-write.
+    #
+    # Falsifier: restore the bare `json.load` and every case below raises.
+    source = (
+        Path(__file__).resolve().parent.parent
+        / "shaderbox"
+        / "resources"
+        / "document_examples"
+        / "53724dbd-8efb-4c09-8c7d-28d626a066e7"
+    )
+    document_dir = tmp_path / "corrupt"
+    shutil.copytree(source, document_dir)
+    (document_dir / "document.json").write_text(corrupt, encoding="utf-8")
+
+    document, metadata = Document.load_from_dir(document_dir, gl_ctx)
+    assert document.passes, "the shader files survive a broken document.json"
+    assert metadata == {}
+    document.release()

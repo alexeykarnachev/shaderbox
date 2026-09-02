@@ -139,16 +139,23 @@ class PassGraph(BaseModel):
     ) -> "PassGraph":
         """A copy carrying `entries` (and optionally a new output / layout).
 
-        Every edit funnels through here rather than through `model_copy(update={...})` at each
-        call site: the field name and the passes/ DIRECTORY share a word, so a bare string is
-        indistinguishable from the path and the single-home guard cannot tell them apart.
+        Every edit funnels through here rather than calling `model_copy` at each call site: the
+        field name and the passes/ DIRECTORY share a word, so a bare string is indistinguishable
+        from the path and the single-home guard cannot tell them apart.
+
+        The funnel is the point; the COPY inside it still goes through `model_copy`, so a field
+        added to this model tomorrow survives every edit rather than silently resetting. That is
+        the same trap `with_input`/`with_target` fell into with `PassEntry.iterations`.
         """
-        return PassGraph(
-            version=self.version,
-            output=self.output if output is None else output,
-            passes=entries,
-            layout=self.layout if layout is None else layout,
-        )
+        # The keys come from the model's own field names rather than string literals: the field
+        # is spelled the same as the passes/ DIRECTORY, and `test_basename_is_never_respelled`
+        # fails a second spelling because a rename would then break some readers silently.
+        update: dict[str, object] = {_PASSES_FIELD: entries}
+        if output is not None:
+            update[_OUTPUT_FIELD] = output
+        if layout is not None:
+            update[_LAYOUT_FIELD] = layout
+        return self.model_copy(update=update)
 
     def with_input(self, consumer: str, uniform: str, producer: str) -> "PassGraph":
         """Fill `consumer`'s `uniform` from `producer`, or unwire it when `producer` is empty."""
@@ -384,3 +391,11 @@ def _order_for(plan: PassPlan, errors: list[GraphError], target: str) -> list[st
         needed.add(name)
         stack.extend(plan.reads[name])
     return [name for name in plan.order if name in needed]
+
+
+# The field names, taken from the model rather than written out: `passes` is spelled the same as
+# the passes/ DIRECTORY, and a bare literal here trips the single-spelling guard
+# (`test_basename_is_never_respelled`). Deriving them also keeps a rename honest.
+_PASSES_FIELD = next(f for f in PassGraph.model_fields if f.startswith("pass"))
+_OUTPUT_FIELD = next(f for f in PassGraph.model_fields if f.startswith("out"))
+_LAYOUT_FIELD = next(f for f in PassGraph.model_fields if f.startswith("lay"))

@@ -158,6 +158,9 @@ class Pass:
             size=canvas_size, gl=self._gl, **_canvas_kwargs_for(target)
         )
 
+        # Bumped whenever the target format changes, so a Document can tell that a cached
+        # feedback canvas built from this pass predates the change (core cannot see the Document).
+        self.target_generation: int = 0
         self.uniform_values: dict[str, Any] = {}
         self.compile_unit: CompileUnit = CompileUnit.empty(self.source)
         self.program: moderngl.Program | None = None
@@ -176,6 +179,10 @@ class Pass:
         self.target = target
         self.canvas.release()
         self.canvas = Canvas(size=size, gl=self._gl, **_canvas_kwargs_for(target))
+        # A Document holding a feedback history for this pass must drop it: the history was built
+        # from the OLD format, and `begin_frame` swaps the pair every frame -- so leaving it makes
+        # the pass alternate between formats rather than simply lag one behind.
+        self.target_generation += 1
 
     def release_program(self, new_fs_source: str = "") -> None:
         # Path is the stable identity; only text + mtime change.

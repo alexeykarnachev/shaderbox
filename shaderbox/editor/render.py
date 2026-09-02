@@ -213,6 +213,13 @@ class EditorPanel:
             verts = build_vertices(prims)
             data = verts.tobytes()
             if self.vbo is None or self.vbo.size < len(data):
+                # Release before reassigning, as `_ensure_target` does for the texture and fbo:
+                # the buffer grows whenever the panel draws more primitives than last time
+                # (a longer file, a wider pane), and an unreleased one leaks per growth step.
+                if self.vao is not None:
+                    self.vao.release()
+                if self.vbo is not None:
+                    self.vbo.release()
                 self.vbo = gl.buffer(reserve=max(len(data), 1))
                 self.vao = gl.vertex_array(
                     self.renderer.program,
