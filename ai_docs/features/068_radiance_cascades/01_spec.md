@@ -1,6 +1,8 @@
 # 068 — Iterated passes, and radiance cascades on top
 
-**Status: SPEC, awaiting plan-lock.**
+**Status: LANDED** (`6871d07`, `659961d`, `3d98c1d`, `ac747d6`), reviewed by a six-agent round
+whose findings are folded in below. Two decisions were superseded during that round — D3 and D7,
+each marked in place.
 
 Two deliverables, in order: the engine gains a way to run one pass N times within a frame, and
 that capability is used to build radiance cascades — shipped as an example document and taught
@@ -19,8 +21,8 @@ its `README.md` supersession map before trusting any recommendation in it.
    sequence within one frame, advancing its ping-pong between each, and tells the shader which
    iteration it is. This is a general primitive: nothing about radiance cascades enters the
    engine.
-2. **Radiance cascades**, built on it, as a playable document: draw light and occluders with the
-   mouse, see bounced light. Ships in `shaderbox/resources/document_examples/`.
+2. **Radiance cascades**, built on it, shipped in `shaderbox/resources/document_examples/`. (The
+   original "draw with the mouse" half was retracted — see D7.)
 3. **A tutorial** — a local HTML file, handed over by path — that walks the build one pass at a
    time, so the maintainer can implement it themselves and learn RC in the process.
 
@@ -53,7 +55,14 @@ exactly like `u_time`. The shader derives its own parameter — JFA's offset is
 `pow(2.0, u_pass_iterations - u_pass_iteration - 1.0)`, one line. **No `u_jfa_offset`**: a
 uniform named for an algorithm is that algorithm leaking into the engine.
 
-**D3 — `iterations` is a plain int the author sets; the engine WARNS when the canvas outgrows it.**
+**D3 — `iterations` is a plain int the author sets. RETRACTED: the warning half was unsound.**
+*Superseded during the review round (commit `ac747d6`).* The shipped check assumed a base-2
+chain and fired on this repo's own base-4 cascade pass at its shipped canvas size, telling the
+user a correctly-configured stack was "subtly wrong". The engine cannot distinguish a base-2
+jump flood from a base-4 cascade stack, so a check assuming either is wrong for the other by
+construction — it is not tunable. What stands: the count is the author's, the help text explains
+what it means, and nothing warns. Original reasoning, kept because the trade-off it names is
+real:
 A canvas resize changes how many JFA steps a correct distance field needs (9 at 512, 10 at 1024).
 The alternative — a small enum of derived formulas — bakes two RC-specific formulas into
 `graph.json`'s model and is a mini expression language pretending not to be one. So the count
@@ -75,20 +84,30 @@ with `iterations: 1` keeps today's behaviour byte for byte.
 **D6 — RC ships as ONE example document, not a scene of fragments.** The tutorial builds it in
 steps, but the artifact is a single document whose passes are the finished stages.
 
-**D7 — Drawing is a script, not an engine feature.** RC is only interesting if you can paint
-light and occluders. `ctx.mouse` and a `persist` target already carry this: a `script.py` tracks
-the mouse and the shader accumulates into a persistent canvas. No engine change, and it exercises
-the scripting path — which the maintainer explicitly wanted stressed.
+**D7 — Drawing by script. RETRACTED: the engine cannot deliver it.**
+*Superseded during the review round (`ac747d6`).* The scene is now built analytically in
+`paint.frag.glsl` from SDFs and `u_time`, with no script — the same shape the Bloom Chain example
+uses.
+
+Two independent reasons the original could not work, both found by execution rather than reading:
+`ProjectSession.tick` binds the script engine to a document's **OUTPUT** pass, so a script can
+only drive uniforms declared there — a brush uniform on `paint` was dropped as an orphan key every
+frame and the example rendered BLACK in the app. And `ctx.mouse` carries position only, no
+buttons, so "drag to paint, right-drag for walls" was never expressible.
+
+This also cost the feature its "stress the scripting path" goal, which is worth stating plainly
+rather than quietly dropping. *Trigger to revisit: a script engine that can address a named pass
+rather than only the output.*
 
 ## Files touched
 
 | File | Change |
 |---|---|
-| `shaderbox/pass_graph.py` | `PassEntry.iterations` (D4); a `GraphError` when the canvas outgrows a count (D3) |
+| `shaderbox/pass_graph.py` | `PassEntry.iterations` (D4). The D3 warning landed and was then retracted — see D3. |
 | `shaderbox/core.py` | `ENGINE_DRIVEN_UNIFORMS` += the two names; bind them in `Pass.render` (D2) |
 | `shaderbox/document.py` | the iteration loop in `render`; per-iteration feedback swap (D1, D5) |
 | `shaderbox/popups/pass_settings.py` | an `iterations` control on the pass-settings modal |
-| `tests/test_pass_graph.py` | count bounds, the resize warning |
+| `tests/test_pass_graph.py` | count bounds (the warning's tests went with D3) |
 | `tests/test_document_graph.py` | N draws happen; ping-pong advances per iteration; `iterations: 1` unchanged |
 | `shaderbox/resources/document_examples/<uuid>/` | the RC document (D6) |
 | `ai_docs/features/068_radiance_cascades/tutorial.html` | the walkthrough |
@@ -103,14 +122,16 @@ Each step fails for exactly one reason.
    run reads 8, not 1. *Falsifier: a per-frame swap gives 1.*
 3. **`iterations: 1` is unchanged.** The Bloom Chain example renders bit-identically to its
    pre-change output. *Falsifier: any pixel differs.*
-4. **The resize warning fires.** A JFA pass with `iterations: 9` on a 512 canvas is clean; resize
-   to 1024 and the warning appears naming the pass. *Falsifier: silence.*
+4. ~~**The resize warning fires.**~~ Withdrawn with D3 — there is no warning to fire.
 5. **RC renders light.** The example shows a lit region around a painted emitter with a shadow
    behind a painted occluder. *Falsifier: uniform brightness, or black.*
-6. **RC is numerically right, not just plausible.** Compare against
-   `063/rc_proof.py`'s corrected implementation on the same input. **This is the check 063's whole
-   wave exists to demand** — its proof rendered convincing shadows while 30.3% wrong. A visual
-   match is not a pass.
+6. **RC is numerically right, not just plausible, AND the check itself is sensitive.**
+   `oracle.py` measures the merge against a converged brute-force reference over bounced light:
+   1.0134 energy ratio, 3.65% relMAE, matching 063's corrected 4.5%. **The gate is
+   mutation-tested** — clean 3.6%, merge disabled 98.3%, transposed slot 29.9% (063 measured
+   30.3% for that same bug). The second half is not optional: the first version of this oracle
+   scored 1.2087 and called it an inherent artifact, when it was measuring a broken reference,
+   and an earlier version of the metric passed a stack computing zero global illumination.
 7. **Drawing works** (needs a display): drag paints an emitter, light updates; drag an occluder,
    a shadow appears.
 
