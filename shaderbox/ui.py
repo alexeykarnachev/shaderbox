@@ -293,7 +293,22 @@ def update_and_draw(app: App) -> None:
         for document_id in tick_documents:
             ui_document = app.ui_documents.get(document_id)
             if ui_document is not None:
-                ui_document.document.render()
+                document = ui_document.document
+                document.render()
+                # One never-drawn pass per document per frame draws its own chain, so a
+                # reopened document's off-chain tiles fill in instead of staying black. The
+                # output render above has already stamped its own chain, so the scan elects a
+                # pass genuinely outside it.
+                pending = next(
+                    (
+                        name
+                        for name, render_pass in document.passes.items()
+                        if not render_pass.first_render_done
+                    ),
+                    None,
+                )
+                if pending is not None:
+                    document.render(target=pending)
     elif app.popup_state == PopupState.EXAMPLES:
         # Same first-render budget as the document set above: one example compiles per frame,
         # so opening the popup never stalls on compiling the whole library at once.

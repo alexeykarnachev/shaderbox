@@ -38,3 +38,14 @@ def test_shortcuts_section_covers_every_populated_category() -> None:
             assert category.value in section.snippet
     help_spec = next(s for s in COMMAND_SPECS if s.label == "Help")
     assert chord_to_str(help_spec.default_chord) in section.snippet
+
+
+def test_shortcuts_section_lists_every_bound_command() -> None:
+    # The category-level assertion above passes for a new command in an already-populated
+    # category, so a bound chord could ship undocumented. This pins each spec individually.
+    section = next(s for s in help_sections() if s.key == "shortcuts")
+    for spec in COMMAND_SPECS:
+        if not spec.default_chord:
+            continue
+        assert spec.label in section.snippet, spec.label
+        assert chord_to_str(spec.default_chord) in section.snippet, spec.label

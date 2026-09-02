@@ -383,26 +383,45 @@ class Document:
             canvas.set_size(live.texture.size)
         return canvas
 
-    def render(self, u_time: float | None = None, canvas: Canvas | None = None) -> None:
+    def render(
+        self,
+        u_time: float | None = None,
+        canvas: Canvas | None = None,
+        target: str | None = None,
+    ) -> None:
         """Draw the document: every pass the output needs, in order, each exactly once.
 
         `canvas` overrides the OUTPUT pass's target only — intermediate passes always draw into
         their own, since that is what the next pass samples.
+
+        `target` draws that pass and its ancestor chain instead of the graph output's, skipping
+        whatever already drew this frame. The graph output still decides which pass keeps full
+        size and which one may receive `canvas`.
         """
-        if canvas is None:
+        if canvas is None and target is None:
             self.first_render_done = True
+        resolved = target if target is not None else self.graph.output_pass
         output = self.graph.output_pass
-        if output is None or output not in self.passes:
+        if resolved is None or resolved not in self.passes:
             self._graph_errors = plan_passes(self.graph)[1]
             return
-        planned, self._graph_errors = plan_for_output(self.graph, output)
+        planned, self._graph_errors = plan_for_output(self.graph, resolved)
         order = [name for name in planned if name in self.passes]
         if not order:
             # A cycle, or an output nothing can reach: draw the output alone so a half-built
             # graph still shows its own shader instead of going blank.
-            order = [output]
+            order = [resolved]
         for name in order:
             render_pass = self.passes[name]
+            if (
+                canvas is None
+                and target is not None
+                and render_pass.drawn_frame == self._frame
+                and self._frame >= 0
+            ):
+                continue
+            render_pass.drawn_frame = self._frame
+            render_pass.first_render_done = True
             entry = self.graph.passes.get(name, PassEntry())
             # The document owns the canvas size, so it applies each pass's scale — a pass cannot
             # size itself from a number it does not hold, and doing it in both places would fight.
@@ -422,7 +441,7 @@ class Document:
             # this shape.
             for iteration in range(entry.iterations):
                 last = iteration + 1 == entry.iterations
-                target = canvas if (name == output and last) else None
+                draw_into = canvas if (name == output and last) else None
                 inputs: dict[str, moderngl.Texture] = {}
                 for uniform, source_name in entry.inputs.items():
                     if source_name == name:
@@ -437,7 +456,7 @@ class Document:
                         inputs[uniform] = self._black_texture()
                 render_pass.render(
                     u_time=u_time,
-                    canvas=target,
+                    canvas=draw_into,
                     inputs=inputs,
                     iteration=iteration,
                     iterations=entry.iterations,

@@ -10,11 +10,14 @@ choice and the open editor tab move together. D3 makes a half-done rename SILENT
 pointing at the old name just reads black.
 """
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import pytest
+from imgui_bundle import imgui
 
+from shaderbox.app import PopupState
 from shaderbox.pass_graph import (
     DTYPES,
     MAX_ITERATIONS,
@@ -23,8 +26,10 @@ from shaderbox.pass_graph import (
     TargetConfig,
 )
 from shaderbox.paths import PASSES_DIR_NAME, pass_shader_name
+from shaderbox.popups import pass_settings
 from shaderbox.popups.pass_settings import _FORMAT_CODES, _FORMATS
 from shaderbox.ui_models import load_document_from_dir
+from shaderbox.widgets import pass_list
 from shaderbox.widgets.pass_list import _strip_order
 
 _SAMPLER = """#version 460 core
@@ -332,3 +337,113 @@ def test_set_pass_iterations_writes_persists_and_rejects(app: Any) -> None:
 
     assert app.session.set_pass_iterations("no-such-document", name, 2)
     assert app.session.set_pass_iterations(document_id, "no-such-pass", 2)
+
+
+# ----------------------------------------------------------------
+# The gear's name field and the add-pass input (069 W-C).
+
+
+def _imgui_frame(body: Callable[[], None]) -> None:
+    # The app fixture already owns a live imgui context (App.__init__ creates one); nothing is
+    # presented, so no backend render call is needed.
+    imgui.new_frame()
+    imgui.begin("rig")
+    body()
+    imgui.end()
+    imgui.end_frame()
+
+
+def test_the_gear_body_survives_a_rename_mid_frame(app: Any) -> None:
+    # #17: the body indexed `document.passes[name]` with the name the rename had just retired,
+    # so the frame that performed the rename raised KeyError. The rename is driven the way a
+    # person drives it — focus the field, type, click away — through the REAL _draw_name.
+    document_id = _document_id(app)
+    name = next(iter(app.ui_documents[document_id].document.passes))
+    app.open_pass_settings(name)
+
+    keep_open: list[bool] = []
+    for frame in range(6):
+        if frame == 2:
+            imgui.get_io().add_input_character(ord("q"))
+
+        def body(frame: int = frame) -> None:
+            if frame in (0, 1):
+                imgui.set_keyboard_focus_here(0)
+            if frame == 3:
+                imgui.set_keyboard_focus_here(1)
+            keep_open.append(pass_settings._draw_body(app))
+
+        _imgui_frame(body)
+
+    document = app.ui_documents[document_id].document
+    assert "q" in document.passes and name not in document.passes
+    assert app.pass_settings_name == "q"
+    # Every frame returned True, including the rename frame: a True can only come from
+    # `return not ghost_button("Close")`, so the Close row was submitted on that frame too — a
+    # plain early return would have skipped it and swallowed a Close click.
+    assert keep_open == [True] * 6
+
+
+def test_a_rejected_rename_snaps_the_buffer_back(app: Any) -> None:
+    document_id = _document_id(app)
+    name = next(iter(app.ui_documents[document_id].document.passes))
+    assert app.session.add_pass(document_id, "sibling") == ""
+    app.open_pass_settings(name)
+
+    pushed: list[str] = []
+    app.notifications.push = lambda text, *a, **kw: pushed.append(text)
+
+    # A name the naming rule rejects, then an existing pass's name: each notifies ONCE and
+    # snaps the field back, so the next deactivate cannot re-fire the same rejection.
+    for bad in ("2fast", "sibling"):
+        app.pass_settings_name_buf = bad
+        before = len(pushed)
+        assert pass_settings._commit_pass_name(app, document_id, name) is False
+        assert len(pushed) == before + 1, bad
+        assert app.pass_settings_name_buf == name, bad
+
+    # An empty buffer is not an error, and still snaps back.
+    app.pass_settings_name_buf = "   "
+    before = len(pushed)
+    assert pass_settings._commit_pass_name(app, document_id, name) is False
+    assert len(pushed) == before
+    assert app.pass_settings_name_buf == name
+
+    # An accepted name returns True — the value _draw_body's guard branches on.
+    app.pass_settings_name_buf = "accepted"
+    assert pass_settings._commit_pass_name(app, document_id, name) is True
+    assert "accepted" in app.ui_documents[document_id].document.passes
+
+
+def test_add_pass_activates_the_new_pass(app: Any) -> None:
+    # #28 / D10: a created pass is what the document SHOWS — tab, output and gear together.
+    # Driven through the real widget: focus the input, type a character, move focus away, which
+    # is the click-away D11 commits on.
+    document_id = _document_id(app)
+    before_output = app.ui_documents[document_id].document.graph.output
+    opened: list[str] = []
+    app.pass_add.open(app.session.paths.passes_dir_for(document_id))
+    app.pass_add.buf = "b"
+
+    for frame in range(6):
+        if frame == 2:
+            imgui.get_io().add_input_character(ord("z"))
+
+        def body(frame: int = frame) -> None:
+            if frame in (0, 1):
+                imgui.set_keyboard_focus_here(0)
+            if frame == 3:
+                imgui.set_keyboard_focus_here(1)
+            if app.pass_add.is_open:
+                pass_list._draw_add_input(app, document_id, opened.append)
+            imgui.input_text("##sink", "sink")
+
+        _imgui_frame(body)
+
+    document = app.ui_documents[document_id].document
+    assert "z" in document.passes, "the click-away never created the pass"
+    assert document.graph.output == "z" != before_output
+    assert opened == ["z"]
+    assert app.popup_state == PopupState.PASS_SETTINGS
+    assert app.pass_settings_name == "z"
+    assert not app.pass_add.is_open

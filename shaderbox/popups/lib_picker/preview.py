@@ -74,11 +74,13 @@ def _draw_function_tag_editor(app: App, fn: ShaderLibFunction) -> None:
     )
     # Update the "input owns Enter" flag immediately so the outer Enter check
     # on the NEXT frame skips Insert+close when the user is still typing here.
+    # Both queries are item-scoped on the input and must stay above the `+ Add` button.
     app.shader_lib_files.picker_tag_input_focused = imgui.is_item_focused()
+    deactivated = imgui.is_item_deactivated_after_edit()
     imgui.same_line()
     add_pressed = ghost_button(f"+ Add##addtag_{fn.name}")
     buf = app.shader_lib_files.picker_new_tag_buf.strip().lstrip("#").lower()
-    if (changed or add_pressed) and buf:
+    if (changed or deactivated or add_pressed) and buf:
         app.shader_lib_tags.add(fn.name, buf)
         app.shader_lib_files.picker_new_tag_buf = ""
         return

@@ -363,9 +363,25 @@ list / grid actions, prefer a right-click context menu over inline buttons.**
 
 Inline inputs that replace a row when an action starts (Rename, New file):
 
-- **Pattern**: `imgui.input_text(..., flags=enter_returns_true)` — Enter
-  commits, Esc cancels. Always reserve an `x` cancel button on the right of
-  the input row — Esc is invisible, the explicit cancel is the affordance.
+- **Pattern**: an inline input whose commit performs a TRANSACTION — a
+  rename, a file creation, a pass creation — commits on
+  `imgui.is_item_deactivated_after_edit()`, with `enter_returns_true` as the
+  Enter shortcut and Esc as cancel. Clicking away is how people leave a field,
+  and a transaction that only Enter fires is silently discarded there. Read the
+  deactivate query on the line IMMEDIATELY after the `input_text` call, before
+  any `same_line` — the item-scoped queries read the last submitted item, so an
+  intervening widget makes them read the wrong one. When a cancel control is
+  drawn after the input, the click that presses it is itself what deactivated
+  the input: capture the deactivate into a local, then apply it only if the
+  cancel branch did not run. A modal that can close while the buffer holds an
+  uncommitted edit commits at its CLOSE FUNNEL as well, because a body that does
+  not draw cannot commit (Esc typically closes the popup a frame before the body
+  runs). Two shapes the rule does NOT cover: a live filter (a search query,
+  consumed the same frame it changes) and a per-keystroke value field whose
+  value IS the state and is applied by a separate Save / Apply / Connect
+  control — there is nothing pending to commit. Always reserve an `x` cancel
+  button on the right of the input row — Esc is invisible, the explicit cancel
+  is the affordance.
 - **Focus**: a one-shot `needs_focus` flag on a state object that the input's
   first draw consumes via `set_keyboard_focus_here(0)`. After that one frame,
   imgui keeps the focus where it is. **Don't call `set_keyboard_focus_here`

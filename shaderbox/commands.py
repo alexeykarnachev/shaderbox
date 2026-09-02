@@ -37,6 +37,8 @@ class CommandId(StrEnum):
     OPEN_SCRIPT = auto()
     CYCLE_CODE_TAB = auto()
     CLOSE_CODE_TAB = auto()
+    OPEN_PASS_SETTINGS = auto()
+    ADD_PASS = auto()
 
 
 class CommandCategory(StrEnum):
@@ -173,6 +175,13 @@ COMMAND_SPECS: list[CommandSpec] = [
         C.TOOLS,
     ),
     CommandSpec(CommandId.OPEN_SETTINGS, "Settings", _chord(K.s, K.mod_alt), C.TOOLS),
+    CommandSpec(
+        CommandId.OPEN_PASS_SETTINGS,
+        "Pass settings",
+        _chord(K.p, K.mod_alt),
+        C.TOOLS,
+    ),
+    CommandSpec(CommandId.ADD_PASS, "Add pass", _chord(K.a, K.mod_alt), C.TOOLS),
     CommandSpec(CommandId.EXAMPLES, "Examples", _chord(K.e, K.mod_alt), C.TOOLS),
     CommandSpec(CommandId.HELP, "Help", _chord(K.f1), C.TOOLS),
     CommandSpec(

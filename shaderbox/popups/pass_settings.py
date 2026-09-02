@@ -64,8 +64,7 @@ def draw_pass_settings(app: App) -> None:
         if not visible:
             return
         if not _draw_body(app):
-            app.popup_state = PopupState.CLOSED
-            app.pass_settings_name = ""
+            app.close_pass_settings()
             imgui.close_current_popup()
 
 
@@ -78,37 +77,52 @@ def _draw_body(app: App) -> bool:
 
     document = ui_document.document
     imgui.separator_text("Pass")
-    _draw_name(app, document_id, name)
-    imgui.dummy((0.0, float(SPACE.MD)))
-
-    _draw_inputs(app, document_id, name, document.passes[name])
-    imgui.dummy((0.0, float(SPACE.MD)))
-    _draw_target(app, document_id, name)
+    renamed = _draw_name(app, document_id, name)
+    if not renamed:
+        imgui.dummy((0.0, float(SPACE.MD)))
+        _draw_inputs(app, document_id, name, document.passes[name])
+        imgui.dummy((0.0, float(SPACE.MD)))
+        _draw_target(app, document_id, name)
 
     imgui.dummy((0.0, float(SPACE.MD)))
     return not ghost_button("Close")
 
 
-def _draw_name(app: App, document_id: str, name: str) -> None:
-    # Enter commits; a successful rename moves the file and every edge, and `_on_pass_renamed`
-    # re-points this modal's own target (App.pass_settings_name) so the body keeps drawing.
+def _draw_name(app: App, document_id: str, name: str) -> bool:
+    """Draw the name row; return True when a rename landed this frame (`name` is now dead)."""
+    # A successful rename moves the file and every edge, and `_on_pass_renamed` re-points this
+    # modal's own target (App.pass_settings_name) so the next frame draws the live pass.
     label_row(app.font_12, "name", _CTRL_W, _ROW_LABEL_W)
     committed, app.pass_settings_name_buf = imgui.input_text(
         "##pass_settings_name",
         app.pass_settings_name_buf,
         flags=imgui.InputTextFlags_.enter_returns_true,
     )
-    if committed:
-        new_name = app.pass_settings_name_buf.strip()
-        if new_name and new_name != name:
-            error = app.session.rename_pass(document_id, name, new_name)
-            if error:
-                app.notifications.push(error)
+    # Read on the line after the input: the item-scoped queries see the LAST submitted item.
+    deactivated = imgui.is_item_deactivated_after_edit()
+    renamed = (
+        _commit_pass_name(app, document_id, name) if committed or deactivated else False
+    )
     imgui.same_line()
     help_marker(
         "The pass's name: its shader file under passes/ and what other passes' Reads "
         "call it. Enter applies; a rename re-points every wire and open tab."
     )
+    return renamed
+
+
+def _commit_pass_name(app: App, document_id: str, name: str) -> bool:
+    """Rename `name` to the buffer's text; return True only when the rename landed."""
+    new_name = app.pass_settings_name_buf.strip()
+    if not new_name or new_name == name:
+        app.pass_settings_name_buf = name
+        return False
+    error = app.session.rename_pass(document_id, name, new_name)
+    if error:
+        app.notifications.push(error)
+        app.pass_settings_name_buf = name
+        return False
+    return True
 
 
 def _sampler_names(render_pass: Pass) -> list[str]:

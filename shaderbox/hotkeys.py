@@ -297,8 +297,12 @@ def _handle_escape(app: App) -> None:
     elif app.any_popup_open():
         # The lib picker's inline inputs (rename / new-file / new-dir / add-tag) own Esc:
         # their per-input cancel runs later this frame — leave the picker open.
-        if app.popup_state != PopupState.SHADER_LIB_PICKER or not inline_input_owns_esc(
-            app
+        if app.popup_state == PopupState.PASS_SETTINGS:
+            # The gear's name field can hold an uncommitted edit; the close funnel commits it.
+            app.close_pass_settings()
+        elif (
+            app.popup_state != PopupState.SHADER_LIB_PICKER
+            or not inline_input_owns_esc(app)
         ):
             app.popup_state = PopupState.CLOSED
     elif app.is_palette_open:

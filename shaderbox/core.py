@@ -161,6 +161,9 @@ class Pass:
         # Bumped whenever the target format changes, so a Document can tell that a cached
         # feedback canvas built from this pass predates the change (core cannot see the Document).
         self.target_generation: int = 0
+        # The document frame this pass last drew in; -1 means never.
+        self.drawn_frame: int = -1
+        self.first_render_done: bool = False
         self.uniform_values: dict[str, Any] = {}
         self.compile_unit: CompileUnit = CompileUnit.empty(self.source)
         self.program: moderngl.Program | None = None

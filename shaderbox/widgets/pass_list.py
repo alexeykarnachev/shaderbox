@@ -173,11 +173,13 @@ def draw(app: App, document_id: str, open_pass: Callable[[str], None]) -> None:
     if ghost_button("add pass"):
         app.pass_add.open(app.session.paths.passes_dir_for(document_id))
     if app.pass_add.is_open:
-        _draw_add_input(app, document_id)
+        _draw_add_input(app, document_id, open_pass)
     imgui.end_disabled()
 
 
-def _draw_add_input(app: App, document_id: str) -> None:
+def _draw_add_input(
+    app: App, document_id: str, open_pass: Callable[[str], None]
+) -> None:
     imgui.dummy((_TICK_W, 0))
     imgui.same_line()
     cancel_w = imgui.calc_text_size("x").x + float(SPACE.MD) * 2.0
@@ -190,17 +192,29 @@ def _draw_add_input(app: App, document_id: str) -> None:
         app.pass_add.buf,
         flags=imgui.InputTextFlags_.enter_returns_true,
     )
-    if committed:
-        name = app.pass_add.buf.strip()
-        error = app.session.add_pass(document_id, name)
-        if error:
-            app.notifications.push(error)
-        else:
-            app.pass_add.close()
-            # A fresh pass's wiring and target are chosen NOW or never — open its settings.
-            app.open_pass_settings(name)
+    # Read on the line after the input: the item-scoped queries see the LAST submitted item.
+    wants_commit = committed or imgui.is_item_deactivated_after_edit()
+    name = app.pass_add.buf.strip()
     if imgui.is_key_pressed(imgui.Key.escape, repeat=False):
         app.pass_add.close()
+        wants_commit = False
     imgui.same_line()
     if ghost_button("x##cancel_add_pass"):
+        # The cancel click IS what deactivated the input, so the commit it raised is the pass
+        # the user just cancelled.
         app.pass_add.close()
+        wants_commit = False
+    if not wants_commit:
+        return
+    error = app.session.add_pass(document_id, name)
+    if error:
+        app.notifications.push(error)
+        return
+    app.pass_add.close()
+    # A new pass is what the document shows: the editor tab, the viewer and the gear all follow
+    # it, and its wiring and target are chosen NOW or never.
+    open_pass(name)
+    output_error = app.session.set_output_pass(document_id, name)
+    if output_error:
+        app.notifications.push(output_error)
+    app.open_pass_settings(name)

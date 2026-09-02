@@ -513,6 +513,8 @@ class App:
             ),
             CommandId.CYCLE_CODE_TAB: self.cycle_code_tab,
             CommandId.CLOSE_CODE_TAB: self.close_active_tab,
+            CommandId.OPEN_PASS_SETTINGS: self.open_pass_settings_for_panel_pass,
+            CommandId.ADD_PASS: self.open_add_pass,
         }
 
     # ---- copilot-cluster forwarders (feature 025) ----
@@ -895,6 +897,35 @@ class App:
         self.pass_settings_name = name
         self.pass_settings_name_buf = name
         self._open_popup(PopupState.PASS_SETTINGS)
+
+    def close_pass_settings(self) -> None:
+        """Close the gear, committing a pending rename first.
+
+        The one funnel both close paths reach: Escape closes the popup before the body draws,
+        so a commit inside the body is unreachable on that frame.
+        """
+        document_id = self.current_document_id
+        name = self.pass_settings_name
+        buf = self.pass_settings_name_buf.strip()
+        if name and buf and buf != name and document_id in self.ui_documents:
+            error = self.session.rename_pass(document_id, name, buf)
+            if error:
+                self.notifications.push(error)
+        self.popup_state = PopupState.CLOSED
+        self.pass_settings_name = ""
+        self.pass_settings_name_buf = ""
+
+    def open_pass_settings_for_panel_pass(self) -> None:
+        document_id = self.current_document_id
+        if document_id not in self.ui_documents:
+            return
+        self.open_pass_settings(pass_name_of(self.panel_pass(document_id).source.path))
+
+    def open_add_pass(self) -> None:
+        document_id = self.current_document_id
+        if document_id not in self.ui_documents:
+            return
+        self.pass_add.open(self.session.paths.passes_dir_for(document_id))
 
     def open_emoji_picker(self, target: Callable[[str], None] | None = None) -> None:
         self._open_popup(PopupState.EMOJI_PICKER)
