@@ -852,6 +852,20 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   next rebuild must not "fix": the layout's glyph UVs address the atlas PNG top-row-first (an upload
   flip renders every glyph upside down), and `ed_revision` rises across `ed_set_text` (the dirty
   flag depends on it).
+- **The vendored sha is a resting point, and re-vendoring is HAND-CHECKED at a real keyboard.**
+  We hold `c5fabc8`; the editor repo has since fixed four vim gaps (`3f3a11b`) and the c-family
+  double-undo (`0143217`). Taking them means rebuilding `libeditor.so` AND deleting three host
+  mitigations we carry for those gaps — the Ctrl+N completion intercept, the visual-scroll
+  consume-noop, and the c-family undo mitigation. All three are live keyboard behaviour that
+  `make smoke` cannot reach (it needs a display, and asserts no key semantics), so the re-vendor
+  is maintainer-supervised: rebuild, delete the three, then type these five at a real keyboard —
+  `cwX` Esc `u` restores the whole word; `o` then Esc stays on its line; `di{` in a multi-line
+  body leaves `{`/`}`; Ctrl+N with the popup open advances the selection; a scroll chord in
+  visual mode extends the selection. Nothing is blocked on it: `c5fabc8` is coherent as-is.
+  MEASURED, and the reason our integration specifically was exposed to the undo bug: the trigger
+  is a HOST CURSOR JUMP mid-insert, not a keystroke — the editor session reproduced it through
+  the C ABI alone (`Vc`, type, `ed_set_cursor(0,0)`, type, undo). Our completion path and
+  jump-to-error both move the cursor mid-insert, so it was reachable in ordinary use.
 - **A live moderngl context must exist before constructing `Image` / `Video` / `Font` / `Canvas` /
   `Document`** — they call `moderngl.get_context()` lazily. In the app,
   `glfw.make_context_current(window)` handles it.
