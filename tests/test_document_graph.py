@@ -23,6 +23,8 @@ from shaderbox.document import DEFAULT_PASS_NAME, Document
 from shaderbox.media import MediaDetails, texture_to_rgba8
 from shaderbox.pass_graph import PassEntry, PassGraph, TargetConfig
 from shaderbox.shader_source import ShaderSource
+from shaderbox.tabs.document import _apply_canvas_size
+from shaderbox.ui_models import UIDocument
 
 # Writes a constant so a consumer's arithmetic on it is unambiguous.
 _CONST = """#version 460 core
@@ -616,3 +618,68 @@ def test_an_iterated_feedback_chain_keeps_advancing_across_frames(
         pytest.approx(153, abs=3),
         pytest.approx(230, abs=3),
     ], f"the chain did not advance 3 steps per frame: {seen}"
+
+
+class _NotificationRecorder:
+    def __init__(self) -> None:
+        self.pushed: list[str] = []
+
+    def push(self, message: str) -> None:
+        self.pushed.append(message)
+
+
+class _AppStub:
+    def __init__(self) -> None:
+        self.notifications = _NotificationRecorder()
+
+
+def _ui_document(doc: Document) -> UIDocument:
+    return UIDocument(document=doc)
+
+
+def test_a_ui_resize_moves_every_pass_together(gl_ctx: moderngl.Context) -> None:
+    # The UI's own path, not Document.set_canvas_size directly (its sibling above): the
+    # Document tab wrote render_pass.canvas.set_size, which leaves canvas_size stale and every
+    # OTHER pass sizing off the old dimensions (069 findings #2/#3).
+    graph = PassGraph(
+        output="out",
+        passes={
+            "half": PassEntry(target=TargetConfig(scale=0.5)),
+            "full": PassEntry(),
+            "out": PassEntry(inputs={"u_a": "half", "u_b": "full"}),
+        },
+    )
+    doc = _document(
+        gl_ctx,
+        {"half": _CONST % "1.0", "full": _CONST % "0.5", "out": _SUM},
+        graph,
+        size=(64, 64),
+    )
+    doc.render(u_time=0.0)
+    _apply_canvas_size(_AppStub(), _ui_document(doc), (32, 32))
+    doc.render(u_time=0.0)
+    assert doc.canvas_size == (32, 32)
+    assert doc.passes["full"].canvas.texture.size == (32, 32)
+    assert doc.passes["half"].canvas.texture.size == (16, 16)
+    doc.release()
+
+
+def test_the_ui_resize_clamps_both_ends(gl_ctx: moderngl.Context) -> None:
+    # Both entry points clamp through the same constant. Asserts the FIELD and does not render:
+    # under the bug the document holds (99999, 4), which no framebuffer completes.
+    doc = _document(gl_ctx, {DEFAULT_PASS_NAME: _CONST % "1.0"}, PassGraph())
+    _apply_canvas_size(_AppStub(), _ui_document(doc), (99999, 4))
+    assert doc.canvas_size == (4096, 16)
+    doc.release()
+
+
+def test_an_unchanged_size_pushes_no_notification(gl_ctx: moderngl.Context) -> None:
+    # A deactivate-after-edit fires whenever a digit was typed and deleted again, so without the
+    # early return a click through a field toasts a resize that did not happen.
+    doc = _document(
+        gl_ctx, {DEFAULT_PASS_NAME: _CONST % "1.0"}, PassGraph(), size=(16, 16)
+    )
+    app = _AppStub()
+    _apply_canvas_size(app, _ui_document(doc), (16, 16))
+    assert app.notifications.pushed == []
+    doc.release()

@@ -128,6 +128,12 @@ class _ColorBag:
     BG_FRAME: tuple[float, float, float, float] = _P["bg_1"]
     BORDER: tuple[float, float, float, float] = _P["bg_2"]
 
+    # Alpha checkerboard behind the viewer: the canvas's extent must read even when the
+    # output is fully transparent. Two adjacent palette greys -- visible as a pattern, quiet
+    # enough that an opaque render is not framed by a texture.
+    CHECKER_LIGHT: tuple[float, float, float, float] = _P["bg_2"]
+    CHECKER_DARK: tuple[float, float, float, float] = _P["bg_1"]
+
     FG_PRIMARY: tuple[float, float, float, float] = _P["fg_1"]
     FG_SECONDARY: tuple[float, float, float, float] = _P["fg_2"]
     FG_MUTED: tuple[float, float, float, float] = _P["fg_4"]
@@ -245,6 +251,10 @@ class SIZE:
 
     PREVIEW_W: int = 200
     PANEL_CTRL_MINH: int = 600
+
+    # One square of the viewer's alpha checkerboard. At 8 the pattern is busy behind a small
+    # preview; at 24 a narrow preview shows two cells and reads as a diagonal split.
+    CHECKER_TILE: int = 12
 
     # Shared share-panel preview box — every exporter's preview is this exact size.
     # Height is generous so it always exceeds any outlet's control column.

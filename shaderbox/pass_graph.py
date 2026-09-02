@@ -42,6 +42,19 @@ GRAPH_JSON_VERSION = 1
 # effect: JFA needs ceil(log2(max_dim)) and a cascade stack ceil(log4(diagonal)) + 1.
 MAX_ITERATIONS = 64
 
+# A canvas dimension the render path can actually allocate. Both entry points -- the Document
+# tab's W x H fields and the copilot's set_canvas_size -- clamp through here.
+MIN_CANVAS_PX: int = 16
+MAX_CANVAS_PX: int = 4096
+
+
+def clamp_canvas_size(size: tuple[int, int]) -> tuple[int, int]:
+    w, h = size
+    return (
+        max(MIN_CANVAS_PX, min(MAX_CANVAS_PX, w)),
+        max(MIN_CANVAS_PX, min(MAX_CANVAS_PX, h)),
+    )
+
 
 class TargetConfig(BaseModel):
     """How one pass's render target is set up. Document state, not shader text.

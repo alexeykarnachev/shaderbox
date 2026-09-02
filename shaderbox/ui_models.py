@@ -357,7 +357,7 @@ class UIDocument(BaseModel):
         dir.mkdir(exist_ok=True, parents=True)
 
         meta: dict[str, Any] = {
-            "canvas_size": list(self.document.render_pass.canvas.texture.size),
+            "canvas_size": list(self.document.canvas_size),
             "uniforms": {},
             "ui_state": self.ui_state.model_dump(),
         }

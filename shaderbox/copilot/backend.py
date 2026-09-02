@@ -99,6 +99,7 @@ from shaderbox.media import (
     is_default_image,
     media_class_for,
 )
+from shaderbox.pass_graph import clamp_canvas_size
 from shaderbox.paths import DOCUMENT_SCRIPT_BASENAME, shader_lib_root
 from shaderbox.render_preset import RenderPreset
 from shaderbox.render_shape import RenderShape, shape_to_preset
@@ -132,9 +133,6 @@ def _stamp_facts(facts: str, t: float) -> str:
 
 
 _COPILOT_FULL_ID_LEN = 36
-# Canvas-size clamp for set_canvas_size (feature 052): a sane render-resolution range.
-_MIN_CANVAS_PX = 16
-_MAX_CANVAS_PX = 4096
 
 
 def _to_error_infos(errors: list[ShaderError]) -> list[CompileErrorInfo]:
@@ -725,7 +723,7 @@ class CopilotBackend:
             errors=_to_error_infos(document.render_pass.compile_unit.errors),
             script_listing=_number_lines(script_text) if script_text else "",
             script_errors=script_errors,
-            canvas=f"{document.render_pass.canvas.texture.size[0]}x{document.render_pass.canvas.texture.size[1]}",
+            canvas=f"{document.canvas_size[0]}x{document.canvas_size[1]}",
             passes=self._pass_views(full_id, short, document),
         )
 
@@ -1076,8 +1074,7 @@ class CopilotBackend:
                     ok=False,
                     error=f"no such document '{document}' — check the project map for ids",
                 )
-            w = max(_MIN_CANVAS_PX, min(_MAX_CANVAS_PX, width))
-            h = max(_MIN_CANVAS_PX, min(_MAX_CANVAS_PX, height))
+            w, h = clamp_canvas_size((width, height))
             ui_document = self._get_ui_documents()[document_id]
             self._capture_document(
                 document_id

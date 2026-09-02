@@ -283,6 +283,13 @@ class App:
             on_pass_renamed=self._on_pass_renamed,
         )
 
+        # The Document tab's canvas W x H pair. The buffer mirrors `document.canvas_size` on
+        # every frame in which neither field is active, so an externally-set size (the copilot,
+        # a disk sync) reaches the fields unclicked; while one is active it holds the pending
+        # digits. Never a `| None` latch -- nothing would clear it.
+        self.canvas_size_buf: tuple[int, int] = (0, 0)
+        self.canvas_size_editing: bool = False
+
         # The pass list's inline add input (name a new pass).
         self.pass_add: InlineInput = InlineInput()
         # The pass whose settings modal is open (a PopupState.PASS_SETTINGS payload), or "",
@@ -537,6 +544,9 @@ class App:
         # Switching documents invalidates the "user has been typing" sticky bit — the new document's
         # session starts fresh; insertions would land at (0,0) until the user clicks into it.
         self.editor_was_ever_focused = False
+        # Ctrl+N is a GLOBAL chord imgui routes through an active text input, so a switch CAN
+        # land mid-edit; re-arm the mirror or the new document draws the old one's half-typed pair.
+        self.canvas_size_editing = False
         if new_id:
             self.ensure_shader_tab(new_id)
 

@@ -192,6 +192,7 @@ def _draw_target(app: App, document_id: str, name: str) -> None:
     label_row(app.font_12, f"size ({w}, {h})", _CTRL_W, _ROW_LABEL_W)
     # The slider runs over 5-100 so `%.0f%%` formats the number a person reads; the model
     # keeps the 0-1 scale.
+    imgui.begin_disabled(is_output)
     scale_changed, percent = imgui.slider_float(
         f"##scale_{name}",
         target.scale * 100.0,
@@ -199,6 +200,7 @@ def _draw_target(app: App, document_id: str, name: str) -> None:
         100.0,
         "%.0f%%",
     )
+    imgui.end_disabled()
     if scale_changed:
         new_target = new_target.model_copy(update={"scale": percent / 100.0})
     imgui.same_line()

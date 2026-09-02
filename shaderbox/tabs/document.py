@@ -1,10 +1,19 @@
 from imgui_bundle import imgui, imgui_ctx
-from OpenGL.GL import GL_SAMPLER_2D
 
 from shaderbox.app import App
 from shaderbox.glyph_tables import TABLE_UNIFORMS
+from shaderbox.media import MediaWithTexture, is_default_image
+from shaderbox.pass_graph import clamp_canvas_size
+from shaderbox.render_preset import resolve_dims
+from shaderbox.render_shape import (
+    MENU_SHAPES,
+    SHAPE_TABLE,
+    RenderShape,
+    shape_to_preset,
+)
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_models import (
+    UIDocument,
     UIUniform,
     UniformSortKey,
     sort_uniform_hashes,
@@ -18,6 +27,67 @@ from shaderbox.ui_primitives import (
 from shaderbox.util import format_auto_value, get_resolution_str, get_uniform_hash
 from shaderbox.widgets import pass_list
 from shaderbox.widgets.uniform import draw_ui_uniform, uniform_name_label
+
+# The canvas row must fit SIZE.RES_COMBO_W, which is what the row already reserves:
+# 56 + SPACE.SM + the "x" glyph + SPACE.SM + 56 + SPACE.MD + 64 = 199. Both are arithmetic
+# against RES_COMBO_W rather than independent design choices, so they stay module constants.
+_CANVAS_FIELD_W: float = 56.0
+_CANVAS_PRESETS_W: float = 64.0
+
+_SQUARE_PRESETS: tuple[int, ...] = (256, 512, 1024, 2048)
+
+
+def _apply_canvas_size(
+    app: App, ui_document: UIDocument, size: tuple[int, int]
+) -> None:
+    w, h = clamp_canvas_size(size)
+    if (w, h) == ui_document.document.canvas_size:
+        return
+    ui_document.document.set_canvas_size((w, h))
+    app.notifications.push(f"Canvas: {w}x{h}")
+
+
+def _canvas_presets(ui_document: UIDocument) -> list[tuple[str, tuple[int, int]]]:
+    """Squares, the named video shapes, then any bound texture's size, across ALL passes.
+
+    Reads `uniform_values`, never `get_active_uniforms()`: the latter compiles a
+    never-attempted pass (066 D1), which on the Document tab's every frame would compile
+    the whole graph.
+    """
+    current = ui_document.document.canvas_size
+    presets: list[tuple[str, tuple[int, int]]] = []
+    seen: set[tuple[int, int]] = {current}
+
+    for n in _SQUARE_PRESETS:
+        size = (n, n)
+        if size in seen:
+            continue
+        seen.add(size)
+        presets.append((get_resolution_str(None, n, n), size))
+
+    for shape in MENU_SHAPES:
+        if shape is RenderShape.NATIVE:
+            continue
+        size = resolve_dims(
+            shape_to_preset(
+                shape, is_video=False, fps=None, container=None, duration_max=None
+            ),
+            current,
+        )
+        presets.append((SHAPE_TABLE[shape].menu_label, size))
+        seen.add(size)
+
+    for render_pass in ui_document.document.passes.values():
+        for uniform_name, value in sorted(render_pass.uniform_values.items()):
+            if not isinstance(value, MediaWithTexture) or is_default_image(value):
+                continue
+            size = value.texture.size
+            if size in seen:
+                continue
+            seen.add(size)
+            presets.append((get_resolution_str(uniform_name, *size), size))
+
+    return presets
 
 
 def _section_break() -> None:
@@ -50,53 +120,15 @@ def draw(app: App) -> None:
 
     imgui.spacing()
 
-    standard_resolutions = [
-        (1080, 1920),
-        (960, 1280),
-        (1080, 1080),
-        (1280, 960),
-        (1920, 1080),
-        (3440, 1440),
-    ]
-
-    cw, ch = ui_document.document.render_pass.canvas.texture.size
-    current_size: tuple[int, int] = (cw, ch)
-
-    uniform_resolutions = []
-    matching_uniforms = []
-    uniform_sizes = set()
-    for uniform in ui_document.document.render_pass.get_active_uniforms():
-        if getattr(uniform, "gl_type", None) == GL_SAMPLER_2D:
-            value = ui_document.document.render_pass.uniform_values[uniform.name]
-
-            w, h = value.texture.size
-            if (w, h) == current_size:
-                matching_uniforms.append(uniform.name)
-            else:
-                uniform_resolutions.append((w, h, uniform.name))
-                uniform_sizes.add((w, h))
-
-    current_name = ", ".join(matching_uniforms) if matching_uniforms else None
-    resolution_items = [get_resolution_str(None, *current_size)]
-    resolution_sizes: list[tuple[int, int]] = [current_size]
-    for w, h, name in uniform_resolutions:
-        resolution_items.append(get_resolution_str(name, w, h))
-        resolution_sizes.append((w, h))
-    for w, h in standard_resolutions:
-        if (w, h) != current_size and (w, h) not in uniform_sizes:
-            resolution_items.append(get_resolution_str(None, w, h))
-            resolution_sizes.append((w, h))
-
     document_ui_state = app.current_document_ui_state_or_default
 
     combo_offset = SIZE.NAME_INPUT_W + SPACE.XL
-    resolution_label = "Resolution"
-    if current_name:
-        resolution_label += f" ({current_name})"
+
+    imgui.begin_disabled(app.copilot_turn_active)
 
     small_caption(app.font_12, "Document name")
     imgui.same_line(combo_offset)
-    small_caption(app.font_12, resolution_label)
+    small_caption(app.font_12, "Canvas")
 
     imgui.set_next_item_width(SIZE.NAME_INPUT_W)
     ui_document.ui_state.ui_name = imgui.input_text_with_hint(
@@ -104,14 +136,54 @@ def draw(app: App) -> None:
     )[1]
 
     imgui.same_line(combo_offset)
-    imgui.set_next_item_width(SIZE.RES_COMBO_W)
-    new_res_idx = imgui.combo("##resolution", 0, resolution_items)[1]
-    if new_res_idx != 0:
-        w, h = resolution_sizes[new_res_idx]
-        ui_document.document.render_pass.canvas.set_size((w, h))
-        app.notifications.push(
-            f"Canvas resolution changed: {resolution_items[new_res_idx]}"
-        )
+
+    if not app.canvas_size_editing:
+        app.canvas_size_buf = ui_document.document.canvas_size
+
+    imgui.set_next_item_width(_CANVAS_FIELD_W)
+    entered_w, buf_w = imgui.input_int(
+        "##canvas_w",
+        app.canvas_size_buf[0],
+        step=0,
+        flags=imgui.InputTextFlags_.enter_returns_true,
+    )
+    active_w = imgui.is_item_active()
+    committed_w = entered_w or imgui.is_item_deactivated_after_edit()
+    app.canvas_size_buf = (buf_w, app.canvas_size_buf[1])
+
+    imgui.same_line(spacing=float(SPACE.SM))
+    imgui.text_colored(COLOR.FG_DIM, "x")
+    imgui.same_line(spacing=float(SPACE.SM))
+
+    imgui.set_next_item_width(_CANVAS_FIELD_W)
+    entered_h, buf_h = imgui.input_int(
+        "##canvas_h",
+        app.canvas_size_buf[1],
+        step=0,
+        flags=imgui.InputTextFlags_.enter_returns_true,
+    )
+    active_h = imgui.is_item_active()
+    committed_h = entered_h or imgui.is_item_deactivated_after_edit()
+    app.canvas_size_buf = (app.canvas_size_buf[0], buf_h)
+
+    app.canvas_size_editing = active_w or active_h
+
+    if committed_w or committed_h:
+        _apply_canvas_size(app, ui_document, app.canvas_size_buf)
+        app.canvas_size_buf = ui_document.document.canvas_size
+
+    imgui.same_line(spacing=float(SPACE.MD))
+    imgui.set_next_item_width(_CANVAS_PRESETS_W)
+    if imgui.begin_combo(
+        "##canvas_presets", "presets", imgui.ComboFlags_.no_arrow_button
+    ):
+        for label, size in _canvas_presets(ui_document):
+            if imgui.selectable(label, False)[0]:
+                _apply_canvas_size(app, ui_document, size)
+                app.canvas_size_buf = ui_document.document.canvas_size
+        imgui.end_combo()
+
+    imgui.end_disabled()
 
     imgui.dummy((0, SPACE.MD))
     _draw_entry_points(app)
