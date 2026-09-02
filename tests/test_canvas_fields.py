@@ -15,6 +15,7 @@ from typing import Any
 from imgui_bundle import imgui
 
 from shaderbox.tabs import document as document_tab
+from tests.conftest import seed_extra_document
 
 
 def _run_row_frames(app: Any, external_write: tuple[int, int] | None) -> None:
@@ -78,4 +79,41 @@ def test_the_active_field_keeps_its_own_pending_digits(app: Any) -> None:
     # never touched, is the one this test's own setup put there.
     assert document.canvas_size == (16, 960), (
         f"the active field's edit never reached the document: {document.canvas_size}"
+    )
+
+
+def test_a_document_switch_mid_edit_does_not_resize_the_new_document(app: Any) -> None:
+    # Clearing the editing flags is not enough on its own: imgui keeps the ITEM active across the
+    # switch, so an unscoped `##canvas_w` id lets the outgoing document's half-typed digit re-latch
+    # onto the incoming one and commit to it on click-away. The row's ids are scoped per document,
+    # so the new document's field is a different item and cannot inherit that activeness.
+    other_id = seed_extra_document(app, "bbbbbbbb-0000-4000-8000-00000000beef")
+    original_id = app.current_document_id
+    app.ui_documents[original_id].document.set_canvas_size((1280, 960))
+    app.ui_documents[other_id].document.set_canvas_size((333, 444))
+
+    imgui.set_window_focus(None)
+    app.canvas_w_editing = False
+    app.canvas_h_editing = False
+
+    for frame in range(9):
+        if frame == 3:
+            imgui.get_io().add_input_character(ord("5"))
+        if frame == 4:
+            app.set_current_document_id(other_id)
+        imgui.new_frame()
+        imgui.begin("rig")
+        if frame in (0, 1, 2):
+            imgui.set_keyboard_focus_here(1)
+        if frame == 6:
+            imgui.set_keyboard_focus_here(3)
+        document_tab.draw(app)
+        imgui.end()
+        imgui.end_frame()
+
+    assert app.ui_documents[other_id].document.canvas_size == (333, 444), (
+        "a digit typed into another document resized this one"
+    )
+    assert app.ui_documents[original_id].document.canvas_size == (1280, 960), (
+        "the document being edited was resized by a switch that should have discarded the edit"
     )

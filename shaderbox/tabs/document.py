@@ -133,6 +133,11 @@ def draw(app: App) -> None:
 
     imgui.same_line(combo_offset)
 
+    # Per-document widget ids. Clearing the editing flags on a switch is not enough on its own:
+    # imgui keeps the ITEM active across it, so a shared `##canvas_w` would let the outgoing
+    # document's half-typed digit re-latch onto the incoming one and commit to it.
+    imgui.push_id(ui_document.id)
+
     # Each half mirrors the document unless ITS OWN field is active, so a field the user is not
     # in never holds a stale number to carry over an external write.
     doc_w, doc_h = ui_document.document.canvas_size
@@ -170,21 +175,11 @@ def draw(app: App) -> None:
     app.canvas_w_editing = active_w
     app.canvas_h_editing = active_h
 
-    # The committing field's pending value against the document's CURRENT other half, re-read
-    # here rather than taken from the buffer: an external write during the edit stands.
-    if committed_w:
-        _apply_canvas_size(
-            app,
-            ui_document,
-            (app.canvas_size_buf[0], ui_document.document.canvas_size[1]),
-        )
-    if committed_h:
-        _apply_canvas_size(
-            app,
-            ui_document,
-            (ui_document.document.canvas_size[0], app.canvas_size_buf[1]),
-        )
+    # The buffer IS the pair to commit: the mirror above already refreshed the half whose field
+    # is not active from the document this same frame, so an external write during the edit
+    # stands without the commit re-reading it.
     if committed_w or committed_h:
+        _apply_canvas_size(app, ui_document, app.canvas_size_buf)
         app.canvas_size_buf = ui_document.document.canvas_size
 
     imgui.same_line(spacing=float(SPACE.MD))
@@ -197,6 +192,8 @@ def draw(app: App) -> None:
                 _apply_canvas_size(app, ui_document, size)
                 app.canvas_size_buf = ui_document.document.canvas_size
         imgui.end_combo()
+
+    imgui.pop_id()
 
     imgui.end_disabled()
 

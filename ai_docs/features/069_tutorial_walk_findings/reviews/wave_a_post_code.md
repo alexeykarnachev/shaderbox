@@ -273,3 +273,229 @@ deleted; `git status --short` is clean.
 
 Not covered: the visual appearance of the checkerboard and border (needs a maintainer `make run`
 per `/imgui-ui` §0), and W-B's help-text scope, which this commit explicitly leaves alone.
+
+---
+
+# Round 2 (closure) — against `3910900`
+
+Narrow closure round on the fix-up commit `3910900` ("069 W-A fixes: canvas_size tuple,
+per-field buffer, checker"). Scope: F1..F5 only, plus the two minor items F6/F7.
+
+**Overall: PARTIAL.** F1, F2, F3, F5, F6, F7 are CLOSED. F4 is CLOSED for the case it was
+filed on and leaves one narrower residual (R2-1). One test-coverage gap (R2-2). Neither is a
+crash; both are below the bar of the round-1 findings.
+
+`make gates` re-run: **exit 0, smoke passed**, and the tree stays clean afterwards.
+
+| Finding | Verdict |
+|---|---|
+| F1 presets crash on a disk-loaded document | **CLOSED** |
+| F2 early return defeated | **CLOSED** |
+| F3 shape loop ignores `seen` | **CLOSED** |
+| F4 stale half reverts an external write | **CLOSED** (residual R2-1) |
+| F5 checkerboard per-frame cost | **CLOSED** |
+| F6 `SIZE.RES_COMBO_W` dead | **CLOSED** |
+| F7 committed file not in repo format | **CLOSED** |
+
+## F1 — CLOSED
+
+`document.py::_as_canvas_size` normalizes at both writers: `Document.__init__`
+(`self.canvas_size = _as_canvas_size(canvas_size) or DEFAULT_CANVAS_SIZE`) and
+`set_canvas_size` (same coercion). `load_from_dir` now passes `document.canvas_size` — the
+already-normalized field — down to each `Pass`, rather than re-reading the raw metadata.
+
+Verified against the real `app` fixture (a disk-loaded document, no normalization in the test):
+
+```
+F1 canvas_size type: tuple (1280, 960)
+F1 presets built OK: 10 entries
+```
+
+Malformed pairs degrade rather than raise, which matches the loader's fail-soft posture:
+`[1280]`, `[1280, 960, 4]`, `"1280x960"`, `[1280.5, 960]`, `None`, `{"w": 1}`, `[None, None]`
+all return `None` → `DEFAULT_CANVAS_SIZE`. `[true, true]` passes the `isinstance(w, int)` check
+(bool subclasses int) and yields `(True, True)`, which `clamp_canvas_size` bounds to `(16, 16)` —
+harmless, and not a value a real file produces.
+
+## F2 — CLOSED
+
+The early return now compares tuple to tuple. On a disk-loaded document, re-applying the same
+size pushes nothing, and Escape after typing no longer toasts a resize that did not happen:
+
+```
+F2 re-applying the SAME size on a disk-loaded doc -> pushes: []
+F2 Escape on a freshly loaded doc -> pushes: [] doc: (1280, 960)
+```
+
+## F3 — CLOSED
+
+`tabs/document.py` — the shape loop now carries `if size in seen: continue` before `seen.add`
+and the append, matching its two siblings. At all four probe sizes, including the three
+video-shape ones that were broken:
+
+```
+(1280, 720)  -> duplicates of current: []
+(720, 1280)  -> duplicates of current: []
+(2560, 1440) -> duplicates of current: []
+(512, 512)   -> duplicates of current: []
+```
+
+The test now covers 1280x720, which exercises the loop that was actually broken.
+
+## F4 — CLOSED, with residual R2-1
+
+Two changes: the mirror is per field (`canvas_w_editing` / `canvas_h_editing` replace the single
+`canvas_size_editing`, each half mirrored on its own flag), and each commit pairs its pending
+half with `ui_document.document.canvas_size`'s live other half.
+
+The four requested traces, run against the real disk-loaded document through
+`tabs/document.py::draw`:
+
+**Copilot write while W is active — the case F4 was filed on. FIXED.**
+
+```
+f3 W=(1280,5,active) H=(960,960)   buf=(5, 960) doc=(1280, 960)
+f4 W=(5,5,active)    H=(600,600)   buf=(5, 600) doc=(800, 600)   <- write lands; H mirrors AT ONCE
+f7 W=(5,-,deact)     H=(600,600)   buf=(16,600) doc=(16, 600)    <- commit keeps the copilot's 600
+>>> final doc: (16, 600)
+```
+
+Round 1's clobber is gone: the height the user never touched is the copilot's 600, not the
+pre-edit 960.
+
+**Tab from W to H. PASS.** Commit fires once at the transition frame, H becomes active in the
+same frame, no double toast:
+
+```
+f6 W=(5,5,deact=True) H=(960,960,active) buf=(16,960) doc=(16,960) p=['Canvas: 16x960']
+f7..f8 unchanged, p unchanged
+```
+
+**Escape in W. PASS.** imgui restores the pre-edit value, the buffer follows, no commit, no toast.
+
+**Ctrl+N (document switch) while W is active. Residual — see R2-1.**
+
+### R2-1 — a document switch mid-edit carries the half-typed width into the NEW document
+
+`_on_current_document_changed` clears both editing flags, but the imgui item is still physically
+active, so `is_item_active()` reads True again on the very next draw and the W half re-latches the
+old document's pending digit. The H half mirrors correctly.
+
+Demonstrated with two documents at different sizes (original 1280x960, other 333x444; type `5`
+into W on the original, switch at f4, click away at f6):
+
+```
+  [f4 pre] switched; wE=False hE=False buf=(5, 960)
+f4 cur=bbbbbbbb buf=(5, 444) wE=True   <- H mirrored to the new doc; W re-latched the stale 5
+...
+orig  : (1280, 960)   (untouched, correct)
+other : (16, 444)     (was 333x444 -- resized by a digit typed into a different document)
+pushes: ['Canvas: 16x444']
+```
+
+Narrower than the original F4 (which reverted any external write on the untouched axis); this
+needs a document switch during an active edit. The original document is correctly left alone.
+
+**Fix.** Clearing the flag is not enough while the item stays active — on a document change also
+re-seed `canvas_size_buf` from the incoming document and call
+`imgui.set_keyboard_focus_here(-1)` (or clear the active id) so the field is genuinely
+deactivated, not merely un-flagged.
+
+### R2-2 — the two halves of the F4 fix are not independently pinned
+
+`tests/test_canvas_fields.py` stays green when the commit-pair change alone is reverted:
+
+```
+commit-pair reverted to the buffer pair:            2 passed
+per-field MIRROR also reverted (the full R1 bug):   1 failed, 1 passed
+```
+
+The per-field mirror is the load-bearing half; the commit-side re-read of the document's live
+other half is defensive redundancy the suite does not exercise. Not a code defect — the fix is
+correct and over-determined — but a regression that removed only the commit-pair re-read would
+ship green.
+
+**Fix.** Add a case where the two disagree at commit time and only the commit-side re-read can
+resolve it, or drop the redundant half and let the mirror carry the property alone.
+
+## F5 — CLOSED
+
+One `add_image` of a 2x2 NEAREST/repeat texture (`ui.py::_draw_canvas_backdrop`).
+
+**Cost, re-measured (mean of 50 calls per size):**
+
+| Viewer | Round 1 | Round 2 |
+|---|---|---|
+| 800x600 | 1.32 ms | 0.0013 ms |
+| 1600x900 | 3.83 ms | 0.0010 ms |
+| 2560x1400 | 9.76 ms | 0.0010 ms |
+
+Flat in viewer size, as claimed — roughly 3800x cheaper at 1600x900.
+
+**UV math correct.** `pair = 2 * SIZE.CHECKER_TILE`; `uv1 = (w/pair, h/pair)` puts exactly one
+2x2 texel pair per 24 px, so one cell lands on 12 px at any viewer size (checked at 1600x900 and
+2560x1400: 12.0 px per cell both).
+
+**GL lifetime, all three questions:**
+
+- *Created after the context exists.* `glfw.make_context_current` runs in `App.__init__`
+  (app.py:183); `_make_checker_texture()` is called from `_init` (app.py:1131), reached at
+  app.py:454 — after. Beside `preview_canvas = Canvas()` on the preceding line, as specified.
+- *Released before the context is destroyed.* `App.release` releases it (app.py:1662) under a
+  `hasattr` guard, immediately after `preview_canvas.release()`; `ui.py:150` calls `app.release()`
+  at shutdown. `_init` calls `self.release()` first, so a project reopen releases the old texture
+  before creating the new one — no leak across project switches. The only `glfw.terminate()` is
+  the window-creation failure path, before any texture exists. Double release is safe (moderngl's
+  `Texture.release` is idempotent; verified directly).
+- *Not recreated per frame.* `_make_checker_texture` has exactly one call site. Live check across
+  5 drawn frames: `glo` = `[2, 2, 2, 2, 2]`, stable; `size=(2,2)`, `filter=(9728, 9728)` (NEAREST
+  both), `repeat_x=repeat_y=True`.
+
+The border colour change is a real fix on the way past: `COLOR.BORDER` is `_P["bg_2"]`, which is
+`CHECKER_LIGHT` — the outline vanished along every light square. `COLOR.VIEWER_BORDER` (`bg_4`)
+reads against both greys. Not verified visually (needs a maintainer `make run`).
+
+## F6 — CLOSED
+
+`grep -rn "RES_COMBO_W" shaderbox/` returns nothing; the token is deleted from `theme.py` and
+replaced by `SIZE.CANVAS_FIELD_W` / `SIZE.CANVAS_PRESETS_W`, both read by `tabs/document.py`.
+Remaining hits are in docs and these reviews.
+
+## F7 — CLOSED
+
+`make gates` leaves the tree clean; the previously drifting `test_canvas_presets.py` import block
+is committed in the repo's own format.
+
+## Conventions (re-check on the fix-up diff)
+
+PASS. No suppressions, no inline imports, no `Any`, no `@staticmethod`, no hand-rolled style
+pushes. The new colour goes through a `_ColorBag` token mapped to a `_P` entry, the two widths
+through `SIZE`. `_make_checker_texture` is a module-level free function, correctly not a method.
+The round-1 note about the `| None` latch comment is resolved — the comment was rewritten to
+describe the per-field rule as it now is, with no rejected-alternative narration.
+
+## False trails (round 2)
+
+- `_as_canvas_size` accepting `[true, true]`: real, bounded to (16,16) by the clamp, not reachable
+  from a real file.
+- `end_combo` in the wrong window: an artifact of stubbing `begin_combo` to return True in a probe,
+  not a defect. The real draw path is balanced.
+- The checker texture leaking across project switches: it does not — `_init` releases first.
+- The `add_image` UV drifting the cell size at large viewers: it does not, 12.0 px at every size.
+
+## Coverage (round 2)
+
+Read: the whole `3910900` diff for `shaderbox/` end-to-end, plus `tests/test_canvas_fields.py` and
+the changed regions of `tests/test_canvas_presets.py`. Re-read `App.__init__` / `_init` / `release`
+ordering and `ui.py`'s shutdown call for the F5 lifetime questions.
+
+Verified by execution, not by reading: the F1 crash path and malformed-pair degradation, the F2
+early return and the Escape trace, the F3 duplicate scan at four sizes, all four F4 traces plus the
+two-document R2-1 case, the F5 timing at three sizes, the texture's `glo`/filter/repeat and its
+release idempotence, and two mutation runs establishing R2-2. All probe files deleted;
+`git diff --quiet` passes and `git status --short` shows only this review plus two untracked
+wave-B files belonging to another agent
+(`30_wave_b_prose_diet.md`, `reviews/wave_b_pre.md`).
+
+Not covered: the visual reading of the checkerboard and the new border colour (a maintainer
+`make run` call, per `/imgui-ui` §0).

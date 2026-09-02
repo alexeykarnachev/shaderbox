@@ -352,3 +352,148 @@ passed), the two test files (34 passed), the `_canvas_presets` output at three c
 Not covered: the rendered frame. This box has no `xdotool` and the agent cannot drive the app, so
 manual items 1-14 remain the maintainer's — findings 1 and 3 are the two whose symptoms would show
 up there first.
+
+---
+
+# Round 2 (closure) — against `3910900`
+
+Narrow closure round on the fix-up commit `3910900` ("069 W-A fixes: canvas_size tuple, per-field
+buffer, checker"), which addresses round 1's six findings plus the code reviewer's five. Scope: are
+my six closed, does the amended `20_wave_a_canvas_viewer.md` describe the landed code, and does the
+D1 count change. Late-round rule applied: a preference is a false trail, so nothing below is a
+restyling request.
+
+**Overall: PARTIAL.** All six findings CLOSED, each by a line or a grep. The amended spec is right
+about the design and now carries the two things it was missing (the per-field traces, the measured
+checkerboard cost); **three of its code blocks and one Files-touched row still show the pre-fix-up
+form and now contradict the corrected prose a few lines away** — finding 7, the only open item.
+
+## Closure of round 1's findings
+
+| # | Finding | Verdict | What closes it |
+|---|---|---|---|
+| 1 | Video-shape loop bypasses `seen`; the guarding test used a square | **CLOSED, both halves** | `tabs/document.py:71-74`: `if size in seen: continue` / `seen.add(size)` now precede the `presets.append`, matching the square loop at `:62-65` and the texture loop at `:81-84`. `tests/test_canvas_presets.py:202` iterates `((512, 512), (1280, 720))` — a square AND a video shape. Falsification demonstrated: reverting the guard to the `78bd1bf` form makes the test fail on the video case (`assert (1280, 720) not in [(256, 256), …]`), and it passes again with the guard restored |
+| 2 | `SIZE.RES_COMBO_W` dead; the row arithmetic unenforced | **CLOSED** | `grep -rn "RES_COMBO_W" shaderbox/ tests/ scripts/ --include=*.py` → exit 1, no hits. The two widths are now tokens: `theme.py:239-240` (`CANVAS_FIELD_W: int = 56`, `CANVAS_PRESETS_W: int = 64`), read at `tabs/document.py:144`, `:159`, `:191`. The `/imgui-ui § 6` rule ("a token used by exactly one panel still belongs in the token bag") is now satisfied rather than argued around |
+| 3 | Border colour identical to `CHECKER_LIGHT` | **CLOSED** | `theme.py:138` `VIEWER_BORDER = _P["bg_4"]`, used at `ui.py:649`. Measured: `VIEWER_BORDER (0.400, 0.361, 0.329)` against `CHECKER_LIGHT (0.235, 0.220, 0.212)` and `CHECKER_DARK (0.157, 0.157, 0.157)` — equal to neither, and still a chrome grey rather than a foreground tone, so it reads against the `bg_0` panel too. Both halves of #21 now work on a transparent output |
+| 4 | Item 8 claimed seven sites for a grep returning fourteen | **CLOSED** | Spec line 782: "**Fourteen** sites read a canvas texture's size, enumerated from `git grep -n "render_pass.canvas.texture.size" 73e65ac -- shaderbox`", and it says plainly that "an earlier draft said seven, having listed only the ones it went on to discuss". The table has 13 rows covering 14 sites because the `widgets/details.py` row is explicitly labelled "x3" — verified against `git grep … 73e65ac \| wc -l` → 14. Arithmetic checks out; the row count is not a second error |
+| 5 | `pass_graph.py` docstring and `dev_flow.md` map both omit the clamp | **CLOSED, both halves** | `pass_graph.py:13-15` adds "It also owns the canvas-dimension bounds (`MIN_CANVAS_PX` / `MAX_CANVAS_PX`) and the `clamp_canvas_size` both entry points funnel through, beside `TargetConfig.scale`'s bound". `dev_flow.md:218-220` adds "Also the canvas-dimension bounds `MIN_CANVAS_PX` / `MAX_CANVAS_PX` and the `clamp_canvas_size` both entry points funnel through (the Document tab's fields and the copilot's `set_canvas_size`)" to the `pass_graph.py` bullet. Both enumerations are now closed lists that include the clamp |
+| 6 | Clamp-test prose and comment stated a false falsification path | **CLOSED, both halves** | Spec `:792-798` now says the test "goes red -- though NOT at the assertion, which an earlier draft of this section predicted", and names the real mechanism: `set_canvas_size` resizes the output canvas as part of writing the field, so `_moderngl.Error: the framebuffer is not complete` fires inside `_apply_canvas_size` one step before the assertion. `tests/test_document_graph.py:668` is cut to the single true sentence `# Both entry points clamp through the same constant.`, so the comment no longer narrates a design deliberation |
+
+The `step=0` note from round 1's closing paragraph is folded in as well: spec decision 3's `step=0`
+bullet now carries the item-scoped-query reason (with `step > 0` the buttons are the last submitted
+item, so the D11 queries would read a button) alongside the button-count one.
+
+## Re-walk of the amended spec against the landed code
+
+| Amended section | Verdict |
+|---|---|
+| Decision 3, the code block | **describes the code**, line for line: `doc_w, doc_h` unpack and the two half-mirrors (`tabs/document.py:138-142`), `active_w` / `active_h` each read on the line after their own `input_int` (`:150`, `:167`), both flags written at the end of the row (`:171-172`), the two separate commits pairing the pending half with `ui_document.document.canvas_size[…]` re-read at that moment (`:176-187`), the shared buffer re-read (`:188-189`). One divergence, finding 7 |
+| Decision 3, three `App` fields | **true**: `app.py:311-313` (`canvas_size_buf`, `canvas_w_editing`, `canvas_h_editing`), both flags cleared at `app.py:571-572` in `_on_current_document_changed` |
+| Decision 3, Trace A (copilot write during an active W) | **true and pinned**: `tests/test_canvas_fields.py:51` asserts `document.canvas_size == (16, 600)` — the clamped width the user typed, with the copilot's 600 height that the user never touched surviving. This is the exact case round 2 had filed as "inherent, not fixed"; the reversal is sound and the ledger the old decision rejected is still absent |
+| Decision 3, Trace B (tab from W to H) | **true**: each commit pairs its own pending half with the document's live other half, so the second commit carries the width the first just wrote rather than a buffer value |
+| Decision 7, the backdrop block | **describes the code**: `ui.py:591-606`, `add_image` of `checker.glo` with uv1 counting cell pairs (`width / pair`, `height / pair`), `pair = 2.0 * SIZE.CHECKER_TILE`. Call site `ui.py:638` passes `app.checker_texture` |
+| Decision 7, the two timing tables | **honest and load-bearing**: the loop-vs-image table (1.11 / 3.41 / 8.56 ms against 0.005 / 0.002 / 0.002) and the reviewer's independent numbers are both given, and the section says outright that the original "well inside imgui's per-frame budget" claim was asserted without measuring. That is the round-1 spec's error named rather than quietly overwritten |
+| Decision 7, App-owned texture | **true**: `_make_checker_texture()` at `app.py:110-125` (2x2, NEAREST, repeat on both axes, the two `COLOR.CHECKER_*` greys), constructed at `app.py:1131` immediately after `self.preview_canvas = Canvas()` and released at `app.py:1662-1663` beside it — the stated existing pattern, no new lifetime rule |
+| Decision 7, the `VIEWER_BORDER` paragraph | **true**: `bg_3` / `bg_4` reasoning matches `theme.py:136-138`'s comment and the measured values. One divergence, finding 7 |
+| Item 8's table | **true**: 14 sites, all accounted for; the eight previously-missing ones each carry an "Unchanged" verdict naming the fit-the-texture question. Spot-checked `document.py::render`, `document.py::render_media`, `exporters/youtube.py`, `widgets/details.py` x3, `widgets/document_grid.py`, `widgets/pass_list.py` — every verdict matches what the code does |
+| Review history, round 3 | **complete and accurate**: names all nine findings from the two reviews, marks the two that reversed a locked decision (the per-field mirror, the checkerboard), and states for each what the old argument got right and what it got wrong. My six appear with their real content, not softened |
+| Files touched table | **four rows stale**, finding 7 |
+
+### D1 word budget, recounted
+
+The fix-up added **no new user-facing string**. `git show 3910900 -- shaderbox/` filtered to string
+literals yields exactly two lines: `hasattr(self, "checker_texture")` (an attribute name) and
+`VIEWER_BORDER … = _P["bg_4"]` (a palette key). Neither is drawn. So round 1's count stands
+unchanged and still passes:
+
+| String | Site | Words | Budget |
+|---|---|---|---|
+| `"Canvas"` | `tabs/document.py:127` | 1 | label 1-2 — in |
+| `"x"` | `tabs/document.py:156` | 1 | the one new site W-B's AST gate measures (`text_colored` + `COLOR.FG_DIM`); ≤ 4 — in |
+| `f"Canvas: {w}x{h}"` | `tabs/document.py:41` | one clause, the skill § 2 table's own example — in |
+| `"presets"` | `tabs/document.py:193` | 1 | — in |
+
+**D1 budget: PASS**, unchanged.
+
+## Finding 7 (new, low severity) — four spots in the amended spec still show the pre-fix-up form and contradict the corrected prose beside them
+
+**Claim.** The fix-up corrected decision 3's and decision 7's prose but not every code block and
+table row that the same fix touched, so the document now states two different things in two places
+about the same three symbols. This is not a style preference: a reader implementing from a code
+block gets the superseded form, and the spec is the artifact a cold session reads.
+
+**Evidence.**
+
+- `20_wave_a_canvas_viewer.md:207` and `:222` — decision 3's block:
+  `imgui.set_next_item_width(_CANVAS_FIELD_W)`. `:412` — decision 4's block:
+  `imgui.set_next_item_width(_CANVAS_PRESETS_W)`. The module constants those name do not exist:
+  `grep -n "_CANVAS_FIELD_W" shaderbox/tabs/document.py` returns nothing, the code reads
+  `SIZE.CANVAS_FIELD_W` (`:144`, `:159`) and `SIZE.CANVAS_PRESETS_W` (`:191`). The same document
+  says so at `:380-399` ("**Both live in `theme.py` as `SIZE.CANVAS_FIELD_W` and
+  `SIZE.CANVAS_PRESETS_W`** … `SIZE.RES_COMBO_W` is DELETED") and at `:440`.
+- `20_wave_a_canvas_viewer.md:1155` — F7's round-1 resolution still reads "56 + 4 + 7 + 4 + 56 + 8
+  + 64 = 199 against `SIZE.RES_COMBO_W`'s 200", a token this commit deleted. Historical rows may
+  legitimately name what was true then, but this one is the only surviving statement of what the
+  199 is measured against.
+- Decision 7's border code block (the `add_rect` snippet) passes
+  `imgui.color_convert_float4_to_u32(COLOR.BORDER)`, while the paragraph immediately below it is
+  titled "**The border needs its OWN token, `COLOR.VIEWER_BORDER`**" and explains that
+  `COLOR.BORDER` is exactly `CHECKER_LIGHT`. The code at `ui.py:649` uses `COLOR.VIEWER_BORDER`.
+  So the block demonstrates the bug the paragraph beneath it fixes.
+- Files-touched, four rows: `shaderbox/tabs/document.py` still lists "`_CANVAS_FIELD_W` and
+  `_CANVAS_PRESETS_W` constants" as new module constants; `shaderbox/theme.py` lists only
+  "`COLOR.CHECKER_LIGHT` / `COLOR.CHECKER_DARK`; `SIZE.CHECKER_TILE`", omitting `VIEWER_BORDER`,
+  `CANVAS_FIELD_W`, `CANVAS_PRESETS_W` and the `RES_COMBO_W` deletion; `shaderbox/ui.py` describes
+  the rect loop's shape rather than the App-owned texture and does not mention `app.checker_texture`;
+  `shaderbox/document.py` says "**No change**, `set_canvas_size` is the funnel and already correct",
+  which `3910900` falsified — `document.py` gained `_as_canvas_size` and normalization at both
+  writers (`document.py`, +33 lines in the fix-up's stat). `shaderbox/app.py`'s row IS updated (three
+  fields, both flags) but omits `checker_texture` and `_make_checker_texture`. `tests/` rows do not
+  mention `tests/test_canvas_fields.py`, which the fix-up added.
+
+**Fix.** In `20_wave_a_canvas_viewer.md`: replace `_CANVAS_FIELD_W` with `SIZE.CANVAS_FIELD_W` at
+`:207` and `:222` and `_CANVAS_PRESETS_W` with `SIZE.CANVAS_PRESETS_W` at `:412`; change `:1155`'s
+trailing clause to name the row budget rather than `SIZE.RES_COMBO_W`; change decision 7's border
+block to `COLOR.VIEWER_BORDER`; and bring the five Files-touched rows to what landed — `theme.py`
+gains `VIEWER_BORDER` + the two `CANVAS_*` widths + the `RES_COMBO_W` deletion, `ui.py` describes
+the `add_image` backdrop taking `app.checker_texture`, `app.py` gains `checker_texture` /
+`_make_checker_texture`, `document.py` changes from "No change" to the `_as_canvas_size`
+normalization at both writers, and `tests/test_canvas_fields.py` gets a row.
+
+## Round 2 false trails
+
+- The item-8 table having 13 rows for 14 sites: not an error. The `widgets/details.py` row is
+  labelled "x3" and covers `:83`, `:85`, `:106`. Counted, it reconciles exactly.
+- `COLOR.BORDER` still existing in `theme.py:129`: correct — it has other readers and is the
+  general chrome border; only the viewer's canvas outline needed its own token.
+- The `_as_canvas_size` degrade-to-default path (`document.py`) swallowing a malformed pair rather
+  than raising: this is the code reviewer's finding, fixed as they specified, and the docstring
+  gives the reason (a hand-edited file never passes a widget; every other field this loader reads
+  degrades the same way). Nothing for me to add.
+- The checkerboard now being a GL object after decision 7 originally argued against one: the
+  reversal is measured (3.4 ms/frame at 1600x900) and the spec states plainly that the lifetime
+  argument was sound and the cost claim was not. Correctly reasoned, not a finding.
+- Whether `_draw_canvas_backdrop` should now move to `ui_primitives.py` since it takes an explicit
+  texture parameter: still one caller, and open question 2's decision that the pass strip does not
+  get it is unchanged. A preference, not a finding.
+
+## Round 2 coverage statement
+
+Checked each of my six findings against `3910900` by opening the closing line or running the grep,
+never by reading the commit message: the `RES_COMBO_W` grep (exit 1) and the two `SIZE` tokens; the
+three theme colours compared numerically; the two doc enumerations diffed; the item-8 count against
+`git grep … 73e65ac | wc -l`; the clamp-test prose and comment read in place. Finding 1 was
+additionally falsification-tested — the guard reverted to the `78bd1bf` form, the test run red on
+the video case, the tree restored and confirmed clean by `git diff --stat`.
+
+Re-walked the amended spec's decision 3 (block, three fields, both traces), decision 7 (backdrop
+block, both timing tables, texture lifetime, border token), item 8's full table with eight verdicts
+spot-checked against the code, and Review history round 3. Recounted D1 over every string literal
+the fix-up added (two, neither drawn).
+
+`make gates` at `3910900`: **exit 0 captured unpiped, check passed / test passed / smoke passed**.
+`tests/test_canvas_fields.py` + `test_canvas_presets.py` + `test_document_graph.py`: 38 passed. The
+working tree carries no W-A changes.
+
+Not covered, unchanged from round 1: the rendered frame. The checkerboard's new `add_image` path
+and the `VIEWER_BORDER` contrast are the two things manual items 6 and 7 would show first.

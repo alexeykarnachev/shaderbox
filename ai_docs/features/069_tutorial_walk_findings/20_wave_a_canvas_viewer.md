@@ -100,7 +100,9 @@ in the gear (finding #3).
 Every write in this wave goes through one module-level free function in `tabs/document.py`:
 
 ```python
-def _apply_canvas_size(app: App, ui_document: UIDocument, size: tuple[int, int]) -> None:
+def _apply_canvas_size(
+    app: App, ui_document: UIDocument, size: tuple[int, int]
+) -> None:
     w, h = clamp_canvas_size(size)
     if (w, h) == ui_document.document.canvas_size:
         return
@@ -198,13 +200,15 @@ combo's clothes, and the current size is item 0 purely so that picking it is a n
 in the same row position (`imgui.same_line(combo_offset)` after the document-name input):
 
 ```python
+    imgui.push_id(ui_document.id)
+
     doc_w, doc_h = ui_document.document.canvas_size
     if not app.canvas_w_editing:
         app.canvas_size_buf = (doc_w, app.canvas_size_buf[1])
     if not app.canvas_h_editing:
         app.canvas_size_buf = (app.canvas_size_buf[0], doc_h)
 
-    imgui.set_next_item_width(_CANVAS_FIELD_W)
+    imgui.set_next_item_width(float(SIZE.CANVAS_FIELD_W))
     entered_w, buf_w = imgui.input_int(
         "##canvas_w",
         app.canvas_size_buf[0],
@@ -219,7 +223,7 @@ in the same row position (`imgui.same_line(combo_offset)` after the document-nam
     imgui.text_colored(COLOR.FG_DIM, "x")
     imgui.same_line(spacing=float(SPACE.SM))
 
-    imgui.set_next_item_width(_CANVAS_FIELD_W)
+    imgui.set_next_item_width(float(SIZE.CANVAS_FIELD_W))
     entered_h, buf_h = imgui.input_int(
         "##canvas_h",
         app.canvas_size_buf[1],
@@ -233,17 +237,12 @@ in the same row position (`imgui.same_line(combo_offset)` after the document-nam
     app.canvas_w_editing = active_w
     app.canvas_h_editing = active_h
 
-    if committed_w:
-        _apply_canvas_size(
-            app, ui_document, (app.canvas_size_buf[0], ui_document.document.canvas_size[1])
-        )
-    if committed_h:
-        _apply_canvas_size(
-            app, ui_document, (ui_document.document.canvas_size[0], app.canvas_size_buf[1])
-        )
     if committed_w or committed_h:
+        _apply_canvas_size(app, ui_document, app.canvas_size_buf)
         app.canvas_size_buf = ui_document.document.canvas_size
 ```
+
+(the presets dropdown follows, then `imgui.pop_id()` — item 4)
 
 Six properties, each load-bearing:
 
@@ -257,8 +256,17 @@ Six properties, each load-bearing:
 - **ONLY the active field holds a pending value; the other half mirrors the document every
   frame.** Each flag is `imgui.is_item_active()` read on the line after ITS OWN `input_int`, and
   both are written at the END of the row, so the mirror check at the TOP of the next frame reads
-  the previous frame's verdict. On commit, the committing field's pending value is paired with the
-  document's CURRENT other half, re-read at that moment rather than taken from the buffer.
+  the previous frame's verdict. The commit then takes the buffer PAIR as it stands: the mirror
+  has already refreshed the inactive half from the document earlier in the same frame, so the
+  live other half is what the buffer holds.
+
+  An earlier version of this fix ALSO re-read the document's other half at commit time, pairing
+  it with the pending half explicitly. That was redundancy, not a second guarantee: the two
+  values agree by construction, and a post-implementation review demonstrated it by reverting the
+  commit-side half alone and watching the suite stay green. Redundancy the tests cannot
+  distinguish from the real mechanism is worse than none -- it invites a later reader to delete
+  the load-bearing half and keep the decorative one. The mirror carries the property alone, and
+  `tests/test_canvas_fields.py` goes red the moment it is removed.
 
   A whole-buffer version of this rule (one `canvas_size_editing` flag, the mirror gated on it, the
   commit taking both halves from the buffer) shipped in `78bd1bf` and is wrong: it freezes the
@@ -275,18 +283,20 @@ Six properties, each load-bearing:
   | f1 | (1280, 960) | True | (1280, 960) | W focused |
   | f3 | (8, 960) | True | (1280, 960) | the digit is in W's half only |
   | f4 | (8, **600**) | True | (800, 600) | H mirrors the write AT ONCE -- it is not the active field |
-  | f6 | (16, 600) | False | (16, **600**) | commit = (clamped 8, the document's live 600) |
+  | f6 | (16, 600) | False | (16, **600**) | commit = the buffer pair, whose 600 the mirror put there at f4 |
 
   Under the whole-buffer rule f4's buffer stays `(8, 960)` and f6 commits `(16, 960)`, reverting
   the copilot's height. Manual verification item 11 is this trace with no typing.
 
   **Trace B -- the user tabs from W to H.** Leaving W fires its deactivate-after-edit, which
-  commits `(new_w, document_h)` and resizes on that frame; the buffer is re-read from the document,
-  so H shows the live height with the caret now in it; editing H and leaving commits
+  commits `(new_w, document_h)` -- the H half being whatever the mirror wrote this frame, since H
+  was not active until this one -- and resizes on that frame; the buffer is then re-read from the
+  document, so H shows the live height with the caret now in it; editing H and leaving commits
   `(document_w, new_h)`, where `document_w` is the width the first commit just wrote. Two resizes,
   both correct, and neither carries a value from the field the user was not in.
 
-- **A document switch re-arms the mirror, in `App._on_current_document_changed`.** One line:
+- **A document switch re-arms the mirror, in `App._on_current_document_changed`, AND the row's
+  widget ids are scoped per document.** Two halves, both needed. The handler clears both flags:
 
   ```python
           self.canvas_w_editing = False
@@ -294,8 +304,20 @@ Six properties, each load-bearing:
   ```
 
   beside the `editor_was_ever_focused = False` already there. It does not clear the buffer; it
-  clears the flag that would stop the mirror from overwriting it, so the next frame reads the NEW
+  clears the flags that would stop the mirror from overwriting it, so the next frame reads the NEW
   document's size and assigns it before either `input_int` is submitted.
+
+  **The flag reset is not sufficient on its own**, which a post-implementation review demonstrated
+  with two documents: clearing the flag does not DEACTIVATE the imgui item, and `##canvas_w` was
+  the same id whatever document was current, so on the next draw `is_item_active()` read True
+  again and the W half re-latched the outgoing document's half-typed digit -- which then committed
+  to the INCOMING document (a 333x444 document resized to 16x444 by a `5` typed into a different
+  one). So the whole row is wrapped in `imgui.push_id(ui_document.id)` / `imgui.pop_id()`: the new
+  document's fields are different items, and an active id belonging to the old document's field
+  cannot attach to them. Scoping ids by the entity a widget edits is the ordinary imgui answer
+  here, and it is what the editor's tab bar already does with its per-path `##id` keys. The flag
+  reset stays -- it is what makes the mirror re-read on the first frame after the switch, where
+  the id scoping only prevents the re-latch.
 
   That handler is the reset point, not `App.set_current_document_id`, which an earlier draft named:
   that method is a bare two-line forwarder to `self.session.set_current_document_id(id)` with no
@@ -409,7 +431,7 @@ sort key:
 
 ```python
     imgui.same_line(spacing=float(SPACE.MD))
-    imgui.set_next_item_width(_CANVAS_PRESETS_W)
+    imgui.set_next_item_width(float(SIZE.CANVAS_PRESETS_W))
     if imgui.begin_combo(
         "##canvas_presets", "presets", imgui.ComboFlags_.no_arrow_button
     ):
@@ -418,6 +440,8 @@ sort key:
                 _apply_canvas_size(app, ui_document, size)
                 app.canvas_size_buf = ui_document.document.canvas_size
         imgui.end_combo()
+
+    imgui.pop_id()
 ```
 
 `begin_combo` + a `selectable` loop is `tabs/document.py`'s own existing idiom, the uniform sort
@@ -451,9 +475,17 @@ dropdown, opening before the row's first `small_caption` and closing after the d
 
 ```python
     imgui.begin_disabled(app.copilot_turn_active)
-    ...the captions, the document-name input, the two input_ints, the "x", the presets combo...
+    ...the captions, the document-name input...
+    imgui.push_id(ui_document.id)      # item 3: the canvas half only
+    ...the two input_ints, the "x", the presets combo...
+    imgui.pop_id()
     imgui.end_disabled()
 ```
+
+The id scope nests INSIDE the disabled scope and covers only the canvas half of the row. The
+document-name input stays outside it: its widget id is already unique in the panel, and its value
+comes from `ui_document.ui_state.ui_name`, which is re-read every frame rather than buffered, so
+it has no pending state a stale active id could carry across a switch.
 
 Every other document MUTATION in this panel already carries this gate: the pass strip
 (`widgets/pass_list.py::draw`), the script row and document-play toggle
@@ -514,12 +546,15 @@ Three groups, in this order:
 3. **Any bound texture's size**, discovered across ALL passes:
 
 ```python
-    for name, render_pass in ui_document.document.passes.items():
+    for render_pass in ui_document.document.passes.values():
         for uniform_name, value in sorted(render_pass.uniform_values.items()):
             if not isinstance(value, MediaWithTexture) or is_default_image(value):
                 continue
             size = value.texture.size
-            ...
+            if size in seen:
+                continue
+            seen.add(size)
+            presets.append((get_resolution_str(uniform_name, *size), size))
 ```
 
    Three facts make this the right shape:
@@ -666,7 +701,7 @@ imgui frame in `ui.py`.
         imgui.get_window_draw_list().add_rect(
             (img_min.x, img_min.y),
             (img_min.x + image_width, img_min.y + image_height),
-            imgui.color_convert_float4_to_u32(COLOR.BORDER),
+            imgui.color_convert_float4_to_u32(COLOR.VIEWER_BORDER),
             thickness=1.0,
         )
 ```
@@ -745,19 +780,21 @@ only THREE are the former:
 
 | File | What changes |
 |---|---|
-| `shaderbox/pass_graph.py` | `MIN_CANVAS_PX` / `MAX_CANVAS_PX` constants and the `clamp_canvas_size` free function, moved from `copilot/backend.py`. |
+| `shaderbox/pass_graph.py` | `MIN_CANVAS_PX` / `MAX_CANVAS_PX` constants and the `clamp_canvas_size` free function, moved from `copilot/backend.py`; the module docstring's contents list names them. |
 | `shaderbox/copilot/backend.py` | `_MIN_CANVAS_PX` / `_MAX_CANVAS_PX` deleted; `set_canvas_size` calls `clamp_canvas_size`; `_copilot_document_working_view` reports `document.canvas_size`. |
-| `shaderbox/tabs/document.py` | The Resolution combo and its whole build block (`standard_resolutions`, `current_size`, the `get_active_uniforms` sampler scan, `resolution_items` / `resolution_sizes`, `resolution_label`) are replaced by the `W x H` `input_int` pair plus the presets dropdown, inside a `begin_disabled(app.copilot_turn_active)` scope; new module-level `_apply_canvas_size` and `_canvas_presets` free functions, `_SQUARE_PRESETS`, `_CANVAS_FIELD_W` and `_CANVAS_PRESETS_W` constants. |
+| `shaderbox/tabs/document.py` | The Resolution combo and its whole build block (`standard_resolutions`, `current_size`, the `get_active_uniforms` sampler scan, `resolution_items` / `resolution_sizes`, `resolution_label`) are replaced by the `W x H` `input_int` pair plus the presets dropdown, inside a `begin_disabled(app.copilot_turn_active)` scope and an `imgui.push_id(ui_document.id)` / `pop_id` pair; new module-level `_apply_canvas_size` and `_canvas_presets` free functions and a `_SQUARE_PRESETS` constant. The two row widths are `SIZE` tokens, not module constants. |
 | `shaderbox/app.py` | Three fields: `canvas_size_buf: tuple[int, int] = (0, 0)`, `canvas_w_editing: bool = False` and `canvas_h_editing: bool = False`; `_on_current_document_changed` clears both flags so a keyboard document switch re-arms the mirror (§ Design decisions item 3). Plus `checker_texture` and its `_make_checker_texture()` factory, created beside `preview_canvas` and released with it (item 7). |
 | `shaderbox/popups/pass_settings.py` | `_draw_target` wraps the scale slider in `begin_disabled(is_output)` / `end_disabled`. No string changes. |
-| `shaderbox/ui.py` | `_draw_canvas_backdrop` free function; `_draw_document_image` calls it before `image_with_bg` and draws the 1px border after. |
-| `shaderbox/theme.py` | `COLOR.CHECKER_LIGHT` / `COLOR.CHECKER_DARK`; `SIZE.CHECKER_TILE`. |
+| `shaderbox/ui.py` | `_draw_canvas_backdrop` free function, taking the checker texture and drawing ONE repeating `add_image`; `_draw_document_image` calls it with `app.checker_texture` before `image_with_bg` and draws the 1px `COLOR.VIEWER_BORDER` rect after. |
+| `shaderbox/theme.py` | `COLOR.CHECKER_LIGHT` / `COLOR.CHECKER_DARK` / `COLOR.VIEWER_BORDER`; `SIZE.CHECKER_TILE`, `SIZE.CANVAS_FIELD_W`, `SIZE.CANVAS_PRESETS_W`. `SIZE.RES_COMBO_W` is DELETED -- the combo was its only reader. |
 | `shaderbox/ui_models.py` | `UIDocument.save` persists `document.canvas_size` rather than the output canvas's texture size. |
-| `shaderbox/document.py` | No change, `set_canvas_size` is the funnel and already correct; its docstring already describes the bug this wave removes from the UI path. Listed so a reviewer knows it was checked. |
+| `shaderbox/document.py` | `_as_canvas_size` normalizes a loaded `canvas_size` to a tuple (or None for a malformed pair) at the field's only two writers, `Document.__init__` and `set_canvas_size`; `load_from_dir` passes the normalized field down to each `Pass` instead of re-reading the raw metadata. `set_canvas_size`'s own funnel logic is unchanged. |
 | `shaderbox/util.py` | No change, `get_resolution_str` keeps its signature and gains a second caller in `_canvas_presets`. Listed for the same reason. |
-| `tests/test_document_graph.py` | The UI-funnel test (below). |
-| `tests/test_canvas_presets.py` | New: the preset-composition and clamp tests. |
+| `tests/test_document_graph.py` | The three UI-funnel tests (below). |
+| `tests/test_canvas_presets.py` | New: the preset-composition and clamp tests, including two built through the real `load_document_from_dir` path. |
+| `tests/test_canvas_fields.py` | New: the `W x H` pair driven through real imgui frames -- the per-field mirror, the pending digits, and the document switch. |
 | `tests/test_document_ops.py` | No change, `test_set_canvas_size_applies_and_clamps` exercises the moved clamp through the public method. Listed for the same reason. |
+| `ai_docs/dev_flow.md` | The `pass_graph.py` module-map bullet names the clamp that moved in. |
 
 ## Tests
 
@@ -911,7 +948,7 @@ to `gl.texture`, which raises `TypeError: argument 1 must be sequence of length 
 `Document.__init__` -- an app that will not open the document, over a hand edit. Fail-soft per key
 is the repo's posture for every other loaded field.
 
-### `tests/test_canvas_fields.py` (two, through a real imgui frame)
+### `tests/test_canvas_fields.py` (three, through a real imgui frame)
 
 `test_a_write_during_an_active_field_survives_the_commit` focuses W, types a digit, lands
 `set_canvas_size((800, 600))` while W is still active, then moves focus off it, and asserts the
@@ -920,15 +957,27 @@ intact on the axis they did not. `test_the_active_field_keeps_its_own_pending_di
 same frames with no external write and asserts `(16, 960)`, so the mirror is shown not to steal
 the digits it is being trusted not to steal.
 
-**Falsifier:** the whole-buffer rule that shipped in `78bd1bf` (one editing flag, the mirror gated
-on it, the commit taking both halves from the buffer) makes the first assert `(16, 960)` -- the
-copilot's height reverted. Both drive `tabs/document.py::draw` in a headless imgui frame per
-`/imgui-ui § 0`, the rig `tests/test_lib_files.py` established; focus index 1, because the row's
-first submitted item is the document-name input.
+**Falsifier:** the whole-buffer rule that shipped in `78bd1bf` (one editing flag gating a mirror
+of the whole pair) makes the first assert `(16, 960)` -- the copilot's height reverted. This is the
+falsifier that decides the design, and it is why the commit-side re-read was DROPPED rather than
+kept: with the mirror per field, reverting only the commit-side half left the suite green, so the
+redundancy could not be told apart from the mechanism.
 
-### The disabled slider, the pair's commit, and the checkerboard: manual
+`test_a_document_switch_mid_edit_does_not_resize_the_new_document` seeds a second document at
+333x444, types `5` into the first document's W, switches at f4, and clicks away at f6; it asserts
+BOTH documents keep their sizes. **Falsifier:** remove the `push_id(ui_document.id)` scope and the
+new document is resized to `16x444` by a digit typed into a different one, while the flag reset in
+`_on_current_document_changed` stays in place -- which is the point, since the reset alone does not
+deactivate the item.
 
-Three things this wave changes have no headless test, each for a stated reason:
+All three drive `tabs/document.py::draw` in a headless imgui frame per `/imgui-ui § 0`, the rig
+`tests/test_lib_files.py` established; focus index 1, because the row's first submitted item is the
+document-name input, and each resets imgui's focus first, since one context serves the whole test
+session and a leftover active field would commit its stale half on frame 0.
+
+### The disabled slider and the checkerboard: manual
+
+Two things this wave changes have no headless test, each for a stated reason:
 
 - **`begin_disabled`'s effect on the slider.** imgui reports a disabled widget's `changed` as
   `False` inside a real frame, but asserting that headlessly means driving a slider through a
@@ -936,12 +985,16 @@ Three things this wave changes have no headless test, each for a stated reason:
   headless. What IS pinned is the invariant underneath it (the renderer ignoring the output's
   scale) by the existing `tests/test_document_graph.py` assertion that the output keeps full size
   whatever its scale says. Manual verification item 4.
-- **Commit-on-deactivate for the pair.** `is_item_deactivated_after_edit()` needs a real focus
-  transition across frames; the same reason W-C states for `_draw_name`. What is pinned headlessly
-  is everything the branch calls: `_apply_canvas_size`'s funnel, clamp, and no-op paths.
-  Manual verification items 1 and 2.
 - **The checkerboard and border.** Pixel output the agent cannot screenshot on this box
   (`/imgui-ui § 9`). Manual verification item 6.
+
+**Commit-on-deactivate for the pair was on this list and no longer is.** The drafted reason -- that
+`is_item_deactivated_after_edit()` needs a real focus transition across frames -- is true, and it
+argued for leaving the whole commit path to manual items 1 and 2. It turned out to be reachable:
+`tests/test_canvas_fields.py` drives that transition in a headless frame, and doing so is what
+caught the two defects a code review then filed (the stale inactive half, the document switch
+carrying a digit across). The rig was already in the repo, in `tests/test_lib_files.py`, for the
+same class of inline input. Manual items 1 and 2 stay as the mouse-driven check.
 
 ## Manual verification
 
@@ -1023,10 +1076,13 @@ the checkerboard"), expanded to one falsifiable step per item.
 13. **A keyboard document switch does not carry a half-typed width across.** Click into the width
     field, type `10` without leaving it, then press Ctrl+N. Expect: the new document appears and its
     canvas fields show ITS OWN size, not `10` and the previous document's height. Fails if the stale
-    pair is displayed, which is the case `_on_current_document_changed`'s
-    editing-flag reset exists for: Ctrl+N is a GLOBAL Ctrl-chord that imgui routes
-    through an active text input, so the mouse-only reasoning that a switch always deactivates the
-    field does not hold.
+    pair is displayed, which is the case the editing-flag reset in
+    `_on_current_document_changed` AND the row's per-document `push_id` both exist for: Ctrl+N is a
+    GLOBAL Ctrl-chord that imgui routes through an active text input, so the mouse-only reasoning
+    that a switch always deactivates the field does not hold -- and the flag reset alone does not
+    deactivate the item, which is why the ids are scoped too. Pinned by
+    `test_a_document_switch_mid_edit_does_not_resize_the_new_document`; this manual step is the
+    Ctrl+N path specifically, which the test drives through `set_current_document_id` instead.
 
 14. **A half-typed number is not stolen by the mirror.** Click into the width field and type `12`
     without leaving it, then wait several seconds. Expect: the field keeps showing `12` rather than
@@ -1152,7 +1208,7 @@ here because several chose between alternatives the reviewer left open:
 | F4 | *(required change)* The document-name input's copilot gate was deferred to "whichever wave next edits that input", which is nowhere. | Lands in W-A. One `begin_disabled(app.copilot_turn_active)` pair now wraps the whole first row; open question 6 deleted, manual item 12 extended, premise row corrected. |
 | F5 | The notification fires on a click-away that changed nothing unless the early return is kept for that reason. | Folded into F2's fix. |
 | F6 | `test_the_video_shapes_come_from_the_shape_table` asserted labels and membership only, so the single-homing half of its falsifier did not fire. | Added the dims assertion against `resolve_dims(shape_to_preset(...), (1, 1))`, which also turns the spec's source-size-independence claim into an assertion. |
-| F7 | `_CANVAS_PRESETS_W` had no value and the row's widths were not shown to fit. | Both numbers fixed with the sum shown: the field width gives, 62 to 56, so 56 + 4 + 7 + 4 + 56 + 8 + 64 = 199 against `SIZE.RES_COMBO_W`'s 200. |
+| F7 | `_CANVAS_PRESETS_W` had no value and the row's widths were not shown to fit. | Both numbers fixed with the sum shown: the field width gives, 62 to 56, so 56 + 4 + 7 + 4 + 56 + 8 + 64 = 199, which at the time was measured against `SIZE.RES_COMBO_W`'s 200. (Round 3 deleted that token with the combo that read it and promoted the two widths to `SIZE.CANVAS_FIELD_W` / `SIZE.CANVAS_PRESETS_W`; decision 3 carries the current statement of what the 199 means.) |
 | F8 | The copilot-turn gate closes none of the five findings and was not labelled as scope. | Named in § Findings folded as a consistency fix the wave took on, alongside the two same-class-as-#2 changes. |
 | F9 | Two counts wrong: fourteen `begin_disabled` sites (really 20) and `app.py:1012` (really `:1043`). | Both corrected in the prose and the premise rows. |
 | F10 | W-C landed `/imgui-ui § 7.5` as the OR of `enter_returns_true` and the deactivate query; W-A's draft took the opposite default without naming the divergence. | Adopted the OR verbatim rather than explaining a divergence. One rule for every inline input; open question 1 deleted. |
@@ -1234,6 +1290,32 @@ now `COLOR.VIEWER_BORDER`; item 8's site count (seven, really fourteen); the cla
 falsification path (the framebuffer error fires inside `_apply_canvas_size`, not at the assertion);
 and `pass_graph.py`'s docstring plus `dev_flow.md`'s module map, neither of which mentioned the
 clamp that moved in.
+
+**Round 4, the two closure rounds.** Both reviewers re-ran their findings against `3910900` and
+closed every one; each left one residual, and both are fixed here.
+
+- **A document switch mid-edit resized the INCOMING document (code review, R2-1).** The narrower
+  survivor of F4: clearing the editing flags does not deactivate the imgui ITEM, and `##canvas_w`
+  was the same id whatever document was current, so `is_item_active()` re-latched the outgoing
+  document's half-typed digit onto the new document's field and committed it there -- a 333x444
+  document resized to 16x444 by a `5` typed into another one. The row is now wrapped in
+  `imgui.push_id(ui_document.id)` / `pop_id`, so the two documents' fields are different items.
+  The reviewer proposed forcing a deactivation (`set_keyboard_focus_here(-1)` or clearing the
+  active id); scoping the ids is the ordinary imgui answer and does not fight the focus system for
+  it. The flag reset stays: it is what re-arms the mirror on the first frame after the switch.
+- **The commit-side re-read of the other half was unfalsifiable redundancy (code review, R2-2).**
+  Reverting it alone left the suite green, because the per-field mirror already refreshed the
+  inactive half from the document earlier in the SAME frame -- the two values agree by
+  construction. It is deleted rather than pinned with a new test: there is no state in which they
+  can disagree, so any test would have had to manufacture one. The mirror carries the property
+  alone, and removing it turns `tests/test_canvas_fields.py` red, which is the check that says so.
+- **Six spots in this document still showed the pre-round-3 form (spec fidelity, finding 7).** The
+  round-3 fix-up corrected prose but not every code block and table row it touched, so the spec
+  contradicted itself about `_CANVAS_FIELD_W` / `_CANVAS_PRESETS_W` (three blocks), `COLOR.BORDER`
+  (decision 7's border block, which demonstrated the bug the paragraph beneath it fixes),
+  `SIZE.RES_COMBO_W` (F7's row, the only surviving statement of what the 199 measures against), and
+  five Files-touched rows -- `document.py` still marked "No change" after gaining `_as_canvas_size`.
+  Every block, row and trace in this document has now been walked against the landed code.
 
 **Post-implementation correction: `_canvas_presets` lost its `app` parameter.** Both rounds carried
 the signature `(app: App, ui_document: UIDocument)`, and implementation showed the body never reads
