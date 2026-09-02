@@ -19,16 +19,17 @@ _RESOURCES = Path(__file__).resolve().parent.parent / "shaderbox" / "resources"
 
 # The characters an editor-bound file keeps tripping over: a writer's quotes and dashes
 # arriving through copy-paste. Mapped to the ASCII the repo uses instead, so a failure names
-# the fix rather than only the offence.
+# the fix rather than only the offence. Keyed by ESCAPE, not by the literal glyph: ruff's
+# RUF001 rejects an ambiguous character in a string and these are exactly those characters.
 _ASCII_FOR = {
-    "—": "--",
-    "–": "-",
-    "…": "...",
-    "‘": "'",
-    "’": "'",
-    "“": '"',
-    "”": '"',
-    "•": "*",
+    "\u2014": "--",  # em dash
+    "\u2013": "-",  # en dash
+    "\u2026": "...",  # ellipsis
+    "\u2018": "'",  # left single quote
+    "\u2019": "'",  # right single quote
+    "\u201c": '"',  # left double quote
+    "\u201d": '"',  # right double quote
+    "\u2022": "*",  # bullet
 }
 
 
@@ -54,11 +55,15 @@ def test_the_shipped_editor_files_are_ascii() -> None:
         if found:
             bad[str(path.relative_to(_RESOURCES))] = found
     hint = {c: _ASCII_FOR[c] for v in bad.values() for c in v}
-    assert not bad, f"typographic punctuation in shipped editor text: {bad}; use: {hint}"
+    assert not bad, (
+        f"typographic punctuation in shipped editor text: {bad}; use: {hint}"
+    )
 
 
 def test_the_script_stub_is_ascii() -> None:
     # The stub is generated per document, so it never passes through the file check above.
     found = _offenders(script_stub_for([]))
     hint = {c: _ASCII_FOR[c] for c in found}
-    assert not found, f"typographic punctuation in the script stub: {found}; use: {hint}"
+    assert not found, (
+        f"typographic punctuation in the script stub: {found}; use: {hint}"
+    )
