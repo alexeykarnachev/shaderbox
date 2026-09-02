@@ -453,3 +453,283 @@ vec2+float uniform set, to read the emitted import line; a headless import of `_
 Not covered: the six `img/*.png` renders (§ Out of scope, and the passes they picture are unchanged
 except `jfa`, whose picture at 11 runs is identical to 9 because runs 9 and 10 copy forward);
 `oracle.py`'s numbers; the CSS the body file gains; W-B's landed prose edits beyond the gear layout.
+
+---
+
+# Round 2 (closure)
+
+Narrow closure round against the folded `80_wave_h_tutorial.md` (1102 lines, up from 948), read at
+the working tree over `91a687b`. Scope: did each of F1..F10 close, with the new text cited. The
+main-session ruling on F6 (`iterations` 12) is a CONSTRAINT here, not a question, and is checked for
+arithmetic and for propagation rather than re-argued.
+
+## Overall: **PASS**
+
+Ten of ten findings closed, one with a narrow residual (F8) that is a defect in the folded predicate
+rather than a reopening of the finding. No fold introduced a new inconsistency, and the F6 ruling
+propagated to all fourteen sites that carry the number.
+
+| Finding | Verdict |
+|---|---|
+| F1 four unrowed bookend sections | **CLOSED** |
+| F2 `F6` taught where it is inert | **CLOSED** |
+| F3 interlude fragments naming `u_scene` | **CLOSED** |
+| F4 card row order vs the gear | **CLOSED** |
+| F5 unreachable degenerate rationale | **CLOSED** |
+| F6 count short of the reachable ceiling | **CLOSED** (ruling verified: 12 covers 16..4096; 512 carries exactly three copy-forward runs) |
+| F7 `paint.frag.glsl` header spliced against itself | **CLOSED** |
+| F8 script-mention predicate | **CLOSED with a residual** — the predicate accepts every mandated descriptive sentence and rejects the falsifier, but `\badd` matches `address*`, which the spec's own D3 teaching sentence uses |
+| F9 the non-existent second CORRECTION | **CLOSED** |
+| F10 manual step 10's chords | **CLOSED** |
+
+---
+
+## Per-finding closure
+
+### F1 — CLOSED
+
+§ The prose table gains `### The bookends` (`:1008-1025`) with seven rows. Each of the four sections
+I named now has text:
+
+- the lede's "**Paint light and walls with the mouse**" → "Build a scene of lights and walls, then
+  paint into it with the mouse in step 1", with the reason recorded ("it becomes true only for a
+  reader who reaches step 1's paint subsection, so the lede says where");
+- the ToC → six numbered entries **reusing each step's own subtitle verbatim** so the two cannot
+  drift, plus the four interludes under "Along the way". The row also names why item 1's old text was
+  wrong twice over;
+- "What you built"'s `jfa` **Runs** cell `9` → `12`; its `paint` **Reads** cell `itself` → `nothing`,
+  with the row explicitly identifying it as #27/#31 drift "surviving in the summary table because
+  nothing generated it";
+- "19 draws a frame" → "**22 draws a frame**". Recomputed: 1+1+12+1+6+1 = **22**. Correct under the
+  12 ruling;
+- the "Things to try" resize bullet is replaced by "Raise `jfa`'s runs above 12 and nothing changes:
+  the extra runs copy their input forward. Lower it to 4 and the field goes blocky at range", which
+  is the same experiment stated in terms the wave makes true, and the row names the contradiction
+  with Manual verification step 5 that forced it;
+- a NEW "Things to try" bullet carries the persistent-canvas suggestion, which is what F2's fold
+  defers to. The two folds are wired to each other rather than left dangling.
+
+The section closes by naming the three bullets it did NOT change and asserting they stay correct,
+which is the completeness claim the original table lacked. `### The table of contents` (`:1026-1028`)
+now reads "Covered by the bookends table above" rather than carrying a second half-specification.
+
+### F2 — CLOSED
+
+Three coordinated edits.
+
+§ decision 6's part 3 (`:331-332`) drops `F6` from the three-fact result: "LMB paints, hover does
+not, and the stroke is a capsule rather than blobs. There is nothing to clear, and § The paint script
+says why."
+
+§ The paint script (`:578-596`) replaces the old sentence with the block quote I proposed, and then
+adds a paragraph headed "**This corrects the spec's own first draft**" that states the mechanism:
+`reset_feedback` releases `_feedback`, `_feedback` is filled only for a self-sourced input, `paint`
+at `iterations: 1` has none, and W-G § 11 draws the button only when `plan_passes(graph)[0].feedback`
+is non-empty. It ends "Teaching a chord that does nothing, beside a button that is not there, is the
+class of defect this whole wave exists to remove", which files the reasoning at the right altitude.
+
+Manual verification loses the claim at step 3 (`:786-791`, now ending "releasing the button leaves
+the analytic scene with no brush residue") and gains a **new step 6** (`:802-806`) that checks `F6`
+where it is live: "With `jfa` in the document, the `Clear` ghost button is drawn at the preview's
+top-left and `F6` fires it; the flood field blanks for one frame and rebuilds", with the falsifier
+naming W-G's `has_feedback` gate reading `_feedback` rather than the graph. The step states why it
+sits there and not at step 3. That is a stronger close than I asked for: it converts a false check
+into a real one for W-G's own gate.
+
+### F3 — CLOSED
+
+Two prose-table rows plus a test.
+
+The naive-GI interlude row (`:947`) renames `vec4 light = texture(u_scene, vs_uv);` and
+`vec4 hit = texture(u_scene, uv);` to `u_paint`, with the reason ("they carry no `{{CODE:}}` marker
+and the generator cannot reach them"). The sphere-marching row (`:985`) renames the loop fragment's
+`texture(u_scene, uv)` and adds the sharper point: "the new interlude text tells the reader to
+compare the fragment against `cascade.frag.glsl` by name, so a reader who does finds the illustration
+and the shipped file disagreeing on the uniform."
+
+`test_no_hand_written_fragment_names_an_absent_uniform` (`:672-683`) collects every `<pre><code>`
+block that is not a `{{CODE:}}` marker, extracts `u_[a-z_]+` tokens, and asserts each appears in some
+shipped `passes/*.frag.glsl` or is one of the three brush uniforms. The allowlist is written into the
+test with its reason stated ("those three uniforms exist only in the reader's document and never in a
+shipped file"), so the exception is enumerated rather than discovered. Falsifier is exact: leave
+`u_scene` after W-D's rename and it goes red naming the token.
+
+### F4 — CLOSED, and propagated to every dependent site
+
+§ decision 2's row table (`:168-176`) is now name · reads · **format · size** · smooth · repeat ·
+runs, and the spec explains rather than merely asserts: "**Format sits above size** because that is
+the order `popups/pass_settings.py` draws them in under the `Draws into` separator" (`:178-180`),
+which matches `pass_settings.py:165` (`format`) preceding `:177` (`size`).
+
+The label question I raised is answered in writing (`:182-186`): "The card's `smooth` and `repeat`
+labels are the gear's CHECKBOX captions, not its label column's `sampling` and `edges` … written
+down here so an implementer told to 'match the gear' does not pick the other one."
+
+Propagation checked at all three dependent sites: the worked `jfa` card's text rendering and its
+HTML both put `format` before `size` (`:485-508`); the five-card summary table's column order is
+`reads | format | size | smooth | repeat | runs` (`:516-523`) and its per-row values are unchanged
+and still correct against `graph.json`; and
+`test_a_card_states_every_row_and_marks_the_defaults` (`:642-647`) now asserts "the seven row labels
+appear in the gear's order (name, reads, format, size, smooth, repeat, runs)". A fold that changed
+the design and not the test would have left the test asserting the old order.
+
+### F5 — CLOSED
+
+§ decision 8's second bullet (`:415-421`) drops the `max side <= 2` claim entirely and substitutes
+the totality argument: "The `u_pass_iteration < 0.5` branch is not reachable at any canvas the clamp
+permits (`MIN_CANVAS_PX` is 16, so run 0's offset is at least 8); it is written because the early
+return must be total." Re-verified: `MIN_CANVAS_PX` is 16 (`pass_graph.py:51`) and run 0's offset at
+16 is `exp2(ceil(log2(16)) - 1) = 8`. The branch stays, which is what I asked for; only the false
+reason went.
+
+### F6 — CLOSED. Ruling arithmetic verified independently.
+
+I recomputed rather than accepting the drafter's numbers.
+
+**Coverage.** For every integer side from 16 to 4096 inclusive, `ceil(log2(side)) <= 12`. The set of
+canvases needing more than 12 runs is **empty**. Spot values: `ceil(log2(16))=4`, `ceil(log2(17))=5`,
+`ceil(log2(512))=9`, `ceil(log2(1024))=10`, `ceil(log2(2048))=11`, `ceil(log2(4095))=12`,
+`ceil(log2(4096))=12`. So 12 is exactly `ceil(log2(MAX_CANVAS_PX))` and not one more than needed.
+
+**The surplus at 512.** Offsets `2^(9-1-i)` for i in 0..11: 256, 128, 64, 32, 16, 8, 4, 2, 1, then
+0.5, 0.25, 0.125. Runs 0-8 are real (offset >= 1); runs 9, 10 and 11 take the `offset < 1.0` branch.
+**Exactly three copy-forward runs**, as § decision 8 (`:441-444`) and the ruling (`:1093-1095`) both
+state. At 4096 the offsets are 2048 down to 1 with **zero** surplus, also as stated.
+
+**Propagation.** The number moved everywhere it needed to, checked site by site: § decision 8's
+heading and body (`:388`, `:430-444`); the worked card's text and HTML and the summary table
+(`:481`, `:490`, `:504`, `:519`); § Files touched's `graph.json` and `document.json` rows (`:606`,
+`:607`); the prose table's `jfa` step lead-in (`:964`, "The card says **12**, which is
+`ceil(log2(4096))`"); the `jfa.frag.glsl` header rows (`:1034-1035`); the `document.json` description
+row (`:1037`); the 068 D3 record row (`:1041`); "What you built"'s runs cell and draw count
+(`:1018`, `:1020`); Manual verification step 5 (`:797`). Every surviving `11` in the file is a
+deliberate reference to the parent's superseded number (`:432`, `:1076`, `:1082`, `:1084`, `:1089`)
+or the test falsifier that pins the deviation (`:757`).
+
+**The resize paragraph.** The prose table row (`:970`) now reads "**Resize freely.** The offset
+formula follows the canvas, so the run count covers every canvas the app can make: 12 runs are
+`ceil(log2(4096))`, and 4096 is the largest side the width and height fields accept. Raise it only if
+you raise that limit." That is the ruling's wording, and the row records that the old paragraph's
+premise is gone rather than merely restated.
+
+**The test.** `test_the_jfa_run_count_covers_every_reachable_canvas` (`:738-761`) asserts against
+both bounds with both imported. Falsifier claims re-derived: 9 fails both (9 < 11 and 9 < 12); **11
+passes the first and fails the second** naming `MAX_CANVAS_PX`, which is the gap F6 found; 12 passes
+both; raising `MAX_CANVAS_PX` to 8192 makes 12 fail the second. Every falsifier the spec claims is
+true. Keeping the preset assertion alongside the clamp assertion is currently redundant (11 <= 12),
+and the spec says so and justifies it: "the two bounds can move independently". That is a reason, not
+a preference, so it stands.
+
+The deviation is recorded where a future reader will look: § Review history's `### The F6 ruling`
+(`:1082-1100`) states the parent's number, the reason it was derived from the wrong set, the cost in
+surplus draws, and the two consequences. § decision 8 also flags it inline ("**This is a deliberate
+deviation from the parent's 11**"). Nothing in the tree now claims 11.
+
+### F7 — CLOSED
+
+§ The prose table's `### Non-tutorial files` gains a `paint.frag.glsl` header row (`:1033`) with old
+and new text. The removed clause is exactly the one I quoted ("The engine's script engine binds to a
+document's **OUTPUT** pass, so a script could not reach a brush uniform declared here anyway -- and"),
+and the replacement keeps the analytic rationale ("so it carries no state and the shipped example
+needs no script: a scene that redraws itself every frame is what lets the two lights drift and the
+shadows follow"). The row states the splice consequence that made it urgent.
+
+§ Files touched gains the file (`:605`) with the scope pinned: "Header comment only … **No GLSL
+changes.**", and the "Not touched" list (`:614-615`) is amended to "other than `jfa` and `paint`'s
+header … no other shader's CODE changes under this wave". The exclusion list and the inclusion list
+now agree, which they did not before.
+
+### F8 — CLOSED, with one residual
+
+**Closed.** `test_every_script_instruction_carries_the_chord` (`:685-716`) enumerates
+`_INSTRUCTION_VERBS = ("add", "create", "make", "open", "write", "hit", "press")` in the spec, and
+asserts only on sentences carrying both `script` and a verb from that set. The spec states why the
+set is enumerated here ("a checker whose domain is chosen while making it pass is the failure class
+the parent's #20 default exists to prevent. Widening the set is a spec edit") and names the
+compatibility case explicitly.
+
+**I ran the predicate** over every script-naming sentence the folded spec mandates for the body:
+
+| Sentence | Asserted on | Result |
+|---|---|---|
+| "The shipped example draws its scene analytically and ships no script, so an exported video is the same every time." (§ decision 7, `:363-364`) | no | correctly exempt |
+| "There is nothing to clear: `paint` redraws from scratch every frame …" (§ The paint script, `:583`) | no (no "script" token) | exempt |
+| "`F6` (Clear canvas) and its `Clear` button appear only once a pass reads itself …" (`:584-586`) | no | exempt |
+| "`Alt+R` creates and opens `scripts/script.py`; the complete script is pasted over the stub." (§ decision 6, `:329-330`) | yes (`create`, `open`) | **passes** — carries `Alt+R` |
+| "a document can carry one Python script that drives its uniforms; `Alt+R` creates and opens it …" (`help_content.py` row, `:1038`) | yes (`create`, `open`) | **passes** — carries `Alt+R` |
+| "press Ctrl+R and the script is created" (the spec's own falsifier) | yes (`press`, `create`) | **goes RED**, as claimed |
+
+So the predicate accepts every mandated descriptive sentence, passes both real instructions, and
+rejects the falsifier. That is the closure.
+
+**Residual (new, narrow).** `\badd` matches `address`, `addresses`, `addressing`, `addressed`. The
+spec's own D3 teaching point (`:556-558`) is "the script **addresses** a pass by NAME, so it drives
+`paint` while the reader is looking at `composite`", and it says "The tutorial says so explicitly",
+so a near-identical sentence lands in the body. It contains `script`, matches `\badd`, and carries no
+chord, so it goes red on a sentence that is not an instruction. `pressure` (matching `press`) and
+`openly` (matching `open`) are the same shape but do not appear in any mandated text. This is a
+defect in the predicate the fold introduced, not a reopening of F8: the enumerated-verb design is
+right and the fix is one line.
+
+*Fix as a sentence the spec author can paste:* "The verb match is `\b<verb>\b` (both boundaries), not
+`\b<verb>`, so `addresses` in the D3 teaching sentence and `pressure` are not read as `add` and
+`press`; the inflections that ARE instructions (`creates`, `opens`, `makes`) are matched by adding
+them to the set explicitly rather than by a prefix match."
+
+### F9 — CLOSED
+
+The two Step 5 rows are merged into one (`:997`). It names the callout in the singular ("the SINGLE
+`CORRECTION` warn block"), carries the lede sentence, gives the replacement lede text I proposed, and
+adds the diagnosis: "**The tutorial has exactly ONE `CORRECTION` callout, not two** — the word
+appears twice, once in this warn block and once in the lede sentence claiming there are two of them,
+so the lede is wrong in the current tutorial and this row is what fixes it." Re-verified against the
+body: `grep -c CORRECTION` is 2, at `:80` (lede) and `:524` (the one block).
+
+### F10 — CLOSED
+
+Manual verification step 11 (`:825-830`) lists only `Ctrl+Shift+N`, `Alt+P`, `Alt+A`, `Alt+R`, adds
+"The list is derived from the body at walk time, not typed here", and states why `F5` and `F6` are
+absent, naming `TOGGLE_DOCUMENT_PLAY`'s real label ("Play/stop document script, not a document
+transport") and pointing at F2 for `F6`.
+
+`Alt+A` is no longer an orphan: the Step 2 prose row (`:954`) now reads "Add a pass called `seed`
+(`Alt+A`)" with the rule stated — "**This is the one step that names the chord**; steps 3 to 6 read
+'Add a pass called `x`, as before'". So the chord the manual step walks is quoted in the body, which
+is what `test_the_tutorial_names_no_chord_the_command_table_does_not_have` needs to have something to
+check. Verified against `commands.py:176`: `ADD_PASS` is `_chord(K.a, K.mod_alt)`.
+
+## False trails this round (a preference is a false trail)
+
+- The `test_the_jfa_run_count_covers_every_reachable_canvas` preset assertion being redundant while
+  `MAX_CANVAS_PX` > `max(_SQUARE_PRESETS)`: true today, and the spec gives the reason it stays (the
+  bounds move independently). Not a finding.
+- Step 5's manual check now asking the maintainer to type 4096 into the canvas fields: slower to
+  walk than the preset-only version, but it is the check the 12 ruling earns. Not a finding.
+- Three surplus full-screen draws at 512 rather than two: the cost the ruling accepts, stated in two
+  places. Not a finding.
+- The card's `format`/`size` transposition being invisible to a reader who fills the gear by name
+  rather than by position: possible, and irrelevant — the spec's stated claim is top-to-bottom
+  reading, and the fold now makes that claim true.
+- § decision 6 part 1 still saying the reader "adds three lines to `paint.frag.glsl`" while F7 edits
+  that file's header: different halves of the file, no collision. The reader edits their own copy;
+  F7 edits the shipped one.
+
+## Coverage statement, round 2
+
+Read in full: the folded `80_wave_h_tutorial.md` §§ Dependencies, Findings folded, Out of scope,
+Design decisions 1-10, The generated card, The paint script, Files touched, Tests (all ten), Manual
+verification (all twelve steps), Verified / corrected premises, The prose table (all thirteen
+subsections), Open questions, Review history including `### The F6 ruling`.
+
+Executed rather than reasoned: coverage of `ceil(log2(side)) <= 12` over every integer side from 16
+to 4096; the offset table at 16, 17, 512, 1024, 2048, 4095, 4096 with the real/surplus split; the
+draw count 1+1+12+1+6+1; the two test-bound falsifiers at 9, 11, 12 and at a raised clamp; the F8
+verb predicate over the seven mandated sentences plus the falsifier; a `\b<verb>` collision scan over
+the enumerated set. Re-read from code: `pass_graph.py:51-52` (`MIN_CANVAS_PX` 16, `MAX_CANVAS_PX`
+4096), `popups/pass_settings.py:165,177` (format above size), `commands.py:176` (`ADD_PASS` = Alt+A),
+and `grep -c CORRECTION` over `tutorial_body.html`.
+
+Not re-checked this round because round 1 verified them and no fold touched them: the five gear
+defaults, the six card values against `graph.json`, the ping-pong argument, the paint script's W-G
+fidelity, the stub's import line, `cascade.frag.glsl`'s 109 lines, the ten prose-table old-text
+quotations.
