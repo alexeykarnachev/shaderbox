@@ -1539,10 +1539,6 @@ class CopilotBackend:
         exporter = self._get_exporter_registry().get("telegram")
         return exporter if isinstance(exporter, TelegramExporter) else None
 
-    def telegram_token_set(self) -> bool:
-        tg = self._copilot_telegram()
-        return tg is not None and tg.bot_token_present()
-
     def set_telegram_token(self, secret: str) -> TelegramConnectResult:
         # Marshal token-set + auto-link to main, then await auth_state leaving LINKING. The secret is
         # set into the live store here and nowhere else.

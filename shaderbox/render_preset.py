@@ -28,7 +28,6 @@ class RenderPreset(BaseModel):
     target_w: int | None = None
     target_h: int | None = None
     fit: FitPolicy = FitPolicy.SCALE_DISTORT
-    max_bytes: int | None = None
 
 
 def _align(value: int, alignment: int = VIDEO_RESOLUTION_ALIGNMENT) -> int:

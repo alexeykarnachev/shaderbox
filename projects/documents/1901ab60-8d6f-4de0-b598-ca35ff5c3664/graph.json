@@ -10,8 +10,7 @@
                 "scale": 0.5,
                 "dtype": "f2",
                 "filter_linear": true,
-                "wrap": false,
-                "persist": false
+                "wrap": false
             }
         },
         "bright": {
@@ -22,8 +21,7 @@
                 "scale": 1.0,
                 "dtype": "f2",
                 "filter_linear": true,
-                "wrap": false,
-                "persist": false
+                "wrap": false
             }
         },
         "composite": {
@@ -36,8 +34,7 @@
                 "scale": 1.0,
                 "dtype": "f1",
                 "filter_linear": true,
-                "wrap": false,
-                "persist": false
+                "wrap": false
             }
         },
         "scene": {
@@ -46,8 +43,7 @@
                 "scale": 1.0,
                 "dtype": "f2",
                 "filter_linear": true,
-                "wrap": false,
-                "persist": false
+                "wrap": false
             }
         },
         "trail": {
@@ -59,8 +55,7 @@
                 "scale": 1.0,
                 "dtype": "f2",
                 "filter_linear": true,
-                "wrap": false,
-                "persist": true
+                "wrap": false
             }
         }
     },

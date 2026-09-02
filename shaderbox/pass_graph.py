@@ -62,7 +62,6 @@ class TargetConfig(BaseModel):
     dtype: Literal["f1", "f2", "f4"] = DEFAULT_DTYPE
     filter_linear: bool = DEFAULT_FILTER_LINEAR
     wrap: bool = DEFAULT_WRAP
-    persist: bool = False
 
     def target_size(self, canvas_size: tuple[int, int]) -> tuple[int, int]:
         return (

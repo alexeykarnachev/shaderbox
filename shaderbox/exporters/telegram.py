@@ -299,7 +299,6 @@ class TelegramExporter(Exporter):
             duration_max=_TG_VIDEO_MAX_DURATION_SEC,
             resolution_policy=ResolutionPolicy.LONGEST_EDGE,
             longest_edge=_TG_VIDEO_MAX_DIM,
-            max_bytes=_TG_VIDEO_MAX_BYTES,
             fit=FitPolicy.RENDER_AT_TARGET,
         )
 

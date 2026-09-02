@@ -206,7 +206,6 @@ def test_target_defaults_are_the_measured_safe_ones() -> None:
     assert target.dtype == DEFAULT_DTYPE == "f2"
     assert target.filter_linear
     assert not target.wrap
-    assert not target.persist
     assert target.target_size((800, 600)) == (800, 600)
 
 
@@ -252,7 +251,7 @@ def test_the_spec_schema_round_trips() -> None:
             },
             "trail": {
                 "inputs": {"u_src": "scene", "u_prev": "trail"},
-                "target": {"scale": 1.0, "dtype": "f2", "persist": True},
+                "target": {"scale": 1.0, "dtype": "f2"},
             },
             "composite": {
                 "inputs": {"u_lit": "scene", "u_glow": "bright", "u_trail": "trail"},
@@ -264,7 +263,6 @@ def test_the_spec_schema_round_trips() -> None:
     graph = PassGraph(**data)
     assert PassGraph(**graph.model_dump()) == graph
     assert graph.output_pass == "composite"
-    assert graph.passes["trail"].target.persist
     assert graph.passes["composite"].target.dtype == "f1"
     plan, errors = _plan(graph)
     assert errors == []

@@ -290,9 +290,7 @@ def test_a_pass_target_config_applies_to_its_own_canvas(
     # from a graph entry gets that entry's format rather than the document's default.
     graph = PassGraph(
         output="out",
-        passes={
-            "out": PassEntry(target=TargetConfig(dtype="f2", scale=1.0, persist=True))
-        },
+        passes={"out": PassEntry(target=TargetConfig(dtype="f2", scale=1.0))},
     )
     doc = _document(gl_ctx, {"out": _CONST % "1.0"}, graph)
     assert doc.passes["out"].canvas.texture.dtype == "f2"

@@ -4,23 +4,59 @@
     "passes": {
         "scene": {
             "inputs": {},
-            "target": {"scale": 1.0, "dtype": "f2", "filter_linear": true, "wrap": false, "persist": false}
+            "target": {
+                "scale": 1.0,
+                "dtype": "f2",
+                "filter_linear": true,
+                "wrap": false
+            }
         },
         "bright": {
-            "inputs": {"u_src": "scene"},
-            "target": {"scale": 0.5, "dtype": "f2", "filter_linear": true, "wrap": false, "persist": false}
+            "inputs": {
+                "u_src": "scene"
+            },
+            "target": {
+                "scale": 0.5,
+                "dtype": "f2",
+                "filter_linear": true,
+                "wrap": false
+            }
         },
         "blur": {
-            "inputs": {"u_src": "bright"},
-            "target": {"scale": 0.5, "dtype": "f2", "filter_linear": true, "wrap": false, "persist": false}
+            "inputs": {
+                "u_src": "bright"
+            },
+            "target": {
+                "scale": 0.5,
+                "dtype": "f2",
+                "filter_linear": true,
+                "wrap": false
+            }
         },
         "trail": {
-            "inputs": {"u_src": "scene", "u_prev": "trail"},
-            "target": {"scale": 1.0, "dtype": "f2", "filter_linear": true, "wrap": false, "persist": true}
+            "inputs": {
+                "u_src": "scene",
+                "u_prev": "trail"
+            },
+            "target": {
+                "scale": 1.0,
+                "dtype": "f2",
+                "filter_linear": true,
+                "wrap": false
+            }
         },
         "composite": {
-            "inputs": {"u_lit": "scene", "u_glow": "blur", "u_trail": "trail"},
-            "target": {"scale": 1.0, "dtype": "f1", "filter_linear": true, "wrap": false, "persist": false}
+            "inputs": {
+                "u_lit": "scene",
+                "u_glow": "blur",
+                "u_trail": "trail"
+            },
+            "target": {
+                "scale": 1.0,
+                "dtype": "f1",
+                "filter_linear": true,
+                "wrap": false
+            }
         }
     },
     "layout": {}

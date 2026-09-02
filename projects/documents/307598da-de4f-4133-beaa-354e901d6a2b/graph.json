@@ -8,8 +8,7 @@
                 "scale": 1.0,
                 "dtype": "f1",
                 "filter_linear": true,
-                "wrap": false,
-                "persist": false
+                "wrap": false
             }
         }
     },

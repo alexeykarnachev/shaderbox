@@ -21,10 +21,6 @@ _STORE_FILE = "shader_lib_favorites.json"
 class ShaderLibFavoritesStore:
     favorites: set[str] = field(default_factory=set)
 
-    @property
-    def file_path(self) -> "object":
-        return app_data_dir() / _STORE_FILE
-
     def is_favorite(self, name: str) -> bool:
         return name in self.favorites
 
