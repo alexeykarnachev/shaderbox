@@ -837,6 +837,17 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   emoji, dynamic glyph loading, `push_font` rasterized-size, `image()` lost `tint_col`, glfw
   cursor sync gap, pfd non-blocking handles, the `.pyi`-only stub pyright warning, the
   SetCursorPos assert. Non-UI library quirks (telegram, moderngl, GLSL `#line`) stay below.
+- **Three "unused" surfaces are DELIBERATE — a sweep will re-find them; do not delete them.**
+  Each was confirmed dead by grep and then rejected on inspection, so the grep evidence alone is
+  not the test.
+  - `PassLayout.x`/`.y` and `PassGraph.layout`: 065 designed them for a spatial pass editor that
+    has not landed, "kept in a separate key so losing layout never costs the effect". An unread
+    field with a written reason is a decision.
+  - `editor/ffi.py`'s unused methods, flag members and `PRIM_STRIDE`: that module is a ctypes
+    MIRROR of the vendored C ABI. Completeness against the ABI is the point; deleting the unused
+    half would make the binding lie about the library's surface.
+  - `PassGraph.version`: round-trip-only by design. A schema version's whole job is to already be
+    there when a reader finally needs it.
 - **The vendored editor binary (`shaderbox/resources/editor/`) rebuilds from a COMMITTED editor-repo
   sha, never a dirty tree.** `libeditor.so` + `atlas.{png,json}` + `VERSION` (the sha) ship together
   (feature 067). Rebuild: in the editor repo at that sha, `odin build ffi -build-mode:shared
@@ -855,14 +866,23 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
 - **The atlas charset is FIXED at bake time, and a codepoint outside it renders as a box.**
   `tools/charset.txt` in the editor repo lists the baked ranges; the atlas is committed there, so
   changing it is an editor-side re-bake (needs `msdf-atlas-gen`, not packaged for Debian — build
-  from source), not something the host can patch. As of `bf0f8d5` the charset is printable ASCII
-  + Cyrillic + 25 typographic/Latin-1 punctuation codepoints (em/en dash, ellipsis, curly quotes,
-  bullet, guillemets, degree, times/divide, …) — 212 glyphs. So a user pasting prose punctuation
-  into a shader comment now renders correctly; ASCII in shipped source stays the house style, but
-  it is a convention, not a rendering constraint. `U+00A0` and `U+200B` are DELIBERATELY unbaked:
+  from source), not something the host can patch. As of `e7db554` the charset is the FONT'S FULL
+  COVERAGE — every codepoint JetBrains Mono has, 1343 glyphs: Latin with diacritics, Greek,
+  Cyrillic, punctuation, math, arrows, box-drawing. So what renders as a box is a fact about the
+  font (CJK, emoji, Arabic), not a curated list anyone has to revisit. Cost: 7.87 MiB VRAM —
+  about ONE 960x960 f2 pass canvas, where the shipped Bloom Chain allocates five — and 1.6 MiB in
+  the bundle, which is the number to revisit if the download ever becomes a complaint. A user
+  pasting prose punctuation into a shader comment renders correctly; ASCII in shipped source
+  stays the house style, but it is a convention, not a rendering constraint. `U+00A0` and `U+200B` are DELIBERATELY unbaked:
   both are invisible, so a box is more useful than a blank you cannot distinguish from a space.
   `atlas_glyph` renders the fallback box and still advances exactly one cell, so column
   arithmetic never desyncs from buffer content — that is by design, do not ask for it to change.
+- **The keyboard pass for `e7db554` is UNRUN.** Two re-vendors landed without it, because
+  `make gates` reaches none of this. Six checks, each one keystroke, at the next `make run`:
+  `cwX` Esc `u` restores the whole word; `o` then Esc stays on its line; `di{` in a multi-line
+  body leaves `{`/`}`; Ctrl+N with the completion popup open advances the selection; a scroll
+  chord in visual mode extends the selection; an em-dash pasted into a comment renders as a dash.
+  If any fails, `git revert` back to `c5fabc8` — it is a coherent resting point.
 - **Re-vendoring the editor is HAND-CHECKED at a real keyboard.** Rebuild from a committed sha,
   copy the three files, update `VERSION`, then delete whatever host mitigations the new sha makes
   dead — and type the checks, because `make smoke` reaches none of this (it needs a display and

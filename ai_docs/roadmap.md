@@ -26,30 +26,34 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-02 (068 landed: iterated passes + radiance cascades; review round in flight). -->
-**068 radiance cascades: code landed, review round running.** A pass can declare `iterations`
-and the engine draws it N times per frame, feeding `u_pass_iteration` / `u_pass_iterations` and
-ping-ponging a self-reading pass BETWEEN iterations — one shader becomes a whole chain. On it: a
-six-pass **Radiance Cascades** example (paint -> seed -> jfa x9 -> df -> cascade x6 ->
-composite) and a tutorial rewriting both source articles for this engine (maintainer-only, never
-shipped). The merge is validated by a NUMBER: `oracle.py` measures it against a converged brute-force reference at 3.65% relMAE,
-with the gate mutation-tested (a broken merge scores 98%). Spec: `ai_docs/features/068_radiance_cascades/01_spec.md`.
+<!-- As of 2026-09-02 (068 landed + reviewed; a repo-wide sweep landed after it). -->
+**NEXT SESSION: the maintainer walks the 068 tutorial**, folding in their own build findings and
+UI/UX polish as they go. Open `ai_docs/features/068_radiance_cascades/tutorial.html` in a browser
+(self-contained, never ships). What that walk turns up IS the work.
 
-**067 custom editor: DONE, v0.27.0 on GitHub (not itch).** The vendored editor is now editor-repo
-`e7db554` — five vim gaps fixed upstream, atlas rebaked to the font's full coverage so pasted
-punctuation renders. **Unrun: the keyboard pass** (`cwX`/Esc/`u`, `o`+Esc, `di{`, Ctrl+N with the
-popup open, a visual scroll chord, an em-dash in a comment) — `make gates` reaches none of it.
-The Windows `libeditor.dll` still needs building ON a Windows host at the next `/ship`.
+**068 radiance cascades: DONE.** A pass declares `iterations` and the engine draws it N times per
+frame (`u_pass_iteration` / `u_pass_iterations`, ping-pong BETWEEN iterations) — one shader
+becomes a whole chain. On it: a six-pass **Radiance Cascades** example. The merge is validated by
+a NUMBER: `oracle.py` measures 3.65% relMAE against a converged reference, mutation-tested (a
+broken merge scores 98%). Spec: `ai_docs/features/068_radiance_cascades/01_spec.md` — D3 and D7
+are marked RETRACTED in place.
 
-**NEXT: the maintainer picks.** Nothing is specced beyond 068.
+**A repo-wide sweep followed**, ten agents over the classes this repo keeps producing: four
+blockers fixed, including a crash loading a corrupt `document.json` from the per-frame sync and a
+feedback bug that silently corrupted output. Ledger, with what was REJECTED and why, in
+`70144d2..7e977bf`.
 
-**Still owed from 065: spec checks 13-15** (a display) **and 16** (`/dogfood`, real API cost).
-Engine and persistence checks 1-12 pass.
+**067: DONE, v0.27.0 on GitHub (not itch).** Vendored editor `e7db554`. **Unrun: the keyboard
+pass** (`cwX`/Esc/`u`, `o`+Esc, `di{`, Ctrl+N with the popup open, a visual scroll chord, an
+em-dash in a comment). The Windows `libeditor.dll` needs a Windows host at the next `/ship`.
+
+**Still owed from 065:** checks 13-15 (a display) and 16 (`/dogfood`, real API cost).
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| — | repo_sweep | done | A ten-agent sweep over the defect classes this repo's history keeps producing (incomplete fix-sweeps, unwired mechanisms, tests that cannot fail, docs that drift from code): four blockers fixed — a crash loading a corrupt `document.json` from the per-frame sync, and three feedback-lifecycle bugs in the 068 machinery, one silently corrupting output — plus two skills that would crash a reader following them literally. What was REJECTED, and why, is in `conventions.md`. Spec: commits `70144d2..7e977bf`. |
 | 068 | radiance_cascades | done | A pass may declare `iterations` and the engine draws it N times per frame (`u_pass_iteration` / `u_pass_iterations`, per-iteration ping-pong), plus a six-pass Radiance Cascades example built on it and a tutorial rewriting both source articles for this engine. Spec: `ai_docs/features/068_radiance_cascades/01_spec.md`. |
 | 066 | perf_and_test_diet | done | Lazy pass compilation (no load-time warm-up; compile+seed on first need; one first-render per frame in the live loop), lazy openai/google seams, starter-only test fixture, and an 18-test falsifier-criterion cull — startup 3.66s -> 0.67s, suite 39.2s -> ~16s / 925 tests. Spec: `ai_docs/features/066_perf_and_test_diet/01_spec.md`. |
 | 067 | custom_editor | done | The code panel runs the maintainer's own vim-modal editor (vendored `libeditor.so`, C ABI, host-rendered MTSDF primitives) instead of imgui's TextEditor — modal keymap with vim-reserved hotkeys, register-unified clipboard, host-drawn chrome, host-fed completion, host-served ex commands. Spec: `ai_docs/features/067_custom_editor.md`. |
