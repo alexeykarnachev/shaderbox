@@ -51,9 +51,10 @@ draw-once invariant keeps its exact current meaning — one *pass turn* per fram
 **D2 — Two engine-driven uniforms, carrying the INDEX and nothing derived.**
 `u_pass_iteration` (0-based, float) and `u_pass_iterations` (the total, float). Both join
 `ENGINE_DRIVEN_UNIFORMS`, so they are excluded from the generated UI and from `document.json`
-exactly like `u_time`. The shader derives its own parameter — JFA's offset is
-`pow(2.0, u_pass_iterations - u_pass_iteration - 1.0)`, one line. **No `u_jfa_offset`**: a
-uniform named for an algorithm is that algorithm leaking into the engine.
+exactly like `u_time`. The shader derives its own parameter — the cascade stack's level is
+`u_pass_iterations - 1.0 - u_pass_iteration`, one line. **No `u_jfa_offset`**: a
+uniform named for an algorithm is that algorithm leaking into the engine. (JFA's offset was
+this shape too until 069 W-H made it canvas-derived; see the W-H note under D3.)
 
 **D3 — `iterations` is a plain int the author sets. RETRACTED: the warning half was unsound.**
 *Superseded during the review round (commit `ac747d6`).* The shipped check assumed a base-2

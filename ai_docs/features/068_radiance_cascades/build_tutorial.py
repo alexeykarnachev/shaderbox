@@ -19,6 +19,8 @@ import base64
 import html
 import json
 import pathlib
+import re
+from collections.abc import Collection
 from typing import Any
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -47,6 +49,15 @@ _DTYPE_LABELS: dict[str, str] = {
     "f4": "32-bit float",
 }
 
+# 069 D9's name rule, mirroring `pass_graph.py`'s `_auto_source` / `effective_inputs`:
+# an absent key means the NAME decides the wire, so a card built from the stored keys
+# alone would print `nothing` for an edge the engine binds. `_FEEDBACK_UNIFORM` reads
+# the pass itself. `test_a_card_resolves_the_same_reads_the_engine_does` drives the
+# engine's own function over this example and compares, so the two cannot diverge.
+_AUTO_PREFIX = "u_"
+_FEEDBACK_UNIFORM = "u_prev"
+_SAMPLER_RE = re.compile(r"^\s*uniform\s+sampler2D\s+(\w+)\s*;", re.M)
+
 
 def _data_uri(name: str) -> str:
     raw = (HERE / "img" / f"{name}.png").read_bytes()
@@ -59,8 +70,39 @@ def _value_cell(rendered: str, is_default: bool) -> str:
     return rendered
 
 
-def _reads_html(name: str, entry: dict[str, Any]) -> str:
-    inputs: dict[str, str] = entry.get("inputs", {})
+def _sampler_names(name: str) -> list[str]:
+    """The `sampler2D` uniforms a pass declares, read from its source.
+
+    By regex rather than from a compiled program: the generator runs without GL and
+    without importing `shaderbox`, and a declaration is one line with a fixed shape.
+    """
+    source = (EXAMPLE_DIR / "passes" / f"{name}.frag.glsl").read_text(encoding="utf-8")
+    return _SAMPLER_RE.findall(source)
+
+
+def _resolved_inputs(
+    name: str, entry: dict[str, Any], passes: Collection[str]
+) -> dict[str, str]:
+    """Every sampler's source: stored edges plus the ones their NAME decides (D9)."""
+    stored: dict[str, str] = entry.get("inputs", {})
+    resolved = {u: src for u, src in stored.items() if src}
+    for uniform in _sampler_names(name):
+        if uniform in stored:
+            continue
+        source = (
+            name
+            if uniform == _FEEDBACK_UNIFORM
+            else uniform[len(_AUTO_PREFIX) :]
+            if uniform.startswith(_AUTO_PREFIX)
+            else ""
+        )
+        if source and source in passes:
+            resolved[uniform] = source
+    return resolved
+
+
+def _reads_html(name: str, entry: dict[str, Any], passes: Collection[str]) -> str:
+    inputs = _resolved_inputs(name, entry, passes)
     if not inputs:
         return "nothing"
     lines: list[str] = []
@@ -85,7 +127,7 @@ def _card_html(name: str, graph: dict[str, Any]) -> str:
     iterations: int = entry.get("iterations", _DEFAULT_ITERATIONS)
     rows: list[tuple[str, str]] = [
         ("name", f"<code>{html.escape(name)}</code>"),
-        ("reads", _reads_html(name, entry)),
+        ("reads", _reads_html(name, entry, graph["passes"])),
         ("format", _value_cell(_DTYPE_LABELS[dtype], dtype == _DEFAULT_DTYPE)),
         ("size", _value_cell(f"{scale * 100:.0f}%", scale == _DEFAULT_SCALE)),
         (

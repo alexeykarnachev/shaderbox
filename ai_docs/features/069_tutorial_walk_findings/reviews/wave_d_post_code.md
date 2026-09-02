@@ -513,3 +513,147 @@ candidate R1 fix (green on all three suites plus both probes). Bisected R1 acros
 `3d635ef` with only `document.py` swapped. `make gates` unpiped: EXIT=0, check passed, test
 passed, smoke passed. Not executed: the interactive gear and the manual in-app steps, which need
 a display this shell does not have.
+
+---
+
+# Round 3 — against `3d36794`
+
+Narrow closure round on `3d36794` ("069 W-D: black holds from frame 0, media survives"), 4 files,
+read via `git show 3d36794:<path>`. W-H's fix-up is in flight in the working tree; nothing tracked
+was edited beyond this file, no `git stash` was used, and every mutation was restored with the
+restore verified.
+
+## Overall: **PASS**
+
+| Item | Verdict |
+| --- | --- |
+| R1 user-bound texture overwritten with black | **CLOSED** |
+| Residue: one frame of photo before the seed knows the samplers | **CLOSED** |
+| 066 D1 (no eager compile of an off-chain pass) | **INTACT** |
+| Round-1 F1..F5 | still closed |
+
+---
+
+## R1 — CLOSED
+
+The seed now carries the same predicate the graph excludes with:
+
+```python
+inputs: dict[str, moderngl.Texture] = {
+    uniform: self._black_texture()
+    for uniform in sampler_names(render_pass)
+    if not is_user_bound(render_pass.uniform_values.get(uniform))
+}
+```
+
+The Media Input bisect, re-run across all three commits with only `shaderbox/document.py`
+swapped and the same probe, on the UNMODIFIED shipped example:
+
+```
+f18a7d3:  max_rgb=255  unique=131266     <- the user's PNG and video
+3d635ef:  max_rgb=0    unique=1          <- the regression
+3d36794:  max_rgb=255  unique=131266     <- restored, texel-identical to pre-regression
+```
+
+The restored numbers match `f18a7d3` exactly, so the fix returns the example to its prior pixels
+rather than to some other non-black state. Pinned: dropping the `is_user_bound` clause turns
+`test_a_user_bound_texture_survives_the_black_seed` red. That test renders the shipped example
+and asserts both a non-black maximum and more than 1000 distinct colours, so a flat fill of any
+brightness fails it — the failure mode the round-2 finding described.
+
+The narrower probe from round 1 also still holds: a pass literally named `image` added beside a
+bound `u_image` produces no auto edge and renders `max_rgb=255, unique=132493`, so the exclusion
+is intact at both the resolution seam and the bind seam.
+
+## The one-frame residue — CLOSED
+
+A program-less pass now compiles immediately before its input seed is built, so
+`sampler_names(render_pass)` is non-empty on the pass's very first frame:
+
+```python
+if render_pass.program is None:
+    render_pass.compile()
+```
+
+The `u_nosuchpass` probe, per frame rather than at the settled state:
+
+```
+frame  0: max_rgb=0 unique=1
+frame  1: max_rgb=0 unique=1
+...
+frame 10: max_rgb=0 unique=1
+WORST across all frames: max_rgb=0
+```
+
+Black from frame 0, where the seed previously had nothing to name on the first frame and let the
+photo through. Pinned: removing the pre-seed compile turns
+`test_an_unresolved_sampler_renders_black` red, and that test is now frame-indexed with the frame
+number in its message, so it fails ON the offending frame rather than reporting a settled state.
+
+## 066 D1 — INTACT
+
+The pre-seed compile fires inside the `for name in order` loop, so it can only reach a pass the
+plan already selected for this frame. Verified with a tripwire rather than by reading: Bloom with
+`scene` as the output, so `bright` / `blur` / `trail` / `composite` are off the chain, every
+off-chain pass given a `compile` that raises, nothing compiled going in:
+
+```
+output=scene  on-chain: ['scene']  off-chain: ['blur', 'bright', 'composite', 'trail']
+render() completed with NO off-chain compile  -> 066 D1 intact
+off-chain passes whose compile was called: none
+on-chain programs after frame 0:  {'scene': True}
+off-chain programs after frame 0: {'blur': False, 'bright': False, 'composite': False, 'trail': False}
+```
+
+The four off-chain stubs stayed silent and their programs are still `None` after the frame.
+
+The guard also adds no compile that was not already happening. Counting `Pass.compile` calls per
+frame over the six-pass Radiance Cascades example, before and after:
+
+```
+f18a7d3:  frame 0 -> 6 calls, frames 1..7 -> 0 each
+3d36794:  frame 0 -> 6 calls, frames 1..7 -> 0 each
+```
+
+Identical, and six calls for six passes means each compiles once. The guard moves the compile a
+few lines earlier within the same pass's turn; `Pass.render` would have issued it moments later,
+which is what the code comment claims and what the count confirms.
+
+## Regression sweep
+
+Everything that was PASS in round 1 or CLOSED in round 2 was re-run against this tree:
+
+- the four-state seam probe: `max_rgb=0` on all four (stored `""`, name matches nothing, no `u_`
+  prefix, stale explicit name);
+- the media exclusion with a colliding pass name: `max_rgb=255, unique=132493`;
+- the twelve-frame planner trace with per-frame `assert_plan_invariants`: converges at f3, no
+  double draw, no skipped draw, no out-of-order turn after the transition;
+- `sublines` has zero occurrences in `shaderbox/`; `sampler_names` and `is_user_bound` are both
+  free public functions;
+- `test_pass_views_resolves_after_the_compile_that_finds_the_samplers` plus the two wiring suites:
+  43 passed.
+
+`make gates` unpiped: **EXIT=0**, check passed, test passed, smoke **passed**.
+
+## False trails, round 3
+
+- Six compiles on frame 0 looked like the eager-compile 066 D1 forbids; the count is identical
+  before and after this commit, and those are `Pass.render`'s own compiles of passes already in
+  `order` — the D1 rule is about compiling a pass nothing is drawing, which the tripwire shows
+  does not happen.
+- The pre-seed compile looked like it might double-compile a pass whose compile FAILS, since a
+  failed attempt sticks; it is guarded on `program is None` and `Pass.render` re-checks the same
+  condition, so a broken pass is attempted once per frame exactly as before.
+- My round-1 `copilot_gap2.py` probe still prints the black rows; it hardcodes the old
+  resolve-before-gather order to reproduce the original defect, so its output describes the
+  script, not the shipped code — the shipped path is covered by the test above.
+
+## Coverage, round 3
+
+Read all four files in `3d36794` end-to-end. Ran: the Media Input bisect across three commits
+with only `document.py` swapped; the `u_nosuchpass` probe frame-indexed from frame 0; an
+off-chain compile tripwire on four passes; a per-frame compile count compared against the
+pre-fix commit; the round-1 seam, media-exclusion and planner probes; two mutations with verified
+restores (the `is_user_bound` clause and the pre-seed compile, each turning its own test red);
+and `make gates` unpiped. Not executed: the interactive gear and the manual in-app steps, which
+need a display this shell does not have.

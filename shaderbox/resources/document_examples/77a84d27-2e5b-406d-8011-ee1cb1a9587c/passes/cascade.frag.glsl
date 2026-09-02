@@ -6,8 +6,9 @@
 // close by needs the opposite -- so compute the far field on a coarse grid with many angles,
 // the near field on a fine grid with few, and add them.
 //
-// Set "Runs per frame" to 6. Run 0 is the COARSEST level (this shader reverses the index, so
-// u_pass_iteration 0 means level 5), and each run merges the one above it through u_prev.
+// Set "runs" to 6 in this pass's gear. Run 0 is the COARSEST level (this shader reverses
+// the index, so u_pass_iteration 0 means level 5), and each run merges the one above it
+// through u_prev.
 //
 // HOW A LEVEL IS PACKED. Every level writes the same full-size texture. At level c the probes
 // sit sp = 2^c texels apart, and the sp x sp block of texels belonging to one probe stores that

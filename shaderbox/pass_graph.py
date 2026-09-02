@@ -101,9 +101,9 @@ class PassEntry(BaseModel):
     inputs: dict[str, str] = {}
     target: TargetConfig = TargetConfig()
     # Draw this pass N times in sequence within one frame, feeding `u_pass_iteration` /
-    # `u_pass_iterations` so one shader can be the whole chain -- JFA's halving offset, a
-    # cascade level. A self-reading iterated pass ping-pongs BETWEEN iterations, not between
-    # frames. Bounded for the reason every number here is: `graph.json` type-checks nothing,
+    # `u_pass_iterations` so one shader can be the whole chain -- a cascade level, a jump
+    # flood's halving offset. A self-reading iterated pass ping-pongs BETWEEN iterations,
+    # not between frames. Bounded for the reason every number here is: `graph.json` type-checks nothing,
     # and an unbounded count is a frame-time bomb.
     #
     # The count is the AUTHOR'S and the engine does not second-guess it. A resize can leave a

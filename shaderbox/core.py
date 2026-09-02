@@ -364,7 +364,7 @@ class Pass:
         `iteration` / `iterations` reach the shader as `u_pass_iteration` / `u_pass_iterations`
         (068). The INDEX is handed over, never a value derived from it -- a `u_jfa_offset` would
         be one algorithm wearing an engine uniform's name, and the shader's own
-        `pow(2.0, iterations - iteration - 1.0)` is one line.
+        `iterations - 1.0 - iteration` (the cascade stack's level) is one line.
         """
         canvas = canvas or self.canvas
         inputs = inputs or {}

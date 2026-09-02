@@ -13,6 +13,7 @@ imported by path.
 
 import html
 import importlib.util
+import itertools
 import json
 import math
 import pathlib
@@ -31,7 +32,9 @@ from shaderbox.pass_graph import (
     DTYPES,
     MAX_CANVAS_PX,
     PassEntry,
+    effective_inputs,
 )
+from shaderbox.popups.pass_settings import _FORMATS
 from shaderbox.tabs.document import _SQUARE_PRESETS
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -77,6 +80,21 @@ def test_no_marker_survives_the_build(tmp_path: pathlib.Path) -> None:
     _BUILD.build(out)
     rendered = out.read_text(encoding="utf-8")
     assert "{{" not in rendered, "an unreplaced marker survived the build"
+
+
+def test_the_committed_tutorial_is_a_fresh_build(tmp_path: pathlib.Path) -> None:
+    # The file a reader opens is the GENERATED one, and it is tracked. Without this the
+    # generator and its own output can drift -- a body edit that was never rebuilt ships a
+    # tutorial missing it, and an edit to the committed HTML alone survives untouched.
+    # That is the generated-drifts-from-source class this whole wave exists to close,
+    # left open on the output side.
+    out = tmp_path / "tutorial.html"
+    _BUILD.build(out)
+    committed = (_TUTORIAL_DIR / "tutorial.html").read_bytes()
+    assert out.read_bytes() == committed, (
+        "the committed tutorial.html is not what build_tutorial.py produces now; "
+        "rerun `uv run python ai_docs/features/068_radiance_cascades/build_tutorial.py`"
+    )
 
 
 def test_a_card_states_every_row_and_marks_the_defaults(graph: dict[str, Any]) -> None:
@@ -211,6 +229,53 @@ def test_the_generator_defaults_match_the_engine() -> None:
     assert _BUILD._DEFAULT_WRAP == DEFAULT_WRAP
     assert PassEntry().iterations == _BUILD._DEFAULT_ITERATIONS
     assert set(_BUILD._DTYPE_LABELS) == set(DTYPES)
+    # The MAPPING, not just its keys: the label is the one card value that is a copied
+    # string, so it is the one that can drift into naming a format the combo does not.
+    assert {code: label for code, label, _ in _FORMATS} == _BUILD._DTYPE_LABELS
+
+
+def test_a_card_resolves_the_same_reads_the_engine_does(graph: dict[str, Any]) -> None:
+    # 069 D9 makes an ABSENT key the preferred on-disk state for a name-resolved edge, so a
+    # card built from the stored keys alone would print `nothing` for an edge the engine
+    # binds. The generator resolves the name rule itself (it may not import `shaderbox`);
+    # this drives the ENGINE's own pure function and compares.
+    #
+    # Every sampler in the shipped example carries an explicit key TODAY, so comparing the
+    # two over `graph.json` as it stands proves nothing -- both rules agree trivially and a
+    # generator that ignored the name rule entirely would still pass. So each pass is also
+    # driven with every SUBSET of its keys removed, which is the on-disk shape D9 prefers
+    # and the one the generator must get right.
+    names = set(graph["passes"])
+    for name, raw in graph["passes"].items():
+        samplers = _BUILD._sampler_names(name)
+        stored: dict[str, str] = raw.get("inputs", {})
+        for drop in itertools.chain.from_iterable(
+            itertools.combinations(sorted(stored), n) for n in range(len(stored) + 1)
+        ):
+            entry = {
+                **raw,
+                "inputs": {u: v for u, v in stored.items() if u not in drop},
+            }
+            expected = effective_inputs(
+                PassEntry.model_validate(entry), samplers, names, name, ()
+            )
+            assert _BUILD._resolved_inputs(name, entry, names) == expected, (
+                f"{name} with {sorted(drop)} dropped"
+            )
+            # And that the CARD is built from that resolution rather than from the stored
+            # keys: the rule being right does not help if the row does not use it.
+            row = re.search(
+                r"<tr><td>reads</td><td>(.*?)</td></tr>",
+                _BUILD._card_html(
+                    name, {**graph, "passes": {**graph["passes"], name: entry}}
+                ),
+                re.S,
+            )
+            assert row is not None
+            for uniform, source in expected.items():
+                assert f"<code>{uniform}</code> from <b>{source}</b>" in row.group(1), (
+                    f"{name}'s card omits {uniform} with {sorted(drop)} dropped"
+                )
 
 
 def test_the_jfa_run_count_covers_every_reachable_canvas(graph: dict[str, Any]) -> None:
@@ -222,12 +287,16 @@ def test_the_jfa_run_count_covers_every_reachable_canvas(graph: dict[str, Any]) 
     )
 
 
+# A chord the tutorial quotes, always inside a <code> element: Ctrl+Shift+N, Alt+P, F6.
+# The run after the final `+` is "anything but the closing tag" rather than `\w+`, so a
+# punctuation-key chord (`Alt+/`, which COMMAND_SPECS binds) is CHECKED rather than
+# skipped -- the shape W-E's sibling `test_help_content.py::_PROSE_CHORD` uses, with
+# `<code>` as the delimiter in place of its backticks.
+_BODY_CHORD = re.compile(r"<code>((?:Ctrl|Alt|Shift)\+[^<]+|F[0-9]{1,2})</code>")
+
+
 def test_the_tutorial_names_no_chord_the_command_table_does_not_have(body: str) -> None:
     known = {chord_to_str(s.default_chord) for s in COMMAND_SPECS if s.default_chord}
-    prose = html.unescape(re.sub(r"<[^>]+>", " ", body))
-    quoted = set(
-        re.findall(r"\b(?:Ctrl|Alt|Shift)(?:\+(?:Ctrl|Alt|Shift))*\+\w+", prose)
-    )
-    quoted |= set(re.findall(r"\bF(?:[1-9]|1[0-2])\b", prose))
+    quoted = {html.unescape(m) for m in _BODY_CHORD.findall(body)}
     for chord in sorted(quoted):
         assert chord in known, f"tutorial quotes {chord}, which no CommandSpec binds"

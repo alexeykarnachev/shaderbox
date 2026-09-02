@@ -120,8 +120,8 @@
   starter, so it arrives with one pass called <code>main</code> at 1280×960. Set the canvas to
   512×512 first: the Document tab's <b>presets</b> menu, beside the width and height fields, has
   <code>512x512 (1:1)</code>. The cascade intervals below are tuned for it. Step 1 renames the
-  starter's pass; steps 2 to 6 each add one. Then open the <b>Passes</b> strip. Each pass step
-  opens with a <b>card</b>: the pass's name, what it reads, and every target setting, with
+  starter's pass; steps 2 to 6 each add one. Each pass step opens with a <b>card</b>: the
+  pass's name, what it reads, and every target setting, with
   <code>default</code> marked where the gear's default already holds. Set the card, paste the
   shader, done. An input named <code>u_&lt;pass&gt;</code> wires itself to the pass of that name,
   so the card's <code>reads</code> rows are usually nothing to do. The finished thing ships as
@@ -718,8 +718,9 @@ void main() {
 // close by needs the opposite -- so compute the far field on a coarse grid with many angles,
 // the near field on a fine grid with few, and add them.
 //
-// Set &quot;Runs per frame&quot; to 6. Run 0 is the COARSEST level (this shader reverses the index, so
-// u_pass_iteration 0 means level 5), and each run merges the one above it through u_prev.
+// Set &quot;runs&quot; to 6 in this pass&#x27;s gear. Run 0 is the COARSEST level (this shader reverses
+// the index, so u_pass_iteration 0 means level 5), and each run merges the one above it
+// through u_prev.
 //
 // HOW A LEVEL IS PACKED. Every level writes the same full-size texture. At level c the probes
 // sit sp = 2^c texels apart, and the sp x sp block of texels belonging to one probe stores that

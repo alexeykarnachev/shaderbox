@@ -266,12 +266,16 @@ is #35's rule ("every pass step's heading IS the pass name, with the concept as 
 | 5 | pass step | `cascade` — the cascade stack | card, produces, code (all 109 lines), explanation in three parts: packing, march, merge |
 | — | interlude | The merge | the one trap, folded INTO step 5's explanation, not a step |
 | 6 | pass step | `composite` — what you look at | card, produces, code, explanation |
-| — | bookend | Verifying it | the oracle, why a plausible render proves nothing |
+| — | interlude | Verifying it | the oracle, why a plausible render proves nothing |
 | — | bookend | What you built / Things to try | unchanged in kind |
 
-Ten headings become six numbered plus four unnumbered, and the interludes carry an explicit opening
-sentence #33 asks for by name: **"Nothing to build here."** It is the first thing in every interlude,
-in bold, so a reader skimming for the next pass cannot mistake an idea for a step.
+Ten headings become six numbered plus four unnumbered sections that build nothing — Naive global
+illumination, Sphere marching, The cascade idea and **Verifying it** — each carrying the explicit
+opening sentence #33 asks for by name: **"Nothing to build here."** It is the first thing in each,
+in bold, so a reader skimming for the next pass cannot mistake an idea for a step. (`Verifying it`
+is the one this spec first listed as a bookend; it builds nothing, so it reads as the others do —
+recorded in § Landed deviations. The table's fifth `interlude` row, The merge, is not a section at
+all: it is folded into step 5's explanation, as the paragraph below says.)
 
 The merge is the one structural judgement call. #34 asks for the cascade pass to appear whole and
 #31 lists the merge among the interludes. Both are satisfied by making the merge the third part of
@@ -483,8 +487,8 @@ What `{{CARD:jfa}}` becomes, given the RC `graph.json` after W-D's rename and th
 
 ```
 name     jfa
-reads    u_seed from seed
-         u_prev from jfa (itself, last run)
+reads    u_prev from jfa (itself, last run)
+         u_seed from seed
 format   32-bit float
 size     100%                        default
 smooth   off
@@ -497,8 +501,8 @@ and as the HTML the generator emits:
 ```html
 <table class="card">
   <tr><td>name</td><td><code>jfa</code></td></tr>
-  <tr><td>reads</td><td><code>u_seed</code> from <b>seed</b><br>
-      <code>u_prev</code> from <b>jfa</b> (itself, last run)</td></tr>
+  <tr><td>reads</td><td><code>u_prev</code> from <b>jfa</b> (itself, last run)<br>
+      <code>u_seed</code> from <b>seed</b></td></tr>
   <tr><td>format</td><td>32-bit float</td></tr>
   <tr><td>size</td><td>100% <span class="dfl">default</span></td></tr>
   <tr><td>smooth</td><td>off</td></tr>
@@ -519,13 +523,13 @@ The other five cards, in one table so the implementer can check the generator's 
 |---|---|---|---|---|---|---|
 | `paint` | nothing | 16-bit float default | 100% default | off | off default | 1 default |
 | `seed` | `u_paint` from `paint` | 32-bit float | 100% default | off | off default | 1 default |
-| `jfa` | `u_seed` from `seed`; `u_prev` from `jfa` (itself, last run) | 32-bit float | 100% default | off | off default | 12 |
+| `jfa` | `u_prev` from `jfa` (itself, last run); `u_seed` from `seed` | 32-bit float | 100% default | off | off default | 12 |
 | `df` | `u_jfa` from `jfa` | 16-bit float default | 100% default | off | off default | 1 default |
 | `cascade` | `u_df` from `df`; `u_paint` from `paint`; `u_prev` from `cascade` (itself, last run) | 16-bit float default | 100% default | off | off default | 6 |
 | `composite` | `u_cascade` from `cascade`; `u_paint` from `paint` | 8-bit | 100% default | on default | off default | 1 default |
 
 The `reads` rows are sorted by uniform name, which is why `cascade` lists `u_df` before `u_paint`
-before `u_prev`. Sorting rather than preserving `graph.json`'s key order is deliberate: JSON key order
+before `u_prev`, and why `jfa` lists `u_prev` before `u_seed`. Sorting rather than preserving `graph.json`'s key order is deliberate: JSON key order
 is an artifact of how the file was written and would make two semantically identical graphs produce
 different cards.
 
@@ -845,12 +849,13 @@ per tutorial step; each fails for exactly one reason.
    prose, which is #27 and #31 recurring.*
 11. **Chords.** Every chord the tutorial quotes fires in the app: `Ctrl+Shift+N`, `Alt+P`, `Alt+A`,
     `Alt+R`. The list is derived from the body at walk time, not typed here, so a chord added to the
-    prose is walked without this step being edited. `F5` and `F6` are deliberately absent: the
-    tutorial quotes neither (`TOGGLE_DOCUMENT_PLAY`'s label is "Play/stop document script", not a
-    document transport, and quoting it beside the paint step would confuse the script with the
-    render; `F6` is out per F2). *Falsifier: any quoted chord does nothing, meaning the tutorial
-    quotes a pre-audit chord.*
-12. **Interludes.** The four unnumbered sections each open with "Nothing to build here" and the
+    prose is walked without this step being edited. `F6` appears twice descriptively (the
+    nothing-to-clear note and the persistent-canvas suggestion) and is pressed at step 6, not
+    here; `F5` is deliberately absent, since `TOGGLE_DOCUMENT_PLAY`'s label is "Play/stop
+    document script" rather than a document transport. *Falsifier: any quoted chord does nothing,
+    meaning the tutorial quotes a pre-audit chord.*
+12. **Interludes.** The four unnumbered sections (Naive global illumination, Sphere marching, The
+    cascade idea, Verifying it) each open with "Nothing to build here" and the
     reader never looks for a pass to add in one. *Falsifier: #33's "replace WHERE?" is askable again.*
 
 ## Verified / corrected premises
@@ -916,7 +921,7 @@ Today's shader is `pow(2.0, u_pass_iterations - u_pass_iteration - 1.0)`, which 
 derived, and that is why raising the count from 9 to 12 under the OLD formula would break 512 rather
 than fix 2048 (the first two runs would jump 1024 and 512 texels on a 512 canvas and find nothing).
 So the count change and the formula change are one edit and must not be split. Arithmetic verified:
-at 512 the offsets run 256 down to 1 over runs 0-8 with runs 9-10 surplus; at 2048 they run 1024 down
+at 512 the offsets run 256 down to 1 over runs 0-8 with runs 9, 10 and 11 surplus; at 2048 they run 1024 down
 to 1 over runs 0-10 with none surplus.
 
 **4. The parent does not mention the surplus-run pass-through's interaction with ping-pong.** Its
@@ -1083,9 +1088,83 @@ reopening the design.
    explanation worse: sphere marching read after `cascade` is read after the code it explains. #31
    asks for them "between pass steps", which is what the default does.
 
+## Landed deviations
+
+Where the implementation differs from this spec as drafted. Each was a contradiction inside the
+spec or a fact the spec had wrong, resolved during implementation; the spec text above now
+matches what landed, and this section is the record of what moved and why.
+
+**1. `iterations` is 12, not the parent's 11.** The largest deviation, ruled during round 1 and
+recorded in § The F6 ruling: the preset list is not the reachable set, because W-A's free-form
+width and height fields commit through `clamp_canvas_size` whose ceiling is `MAX_CANVAS_PX` =
+4096. Measured after landing, driving the shipped shader over a corner seed: at 11 runs a 4096
+canvas leaves 12582912 of 16777216 texels unreached with no warning; at 12 every canvas from 512
+to 4096 completes. Surplus runs are provably a no-op (9 vs 12 at 512 is bit-identical), so
+`jfa.png` stands.
+
+**2. The `reads` rows sort alphabetically, and the spec's worked `jfa` card did not.** § decision
+2 states the rule ("sorted by uniform name") and gives its reason (JSON key order "is an artifact
+of how the file was written"), and § The generated card's `cascade` summary row is already in
+sorted order — but that section's worked `jfa` text sample, its HTML sample and its `jfa` summary
+row all kept `graph.json`'s insertion order, showing `u_seed` above `u_prev`. The generator
+sorts, which is the stated rule; all three samples are corrected above, and the worked HTML
+sample is now byte-identical to what `_card_html("jfa", graph)` emits.
+
+**3. `Verifying it` is an unnumbered interlude, not a bookend.** § decision 4's table listed it
+as a bookend, and it had been numbered step 10 in the old tutorial. It builds nothing, so
+numbering it is exactly #31's and #33's complaint; it takes the "Nothing to build here" opening
+like the other three and sits under the ToC's "Along the way". That makes **four** unnumbered
+sections that build nothing, not three — the table's fifth `interlude` row, The merge, is a row
+rather than a section, since decision 4 folds it into step 5's explanation. Decision 4's heading,
+its table, its counting sentence and manual step 12 are corrected above.
+
+**4. Three wiring sentences were deleted that § The prose table does not list.** `cascade`'s
+"Wire `u_scene` → paint, `u_df` → df, `u_prev` → cascade …" and `composite`'s "Wire `u_light` →
+cascade, `u_scene` → paint …", plus the naive-GI aside's `u_prev` feedback instruction. All three
+are settings-and-wiring prose that the card rule replaces, and two of them named uniforms W-D
+renamed away (`u_scene`, `u_light`), so leaving them would have taught names no shipped shader
+declares. The table's step 5 and step 6 rows replace those steps wholesale, which is why no row
+named the sentences individually.
+
+**5. `build()` gained an `out` parameter.** § decision 9 specifies that the test exercises
+`build()` "once through a `tmp_path` output", which the spec's own `build()` signature could not
+do — it wrote to `HERE / "tutorial.html"` unconditionally. The parameter defaults to that path,
+so the script's behaviour is unchanged and the test writes nothing into the tree.
+
 ## Review history
 
-### Round 2, closure check
+### Round 2, post-implementation review
+
+Two reviewers against `fdc7841` — code correctness and spec fidelity. Verdicts: code PARTIAL on
+the generator and on tests-as-checkers, PASS on the JFA shader, the example, Help and
+conventions; spec PASS on wave fidelity, parent fidelity and findings closure, PARTIAL on
+app-noun fidelity. Both confirmed the committed `tutorial.html` regenerates byte-identical and
+reproduced the wave's JFA measurement independently. **Eleven findings, ten accepted and fixed,
+one accepted-as-is.**
+
+| # | Finding | Fixed as |
+|---|---|---|
+| C1 | The committed `tutorial.html` — the file a reader opens — had no freshness gate: editing it alone, or editing the body without rebuilding, left the suite green | `test_the_committed_tutorial_is_a_fresh_build` builds to `tmp_path` and compares bytes against the tracked file |
+| C2 | `_DTYPE_LABELS` was gated on its KEY set only, so the one card value that is a copied string was the one that could drift into naming a format the combo does not show | the assertion compares the MAPPING against `pass_settings._FORMATS` |
+| C3 | `_reads_html` read `graph.json`'s stored keys, so a D9 name-resolved edge (an ABSENT key, which D9 makes the preferred on-disk state) would render as `reads: nothing` while the engine binds the texture | the generator resolves through `_sampler_names` (regex over the shader source — GL-free, and no `shaderbox` import) + `_resolved_inputs`; `test_a_card_resolves_the_same_reads_the_engine_does` drives the engine's own `effective_inputs` over the same graph and compares, so the generator's copy of the rule cannot diverge |
+| C4 | The chord regex used `\w+` after the final `+`, so a punctuation-key chord (`Alt+/`, which `COMMAND_SPECS` binds) was invisible to the checker, unlike its W-E sibling | `_BODY_CHORD` takes the sibling's shape with `<code>` as the delimiter; verified `Alt+/`, `Ctrl+;` and `F13` go from unseen to checked, and all five real chords still resolve |
+| C5 | Spec D2 and two source comments still presented the retired `pow(2, iterations - iteration - 1)` offset as JFA's current one | re-attributed to the cascade stack (which does use that shape, `cascade.frag.glsl` `level`) in present tense at `068/01_spec.md` D2, `core.py::Pass.render`'s docstring and `pass_graph.py`'s `iterations` comment |
+| C6 | `_hand_written_code_blocks`'s splice filter is unreachable today | left, per the reviewer's own recommendation: it costs nothing and guards the shape a future body edit would introduce |
+| S1 | `cascade.frag.glsl`'s header told the reader to set "Runs per frame", a control W-B renamed to `runs` four waves earlier — spliced verbatim into step 5 by `{{CODE:cascade}}`. `document.json`'s description carried the same stale label, one clause from the string this wave edited | both corrected to the gear's own word; the header rewrapped; the tutorial rebuilt |
+| S2 | "Then open the Passes strip" instructed an action the app does not offer — `pass_list.draw` is unconditional, the strip is a caption over a row of tiles — and the sentence was not in § The prose table | deleted; the paragraph reflowed |
+| S3 | `Verifying it` landed as a "Nothing to build here" section while the spec listed it as a bookend, so the spec described three such sections where the tutorial has four | § Landed deviations 3; decision 4's heading, its table, its counting sentence and manual step 12 corrected against the four the body actually carries |
+| S4 | Manual step 11 said the tutorial quotes no `F6`; it quotes it twice, both mandated by this spec | step 11's parenthetical rewritten to say `F6` is descriptive here and pressed at step 6 |
+| S5 | The spec's worked `jfa` card and summary row contradicted the spec's own sorting rule | § Landed deviations 2; all three samples corrected, and the HTML sample verified byte-identical to the generator's output |
+
+Both reviewers flagged the same class in different places, and it is worth naming: **W-H closed
+generated-drifts-from-source on the card and the code block, and three of these findings are the
+same class on surfaces the wave did not reach** — the committed output (C1), the copied label
+text (C2), and a shipped shader's own header prose that `{{CODE:}}` splices verbatim (S1). The
+last is the sharpest: the wave hand-edited `jfa.frag.glsl`'s and `paint.frag.glsl`'s headers for
+exactly this reason and listed `cascade.frag.glsl` under "Not touched, each checked" — checked
+for uniform renames, not for control names.
+
+### Round 2 (pre-implementation), closure check
 
 All ten round-1 findings confirmed CLOSED, with **one residual on F8**, accepted and fixed.
 
