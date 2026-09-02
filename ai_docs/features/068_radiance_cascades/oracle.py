@@ -24,16 +24,23 @@ coordinates) but share no code, so a change to `cascade.frag.glsl` moves nothing
 this file protects is the algorithm; `tests/test_radiance_cascades_example.py` protects the
 document's wiring, and the two together are the coverage.
 
-**Mutation-verified**, which is the only reason to trust any of the numbers below:
+**Mutation-verified**, which is the only reason to trust any number below. Reproduce it --
+these are a command, not a memory of someone's hand edits:
 
-    clean                          3.6%
-    merge disabled                98.3%
-    upper slot transposed         29.9%   (063 measured 30.3% for this class)
-    probe spacing for slot span  117.9%
-    063's own four-sub-index bug 120.8%
+    uv run python ai_docs/features/068_radiance_cascades/oracle.py --mutate merge-off
+
+    clean                          3.65%
+    merge-off                     98.26%
+    slot-transposed               29.93%   (063 measured 30.3% for this class)
+    spacing-for-span             117.87%
+    063-four-sub-index           120.86%
+
+`--mutate` refuses a pattern that matches nothing, because a mutation that does not mutate
+scores as clean and proves the opposite of what it looks like.
 """
 
 import os
+import sys
 
 os.environ.setdefault("MESA_GL_VERSION_OVERRIDE", "4.6")
 os.environ.setdefault("MESA_GLSL_VERSION_OVERRIDE", "460")
@@ -270,6 +277,39 @@ def relative_error(got: np.ndarray, want: np.ndarray) -> float:
     return float(np.abs(got[lit] - want[lit]).sum() / np.abs(want[lit]).sum())
 
 
+# The mutations behind the sensitivity table in this file's docstring, as CODE rather than as a
+# memory of someone's hand edits. `--mutate <name>` applies one and reports the score, so the
+# table is reproducible: a claim that a gate is sensitive is worth exactly the command that
+# demonstrates it. Three of the first hand-made attempts silently matched nothing and scored
+# identically to clean -- a mutation that does not mutate reads exactly like a gate that does not
+# gate, which is the whole reason these are anchored in source here.
+MUTATIONS: dict[str, tuple[str, str]] = {
+    "merge-off": (
+        "if (hit.a < 0.5 && u_c < u_count - 1.0) {",
+        "if (false) {",
+    ),
+    "slot-transposed": (
+        "vec2 uSlot = vec2(mod(uS, usp), floor(uS / usp));",
+        "vec2 uSlot = vec2(floor(uS / usp), mod(uS, usp));",
+    ),
+    "spacing-for-span": (
+        "vec2 uSlot = vec2(mod(uS, usp), floor(uS / usp));",
+        "vec2 uSlot = vec2(mod(uS, sp), floor(uS / sp));",
+    ),
+    "063-four-sub-index": ("float uS = idx;", "float uS = idx * 4.0;"),
+}
+
+
+def apply_mutation(name: str) -> None:
+    """Break the merge one specific way, so the gate can be shown to notice."""
+    old, new = MUTATIONS[name]
+    if old not in FS_CASCADE:
+        raise AssertionError(
+            f"mutation {name!r} matched nothing -- it would score as clean and prove nothing"
+        )
+    globals()["FS_CASCADE"] = FS_CASCADE.replace(old, new, 1)
+
+
 def main() -> int:
     """Measure the cascade merge against a CONVERGED brute-force reference, on bounced light.
 
@@ -294,8 +334,18 @@ def main() -> int:
     texel. 063's corrected implementation measured 4.5% against a 65536-ray reference and its
     BROKEN one 30.3%, so the band sits between them.
     """
+    mutation = ""
+    if "--mutate" in sys.argv:
+        mutation = sys.argv[sys.argv.index("--mutate") + 1]
+        if mutation not in MUTATIONS:
+            print(f"unknown mutation {mutation!r}; have: {', '.join(MUTATIONS)}")
+            return 2
+        apply_mutation(mutation)
+
     ctx = moderngl.create_standalone_context()
     print(f"resolution {RES}x{RES}, base interval {BASE_INTERVAL}, {REFERENCE_RAYS} ref rays")
+    if mutation:
+        print(f"MUTATED: {mutation} -- expect this to FAIL; that is the point")
 
     # Each depth is scored against a reference marched to THAT depth's reach. A shallow stack
     # genuinely cannot see light the full-canvas reference finds, and calling that "error" would

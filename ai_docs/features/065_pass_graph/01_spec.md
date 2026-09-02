@@ -509,7 +509,7 @@ Nothing below has been looked at by a human. Ask before assuming any of it is fi
   in `pass_list.py`, so a correction is one token edit.
 - **Spec checks 13-15**, which need a display: an error in pass 2 landing in the strip with pass
   2's file and line and click-to-jump working; a rename re-pointing an open tab (the engine half
-  is tested, the TAB half only smoke-verified); the six shipped examples loading with the browser
+  is tested, the TAB half only smoke-verified); the seven shipped examples loading with the browser
   populated.
 - **Check 16**, which needs `/dogfood` and real API cost: the copilot authoring a two-pass
   document and seeing per-pass errors.
@@ -560,7 +560,7 @@ Each check fails for exactly one reason, and each names its falsifier.
 13. **An error in pass 2 lands in the strip with pass 2's file and line**, and click-to-jump works.
 14. **Rename rewrites every edge**, renames the file, and re-points an open tab. Falsifier: an edge
     still names the old pass, and per D3 it silently reads black.
-15. **The six shipped examples still load and render**, and the examples browser is populated. This
+15. **The seven shipped examples still load and render**, and the examples browser is populated. This
     is the highest-probability breakage of the whole wave.
 
 **Copilot (needs the dogfood harness and real API cost — not a green-tree check):**

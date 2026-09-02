@@ -132,10 +132,9 @@ Each step fails for exactly one reason.
    30.3% for that same bug). The second half is not optional: the first version of this oracle
    scored 1.2087 and called it an inherent artifact, when it was measuring a broken reference,
    and an earlier version of the metric passed a stack computing zero global illumination.
-7. **Drawing works** (needs a display): drag paints an emitter, light updates; drag an occluder,
-   a shadow appears.
+7. ~~**Drawing works.**~~ Withdrawn with D7 — there is nothing to drag.
 
-Checks 1-4 and 6 are headless. 5 and 7 need `make run`.
+Checks 1-3 and 6 are headless; 5 needs `make run`. 4 and 7 are withdrawn.
 
 ## Locked by the maintainer
 
@@ -150,13 +149,14 @@ Checks 1-4 and 6 are headless. 5 and 7 need `make run`.
 
 Both articles were read in full after 063's summary. Three things the spec now rests on:
 
-1. **The article's merge snippet is WRONG as printed, and 063's corrected proof is the
-   reference.** The article computes the upper-cascade slot as
-   `vec2(mod(index, sqrtBase), floor(index / upperSpacing))` — mixing a slot dimension with a
-   probe spacing in one expression. `063/rc_proof.py` (post-fix) uses `usp = sp * 2.0` for BOTH:
+1. **The merge's slot address is the easiest thing here to get wrong, and 063's corrected proof
+   is the reference.** Addressing it with a slot dimension in one component and a probe spacing
+   in the other `063/rc_proof.py` (post-fix) uses `usp = sp * 2.0` for BOTH:
    `vec2(mod(uS, usp), floor(uS / usp))`. This is exactly the class 063 warned about — its own
    first attempt had 1364/1364 directions reading the wrong slot at 30.3% error while rendering
-   convincing shadows. **Build the merge from `rc_proof.py`, not from the article.**
+   convincing shadows. **Build the merge from `rc_proof.py`.** *Corrected during the review
+   round: the article's SHIPPED demo source agrees with this implementation — only its base-16
+   prose differs. An earlier draft of this spec accused it of a bug it does not contain.*
 2. **The GI article supplies the stages RC assumes** and is not optional reading: the drawing
    surface (`sdfLineSquared`), the seed pass (`vec4(vUv * alpha, 0, 1)`), the JFA 3x3 kernel, the
    distance-field pass, and naive raymarching as the pedagogical control. The tutorial covers all

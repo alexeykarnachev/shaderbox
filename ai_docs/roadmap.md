@@ -28,24 +28,25 @@ feature; brief points at the superseder).
 
 <!-- As of 2026-09-02 (068 landed + reviewed; a repo-wide sweep landed after it). -->
 **NEXT SESSION: the maintainer walks the 068 tutorial**, folding in their own build findings and
-UI/UX polish as they go. Open `ai_docs/features/068_radiance_cascades/tutorial.html` in a browser
-(self-contained, never ships). What that walk turns up IS the work.
+UI/UX polish as they go. Open `ai_docs/features/068_radiance_cascades/tutorial.html` (generated —
+edit `tutorial_body.html` and re-run `build_tutorial.py`). A step that does not produce its stated
+picture is a tutorial DEFECT, fixed in `tutorial_body.html`; a step that works but is awkward is a
+UI/UX finding, and those accumulate into a spec for the next feature rather than being fixed
+mid-walk.
 
 **068 radiance cascades: DONE.** A pass declares `iterations` and the engine draws it N times per
 frame (`u_pass_iteration` / `u_pass_iterations`, ping-pong BETWEEN iterations) — one shader
-becomes a whole chain. On it: a six-pass **Radiance Cascades** example. The merge is validated by
-a NUMBER: `oracle.py` measures 3.65% relMAE against a converged reference, mutation-tested (a
-broken merge scores 98%). Spec: `ai_docs/features/068_radiance_cascades/01_spec.md` — D3 and D7
-are marked RETRACTED in place.
+becomes a chain. On it: a six-pass **Radiance Cascades** example. The merge is validated by a
+NUMBER: `oracle.py` measures 3.65% relMAE, and `--mutate` reproduces the sensitivity table. Spec:
+`ai_docs/features/068_radiance_cascades/01_spec.md` — D3 and D7 are RETRACTED in place.
 
 **A repo-wide sweep followed**, ten agents over the classes this repo keeps producing: four
-blockers fixed, including a crash loading a corrupt `document.json` from the per-frame sync and a
-feedback bug that silently corrupted output. Ledger, with what was REJECTED and why, in
-`70144d2..7e977bf`.
+blockers fixed, including a crash loading a corrupt `document.json` from the per-frame sync.
+Ledger, and what was REJECTED, in `70144d2..7e977bf` and `conventions.md`.
 
-**067: DONE, v0.27.0 on GitHub (not itch).** Vendored editor `e7db554`. **Unrun: the keyboard
-pass** (`cwX`/Esc/`u`, `o`+Esc, `di{`, Ctrl+N with the popup open, a visual scroll chord, an
-em-dash in a comment). The Windows `libeditor.dll` needs a Windows host at the next `/ship`.
+**067: DONE, v0.27.0 on GitHub (not itch).** Vendored editor `e7db554`. **The keyboard pass is
+UNRUN** — six one-keystroke checks in `conventions.md`, with the revert target named. The Windows
+`libeditor.dll` needs a Windows host at the next `/ship`.
 
 **Still owed from 065:** checks 13-15 (a display) and 16 (`/dogfood`, real API cost).
 

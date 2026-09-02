@@ -98,25 +98,22 @@
 </div>
 
 <div class="note">
-  <b>Before you start.</b> Make a new document (<code>Ctrl+N</code>), open the <b>Passes</b>
-  strip in the Document tab, and give yourself a 512×512 canvas. Each step below adds one pass:
+  <b>Before you start.</b> <code>Ctrl+N</code> makes a new document from the starter example, so
+  it arrives with one pass called <code>main</code> at 1280×960. Rename that pass to
+  <code>paint</code> and paste step 1 over it, and set the canvas to 512×512 in the Document tab
+  (the cascade intervals below are tuned for it). Then open the <b>Passes</b> strip. Each step
+  after this adds one pass:
   click <b>add pass</b>, name it, paste the shader, then open its gear to wire its inputs and
   set its target. The finished thing ships as the <b>Radiance Cascades</b> example — open that
   if you get stuck, or to compare.
 </div>
 
-<h2 id="draw"><span class="step">1</span>A canvas you can draw on</h2>
+<h2 id="draw"><span class="step">1</span>A scene to light</h2>
 
 <p>
-  Everything downstream needs a scene to light. Rather than hard-coding shapes, we make a canvas
-  that <em>remembers</em> — you paint into it and it keeps what you painted.
-</p>
-
-<p>
-  A fragment shader has no memory: it runs fresh every frame and forgets everything. The way you
-  give it memory is to let it read its own output from the previous frame. In ShaderBox you wire
-  a pass's sampler input to <b>itself</b>; the engine calls this <b>feedback</b> and keeps a
-  second texture behind the scenes, so you read last frame while writing this one.
+  Everything downstream needs something to light. One pass builds it: bright shapes that emit,
+  dark shapes that block, and nothing else. It draws itself from scratch every frame, so it holds
+  no state and needs no script.
 </p>
 
 <p>Add a pass called <code>paint</code>:</p>
@@ -126,89 +123,68 @@
 in vec2 vs_uv;
 out vec4 fs_color;
 
-uniform sampler2D u_prev;
-uniform vec4 u_brush;            // xy = cursor UV, z = radius, w = 0 off / 1 painting
-uniform vec3 u_brush_color;
-uniform float u_brush_emissive;  // 1 = a light, 0 = a wall
+uniform float u_time;
+uniform float u_drift = 0.06;        // how far the warm light wanders
+uniform float u_wall_height = 0.15;
+uniform float u_light_radius = 0.035;
 
-// Squared distance from p to the segment a-b. Squared so there is no sqrt in the hot path.
-float sd_seg_sq(vec2 p, vec2 a, vec2 b) {
-    vec2 pa = p - a, ba = b - a;
-    float len_sq = max(dot(ba, ba), 1e-9);
-    float t = clamp(dot(pa, ba) / len_sq, 0.0, 1.0);
-    vec2 d = pa - ba * t;
-    return dot(d, d);
+float sd_circle(vec2 p, float r) { return length(p) - r; }
+
+float sd_box(vec2 p, vec2 b) {
+    vec2 q = abs(p) - b;
+    return length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0);
 }
 
 void main() {
-    vec4 current = texture(u_prev, vs_uv);
-    if (u_brush.w &gt; 0.5) {
-        float r = u_brush.z;
-        if (sd_seg_sq(vs_uv, u_brush.xy, u_brush.xy) &lt;= r * r) {
-            current = vec4(u_brush_color * u_brush_emissive, 1.0);
-        }
-    }
-    fs_color = current;
+    vec2 p = vs_uv;
+
+    // Two emitters. The warm one drifts, so the shadows move and you can see the lighting is
+    // recomputed every frame rather than baked once.
+    vec2 warm_at = vec2(0.28, 0.70 + u_drift * sin(u_time * 0.7));
+    float warm = sd_circle(p - warm_at, u_light_radius);
+    float cool = sd_circle(p - vec2(0.80, 0.80), 0.030);
+
+    // Two occluders: a wall between the lights, and a round one low-left.
+    float wall = sd_box(p - vec2(0.50, 0.50), vec2(0.008, u_wall_height));
+    float blob = sd_circle(p - vec2(0.22, 0.26), 0.055);
+
+    if (warm &lt; 0.0) { fs_color = vec4(4.0, 3.3, 2.0, 1.0); return; }
+    if (cool &lt; 0.0) { fs_color = vec4(0.5, 1.2, 4.0, 1.0); return; }
+    // Solid and black: stops a ray and emits nothing, which is what casts a shadow.
+    if (min(wall, blob) &lt; 0.0) { fs_color = vec4(0.0, 0.0, 0.0, 1.0); return; }
+    fs_color = vec4(0.0);
 }</code></pre>
 
 <p>
-  In the pass's settings: wire <code>u_prev</code> to <b>paint</b> (itself), set the format to
-  <b>16-bit float</b>, and turn <b>smooth</b> off.
+  In the pass's settings: set the format to <b>16-bit float</b> and turn <b>smooth</b> off. It
+  reads nothing, so it has no inputs to wire.
 </p>
 
 <div class="note">
   <b>Why 16-bit float, and why not smooth.</b> An emitter is brighter than white — the warm light
-  below is <code>vec3(4.0, 3.3, 2.0)</code>. An 8-bit target clamps that to 1.0 and every light
-  becomes equally bright, destroying the falloff before it starts. And <b>smooth</b> makes reads
-  blend between texels, which would smear the crisp edge that tells the next pass exactly where a
-  wall is.
+  is <code>vec3(4.0, 3.3, 2.0)</code>. An 8-bit target clamps that to 1.0 and every light becomes
+  equally bright, destroying the falloff before it starts. And <b>smooth</b> makes reads blend
+  between texels, which would smear the crisp edge that tells the next pass exactly where a wall
+  is.
 </div>
 
 <p>
-  The alpha channel is the important convention: <b>alpha 1 means "something solid is here"</b>.
-  RGB is what it emits. A wall is solid and black; a light is solid and bright. Every later pass
-  keys off that single bit.
+  The alpha channel is the convention everything downstream keys off: <b>alpha 1 means "something
+  solid is here"</b>, and RGB is what it emits. A wall is solid and black; a light is solid and
+  bright. A ray stops at the first solid texel it reaches — so a black one casts a shadow and a
+  bright one is where light comes from.
 </p>
-
-<h3>The cursor comes from a script</h3>
-
-<p>
-  A shader can't read the mouse. In ShaderBox, a <b>script</b> can — it gets a <code>ctx</code>
-  each frame and returns uniform values. Add <code>scripts/script.py</code> to the document:
-</p>
-
-<pre><code>import math
-from shaderbox.scripting import Ctx, ScriptBehavior, Vec3, Vec4
-
-
-class Behavior(ScriptBehavior):
-    def __init__(self) -&gt; None:
-        self.last: tuple[float, float] | None = None
-
-    def update(self, ctx: Ctx) -&gt; dict[str, object]:
-        x, y = ctx.mouse.x, ctx.mouse.y
-        moved = self.last is not None and math.dist((x, y), self.last) &gt; 0.002
-        self.last = (x, y)
-        return {
-            "u_brush": Vec4(x, y, 0.02, 1.0 if moved else 0.0),
-            "u_brush_color": Vec3(4.0, 3.0, 1.6),
-            "u_brush_emissive": 1.0,
-        }</code></pre>
 
 <div class="warn">
-  <b>ctx.mouse has position but no buttons.</b> So there is no click to gate on: the brush paints
-  whenever the cursor <em>moves</em>. The distance threshold matters — without it a resting cursor
-  burns a permanent dot into a canvas that never forgets.
+  <b>Why this is not painted with the mouse.</b> The obvious design — a canvas that reads itself
+  for feedback while a script feeds it the cursor — was built here and <b>renders black</b>. Two
+  independent reasons, both worth knowing before you reach for a script in this engine:
+  ShaderBox's script engine binds to a document's <b>OUTPUT</b> pass, so a uniform declared on
+  any other pass is silently dropped as an orphan key; and <code>ctx.mouse</code> carries position
+  only, no buttons, so there is no click to gate a brush on. An analytic scene sidesteps both, and
+  a drifting light demonstrates the same thing a brush would.
 </div>
 
-<figure>
-  <img src="{{IMG:paint}}" alt="Two bright dots and a dark vertical wall on black">
-  <figcaption>
-    <b>paint</b> — two emitters and a wall. Nothing is lit yet; these are just the texels that
-    are <em>solid</em>. Everything after this is about getting light from the bright ones to
-    everywhere else.
-  </figcaption>
-</figure>
 
 <h2 id="naive"><span class="step">2</span>Naive global illumination</h2>
 
@@ -251,8 +227,9 @@ class Behavior(ScriptBehavior):
   The original article reaches for <b>temporal accumulation</b> here — jitter the noise by time
   and blend 90% of the previous frame — which trades noise for smearing. Worth knowing, because
   radiance cascades needs none of it: its ray directions are deterministic, so there is no noise
-  to hide. If you build this stage, give it a <b>persist</b> target and blend with
-  <code>u_prev</code>; then delete it happily at step 7.
+  to hide. If you build this stage, wire its
+  <code>u_prev</code> input to the pass ITSELF — that is how a pass sees its own last frame here —
+  and blend against it; then delete it happily at step 7.
 </div>
 
 <p>
@@ -375,8 +352,10 @@ void main() {
 
 <div class="warn">
   <b>Resize changes the answer.</b> 9 runs spans 512px; a 1024px canvas needs 10. Come up short
-  and it still renders — just with a subtly wrong distance field and no error anywhere. The pass
-  settings panel warns you when the count no longer reaches, because this failure is invisible.
+  and it still renders — just with a subtly wrong distance field and no error anywhere. Nothing
+  warns you: an engine-side check was built and then retracted, because it cannot tell a base-2
+  jump flood from the base-4 cascade stack in the next pass, and a check assuming one is wrong
+  for the other. The count is yours to keep right.
 </div>
 
 <figure>
@@ -503,12 +482,13 @@ vec2  probe_uv = (probe + 0.5) * sp / u_resolution;</code></pre>
 </p>
 
 <div class="warn">
-  <span class="k">CORRECTION</span> <b>The published snippet is wrong here</b>, and it is the
-  single easiest thing in this entire pipeline to get wrong. The article computes the upper slot
-  as <code>vec2(mod(index, sqrtBase), floor(index / upperSpacing))</code> — mixing a
-  <em>slot dimension</em> with a <em>probe spacing</em>. Both components must use the same
-  quantity. Get this wrong and it still renders convincing shadows while being 30% off; that
-  exact bug shipped once in this repo's own research and took a numerical comparison to catch.
+  <b>This is the single easiest thing in the pipeline to get wrong</b>, and the failure is
+  invisible: address the upper slot with a <em>slot dimension</em> in one component and a
+  <em>probe spacing</em> in the other and it still renders convincing shadows while being 30%
+  off. That exact bug shipped once in this repo's own research and took a numerical comparison to
+  catch. Both components must use the same quantity — <code>usp</code> below. (The article's
+  prose shows a base-16 form that differs from this; its shipped demo source agrees with what is
+  here. Read the source, not the prose.)
 </div>
 
 <pre><code>float usp = sp * 2.0;                          // the level above is spaced twice as wide
@@ -687,7 +667,8 @@ void main() {
   <li>Set <code>jfa</code>'s runs to 4 and look at <code>df</code> — the field goes blocky at range.</li>
   <li>Point the document's output at <code>df</code> or <code>jfa</code> to see any stage directly.</li>
   <li>Turn <b>smooth</b> on for <code>cascade</code> and watch the merge break in an interesting way.</li>
-  <li>Resize the canvas to 1024 and read the warning the pass settings give you.</li>
+  <li>Resize the canvas to 1024 and look at <code>df</code> — nine runs no longer span it, and
+      nothing tells you; the field just goes subtly wrong at range.</li>
 </ul>
 
 </div>
