@@ -373,3 +373,143 @@ and `test_copilot_passes.py` to the extent the missing display allows.
 Not verified: the eight manual in-app steps (maintainer's, and this shell has no usable display);
 `test_the_gear_shows_three_distinct_states` and the three `app`-fixture strip tests, which were read
 as code instead; whether F8's fix has a visual cost the maintainer would object to.
+
+---
+
+# Round 2 (closure) - against `3d635ef`
+
+Narrow closure round on `3d635ef` ("069 W-D fixes: an unfilled input reads black"), 12 files.
+Read via `git show 3d635ef:<path>`; the banner via `git show fdc7841:ai_docs/roadmap.md`. Nothing
+tracked was edited beyond this file.
+
+## Overall: **PARTIAL**
+
+Seven of eight findings are closed outright, one is closed for the case it was reported on and
+leaves a narrower residue (F8). No fix introduced a regression, the deviation list is complete
+against the combined diff, and the `sublines` deletion is a genuine improvement over what round 1
+reviewed. The residue is one frame, is now pinned by nothing, and the spec still asserts the
+opposite of what the engine does at that frame.
+
+## Per-finding verdicts
+
+| # | Finding | Verdict | Line |
+|---|---|---|---|
+| F1 | `_pass_views` resolves before it compiles | **CLOSED** | `copilot/backend.py:780-787` gathers `samplers` for every pass before `:790`'s `effective_graph()`; rows read `samplers[name]` at `:799`. Pinned by `tests/test_copilot_passes.py:181-198`, which asserts on `_pass_views` directly with `program is None` (`:192`) - the one place the defect is reachable, since `read_working_set` compiles upstream. Re-ran the round-1 reproduction: the Bloom-with-edges-stripped case now reports `u_scene <- scene` where it reported `(nothing; reads BLACK)`. |
+| F2 | Deviations unrecorded, no post-impl section | **CLOSED** | `70_wave_d_wiring_naming.md:1105-1160` (`## Landed deviations`, nine entries) and `:1227-1264` (Review history round 2). Decisions corrected in place, not merely appended: decision 1's body shape at `:92-104`, decision 3's consumer count at `:237-242` ("The SIX consumers"), decision 11's sublines ruling at `:567-573`, premise 16 at `:1055-1058`. |
+| F3 | Parent's refuted api-lock claim | **CLOSED** | `01_spec.md:182-189`. The clause is replaced by the gate that shipped, in bold ("**no api-lock file is involved**"), pointing at premise 15 and additionally carrying the F4-corrected fact that the resolve-clean test cannot see a uniform rename. The third prefix trap inside RC is now named in the parent too. |
+| F4 | Docstrings narrate development history | **CLOSED** | `widgets/pass_list.py:8-9` is now "A tile is a picture and a name, nothing else. Compile errors show as a red border rather than as text, and the wiring lives in the gear." `popups/pass_settings.py:14-15` ends at "Three stored states, three distinct readings." Both state the surface; neither says what it replaced. |
+| F5 | `_is_user_bound` imported privately across a boundary | **CLOSED** | `document.py:222` is `is_user_bound` with a docstring; `popups/pass_settings.py:23` imports the public name. A grep for `_is_user_bound` over `shaderbox/` returns nothing. The fix went further than proposed: `Document._sampler_names` took a `self` it never used and is now the free function `sampler_names` (`document.py:232-246`), which the no-`@staticmethod` rule requires. |
+| F6 | `_black_texture` lifetime | **CLOSED (was no defect)** | Unchanged at `document.py:398-402`. The new seed at `:548-551` calls the same cached accessor, so binding every declared sampler still allocates one 1x1 texture per document. |
+| F7 | Roadmap banner stale | **CLOSED** | `fdc7841:ai_docs/roadmap.md:29-30`: "As of 2026-09-03 (069 complete: all eight waves landed; W-H closed it)" with W-D named in the landed list. Closed by W-H, not by `3d635ef`, exactly as the fix-up commit message says. |
+| F8 | Unresolved sampler renders the shipped photo | **CLOSED for the reported case; a one-frame residue remains** | See below. |
+
+## The worked example, re-executed against `3d635ef`
+
+Fresh RC copy, `edge` pass declaring `u_df` beside pass `df`, run frame by frame:
+
+```
+F0 samplers: [] eff: {}
+F1 program None: True eff: {}
+F2 max px: 255  is_default_image(u_df value): True
+F2 eff (after the compile): {'u_df': 'df'}
+F3 eff: {'u_df': 'df'} order: ['paint', 'seed', 'jfa', 'df', 'edge'] max px: 154
+F3 edge vs df maxdiff: 1  stored graph.json inputs: {}
+```
+
+The `u_nosuch` case, ten frames:
+
+```
+after 10 frames max px: 0  is_default_image(u_nosuch value): True
+eff: {}
+```
+
+**F8's reported case is fixed.** `u_nosuch` went from `max px: 255` to `max px: 0`. The seeded
+value is still the default image (`is_default_image` is `True`), which is correct - the fix binds
+black over it rather than changing what is seeded. The strengthened
+`test_u_df_beside_df_renders_without_the_gear` is real: `edge` vs `df` agree to within 1 of 255
+texel for texel, so the assertion now distinguishes the distance field from the photo, which
+`max(rgb) > 0` could not.
+
+**The residue: the compile frame itself still shows the photo.** `F2 max px: 255`, with
+`is_default_image` True. The mechanism, isolated on a document whose only sampler can never
+resolve:
+
+```
+BEFORE frame0: program is None -> True   sampler_names -> []
+FRAME 0 (the compile frame) max px: 255
+AFTER frame0: sampler_names -> ['u_nosuch']
+FRAME 1 max px: 0
+```
+
+The black seed at `document.py:548-551` iterates `sampler_names(render_pass)`, which reads
+`render_pass.program` (`document.py:238-240`). On the frame a pass first compiles, the compile
+happens inside `Pass.render`, *after* the seed dict is built - so the dict is empty, nothing is
+bound, and `core.py:381` falls through to the seeded photo for exactly one frame. From the next
+frame on the seed is complete and the frame is black.
+
+This is not a regression and not the case F8 was reported on: it is one frame rather than
+permanent, and it is the same window decision 2 already accepts for the auto edge. Three reasons
+it is still worth naming:
+
+1. **The spec asserts the opposite at exactly this frame.** `70_wave_d_wiring_naming.md:676-677`
+   still reads "So frame 2 draws `edge` with an unresolved `u_df` - **black, one frame**", and
+   `:153` still says "a pass whose auto input has not resolved yet reads black for those frames".
+   Round 1 raised this as part of F8 and the fix-up corrected the engine everywhere except here,
+   so the spec's own worked example remains the one place it is falsified.
+2. **Nothing pins it.** `test_an_unresolved_sampler_renders_black`
+   (`tests/test_default_wiring.py:199-224`) calls `_render_until_online` for `len(passes) + 4`
+   frames before asserting, so it never observes the compile frame. The assertion would hold under
+   a fix and under no fix.
+3. **It is the same class the fix-up commit message names.** "two surfaces that assert a behaviour
+   the engine did not have" - the gear's `auto: none` and the copilot's `reads BLACK` are both
+   accurate from frame 2 onward and both wrong on frame 1 for a pass coming online.
+
+**Fix**, one of two, maintainer's call: either seed from the pass's declared samplers in a way
+that survives the not-yet-compiled window (the source text is available where the program is not),
+or amend `:676-677` and `:153` to say "the seeded default image for the compile frame, black from
+the next" and add a frame-indexed assertion so the prose is pinned. The second is the smaller
+change and matches the existing tolerance for a one-frame cost.
+
+## Deviation-list completeness against `f18a7d3 + 3d635ef`
+
+Enumerated the combined diff (`git diff f18a7d3~1 3d635ef`) and matched every departure from the
+spec's original text to a listed deviation. **The nine cover everything.**
+
+| Departure in the combined diff | Listed as |
+|---|---|
+| `effective_inputs` loops rather than comprehends, carrying stored edges | 1 |
+| `has_feedback` plans the effective graph (`document.py:384`) | 2 |
+| Every declared sampler seeded black (`document.py:548-551`) | 3 |
+| `_pass_views` gathers samplers before resolving | 4 |
+| `preview_cell` loses `sublines`; `ui_primitives.py` enters the file set | 5 |
+| `sampler_names` free function; `is_user_bound` public | 6 |
+| `effective_graph()` hoisted out of `_pass_views`' loop | 7 |
+| `test_copilot_script_tools.py` stub shim | 8 |
+| Two module docstrings | 9 |
+
+`shaderbox/ui_primitives.py` is the only file in the combined diff that the spec's Files-touched
+section never named, and deviation 5 is what puts it there. `tests/test_tutorial_build.py` in the
+combined range is W-H's, not W-D's. `tests/test_pass_graph.py` and `tests/test_document_graph.py`
+remain untouched, correctly (round 1 checked: neither asserts the old `""` semantics).
+
+Two test-name drifts in the spec, below the bar for a deviation but worth a line since the spec is
+the durable artifact: `70_wave_d_wiring_naming.md:904` still headings
+`tests/test_pass_verbs.py::test_the_strip_draws_no_sublines`, which was renamed to
+`test_the_strip_draws_a_picture_and_a_name_only` (`tests/test_pass_verbs.py:498`); and
+`test_pass_views_resolves_after_the_compile_that_finds_the_samplers` appears nowhere in the spec
+though deviation 4 describes what it pins. Both are one-word edits.
+
+## Tests re-run
+
+`tests/test_default_wiring.py` 9 passed (1 deselected: `test_the_gear_shows_three_distinct_states`
+needs the `app` fixture, which segfaults in this shell at `glfw.get_video_mode` - environmental,
+established in round 1 on the untouched `test_canvas_fields.py`). `tests/test_examples_resolve.py`,
+`tests/test_ui_prose_budget.py`, `tests/test_copilot_script_tools.py`, `tests/test_pass_graph.py`:
+559 passed, 4 skipped. The prose-budget suite is green with the `sublines` row gone, confirming
+deviation 5's claim that the gate's derived domain follows the signature.
+
+## False trails, round 2
+
+- The `sublines` deletion is not scope creep: with the strip no longer passing it the parameter had zero callers in `shaderbox/`, and the gate's row left with the signature rather than needing an edit. Round 1 reported decision 11 as landed-as-specified, and the fix-up reversing that decision is the better call - recorded here so a later reader does not read the reversal as drift.
+- `is_default_image` still returning True for the unresolved sampler's stored value is correct, not a leftover: the fix binds black over the seeded value rather than changing what `_default_uniform_value` seeds, which keeps the media-bound exclusion working.
+- The `_pass_views` fix costs one extra pass over `document.passes`, not an extra compile: `_sampler_uniform_names` was already called once per pass in the loop it was hoisted out of.

@@ -315,3 +315,201 @@ read; the rename/remove `""` round trip; a cost measurement; six mutation falsif
 verified restores; `make gates` unpiped (EXIT=0, smoke passed) and the full suite (1629 passed).
 Not executed: the interactive gear (its combo was exercised through the wave's own imgui-frame
 rig rather than by clicking), and the tutorial/W-H surface, which is a different wave.
+
+---
+
+# Round 2 (closure) — against `3d635ef`
+
+Narrow closure round on `3d635ef` ("069 W-D fixes: an unfilled input reads black"), 12 files,
+read via `git show 3d635ef:<path>`. Nothing tracked was edited beyond this file; every probe and
+every mutation ran in the scratchpad and was restored with the restore verified.
+
+## Overall: **FAIL**
+
+All five round-1 findings are CLOSED. The fix for F1 introduced a new defect of the same class
+and of higher severity than the one it closed: the shipped Media Input example now renders fully
+black. It is a one-line fix, and the suite cannot see it.
+
+| Finding | Verdict |
+| --- | --- |
+| F1 unresolved sampler reads the photo | **CLOSED** (regression R1 below) |
+| F2 `_pass_views` resolves before the compile | **CLOSED** |
+| F3 raw-graph render falsifier stays green | **CLOSED** |
+| F4 `sublines` has zero callers | **CLOSED** |
+| F5 `_sampler_names` takes an unused `self`; `_is_user_bound` shared while private | **CLOSED** |
+| R1 a user-bound texture is overwritten with black | **NEW, blocking** |
+
+---
+
+## R1 (new, blocking). The black seed overwrites a USER-BOUND texture, and the shipped Media Input example renders black
+
+**Claim.** `Document.render` now seeds `inputs` with the black texture for every sampler the
+pass DECLARES:
+
+```python
+inputs: dict[str, moderngl.Texture] = {
+    uniform: self._black_texture()
+    for uniform in sampler_names(render_pass)
+}
+```
+
+`Pass.render` resolves each sampler as `inputs.get(name, uniform_values.get(name))`, so a seeded
+entry SHADOWS `uniform_values` — including a texture the user bound. The effective graph
+deliberately produces no edge for a user-bound sampler (that is the 069 D9 media exclusion), so
+nothing overwrites the seed and the user's image is replaced by black.
+
+**Evidence.** The shipped Media Input example (`73ea2431-13f6-41e4-b923-04d846b678b0`),
+UNMODIFIED, copied to a temp dir and rendered until every pass is online:
+
+```
+u_image: Image, is_default_image=False, user_bound=True
+u_video: Video, is_default_image=False, user_bound=True
+effective inputs for `main`: {}
+RENDER: max_rgb=0   unique_colours=1
+```
+
+Bisected across the two commits with only `shaderbox/document.py` swapped, same probe:
+
+```
+f18a7d3:  max_rgb=255  unique=131266     <- the user's PNG and video
+3d635ef:  max_rgb=0    unique=1          <- fully black
+```
+
+This is strictly worse than F1. F1 showed the wrong picture for a sampler the user had not
+wired; R1 discards a picture the user explicitly chose, on a shipped example whose entire subject
+is media input. The wave's own decision 3 exists to prevent exactly this ("a sampler whose
+`uniform_values` entry is a user-bound texture is never auto-wired ... would otherwise let a pass
+named `image` silently replace the PNG in the `Media Input` example"); the exclusion was applied
+in `effective_inputs` and then bypassed at the seam that came after it.
+
+**Why the suite is green.** No test renders the Media Input example and inspects its pixels.
+`test_raw_texture_round_trip.py` and `test_video_frame_stepping.py` reach into that directory for
+a media FILE, not for a document render. The round-1 media-exclusion probe that would have caught
+it asserted on `effective_graph`, which is still correct — the defect is downstream of it.
+
+R1 is independent of the frame-0 compile guard the concurrent spec review added to
+`Document.render` after this round began: re-run against the working tree carrying that guard,
+the Media Input example still renders `max_rgb=0, unique=1`. The two defects sit on the same
+seed and neither fix substitutes for the other.
+
+**Fix.** Exclude user-bound samplers from the seed, the same predicate the graph already uses:
+
+```python
+inputs: dict[str, moderngl.Texture] = {
+    uniform: self._black_texture()
+    for uniform in sampler_names(render_pass)
+    if not is_user_bound(render_pass.uniform_values.get(uniform))
+}
+```
+
+Verified: with that one line, Media Input renders `max_rgb=255, unique=131266` again, the
+`u_nosuchpass` probe still renders `max_rgb=0`, and `test_default_wiring.py` +
+`test_pass_verbs.py` + `test_copilot_passes.py` are 57 passed. The accompanying test is the one
+the suite lacks: render the shipped Media Input example and assert its output is not uniformly
+black.
+
+---
+
+## F1 — CLOSED
+
+`Document.render` seeds every declared sampler black and lets resolved edges overwrite, so the
+three states reach the same texture by one rule. The four-state seam probe, re-run verbatim:
+
+```
+                              round 1        round 2
+absent, name matches nothing  max_rgb=255 -> max_rgb=0
+absent, no u_ prefix (`tex`)  max_rgb=255 -> max_rgb=0
+explicit ""                   max_rgb=0   -> max_rgb=0
+stale explicit name           max_rgb=0   -> max_rgb=0
+```
+
+The three surfaces that disagreed now agree on the same sampler in the same frame:
+
+```
+GEAR:     auto: none   (index 0)
+COPILOT:  u_nosuchpass <- (nothing; reads BLACK)
+RENDER:   max_rgb=0, 1 unique colour
+```
+
+Pinned: reverting the seed to the stored-`""`-only form turns
+`test_an_unresolved_sampler_renders_black` red.
+
+## F2 — CLOSED
+
+`_pass_views` gathers `_sampler_uniform_names` for every pass (the call that compiles) before
+resolving the graph once. The round-1 two-read probe, first read on a name-wired never-compiled
+Bloom, all programs `None` going in:
+
+```
+call 1:  blur ['u_bright <- bright']  bright ['u_scene <- scene']
+         composite ['u_scene <- scene', 'u_blur <- blur', 'u_trail <- trail']
+         trail ['u_scene <- scene', 'u_prev <- trail']
+```
+
+Correct on the FIRST read, where round 1 reported every row as `(nothing; reads BLACK)`. Pinned:
+moving the sampler gather back below the resolve turns
+`test_pass_views_resolves_after_the_compile_that_finds_the_samplers` red. The implementer's note
+that `read_working_set` already compiles before reaching `_pass_views` is correct, so the test
+asserting on `_pass_views` directly is the right level.
+
+## F3 — CLOSED
+
+`test_u_df_beside_df_renders_without_the_gear` now compares `edge`'s canvas against `df`'s texel
+for texel (`abs diff max <= 1`) and keeps a non-black check as a separate assertion. The round-1
+falsifier that stayed green:
+
+```
+Document.render plans self.graph  ->  1 failed, 40 passed
+FAILED tests/test_default_wiring.py::test_u_df_beside_df_renders_without_the_gear
+```
+
+Red now, where round 1 was 40 passed. The failure output shows the texel comparison rejecting the
+grey field against the photo, which is the mechanism the finding asked for.
+
+## F4 — CLOSED
+
+`sublines` is gone from `preview_cell`'s signature, docstring, `footer_h` term and render loop,
+and from `test_ui_prose_budget.py`'s widths map. The only occurrence left in the tree is the
+guard assertion in `test_the_strip_draws_a_picture_and_a_name_only`:
+
+```
+tests/test_pass_verbs.py:517:  assert "sublines" not in kwargs, kwargs
+```
+
+The rewritten test also asserts each tile's `footer` is a real pass name, so it checks what a
+tile DOES carry rather than only what it does not.
+
+## F5 — CLOSED
+
+`Document._sampler_names` is now the free function `document.sampler_names(render_pass)` with no
+`self`, and `_is_user_bound` is `is_user_bound`, both with docstrings. `pass_settings.py` imports
+the public name. `pass_settings.py` keeps its own local `_sampler_names` that goes through
+`get_active_uniforms()`; that is a different function on purpose (opening the gear is a user act
+that should bring the pass online, where the render path must not compile), it predates this
+commit, and it is single-module private, so it is correctly named.
+
+---
+
+## False trails, round 2
+
+- The two `sampler_names` functions in `document.py` and `pass_settings.py` looked like a
+  duplicate left behind by the rename; they differ in the one respect that matters (compiles
+  versus does not) and both are correct where they sit.
+- The black seed running per iteration rather than per pass looked like wasted work; it is a dict
+  comprehension over a handful of names inside a loop that already issues a draw call, and the
+  round-1 measurement put the whole resolution path at 0.5% of a 60 fps budget.
+- `is_default_image` still returning True for an unresolved sampler's stored value looked like a
+  leftover; the fix binds over the seeded value rather than changing what is seeded, which is what
+  keeps the media exclusion expressible at all.
+
+## Coverage, round 2
+
+Read every source and test file in `3d635ef` end-to-end. Re-ran the round-1 seam probe, the
+three-surface agreement probe, the `_pass_views` two-read probe, the media-exclusion probe, and
+the twelve-frame planner trace with per-frame invariant assertions (unchanged: converges at f3,
+no double draw, no skipped draw). Ran four mutations with verified restores: the raw-graph render
+plan (now red), the stored-only black seed (red), the `_pass_views` resolve order (red), and the
+candidate R1 fix (green on all three suites plus both probes). Bisected R1 across `f18a7d3` and
+`3d635ef` with only `document.py` swapped. `make gates` unpiped: EXIT=0, check passed, test
+passed, smoke passed. Not executed: the interactive gear and the manual in-app steps, which need
+a display this shell does not have.
