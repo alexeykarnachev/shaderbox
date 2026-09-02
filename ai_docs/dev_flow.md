@@ -239,10 +239,11 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   (the typed returns: `Vec2/3/4` tuple-subclasses + `Array`/`Text` + `normalize_output` → coercion),
   `behavior.py` (`ScriptBehavior` base + `Behavior` protocol + `PythonBehavior` — the curated-globals
   `exec` seam, subclass resolve, instance hold, `run`; + the free `coerce_one` coercion atom),
-  `engine.py` (`ScriptEngine`: per-document registry, `(path,mtime)` cache + cached source, resolve/orphan-
-  warn, `tick`, `dry_run`, `reset`, `fresh_behavior_for`, `script_stub_for`, `script_status`,
-  `is_scriptable`), `keys.py` (`StoppedKey`, the persisted `(pass, uniform)` stop key the engine also
-  takes per tick). The UI reads these via `ProjectSession`. Imports no imgui/glfw/App and no concrete `Document`
+  `engine.py` (`ScriptEngine`: per-document registry, `(path,mtime)` cache + cached source, resolve +
+  orphan-report (an error-strip row, never a log line), `tick`, `dry_run`, `reset`,
+  `fresh_behavior_for`, `script_stub_for`, `script_status`, `is_scriptable`), `keys.py` (`StoppedKey`,
+  the persisted `(pass, uniform)` stop key the engine also takes per tick). The UI reads these via
+  `ProjectSession`. Imports no imgui/glfw/App and no concrete `Document`
   (works against the `ScriptTarget` protocol — a document's passes by name). `ProjectSession` owns it;
   `ui.py` ticks live; export ticks
   a FRESH per-export instance — structurally, via the injected `Document.export_isolation` factory that

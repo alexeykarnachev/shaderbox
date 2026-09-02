@@ -25,12 +25,17 @@ def _u(name: str, dim: int = 1, n: int = 1) -> types.SimpleNamespace:
 
 
 class _FakePass:
+    # Mirrors the real `Pass` contract the engine leans on: `get_active_uniforms` COMPILES a
+    # never-attempted pass, and that attempt is what makes it `script_ready`. A stand-in that
+    # reported readiness independently of the call would let a probe pass while the real lazy
+    # compile did nothing.
     def __init__(self, uniforms: list[types.SimpleNamespace]) -> None:
         self.uniform_values: dict[str, object] = {}
         self.script_ready = True
         self._uniforms = uniforms
 
     def get_active_uniforms(self) -> list[types.SimpleNamespace]:
+        self.script_ready = True
         return self._uniforms
 
 
@@ -296,3 +301,27 @@ def test_dry_run_reports_the_pass_in_orphan_keys(tmp_path: Path) -> None:
 
     assert probe.driven == {("paint", "u_x")}  # the block drove paint ALONE
     assert [(p, name) for p, name, _ in probe.orphan_keys] == [("paint", "u_typo")]
+
+
+def test_a_cold_dry_run_compiles_and_reports_the_real_driven_set(
+    tmp_path: Path,
+) -> None:
+    # `write_script_source` reloads then probes with no render in between, so on a document whose
+    # passes have never rendered the probe used to hand the agent three false facts at once: an empty
+    # driven set (the deliberate "loud no-op"), an orphan naming a uniform the shader DOES declare,
+    # and STATIC from empty samples. `dry_run` is a synchronous agent call, not the frame loop, so it
+    # compiles first (066 D1 constrains the frame loop only). Falsifier: drop that compile — driven
+    # goes empty, orphan_keys grows the row, and every sample dict is empty.
+    _write_script(tmp_path, _script(update_body="        return {'u_x': ctx.t}\n"))
+    document = _FakeDocument({"seed": [_u("u_x")], "out": [_u("u_x")]})
+    for render_pass in document.passes.values():
+        render_pass.script_ready = False  # never rendered
+    eng = _engine(tmp_path, document)
+
+    probe = eng.dry_run("n0", document, _SAMPLE_TIMES, _FPS)
+
+    assert probe.driven == {("seed", "u_x"), ("out", "u_x")}
+    assert probe.orphan_keys == []
+    assert all(s[1] for s in probe.samples)  # non-empty, so the motion verdict is real
+    moved = [s[1][("seed", "u_x")] for s in probe.samples]
+    assert moved[0] != moved[-1]

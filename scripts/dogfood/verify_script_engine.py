@@ -19,6 +19,7 @@ from pathlib import Path
 from PIL import Image
 
 from scripts.dogfood.harness import DogfoodHarness
+from shaderbox.paths import PASSES_DIR_NAME, pass_shader_name
 
 _SHADER = """#version 460 core
 in vec2 vs_uv;
@@ -30,8 +31,11 @@ void main() { fs_color = vec4(vec3(u_wave), 1.0); }
 
 def _seed_scripted_document(project_dir: Path, body: str) -> None:
     document = project_dir / "documents" / "scripted"
-    document.mkdir(parents=True, exist_ok=True)
-    (document / "shader.frag.glsl").write_text(_SHADER, encoding="utf-8")
+    passes = document / PASSES_DIR_NAME
+    passes.mkdir(parents=True, exist_ok=True)
+    # 065 moved a document's shaders into `passes/<name>.frag.glsl`; the loader reads nothing else,
+    # so a shader at the document root produces a document with no passes at all.
+    (passes / pass_shader_name("main")).write_text(_SHADER, encoding="utf-8")
     (document / "document.json").write_text(
         json.dumps(
             {
@@ -87,11 +91,17 @@ def main() -> int:
     _seed_scripted_document(h.project_dir, _PURE)
     h.session.load(h.project_dir)
     h.session.set_current_document_id("scripted")
-    # One script per document (048): the script binds by existence — no activate step. The driven set is
-    # the script's LAST-TICK keys (dynamic), so tick once before reading it (the live frame order:
-    # tick -> read; the engine knows nothing it drove until the first tick).
+    # One script per document (048): the script binds by existence — no activate step. The driven set
+    # is the script's LAST-TICK keys (dynamic), so it is only known after a tick. Follow the LIVE
+    # frame order — tick, render, tick — because a pass that has never attempted a compile is HELD
+    # for its first tick (069: the engine never compiles from inside the frame loop), so the first
+    # render is what makes it readable and the second tick is what drives it.
     h.session.reload_scripts()
+    document = h.session.ui_documents["scripted"].document
     h.session.tick(["scripted"], t=0.0, dt=1 / 60, frame=0)
+    document.begin_frame(0)
+    document.render(u_time=0.0)
+    h.session.tick(["scripted"], t=0.0, dt=1 / 60, frame=1)
 
     driven = h.session.get_script_driven_uniforms("scripted")
     assert driven == {("main", "u_wave")}, (
@@ -156,8 +166,11 @@ def main() -> int:
     h.session.reload_scripts()
     p_broken = h.render_at(3.0, "scripted")
     assert p_broken, "a broken script crashed the render instead of freezing"
+    # The sentinel key is (document, pass, name) since 069, with "" as the absent-pass marker: a
+    # behavior-level failure belongs to no pass.
     assert (
         "scripted",
+        "",
         "script.py",
     ) in h.session.script_engine.errors, "no ScriptError recorded"
 

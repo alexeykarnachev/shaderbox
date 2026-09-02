@@ -18,6 +18,7 @@ from typing import Any
 import pytest
 from loguru import logger
 
+from shaderbox.core import Pass
 from shaderbox.scripting import (
     EngineContext,
     ScriptEngine,
@@ -1305,13 +1306,15 @@ def test_the_stub_has_one_block_per_pass() -> None:
             "empty": [],
         }
     )
-    assert "'paint': {" in body
-    assert "'composite': {" in body
-    assert "'empty': {" in body
+    # DOUBLE quotes, matching the bare-key example in the same stub and the design note's snippet.
+    # Falsifier: emit `!r` (single quotes) — the stub would be quoted two ways in one block.
+    assert '"paint": {' in body
+    assert '"composite": {' in body
+    assert '"empty": {' in body
     assert "(no scriptable uniforms)" in body
     assert "EVERY pass declaring it" in body
-    paint_block = body.split("'paint': {")[1].split("'composite': {")[0]
-    composite_block = body.split("'composite': {")[1].split("'empty': {")[0]
+    paint_block = body.split('"paint": {')[1].split('"composite": {')[0]
+    composite_block = body.split('"composite": {')[1].split('"empty": {')[0]
     assert "u_b" in paint_block and "u_b" not in composite_block
 
     ast.parse(body)  # the comments are comments, not broken code
@@ -1370,3 +1373,114 @@ def test_a_stopped_pair_freezes_only_that_pass(tmp_path: Path) -> None:
     # BOTH keep their play/stop button: a stopped pair still counts as driven.
     driven = eng.script_driven_uniforms("n0")
     assert ("paint", "u_a") in driven and ("composite", "u_a") in driven
+
+
+def test_a_broadcast_is_held_for_a_not_yet_compiled_pass(tmp_path: Path) -> None:
+    # The hold is the BROADCAST's too, not only the pass block's (069 round 3). A never-rendered
+    # two-pass document must produce NO strip row on frame 0 and drive on frame 1 — "absent because
+    # it has not compiled yet" and "absent because no pass declares it" are different answers.
+    # Falsifier: drop the not_ready check in the broadcast phase; frame 0 records
+    # `no pass declares 'u_a'` and the strip shows the orphan the hold exists to prevent.
+    _write_script(tmp_path, _script(update_body="        return {'u_a': 1.0}\n"))
+    document = _FakeDocument({"paint": [_u("u_a")], "composite": [_u("u_a")]})
+    for render_pass in document.passes.values():
+        render_pass.script_ready = False
+    eng = _engine(tmp_path, document)
+
+    eng.tick("n0", document, _ctx(0.0))
+    assert not any(k[0] == "n0" for k in eng.errors)
+    status = eng.script_status("n0")
+    assert status is not None and status.soft_errors == []
+    assert eng.script_driven_uniforms("n0") == set()
+    assert document.passes["paint"].uniform_values == {}
+
+    for render_pass in document.passes.values():
+        render_pass.script_ready = True
+    eng.tick("n0", document, _ctx(0.1))
+    assert eng.script_driven_uniforms("n0") == {("paint", "u_a"), ("composite", "u_a")}
+    assert not any(k[0] == "n0" for k in eng.errors)
+
+
+def test_a_broadcast_names_the_broken_pass_that_would_have_declared_it(
+    tmp_path: Path,
+) -> None:
+    # Every pass is READY and none declares the key, but one is ready-BECAUSE-its-compile-failed: the
+    # row names that pass and its compile failure, and is emitted under that pass's key so the shader
+    # tab carrying the actual cause shows it. Falsifier: keep the pass-free `no pass declares` row —
+    # the message and the key both go red, and the row would appear on no shader tab at all.
+    _write_script(tmp_path, _script(update_body="        return {'u_wave': 1.0}\n"))
+    document = _FakeDocument(
+        {"main": []}
+    )  # ready, but declaring nothing = a failed compile
+    eng = _engine(tmp_path, document)
+    eng.tick("n0", document, _ctx(0.0))
+
+    err = eng.errors[("n0", "main", "u_wave")]
+    assert "does not compile" in err.message and "'main'" in err.message
+    assert err.pass_name == "main"
+    status = eng.script_status("n0")
+    assert status is not None
+    assert [(p, name) for p, name, _ in status.soft_errors] == [("main", "u_wave")]
+
+
+def test_a_bare_key_no_ready_pass_declares_stays_pass_free(tmp_path: Path) -> None:
+    # The ordinary homeless case is unchanged: every pass compiled and simply does not declare the
+    # key, so the row belongs to no pass. Falsifier: attribute it to a pass anyway — a bare key is a
+    # claim about the whole document and would then land on an unrelated shader tab.
+    _write_script(tmp_path, _script(update_body="        return {'u_z': 1.0}\n"))
+    document = _FakeDocument({"paint": [_u("u_a")], "composite": [_u("u_a")]})
+    eng = _engine(tmp_path, document)
+    eng.tick("n0", document, _ctx(0.0))
+
+    err = eng.errors[("n0", "", "u_z")]
+    assert err.message == "no pass declares 'u_z' (orphan key)"
+    assert err.pass_name == ""
+
+
+# ---- Pass.script_ready's truth table, GL-free ----
+
+
+def _ready(program: object | None, error_raw: str) -> bool:
+    # `Pass.script_ready` bound onto a light stub (the __get__ idiom the backend tests already use):
+    # the property reads only these two attributes, so no GL context is needed. A GL-gated pin would
+    # leave the expression unverified on a display-less box, which is where the inverted form shipped
+    # green during the spec's own round 2.
+    stub = types.SimpleNamespace(
+        program=program, compile_unit=types.SimpleNamespace(error_raw=error_raw)
+    )
+    return Pass.script_ready.fget(stub)
+
+
+def test_script_ready_matches_its_truth_table() -> None:
+    # The wave spec's three rows, asserted on the expression itself. `script_ready` is the NEGATION
+    # of the guard `get_active_uniforms` tests before compiling, and writing that guard verbatim
+    # inverts the member — which is exactly what round 2 caught in the spec.
+    # Falsifier: invert to `program is None and not error_raw`; all three rows go red.
+    assert (
+        _ready(None, "") is False
+    )  # never attempted -> HELD, no compile from the tick
+    assert (
+        _ready(None, "boom") is True
+    )  # compile FAILED -> ready-but-empty, orphan path
+    assert _ready(object(), "") is True  # compiled -> routes normally
+
+
+def test_script_ready_never_compiles() -> None:
+    # It is a pure read: a stub whose attributes raise if anything tries to build a program proves
+    # the property triggers no compile, which is what makes 066 D1 hold by construction rather than
+    # by an engine-side exception handler. Falsifier: have the property call get_active_uniforms.
+    calls: list[str] = []
+
+    class _Probe:
+        program = None
+        compile_unit = types.SimpleNamespace(error_raw="")
+
+        def compile(self) -> None:
+            calls.append("compile")
+
+        def get_active_uniforms(self) -> list[object]:
+            calls.append("get_active_uniforms")
+            return []
+
+    assert Pass.script_ready.fget(_Probe()) is False
+    assert calls == []

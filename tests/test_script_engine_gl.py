@@ -352,18 +352,25 @@ def test_a_broadcast_reaches_both_passes_on_the_gpu(
     for render_pass in document.passes.values():
         render_pass.release()
     document.passes = {}
+    # `out` READS `seed`, so `seed` is on the output chain and actually renders — a pass nothing
+    # consumes is never drawn, which would make the assertion below unfalsifiable.
+    graph = PassGraph(
+        output="out",
+        passes={"seed": PassEntry(), "out": PassEntry(inputs={"u_seed": "seed"})},
+    )
     for name, src in (("seed", _SEED_SRC), ("out", _OUT_SRC)):
-        render_pass = Pass(gl=gl_ctx, canvas_size=(8, 8))
+        # The pass's target comes from its OWN graph entry, exactly as the loader builds it. A
+        # bare `Pass(...)` takes Canvas's 8-bit default while the entry says f2, and a float target
+        # read as uint8 truncates to a plausible wrong value — the trap `_red_of` names in
+        # test_document_graph.py.
+        render_pass = Pass(
+            gl=gl_ctx, canvas_size=(8, 8), target=graph.passes[name].target
+        )
         render_pass.release_program(src)
         render_pass.compile()
         assert render_pass.compile_unit.errors == []
         document.passes[name] = render_pass
-    # `out` READS `seed`, so `seed` is on the output chain and actually renders — a pass nothing
-    # consumes is never drawn, which would make the assertion below unfalsifiable.
-    document.graph = PassGraph(
-        output="out",
-        passes={"seed": PassEntry(), "out": PassEntry(inputs={"u_seed": "seed"})},
-    )
+    document.graph = graph
 
     eng = ScriptEngine()
     eng.reload("n", scripts_dir, document)
@@ -375,6 +382,10 @@ def test_a_broadcast_reaches_both_passes_on_the_gpu(
         eng.tick("n", document, EngineContext(t=t, dt=1.0, frame=int(t * 4)))
         document.begin_frame(int(t * 4))
         document.render(u_time=t)
+        # Read back only once the GPU has actually finished: llvmpipe under suite-wide memory
+        # pressure otherwise hands back the PREVIOUS frame's mapping, which reads as this test
+        # failing intermittently with exactly the prior sample's value.
+        gl_ctx.finish()
         seed_px = int(texture_to_rgba8(document.passes["seed"].canvas.texture)[0][0][0])
         assert abs(seed_px - expected) <= 2, (
             f"the broadcast did not reach the NON-output pass at t={t} "

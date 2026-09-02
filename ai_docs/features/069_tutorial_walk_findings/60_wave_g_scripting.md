@@ -92,8 +92,11 @@ class ScriptPass(Protocol):
 
 
 class ScriptTarget(Protocol):
-    # The slice of a DOCUMENT the engine routes across: its passes by name.
-    passes: dict[str, ScriptPass]
+    # The slice of a DOCUMENT the engine routes across: its passes by name. A read-only Mapping,
+    # NOT a `dict`: a mutable dict is invariant in its value type, so a real `dict[str, Pass]`
+    # would not satisfy `dict[str, ScriptPass]` (Landed deviation 4).
+    @property
+    def passes(self) -> Mapping[str, ScriptPass]: ...
 ```
 
 `ScriptPass` is `EngineNode` verbatim under a name that says what it is; `ScriptTarget` is the new
@@ -132,9 +135,12 @@ gains one more member the protocol can express without pulling GL in:
 ```python
 class ScriptPass(Protocol):
     uniform_values: dict[str, Any]
+
     # False only while the pass has NEVER ATTEMPTED a compile: the engine skips it this tick
-    # rather than forcing a compile from inside the script tick (066 D1).
-    script_ready: bool
+    # rather than forcing a compile from inside the script tick (066 D1). A read-only PROPERTY,
+    # not a bare `bool`, so a `Pass` satisfying it with a property is accepted (Landed deviation 3).
+    @property
+    def script_ready(self) -> bool: ...
 
     def get_active_uniforms(self) -> list[moderngl.Uniform | moderngl.UniformBlock]: ...
 ```
@@ -207,9 +213,25 @@ for an orphan or a sampler, `coerce_one`, the stopped check, the write), with `(
 replacing `name` as the key of everything the path records.
 
 **Bare key.** The uniform name is looked up across every ready pass. Every pass whose active map has
-it and for which `_binding_reject` returns `None` receives the coerced value. A bare key that NO pass
-declares is a soft error, once, keyed on the pass-free form (item 5). A bare key some passes declare
-and others do not drives those and says nothing about the rest, per the design note.
+it and for which `_binding_reject` returns `None` receives the coerced value. A bare key some passes
+declare and others do not drives those and says nothing about the rest, per the design note.
+
+When NO pass takes it, the broadcast gives the **same three-way answer the pass block gets from a
+named lookup** — which is why `_active_by_pass` returns `(active, not_ready)` rather than the ready
+map alone (round 3, code finding 1; Landed deviation 12):
+
+- **any pass NOT ready** → HELD. No error, nothing written, nothing driven. A pass that has not
+  attempted a compile might yet declare the key, so erroring here is the same first-frame noise the
+  block phase's hold prevents. Without the `not_ready` set the branch cannot tell "absent because it
+  has not compiled yet" from "absent because no pass declares it": both are simply absent from the
+  map.
+- **every pass ready, one ready-because-its-compile-FAILED** → a soft error naming that pass and its
+  failure (`no pass declares 'u_x' (orphan key) — pass 'paint' does not compile`), keyed on THAT
+  pass so the strip shows it on the shader tab carrying the compile error that is the actual cause.
+  `_broken_pass_for` finds it: a ready pass whose active map is EMPTY has attempted a compile and
+  failed, since a working program always reports at least the engine's own uniforms.
+- **every pass ready and compiling, none declares it** → the ordinary homeless soft error, once,
+  keyed on the pass-free form (item 5), because a bare key is a claim about the whole document.
 
 **Pass block beats broadcast.** Broadcasts are applied FIRST, then pass blocks, in two passes over
 the dict rather than one:
@@ -341,14 +363,16 @@ keeps a flat dict keyed by the same pairs, so the dry-run's isolation is unchang
 The persisted stop set becomes a list of models:
 
 ```python
-class StoppedKey(BaseModel):
+class StoppedKey(BaseModel, frozen=True):
     # One (pass, uniform) the user has STOPPED. A pair, not a name: the same uniform name on two
     # passes is two independently stoppable rows (069 D3).
     pass_name: str
     name: str
 ```
 
-placed in `ui_models.py` immediately above `UIDocumentState`, and
+placed in **`shaderbox/scripting/keys.py`**, a new leaf of the engine's own package — NOT in
+`ui_models.py`, which imports the concrete `Document` the engine may not reach (Landed deviation 1).
+`ui_models` imports it from there for the persisted field. And
 
 ```python
     stopped_uniforms: list[StoppedKey] = []
@@ -360,8 +384,9 @@ pass).
 The field name `pass_name` rather than `pass`: `pass` is a Python keyword and cannot be an attribute.
 It is spelled `pass_name` everywhere, including on disk, so the JSON and the model read alike.
 
-`StoppedKey` is `frozen=True` and used as a set element in the engine, so `model_config` carries
-`frozen=True` (pydantic gives a frozen model `__hash__`). The engine receives
+`StoppedKey` is used as a set element in the engine, so it is frozen — `frozen=True` in the CLASS
+ARGS, not a `model_config`, because only the class-arg form makes the generated `__hash__` visible to
+pyright (Landed deviation 2). The engine receives
 `frozenset[StoppedKey]`, which keeps `ProjectSession._stopped_for`'s existing shape: build fresh per
 tick, hand it in as a parameter, and the engine still never learns `UIDocumentState`.
 
@@ -463,7 +488,8 @@ status into `ShaderError` rows for the shared bottom strip, and `tabs/code.py:51
 errors = (
     _script_errors_for(app, tab)
     if tab.kind == "script"
-    else _to_pass_errors(edited) + _script_errors_for_pass(app, tab, pass_name_of(tab.path))
+    else edited.compile_unit.errors
+    + _script_errors_for_pass(app, tab, pass_name_of(tab.path))
     if (edited := _pass_for_tab(app, tab)) is not None
     else ui_document.document.render_pass.compile_unit.errors
 )
@@ -512,7 +538,10 @@ def _scriptable_uniforms_for(self, document_id: str) -> dict[str, list[moderngl.
 
 This one DOES compile every pass, and that is correct here: it runs from `create_script` /
 `read_script_source` (a user or agent action), never from the frame loop, so 066 D1's per-frame
-prohibition is not in play. Passes are emitted in `document.passes` order, which is insertion order
+prohibition is not in play. **`dry_run` compiles for the same reason** (round 3): it is a synchronous
+copilot call on the main thread, so a cold probe of a never-rendered document reports the real driven
+set instead of holding every key and handing the agent an empty driven set, a false orphan and a
+STATIC verdict off empty samples. Passes are emitted in `document.passes` order, which is insertion order
 from disk, so the stub's blocks match the pass strip's order.
 
 `script_stub_for` takes the mapping and emits, per the design note:
@@ -895,8 +924,10 @@ The parent's list, verified against `ccd446b`, one clause each.
 | the eleven tracked `document.json`s | verified, zero bytes changed (item 13): seven under `shaderbox/resources/document_examples/`, two under `projects/documents/`, two under `projects/dev/documents/`. |
 | `projects/dev/documents/*/scripts/` | nothing to rewrite; neither dev document has a `scripts/` dir. |
 | `scripts/smoke.py` | the 048 stopped-skip canary passes the pass name to `set_uniform_stopped` and compares `("main", "u_a")` against the pair-shaped driven set. **This file is inside `make gates`.** |
-| `scripts/dogfood/verify_script_engine.py` | the driven-set assertion becomes `{("main", "u_wave")}`; the `drop_document` assertion compares against the empty set and is shape-agnostic. |
-| tests | § Tests. |
+| `scripts/dogfood/verify_script_engine.py` | the driven-set assertion becomes `{("main", "u_wave")}`; the sentinel-key check becomes the three-tuple; the seed writes `passes/main.frag.glsl` (dead since 065) and the driven check follows the live tick → render → tick order. **NOT a gate file** — `make gates` runs `check`, `test` and `scripts/smoke.py` only (Landed deviation 9). |
+| `scripts/dogfood/harness.py` | **not in the parent's list**: two more `.render_pass` seams (`tick_export`, `dry_run`) and a three-element unpack of `probe.per_key_errors` / `orphan_keys` (Landed deviation 7). |
+| `tests/test_motion_verdict.py` | **not in the parent's list**: `_motion_verdict` / `_uniform_changes` take the pair and print the dotted form (Landed deviation 8). |
+| tests | § Tests, plus the two files § Landed deviations row 10 names. |
 
 ## Tests
 
@@ -947,6 +978,37 @@ and after flipping the flag the next tick writes and clears.
 
 **Falsifier:** treat a not-ready pass as absent. The no-error assertion goes red, which is the
 first-frame noise this guard exists to prevent.
+
+### `tests/test_script_engine.py` — the round-3 routing tests
+
+Four, added by round 3's code review (§ Landed deviations row 12):
+
+- `test_a_broadcast_is_held_for_a_not_yet_compiled_pass`: a never-rendered two-pass document produces
+  NO error and NO strip row on frame 0, and drives both passes on frame 1.
+  **Falsifier:** drop the `not_ready` check in the broadcast phase — frame 0 records
+  `no pass declares 'u_a'` and the strip shows it.
+- `test_a_broadcast_names_the_broken_pass_that_would_have_declared_it`: the message names the pass
+  and its compile failure, and the error is keyed on that pass so its shader tab shows it.
+  **Falsifier:** keep the pass-free row — the message and the key both go red.
+- `test_a_bare_key_no_ready_pass_declares_stays_pass_free`: the ordinary homeless case keeps the
+  pass-free key and its exact wording. **Falsifier:** attribute it to a pass anyway.
+- `tests/test_script_dry_run.py::test_a_cold_dry_run_compiles_and_reports_the_real_driven_set`: a
+  probe of a document whose passes have never rendered reports the real driven pairs, no orphan, and
+  non-empty samples that MOVE across t. **Falsifier:** drop `dry_run`'s pre-compile — driven goes
+  empty, an orphan appears, and every sample dict is empty (the three false facts at once).
+  Its `_FakePass` also models the real lazy-compile contract (`get_active_uniforms` makes a pass
+  ready), so a stand-in cannot report readiness the real `Pass` would not.
+
+### `tests/test_script_engine.py` — `Pass.script_ready`'s truth table, GL-free
+
+`test_script_ready_matches_its_truth_table` asserts the three rows of item 2's table directly, and
+`test_script_ready_never_compiles` proves the property triggers no compile. Both bind the property
+onto a two-attribute stub (the `__get__` idiom the backend tests use), so no GL context is needed.
+
+**Falsifier:** invert the expression to `core.py`'s would-compile guard — the form round 2 caught.
+This is the point of the test: the inverted expression left the GL-free suite fully green and failed
+only under `xvfb`, so on a display-less box the wave's most-discussed hazard shipped green (round 3,
+spec finding 3).
 
 ### `tests/test_script_engine.py::test_coerce_one_rejects_a_dict`
 
@@ -1307,6 +1369,34 @@ Each carries a robust default, taken; none blocks implementation.
    Revisit if a user asks why the button appears on some documents and not others; the answer would be
    a tooltip on a disabled button, which costs a permanent control for a one-time question.
 
+## Landed deviations
+
+What the implementation departed from, and why. Every row is behaviour-preserving or a correction;
+the four inline code blocks above were rewritten to match, so a reader copying from this spec writes
+what is in the tree. Rows 1-11 landed with the implementation commit; row 12 is round 3's routing
+fix. (The spec-fidelity reviewer's finding: eleven of these lived only in the commit message, which
+is not where the next session looks.)
+
+| # | Spec said | Landed as | Why |
+|---|---|---|---|
+| 1 | `StoppedKey` in `ui_models.py` above `UIDocumentState` (item 6) | `shaderbox/scripting/keys.py`, a new leaf; `ui_models` imports it | The engine takes `frozenset[StoppedKey]` per tick and `ui_models` imports the concrete `Document`, which `scripting/` may not reach. The spec's two sentences — "in `ui_models.py`" and "the engine receives `frozenset[StoppedKey]`" — could not both hold. `keys.py` imports only pydantic, so it opens no cycle. |
+| 2 | `model_config` carries `frozen=True` (item 6) | `class StoppedKey(BaseModel, frozen=True)` | Only the class-arg form makes the generated `__hash__` visible to pyright; with `model_config` the engine's `frozenset[StoppedKey]` is `reportUnhashable`. Same runtime semantics. |
+| 3 | `script_ready: bool` as a protocol attribute (item 2) | a read-only `@property` on the protocol | `Pass` satisfies it with a property, and a protocol declaring a mutable attribute rejects one. |
+| 4 | `passes: dict[str, ScriptPass]` (item 1) | a read-only `Mapping[str, ScriptPass]` property | A mutable `dict` is invariant in its value type, so a real `dict[str, Pass]` does not satisfy `dict[str, ScriptPass]`. The engine never inserts a pass, so read-only is also the honest surface. |
+| 5 | `_to_pass_errors(edited)` in the `errors` expression (item 8) | `edited.compile_unit.errors` | `_to_pass_errors` does not exist and never did; the spec invented it. Same ordering, same rows. |
+| 6 | `_draw_error_strip`'s signature unchanged (item 8) | it takes the `tab` | The click branch must call `app.open_script_for(tab.document_id)` before latching the jump, and the strip had no way to reach a document id. |
+| 7 | seven `.render_pass` seams (Files touched) | **nine**, plus a tenth stale key | `scripts/dogfood/harness.py` carries two more (`tick_export` and `dry_run`) and a 2-tuple unpack of `probe.per_key_errors`; `scripts/dogfood/verify_script_engine.py` also held a two-tuple sentinel key `("scripted", "script.py")`. Found by running the file, not by grep. |
+| 8 | `tests/test_motion_verdict.py` not in the blast radius | it is | It drives `_motion_verdict` and `_uniform_changes` with name-keyed samples. Found by a red test; its `_uniform_changes` case had been passing only because a string key happens to index a dict. |
+| 9 | `scripts/dogfood/verify_script_engine.py` is "a gate file" (Files touched) | it is NOT in `make gates` | `gates` runs `check`, `test` and `scripts/smoke.py`, nothing else. It was also dead since 065 (it seeded `shader.frag.glsl` at the document root, which the loader stopped reading) — fixed in round 3, see row 12. |
+| 10 | Tests: no `tests/test_script_error_strip.py`, no `test_document_graph.py` row | both shipped | `tabs/code.py`'s two error adapters had zero coverage, and `has_feedback` — the wave's own instructive error — had none either. Four and one tests respectively, each falsified. |
+| 11 | `load_document_from_dir` untouched | `_load_ui_state` split out of it | The loader builds a real `Document` and so needs a GL context; a persistence rule verified behind a GL skip is a rule nothing checks on a display-less box. The split is a verbatim extraction. The GPU test likewise asserts an ABSOLUTE pixel per sample time rather than a difference — as first written it compared t=0 against t=1, and an unrendered canvas also reads 0, so it passed for the wrong reason at one end. Round 3 found the flake's real cause underneath that: the read-back raced the GPU. Under suite-wide memory pressure llvmpipe hands `texture.read()` the PREVIOUS frame's mapping, so the t=1.0 assertion read exactly the t=0.25 value — the same number every time, which is what identifies it as a stale mapping rather than a routing error. A `gl_ctx.finish()` before the read fixes it; each pass also takes its own graph entry's `target` now, as the loader builds one. |
+| 12 | the broadcast phase errors when no READY pass declares a key (item 2) | it gives the block phase's **three-way** answer, and `dry_run` compiles first | Round 3, code review finding 1. `_active_by_pass` omits a not-ready pass, so "absent because it has not compiled yet" and "absent because no pass declares it" were the same condition to the broadcast branch — the pass-block phase distinguished them, the broadcast phase could not. It now returns `(active, not_ready)` and HOLDS when any pass is not ready, erroring only when every pass is ready and none declares the key. Finding 2: when every pass is ready and one is ready-because-its-compile-FAILED, the row names that pass and its failure and is emitted under that pass's key, so it reaches the shader tab carrying the actual cause. And `dry_run` compiles every pass before its loop — it is a synchronous agent call, the context `_scriptable_uniforms_for` already compiles in, not the frame loop 066 D1 constrains — because a cold probe otherwise handed the agent three false facts at once (an empty driven set, an orphan naming a uniform the shader does declare, and STATIC from empty samples). |
+
+Two more corrections that change no code but were wrong in this spec: the stub emits **double**-quoted
+pass keys (item 9's snippet shape, matching the bare-key example in the same block), and
+`Pass.script_ready` is pinned by a **GL-free** test asserting its three truth-table rows directly —
+the inversion round 2 caught was previously green on any box without a GL context.
+
 ## Review history
 
 ### Round 1, pre-implementation (two reviewers, both against the spec at `0ce84f8`)
@@ -1441,3 +1531,101 @@ verified by opening it — and it was applied to the round-1 claims but not to t
 The reviewers also re-verified the on-disk enumeration the fold changed (nine files to eleven,
 `git ls-files | grep -c "document.json$"` = 11) and confirmed the zero-byte and no-salvage-line
 conclusions survive it.
+
+### Round 3, post-implementation (three reviewers, against `928c231`)
+
+`reviews/wave_g_post_code.md` (code correctness), `wave_g_post_arch.md` (architecture and
+conventions), `wave_g_post_spec.md` (spec fidelity). Verdicts as filed:
+
+| Reviewer | Dimension | Verdict |
+|---|---|---|
+| code | Routing (`_tick_script` / `_active_by_pass`) | **FAIL** (findings 1, 2) |
+| code | `(pass, name)` keys, persistence, mouse, `RESET_FEEDBACK`, strip, GL, tests, conventions | PASS (eight areas) |
+| arch | Boundaries, protocol, duplication, copilot prompt, conventions | PASS (five areas) |
+| arch | Docs | PARTIAL (finding 1) |
+| arch | Dogfood script | PARTIAL (finding 2) |
+| spec | Wave-spec fidelity (code), design-doc, parent, findings closure, on-disk | PASS (five dimensions) |
+| spec | **Spec-record fidelity** | **FAIL** (finding 1) |
+
+**Code review, two findings, both accepted.**
+
+1. *A BROADCAST key is not held for a never-compiled pass — it errors.* The hold the wave states four
+   times was implemented in the pass-block phase only: `_active_by_pass` omits a not-ready pass, so
+   the broadcast branch read "absent because it has not compiled yet" and "absent because no pass
+   declares it" as one condition. Demonstrated on real `Pass` objects in the app's own frame order —
+   frame 0 recorded `no pass declares 'u_wave' (orphan key)` and showed a strip row, frame 1 drove
+   both passes and cleared it: exactly the "orphan that clears a frame later" the hold exists to
+   prevent, on the one addressing form 069 introduced. The expensive half was `dry_run`, which never
+   renders: a cold probe returned an empty driven set, an orphan naming a uniform the shader does
+   declare, and `values UNCHANGED across t (STATIC)` from empty samples — three false facts, so the
+   agent debugs a correct script. Folded into item 2 and Landed deviation 12: `_active_by_pass`
+   returns `(active, not_ready)`, the broadcast HOLDS when any pass is not ready, and `dry_run`
+   compiles every pass before its loop (a synchronous agent call, not the frame loop 066 D1
+   constrains). Pinned by `test_a_broadcast_is_held_for_a_not_yet_compiled_pass` and
+   `test_a_cold_dry_run_compiles_and_reports_the_real_driven_set`.
+2. *A bare key whose only declaring pass FAILED to compile says "no pass declares it", naming neither
+   the pass nor the failure* — permanently, and pass-free, so by the strip's own filter it appears on
+   no shader tab: the one tab carrying the cause. Folded into the same item: `_broken_pass_for` names
+   the ready-but-empty pass, and the row is emitted under that pass's key. Pinned by
+   `test_a_broadcast_names_the_broken_pass_that_would_have_declared_it`, with
+   `test_a_bare_key_no_ready_pass_declares_stays_pass_free` holding the ordinary homeless case.
+
+**Architecture review, two findings, both accepted.**
+
+1. *`dev_flow.md`'s `scripting/` entry still lists "orphan-warn"* — in the same entry this wave
+   edited, three lines above its own `keys.py` addition, while the wave deleted the `logger.warning`
+   and the `warned` set outright. Fixed: the clause now reads `resolve + orphan-report (an
+   error-strip row, never a log line)`.
+2. *`scripts/dogfood/verify_script_engine.py` has produced a ZERO-pass document since 065* — it seeds
+   `shader.frag.glsl` at the document root, and 065's loader reads only `passes/*.frag.glsl`, so the
+   document is rejected at load. Dead, not degraded, for four features, and outside every gate, which
+   is why nothing went red. The wave disclosed it and left it; the reviewer's judgement was that
+   touching the file took ownership of it. Fixed: it writes `passes/main.frag.glsl` through
+   `paths.pass_shader_name`, which is what its own `{("main", "u_wave")}` assertion already expected.
+   Two further breakages surfaced only by RUNNING it — a stale two-tuple sentinel key
+   `("scripted", "script.py")` the wave's re-key missed, and a driven check that read the set after a
+   single tick, which the new hold makes empty on a never-rendered pass. It now follows the live
+   frame order (tick → render → tick) and exits 0: *animated across t, deterministic at fixed t,
+   export-isolated, broken script froze*.
+
+**Spec-fidelity audit, four findings, all accepted.**
+
+1. *The wave spec records none of the eleven landed deviations* — the implementation commit did not
+   touch this file, so a reader arriving after `/clear` is handed instructions that contradict the
+   code in eleven places, four of them inside copyable code blocks. This is the round-2 post-mortem's
+   own gap repeating one level down: the verify-by-opening rule was applied to the spec's claims and
+   not to the implementation's corrections of them. Fixed by § Landed deviations plus the four
+   corrected blocks (`ScriptPass`, `ScriptTarget`, `StoppedKey`'s home and frozen form, the `errors`
+   expression).
+2. *The parent's refuted salvage-line expectation is still stated as fact, with no pointer to its
+   correction* — and `01_spec.md` had no reference to this wave spec at all. Both sites now state
+   that no line appears and cite § Manual verification step 6.
+3. *The `script_ready` inversion is caught only by GL-gated tests* — demonstrated: the inverted
+   expression leaves the GL-free suite fully green (`75 passed, 7 skipped`) and only fails under
+   `xvfb`, so on a display-less box the bug ships green. That is the wave's most-discussed hazard,
+   reopened in round 2 precisely because the fold wrote it inverted. Fixed by
+   `test_script_ready_matches_its_truth_table` and `test_script_ready_never_compiles`, which bind the
+   property onto a two-attribute stub; the inversion now turns the GL-free suite red.
+4. *The stub emits single-quoted pass keys where this spec and the design note show double* —
+   cosmetic, but the stub is read beside both. Fixed at the emitter (the smaller edit), so the block
+   is quoted one way throughout, and pinned in `test_the_stub_has_one_block_per_pass`.
+
+One defect surfaced during the fold rather than from a review, and it took three attempts because the
+first two were guesses. The round-1 GPU test flaked in the full suite and passed alone; the wave had
+"fixed" it by asserting absolute pixels rather than a difference (a real improvement that did not
+touch the cause), and round 3 first blamed a target-format mismatch (plausible, also not the cause —
+the flake survived it). The cause is a read-back racing the GPU: under suite-wide memory pressure
+llvmpipe returns the PREVIOUS frame's mapping for `texture.read()`, so the t=1.0 assertion read
+exactly the t=0.25 value. Reading the SAME wrong number every time is the fingerprint — a routing
+error would vary with the input, a stale mapping cannot. A `gl_ctx.finish()` before the read settles
+it (twelve consecutive full-suite runs green, against two failures in five before). The lesson is the
+wave's own rule, applied to itself: a test that passes alone and fails in a suite has ONE cause, and
+an assertion that merely fails less often has not found it — the number the failure reports is the
+evidence, and it was pointing at the previous sample the whole time.
+
+All three reviewers ran the gate themselves. Two reported the smoke step segfaulting under their own
+`xvfb`/llvmpipe shell and both attributed it correctly — the arch reviewer to an environment artifact,
+the spec reviewer by reproducing it identically at `928c231^` in a clean worktree — rather than to the
+commit. The shape worth keeping: three of the six findings were found by EXECUTING the artifact (the
+frame-0 probe, the cold `dry_run`, running the dogfood script) rather than by reading it, and the
+dogfood script's two extra breakages were reachable no other way.

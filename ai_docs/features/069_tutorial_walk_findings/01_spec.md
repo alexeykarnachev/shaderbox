@@ -322,8 +322,10 @@ Each lists: findings folded, the shape, the files, what pins it (test or check).
   `list[str]` fails `validate_assignment` and drops to `[]` under the existing `drop_invalid`
   policy (`model_salvage` needs no change). Seven shipped examples exist; five persist
   `stopped_uniforms` and are hand-edited; the two that do not are exactly the multi-pass ones.
-  First launch after W-G logs one salvage line per stale `projects/dev` document — expected, and
-  the verification list says so.
+  **Refuted by the wave spec, which opened all eleven tracked `document.json` files: every one holds
+  `[]` or omits the key, so the reshape changes zero bytes and the first launch logs NOTHING about
+  `stopped_uniforms`** (`60_wave_g_scripting.md` item 13; its § Manual verification step 6 gives the
+  deliberate way to exercise the salvage path once).
 - The SCRIPT API prompt block: `scripting/api_doc.py` generates it from `MouseState`'s dataclass
   fields and the stub, `copilot/prompt_context.py` is its importer — both change;
   `scripting/__init__.py` re-exports follow. Tests: this is the largest test rewrite in the
@@ -430,9 +432,9 @@ rule; § 2 already carries D1), `todo.md` untouched (frozen).
   readable; edit above an error — markers vanish until save; visual `p` replaces (after the
   re-vendor carrying the fix).
 - W-G: a script returning `{"paint": {...}, "u_time_scale": 0.5}` drives both; LMB paints,
-  hover does not; the stroke is continuous; Clear canvas empties it. The first launch logs one
-  salvage line per `projects/dev` document whose `stopped_uniforms` predates the pair shape —
-  expected once, gone after the hand-edit.
+  hover does not; the stroke is continuous; Clear canvas empties it. No salvage line appears — every
+  tracked `document.json` already holds `[]`, so nothing is stale (`60_wave_g_scripting.md § Manual
+  verification` step 6 carries the corrected expectation and how to see the line deliberately).
 - W-H: the maintainer walks the tutorial end-to-end; every step produces its picture.
 
 ## Open questions — closed by the maintainer ("pick the defaults")
