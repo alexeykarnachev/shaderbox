@@ -92,19 +92,21 @@ def _section_break() -> None:
     imgui.spacing()
 
 
-def _draw_auto_row(app: App, uniforms: list[UIUniform]) -> None:
-    # Engine-driven uniforms (u_time / u_aspect / u_resolution): one inline row,
-    # names participate in the code<->panel hover/jump bridge; value is read-only.
+def _draw_auto_block(app: App, uniforms: list[UIUniform]) -> None:
+    # Engine-driven uniforms: one row each under the sort row, outside the sorted list. A FIXED
+    # name column is what makes the rows read as a block; the names keep the code<->panel
+    # hover/jump bridge, values are read-only.
     panel_pass = app.panel_pass(app.current_document_id)
     imgui.push_font(app.font_12, app.font_12.legacy_size)
-    for i, u in enumerate(uniforms):
-        if i > 0:
-            imgui.same_line(spacing=float(SPACE.LG))
-        name_w = imgui.calc_text_size(u.name).x
+    for u in uniforms:
         uniform_name_label(
-            app, u.name, name_w, text_color=COLOR.STATE_INFO, accent=COLOR.STATE_INFO
+            app,
+            u.name,
+            float(SIZE.AUTO_NAME_W),
+            text_color=COLOR.STATE_INFO,
+            accent=COLOR.STATE_INFO,
         )
-        imgui.same_line(spacing=float(SPACE.MD))
+        imgui.same_line(float(SIZE.AUTO_NAME_W) + float(SPACE.MD))
         value = panel_pass.uniform_values.get(u.name)
         imgui.text_colored(COLOR.FG_DIM, format_auto_value(value))
     imgui.pop_font()
@@ -236,11 +238,11 @@ def draw(app: App) -> None:
     if button(f"{arrow}##uniform_sort_dir", width=SIZE.BTN_SM_H):
         document_ui_state.uniform_sort_desc = not document_ui_state.uniform_sort_desc
 
-    if auto_hashes:
-        imgui.same_line(spacing=float(SPACE.XL))
-        _draw_auto_row(app, [ui_uniforms[h] for h in auto_hashes])
-
     imgui.dummy((0, SPACE.MD))
+
+    if auto_hashes:
+        _draw_auto_block(app, [ui_uniforms[h] for h in auto_hashes])
+        imgui.dummy((0, SPACE.MD))
 
     sorted_hashes = sort_uniform_hashes(
         active_uniform_hashes,
@@ -313,11 +315,7 @@ def _draw_entry_points(app: App) -> None:
     # single control said the word twice and cost a line the panel could not spare.
     _entry_row_label(script_active, "Script")
     open_tooltip = (
-        "Document script error -- click to open and fix"
-        if error
-        else "Open the document script (drives many uniforms)"
-        if present
-        else "Create + open a document script (drives many uniforms)"
+        "Open the document script" if present else "Create the document script"
     )
     open_color = COLOR.STATE_ERROR if error else COLOR.FG_SECONDARY
     if ghost_button("open##entry_script", text_color=open_color):
@@ -330,9 +328,7 @@ def _draw_entry_points(app: App) -> None:
         if play_stop_toggle(
             "document",
             playing,
-            tooltip="Stop the whole script (freeze all uniforms)"
-            if playing
-            else "Resume the whole script",
+            tooltip="Stop the whole script" if playing else "Resume the whole script",
         ):
             app.set_document_all_stopped(document_id, playing)
     imgui.end_disabled()

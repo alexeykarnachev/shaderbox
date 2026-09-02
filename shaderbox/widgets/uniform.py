@@ -159,11 +159,11 @@ def _draw_play_stop(app: App, name: str, *, driven: bool, playing: bool) -> None
     imgui.same_line()
     imgui.begin_disabled(app.copilot_turn_active or document_stopped)
     tooltip = (
-        "Can't play a single uniform while the whole script is stopped"
+        "Whole script is stopped"
         if document_stopped
-        else "Stop the script driving this uniform (edit it by hand)"
+        else "Stop this uniform"
         if playing
-        else "Resume the script driving this uniform"
+        else "Resume this uniform"
     )
     if play_stop_toggle(f"u_{name}", playing, tooltip=tooltip):
         app.set_uniform_stopped(document_id, name, playing)

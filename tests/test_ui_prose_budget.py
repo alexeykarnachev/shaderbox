@@ -1,0 +1,567 @@
+"""Every fixed UI string in `shaderbox/` fits the word budget D1 states.
+
+The budgets live in `.claude/skills/imgui-ui/SKILL.md` § 2: a label is 1-2 words, an icon
+tooltip is the control's name, a `help_marker` is one clause of at most 8 words, an empty
+state is at most 4. This module walks the package's AST, scores every call that carries
+authored copy, and fails the ones over budget or joining a second clause.
+
+A string the walk cannot read (a name bound to a call, a helper forwarding its caller's
+text) is UNMEASURABLE and must be written into `_UNMEASURABLE` with a reason; a string it
+CAN read that stays over budget must be written into `_OVER_BUDGET` with its measured
+count, which is what makes that exemption self-invalidating. Neither list can rot: every
+entry must still name a site the walk finds.
+"""
+
+import ast
+import inspect
+from pathlib import Path
+
+import pytest
+
+from shaderbox.core import ENGINE_DRIVEN_UNIFORMS
+from shaderbox.glyph_tables import TABLE_UNIFORMS
+from shaderbox.popups.pass_settings import _FORMATS
+from shaderbox.theme import SIZE
+from shaderbox.ui_primitives import label_row, row_label, small_caption
+
+_PKG = Path(__file__).resolve().parent.parent / "shaderbox"
+
+UNMEASURABLE = -1
+
+# (call name, parameter name, positional index, budget). A call is matched by NAME only —
+# `imgui.set_tooltip` and a bare `set_tooltip` are the same site, and an aliased import is
+# outside the walk by construction (`test_the_walk_finds_the_known_call_sites` is what
+# catches an import style the walk cannot see).
+_SCORED: list[tuple[str, str, int | None, int]] = [
+    ("help_marker", "text", 0, 8),
+    ("set_tooltip", "text", 0, 5),
+    ("separator_text", "label", 0, 2),
+    ("label_row", "label", 1, 2),
+    ("row_label", "label", 1, 2),
+    ("text_colored", "text", 1, 4),
+    ("play_stop_toggle", "tooltip", None, 5),
+    ("clickable_label", "label", 0, 2),
+    ("clickable_label", "tooltip", None, 5),
+    ("clipped_caption", "text", 0, 4),
+    ("gauge_bar", "tooltip", 2, 5),
+    ("draw_copyable_text", "label", 0, 2),
+    ("draw_copyable_text", "tooltip", None, 5),
+    ("draw_link", "label", 0, 2),
+    ("preview_cell", "footer", None, 2),
+    ("preview_cell", "sublines", None, 4),
+]
+
+_CLAUSE_JOINERS: tuple[str, ...] = (";", " — ", " -- ")
+
+# Sites the gate CANNOT measure, each with why. A `ui_primitives` entry is a shared helper
+# forwarding a caller's text -- the CALLERS are the measured sites.
+_UNMEASURABLE: dict[tuple[str, str], str] = {
+    ("shaderbox/popups/emoji_picker.py", "_draw_body"): "an emoji group/entry name",
+    ("shaderbox/popups/lib_picker/preview.py", "draw_preview"): "the file's own path",
+    (
+        "shaderbox/popups/lib_picker/search.py",
+        "draw_search_row",
+    ): "the matched tag list, built per frame",
+    (
+        "shaderbox/popups/lib_picker/tree.py",
+        "_draw_inline_new_input",
+    ): "the caller's inline-input label",
+    (
+        "shaderbox/popups/lib_picker/tree.py",
+        "_draw_function_leaf",
+    ): "the function's own doc line, ellipsized per frame",
+    (
+        "shaderbox/popups/pass_settings.py",
+        "_draw_inputs",
+    ): "the sampler uniform's own name",
+    (
+        "shaderbox/popups/pass_settings.py",
+        "_draw_target",
+    ): "the format table's tooltip, reached by subscript; "
+    "test_the_format_tooltips_are_within_the_help_budget measures it directly",
+    (
+        "shaderbox/popups/settings.py",
+        "_draw_copilot_config",
+    ): "the copilot limits table's label and hint; a cost the reader is spending "
+    "real money on, and copilot-llm-agent-design owns the wording",
+    ("shaderbox/tabs/code.py", "draw_chrome"): "the open file's path, tab label or error",
+    ("shaderbox/tabs/document.py", "_draw_auto_block"): "the uniform's live value",
+    ("shaderbox/tabs/document.py", "_entry_row_label"): "the caller's row label",
+    ("shaderbox/ui_primitives.py", "play_stop_toggle"): "forwards the caller's tooltip",
+    ("shaderbox/ui_primitives.py", "clipped_caption"): "forwards the caller's text",
+    ("shaderbox/ui_primitives.py", "setup_steps"): "forwards the step's own url",
+    ("shaderbox/ui_primitives.py", "small_caption"): "forwards the caller's text",
+    ("shaderbox/ui_primitives.py", "gauge_bar"): "forwards the caller's tooltip",
+    ("shaderbox/ui_primitives.py", "preview_cell"): "forwards the caller's footer text",
+    ("shaderbox/ui_primitives.py", "label_row"): "forwards the caller's label",
+    ("shaderbox/ui_primitives.py", "draw_copyable_text"): "forwards the caller's tooltip",
+    ("shaderbox/ui_primitives.py", "clickable_label"): "forwards the caller's tooltip",
+    ("shaderbox/widgets/copilot_chat.py", "_tooltip_stat_row"): "the caller's stat label",
+    (
+        "shaderbox/widgets/copilot_chat.py",
+        "_draw_snippet_tooltip",
+    ): "the turn's own token numbers",
+    ("shaderbox/widgets/copilot_chat.py", "_draw_top_bar"): "the context gauge's readout",
+    ("shaderbox/widgets/details.py", "draw_file_details"): "the file's own path",
+    (
+        "shaderbox/widgets/document_grid.py",
+        "draw_document_preview_button",
+    ): "the document's own name",
+    ("shaderbox/widgets/pass_list.py", "_draw_pass_tile"): "the pass's name and wiring",
+    ("shaderbox/widgets/uniform.py", "uniform_name_label"): "the uniform's own name",
+    ("shaderbox/widgets/uniform.py", "draw_ui_uniform"): "the uniform's live value",
+}
+
+# Sites the gate CAN measure, that are over budget, and that stay. Each entry carries the
+# measured word count, so a rewrite that changes the string changes this line too.
+_OVER_BUDGET: dict[tuple[str, str, int], str] = {
+    (
+        "shaderbox/exporters/telegram.py",
+        "_draw_status_slot",
+        9,
+    ): "a derived stat line: five interpolations around four authored words; "
+    "revisit if a third stat joins it",
+    (
+        "shaderbox/exporters/youtube.py",
+        "_draw_controls",
+        4,
+    ): "a link's destination name, not a control label",
+    (
+        "shaderbox/popups/help.py",
+        "_draw_body",
+        15,
+    ): "a disabled-state reason; a control's name cannot carry why it is greyed",
+    (
+        "shaderbox/popups/lib_picker/__init__.py",
+        "_draw_body",
+        11,
+    ): "the same disabled state on the picker's Insert button",
+    (
+        "shaderbox/popups/settings.py",
+        "_draw_body",
+        3,
+    ): "derived: an exporter's name joined to its own unavailable reason",
+}
+
+
+def _parents(tree: ast.AST) -> dict[ast.AST, ast.AST]:
+    parents: dict[ast.AST, ast.AST] = {}
+    for node in ast.walk(tree):
+        for child in ast.iter_child_nodes(node):
+            parents[child] = node
+    return parents
+
+
+def _enclosing_function(
+    node: ast.AST, parents: dict[ast.AST, ast.AST]
+) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
+    current: ast.AST | None = node
+    while current is not None:
+        if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            return current
+        current = parents.get(current)
+    return None
+
+
+def _score(node: ast.expr) -> int:
+    """Word count of an authored-copy expression, or UNMEASURABLE."""
+    if isinstance(node, ast.Constant):
+        return len(node.value.split()) if isinstance(node.value, str) else UNMEASURABLE
+    if isinstance(node, ast.JoinedStr):
+        total = 0
+        for part in node.values:
+            if isinstance(part, ast.FormattedValue):
+                total += 1
+            elif isinstance(part, ast.Constant) and isinstance(part.value, str):
+                total += len(part.value.split())
+            else:
+                return UNMEASURABLE
+        return total
+    if isinstance(node, ast.IfExp):
+        return _worst([_score(node.body), _score(node.orelse)])
+    if isinstance(node, (ast.List, ast.Tuple)):
+        return _worst([_score(element) for element in node.elts])
+    return UNMEASURABLE
+
+
+def _worst(scores: list[int]) -> int:
+    if not scores or UNMEASURABLE in scores:
+        return UNMEASURABLE
+    return max(scores)
+
+
+def _text_of(node: ast.expr) -> str:
+    """The concatenated authored text of a scorable expression (for the clause check)."""
+    if isinstance(node, ast.Constant):
+        return node.value if isinstance(node.value, str) else ""
+    if isinstance(node, ast.JoinedStr):
+        return "".join(
+            part.value
+            for part in node.values
+            if isinstance(part, ast.Constant) and isinstance(part.value, str)
+        )
+    if isinstance(node, ast.IfExp):
+        return f"{_text_of(node.body)}\n{_text_of(node.orelse)}"
+    if isinstance(node, (ast.List, ast.Tuple)):
+        return "\n".join(_text_of(element) for element in node.elts)
+    return ""
+
+
+def _resolve(
+    arg: ast.expr, enclosing: ast.FunctionDef | ast.AsyncFunctionDef | None
+) -> ast.expr | None:
+    """A `Name` argument resolved to its string assignment in the enclosing function.
+
+    Returns None when the name cannot be resolved to authored copy — including a name the
+    function ever appends to, which is longer than any one binding shows.
+    """
+    if not isinstance(arg, ast.Name):
+        return arg
+    if enclosing is None:
+        return None
+    for node in ast.walk(enclosing):
+        if (
+            isinstance(node, ast.AugAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == arg.id
+        ):
+            return None
+    candidates: list[ast.expr] = [
+        node.value
+        for node in ast.walk(enclosing)
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+        and node.targets[0].id == arg.id
+        and isinstance(node.value, (ast.Constant, ast.JoinedStr, ast.IfExp))
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda node: (_score(node), 0))
+
+
+def _call_name(call: ast.Call) -> str | None:
+    if isinstance(call.func, ast.Name):
+        return call.func.id
+    if isinstance(call.func, ast.Attribute):
+        return call.func.attr
+    return None
+
+
+def _is_dim(call: ast.Call) -> bool:
+    """`text_colored`'s first argument is `COLOR.FG_DIM` — the dim-readout budget."""
+    if not call.args:
+        return False
+    first = call.args[0]
+    return isinstance(first, ast.Attribute) and first.attr == "FG_DIM"
+
+
+class Site:
+    def __init__(
+        self,
+        module: str,
+        function: str,
+        lineno: int,
+        call: str,
+        parameter: str,
+        budget: int,
+        words: int,
+        text: str,
+        expression: str,
+        is_label: bool,
+        has_interpolation: bool,
+    ) -> None:
+        self.module: str = module
+        self.function: str = function
+        self.lineno: int = lineno
+        self.call: str = call
+        self.parameter: str = parameter
+        self.budget: int = budget
+        self.words: int = words
+        self.text: str = text
+        self.expression: str = expression
+        self.is_label: bool = is_label
+        self.has_interpolation: bool = has_interpolation
+
+    @property
+    def key(self) -> tuple[str, str]:
+        return (self.module, self.function)
+
+    def __repr__(self) -> str:
+        return f"{self.module}::{self.function}:{self.lineno} {self.call}.{self.parameter}"
+
+
+def _has_interpolation(node: ast.expr) -> bool:
+    if isinstance(node, ast.JoinedStr):
+        return any(isinstance(part, ast.FormattedValue) for part in node.values)
+    if isinstance(node, ast.IfExp):
+        return _has_interpolation(node.body) or _has_interpolation(node.orelse)
+    if isinstance(node, (ast.List, ast.Tuple)):
+        return any(_has_interpolation(element) for element in node.elts)
+    return False
+
+
+def _collect() -> list[Site]:
+    sites: list[Site] = []
+    for path in sorted(_PKG.rglob("*.py")):
+        tree = ast.parse(path.read_text(), filename=str(path))
+        parents = _parents(tree)
+        module = path.relative_to(_PKG.parent).as_posix()
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            name = _call_name(node)
+            if name is None:
+                continue
+            for call, parameter, index, budget in _SCORED:
+                if call != name:
+                    continue
+                if call == "text_colored" and not _is_dim(node):
+                    continue
+                arg: ast.expr | None = None
+                if index is not None and len(node.args) > index:
+                    arg = node.args[index]
+                else:
+                    for keyword in node.keywords:
+                        if keyword.arg == parameter:
+                            arg = keyword.value
+                    if arg is None and (index is None or len(node.args) <= index):
+                        # A call that omits an optional parameter carries no string.
+                        if not _supplies(node, parameter, index):
+                            continue
+                enclosing = _enclosing_function(node, parents)
+                function = enclosing.name if enclosing is not None else "<module>"
+                resolved = _resolve(arg, enclosing) if arg is not None else None
+                words = _score(resolved) if resolved is not None else UNMEASURABLE
+                sites.append(
+                    Site(
+                        module=module,
+                        function=function,
+                        lineno=node.lineno,
+                        call=call,
+                        parameter=parameter,
+                        budget=budget,
+                        words=words,
+                        text=_text_of(resolved) if resolved is not None else "",
+                        expression=ast.unparse(arg) if arg is not None else "**kwargs",
+                        is_label=call in ("label_row", "row_label"),
+                        has_interpolation=(
+                            _has_interpolation(resolved) if resolved is not None else False
+                        ),
+                    )
+                )
+    return sites
+
+
+def _supplies(call: ast.Call, parameter: str, index: int | None) -> bool:
+    """Whether the call supplies `parameter` at all — by position, keyword, or `**kwargs`."""
+    if index is not None and len(call.args) > index:
+        return True
+    for keyword in call.keywords:
+        if keyword.arg == parameter or keyword.arg is None:
+            return True
+    return False
+
+
+_SITES: list[Site] = _collect()
+_MEASURABLE: list[Site] = [s for s in _SITES if s.words != UNMEASURABLE]
+_UNREADABLE: list[Site] = [s for s in _SITES if s.words == UNMEASURABLE]
+_EXEMPT: set[tuple[str, str, int]] = set(_OVER_BUDGET)
+
+
+def _budgeted() -> list[Site]:
+    return [s for s in _MEASURABLE if (s.module, s.function, s.words) not in _EXEMPT]
+
+
+def _ids(sites: list[Site]) -> list[str]:
+    return [repr(s) for s in sites]
+
+
+def test_the_walk_finds_the_known_call_sites() -> None:
+    # The collector's own falsifier: without it every parametrized assertion below would
+    # pass vacuously on an empty collection — the "checker that narrows its own domain"
+    # family. The floor sits well under today's count so a legitimate new string never
+    # trips it; only a collector that broke does.
+    modules = {site.module for site in _SITES}
+    assert "shaderbox/popups/pass_settings.py" in modules
+    assert "shaderbox/widgets/pass_list.py" in modules
+    assert "shaderbox/tabs/document.py" in modules
+    assert "shaderbox/ui_primitives.py" in modules
+    assert len(_SITES) >= 60, f"the walk found only {len(_SITES)} sites"
+
+
+@pytest.mark.parametrize("site", _budgeted(), ids=_ids(_budgeted()))
+def test_every_measured_site_is_within_budget(site: Site) -> None:
+    assert site.words <= site.budget, (
+        f"{site.module}::{site.function}:{site.lineno} {site.call}({site.parameter}=) "
+        f"is {site.words} words against a budget of {site.budget}: {site.text!r}"
+    )
+
+
+@pytest.mark.parametrize("site", _budgeted(), ids=_ids(_budgeted()))
+def test_no_scored_string_joins_a_second_clause(site: Site) -> None:
+    for joiner in _CLAUSE_JOINERS:
+        assert joiner not in site.text, (
+            f"{site.module}::{site.function}:{site.lineno} joins a second clause with "
+            f"{joiner!r}: {site.text!r}. D1 is one clause, not one sentence."
+        )
+
+
+@pytest.mark.parametrize(
+    "site",
+    [s for s in _MEASURABLE if s.is_label],
+    ids=_ids([s for s in _MEASURABLE if s.is_label]),
+)
+def test_no_label_carries_an_interpolation(site: Site) -> None:
+    assert not site.has_interpolation, (
+        f"{site.module}::{site.function}:{site.lineno} puts an interpolation in a label: "
+        f"{site.expression}. A label column is fixed-width; derived values go in the control."
+    )
+
+
+@pytest.mark.parametrize("site", _UNREADABLE, ids=_ids(_UNREADABLE))
+def test_every_unmeasurable_site_is_listed(site: Site) -> None:
+    assert site.key in _UNMEASURABLE, (
+        f"{site.module}::{site.function}:{site.lineno} {site.call}({site.parameter}=) "
+        f"passes {site.expression}, which the gate cannot read. Make it a literal, or add "
+        f'{site.key} to _UNMEASURABLE with the reason.'
+    )
+
+
+def test_no_site_is_both_measured_and_unmeasurable_listed() -> None:
+    measured_keys = {site.key for site in _MEASURABLE}
+    unreadable_keys = {site.key for site in _UNREADABLE}
+    overlap = set(_UNMEASURABLE) & measured_keys - unreadable_keys
+    assert not overlap, (
+        f"{sorted(overlap)} are listed unmeasurable but every site there was read. "
+        "An entry that suppresses a measurable function is a hole, not an exemption."
+    )
+
+
+@pytest.mark.parametrize("key", sorted(_UNMEASURABLE), ids=lambda k: f"{k[0]}::{k[1]}")
+def test_every_unmeasurable_entry_still_names_a_real_site(key: tuple[str, str]) -> None:
+    assert key in {site.key for site in _UNREADABLE}, (
+        f"{key} no longer names an unmeasurable site; delete the entry."
+    )
+
+
+@pytest.mark.parametrize(
+    "key", sorted(_OVER_BUDGET), ids=lambda k: f"{k[0]}::{k[1]}:{k[2]}"
+)
+def test_every_over_budget_entry_still_names_a_real_site(key: tuple[str, str, int]) -> None:
+    module, function, words = key
+    matches = [
+        site
+        for site in _MEASURABLE
+        if site.module == module and site.function == function
+    ]
+    assert matches, f"{module}::{function} has no measurable site; delete the entry."
+    assert any(site.words == words for site in matches), (
+        f"{module}::{function} no longer has a site at {words} words "
+        f"(found {sorted({site.words for site in matches})}); update or delete the entry."
+    )
+
+
+def test_a_keyword_supplied_argument_is_scored() -> None:
+    sites = _sites_of('help_marker(text="a b c d e f g h i")')
+    assert [site.words for site in sites] == [9]
+
+
+def test_an_argument_supplied_by_neither_position_nor_keyword_is_unmeasurable() -> None:
+    sites = _sites_of("help_marker(**kwargs)")
+    assert [site.words for site in sites] == [UNMEASURABLE]
+
+
+def test_an_ifexp_argument_scores_its_worst_branch() -> None:
+    sites = _sites_of('help_marker("a" if p else "b c d e f g h i j")')
+    assert [site.words for site in sites] == [9]
+
+
+def test_a_name_rebound_by_augassign_is_not_resolved() -> None:
+    source = 'def f():\n    text = "a"\n    text += " b c"\n    help_marker(text)\n'
+    sites = _sites_of(source, wrap=False)
+    assert [site.words for site in sites] == [UNMEASURABLE]
+
+
+def _sites_of(source: str, wrap: bool = True) -> list[Site]:
+    """Run the collector's per-call logic over a source fixture."""
+    tree = ast.parse(f"def f():\n    {source}\n" if wrap else source)
+    parents = _parents(tree)
+    sites: list[Site] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        name = _call_name(node)
+        for call, parameter, index, budget in _SCORED:
+            if call != name:
+                continue
+            arg: ast.expr | None = None
+            if index is not None and len(node.args) > index:
+                arg = node.args[index]
+            else:
+                for keyword in node.keywords:
+                    if keyword.arg == parameter:
+                        arg = keyword.value
+                if arg is None and not _supplies(node, parameter, index):
+                    continue
+            enclosing = _enclosing_function(node, parents)
+            resolved = _resolve(arg, enclosing) if arg is not None else None
+            words = _score(resolved) if resolved is not None else UNMEASURABLE
+            sites.append(
+                Site(
+                    module="<fixture>",
+                    function=enclosing.name if enclosing is not None else "<module>",
+                    lineno=node.lineno,
+                    call=call,
+                    parameter=parameter,
+                    budget=budget,
+                    words=words,
+                    text=_text_of(resolved) if resolved is not None else "",
+                    expression=ast.unparse(arg) if arg is not None else "**kwargs",
+                    is_label=call in ("label_row", "row_label"),
+                    has_interpolation=(
+                        _has_interpolation(resolved) if resolved is not None else False
+                    ),
+                )
+            )
+    return sites
+
+
+def test_the_label_helpers_are_read_at_the_right_argument() -> None:
+    # The gate reads a label at argument 1 because the font comes first. A reorder would
+    # move every label out of the measured position and the gate would go green measuring
+    # nothing, which is how this wave's own first census produced 17 false unmeasurables.
+    for function, index, expected in (
+        (label_row, 1, "label"),
+        (row_label, 1, "label"),
+        (small_caption, 1, "text"),
+    ):
+        parameters = list(inspect.signature(function).parameters)
+        assert parameters[0] == "font", f"{function.__name__} no longer takes font first"
+        assert parameters[index] == expected, (
+            f"{function.__name__}'s argument {index} is {parameters[index]}, not {expected}"
+        )
+
+
+def test_the_format_tooltips_are_within_the_help_budget() -> None:
+    # `_FORMATS` is reached through a Subscript, so no call-site walk can read it. Any
+    # future table of UI strings needs its own direct assertion for the same reason.
+    for code, label, tooltip in _FORMATS:
+        assert len(label.split()) <= 2, f"{code}'s menu label is over budget: {label!r}"
+        assert len(tooltip.split()) <= 8, f"{code}'s tooltip is over budget: {tooltip!r}"
+        for joiner in _CLAUSE_JOINERS:
+            assert joiner not in tooltip, f"{code}'s tooltip joins a second clause"
+
+
+def test_the_auto_name_column_fits_every_engine_uniform() -> None:
+    # The Document tab draws each engine uniform's name in a fixed SIZE.AUTO_NAME_W column
+    # through `clickable_label`, which ELLIPSIZES rather than overflowing — so a name too
+    # wide is silently truncated. AnonymousPro-Regular's advance is 1118/2048 em, so one
+    # character of the 12px face is 6.5508px.
+    char_w = 12.0 * 1118.0 / 2048.0
+    budget = int(float(SIZE.AUTO_NAME_W) // char_w)
+    for name in set(ENGINE_DRIVEN_UNIFORMS) - set(TABLE_UNIFORMS):
+        assert len(name) <= budget, (
+            f"{name} is {len(name)} characters against a column fitting {budget}; "
+            "clickable_label would ellipsize it into a silent truncation."
+        )

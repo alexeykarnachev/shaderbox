@@ -39,7 +39,7 @@ ENGINE_UNIFORM_DOCS: dict[str, tuple[str, str]] = {
     "u_time": ("float", "seconds since launch — the animation clock"),
     "u_aspect": ("float", "canvas width / height"),
     "u_resolution": ("vec2", "canvas size in pixels"),
-    "u_pass_iteration": ("float", "which run this is, 0-based (see Runs per frame)"),
+    "u_pass_iteration": ("float", "which run this is, 0-based (see Runs)"),
     "u_pass_iterations": ("float", "how many runs this pass makes per frame"),
 }
 
@@ -165,6 +165,24 @@ def help_sections() -> list[HelpSection]:
                 "float d    = SB_sd_circle(p, 0.3);            // distance: negative inside\n"
                 "float mask = SB_fill_aa(d);                   // distance -> antialiased mask\n"
                 "fs_color   = vec4(vec3(mask), 1.0);"
+            ),
+        ),
+        HelpSection(
+            key="pass_settings",
+            title="Passes",
+            body=(
+                "`smooth` blends between pixels when another pass reads this one — the right "
+                "choice for a blur or an upscale; off gives hard pixel edges.\n"
+                "\n"
+                "`repeat` wraps a read past the edge to the far side for tiling; off clamps to "
+                "the edge pixel, which is what a feedback trail wants.\n"
+                "\n"
+                "**Runs** draws the pass more than once per frame, each run reading what the one "
+                "before it wrote — `u_pass_iteration` says which run this is and "
+                "`u_pass_iterations` how many there are.\n"
+                "\n"
+                "**size** is the pass's share of the canvas. Half size is a quarter of the "
+                "pixels, which is the usual choice for a blur; the output pass always draws full."
             ),
         ),
         _shortcuts_section(),

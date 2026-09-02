@@ -34,22 +34,9 @@ _UNWIRED = "(none)"
 # tuple is (code, menu label, what it is for) — the label is what a person picks from, the last
 # half is the tooltip, because "16-bit" alone does not tell you when to want it.
 _FORMATS: list[tuple[str, str, str]] = [
-    (
-        "f1",
-        "8-bit",
-        "Smallest. Values clamp to 0-1 — the right choice for a final image.",
-    ),
-    (
-        "f2",
-        "16-bit float",
-        "Holds values above 1 (bright highlights, accumulated light). The default, and what "
-        "bloom and feedback need.",
-    ),
-    (
-        "f4",
-        "32-bit float",
-        "Full precision. Rarely needed; costs twice the memory of 16-bit.",
-    ),
+    ("f1", "8-bit", "clamps to 0-1, the smallest"),
+    ("f2", "16-bit float", "holds values above 1, the default"),
+    ("f4", "32-bit float", "full precision, twice the memory"),
 ]
 _FORMAT_LABELS = [label for _, label, _ in _FORMATS]
 _FORMAT_CODES = [code for code, _, _ in _FORMATS]
@@ -59,7 +46,9 @@ def draw_pass_settings(app: App) -> None:
     if app.popup_state != PopupState.PASS_SETTINGS:
         return
     with modal_window(
-        _LABEL, (float(SIZE.PASS_SETTINGS_W), float(SIZE.PASS_SETTINGS_H))
+        _LABEL,
+        (float(SIZE.PASS_SETTINGS_W), 0.0),
+        flags=imgui.WindowFlags_.always_auto_resize | imgui.WindowFlags_.no_scrollbar,
     ) as visible:
         if not visible:
             return
@@ -104,10 +93,7 @@ def _draw_name(app: App, document_id: str, name: str) -> bool:
         _commit_pass_name(app, document_id, name) if committed or deactivated else False
     )
     imgui.same_line()
-    help_marker(
-        "The pass's name: its shader file under passes/ and what other passes' Reads "
-        "call it. Enter applies; a rename re-points every wire and open tab."
-    )
+    help_marker("names its shader file and its wires")
     return renamed
 
 
@@ -134,21 +120,11 @@ def _sampler_names(render_pass: Pass) -> list[str]:
 
 
 def _draw_inputs(app: App, document_id: str, name: str, render_pass: Pass) -> None:
-    # One closed-set combo per sampler uniform the pass actually declares; one help for the whole
-    # section — per-row help repeated the same sentence under every combo. separator_text is an
-    # item, so the section title itself hosts the hover; "(?)" in the label marks it.
-    imgui.separator_text("Reads (?)")
-    if imgui.is_item_hovered(imgui.HoveredFlags_.delay_short):
-        imgui.set_tooltip(
-            "Every sampler2D uniform this pass declares gets a row here; pick which pass "
-            f"fills it ({_UNWIRED} leaves it black). To read something new, declare another "
-            "sampler2D in this pass's shader."
-        )
+    # One closed-set combo per sampler uniform the pass actually declares.
+    imgui.separator_text("Reads")
     samplers = _sampler_names(render_pass)
     if not samplers:
-        imgui.text_colored(
-            COLOR.FG_DIM, "nothing — declare a sampler2D uniform to read another pass"
-        )
+        imgui.text_colored(COLOR.FG_DIM, "no sampler2D uniforms")
         return
     document = app.ui_documents[document_id].document
     entry = document.graph.passes.get(name, PassEntry())
@@ -188,50 +164,32 @@ def _draw_target(app: App, document_id: str, name: str) -> None:
     canvas_w, canvas_h = document.canvas_size
     w = max(1, round(canvas_w * target.scale))
     h = max(1, round(canvas_h * target.scale))
-    # The derived resolution lives in the LABEL — inside the slider only the percent fits.
-    label_row(app.font_12, f"size ({w}, {h})", _CTRL_W, _ROW_LABEL_W)
+    label_row(app.font_12, "size", _CTRL_W, _ROW_LABEL_W)
     # The slider runs over 5-100 so `%.0f%%` formats the number a person reads; the model
-    # keeps the 0-1 scale.
+    # keeps the 0-1 scale. The derived dims ride the format string, not the label column.
     imgui.begin_disabled(is_output)
     scale_changed, percent = imgui.slider_float(
         f"##scale_{name}",
         target.scale * 100.0,
         5.0,
         100.0,
-        "%.0f%%",
+        f"%.0f%% · {w}x{h}",
     )
     imgui.end_disabled()
     if scale_changed:
         new_target = new_target.model_copy(update={"scale": percent / 100.0})
     imgui.same_line()
-    help_marker(
-        "How big this pass's own image is, relative to the canvas. Half size is a quarter of "
-        "the pixels — the usual choice for a blur, which looks the same and costs less. The "
-        "output pass always draws at full size."
-        if is_output
-        else "How big this pass's own image is, relative to the canvas. Half size is a quarter "
-        "of the pixels — the usual choice for a blur, which looks the same and costs less."
-    )
+    help_marker("share of the canvas, output always full")
 
     label_row(app.font_12, "sampling", _CTRL_W, _ROW_LABEL_W)
     smooth_changed, smooth = imgui.checkbox(f"smooth##{name}", target.filter_linear)
     if smooth_changed:
         new_target = new_target.model_copy(update={"filter_linear": smooth})
-    imgui.same_line()
-    help_marker(
-        "How another pass reads this one BETWEEN pixels: smooth blends neighbours (right for "
-        "a blur or an upscale), off gives hard pixel edges."
-    )
 
     label_row(app.font_12, "edges", _CTRL_W, _ROW_LABEL_W)
     tile_changed, tile = imgui.checkbox(f"repeat##{name}", target.wrap)
     if tile_changed:
         new_target = new_target.model_copy(update={"wrap": tile})
-    imgui.same_line()
-    help_marker(
-        "What a read PAST this pass's edge returns: repeat wraps to the far side (tiling), "
-        "off clamps to the edge pixel — which is what a feedback trail wants."
-    )
 
     if new_target != target:
         error = app.session.set_pass_target(document_id, name, new_target)
@@ -250,19 +208,14 @@ def _draw_repeat(
 ) -> None:
     # How many times this pass draws per frame (068). Named for what it does to the picture --
     # "runs" of the same shader, each seeing the one before it -- not for the model field.
-    imgui.separator_text("Runs per frame")
+    imgui.separator_text("Runs")
 
     label_row(app.font_12, "runs", _CTRL_W, _ROW_LABEL_W)
     changed, runs = imgui.slider_int(
         f"##iterations_{name}", entry.iterations, 1, MAX_ITERATIONS
     )
     imgui.same_line()
-    help_marker(
-        "How many times this pass draws each frame, each run reading what the one before it "
-        "wrote. One is an ordinary pass. More builds a chain inside a single shader -- a jump "
-        "flood, a cascade stack -- with u_pass_iteration telling the shader which run it is "
-        "and u_pass_iterations how many there are."
-    )
+    help_marker("redraws per frame, each reading the last")
     if changed and runs != entry.iterations:
         error = app.session.set_pass_iterations(document_id, name, runs)
         if error:

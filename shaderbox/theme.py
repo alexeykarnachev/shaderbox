@@ -238,6 +238,9 @@ class SIZE:
     # dropdown. 56 holds a four-digit number (4096 is the clamp's ceiling) inside its padding.
     CANVAS_FIELD_W: int = 56
     CANVAS_PRESETS_W: int = 64
+    # The Document tab's engine-uniform block: a fixed name column so the rows read as a
+    # block. 128 fits the longest engine name in the 12px face (tests/test_ui_prose_budget.py).
+    AUTO_NAME_W: int = 128
 
     LABEL_W: int = 64
     RENDER_CTRL_W: int = 200
@@ -273,7 +276,6 @@ class SIZE:
     SETTINGS_LABEL_W: int = 92
     SETTINGS_CTRL_W: int = 120
     PASS_SETTINGS_W: int = 440
-    PASS_SETTINGS_H: int = 400
 
     SCROLLBAR_W: int = 12
     GRAB_MIN: int = 10

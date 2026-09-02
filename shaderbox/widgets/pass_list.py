@@ -95,7 +95,7 @@ def _draw_pass_tile(
         if tune_icon_button(f"settings_{name}", side):
             app.open_pass_settings(name)
         if imgui.is_item_hovered():
-            imgui.set_tooltip("Pass settings — what it reads, what it draws into")
+            imgui.set_tooltip("Pass settings")
 
     # The wiring reads INSIDE the card, under the title — not as a hover tooltip. A tile-wide
     # tooltip fires whenever the pointer is anywhere over the tile, including on the gear and

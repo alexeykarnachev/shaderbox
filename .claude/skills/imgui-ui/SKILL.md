@@ -92,6 +92,11 @@ genuinely narrow container — never a stack of full-width bars.
   | notification | one clause | `Canvas: 1080x1080` |
   | section title | 1-2 words | `Reads`, `Draws into` |
 
+  These budgets are enforced, not advised: ShaderBox's `tests/test_ui_prose_budget.py` walks
+  the package's AST, scores every call carrying authored copy, and fails an over-budget string
+  or one joining a second clause. A string the walk cannot read, or one that stays over budget,
+  goes into one of its two allowlists with a written reason.
+
   A `help_marker` exists only where the label alone is ambiguous; a label that is clear gets no
   marker at all. It names what the control does, never why one would want it, never the
   alternative, never the history. Anything longer than the budget is documentation and goes to the
