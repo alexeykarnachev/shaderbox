@@ -99,7 +99,7 @@
   <b>What you'll build</b>
   <ol>
     <li><a href="#paint"><code>paint</code></a> — the scene to light</li>
-    <li><a href="#seed"><code>seed</code></a> — each texel's nearest solid</li>
+    <li><a href="#seed"><code>seed</code></a> — every solid texel's own position</li>
     <li><a href="#jfa"><code>jfa</code></a> — the jump flood</li>
     <li><a href="#df"><code>df</code></a> — one line of real work</li>
     <li><a href="#cascade"><code>cascade</code></a> — the cascade stack</li>
@@ -281,7 +281,7 @@ void main() {
   can possibly be hit before then.
 </p>
 
-<h2 id="seed"><span class="step">2</span><code>seed</code> — each texel's nearest solid</h2>
+<h2 id="seed"><span class="step">2</span><code>seed</code> — every solid texel's own position</h2>
 
 <p>Add a pass called <code>seed</code> (<code>Alt+A</code>).</p>
 
@@ -781,10 +781,9 @@ void main() {
 
 <p>
   The four taps are a bilinear blend done <b>by hand</b>, and the target stays unsmoothed for the
-  same reason. Neighbouring texels here are <em>different directions of the same probe</em>, not
-  neighbouring positions, so hardware filtering would blend unrelated angles. The four taps
-  sample the <b>same slot</b> in four <b>neighbouring probes</b>, which is the quantity you
-  actually want.
+  same reason. Neighbouring texels here are <em>different directions of the same probe</em>, so
+  hardware filtering would blend unrelated angles. The four taps sample the <b>same slot</b> in
+  four <b>neighbouring probes</b>, which is the quantity you actually want.
 </p>
 
 <p>
@@ -863,7 +862,7 @@ void main() {
 
 <table>
   <tr><th>Pass</th><th>Runs</th><th>Reads</th><th>Format</th><th>Does</th></tr>
-  <tr><td><code>paint</code></td><td>1</td><td>nothing</td><td>f2</td><td>the drawable scene</td></tr>
+  <tr><td><code>paint</code></td><td>1</td><td>nothing</td><td>f2</td><td>the scene to light</td></tr>
   <tr><td><code>seed</code></td><td>1</td><td>paint</td><td>f4</td><td>solid texels store their UV</td></tr>
   <tr><td><code>jfa</code></td><td><b>12</b></td><td>seed, itself</td><td>f4</td><td>flood the nearest-seed field</td></tr>
   <tr><td><code>df</code></td><td>1</td><td>jfa</td><td>f2</td><td>coordinates → distance</td></tr>
@@ -931,7 +930,8 @@ uniform vec2 u_brush_prev;   // where it was last frame
 uniform float u_brush_down;  // 1 while the left button is held</code></pre>
 
 <p>
-  And the stamp, placed just before the fallthrough. It measures the distance to the segment
+  And the stamp, placed just before the fallthrough, where <code>p</code> is the
+  <code>vec2 p = vs_uv</code> the pass already opens with. It measures the distance to the segment
   from last frame's cursor to this one, so a fast drag paints a continuous stroke; each frame
   adds one segment on top of what <code>u_prev</code> carried forward, and the stroke is the
   sum.

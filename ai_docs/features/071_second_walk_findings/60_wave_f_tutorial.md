@@ -21,7 +21,8 @@ verify" (D6); "Don't use ... this 'bla bla bla, but not bla bla' construction" (
   canvas, not from the run count" is "derived from the canvas"; the engine-index note (the
   maintainer's example) is "The engine hands over the run index. `u_pass_iteration` says which
   run this is, and the halving offset is one line in the shader."; "rather than the size you
-  happen to be using" is gone. Zero contrast constructions remain in the body.
+  happen to be using" is gone. Zero contrast constructions remain in the body, measured with
+  whitespace collapsed.
 - **Added.** A closing chapter, "Draw into it", after "Things to try", listed in the contents
   under "Along the way". Paste-on-top on the finished example, in four steps each with its
   mechanism: a pass that remembers (`u_prev` declared, the fallthrough copying the previous
@@ -43,6 +44,22 @@ script instruction carries `Alt+R`, no sentence instructs adding a script, every
 (`Ctrl+Shift+N`, `Alt+P`, `Alt+R`, `F6`) is in `COMMAND_SPECS`, and the committed
 `tutorial.html` is a fresh build. `tests/test_prose_spelling.py` gained an exclusion for itself:
 once tracked it flagged its own regex and docstring.
+
+## Review history
+
+**Post-impl prose audit (one reviewer, opus, anchored to the maintainer's words).** Verdict FIX,
+taken in a fix-up: the step-2 heading's rewrite ("each texel's nearest solid") stated step 3's
+result, which the body's own produces-lines contradict -- now "every solid texel's own position";
+one "X, not Y" survived at the cascade's merge note because the line wrapped between the comma
+and "not", where the gate's regex could not see it -- the sentence is rewritten and the gate
+collapses whitespace before matching (a mutation of three added instances fails it); the
+"What you built" table still called `paint` "the drawable scene", the one D1 leak a grep does
+not find -- now "the scene to light"; the stamp snippet's `p` is named as the `vec2 p = vs_uv`
+the pass opens with. Verified by the auditor by running the chapter headless on the shipped
+example: `u_prev` wires itself with no gear step, a drag's stroke is continuous and persists after
+release, it lights the scene (`composite` reads bright beside it), F6 wipes it; every anchor
+pairs with an id, no oracle word survives, every pass step has an image and a one-line
+"produces", and the script, `Alt+R`, the pass block and the mouse fields all match the engine.
 
 ## Manual verification (the maintainer, in the app, with the tutorial beside it)
 

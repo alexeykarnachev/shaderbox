@@ -314,7 +314,9 @@ def test_the_prose_says_what_a_thing_is(body: str) -> None:
     surfaces = {"tutorial_body.html": prose}
     for section in help_sections():
         surfaces[f"help:{section.key}"] = section.body
-    for where, text in surfaces.items():
+    for where, raw in surfaces.items():
+        # Whitespace collapsed first: a wrap between the comma and "not" hid one instance.
+        text = re.sub(r"\s+", " ", raw)
         hits = [m.start() for m in _CONTRAST.finditer(text)]
         assert len(hits) <= 2, (
             f"{where}: {len(hits)} contrast constructions; "
