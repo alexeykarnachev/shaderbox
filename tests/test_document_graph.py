@@ -21,7 +21,14 @@ from shaderbox.constants import DEFAULT_FS_FILE_PATH
 from shaderbox.core import Canvas, Pass
 from shaderbox.document import DEFAULT_PASS_NAME, Document
 from shaderbox.media import MediaDetails, texture_to_rgba8
-from shaderbox.pass_graph import PassEntry, PassGraph, TargetConfig, plan_passes
+from shaderbox.pass_graph import (
+    NoSource,
+    PassEntry,
+    PassGraph,
+    PassSource,
+    TargetConfig,
+    plan_passes,
+)
 from shaderbox.shader_source import ShaderSource
 from shaderbox.tabs.document import _apply_canvas_size
 from shaderbox.ui_models import UIDocument
@@ -81,7 +88,11 @@ def _document(
     sources: dict[str, str],
     graph: PassGraph,
     size: tuple[int, int] = (8, 8),
+    wiring: dict[str, dict[str, str]] | None = None,
 ) -> Document:
+    """`wiring` is the explicit source per sampler (072): these shaders name their samplers by
+    ROLE (`u_src`, `u_a`), which no pass name derives, so each wire is a `PassSource` row; a
+    `u_prev` needs none, the name rule reads it."""
     doc = Document(gl=gl, canvas_size=size)
     doc.passes[DEFAULT_PASS_NAME].release()
     doc.passes = {}
@@ -94,6 +105,9 @@ def _document(
             f"{name}: {render_pass.compile_unit.errors}"
         )
         doc.passes[name] = render_pass
+    for consumer, reads in (wiring or {}).items():
+        for uniform, source in reads.items():
+            doc.passes[consumer].uniform_values[uniform] = PassSource(source)
     doc.graph = graph
     return doc
 
@@ -122,10 +136,8 @@ def test_a_two_pass_chain_shows_b_reads_a(gl_ctx: moderngl.Context) -> None:
     doc = _document(
         gl_ctx,
         {"a": _CONST % "0.8", "b": _HALVE},
-        PassGraph(
-            output="b",
-            passes={"a": PassEntry(), "b": PassEntry(inputs={"u_src": "a"})},
-        ),
+        PassGraph(output="b", passes={"a": PassEntry(), "b": PassEntry()}),
+        wiring={"b": {"u_src": "a"}},
     )
     doc.render(u_time=0.0)
     assert _red(doc) == pytest.approx(102, abs=2)  # 0.8 * 0.5 = 0.4 -> 102
@@ -142,13 +154,13 @@ def test_a_diamond_feeds_both_branches_from_one_ancestor(
         {"base": _CONST % "0.6", "left": _HALVE, "right": _HALVE, "out": _SUM},
         PassGraph(
             output="out",
-            passes={
-                "base": PassEntry(),
-                "left": PassEntry(inputs={"u_src": "base"}),
-                "right": PassEntry(inputs={"u_src": "base"}),
-                "out": PassEntry(inputs={"u_a": "left", "u_b": "right"}),
-            },
+            passes={n: PassEntry() for n in ("base", "left", "right", "out")},
         ),
+        wiring={
+            "left": {"u_src": "base"},
+            "right": {"u_src": "base"},
+            "out": {"u_a": "left", "u_b": "right"},
+        },
     )
     doc.render(u_time=0.0)
     assert _red(doc) == pytest.approx(153, abs=2)  # (0.6*0.5) + (0.6*0.5) = 0.6 -> 153
@@ -161,10 +173,7 @@ def test_a_feedback_pass_accumulates_once_per_frame(gl_ctx: moderngl.Context) ->
     doc = _document(
         gl_ctx,
         {"trail": _ACCUMULATE},
-        PassGraph(
-            output="trail",
-            passes={"trail": PassEntry(inputs={"u_prev": "trail"})},
-        ),
+        PassGraph(output="trail", passes={"trail": PassEntry()}),
     )
     for _ in range(4):
         doc.begin_frame()
@@ -181,9 +190,7 @@ def test_feedback_starts_black(gl_ctx: moderngl.Context) -> None:
     doc = _document(
         gl_ctx,
         {"trail": _ACCUMULATE},
-        PassGraph(
-            output="trail", passes={"trail": PassEntry(inputs={"u_prev": "trail"})}
-        ),
+        PassGraph(output="trail", passes={"trail": PassEntry()}),
     )
     doc.begin_frame()
     doc.render(u_time=0.0)
@@ -199,13 +206,8 @@ def test_a_cycle_reports_per_pass_and_still_draws_the_output(
     doc = _document(
         gl_ctx,
         {"a": _HALVE, "b": _HALVE},
-        PassGraph(
-            output="a",
-            passes={
-                "a": PassEntry(inputs={"u_src": "b"}),
-                "b": PassEntry(inputs={"u_src": "a"}),
-            },
-        ),
+        PassGraph(output="a", passes={"a": PassEntry(), "b": PassEntry()}),
+        wiring={"a": {"u_src": "b"}, "b": {"u_src": "a"}},
     )
     doc.render(u_time=0.0)
     assert {e.pass_name for e in doc.graph_errors} == {"a", "b"}
@@ -220,7 +222,8 @@ def test_an_unfilled_input_reads_black_and_the_document_renders(
     doc = _document(
         gl_ctx,
         {"blur": _HALVE},
-        PassGraph(output="blur", passes={"blur": PassEntry(inputs={"u_src": "ghost"})}),
+        PassGraph(output="blur", passes={"blur": PassEntry()}),
+        wiring={"blur": {"u_src": "ghost"}},
     )
     doc.render(u_time=0.0)
     assert _red(doc) == 0
@@ -235,12 +238,9 @@ def test_only_the_passes_the_output_needs_are_drawn(gl_ctx: moderngl.Context) ->
         {"a": _CONST % "1.0", "used": _HALVE, "unused": _HALVE},
         PassGraph(
             output="used",
-            passes={
-                "a": PassEntry(),
-                "used": PassEntry(inputs={"u_src": "a"}),
-                "unused": PassEntry(inputs={"u_src": "a"}),
-            },
+            passes={"a": PassEntry(), "used": PassEntry(), "unused": PassEntry()},
         ),
+        wiring={"used": {"u_src": "a"}, "unused": {"u_src": "a"}},
     )
     doc.render(u_time=0.0)
     assert _red(doc) == pytest.approx(128, abs=2)
@@ -273,9 +273,8 @@ def test_an_external_canvas_overrides_only_the_output_target(
     doc = _document(
         gl_ctx,
         {"a": _CONST % "0.8", "b": _HALVE},
-        PassGraph(
-            output="b", passes={"a": PassEntry(), "b": PassEntry(inputs={"u_src": "a"})}
-        ),
+        PassGraph(output="b", passes={"a": PassEntry(), "b": PassEntry()}),
+        wiring={"b": {"u_src": "a"}},
     )
     external = Canvas(gl=gl_ctx, size=(4, 4))
     doc.render(u_time=0.0, canvas=external)
@@ -331,9 +330,7 @@ def test_two_exports_of_a_feedback_document_are_identical(
     doc = _document(
         gl_ctx,
         {"trail": _ACCUMULATE},
-        PassGraph(
-            output="trail", passes={"trail": PassEntry(inputs={"u_prev": "trail"})}
-        ),
+        PassGraph(output="trail", passes={"trail": PassEntry()}),
     )
     first = tmp_path / "a.png"
     second = tmp_path / "b.png"
@@ -354,9 +351,7 @@ def test_an_export_does_not_inherit_the_live_history(
     doc = _document(
         gl_ctx,
         {"trail": _ACCUMULATE},
-        PassGraph(
-            output="trail", passes={"trail": PassEntry(inputs={"u_prev": "trail"})}
-        ),
+        PassGraph(output="trail", passes={"trail": PassEntry()}),
     )
     for _ in range(30):
         doc.begin_frame()
@@ -379,9 +374,7 @@ def test_begin_frame_is_idempotent_within_one_frame(gl_ctx: moderngl.Context) ->
     doc = _document(
         gl_ctx,
         {"trail": _ACCUMULATE},
-        PassGraph(
-            output="trail", passes={"trail": PassEntry(inputs={"u_prev": "trail"})}
-        ),
+        PassGraph(output="trail", passes={"trail": PassEntry()}),
     )
     for frame in range(4):
         doc.begin_frame(frame)
@@ -399,9 +392,7 @@ def test_begin_frame_without_a_number_advances_every_call(
     doc = _document(
         gl_ctx,
         {"trail": _ACCUMULATE},
-        PassGraph(
-            output="trail", passes={"trail": PassEntry(inputs={"u_prev": "trail"})}
-        ),
+        PassGraph(output="trail", passes={"trail": PassEntry()}),
     )
     for _ in range(3):
         doc.begin_frame()
@@ -419,9 +410,8 @@ def test_editing_one_pass_recompiles_only_that_pass(
     doc = _document(
         gl_ctx,
         {"a": _CONST % "0.8", "b": _HALVE},
-        PassGraph(
-            output="b", passes={"a": PassEntry(), "b": PassEntry(inputs={"u_src": "a"})}
-        ),
+        PassGraph(output="b", passes={"a": PassEntry(), "b": PassEntry()}),
+        wiring={"b": {"u_src": "a"}},
     )
     doc.render(u_time=0.0)
 
@@ -453,11 +443,15 @@ def test_a_pass_scale_shrinks_its_target(gl_ctx: moderngl.Context) -> None:
         output="out",
         passes={
             "half": PassEntry(target=TargetConfig(scale=0.5)),
-            "out": PassEntry(inputs={"u_src": "half"}),
+            "out": PassEntry(),
         },
     )
     doc = _document(
-        gl_ctx, {"half": _CONST % "1.0", "out": _HALVE}, graph, size=(64, 64)
+        gl_ctx,
+        {"half": _CONST % "1.0", "out": _HALVE},
+        graph,
+        size=(64, 64),
+        wiring={"out": {"u_src": "half"}},
     )
     doc.render(u_time=0.0)
     assert doc.passes["half"].canvas.texture.size == (32, 32)
@@ -475,11 +469,15 @@ def test_a_scaled_pass_keeps_its_size_across_frames(gl_ctx: moderngl.Context) ->
         output="out",
         passes={
             "half": PassEntry(target=TargetConfig(scale=0.5)),
-            "out": PassEntry(inputs={"u_src": "half"}),
+            "out": PassEntry(),
         },
     )
     doc = _document(
-        gl_ctx, {"half": _CONST % "1.0", "out": _HALVE}, graph, size=(64, 64)
+        gl_ctx,
+        {"half": _CONST % "1.0", "out": _HALVE},
+        graph,
+        size=(64, 64),
+        wiring={"out": {"u_src": "half"}},
     )
     doc.render(u_time=0.0)
     texture = doc.passes["half"].canvas.texture
@@ -498,7 +496,7 @@ def test_a_resize_moves_every_pass_together(gl_ctx: moderngl.Context) -> None:
         passes={
             "half": PassEntry(target=TargetConfig(scale=0.5)),
             "full": PassEntry(),
-            "out": PassEntry(inputs={"u_a": "half", "u_b": "full"}),
+            "out": PassEntry(),
         },
     )
     doc = _document(
@@ -506,6 +504,7 @@ def test_a_resize_moves_every_pass_together(gl_ctx: moderngl.Context) -> None:
         {"half": _CONST % "1.0", "full": _CONST % "0.5", "out": _SUM},
         graph,
         size=(64, 64),
+        wiring={"out": {"u_a": "half", "u_b": "full"}},
     )
     doc.render(u_time=0.0)
     doc.set_canvas_size((32, 32))
@@ -568,7 +567,7 @@ def test_feedback_advances_once_per_iteration(gl_ctx: moderngl.Context) -> None:
     # +0.1 reach 0.8, while a per-FRAME swap leaves every iteration reading black and lands 0.1.
     graph = PassGraph(
         output="acc",
-        passes={"acc": PassEntry(inputs={"u_prev": "acc"}, iterations=8)},
+        passes={"acc": PassEntry(iterations=8)},
     )
     doc = _document(gl_ctx, {"acc": _ITERATED_ACCUMULATE}, graph)
     doc.begin_frame(0)
@@ -584,7 +583,7 @@ def test_an_iterated_output_pass_lands_its_last_iteration_on_the_canvas(
     # what was written -- the chain stalls at one step (0.1 -> 26) instead of reaching 0.8.
     graph = PassGraph(
         output="acc",
-        passes={"acc": PassEntry(inputs={"u_prev": "acc"}, iterations=8)},
+        passes={"acc": PassEntry(iterations=8)},
     )
     doc = _document(gl_ctx, {"acc": _ITERATED_ACCUMULATE}, graph)
     external = Canvas(gl=gl_ctx, size=(8, 8), dtype="f2")
@@ -604,7 +603,7 @@ def test_an_iterated_feedback_chain_keeps_advancing_across_frames(
     # Falsifier: a parity bug in the swap composition makes frame 2 restart or double-count.
     graph = PassGraph(
         output="acc",
-        passes={"acc": PassEntry(inputs={"u_prev": "acc"}, iterations=3)},
+        passes={"acc": PassEntry(iterations=3)},
     )
     doc = _document(gl_ctx, {"acc": _ITERATED_ACCUMULATE}, graph)
     seen: list[int] = []
@@ -646,7 +645,7 @@ def test_a_ui_resize_moves_every_pass_together(gl_ctx: moderngl.Context) -> None
         passes={
             "half": PassEntry(target=TargetConfig(scale=0.5)),
             "full": PassEntry(),
-            "out": PassEntry(inputs={"u_a": "half", "u_b": "full"}),
+            "out": PassEntry(),
         },
     )
     doc = _document(
@@ -654,6 +653,7 @@ def test_a_ui_resize_moves_every_pass_together(gl_ctx: moderngl.Context) -> None
         {"half": _CONST % "1.0", "full": _CONST % "0.5", "out": _SUM},
         graph,
         size=(64, 64),
+        wiring={"out": {"u_a": "half", "u_b": "full"}},
     )
     doc.render(u_time=0.0)
     _apply_canvas_size(_AppStub(), _ui_document(doc), (32, 32))
@@ -684,22 +684,19 @@ def test_an_unchanged_size_pushes_no_notification(gl_ctx: moderngl.Context) -> N
     doc.release()
 
 
-def test_feedback_is_read_from_the_graph_not_the_allocation_cache(
+def test_feedback_is_read_from_the_wiring_not_the_allocation_cache(
     gl_ctx: moderngl.Context,
 ) -> None:
-    # The feedback set comes from the GRAPH's own declaration: present BEFORE any render, and still
-    # present right after a reset. Falsifier: derive it from `_feedback` — that dict is filled on
-    # demand during render() and emptied by reset_feedback, so it would be empty before the first
-    # frame and empty again the instant a reset runs.
+    # The feedback set comes from the WIRING's own declaration: present BEFORE any render, and
+    # still present right after a reset. Falsifier: derive it from `_feedback` — that dict is
+    # filled on demand during render() and emptied by reset_feedback, so it would be empty
+    # before the first frame and empty again the instant a reset runs.
     doc = _document(
         gl_ctx,
         {"trail": _ACCUMULATE},
-        PassGraph(
-            output="trail",
-            passes={"trail": PassEntry(inputs={"u_prev": "trail"})},
-        ),
+        PassGraph(output="trail", passes={"trail": PassEntry()}),
     )
-    assert plan_passes(doc.effective_graph())[0].feedback == {
+    assert plan_passes(doc.effective_wiring())[0].feedback == {
         "trail"
     }  # before any render
 
@@ -707,9 +704,15 @@ def test_feedback_is_read_from_the_graph_not_the_allocation_cache(
     doc.render(u_time=0.0)
     doc.reset_feedback()
     # A reset does not retire the declaration.
-    assert plan_passes(doc.effective_graph())[0].feedback == {"trail"}
+    assert plan_passes(doc.effective_wiring())[0].feedback == {"trail"}
     doc.release()
 
-    plain = _document(gl_ctx, {"trail": _ACCUMULATE}, PassGraph(output="trail"))
-    assert not plan_passes(plain.effective_graph())[0].feedback
+    # A decision for black on `u_prev` is what makes a `u_prev` pass NOT feedback (072).
+    plain = _document(
+        gl_ctx,
+        {"trail": _ACCUMULATE},
+        PassGraph(output="trail", passes={"trail": PassEntry()}),
+    )
+    plain.passes["trail"].uniform_values["u_prev"] = NoSource()
+    assert not plan_passes(plain.effective_wiring())[0].feedback
     plain.release()

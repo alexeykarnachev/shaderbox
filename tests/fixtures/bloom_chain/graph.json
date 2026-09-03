@@ -1,9 +1,8 @@
 {
-    "version": 1,
+    "version": 2,
     "output": "composite",
     "passes": {
         "scene": {
-            "inputs": {},
             "target": {
                 "scale": 1.0,
                 "dtype": "f2",
@@ -12,9 +11,6 @@
             }
         },
         "bright": {
-            "inputs": {
-                "u_scene": "scene"
-            },
             "target": {
                 "scale": 0.5,
                 "dtype": "f2",
@@ -23,9 +19,6 @@
             }
         },
         "blur": {
-            "inputs": {
-                "u_bright": "bright"
-            },
             "target": {
                 "scale": 0.5,
                 "dtype": "f2",
@@ -34,10 +27,6 @@
             }
         },
         "trail": {
-            "inputs": {
-                "u_scene": "scene",
-                "u_prev": "trail"
-            },
             "target": {
                 "scale": 1.0,
                 "dtype": "f2",
@@ -46,11 +35,6 @@
             }
         },
         "composite": {
-            "inputs": {
-                "u_scene": "scene",
-                "u_blur": "blur",
-                "u_trail": "trail"
-            },
             "target": {
                 "scale": 1.0,
                 "dtype": "f1",
@@ -58,6 +42,5 @@
                 "wrap": false
             }
         }
-    },
-    "layout": {}
+    }
 }

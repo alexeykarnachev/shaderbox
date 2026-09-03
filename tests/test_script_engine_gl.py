@@ -356,7 +356,7 @@ def test_a_broadcast_reaches_both_passes_on_the_gpu(
     # consumes is never drawn, which would make the assertion below unfalsifiable.
     graph = PassGraph(
         output="out",
-        passes={"seed": PassEntry(), "out": PassEntry(inputs={"u_seed": "seed"})},
+        passes={"seed": PassEntry(), "out": PassEntry()},
     )
     for name, src in (("seed", _SEED_SRC), ("out", _OUT_SRC)):
         # The pass's target comes from its OWN graph entry, exactly as the loader builds it. A

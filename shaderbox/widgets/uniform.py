@@ -11,9 +11,9 @@ from OpenGL.GL import GL_FLOAT, GL_UNSIGNED_INT
 from shaderbox.app import App
 from shaderbox.constants import MEDIA_EXTENSIONS
 from shaderbox.core import UniformValue
-from shaderbox.document import is_user_bound
 from shaderbox.editor_types import HoverMark, JumpRequest
 from shaderbox.media import MediaWithTexture, Video, media_class_for
+from shaderbox.pass_graph import AutoSource, NoSource, PassSource, wired_pass
 from shaderbox.paths import pass_name_of
 from shaderbox.shader_errors import find_uniform_declaration_line
 from shaderbox.theme import COLOR, SIZE, SPACE
@@ -180,7 +180,7 @@ def _thumb_size(texture: moderngl.Texture) -> tuple[int, int]:
 
 
 def _draw_pass_source(texture: moderngl.Texture, source: str) -> None:
-    # A live thumbnail of the producing pass, captioned with its name; wiring is the gear's.
+    # A live thumbnail of the producing pass, captioned with its name.
     imgui.set_cursor_pos_x(_CTRL_X)
     imgui.image(
         imgui.ImTextureRef(texture.glo),
@@ -190,6 +190,17 @@ def _draw_pass_source(texture: moderngl.Texture, source: str) -> None:
     )
     imgui.same_line()
     caption_text(source)
+
+
+def _pick_media_file() -> Path:
+    # Both cases: Linux glob filters are case-sensitive, phone cameras emit .MOV/.JPG.
+    patterns = " ".join(f"*{ext} *{ext.upper()}" for ext in MEDIA_EXTENSIONS)
+    results = pfd_block(
+        pfd.open_file(
+            "Select image or video", default_path=".", filters=["Media", patterns]
+        )
+    )
+    return Path(results[0]) if results else Path()
 
 
 def _draw_black_swatch() -> None:
@@ -270,52 +281,72 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
             new_value = str_to_unicode(text, ui_uniform.array_length)
 
     elif ui_uniform.input_type == "texture":
-        assert isinstance(current_value, MediaWithTexture)
-        # The row shows what the sampler READS (071 D9): a pass it is wired to, the texture the
-        # user bound, or the black every other sampler starts from. The seeded default image in
-        # the slot is a placeholder the renderer never binds, so it is never shown.
+        # The row is where a sampler's SOURCE is chosen (072): a pass, black, the name rule, or
+        # a file. Under the combo, what it reads: the pass's live thumbnail, the bound media, or
+        # the black swatch every unfilled sampler binds.
         document = app.ui_documents[document_id].document
-        source = document.sampler_source(panel_pass_name, name)
-        if source is not None:
-            _draw_pass_source(document.input_texture(panel_pass_name, source), source)
+        passes = sorted(document.passes)
+        auto = wired_pass(AutoSource(), name, panel_pass_name, passes)
+        choices = [f"auto ({auto or 'none'})", "none", *passes, "file..."]
+        file_item = len(choices) - 1
+        if isinstance(current_value, PassSource):
+            index = (
+                choices.index(current_value.name) if current_value.name in passes else 1
+            )
+        elif isinstance(current_value, NoSource):
+            index = 1
+        elif isinstance(current_value, AutoSource):
+            index = 0
         else:
-            if button("Load" + hidden):
-                # Both cases: Linux glob filters are case-sensitive, phone cameras emit
-                # .MOV/.JPG.
-                patterns = " ".join(
-                    f"*{ext} *{ext.upper()}" for ext in MEDIA_EXTENSIONS
-                )
-                results = pfd_block(
-                    pfd.open_file(
-                        "Select image or video",
-                        default_path=".",
-                        filters=["Media", patterns],
-                    )
-                )
-                file_path = Path(results[0]) if results else Path()
+            index = file_item
+        changed, picked = imgui.combo(f"##source_{name}", index, choices)
+        if changed and picked == file_item:
+            file_path = _pick_media_file()
+            if file_path.suffix.lower() in MEDIA_EXTENSIONS:
+                new_value = media_class_for(file_path.suffix)(file_path)
+        elif changed:
+            source = (
+                AutoSource()
+                if picked == 0
+                else NoSource()
+                if picked == 1
+                else PassSource(choices[picked])
+            )
+            error = app.session.set_sampler_source(
+                document_id, panel_pass_name, name, source
+            )
+            if error:
+                app.notifications.push(error)
+            current_value = panel_pass.uniform_values[name]
 
-                if file_path.suffix.lower() in MEDIA_EXTENSIONS:
-                    new_value = media_class_for(file_path.suffix)(file_path)
-
+        source_pass = document.sampler_source(panel_pass_name, name)
+        if source_pass is not None:
+            _draw_pass_source(
+                document.input_texture(panel_pass_name, source_pass), source_pass
+            )
+        elif isinstance(current_value, MediaWithTexture | moderngl.Texture):
+            texture = (
+                current_value.texture
+                if isinstance(current_value, MediaWithTexture)
+                else current_value
+            )
+            imgui.set_cursor_pos_x(_CTRL_X)
+            imgui.image(
+                imgui.ImTextureRef(texture.glo),
+                image_size=_thumb_size(texture),
+                uv0=(0, 1),
+                uv1=(1, 0),
+            )
             imgui.same_line()
-            if is_user_bound(current_value):
-                caption_text(get_resolution_str(None, *current_value.texture.size))
-                imgui.set_cursor_pos_x(_CTRL_X)
-                imgui.image(
-                    imgui.ImTextureRef(current_value.texture.glo),
-                    image_size=_thumb_size(current_value.texture),
-                    uv0=(0, 1),
-                    uv1=(1, 0),
-                )
-                if isinstance(current_value, Video):
-                    imgui.same_line(spacing=float(SPACE.LG))
-                    video_value = draw_video_filters(app, current_value)
-                    if video_value is not current_value:
-                        new_value = video_value
-            else:
-                caption_text("unwired")
-                imgui.set_cursor_pos_x(_CTRL_X)
-                _draw_black_swatch()
+            caption_text(get_resolution_str(None, *texture.size))
+            if isinstance(current_value, Video):
+                imgui.same_line(spacing=float(SPACE.LG))
+                video_value = draw_video_filters(app, current_value)
+                if video_value is not current_value:
+                    new_value = video_value
+        else:
+            imgui.set_cursor_pos_x(_CTRL_X)
+            _draw_black_swatch()
 
     elif ui_uniform.input_type == "color":
         assert isinstance(current_value, Sequence)

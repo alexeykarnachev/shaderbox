@@ -37,13 +37,13 @@ from shaderbox.tabs import render as render_tab
 from shaderbox.tabs import share as share_tab
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_primitives import (
+    chip_button,
     fps_overlay,
-    ghost_button,
     item_normalized_mouse,
     rendering_overlay,
     toggle_button,
 )
-from shaderbox.ui_regions import DocumentTab
+from shaderbox.ui_regions import CHANNEL_VIEW_LABELS, ChannelView, DocumentTab
 from shaderbox.util import adjust_size
 from shaderbox.watch import maybe_rebuild_lib_index, reload_document_if_changed
 from shaderbox.widgets import cheatsheet, copilot_chat
@@ -633,9 +633,20 @@ def _draw_document_image(
         # On compile failure the last-good program stays bound — kept bright; the error
         # surfaces in the editor pane strip.
         img_min = imgui.get_cursor_screen_pos()
-        _draw_canvas_backdrop(app.checker_texture, img_min, image_width, image_height)
+        view = app.app_state.channel_view
+        output_texture = ui_document.document.render_pass.canvas.texture
+        if view == ChannelView.ALPHA:
+            shown_texture = app.alpha_view.render(output_texture)
+        else:
+            shown_texture = output_texture
+        backdrop = (
+            app.checker_loud_texture
+            if view == ChannelView.COLOR_ALPHA
+            else app.checker_texture
+        )
+        _draw_canvas_backdrop(backdrop, img_min, image_width, image_height)
         imgui.image_with_bg(
-            imgui.ImTextureRef(ui_document.document.render_pass.canvas.texture.glo),
+            imgui.ImTextureRef(shown_texture.glo),
             image_size=(image_width, image_height),
             uv0=(0, 1),
             uv1=(1, 0),
@@ -709,16 +720,20 @@ def _draw_app_panel(app: App) -> None:
             target_fps=app.app_state.global_target_fps,
             is_open=app.fps_details_open,
         )
-        # "Reset document" over the preview's top-LEFT — the opposite corner from the FPS chip, so
-        # the two never collide whatever the canvas aspect. Always drawn: every document has a
-        # clock to restart, whether or not it accumulates anything.
+        # The channel-view chip over the preview's top-LEFT — the opposite corner from the FPS
+        # chip, so the two never collide whatever the canvas aspect.
         imgui.set_cursor_screen_pos(
             (cursor_pos.x + float(SPACE.MD), cursor_pos.y + float(SPACE.MD))
         )
-        if ghost_button("Reset"):
-            app.reset_current_document()
+        view = app.app_state.channel_view
+        label = CHANNEL_VIEW_LABELS[view]
+        chip_w = imgui.calc_text_size(label).x + 2.0 * float(SPACE.MD)
+        if chip_button(label, chip_w, imgui.get_frame_height(), faded=True):
+            app.cycle_channel_view()
         if imgui.is_item_hovered():
-            imgui.set_tooltip(f"Reset document  {_hint(app, CommandId.RESET_DOCUMENT)}")
+            imgui.set_tooltip(
+                f"Channel view  {_hint(app, CommandId.CYCLE_CHANNEL_VIEW)}"
+            )
 
     imgui.set_cursor_screen_pos(
         (cursor_pos.x, cursor_pos.y + image_height + float(SPACE.MD))

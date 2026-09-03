@@ -20,8 +20,9 @@ from shaderbox.copilot.state import CopilotLayout
 from shaderbox.core import ENGINE_DRIVEN_UNIFORMS
 from shaderbox.document import Document
 from shaderbox.glyph_tables import TABLE_UNIFORMS
-from shaderbox.media import MediaDetails, MediaWithTexture, is_default_image
+from shaderbox.media import MediaDetails, MediaWithTexture
 from shaderbox.model_salvage import drop_invalid, load_model
+from shaderbox.pass_graph import AutoSource, NoSource, PassSource
 from shaderbox.paths import (
     DOCUMENT_JSON_BASENAME,
     GRAPH_JSON_BASENAME,
@@ -31,7 +32,7 @@ from shaderbox.paths import (
     pass_shader_name,
 )
 from shaderbox.scripting.keys import StoppedKey
-from shaderbox.ui_regions import DocumentTab
+from shaderbox.ui_regions import ChannelView, DocumentTab
 from shaderbox.util import get_uniform_hash
 
 UIUniformInputType = Literal[
@@ -235,6 +236,7 @@ class UIAppState(BaseModel):
     # Persisted UI layout prefs (the App holds the live copies; synced at load/save).
     # NOT copilot_focused — that one is transient-by-design.
     active_document_tab: DocumentTab = DocumentTab.DOCUMENT
+    channel_view: ChannelView = ChannelView.COLOR
     is_copilot_open: bool = False
     copilot_layout: CopilotLayout = CopilotLayout.CORNER
 
@@ -274,7 +276,7 @@ def _existing_rows(dir: Path, pass_name: str) -> dict[str, Any]:
     return rows if isinstance(rows, dict) else {}
 
 
-# Sentinel: this uniform contributes no row (an unbound sampler holding the shipped default).
+# Sentinel: this uniform contributes no row (an undecided sampler, or an unsupported value).
 _SKIP: Any = object()
 
 
@@ -286,14 +288,18 @@ def _uniform_entry(
 ) -> Any:
     """One uniform's serialized form, writing its asset under `<kind>/<pass>/` (D16)."""
     if getattr(uniform, "gl_type", None) == GL_SAMPLER_2D:
-        # An unbound sampler holds the shipped default; persisting a per-document copy is pointless
-        # and would make it read back as "bound" on reload. Skip it — load's seed_uniform_values
-        # re-establishes the default. A file left by a PREVIOUS bind is deleted with the skip
-        # (load ignores it, but it would linger on disk and ride along duplicate_document).
-        if is_default_image(value):
+        # A sampler whose value is a SOURCE owns no file: a file left by a PREVIOUS bind is
+        # deleted with the row (load ignores it, but it would linger on disk and ride along
+        # duplicate_document). An undecided sampler writes no row at all -- the absent key IS
+        # the undecided state, and load's seed re-establishes it.
+        if isinstance(value, PassSource | NoSource | AutoSource):
             for kind in (MEDIA_DIR_NAME, TEXTURES_DIR_NAME):
                 for stale in (dir / kind / pass_name).glob(f"{uniform.name}.*"):
                     stale.unlink()
+            if isinstance(value, PassSource):
+                return {"pass": value.name}
+            if isinstance(value, NoSource):
+                return {"none": True}
             return _SKIP
 
         if isinstance(value, MediaWithTexture):

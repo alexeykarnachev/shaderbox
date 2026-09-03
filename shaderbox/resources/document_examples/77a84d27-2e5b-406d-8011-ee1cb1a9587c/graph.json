@@ -1,9 +1,8 @@
 {
-    "version": 1,
+    "version": 2,
     "output": "composite",
     "passes": {
         "paint": {
-            "inputs": {},
             "target": {
                 "scale": 1.0,
                 "dtype": "f2",
@@ -13,9 +12,6 @@
             "iterations": 1
         },
         "seed": {
-            "inputs": {
-                "u_paint": "paint"
-            },
             "target": {
                 "scale": 1.0,
                 "dtype": "f4",
@@ -25,10 +21,6 @@
             "iterations": 1
         },
         "jfa": {
-            "inputs": {
-                "u_seed": "seed",
-                "u_prev": "jfa"
-            },
             "target": {
                 "scale": 1.0,
                 "dtype": "f4",
@@ -38,9 +30,6 @@
             "iterations": 12
         },
         "df": {
-            "inputs": {
-                "u_jfa": "jfa"
-            },
             "target": {
                 "scale": 1.0,
                 "dtype": "f2",
@@ -50,11 +39,6 @@
             "iterations": 1
         },
         "cascade": {
-            "inputs": {
-                "u_paint": "paint",
-                "u_df": "df",
-                "u_prev": "cascade"
-            },
             "target": {
                 "scale": 1.0,
                 "dtype": "f2",
@@ -64,10 +48,6 @@
             "iterations": 6
         },
         "composite": {
-            "inputs": {
-                "u_cascade": "cascade",
-                "u_paint": "paint"
-            },
             "target": {
                 "scale": 1.0,
                 "dtype": "f1",
@@ -76,6 +56,5 @@
             },
             "iterations": 1
         }
-    },
-    "layout": {}
+    }
 }

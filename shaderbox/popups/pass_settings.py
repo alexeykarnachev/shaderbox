@@ -1,28 +1,18 @@
-"""The pass-settings modal: what fills one pass's inputs, and the target it draws into (065).
+"""The pass-settings modal: a pass's name, how many times it runs, and the target it draws
+into (065, 068).
 
-Wiring and target controls live here, off the strip — they are set-up-once choices, and as an
-always-open block under the strip they spent the panel's vertical budget on rows nobody touches
-after the first minute. The modal opens from a tile's gear, the tile's context menu, and
-automatically when a pass is created (the one moment the choices are actually made).
-
-Wiring is a closed-set combo over the document's own pass names, never a free-text field, so an
-input can never name a pass that does not exist. That is what makes SHADERed's positional-slot
-footgun impossible here, and it is why an unfilled input reading black (D3) stays a state you are
-building toward rather than a typo you cannot see.
-
-The combo carries two synthetic items ahead of the names (069 D9): `auto: <x>` is what the
-uniform's own NAME resolves to and stores no key, `(none)` stores an explicit black the name rule
-must not undo. Three stored states, three distinct readings.
+These are set-up-once choices, and as an always-open block under the strip they spent the
+panel's vertical budget on rows nobody touches after the first minute. The modal opens from a
+tile's gear, the tile's context menu, and automatically when a pass is created (the one moment
+the choices are actually made). What a pass READS is not here: a sampler's source is chosen on
+its own row of the uniforms panel (072).
 """
 
 from imgui_bundle import imgui
-from OpenGL.GL import GL_SAMPLER_2D
 
 from shaderbox.app import App, PopupState
-from shaderbox.core import Pass
-from shaderbox.document import is_user_bound
-from shaderbox.pass_graph import MAX_ITERATIONS, PassEntry, effective_inputs
-from shaderbox.theme import COLOR, SIZE, SPACE
+from shaderbox.pass_graph import MAX_ITERATIONS, PassEntry
+from shaderbox.theme import SIZE, SPACE
 from shaderbox.ui_primitives import (
     ghost_button,
     help_marker,
@@ -33,7 +23,6 @@ from shaderbox.ui_primitives import (
 _LABEL = "Pass settings##popup"
 _ROW_LABEL_W = 110.0
 _CTRL_W = 168.0
-_UNWIRED = "(none)"
 
 # What a pass's target format MEANS, in place of moderngl's `f1`/`f2`/`f4` dtype strings. The
 # tuple is (code, menu label, what it is for) — the label is what a person picks from, the last
@@ -79,12 +68,9 @@ def _draw_body(app: App) -> bool:
     if ui_document is None or name not in ui_document.document.passes:
         return False
 
-    document = ui_document.document
     imgui.separator_text("Pass")
     renamed = _draw_name(app, document_id, name)
     if not renamed:
-        imgui.dummy((0.0, float(SPACE.MD)))
-        _draw_inputs(app, document_id, name, document.passes[name])
         imgui.dummy((0.0, float(SPACE.MD)))
         _draw_target(app, document_id, name)
 
@@ -124,62 +110,6 @@ def _commit_pass_name(app: App, document_id: str, name: str) -> bool:
         app.pass_settings_name_buf = name
         return False
     return True
-
-
-def _sampler_names(render_pass: Pass) -> list[str]:
-    return [
-        u.name
-        for u in render_pass.get_active_uniforms()
-        if getattr(u, "gl_type", None) == GL_SAMPLER_2D
-    ]
-
-
-def _draw_inputs(app: App, document_id: str, name: str, render_pass: Pass) -> None:
-    # One closed-set combo per sampler uniform the pass actually declares, with two synthetic
-    # items in front of the pass names: the name rule's own answer, and an explicit none. Neither
-    # label is a reachable pass name (`_PASS_NAME_RE` admits no colon, space or parenthesis), so
-    # indexing this mixed list is safe.
-    imgui.separator_text("Reads")
-    samplers = _sampler_names(render_pass)
-    if not samplers:
-        imgui.text_colored(COLOR.FG_DIM, "no sampler2D uniforms")
-        return
-    document = app.ui_documents[document_id].document
-    entry = document.graph.passes.get(name, PassEntry())
-    names = set(document.passes)
-    bound = [
-        uniform
-        for uniform in samplers
-        if is_user_bound(render_pass.uniform_values.get(uniform))
-    ]
-    for uniform in samplers:
-        undecided = entry.model_copy(
-            update={"inputs": {u: s for u, s in entry.inputs.items() if u != uniform}}
-        )
-        auto = effective_inputs(undecided, [uniform], names, name, bound).get(
-            uniform, ""
-        )
-        choices = [f"auto: {auto or 'none'}", _UNWIRED, *sorted(document.passes)]
-        stored = entry.inputs.get(uniform)
-        if stored is None:
-            index = 0
-        elif stored == "":
-            index = 1
-        else:
-            # A stale explicit name -- its pass is gone -- reads as `(none)`, which is what it
-            # renders as; picking anything then rewrites the key to something valid.
-            index = choices.index(stored) if stored in choices else 1
-        label_row(app.font_12, uniform, _CTRL_W, _ROW_LABEL_W)
-        changed, picked = imgui.combo(f"##wire_{name}_{uniform}", index, choices)
-        if not changed:
-            continue
-        if picked == 0:
-            error = app.session.unwire_pass_input(document_id, name, uniform)
-        else:
-            producer = "" if picked == 1 else choices[picked]
-            error = app.session.wire_pass_input(document_id, name, uniform, producer)
-        if error:
-            app.notifications.push(error)
 
 
 def _draw_target(app: App, document_id: str, name: str) -> None:

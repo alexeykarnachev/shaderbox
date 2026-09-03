@@ -26,20 +26,18 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-03 (071 shipped as v0.28.0 on GitHub; 070 stubbed). -->
-**NEXT SESSION: brainstorm 070, the graph view of the pass strip.** The stub
-`ai_docs/features/070_pass_graph_view/01_spec.md` carries what is fixed (the strip stays the
-default; nodes in evaluation order, edges labelled by uniform, feedback as a loop mark, read-only,
-draw-list not `imgui_node_editor`) and the open questions (tree vs graph, where it lives, what a
-click does, layout at panel width, editable edges). The maintainer opens with "I'm not sure how
-we'll do this": the session's job is the brainstorm, then the full spec, per `dev_flow.md
-## Feature flow`.
+<!-- As of 2026-09-03 (073 spec written; 070 + 072 still uncommitted in the working tree). -->
+**073 is in progress.** The maintainer's third walk filed 8 findings and 5 decisions
+(`ai_docs/features/073_third_walk_findings/00_findings.md`); the spec (`01_spec.md`) splits them
+into W-A (editor library: closer snap, reverse-video caret, `K` seam, done by the editor session
+from one batch message, then re-vendored here), W-B (completion providers + auto-trigger + `K`
+lookup), W-C (viewer channel view + Reset moves to the grid row), W-D (live-tile fill replaces the
+dormant tint, `Alt+Left`/`Alt+Right` pass switching), W-E (sanitize). Host waves land here in the
+order W-C, W-D, W-B while the editor session works; W-A's re-vendor when it pings back.
 
-**Still due at the display, whenever the maintainer sits down to it:** 071's per-wave
-`## Manual verification` lists (`ai_docs/features/071_second_walk_findings/{10,20,30,50,60}_*.md`),
-the tutorial's closing chapter followed literally, `COLOR.STALE_TINT` tuned by eye, `todo.md`'s
-live-only checks and 065's checks 13-16. Findings go into a new ledger per `dev_flow.md ### How a
-tutorial walk runs`.
+**Still due at the display:** 073's `## Manual verification`, then 072's five checks
+(`072_sampler_source/01_spec.md`), 070's (`070_pass_reads/01_spec.md`), 071's per-wave lists,
+`todo.md`'s live-only checks and 065's checks 13-16.
 
 **Shipped:** v0.28.0 is a GitHub release only; the itch channels stay at v0.27.0. The Windows
 `libeditor.dll` still needs a Windows host before the next itch cut.
@@ -48,7 +46,9 @@ tutorial walk runs`.
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 070 | pass_graph_view | spec | The graph view of the pass strip: thumbnails as nodes in evaluation order, edges labelled by uniform, feedback as a loop mark, read-only, draw-list drawn; the strip stays the default view. Stub only; the brainstorm and the full spec are the next session's. Spec: `ai_docs/features/070_pass_graph_view/01_spec.md`. |
+| 073 | third_walk_findings | in progress | The maintainer's third walk (the 070 + 072 tree): 8 findings, five decisions -- a matching-opener bracket snap and a reverse-video caret in the editor library, context-aware auto-completion and a `K` lookup popup, a three-state alpha view on the viewer, a live-tile fill instead of the dormant tint, `Alt+Left`/`Alt+Right` pass switching, Reset moved to the document row. Spec: `ai_docs/features/073_third_walk_findings/01_spec.md`. |
+| 072 | sampler_source | done | A sampler2D has ONE source, held as its value (`PassSource` / `NoSource` / `AutoSource` / a bound texture) and chosen on its own panel row; `graph.json` loses `inputs` and `layout`, the planner takes a wiring, the gear loses Reads, the copilot's sampler row says what it reads. Spec: `ai_docs/features/072_sampler_source/01_spec.md`. |
+| 070 | pass_reads | done | Each strip tile carries a row of chips naming the passes it reads (`prev` for its own previous frame), drawn from the effective graph; a six-layout brainstorm rejected the graph view the feature opened as. Spec: `ai_docs/features/070_pass_reads/01_spec.md`. |
 | 071 | second_walk_findings | done | The maintainer's second walk of the 068 tutorial: 11 findings, six decisions, six waves landed -- a document-wide Reset (histories, clock, script, videos), the code panel's cursor follow and Ctrl+Tab, sampler rows showing what they read, American spelling with a gate, four editor-library items re-vendored from `aa8c6719`, and the tutorial cut to the cascades with a drawing chapter at the end; the maintainer's hands-on pass per wave is outstanding. Spec: `ai_docs/features/071_second_walk_findings/01_spec.md`. |
 | 069 | tutorial_walk_findings | done | The maintainer's walk of the 068 tutorial: 37 findings, eight waves, twelve locked decisions, all landed. Spec: `ai_docs/features/069_tutorial_walk_findings/01_spec.md`. |
 | — | repo_sweep | done | A ten-agent sweep over the defect classes this repo's history keeps producing (incomplete fix-sweeps, unwired mechanisms, tests that cannot fail, docs that drift from code): four blockers fixed — a crash loading a corrupt `document.json` from the per-frame sync, and three feedback-lifecycle bugs in the 068 machinery, one silently corrupting output — plus two skills that would crash a reader following them literally. What was REJECTED, and why, is in `conventions.md`. Spec: commits `70144d2..7e977bf`. |

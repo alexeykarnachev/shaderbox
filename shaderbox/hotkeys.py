@@ -64,6 +64,8 @@ def _drain_editor_input(app: App) -> None:
             continue
         if _handle_clipboard(app, editor, event):
             continue
+        if editor.complete_open():
+            _track_completion_intent(app, editor, event)
         consumed = editor.key(event.code, event.mods, event.text)
         if not consumed and _handle_reserved_chord(app, editor, event):
             continue
@@ -86,6 +88,26 @@ def _drain_editor_input(app: App) -> None:
     if register and register != clip:
         glfw.set_clipboard_string(app.window, register)
     _serve_host_command(app, session)
+
+
+def _track_completion_intent(app: App, editor: Editor, event: KeyEvent) -> None:
+    # An auto-offered popup preselects its first row like any other, but the user never
+    # asked for it, so Enter stays a newline until they move into the list (Up / Down /
+    # Ctrl+N / Ctrl+P). Cancelling before the key is fed is what makes Enter a newline.
+    navigating = event.code in (KeyCode.UP, KeyCode.DOWN) or (
+        event.code == KeyCode.CHAR
+        and event.mods == KeyMod.CTRL
+        and event.text in ("n", "p")
+    )
+    if navigating:
+        app.editor_completion_navigated = True
+        return
+    if (
+        event.code == KeyCode.ENTER
+        and app.editor_completion_auto
+        and not app.editor_completion_navigated
+    ):
+        editor.complete_cancel()
 
 
 def _serve_host_command(app: App, session: EditorSession) -> None:

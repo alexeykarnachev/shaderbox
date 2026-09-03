@@ -36,21 +36,22 @@ from shaderbox.core import Canvas, Pass, process_time
 from shaderbox.media import (
     Image,
     MediaDetails,
-    MediaWithTexture,
     Video,
-    is_default_image,
     media_class_for,
     texture_to_pil,
     texture_to_rgba8,
 )
 from shaderbox.model_salvage import drop_invalid, drop_unknown
 from shaderbox.pass_graph import (
+    AutoSource,
     GraphError,
+    NoSource,
     PassEntry,
     PassGraph,
-    effective_inputs,
+    PassSource,
     plan_for_output,
     plan_passes,
+    wired_pass,
 )
 from shaderbox.paths import (
     DOCUMENT_JSON_BASENAME,
@@ -197,6 +198,15 @@ def _load_uniform_value(gl: moderngl.Context, document_dir: Path, value: Any) ->
     if not isinstance(value, dict):
         return value
 
+    # A sampler's SOURCE (072): a pass by name, or an explicit black. An undecided sampler
+    # writes no row at all, so there is no "auto" shape to read.
+    if "pass" in value:
+        if not isinstance(value["pass"], str):
+            raise ValueError("a pass source names a pass")
+        return PassSource(value["pass"])
+    if value.get("none") is True:
+        return NoSource()
+
     local_file_path = value.get("file_path")
     value_base64 = value.get("base64")
     if local_file_path is not None:
@@ -217,16 +227,6 @@ def _load_uniform_value(gl: moderngl.Context, document_dir: Path, value: Any) ->
     if value_base64 is not None:
         return gl.buffer(base64.b64decode(value_base64))
     raise ValueError("unknown uniform dict format")
-
-
-def is_user_bound(value: object) -> bool:
-    """Whether a sampler's value is a texture the USER chose, so the name rule must not replace it.
-
-    Not "is a MediaWithTexture": `Pass._default_uniform_value` seeds EVERY unbound sampler with
-    the shipped default image, so that test alone would call every sampler bound and disable
-    auto-wiring outright.
-    """
-    return isinstance(value, MediaWithTexture) and not is_default_image(value)
 
 
 def sampler_names(render_pass: Pass) -> list[str]:
@@ -287,7 +287,6 @@ class Document:
         # u_time) sees `live_time()`; export and the probe pass their own u_time and never
         # read this.
         self.time_origin: float = process_time()
-        self._black: moderngl.Texture | None = None
         self._frame: int = -1
         self._graph_errors: list[GraphError] = []
         # Loading compiles nothing (066 D1), so the first render pays the pass compiles. The
@@ -337,9 +336,6 @@ class Document:
             canvas.release()
         self._feedback.clear()
         self._feedback_generation.clear()
-        if self._black is not None:
-            self._black.release()
-            self._black = None
 
     def set_canvas_size(self, size: tuple[int, int]) -> None:
         """Resize the document: its output target now, its other passes on the next render.
@@ -422,12 +418,6 @@ class Document:
         self._feedback_generation.clear()
         self._frame = -1
 
-    def _black_texture(self) -> moderngl.Texture:
-        # One 1x1 zero texture for every unresolved input in the document.
-        if self._black is None:
-            self._black = self._gl.texture((1, 1), 4, data=b"\x00\x00\x00\xff")
-        return self._black
-
     def drop_feedback(self, name: str) -> None:
         """Release `name`'s feedback history. Call when a pass is deleted or renamed.
 
@@ -470,17 +460,13 @@ class Document:
         return canvas
 
     def sampler_source(self, pass_name: str, uniform: str) -> str | None:
-        """The pass `uniform` of `pass_name` reads from, or None when it reads black.
+        """The pass `uniform` of `pass_name` reads from, or None when it reads no pass.
 
-        The same resolution the renderer binds with: a stored edge or the name default (069
-        D9) naming a pass that exists. A stale name and an explicit `""` both read black, so
-        both answer None; a user-bound texture is the caller's next question.
+        The same resolution the renderer binds with (`effective_wiring`). A `NoSource`, a texture
+        the user bound and a name matching no pass all answer None; a user-bound texture is the
+        caller's next question.
         """
-        entry = self.effective_graph().passes.get(pass_name)
-        if entry is None:
-            return None
-        source = entry.inputs.get(uniform, "")
-        return source if source in self.passes else None
+        return self.effective_wiring().get(pass_name, {}).get(uniform)
 
     def input_texture(self, consumer: str, source: str) -> moderngl.Texture:
         """The texture `consumer` reads from pass `source`: the source's live canvas, or, when a
@@ -490,30 +476,70 @@ class Document:
             return self._feedback[source].texture
         return self.passes[source].canvas.texture
 
-    def effective_graph(self) -> PassGraph:
-        """`self.graph` with every sampler's effective source filled in (069 D9).
+    def effective_wiring(self) -> dict[str, dict[str, str]]:
+        """Which pass each sampler of each pass reads: pass -> uniform -> pass (072).
 
-        The planner must see the auto edges or it cannot order the draw, and it cannot detect a
-        cycle a name default creates. Built from COMPILED passes only, so it grows as the sweep
-        brings passes online rather than compiling them to find out.
+        Every pass is a key, so the planner orders all of them. A COMPILED pass answers over the
+        samplers its program declares, each from its value (an absent value is undecided, so the
+        name rule decides); a row for a sampler the program no longer declares is not a read. A
+        pass that has not compiled answers with its explicit `PassSource` rows only: an explicit
+        wire is never lost to lazy compilation (066 D1), and only the NAME rule waits for the
+        program, because asking for the samplers would compile the whole document on frame one.
         """
         names = set(self.passes)
-        entries: dict[str, PassEntry] = {}
-        for name, entry in self.graph.passes.items():
-            render_pass = self.passes.get(name)
-            if render_pass is None:
-                entries[name] = entry
+        return {name: self._reads_of(name, names) for name in self.passes}
+
+    def _reads_of(self, name: str, names: set[str]) -> dict[str, str]:
+        render_pass = self.passes[name]
+        values = render_pass.uniform_values
+        declared = sampler_names(render_pass)
+        candidates = (
+            [(u, values.get(u, AutoSource())) for u in declared]
+            if declared
+            else [(u, v) for u, v in values.items() if isinstance(v, PassSource)]
+        )
+        reads: dict[str, str] = {}
+        for uniform, value in candidates:
+            source = wired_pass(value, uniform, name, names)
+            if source is not None:
+                reads[uniform] = source
+        return reads
+
+    def _bring_chain_online(self, target: str) -> None:
+        """Compile every pass `target` needs, by discovery: a never-compiled pass's name-wired
+        inputs are unknown until its program exists, so the chain is walked compile by compile
+        before it is planned. The whole output chain compiles on the frame that first draws it,
+        which is what an explicit wire always cost (066 D1's budget is about passes OFF the
+        chain, which the first-render sweep still admits one per frame). A pass whose compile
+        already failed keeps its errors; only `invalidate` re-arms an attempt.
+        """
+        names = set(self.passes)
+        pending = [target]
+        seen: set[str] = set()
+        while pending:
+            name = pending.pop()
+            if name in seen or name not in self.passes:
                 continue
-            samplers = sampler_names(render_pass)
-            bound = [
-                uniform
-                for uniform in samplers
-                if is_user_bound(render_pass.uniform_values.get(uniform))
-            ]
-            entries[name] = entry.model_copy(
-                update={"inputs": effective_inputs(entry, samplers, names, name, bound)}
-            )
-        return self.graph.with_passes(entries)
+            seen.add(name)
+            render_pass = self.passes[name]
+            if render_pass.program is None and not render_pass.compile_unit.errors:
+                render_pass.compile()
+            pending.extend(self._reads_of(name, names).values())
+
+    def forget_pass_sources(self, name: str) -> None:
+        """Every sampler that named pass `name` explicitly goes back to undecided. For a pass
+        being deleted: a `PassSource` left naming it would read black and say nothing."""
+        for render_pass in self.passes.values():
+            for uniform, value in list(render_pass.uniform_values.items()):
+                if isinstance(value, PassSource) and value.name == name:
+                    render_pass.uniform_values[uniform] = AutoSource()
+
+    def rename_pass_sources(self, old: str, new: str) -> None:
+        """Every sampler that named pass `old` explicitly now names `new`."""
+        for render_pass in self.passes.values():
+            for uniform, value in list(render_pass.uniform_values.items()):
+                if isinstance(value, PassSource) and value.name == old:
+                    render_pass.uniform_values[uniform] = PassSource(new)
 
     def render(
         self,
@@ -534,13 +560,14 @@ class Document:
             self.first_render_done = True
         if u_time is None:
             u_time = self.live_time()
-        resolved_graph = self.effective_graph()
         resolved = target if target is not None else self.graph.output_pass
         output = self.graph.output_pass
         if resolved is None or resolved not in self.passes:
-            self._graph_errors = plan_passes(resolved_graph)[1]
+            self._graph_errors = plan_passes(self.effective_wiring())[1]
             return
-        planned, self._graph_errors = plan_for_output(resolved_graph, resolved)
+        self._bring_chain_online(resolved)
+        wiring = self.effective_wiring()
+        planned, self._graph_errors = plan_for_output(wiring, resolved)
         order = [name for name in planned if name in self.passes]
         if not order:
             # A cycle, or an output nothing can reach: draw the output alone so a half-built
@@ -557,13 +584,7 @@ class Document:
                 continue
             render_pass.drawn_frame = self._frame
             render_pass.first_render_done = True
-            # Compile BEFORE the input seed below, which reads the program to learn what this
-            # pass declares: an empty seed lets frame 0 fall through to the default photo. Not a
-            # 066 D1 puller -- this pass is being drawn this frame regardless, and `Pass.render`
-            # would compile it moments later anyway.
-            if render_pass.program is None:
-                render_pass.compile()
-            entry = resolved_graph.passes.get(name, PassEntry())
+            entry = self.graph.passes.get(name, PassEntry())
             # The document owns the canvas size, so it applies each pass's scale — a pass cannot
             # size itself from a number it does not hold, and doing it in both places would fight.
             # The OUTPUT keeps full size: it is what the preview and export read.
@@ -583,31 +604,16 @@ class Document:
             for iteration in range(entry.iterations):
                 last = iteration + 1 == entry.iterations
                 draw_into = canvas if (name == output and last) else None
-                # Every declared sampler starts BLACK and a resolved edge overwrites it (065
-                # D3). Left unbound a sampler falls through to its own seeded default photo, so
-                # an input the graph does not fill would show a picture -- and the gear's
-                # `auto: none` and the copilot's `reads BLACK` would both be lying about it.
-                #
-                # A USER-BOUND texture is exempt, by the same predicate the graph excludes it
-                # with: `inputs` SHADOWS `uniform_values`, so seeding one would discard the
-                # image the user chose -- the media exclusion applied at resolution and then
-                # undone at the seam after it.
-                inputs: dict[str, moderngl.Texture] = {
-                    uniform: self._black_texture()
-                    for uniform in sampler_names(render_pass)
-                    if not is_user_bound(render_pass.uniform_values.get(uniform))
-                }
-                for uniform, source_name in entry.inputs.items():
+                # The textures the wiring fills: a pass's live canvas, or the consumer's own
+                # feedback history for a self-read. A sampler the wiring does not fill keeps its
+                # own value -- a texture the user bound, or a source, which `Pass.render` binds
+                # black (065 D3), never a picture.
+                inputs: dict[str, moderngl.Texture] = {}
+                for uniform, source_name in wiring.get(name, {}).items():
                     if source_name == name:
                         inputs[uniform] = self._feedback_canvas(name).texture
-                    elif source_name in self.passes:
-                        inputs[uniform] = self.passes[source_name].canvas.texture
                     else:
-                        # An input naming a pass that does not exist reads BLACK (D3), which is
-                        # what keeps a half-built graph usable. Leaving it unbound would fall
-                        # through to the sampler's own default photo, so a mis-wire would show
-                        # an image.
-                        inputs[uniform] = self._black_texture()
+                        inputs[uniform] = self.passes[source_name].canvas.texture
                 render_pass.render(
                     u_time=u_time,
                     canvas=draw_into,

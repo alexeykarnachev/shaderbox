@@ -206,7 +206,7 @@ def test_the_steady_state_draws_only_the_output_chain(
         _sweep_frame(document, frame)
 
     counts = _count_draws(document)
-    chain = set(evaluation_order(document.graph, "blur"))
+    chain = set(evaluation_order(document.effective_wiring(), "blur"))
     for frame in range(len(document.passes), len(document.passes) + 3):
         before = dict(counts)
         elected = _sweep_frame(document, frame)
@@ -243,7 +243,7 @@ def test_two_output_renders_in_one_frame_both_draw(
     document.render(canvas=foreign)
     before = dict(counts)
     document.render()
-    chain = set(evaluation_order(document.graph, "blur"))
+    chain = set(evaluation_order(document.effective_wiring(), "blur"))
     drawn = {name for name in counts if counts[name] > before[name]}
     assert drawn == chain, f"the own-canvas render drew {drawn}, not the chain"
     # The target render draws composite plus the ancestors the chain has not already stamped

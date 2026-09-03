@@ -1,11 +1,12 @@
-"""The pass graph's six verbs (065 stage 7, D15).
+"""The pass verbs (065 stage 7, D15; 072).
 
-Add / delete / rename / set output / wire / unwire, driven through the headless `ProjectSession`
-rather than through the panel — the panel is a caller, and these are what it calls. Each verb
-mutates the live document AND saves, so `passes/` and `graph.json` can never disagree with what
-is on screen; every test reloads from disk to prove it.
+Add / delete / rename / set output / set a sampler's source / set target / set run count, driven
+through the headless `ProjectSession` rather than through the panel — the panel is a caller, and
+these are what it calls. Each verb mutates the live document AND saves, so `passes/`,
+`graph.json` and the sampler rows of `document.json` can never disagree with what is on screen;
+every test reloads from disk to prove it.
 
-Rename is the one that has to be transactional: the file, every edge naming the pass, the output
+Rename is the one that has to be transactional: the file, every sampler naming the pass, the output
 choice and the open editor tab move together. D3 makes a half-done rename SILENT — an edge left
 pointing at the old name just reads black.
 """
@@ -21,16 +22,18 @@ from shaderbox.app import PopupState
 from shaderbox.pass_graph import (
     DTYPES,
     MAX_ITERATIONS,
+    AutoSource,
+    NoSource,
     PassEntry,
-    PassGraph,
+    PassSource,
     TargetConfig,
+    strip_order,
 )
 from shaderbox.paths import PASSES_DIR_NAME, pass_shader_name
 from shaderbox.popups import pass_settings
 from shaderbox.popups.pass_settings import _FORMAT_CODES, _FORMATS
 from shaderbox.ui_models import load_document_from_dir
 from shaderbox.widgets import pass_list
-from shaderbox.widgets.pass_list import _strip_order
 
 _SAMPLER_ON = """#version 460 core
 in vec2 vs_uv;
@@ -45,6 +48,14 @@ def _sampler_on(source: str) -> str:
 
 
 _SAMPLER_ON_A = _sampler_on("a")
+
+_SAMPLER_SRC_AND_PREV = """#version 460 core
+in vec2 vs_uv;
+uniform sampler2D u_src;
+uniform sampler2D u_prev;
+out vec4 fs_color;
+void main() { fs_color = texture(u_src, vs_uv) + texture(u_prev, vs_uv); }
+"""
 
 _SAMPLER = """#version 460 core
 in vec2 vs_uv;
@@ -90,17 +101,20 @@ def test_delete_pass_removes_the_file_and_every_edge_naming_it(app: Any) -> None
     document = app.ui_documents[document_id].document
     document.passes["sink"].release_program(_SAMPLER)
     document.passes["sink"].compile()
-    assert app.session.wire_pass_input(document_id, "sink", "u_src", "src") == ""
-    assert document.graph.passes["sink"].inputs == {"u_src": "src"}
+    assert (
+        app.session.set_sampler_source(document_id, "sink", "u_src", PassSource("src"))
+        == ""
+    )
+    assert document.passes["sink"].uniform_values["u_src"] == PassSource("src")
 
     assert app.session.delete_pass(document_id, "src") == ""
     assert "src" not in document.passes
-    # The edge goes with it: left behind, it would read black, which says nothing.
-    assert document.graph.passes["sink"].inputs == {}
+    # The source goes with it: left behind, it would read black, which says nothing.
+    assert document.passes["sink"].uniform_values["u_src"] == AutoSource()
     assert not app.session.paths.pass_shader_for(document_id, "src").exists()
     reloaded = _reload(app, document_id).document
     assert "src" not in reloaded.passes
-    assert reloaded.graph.passes["sink"].inputs == {}
+    assert "u_src" not in reloaded.passes["sink"].uniform_values
 
 
 def test_deleting_the_output_repoints_it(app: Any) -> None:
@@ -127,21 +141,23 @@ def test_rename_moves_the_file_the_edges_and_the_output(app: Any) -> None:
     document = app.ui_documents[document_id].document
     document.passes["consumer"].release_program(_SAMPLER)
     document.passes["consumer"].compile()
-    app.session.wire_pass_input(document_id, "consumer", "u_src", "producer")
+    app.session.set_sampler_source(
+        document_id, "consumer", "u_src", PassSource("producer")
+    )
     app.session.set_output_pass(document_id, "producer")
 
     assert app.session.rename_pass(document_id, "producer", "scene") == ""
     document = app.ui_documents[document_id].document
     assert "producer" not in document.passes and "scene" in document.passes
     assert document.graph.output == "scene"
-    # The edge follows: this is the half D3 makes silent if it is missed.
-    assert document.graph.passes["consumer"].inputs == {"u_src": "scene"}
+    # The source follows: this is the half D3 makes silent if it is missed.
+    assert document.passes["consumer"].uniform_values["u_src"] == PassSource("scene")
     assert not app.session.paths.pass_shader_for(document_id, "producer").exists()
     assert app.session.paths.pass_shader_for(document_id, "scene").is_file()
     assert document.passes["scene"].source.path.name == pass_shader_name("scene")
 
     reloaded = _reload(app, document_id).document
-    assert reloaded.graph.passes["consumer"].inputs == {"u_src": "scene"}
+    assert reloaded.passes["consumer"].uniform_values["u_src"] == PassSource("scene")
     assert reloaded.graph.output == "scene"
 
 
@@ -177,30 +193,38 @@ def test_wiring_is_a_closed_set(app: Any) -> None:
     document.passes["sink"].compile()
     # A producer the document does not have is refused rather than stored: the panel picks from
     # the document's own pass names, so this can only be reached by a caller inventing one.
-    assert "no such pass" in app.session.wire_pass_input(
-        document_id, "sink", "u_src", "ghost"
+    assert "no such pass" in app.session.set_sampler_source(
+        document_id, "sink", "u_src", PassSource("ghost")
     )
-    assert document.graph.passes["sink"].inputs == {}
+    assert "u_src" not in document.passes["sink"].uniform_values
 
 
-def test_unwiring_stores_an_explicit_none_and_unwire_forgets_it(app: Any) -> None:
-    # An empty producer is a DECISION -- this sampler reads black -- and it must survive a
-    # reload, or the name rule (069 D9) re-wires what the user un-wired. `unwire_pass_input` is
-    # the separate verb that returns the sampler to undecided.
+def test_a_none_source_persists_and_an_auto_source_forgets_it(app: Any) -> None:
+    # A `NoSource` is a DECISION -- this sampler reads black -- and it must survive a reload,
+    # or the name rule (069 D9) re-wires what the user un-wired. `AutoSource` returns the
+    # sampler to undecided, which writes no row.
     document_id = _document_id(app)
     app.session.add_pass(document_id, "src")
     app.session.add_pass(document_id, "sink")
-    app.session.wire_pass_input(document_id, "sink", "u_src", "src")
-    assert app.session.wire_pass_input(document_id, "sink", "u_src", "") == ""
     document = app.ui_documents[document_id].document
-    assert document.graph.passes["sink"].inputs == {"u_src": ""}
-    assert _reload(app, document_id).document.graph.passes["sink"].inputs == {
-        "u_src": ""
-    }
+    document.passes["sink"].release_program(_SAMPLER)
+    document.passes["sink"].compile()
+    app.session.set_sampler_source(document_id, "sink", "u_src", PassSource("src"))
+    assert (
+        app.session.set_sampler_source(document_id, "sink", "u_src", NoSource()) == ""
+    )
+    assert document.passes["sink"].uniform_values["u_src"] == NoSource()
+    reloaded = _reload(app, document_id).document
+    assert reloaded.passes["sink"].uniform_values["u_src"] == NoSource()
 
-    assert app.session.unwire_pass_input(document_id, "sink", "u_src") == ""
-    assert app.ui_documents[document_id].document.graph.passes["sink"].inputs == {}
-    assert _reload(app, document_id).document.graph.passes["sink"].inputs == {}
+    assert (
+        app.session.set_sampler_source(document_id, "sink", "u_src", AutoSource()) == ""
+    )
+    document = app.ui_documents[document_id].document
+    assert document.passes["sink"].uniform_values["u_src"] == AutoSource()
+    assert (
+        "u_src" not in _reload(app, document_id).document.passes["sink"].uniform_values
+    )
 
 
 def test_set_output_persists_and_refuses_a_stranger(app: Any) -> None:
@@ -231,7 +255,7 @@ def test_every_verb_refuses_an_unknown_document(app: Any) -> None:
         lambda: app.session.delete_pass("ghost", "p"),
         lambda: app.session.rename_pass("ghost", "p", "q"),
         lambda: app.session.set_output_pass("ghost", "p"),
-        lambda: app.session.wire_pass_input("ghost", "p", "u", "q"),
+        lambda: app.session.set_sampler_source("ghost", "p", "u", NoSource()),
         lambda: app.session.set_pass_target("ghost", "p", TargetConfig()),
     ):
         assert "no such document" in call()
@@ -248,13 +272,15 @@ def test_a_saved_document_survives_a_full_round_of_verbs(
     document = app.ui_documents[document_id].document
     document.passes["composite"].release_program(_SAMPLER)
     document.passes["composite"].compile()
-    app.session.wire_pass_input(document_id, "composite", "u_src", "scene")
+    app.session.set_sampler_source(
+        document_id, "composite", "u_src", PassSource("scene")
+    )
     app.session.set_output_pass(document_id, "composite")
     app.session.save_ui_document(app.ui_documents[document_id])
 
     reloaded = _reload(app, document_id).document
     assert reloaded.graph.output == "composite"
-    assert reloaded.graph.passes["composite"].inputs == {"u_src": "scene"}
+    assert reloaded.passes["composite"].uniform_values["u_src"] == PassSource("scene")
     reloaded.render(u_time=0.0)
     assert reloaded.graph_errors == []
     files = sorted(
@@ -310,17 +336,14 @@ def test_renaming_a_pass_moves_the_settings_target_with_it(app: Any) -> None:
 def test_the_strip_order_is_topological_and_independent_of_the_output() -> None:
     # Alphabetical would read composite before scene, and moving the output around must not
     # shuffle the tiles: picking a different output leaves the strip exactly where it was. A pass
-    # the planner cannot order (no graph entry) still gets a tile, appended by name.
-    passes = {
-        "scene": PassEntry(),
-        "blur": PassEntry(inputs={"u_src": "scene"}),
-        "composite": PassEntry(inputs={"u_a": "scene", "u_b": "blur"}),
+    # the planner cannot order (no wiring entry) still gets a tile, appended by name.
+    wiring = {
+        "scene": {},
+        "blur": {"u_src": "scene"},
+        "composite": {"u_a": "scene", "u_b": "blur"},
     }
     names = ["blur", "composite", "scene", "unplanned"]
-    orders = [
-        _strip_order(names, PassGraph(output=output, passes=passes))
-        for output in ("composite", "scene", "blur")
-    ]
+    orders = [strip_order(names, wiring) for _output in ("composite", "scene", "blur")]
     assert orders[0] == ["scene", "blur", "composite", "unplanned"]
     assert orders[1] == orders[0] and orders[2] == orders[0], (
         "changing the output re-shuffled the strip"
@@ -445,6 +468,13 @@ def test_add_pass_activates_the_new_pass(app: Any) -> None:
     document_id = _document_id(app)
     before_output = app.ui_documents[document_id].document.graph.output
     opened: list[str] = []
+    real_ensure = app.ensure_shader_tab
+
+    def spy(doc_id: str, pass_name: str = "", focus_editor: bool = False) -> None:
+        opened.append(pass_name)
+        real_ensure(doc_id, pass_name, focus_editor=focus_editor)
+
+    app.ensure_shader_tab = spy
     app.pass_add.open(app.session.paths.passes_dir_for(document_id))
     app.pass_add.buf = "b"
 
@@ -458,7 +488,7 @@ def test_add_pass_activates_the_new_pass(app: Any) -> None:
             if frame == 3:
                 imgui.set_keyboard_focus_here(1)
             if app.pass_add.is_open:
-                pass_list._draw_add_input(app, document_id, opened.append)
+                pass_list._draw_add_input(app, document_id)
             imgui.input_text("##sink", "sink")
 
         _imgui_frame(body)
@@ -495,27 +525,56 @@ def test_closing_the_gear_on_a_retired_pass_stays_silent(app: Any) -> None:
 # The strip: what a tile shows, and which graph it plans (069 W-D).
 
 
-def test_the_strip_draws_a_picture_and_a_name_only(app: Any, monkeypatch: Any) -> None:
-    # A tile carries the pass's name and nothing under it: the wiring lines were ellipsized to
-    # nothing at this width, and the error line said what the red border already says.
+def test_the_strip_draws_a_picture_a_name_and_its_reads(
+    app: Any, monkeypatch: Any
+) -> None:
+    # Under the name, a chip per pass the tile reads (070): never the uniform, never an
+    # arrow -- the `u_x <- y` sublines 069 #19 rejected were cut at the tile's width. A
+    # stored edge on a sampler the program no longer declares (`u_old`, the shape a rename
+    # leaves behind) binds nothing, so it is no chip.
     document_id = _document_id(app)
+    document = app.ui_documents[document_id].document
     app.session.add_pass(document_id, "src")
     app.session.add_pass(document_id, "sink")
-    app.session.wire_pass_input(document_id, "sink", "u_src", "src")
+    document.passes["sink"].release_program(_SAMPLER_SRC_AND_PREV)
+    document.passes["sink"].compile()
+    assert document.passes["sink"].compile_unit.errors == []
+    for uniform, source in (
+        ("u_src", "src"),
+        ("u_again", "src"),
+        ("u_prev", "sink"),
+        ("u_old", "main"),
+    ):
+        app.session.set_sampler_source(document_id, "sink", uniform, PassSource(source))
 
-    captured: list[dict[str, Any]] = []
+    captured: dict[str, dict[str, Any]] = {}
     real = pass_list.preview_cell
 
     def spy(*a: Any, **kw: Any) -> Any:
-        captured.append(dict(kw))
+        captured[kw["footer"]] = dict(kw)
         return real(*a, **kw)
 
     monkeypatch.setattr(pass_list, "preview_cell", spy)
-    _imgui_frame(lambda: pass_list.draw(app, document_id, lambda _: None))
-    assert captured
-    for kwargs in captured:
+    _imgui_frame(lambda: pass_list.draw(app, document_id))
+    assert set(captured) == {"main", "src", "sink"}
+    assert captured["sink"]["chips"] == ["src", pass_list.FEEDBACK_CHIP], captured
+    assert captured["src"]["chips"] == [], captured
+    for kwargs in captured.values():
         assert "sublines" not in kwargs, kwargs
-        assert kwargs["footer"] in ("main", "src", "sink"), kwargs
+        assert kwargs["chip_font"] is app.font_12
+
+
+def test_the_chips_follow_the_wiring() -> None:
+    # The wiring already excludes a missing source and an undeclared sampler (072); the chips
+    # add strip order, one chip per source, and `prev` last.
+    wiring = {"a": {}, "b": {"u_a": "a", "u_again": "a", "u_prev": "b"}}
+    reads = pass_list._reads
+    assert reads("b", wiring, ["a", "b"]) == ["a", pass_list.FEEDBACK_CHIP]
+    assert reads("b", {"a": {}, "b": {"u_prev": "b"}}, ["a", "b"]) == [
+        pass_list.FEEDBACK_CHIP
+    ]
+    assert reads("a", wiring, ["a", "b"]) == []
+    assert reads("zzz", wiring, ["a", "b"]) == []
 
 
 def test_an_auto_wired_ancestor_is_not_washed_stale(app: Any, monkeypatch: Any) -> None:
@@ -540,14 +599,14 @@ def test_an_auto_wired_ancestor_is_not_washed_stale(app: Any, monkeypatch: Any) 
         document_id_: str,
         name: str,
         render_pass: Any,
-        open_pass: Any,
         stale: bool,
+        reads: Any,
     ) -> None:
         stale_by_name[name] = stale
-        real(app_, document_id_, name, render_pass, open_pass, stale)
+        real(app_, document_id_, name, render_pass, stale, reads)
 
     monkeypatch.setattr(pass_list, "_draw_pass_tile", spy)
-    _imgui_frame(lambda: pass_list.draw(app, document_id, lambda _: None))
+    _imgui_frame(lambda: pass_list.draw(app, document_id))
     assert stale_by_name["a"] is False, stale_by_name
 
 
@@ -564,7 +623,7 @@ def test_the_strip_orders_a_name_wired_document_topologically(app: Any) -> None:
     document.passes["mid"].release_program(_sampler_on("alpha"))
     document.passes["mid"].compile()
 
-    assert _strip_order(document.passes, document.effective_graph()) == [
+    assert strip_order(document.passes, document.effective_wiring()) == [
         "zeta",
         "alpha",
         "mid",

@@ -1,9 +1,8 @@
 {
-    "version": 1,
+    "version": 2,
     "output": "main",
     "passes": {
         "main": {
-            "inputs": {},
             "target": {
                 "scale": 1.0,
                 "dtype": "f1",
@@ -11,6 +10,5 @@
                 "wrap": false
             }
         }
-    },
-    "layout": {}
+    }
 }

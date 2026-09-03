@@ -35,7 +35,14 @@ from shaderbox.core import ENGINE_DRIVEN_UNIFORMS, Pass
 from shaderbox.document import Document
 from shaderbox.exporters.registry import ExporterRegistry
 from shaderbox.integrations import IntegrationsStore
-from shaderbox.pass_graph import MAX_ITERATIONS, PassEntry, PassGraph, TargetConfig
+from shaderbox.pass_graph import (
+    MAX_ITERATIONS,
+    PassEntry,
+    PassGraph,
+    PassSource,
+    SamplerSource,
+    TargetConfig,
+)
 from shaderbox.paths import (
     DOCUMENT_JSON_BASENAME,
     DOCUMENT_SCRIPT_BASENAME,
@@ -68,7 +75,7 @@ from shaderbox.ui_models import (
     load_document_from_dir,
     load_documents_from_dir,
 )
-from shaderbox.util import select_next_value
+from shaderbox.util import select_next_value, try_to_release
 
 # Prepended to the engine stub when the COPILOT reads a script-less document (feature 043). The actor
 # copies verbatim, so a no-op commented stub teaches the binding but not MOTION — this gives one
@@ -125,34 +132,17 @@ def _pass_name_error(name: str, existing: dict[str, Pass]) -> str:
 
 
 def _graph_without(graph: PassGraph, removed: str, kept: dict[str, Pass]) -> PassGraph:
-    entries = {
-        name: entry.model_copy(
-            update={
-                "inputs": {u: src for u, src in entry.inputs.items() if src != removed}
-            }
-        )
-        for name, entry in graph.passes.items()
-        if name != removed
-    }
+    entries = {name: entry for name, entry in graph.passes.items() if name != removed}
     output = graph.output if graph.output != removed else next(iter(kept), "")
-    layout = {n: pos for n, pos in graph.layout.items() if n != removed}
-    return graph.with_passes(entries, output=output, layout=layout)
+    return graph.with_passes(entries, output=output)
 
 
 def _graph_renamed(graph: PassGraph, old: str, new: str) -> PassGraph:
-    def moved(entry: PassEntry) -> PassEntry:
-        inputs = {u: (new if src == old else src) for u, src in entry.inputs.items()}
-        return entry.model_copy(update={"inputs": inputs})
-
     entries = {
-        (new if name == old else name): moved(entry)
-        for name, entry in graph.passes.items()
+        (new if name == old else name): entry for name, entry in graph.passes.items()
     }
-    layout = {(new if n == old else n): pos for n, pos in graph.layout.items()}
     return graph.with_passes(
-        entries,
-        output=new if graph.output == old else graph.output,
-        layout=layout,
+        entries, output=new if graph.output == old else graph.output
     )
 
 
@@ -832,8 +822,10 @@ class ProjectSession:
         # The feedback history is keyed by NAME and owned by the Document, so releasing the pass
         # does not release it -- without this it outlives every reference to it.
         document.drop_feedback(name)
-        # Every edge that named it goes too: an input left pointing at a deleted pass would read
-        # black (D3), which is silent — the panel's own delete must not leave that behind.
+        # Every sampler that named it goes back to undecided: a source left pointing at a deleted
+        # pass would read black (D3), which is silent -- the panel's own delete must not leave
+        # that behind.
+        document.forget_pass_sources(name)
         document.graph = _graph_without(document.graph, name, document.passes)
         self.save_ui_document(ui_document)
         return ""
@@ -850,8 +842,8 @@ class ProjectSession:
         error = _pass_name_error(new, document.passes)
         if error:
             return error
-        # Transactional (D15): the file, every edge that references it, the output choice, and the
-        # open editor tab move together. Any one of them left behind fails SILENTLY — an edge
+        # Transactional (D15): the file, every sampler that names it, the output choice, and the
+        # open editor tab move together. Any one of them left behind fails SILENTLY -- a source
         # naming a pass that no longer exists just reads black.
         render_pass = document.passes.pop(old)
         old_path = render_pass.source.path
@@ -863,6 +855,7 @@ class ProjectSession:
         # the next render allocates a second under the new name. Dropped rather than re-keyed:
         # one frame from black is invisible next to a leak plus a duplicate.
         document.drop_feedback(old)
+        document.rename_pass_sources(old, new)
         document.graph = _graph_renamed(document.graph, old, new)
         self._on_pass_renamed(old_path, new_path)
         self.save_ui_document(ui_document)
@@ -879,39 +872,29 @@ class ProjectSession:
         self.save_ui_document(ui_document)
         return ""
 
-    def wire_pass_input(
-        self, document_id: str, consumer: str, uniform: str, producer: str
+    def set_sampler_source(
+        self, document_id: str, pass_name: str, uniform: str, source: SamplerSource
     ) -> str:
-        """Fill `consumer`'s `uniform` from `producer`, or store an explicit none when empty.
+        """Decide what `pass_name`'s `uniform` reads: a pass, black, or nothing decided (072).
 
-        A closed set by construction: the caller picks `producer` from the document's own pass
-        names, which is what makes SHADERed's positional-slot footgun impossible here.
-
-        An empty `producer` is a DECISION -- "this sampler reads black" -- and it survives a
-        reload, so the name rule (069 D9) does not re-wire it. `unwire_pass_input` is what
-        returns the sampler to undecided.
+        A closed set by construction: a `PassSource` must name one of the document's own passes,
+        which is what makes SHADERed's positional-slot footgun impossible here. A `NoSource` is a
+        DECISION -- "this sampler reads black" -- and it survives a reload, so the name rule
+        (069 D9) does not re-wire it; an `AutoSource` returns the sampler to undecided. A texture
+        the user bound is written by its own pickers (the panel, the copilot's `bind_media`)
+        into the same slot, so choosing a source here replaces it.
         """
         ui_document = self.ui_documents.get(document_id)
         if ui_document is None:
             return f"no such document '{document_id}'"
         document = ui_document.document
-        if consumer not in document.passes:
-            return f"no such pass '{consumer}'"
-        if producer and producer not in document.passes:
-            return f"no such pass '{producer}'"
-        document.graph = document.graph.with_input(consumer, uniform, producer)
-        self.save_ui_document(ui_document)
-        return ""
-
-    def unwire_pass_input(self, document_id: str, consumer: str, uniform: str) -> str:
-        """Return `consumer`'s `uniform` to undecided, so the name rule fills it again."""
-        ui_document = self.ui_documents.get(document_id)
-        if ui_document is None:
-            return f"no such document '{document_id}'"
-        document = ui_document.document
-        if consumer not in document.passes:
-            return f"no such pass '{consumer}'"
-        document.graph = document.graph.without_input(consumer, uniform)
+        if pass_name not in document.passes:
+            return f"no such pass '{pass_name}'"
+        if isinstance(source, PassSource) and source.name not in document.passes:
+            return f"no such pass '{source.name}'"
+        values = document.passes[pass_name].uniform_values
+        try_to_release(values.get(uniform))
+        values[uniform] = source
         self.save_ui_document(ui_document)
         return ""
 

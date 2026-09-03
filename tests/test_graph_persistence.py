@@ -21,7 +21,7 @@ from PIL import Image as PILImage
 from shaderbox.constants import DEFAULT_FS_FILE_PATH
 from shaderbox.document import DEFAULT_PASS_NAME, Document, load_graph
 from shaderbox.media import Image
-from shaderbox.pass_graph import PassEntry, PassGraph, TargetConfig
+from shaderbox.pass_graph import PassEntry, PassGraph, PassSource, TargetConfig
 from shaderbox.paths import (
     DOCUMENT_JSON_BASENAME,
     GRAPH_JSON_BASENAME,
@@ -86,15 +86,11 @@ def _image(path: Path, color: tuple[int, int, int]) -> Path:
 
 def test_a_graph_round_trips_every_field(tmp_path: Path) -> None:
     graph = PassGraph(
-        version=1,
         output="composite",
         passes={
             "scene": PassEntry(target=TargetConfig(dtype="f4", scale=0.5, wrap=True)),
-            "trail": PassEntry(
-                inputs={"u_src": "scene", "u_prev": "trail"},
-                target=TargetConfig(persist=True, filter_linear=False),
-            ),
-            "composite": PassEntry(inputs={"u_a": "scene", "u_b": "trail"}),
+            "trail": PassEntry(iterations=3, target=TargetConfig(filter_linear=False)),
+            "composite": PassEntry(),
         },
     )
     path = tmp_path / GRAPH_JSON_BASENAME
@@ -108,20 +104,20 @@ def test_a_document_round_trips_its_graph_and_passes(
     document_dir = tmp_path / "doc"
     graph = PassGraph(
         output="b",
-        passes={
-            "a": PassEntry(target=TargetConfig(scale=0.5)),
-            "b": PassEntry(inputs={"u_tex": "a"}),
-        },
+        passes={"a": PassEntry(target=TargetConfig(scale=0.5)), "b": PassEntry()},
     )
     _write_document(document_dir, {"a": _PLAIN, "b": _SAMPLER}, graph)
     loaded = load_document_from_dir(document_dir)
     loaded.document.render_pass.uniform_values["u_amount"] = 0.75
+    # The source is a uniform row (072): `u_tex` names no pass, so the wire is an explicit one.
+    loaded.document.render_pass.uniform_values["u_tex"] = PassSource("a")
     loaded.save(document_dir.parent, document_dir.name, rebind=False)
 
     again = load_document_from_dir(document_dir)
     assert sorted(again.document.passes) == ["a", "b"]
     assert again.document.graph.output == "b"
-    assert again.document.graph.passes["b"].inputs == {"u_tex": "a"}
+    assert again.document.render_pass.uniform_values["u_tex"] == PassSource("a")
+    assert again.document.effective_wiring()["b"] == {"u_tex": "a"}
     assert again.document.graph.passes["a"].target.scale == 0.5
     assert again.document.render_pass.uniform_values["u_amount"] == 0.75
     again.document.release()
@@ -166,10 +162,10 @@ def test_a_malformed_graph_entry_costs_that_entry_not_the_document(
     path.write_text(
         json.dumps(
             {
-                "version": 1,
+                "version": 2,
                 "output": "good",
                 "passes": {
-                    "good": {"inputs": {"u_src": "other"}},
+                    "good": {"iterations": 3},
                     "broken": {"target": {"dtype": "f8", "scale": 99.0}},
                     "notadict": "nonsense",
                 },
@@ -178,7 +174,7 @@ def test_a_malformed_graph_entry_costs_that_entry_not_the_document(
     )
     graph = load_graph(path)
     assert graph.output == "good"
-    assert graph.passes["good"].inputs == {"u_src": "other"}
+    assert graph.passes["good"].iterations == 3
     # `broken`'s own fields were invalid, so it falls back to a default entry rather than
     # taking its siblings with it.
     assert graph.passes["broken"] == PassEntry()

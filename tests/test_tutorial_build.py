@@ -31,8 +31,11 @@ from shaderbox.pass_graph import (
     DEFAULT_WRAP,
     DTYPES,
     MAX_CANVAS_PX,
+    AutoSource,
+    NoSource,
     PassEntry,
-    effective_inputs,
+    PassSource,
+    wired_pass,
 )
 from shaderbox.popups.pass_settings import _FORMATS
 from shaderbox.tabs.document import _SQUARE_PRESETS
@@ -60,6 +63,14 @@ def graph() -> dict[str, Any]:
         (_BUILD.EXAMPLE_DIR / "graph.json").read_text(encoding="utf-8")
     )
     return raw
+
+
+@pytest.fixture(scope="module")
+def uniforms() -> dict[str, Any]:
+    raw: dict[str, Any] = json.loads(
+        (_BUILD.EXAMPLE_DIR / "document.json").read_text(encoding="utf-8")
+    )
+    return raw.get("uniforms", {})
 
 
 @pytest.fixture(scope="module")
@@ -97,8 +108,10 @@ def test_the_committed_tutorial_is_a_fresh_build(tmp_path: pathlib.Path) -> None
     )
 
 
-def test_a_card_states_every_row_and_marks_the_defaults(graph: dict[str, Any]) -> None:
-    card = _BUILD._card_html("jfa", graph)
+def test_a_card_states_every_row_and_marks_the_defaults(
+    graph: dict[str, Any], uniforms: dict[str, Any]
+) -> None:
+    card = _BUILD._card_html("jfa", graph, uniforms)
     labels = re.findall(r"<tr><td>([a-z]+)</td>", card)
     assert labels == ["name", "reads", "format", "size", "smooth", "repeat", "runs"]
 
@@ -108,7 +121,7 @@ def test_a_card_states_every_row_and_marks_the_defaults(graph: dict[str, Any]) -
     assert rows["smooth"].strip() == "off"
     assert "off" in rows["repeat"] and "dfl" in rows["repeat"]
 
-    composite = _BUILD._card_html("composite", graph)
+    composite = _BUILD._card_html("composite", graph, uniforms)
     comp_rows = dict(
         re.findall(r"<tr><td>([a-z]+)</td><td>(.*?)</td></tr>", composite, re.S)
     )
@@ -234,48 +247,66 @@ def test_the_generator_defaults_match_the_engine() -> None:
     assert {code: label for code, label, _ in _FORMATS} == _BUILD._DTYPE_LABELS
 
 
-def test_a_card_resolves_the_same_reads_the_engine_does(graph: dict[str, Any]) -> None:
-    # 069 D9 makes an ABSENT key the preferred on-disk state for a name-resolved edge, so a
-    # card built from the stored keys alone would print `nothing` for an edge the engine
-    # binds. The generator resolves the name rule itself (it may not import `shaderbox`);
-    # this drives the ENGINE's own pure function and compares.
+def test_a_card_resolves_the_same_reads_the_engine_does(
+    graph: dict[str, Any], uniforms: dict[str, Any]
+) -> None:
+    # 069 D9 and 072: an undecided sampler has NO row in `document.json`, so a card built from
+    # the rows alone would print `nothing` for an edge the engine binds. The generator resolves
+    # the name rule itself (it may not import `shaderbox`); this drives the ENGINE's own pure
+    # function and compares.
     #
-    # Every sampler in the shipped example carries an explicit key TODAY, so comparing the
-    # two over `graph.json` as it stands proves nothing -- both rules agree trivially and a
-    # generator that ignored the name rule entirely would still pass. So each pass is also
-    # driven with every SUBSET of its keys removed, which is the on-disk shape D9 prefers
-    # and the one the generator must get right.
+    # The shipped example carries no row at all (every edge is the name rule's), so comparing
+    # over the file as it stands proves only the undecided branch. Each pass is therefore also
+    # driven with every SUBSET of its samplers given an explicit row: the name rule's own answer
+    # as a `{"pass": ...}` row, which must read the same, and `{"none": true}`, which must
+    # read black and drop out of the card.
     names = set(graph["passes"])
-    for name, raw in graph["passes"].items():
+    for name in graph["passes"]:
         samplers = _BUILD._sampler_names(name)
-        stored: dict[str, str] = raw.get("inputs", {})
-        for drop in itertools.chain.from_iterable(
-            itertools.combinations(sorted(stored), n) for n in range(len(stored) + 1)
+        for chosen in itertools.chain.from_iterable(
+            itertools.combinations(samplers, n) for n in range(len(samplers) + 1)
         ):
-            entry = {
-                **raw,
-                "inputs": {u: v for u, v in stored.items() if u not in drop},
-            }
-            expected = effective_inputs(
-                PassEntry.model_validate(entry), samplers, names, name, ()
-            )
-            assert _BUILD._resolved_inputs(name, entry, names) == expected, (
-                f"{name} with {sorted(drop)} dropped"
-            )
-            # And that the CARD is built from that resolution rather than from the stored
-            # keys: the rule being right does not help if the row does not use it.
-            row = re.search(
-                r"<tr><td>reads</td><td>(.*?)</td></tr>",
-                _BUILD._card_html(
-                    name, {**graph, "passes": {**graph["passes"], name: entry}}
-                ),
-                re.S,
-            )
-            assert row is not None
-            for uniform, source in expected.items():
-                assert f"<code>{uniform}</code> from <b>{source}</b>" in row.group(1), (
-                    f"{name}'s card omits {uniform} with {sorted(drop)} dropped"
+            for kind in ("pass", "none"):
+                rows: dict[str, Any] = {}
+                for uniform in chosen:
+                    if kind == "pass":
+                        auto = wired_pass(AutoSource(), uniform, name, names)
+                        rows[uniform] = {"pass": auto or "gone"}
+                    else:
+                        rows[uniform] = {"none": True}
+                expected: dict[str, str] = {}
+                for uniform in samplers:
+                    row = rows.get(uniform)
+                    value: object = (
+                        PassSource(row["pass"])
+                        if row is not None and "pass" in row
+                        else NoSource()
+                        if row is not None
+                        else AutoSource()
+                    )
+                    source = wired_pass(value, uniform, name, names)
+                    if source is not None:
+                        expected[uniform] = source
+                assert _BUILD._resolved_inputs(name, rows, names) == expected, (
+                    f"{name} with {sorted(chosen)} as {kind} rows"
                 )
+                # And that the CARD is built from that resolution rather than from the rows:
+                # the rule being right does not help if the row does not use it.
+                card = re.search(
+                    r"<tr><td>reads</td><td>(.*?)</td></tr>",
+                    _BUILD._card_html(name, graph, {**uniforms, name: rows}),
+                    re.S,
+                )
+                assert card is not None
+                for uniform, source in expected.items():
+                    assert f"<code>{uniform}</code> from <b>{source}</b>" in card.group(
+                        1
+                    ), f"{name}'s card omits {uniform} with {sorted(chosen)} as {kind}"
+                for uniform in samplers:
+                    if uniform not in expected:
+                        assert f"<code>{uniform}</code>" not in card.group(1), (
+                            f"{name}'s card lists {uniform}, which reads no pass"
+                        )
 
 
 def test_the_jfa_run_count_covers_every_reachable_canvas(graph: dict[str, Any]) -> None:

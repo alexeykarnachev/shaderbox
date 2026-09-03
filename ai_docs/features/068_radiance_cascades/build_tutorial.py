@@ -49,10 +49,10 @@ _DTYPE_LABELS: dict[str, str] = {
     "f4": "32-bit float",
 }
 
-# 069 D9's name rule, mirroring `pass_graph.py`'s `_auto_source` / `effective_inputs`:
-# an absent key means the NAME decides the wire, so a card built from the stored keys
-# alone would print `nothing` for an edge the engine binds. `_FEEDBACK_UNIFORM` reads
-# the pass itself. `test_a_card_resolves_the_same_reads_the_engine_does` drives the
+# 069 D9's name rule, mirroring `pass_graph.py`'s `_auto_source` / `wired_pass`: a sampler
+# with no row in `document.json` is undecided, so the NAME decides the wire, and a card built
+# from the rows alone would print `nothing` for an edge the engine binds. `_FEEDBACK_UNIFORM`
+# reads the pass itself. `test_a_card_resolves_the_same_reads_the_engine_does` drives the
 # engine's own function over this example and compares, so the two cannot diverge.
 _AUTO_PREFIX = "u_"
 _FEEDBACK_UNIFORM = "u_prev"
@@ -81,28 +81,34 @@ def _sampler_names(name: str) -> list[str]:
 
 
 def _resolved_inputs(
-    name: str, entry: dict[str, Any], passes: Collection[str]
+    name: str, rows: dict[str, Any], passes: Collection[str]
 ) -> dict[str, str]:
-    """Every sampler's source: stored edges plus the ones their NAME decides (D9)."""
-    stored: dict[str, str] = entry.get("inputs", {})
-    resolved = {u: src for u, src in stored.items() if src}
+    """Every sampler's source pass: the `{"pass": ...}` rows, plus what the NAME decides (D9)
+    for a sampler with no row. A `{"none": true}` row and a media row read no pass."""
+    resolved: dict[str, str] = {}
     for uniform in _sampler_names(name):
-        if uniform in stored:
+        row = rows.get(uniform)
+        if isinstance(row, dict):
+            source = row.get("pass", "")
+            if isinstance(source, str) and source in passes:
+                resolved[uniform] = source
             continue
-        source = (
+        auto = (
             name
             if uniform == _FEEDBACK_UNIFORM
             else uniform[len(_AUTO_PREFIX) :]
             if uniform.startswith(_AUTO_PREFIX)
             else ""
         )
-        if source and source in passes:
-            resolved[uniform] = source
+        if auto and auto in passes:
+            resolved[uniform] = auto
     return resolved
 
 
-def _reads_html(name: str, entry: dict[str, Any], passes: Collection[str]) -> str:
-    inputs = _resolved_inputs(name, entry, passes)
+def _reads_html(
+    name: str, entry: dict[str, Any], rows: dict[str, Any], passes: Collection[str]
+) -> str:
+    inputs = _resolved_inputs(name, rows, passes)
     if not inputs:
         return "nothing"
     lines: list[str] = []
@@ -117,8 +123,9 @@ def _reads_html(name: str, entry: dict[str, Any], passes: Collection[str]) -> st
     return "<br>\n      ".join(lines)
 
 
-def _card_html(name: str, graph: dict[str, Any]) -> str:
+def _card_html(name: str, graph: dict[str, Any], uniforms: dict[str, Any]) -> str:
     entry: dict[str, Any] = graph["passes"][name]
+    uniform_rows: dict[str, Any] = uniforms.get(name, {})
     target: dict[str, Any] = entry.get("target", {})
     scale: float = target.get("scale", _DEFAULT_SCALE)
     dtype: str = target.get("dtype", _DEFAULT_DTYPE)
@@ -127,7 +134,7 @@ def _card_html(name: str, graph: dict[str, Any]) -> str:
     iterations: int = entry.get("iterations", _DEFAULT_ITERATIONS)
     rows: list[tuple[str, str]] = [
         ("name", f"<code>{html.escape(name)}</code>"),
-        ("reads", _reads_html(name, entry, graph["passes"])),
+        ("reads", _reads_html(name, entry, uniform_rows, graph["passes"])),
         ("format", _value_cell(_DTYPE_LABELS[dtype], dtype == _DEFAULT_DTYPE)),
         ("size", _value_cell(f"{scale * 100:.0f}%", scale == _DEFAULT_SCALE)),
         (
@@ -155,9 +162,12 @@ def build(out: pathlib.Path | None = None) -> None:
     graph: dict[str, Any] = json.loads(
         (EXAMPLE_DIR / "graph.json").read_text(encoding="utf-8")
     )
+    uniforms: dict[str, Any] = json.loads(
+        (EXAMPLE_DIR / "document.json").read_text(encoding="utf-8")
+    ).get("uniforms", {})
     body = (HERE / "tutorial_body.html").read_text(encoding="utf-8")
     for name in graph["passes"]:
-        body = body.replace(f"{{{{CARD:{name}}}}}", _card_html(name, graph))
+        body = body.replace(f"{{{{CARD:{name}}}}}", _card_html(name, graph, uniforms))
         body = body.replace(f"{{{{CODE:{name}}}}}", _code_html(name))
     for name in graph["passes"]:
         body = body.replace(f"{{{{IMG:{name}}}}}", _data_uri(name))

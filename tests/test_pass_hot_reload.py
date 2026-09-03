@@ -68,11 +68,10 @@ def _chain_document(gl: moderngl.Context, root: Path) -> UIDocument:
     (passes / pass_shader_name("a")).write_text(_CONST % "0.8")
     (passes / pass_shader_name("b")).write_text(_HALVE % "0.5")
     (document_dir / "document.json").write_text(
-        '{"canvas_size": [8, 8], "uniforms": {}, "ui_state": {}}'
+        '{"canvas_size": [8, 8], "uniforms": {"b": {"u_src": {"pass": "a"}}},'
+        ' "ui_state": {}}'
     )
-    graph = PassGraph(
-        output="b", passes={"a": PassEntry(), "b": PassEntry(inputs={"u_src": "a"})}
-    )
+    graph = PassGraph(output="b", passes={"a": PassEntry(), "b": PassEntry()})
     (document_dir / "graph.json").write_text(graph.model_dump_json())
     ui_document = load_document_from_dir(document_dir)
     ui_document.document.render(u_time=0.0)

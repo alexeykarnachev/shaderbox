@@ -117,12 +117,10 @@ class _ColorBag:
     # what an unwired sampler reads: the swatch a panel shows for it
     BLACK: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0)
 
-    # a preview whose texture is no longer being rendered: the tile dims and takes a
-    # corner tick, so a frozen picture cannot be misread as a live one.
-    # The tint a stale preview image is blitted with: multiplicative, so black stays black
-    # and the picture keeps its shape while its lights go down — a grey wash over it read
-    # as a solid slab on dark content.
-    STALE_TINT: tuple[float, float, float, float] = (0.45, 0.45, 0.45, 1.0)
+    # A pass tile in the output's chain carries the accent at this alpha as its cell ground;
+    # a dormant tile keeps the plain ground, its picture untouched, and the corner tick.
+    # Computed at draw time off ACCENT_PRIMARY, which apply_theme swaps at runtime.
+    PASS_LIVE_FILL_ALPHA: float = 0.12
 
     # neutrals
     BG_APP: tuple[float, float, float, float] = _P["bg_0"]
@@ -136,6 +134,10 @@ class _ColorBag:
     # enough that an opaque render is not framed by a texture.
     CHECKER_LIGHT: tuple[float, float, float, float] = _P["bg_2"]
     CHECKER_DARK: tuple[float, float, float, float] = _P["bg_1"]
+    # The Color+Alpha view's checker: two mid greys far enough apart to read under a dark
+    # render, shown only in that opt-in view.
+    CHECKER_LIGHT_LOUD: tuple[float, float, float, float] = _P["gray"]
+    CHECKER_DARK_LOUD: tuple[float, float, float, float] = _P["bg_4"]
     # The viewer's 1px canvas outline. Two steps above CHECKER_LIGHT, so it reads against
     # both checker greys AND the panel -- BORDER is bg_2, which IS one of them.
     VIEWER_BORDER: tuple[float, float, float, float] = _P["bg_4"]

@@ -16,8 +16,10 @@ from shaderbox.copilot.address import (
     pass_address,
     split_pass_address,
 )
+from shaderbox.copilot.backend import _wired_for
 from shaderbox.copilot.prompt import render_working_set
 from shaderbox.copilot.prompt_context import _render_document_tree
+from shaderbox.pass_graph import AutoSource, NoSource, PassSource
 from tests.conftest import seed_extra_document
 
 _A = """#version 460 core
@@ -56,7 +58,9 @@ def _two_pass(app: Any) -> str:
     document.passes["scene"].compile()
     document.passes["composite"].release_program(_B)
     document.passes["composite"].compile()
-    app.session.wire_pass_input(document_id, "composite", "u_src", "scene")
+    app.session.set_sampler_source(
+        document_id, "composite", "u_src", PassSource("scene")
+    )
     app.session.set_output_pass(document_id, "composite")
     return document_id
 
@@ -151,17 +155,23 @@ def test_a_pass_s_wiring_is_shown_including_what_is_unwired(app: Any) -> None:
     views, _ = app.copilot_backend.read_working_set()
     view = next(v for v in views if not v.is_lib)
     composite = next(p for p in view.passes if p.name == "composite")
-    assert composite.inputs == ["u_src <- scene"]
+    assert "u_src sampler2D <- scene" in composite.uniforms
 
-    app.session.wire_pass_input(document_id, "composite", "u_src", "")
+    app.session.set_sampler_source(document_id, "composite", "u_src", NoSource())
     views, _ = app.copilot_backend.read_working_set()
     view = next(v for v in views if not v.is_lib)
     composite = next(p for p in view.passes if p.name == "composite")
-    # An unwired input reads black (D3), which is silent on screen — so it is stated here. An
+    # An unfilled input reads black (D3), which is silent on screen — so it is stated here. An
     # explicit none reads differently from an undecided one: the model can respect the first and
     # should fill the second.
-    assert composite.inputs == ["u_src <- (none; reads BLACK)"]
+    assert "u_src sampler2D <- (none; reads BLACK)" in composite.uniforms
     assert "reads BLACK" in render_working_set(views, [])[0].content
+
+    app.session.set_sampler_source(document_id, "composite", "u_src", AutoSource())
+    views, _ = app.copilot_backend.read_working_set()
+    view = next(v for v in views if not v.is_lib)
+    composite = next(p for p in view.passes if p.name == "composite")
+    assert "u_src sampler2D <- (nothing; reads BLACK)" in composite.uniforms
 
 
 def test_a_pass_wired_only_by_its_uniform_name_is_shown_as_filled(app: Any) -> None:
@@ -169,32 +179,53 @@ def test_a_pass_wired_only_by_its_uniform_name_is_shown_as_filled(app: Any) -> N
     # telling the model it reads BLACK would be a false fact on the channel it acts from.
     document_id = _two_pass(app)
     document = app.ui_documents[document_id].document
-    app.session.unwire_pass_input(document_id, "composite", "u_src")
+    app.session.set_sampler_source(document_id, "composite", "u_src", AutoSource())
     document.passes["composite"].release_program(_NAMED)
     document.passes["composite"].compile()
     views, _ = app.copilot_backend.read_working_set()
     view = next(v for v in views if not v.is_lib)
     composite = next(p for p in view.passes if p.name == "composite")
-    assert composite.inputs == ["u_scene <- scene"]
+    assert "u_scene sampler2D <- scene" in composite.uniforms
 
 
 def test_pass_views_resolves_after_the_compile_that_finds_the_samplers(
     app: Any,
 ) -> None:
     # `_sampler_uniform_names` goes through `get_active_uniforms`, which COMPILES a
-    # never-attempted pass -- and the effective graph resolves from compiled programs. Resolving
+    # never-attempted pass -- and the name rule resolves from compiled programs. Resolving
     # first therefore sees no program and reports every name-wired sampler as BLACK, a false fact
     # on the channel the model acts from. `read_working_set` compiles before it reaches here, so
     # the ordering is asserted on `_pass_views` itself, where the defect lives.
     document_id = _two_pass(app)
-    app.session.unwire_pass_input(document_id, "composite", "u_src")
+    app.session.set_sampler_source(document_id, "composite", "u_src", AutoSource())
     document = app.ui_documents[document_id].document
     document.passes["composite"].release_program(_NAMED)
     assert document.passes["composite"].program is None
 
     views = app.copilot_backend._pass_views(document_id, {}, document)
     composite = next(v for v in views if v.name == "composite")
-    assert composite.inputs == ["u_scene <- scene"]
+    assert "u_scene sampler2D <- scene" in composite.uniforms
+
+
+def test_the_member_row_resolves_after_the_compile_that_finds_the_samplers(
+    app: Any,
+) -> None:
+    # The member view's own uniform rows (every document, not only a multi-pass one) resolve the
+    # wiring through `_wired_for`, and the name rule reads from a COMPILED program: asked about
+    # a never-compiled output pass, the row would say its name-wired sampler reads BLACK. The
+    # working-set builder compiles first; this pins that it does. Falsifier: drop the compile
+    # loop from `_copilot_document_working_view`.
+    document_id = _two_pass(app)
+    app.session.set_sampler_source(document_id, "composite", "u_src", AutoSource())
+    document = app.ui_documents[document_id].document
+    document.passes["composite"].release_program(_NAMED)
+    assert document.passes["composite"].program is None
+    # The precondition, stated: without the compile the lookup has nothing to resolve from.
+    assert _wired_for(document, document.render_pass) == {}
+
+    views, _ = app.copilot_backend.read_working_set()
+    view = next(v for v in views if not v.is_lib)
+    assert "u_scene sampler2D <- scene" in view.uniforms
 
 
 def test_a_single_pass_document_renders_exactly_as_before(app: Any) -> None:

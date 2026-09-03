@@ -2,7 +2,7 @@ from imgui_bundle import imgui, imgui_ctx
 
 from shaderbox.app import App
 from shaderbox.glyph_tables import TABLE_UNIFORMS
-from shaderbox.media import MediaWithTexture, is_default_image
+from shaderbox.media import MediaWithTexture
 from shaderbox.pass_graph import clamp_canvas_size
 from shaderbox.render_preset import resolve_dims
 from shaderbox.render_shape import (
@@ -75,7 +75,7 @@ def _canvas_presets(ui_document: UIDocument) -> list[tuple[str, tuple[int, int]]
 
     for render_pass in ui_document.document.passes.values():
         for uniform_name, value in sorted(render_pass.uniform_values.items()):
-            if not isinstance(value, MediaWithTexture) or is_default_image(value):
+            if not isinstance(value, MediaWithTexture):
                 continue
             size = value.texture.size
             if size in seen:
@@ -303,9 +303,7 @@ def _draw_entry_points(app: App) -> None:
         and active.document_id == document_id
     )
 
-    pass_list.draw(
-        app, document_id, lambda name: app.ensure_shader_tab(document_id, name)
-    )
+    pass_list.draw(app, document_id)
 
     imgui.dummy((0, float(SPACE.MD)))
     imgui.begin_disabled(app.copilot_turn_active)

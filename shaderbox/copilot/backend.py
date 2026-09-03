@@ -12,7 +12,7 @@ GL-affine verb marshals to the main thread through `self._bridge.run_on_main`.
 
 import re
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -22,7 +22,6 @@ import numpy as np
 from loguru import logger
 
 from shaderbox import render_job
-from shaderbox.constants import DEFAULT_IMAGE_FILE_PATH
 from shaderbox.copilot.address import (
     DOCUMENT_SHORT_ID_LEN,
     example_address,
@@ -94,12 +93,10 @@ from shaderbox.exporters.telegram import NEEDS_START_ERROR, TelegramExporter
 from shaderbox.exporters.youtube import YouTubeExporter
 from shaderbox.glyph_tables import TABLE_UNIFORMS
 from shaderbox.media import (
-    Image,
     MediaWithTexture,
-    is_default_image,
     media_class_for,
 )
-from shaderbox.pass_graph import clamp_canvas_size
+from shaderbox.pass_graph import AutoSource, NoSource, clamp_canvas_size
 from shaderbox.paths import DOCUMENT_SCRIPT_BASENAME, pass_name_of, shader_lib_root
 from shaderbox.render_preset import RenderPreset
 from shaderbox.render_shape import RenderShape, shape_to_preset
@@ -244,7 +241,9 @@ def _driven_on(driven: set[tuple[str, str]], pass_name: str) -> set[str]:
     return {name for pass_, name in driven if pass_ == pass_name}
 
 
-def _format_uniforms(render_pass: Pass, driven: set[str]) -> list[str]:
+def _format_uniforms(
+    render_pass: Pass, driven: set[str], wired: Mapping[str, str]
+) -> list[str]:
     # "name type = value" rows. Blocks have no scalar value. The shown value comes from the document's
     # uniform_values cache (the same source tabs/document.py reads) — NOT live u.value, which Pass.render()
     # overwrites every frame, so a just-set_uniform value would read back stale and the agent loops.
@@ -262,25 +261,13 @@ def _format_uniforms(render_pass: Pass, driven: set[str]) -> list[str]:
         elif u.name in driven:
             rows.append(f"{u.name} {label} = <driven by script.py>")
         elif label == "sampler2D":
-            rows.append(f"{u.name} {label} <- {_sampler_binding(render_pass, u.name)}")
+            rows.append(
+                f"{u.name} {label} <- {_sampler_reads(render_pass, u.name, wired)}"
+            )
         else:
             value = render_pass.uniform_values.get(u.name, u.value)
             rows.append(f"{u.name} {label} = {value}")
     return rows
-
-
-def _input_row(uniform: str, wired: dict[str, str], stored: dict[str, str]) -> str:
-    """One `inputs:` row: which pass fills `uniform`, and why it is black when it is.
-
-    Whether a filled edge was chosen or derived from the name is not the model's business; an
-    EMPTY one is, because "the user chose black" and "nothing decided yet" call for different
-    actions.
-    """
-    if uniform in wired:
-        return f"{uniform} <- {wired[uniform]}"
-    if stored.get(uniform) == "":
-        return f"{uniform} <- (none; reads BLACK)"
-    return f"{uniform} <- (nothing; reads BLACK)"
 
 
 def _sampler_uniform_names(render_pass: Pass) -> list[str]:
@@ -291,17 +278,31 @@ def _sampler_uniform_names(render_pass: Pass) -> list[str]:
     ]
 
 
-def _sampler_binding(render_pass: Pass, name: str) -> str:
-    # What a sampler is bound to, for the working-set row. NEVER the source path (corollary-1: the abs
-    # path is a model-visible leak); only "(no media bound)" for the default, else dims + kind.
+def _wired_for(document: Document, render_pass: Pass) -> Mapping[str, str]:
+    # What the binder fills on THIS pass: uniform -> the pass it reads (072). The name rule
+    # resolves from a COMPILED program, so every caller compiles the pass first; asked about a
+    # never-compiled pass this reports its name-wired samplers as BLACK.
+    return document.effective_wiring().get(pass_name_of(render_pass.source.path), {})
+
+
+def _sampler_reads(render_pass: Pass, name: str, wired: Mapping[str, str]) -> str:
+    """One sampler's `<-` cell: the pass it reads, the media the user bound, or why it is
+    black. Whether a filled edge was chosen or derived from the name is not the model's
+    business; an EMPTY one is, because "the user chose black" and "nothing decided yet" call
+    for different actions. NEVER the source path (corollary-1: the abs path is a model-visible
+    leak); only dims + kind for media."""
+    if name in wired:
+        return wired[name]
     value = render_pass.uniform_values.get(name)
-    if value is None or is_default_image(value):
-        return "(no media bound)"
     if isinstance(value, MediaWithTexture):
         res = value.details.resolution_details
         kind = "video" if value.details.is_video else "image"
         return f"({res.width}x{res.height}, {kind})"
-    return "(texture)"
+    if isinstance(value, moderngl.Texture):
+        return "(texture)"
+    if isinstance(value, NoSource):
+        return "(none; reads BLACK)"
+    return "(nothing; reads BLACK)"
 
 
 def _values_differ(a: object, b: object, eps: float) -> bool:
@@ -681,7 +682,11 @@ class CopilotBackend:
                         document_id=view_id,
                         name=ui_document.ui_state.ui_name,
                         listing=_number_lines(text),
-                        uniforms=_format_uniforms(document.render_pass, driven),
+                        uniforms=_format_uniforms(
+                            document.render_pass,
+                            driven,
+                            _wired_for(document, document.render_pass),
+                        ),
                         errors=_to_error_infos(
                             document.render_pass.compile_unit.errors
                         ),
@@ -760,6 +765,7 @@ class CopilotBackend:
                     self._get_script_driven_uniforms(full_id),
                     pass_name_of(document.render_pass.source.path),
                 ),
+                _wired_for(document, document.render_pass),
             ),
             errors=_to_error_infos(document.render_pass.compile_unit.errors),
             script_listing=_number_lines(script_text) if script_text else "",
@@ -777,27 +783,18 @@ class CopilotBackend:
             return []
         handle = short.get(full_id, full_id)
         driven = self._get_script_driven_uniforms(full_id)
-        # Sampler names FIRST, and only then the effective graph: `_sampler_uniform_names` goes
-        # through `get_active_uniforms`, which compiles a never-attempted pass -- and the graph
+        # Sampler names FIRST, and only then the wiring: `_sampler_uniform_names` goes through
+        # `get_active_uniforms`, which compiles a never-attempted pass -- and the name rule
         # resolves from COMPILED programs, so resolving first would see none of them and report
         # every name-wired sampler as BLACK on the first read of a freshly opened document.
-        samplers = {
-            name: _sampler_uniform_names(render_pass)
-            for name, render_pass in sorted(document.passes.items())
-        }
-        # The EFFECTIVE graph (069 D9): a sampler the name rule fills has no stored edge, and
-        # telling the model it reads BLACK while the renderer fills it is a false fact.
-        resolved = document.effective_graph()
+        for render_pass in document.passes.values():
+            _sampler_uniform_names(render_pass)
+        # The EFFECTIVE wiring (069 D9, 072): a sampler the name rule fills has no stored row,
+        # and telling the model it reads BLACK while the renderer fills it is a false fact.
+        wiring = document.effective_wiring()
         views: list[PassView] = []
         for name in sorted(document.passes):
             render_pass = document.passes[name]
-            effective = resolved.passes.get(name)
-            wired = effective.inputs if effective is not None else {}
-            stored = document.graph.passes.get(name)
-            inputs = [
-                _input_row(uniform, wired, stored.inputs if stored is not None else {})
-                for uniform in samplers[name]
-            ]
             views.append(
                 PassView(
                     name=name,
@@ -806,10 +803,11 @@ class CopilotBackend:
                     # Per PASS (069): the driven set is document-scoped pairs, so each pass gets
                     # only what the script drives ON IT — the same uniform name on a sibling pass
                     # keeps its real value rather than a phantom marker.
-                    uniforms=_format_uniforms(render_pass, _driven_on(driven, name)),
+                    uniforms=_format_uniforms(
+                        render_pass, _driven_on(driven, name), wiring.get(name, {})
+                    ),
                     errors=_to_error_infos(render_pass.compile_unit.errors),
                     is_output=(name == document.graph.output),
-                    inputs=inputs,
                 )
             )
         return views
@@ -1299,8 +1297,8 @@ class CopilotBackend:
         )
 
     def unbind_media(self, document: str, uniform: str) -> MediaBindResult:
-        # Reset a sampler to the default image (no picker). save() then skips the default, so it
-        # round-trips to "(no media bound)".
+        # Return a sampler to undecided (no picker): the name rule fills it or it reads black,
+        # and save() writes no row for it.
         def _on_main() -> MediaBindResult:
             document_id = self._copilot_resolve_document_id(document)
             if document_id is None or document_id not in self._get_ui_documents():
@@ -1322,7 +1320,7 @@ class CopilotBackend:
                 )
             self._capture_document(document_id)
             try_to_release(n.render_pass.uniform_values.get(uniform))
-            n.render_pass.uniform_values[uniform] = Image(DEFAULT_IMAGE_FILE_PATH)
+            n.render_pass.uniform_values[uniform] = AutoSource()
             self._save_ui_document(ui_document)
             logger.info(f"copilot unbound media on {document_id}.{uniform}")
             return MediaBindResult(ok=True)

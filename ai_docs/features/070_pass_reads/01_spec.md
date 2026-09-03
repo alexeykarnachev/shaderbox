@@ -1,42 +1,62 @@
-# 070 — The graph view of the pass strip (stub)
+# 070 — What a pass reads, on its tile
 
-Status: **spec** -- a stub. The full spec is written in the next session, after a brainstorm the
-maintainer opens with "I'm not sure how we'll do this". This file carries what is already fixed
-and what is open, so that session starts from the decisions rather than from scratch.
+Status: **done**. Opened as "the graph view of the pass strip" (069 #19 option A); closed as a
+row of chips under each tile, after a brainstorm that rejected the graph view. This file records
+the decision and what shipped.
 
-## Fixed before this feature opened
+## Goal
 
-- **The linear strip stays the default view and must read on its own** (071 D2). The graph view
-  is an addition, and the strip is the thing it must not make worse.
-- **Direction, from `069/01_spec.md § Out of scope`** (069 #19 option A, the maintainer's
-  preferred order): small square thumbnails as nodes, laid out by evaluation order (the plan gives
-  the topological order; rank = longest path from a source), edges as arrows from source pass to
-  consuming pass labelled by the uniform (069 D9: a sampler `u_<pass>` reads that pass by name, so
-  most labels are the pass name), feedback (a self-input, `u_prev`) as a loop mark on the node.
-  Wiring stays edited in the gear; the view is read-only at first.
-- **Draw with `draw_list` lines and beziers plus arrowheads on a plain child, not
-  `imgui_node_editor`** (its own canvas and coordinate space, zoom and pan, and the hard-assert
-  rule in `conventions.md ## Known quirks` are more machinery than a read-only picture of a few
-  nodes needs). Recorded in 069 W-D's out-of-scope note; reconfirm at the brainstorm.
-- **What a node knows** already exists: `Document.effective_graph()` and `pass_graph.plan_passes`
-  give order, reads and the feedback set; `Document.sampler_source` (071 W-D) answers "what does
-  this sampler read"; the strip's tile (`ui_primitives.preview_cell`) is the blit to reuse; the
-  dormant tint (`COLOR.STALE_TINT`) is the dormancy cue.
+The strip shows six thumbnails of the Radiance Cascades example and nothing about how they
+connect. 069 #19 asked for the wiring to be visible without opening the gear, and the first
+answer, one `u_x <- y` line per input, was cut at the tile's width and dropped in 069 W-D.
 
-## Open, for the brainstorm
+## The brainstorm (2026-09-03)
 
-- Tree or graph: a DAG can fan in (composite reads cascade and paint); does a tree reading with
-  duplicated leaves read better than a true graph for the documents ShaderBox actually holds
-  (two to eight passes)?
-- Where it lives: a mode of the Passes strip (toggle), a tab of its own, or a popup like the gear.
-- What a click does: the strip's one click sets the output pass; the view's click should agree.
-- Layout at the panel's width: a left-to-right rank layout wraps badly on a narrow panel; a
-  top-to-bottom one costs height the panel does not have.
-- Whether the view stays read-only or the edge becomes editable (drag from a node to a sampler),
-  and if so how that meets the gear's closed-set combo.
+Six layouts were mocked as a local HTML page over the real six-pass example, each at panel
+widths from 480 to 1040, with a click setting the output so the stale tint could be judged:
 
-## Files it will touch (expected)
+- **arcs over the strip**, **ranked columns with beziers**, and the same **in a popup**: rejected,
+  the maintainer's word was "messy"; every arc layout also degrades at 480, where the strip wraps
+  and an edge has nowhere to go;
+- **an outline tree from the output**: rejected, "too many clicks machinery for nothing useful";
+- **rows top to bottom with git-log lanes**, and two horizontal versions of it (a dot rail above
+  the strip; lanes leaving the tiles): liked, but the horizontal ones trade wrapping for a
+  sideways scroll, and the vertical one is a second layout beside the strip;
+- **the strip with chips**: chosen. "Looks simple and it seems like a user needs nothing more."
 
-`shaderbox/widgets/pass_list.py` (or a sibling `pass_graph_view.py`), `shaderbox/ui_primitives.py`,
-`shaderbox/theme.py`, `shaderbox/pass_graph.py` (rank/longest-path if the planner does not already
-expose it), tests, the tutorial's strip screenshots if the view replaces the strip anywhere in it.
+Decision: **no graph view.** The strip is the one view of the passes; each tile names what it
+reads. The `imgui_node_editor` question is closed with it.
+
+## What shipped
+
+- `ui_primitives.preview_cell` takes `chips` + `chip_font`: one more line under the footer, each
+  word on a small chip, centered; chips that do not fit collapse into a `+N` count. The line is
+  reserved whenever `chips` is given, so every tile in a strip has the same height. The row spans
+  the cell's width to a 2px inset, not the padded content region: three short names need 97px
+  and the padded region is 96. Chips dim with the stale tint.
+- `text_chip` is the shared word-on-a-chip primitive; the Help body's inline code chip now draws
+  through it.
+- `pass_list._reads`: the chips are the passes a tile reads from the effective wiring
+  (`Document.effective_wiring`, 072), in strip order, one per source pass however many samplers
+  read it, then `prev` when the pass reads its own previous frame. A read is what the binder
+  binds: a source whose sampler the compiled program does not declare (the maintainer's first
+  break: `u_paint` renamed to `u_paint0`) samples nothing, so it is no chip; a source naming a
+  pass that no longer exists binds black, so it is no chip either. The uniform name and the run
+  count stay off the tile.
+- Tests: `test_pass_verbs.py` pins the chips a wired tile carries (source once, `prev` last,
+  never a uniform) and the missing-source case; `test_ui_prose_budget.py` lists the two chip
+  sites as unmeasurable (they forward a pass name / a code span).
+
+![the strip on the Radiance Cascades example](strip.png)
+
+## Manual verification
+
+Open the Radiance Cascades example and look at the strip:
+
+1. `cascade` shows `paint df prev` on one line, no `+1`.
+2. Pick `df` as output: the three later tiles dim, chips included.
+3. Add a pass with four inputs and check the `+N` collapse reads, not clips.
+4. Rename `u_paint` to `u_paint0` in `seed`: its `paint` chip goes with the wire; rename it
+   back and the chip returns.
+5. The chip row on the one-pass examples is an empty line; judge whether the extra height under
+   `main` is acceptable or the line should collapse for a document with no reads at all.

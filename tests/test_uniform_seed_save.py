@@ -14,7 +14,8 @@ import pytest
 
 from shaderbox.copilot.backend import _format_uniforms
 from shaderbox.document import Document
-from shaderbox.media import Image, is_default_image
+from shaderbox.media import Image
+from shaderbox.pass_graph import AutoSource
 from shaderbox.ui_models import UIDocument
 
 _SCALAR_SRC = """#version 460 core
@@ -81,10 +82,9 @@ def test_save_seeds_scalar_uniforms_without_render(
 def test_save_skips_default_sampler_and_reload_reseeds(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
-    # Feature 052: an UNBOUND sampler (still the shipped default) is NOT persisted — save skips it so
-    # it never reads back as "bound" on reload (the round-2 round-trip fix). Load's seed re-establishes
-    # the default. Falsifier: without the skip, `u_image` is in meta and reloads from media/ (path !=
-    # default) -> would read as bound.
+    # Feature 052, 072: an UNDECIDED sampler is NOT persisted -- save writes no row for it, so it
+    # never reads back as "bound" on reload. Load's seed re-establishes `AutoSource`. Falsifier:
+    # a row for `u_image` in meta that reloads as something other than undecided.
     document = _document_from_source(gl_ctx, _SAMPLER_SRC)
     ui_document = UIDocument(document=document, id="sampler")
     ui_document.save(tmp_path)  # must not raise
@@ -92,9 +92,9 @@ def test_save_skips_default_sampler_and_reload_reseeds(
     reloaded, meta = Document.load_from_dir(tmp_path / "sampler", gl=gl_ctx)
     assert "u_image" not in meta["uniforms"]["main"]  # default sampler skipped
     reloaded.render()  # compiles + seeds on first need (066 D1)
-    assert is_default_image(
-        reloaded.render_pass.uniform_values["u_image"]
-    )  # re-seeded to default
+    assert isinstance(
+        reloaded.render_pass.uniform_values["u_image"], AutoSource
+    )  # re-seeded to undecided
     _teardown(document)
     _teardown(reloaded)
 
@@ -113,7 +113,7 @@ def test_save_persists_user_bound_sampler(
     assert (tmp_path / "bound" / "media" / "main" / "u_image.png").exists()
     reloaded, meta = Document.load_from_dir(tmp_path / "bound", gl=gl_ctx)
     assert "u_image" in meta["uniforms"]["main"]
-    assert not is_default_image(reloaded.render_pass.uniform_values["u_image"])
+    assert isinstance(reloaded.render_pass.uniform_values["u_image"], Image)
     _teardown(document)
     _teardown(reloaded)
 
@@ -122,12 +122,12 @@ def test_sampler_awareness_row_default_vs_bound(gl_ctx: moderngl.Context) -> Non
     # Feature 052 slice 1: the working-set uniform row shows a sampler's binding, NOT a source path.
     document = _document_from_source(gl_ctx, _SAMPLER_SRC)
     document.render_pass.seed_uniform_values()
-    default_rows = _format_uniforms(document.render_pass, set())
-    assert any("u_image sampler2D <- (no media bound)" in r for r in default_rows)
+    default_rows = _format_uniforms(document.render_pass, set(), {})
+    assert any("u_image sampler2D <- (nothing; reads BLACK)" in r for r in default_rows)
     document.render_pass.uniform_values["u_image"] = Image(
         np.zeros((8, 8, 3), dtype=np.uint8)
     )
-    bound_rows = _format_uniforms(document.render_pass, set())
+    bound_rows = _format_uniforms(document.render_pass, set(), {})
     assert any("u_image sampler2D <- (8x8, image)" in r for r in bound_rows)
     # Corollary-1: no absolute path leaks into the row.
     assert all("/" not in r.split("<-")[1] for r in bound_rows if "u_image" in r)
@@ -147,10 +147,11 @@ def test_release_frees_uniform_held_resources(gl_ctx: moderngl.Context) -> None:
     # Document.release() used to free only the program + canvas, leaking every texture (and, for a
     # Video, an open capture) parked in uniform_values — one leak per reload, and the file watcher
     # reloads on every external document.json touch. Falsifier: drop the uniform_values loop from
-    # Document.release and the sampler's default Image keeps a live texture below.
+    # Document.release and the bound Image keeps a live texture below.
     document = _document_from_source(gl_ctx, _SAMPLER_SRC)
     document.render_pass.seed_uniform_values()
-    image = document.render_pass.uniform_values["u_image"]
+    image = Image(np.zeros((8, 8, 3), dtype=np.uint8))
+    document.render_pass.uniform_values["u_image"] = image
     assert (
         image.texture is not None
     )  # touch it: the texture is created lazily on first access

@@ -209,25 +209,28 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
 - **`widgets/pass_list.py`** — the Document tab's pass strip (feature 065): one live `preview_cell`
   thumbnail per pass in `plan_passes` topological order, blind to the output choice. A tile click
   sets the graph OUTPUT and opens that pass in the editor; off-plan tiles wash toward grey. Both
-  the order and the wash plan `Document.effective_graph()`, never `document.graph` — a pass wired
-  only by its uniform's name has no stored edge, and the raw graph would wash live ancestors and
-  hand the strip sorted-name order. A tile is a picture and a name: the wiring lives in the gear. The
-  six verbs of D15 are reachable from the strip (gear overlay / context menu); holds no state of
-  its own beyond `App.pass_add`.
+  the order and the wash plan `Document.effective_wiring()`, never the stored rows alone — a pass
+  wired only by its uniform's name has no stored row, and the rows would wash live ancestors and
+  hand the strip sorted-name order. A tile is a picture, a name, and a row of chips naming the
+  passes it reads (070); the source itself is chosen on the sampler's row of the uniforms panel
+  (072). The six verbs of D15 are reachable from the strip (gear overlay / context menu); holds no
+  state of its own beyond `App.pass_add`.
 - **`popups/pass_settings.py`** — the pass-settings modal (feature 065), in the `PopupState`
-  mutex: one pass's input wiring (closed-set combos over the document's own pass names, plus
-  `auto: <x>` for the name rule's own answer and `(none)` for an explicit black), its
-  target controls, and the rename row. Opens from a tile's gear, its context menu, or
-  automatically on `add pass` — set-up-once choices live here, off the strip.
-- **`pass_graph.py`** — leaf, GL-free (feature 065): the `graph.json` model (`PassGraph` /
-  `PassEntry` / `TargetConfig` / `PassLayout`, edited through `with_passes` / `with_input` /
-  `without_input` / `with_target` / `with_output` rather than `model_copy`), `effective_inputs`
-  (which pass fills each sampler, stored edges and name defaults together) plus the planner — `plan_passes` (topological order,
-  cycle detection per pass, feedback marking, unresolved inputs), `evaluation_order` (the passes one
-  output actually needs; `plan_for_output` returns that order AND the errors, so a renderer plans
-  once per frame) and `assert_plan_invariants` (the draw-once guard both run on every plan). Also
-  the canvas-dimension bounds `MIN_CANVAS_PX` / `MAX_CANVAS_PX` and the `clamp_canvas_size` both
-  entry points funnel through (the Document tab's fields and the copilot's `set_canvas_size`). Pure
+  mutex: one pass's name, run count and target controls. Opens from a tile's gear, its context
+  menu, or automatically on `add pass` — set-up-once choices live here, off the strip. What a
+  pass reads is not here since 072: that is each sampler's own row.
+- **`pass_graph.py`** — leaf, GL-free (feature 065, reshaped by 072): the `graph.json` model
+  (`PassGraph` / `PassEntry` / `TargetConfig`, edited through `with_passes` / `with_target` /
+  `with_output` rather than `model_copy`), the sampler SOURCE kinds (`PassSource` / `NoSource` /
+  `AutoSource`, the value a `sampler2D` holds in `uniform_values` beside a bound texture) and
+  `wired_pass` (which pass one sampler reads, given its value: an explicit pass, or the name
+  rule for an undecided one), plus the planner over a WIRING (pass -> uniform -> pass) —
+  `plan_passes` (topological order, cycle detection per pass, feedback marking),
+  `evaluation_order` (the passes one output actually needs; `plan_for_output` returns that order
+  AND the errors, so a renderer plans once per frame) and `assert_plan_invariants` (the draw-once
+  guard both run on every plan). Also the canvas-dimension bounds `MIN_CANVAS_PX` /
+  `MAX_CANVAS_PX` and the `clamp_canvas_size` both entry points funnel through (the Document
+  tab's fields and the copilot's `set_canvas_size`). Pure
   data: no GL, no imgui, importable anywhere.
 
 - **`project_session.py`** — `ProjectSession`: the headless project + copilot CORE (paths, documents,

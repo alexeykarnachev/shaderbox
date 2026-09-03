@@ -38,18 +38,22 @@ def test_examples_resolve_clean() -> None:
 
 def test_every_example_input_uniform_names_its_source() -> None:
     # 069 D9: an input uniform is named after the pass it reads (`u_<pass>`), and feedback is
-    # `u_prev`. A shipped example that reintroduces a role name (`u_src`, `u_lit`) teaches the
-    # opposite of what the engine now does, so the examples are the gate.
-    graphs = sorted(DOCUMENT_EXAMPLES_DIR.glob("*/graph.json"))
-    assert graphs, "no shipped example graphs found"
-    for path in graphs:
-        passes = json.loads(path.read_text(encoding="utf-8")).get("passes", {})
-        for consumer, entry in passes.items():
-            for uniform, source in (entry.get("inputs") or {}).items():
+    # `u_prev`, so the name rule wires it and the example ships no row for it. A shipped example
+    # that stores a pass row under a role name (`u_src`, `u_lit`) teaches the opposite of what
+    # the engine does, so the examples are the gate (072: the row lives in `document.json`).
+    documents = sorted(DOCUMENT_EXAMPLES_DIR.glob("*/document.json"))
+    assert documents, "no shipped example documents found"
+    for path in documents:
+        uniforms = json.loads(path.read_text(encoding="utf-8")).get("uniforms", {})
+        for consumer, rows in uniforms.items():
+            for uniform, row in rows.items():
+                if not isinstance(row, dict) or "pass" not in row:
+                    continue
+                source = row["pass"]
                 expected = "u_prev" if source == consumer else f"u_{source}"
                 assert uniform == expected, (
                     f"{path.parent.name}: {consumer}.{uniform} reads '{source}' but D9 names "
-                    f"it '{expected}'"
+                    f"it '{expected}', which needs no row"
                 )
 
 

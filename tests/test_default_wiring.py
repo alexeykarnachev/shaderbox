@@ -1,10 +1,10 @@
-"""An input uniform's NAME is its default wire, resolved at render time (069 W-D, D9).
+"""An input uniform's NAME is its default wire, resolved at render time (069 W-D, D9; 072).
 
-A sampler called `u_<pass>` reads that pass without anyone opening the gear; `u_prev` reads the
-pass's own previous frame; an explicit `""` in `graph.json` means BLACK and survives a reload,
-because the rule must not undo a decision the user made. The resolution is one pure function and
-one method built on it, and every consumer reads the same effective graph -- so "the renderer
-draws it" and "the strip says it is live" cannot disagree.
+A sampler called `u_<pass>` reads that pass without anyone choosing it; `u_prev` reads the
+pass's own previous frame; an explicit `NoSource` means BLACK and survives a reload, because the
+rule must not undo a decision the user made. The resolution is one pure function (`wired_pass`)
+and one method built on it (`Document.effective_wiring`), and every consumer reads the same
+wiring -- so "the renderer draws it" and "the strip says it is live" cannot disagree.
 
 The two GL tests that build a document do it on a COPY of a shipped example, never in place.
 """
@@ -20,16 +20,17 @@ from imgui_bundle import imgui
 
 from shaderbox.media import texture_to_rgba8
 from shaderbox.pass_graph import (
-    PassEntry,
-    PassGraph,
-    effective_inputs,
+    AutoSource,
+    NoSource,
+    PassSource,
     plan_for_output,
     plan_passes,
+    wired_pass,
 )
 from shaderbox.paths import shader_lib_root
-from shaderbox.popups import pass_settings
 from shaderbox.shader_lib import ShaderLibIndex, set_active
-from shaderbox.ui_models import load_document_from_dir
+from shaderbox.ui_models import UIUniform, load_document_from_dir
+from shaderbox.widgets import uniform as uniform_widget
 
 _EXAMPLES = (
     Path(__file__).resolve().parent.parent / "shaderbox/resources/document_examples"
@@ -65,74 +66,23 @@ def gl() -> moderngl.Context:
 # ---------------------------------------------------------------- the pure resolution
 
 
-def test_effective_inputs_over_every_state() -> None:
-    # The nine cells of (absent, "", explicit) x (the named pass exists or not) x (media-bound),
-    # plus `u_prev`. A media-bound sampler never auto-wires, and an explicit answer -- a name or
-    # an explicit none -- always beats both the name rule and the bound exclusion.
-    cases: list[tuple[dict[str, str], set[str], list[str], dict[str, str]]] = [
-        ({}, {"df", "jfa"}, [], {"u_df": "df"}),
-        ({}, {"jfa"}, [], {}),
-        ({}, {"df", "jfa"}, ["u_df"], {}),
-        ({"u_df": ""}, {"df", "jfa"}, [], {}),
-        ({"u_df": ""}, {"jfa"}, [], {}),
-        ({"u_df": ""}, {"df", "jfa"}, ["u_df"], {}),
-        ({"u_df": "jfa"}, {"df", "jfa"}, [], {"u_df": "jfa"}),
-        ({"u_df": "jfa"}, {"jfa"}, [], {"u_df": "jfa"}),
-        ({"u_df": "jfa"}, {"df", "jfa"}, ["u_df"], {"u_df": "jfa"}),
-    ]
-    for stored, passes, bound, expected in cases:
-        got = effective_inputs(
-            PassEntry(inputs=stored), ["u_df"], passes, "edge", bound
-        )
-        assert got == expected, (stored, sorted(passes), bound)
-
-    # The feedback exception wins over a sibling that happens to be called `prev`: D9 writes
-    # `u_prev` down as reading yourself, so that is the branch a user can predict.
-    assert effective_inputs(
-        PassEntry(), ["u_prev"], {"cascade", "prev"}, "cascade"
-    ) == {"u_prev": "cascade"}
-
-    # No `u_` prefix, no auto edge -- D9's rule is about `u_<pass>` names.
-    assert effective_inputs(PassEntry(), ["df"], {"df"}, "edge") == {}
-
-
 def test_the_planner_orders_an_auto_edge() -> None:
     # The planner must SEE the auto edges or it cannot order the draw, and it cannot detect a
-    # cycle a name default creates.
-    raw = PassGraph(output="b", passes={"a": PassEntry(), "b": PassEntry()})
-    resolved = raw.with_passes(
-        {
-            "a": raw.passes["a"],
-            "b": raw.passes["b"].model_copy(
-                update={
-                    "inputs": effective_inputs(
-                        raw.passes["b"], ["u_a"], set(raw.passes), "b"
-                    )
-                }
-            ),
-        }
-    )
-    order, errors = plan_for_output(resolved, "b")
+    # cycle a name default creates. `wired_pass` is where a name becomes an edge.
+    names = {"a", "b"}
+
+    def reads(consumer: str, samplers: list[str]) -> dict[str, str]:
+        wired = {u: wired_pass(AutoSource(), u, consumer, names) for u in samplers}
+        return {u: p for u, p in wired.items() if p is not None}
+
+    wiring = {"a": reads("a", []), "b": reads("b", ["u_a"])}
+    order, errors = plan_for_output(wiring, "b")
     assert order == ["a", "b"]
     assert errors == []
-    assert plan_passes(resolved)[0].reads["b"] == {"a"}
+    assert plan_passes(wiring)[0].reads["b"] == {"a"}
 
     # A name default that closes a loop is a real cycle and is reported as one.
-    looped = raw.with_passes(
-        {
-            name: entry.model_copy(
-                update={
-                    "inputs": effective_inputs(
-                        entry,
-                        ["u_b"] if name == "a" else ["u_a"],
-                        set(raw.passes),
-                        name,
-                    )
-                }
-            )
-            for name, entry in raw.passes.items()
-        }
-    )
+    looped = {"a": reads("a", ["u_b"]), "b": reads("b", ["u_a"])}
     cycle_errors = plan_passes(looped)[1]
     assert {e.pass_name for e in cycle_errors} == {"a", "b"}
     assert any("cycle" in e.message for e in cycle_errors)
@@ -144,8 +94,8 @@ def test_the_planner_orders_an_auto_edge() -> None:
 def _rc_with_edge(tmp_path: Path) -> Any:
     """A copy of the Radiance Cascades example plus an `edge` pass declaring `u_df`.
 
-    The pass file is written directly and `graph.json` is left alone: nothing wires `u_df`, so
-    only the name rule can fill it.
+    The pass file is written directly and `document.json` is left alone: no row decides
+    `u_df`, so only the name rule can fill it.
     """
     document_dir = tmp_path / "document"
     shutil.copytree(_RC, document_dir)
@@ -176,11 +126,11 @@ def test_u_df_beside_df_renders_without_the_gear(
     ui_document = _rc_with_edge(tmp_path)
     document = ui_document.document
     document.graph = document.graph.with_output("edge")
-    assert document.graph.passes["edge"].inputs == {}
+    assert "u_df" not in document.passes["edge"].uniform_values
 
     _render_until_online(document, len(document.passes) + 4)
 
-    assert document.effective_graph().passes["edge"].inputs == {"u_df": "df"}
+    assert document.effective_wiring()["edge"] == {"u_df": "df"}
     # The PICTURE, not merely a non-black one: `edge` passes `df`'s texel straight through, so
     # the two canvases must agree. Asserting brightness alone cannot tell the distance field from
     # the seeded default PHOTO an unbound sampler used to fall through to -- both are non-black.
@@ -195,8 +145,8 @@ def test_u_df_beside_df_renders_without_the_gear(
         "`edge` did not render what `df` produced"
     )
     assert int(drawn.max()) > 0, "the distance field itself came out black"
-    # The rule stores nothing: `graph.json` still holds only what the user decided.
-    assert document.graph.passes["edge"].inputs == {}
+    # The rule stores nothing: the sampler's value is still undecided.
+    assert isinstance(document.passes["edge"].uniform_values["u_df"], AutoSource)
 
 
 def test_an_unresolved_sampler_renders_black(
@@ -226,7 +176,7 @@ def test_an_unresolved_sampler_renders_black(
             f"frame {frame}: an unresolved sampler rendered the seeded default image"
         )
 
-    assert document.effective_graph().passes["edge"].inputs == {}
+    assert document.effective_wiring()["edge"] == {}
 
 
 def test_a_user_bound_texture_survives_the_black_seed(
@@ -250,20 +200,20 @@ def test_a_user_bound_texture_survives_the_black_seed(
     )
 
 
-def test_a_stored_empty_string_stays_black_across_a_reload(
+def test_an_explicit_none_stays_black_across_a_reload(
     gl: moderngl.Context, tmp_path: Path
 ) -> None:
     ui_document = _rc_with_edge(tmp_path)
     document = ui_document.document
-    document.graph = document.graph.with_output("edge").with_input("edge", "u_df", "")
-    assert document.graph.passes["edge"].inputs == {"u_df": ""}
+    document.graph = document.graph.with_output("edge")
+    document.passes["edge"].uniform_values["u_df"] = NoSource()
 
     ui_document.save(tmp_path, dir_name="document")
     reloaded = load_document_from_dir(tmp_path / "document").document
-    # Through disk on purpose: an in-memory assertion would pass under a `with_input` that
-    # stored `""` and a `model_dump` that dropped it.
-    assert reloaded.graph.passes["edge"].inputs == {"u_df": ""}
-    assert reloaded.effective_graph().passes["edge"].inputs == {}
+    # Through disk on purpose: an in-memory assertion would pass under a save that wrote no row
+    # for the decision and a load that seeded it undecided.
+    assert isinstance(reloaded.passes["edge"].uniform_values["u_df"], NoSource)
+    assert reloaded.effective_wiring()["edge"] == {}
 
     _render_until_online(reloaded, len(reloaded.passes) + 4)
     image = texture_to_rgba8(reloaded.passes["edge"].canvas.texture)
@@ -280,20 +230,26 @@ def test_an_uncompiled_pass_contributes_no_auto_edge_and_compiles_nothing(
     document = load_document_from_dir(document_dir).document
     assert all(p.program is None for p in document.passes.values())
 
-    resolved = document.effective_graph()
-    assert {n: e.inputs for n, e in resolved.passes.items()} == {
-        n: e.inputs for n, e in document.graph.passes.items()
-    }
+    # The fixture stores no row (every edge is the name rule's), and the name rule waits for a
+    # program: nothing reads anything yet.
+    assert document.effective_wiring() == {name: {} for name in document.passes}
     # (b): asking the program is not asking `get_active_uniforms()`, which would compile the
     # whole document on frame one and invert 066 D1.
     assert all(p.program is None for p in document.passes.values())
 
+    # An explicit row is visible BEFORE the compile (072 D3): a wire is never lost to lazy
+    # compilation, only the name rule waits.
+    document.passes["composite"].uniform_values["u_extra"] = PassSource("scene")
+    assert document.effective_wiring()["composite"] == {"u_extra": "scene"}
+    assert all(p.program is None for p in document.passes.values())
+    del document.passes["composite"].uniform_values["u_extra"]
+
     _render_until_online(document, len(document.passes) + 2)
-    online = document.effective_graph()
-    assert online.passes["composite"].inputs["u_blur"] == "blur"
+    online = document.effective_wiring()
+    assert online["composite"]["u_blur"] == "blur"
 
 
-# ---------------------------------------------------------------- the gear
+# ---------------------------------------------------------------- the panel row
 
 
 def _combo_capture(monkeypatch: pytest.MonkeyPatch) -> list[tuple[int, list[str]]]:
@@ -301,11 +257,11 @@ def _combo_capture(monkeypatch: pytest.MonkeyPatch) -> list[tuple[int, list[str]
     real = imgui.combo
 
     def spy(label: str, current: int, items: list[str], *a: Any, **kw: Any) -> Any:
-        if label.startswith("##wire_"):
+        if label.startswith("##source_"):
             seen.append((current, list(items)))
         return real(label, current, items, *a, **kw)
 
-    monkeypatch.setattr(pass_settings.imgui, "combo", spy)
+    monkeypatch.setattr(uniform_widget.imgui, "combo", spy)
     return seen
 
 
@@ -317,53 +273,49 @@ def _frame(body: Any) -> None:
     imgui.end_frame()
 
 
-def test_the_gear_shows_three_distinct_states(
+def test_the_row_shows_three_distinct_states(
     app: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # The sampler's row on the uniforms panel is where its source is chosen (072 D7); the
+    # combo's items and selection are the three readings the row must keep apart.
     document_id = app.current_document_id
     document = app.ui_documents[document_id].document
     app.session.rename_pass(document_id, next(iter(document.passes)), "df")
     app.session.add_pass(document_id, "edge")
     document.passes["edge"].release_program(_EDGE)
     document.passes["edge"].compile()
-    app.open_pass_settings("edge")
+    document.passes["edge"].seed_uniform_values()
+    # The panel shows the active shader tab's pass.
+    app.ensure_shader_tab(document_id, "edge")
+    ui_uniform = next(
+        UIUniform.from_uniform(u)
+        for u in document.passes["edge"].get_active_uniforms()
+        if u.name == "u_df"
+    )
     seen = _combo_capture(monkeypatch)
 
-    # Absent key: the name rule's answer, selected.
-    _frame(
-        lambda: pass_settings._draw_inputs(
-            app, document_id, "edge", document.passes["edge"]
-        )
-    )
-    assert seen[-1] == (0, ["auto: df", "(none)", "df", "edge"])
+    def draw() -> None:
+        uniform_widget.draw_ui_uniform(app, ui_uniform)
 
-    # An explicit none is its OWN item, not the same index an absent key falls to.
-    app.session.wire_pass_input(document_id, "edge", "u_df", "")
-    _frame(
-        lambda: pass_settings._draw_inputs(
-            app, document_id, "edge", document.passes["edge"]
-        )
-    )
+    # Undecided: the name rule's answer, selected.
+    _frame(draw)
+    assert seen[-1] == (0, ["auto (df)", "none", "df", "edge", "file..."])
+
+    # An explicit none is its OWN item, not the same index undecided falls to.
+    app.session.set_sampler_source(document_id, "edge", "u_df", NoSource())
+    _frame(draw)
     assert seen[-1][0] == 1
 
-    # An explicit name selects that pass.
-    app.session.wire_pass_input(document_id, "edge", "u_df", "edge")
-    _frame(
-        lambda: pass_settings._draw_inputs(
-            app, document_id, "edge", document.passes["edge"]
-        )
-    )
+    # An explicit pass selects that pass.
+    app.session.set_sampler_source(document_id, "edge", "u_df", PassSource("edge"))
+    _frame(draw)
     assert seen[-1][0] == seen[-1][1].index("edge")
 
-    # `auto: none` when the name names no pass: back to undecided, with `df` renamed away.
-    app.session.unwire_pass_input(document_id, "edge", "u_df")
+    # `auto (none)` when the name names no pass: back to undecided, with `df` renamed away.
+    app.session.set_sampler_source(document_id, "edge", "u_df", AutoSource())
     app.session.rename_pass(document_id, "df", "field")
-    _frame(
-        lambda: pass_settings._draw_inputs(
-            app, document_id, "edge", document.passes["edge"]
-        )
-    )
-    assert seen[-1] == (0, ["auto: none", "(none)", "edge", "field"])
+    _frame(draw)
+    assert seen[-1] == (0, ["auto (none)", "none", "edge", "field", "file..."])
 
 
 # ---------------------------------------------------------------- the shipped examples
@@ -387,26 +339,22 @@ def test_every_multi_pass_example_compiles_every_pass(
     assert broken == {}, f"{example.name}: passes failed to compile: {broken}"
 
 
-def test_a_u_prev_pass_has_feedback_without_a_stored_edge(
+def test_a_u_prev_pass_has_feedback_without_a_stored_row(
     gl: moderngl.Context, tmp_path: Path
 ) -> None:
-    # The plan of the EFFECTIVE graph must see the auto edge too: a pass declaring `u_prev` and
+    # The plan of the EFFECTIVE wiring must see the auto edge too: a pass declaring `u_prev` and
     # nothing else reads its own previous frame, and the renderer allocates its history from
-    # that plan.
-    # Bloom's `trail` is the only feedback in the example and its edge is EXPLICIT, so it is
-    # rewired to a fresh `u_prev`-only pass that stores nothing.
+    # that plan. Bloom's `trail` is the only feedback in the fixture; it is rewired to a fresh
+    # `u_prev`-only pass so the name rule is the only thing that can wire it.
     document_dir = tmp_path / "document"
     shutil.copytree(_BLOOM, document_dir)
     (document_dir / "passes" / "trail.frag.glsl").write_text(_TRAIL, encoding="utf-8")
     document = load_document_from_dir(document_dir).document
-    document.graph = document.graph.without_input("trail", "u_prev").without_input(
-        "trail", "u_scene"
-    )
-    assert document.graph.passes["trail"].inputs == {}
-    assert not plan_passes(document.effective_graph())[0].feedback, (
+    assert "u_prev" not in document.passes["trail"].uniform_values
+    assert not plan_passes(document.effective_wiring())[0].feedback, (
         "nothing has compiled yet, so no auto edge exists"
     )
 
     _render_until_online(document, len(document.passes) + 4)
-    assert document.graph.passes["trail"].inputs == {}
-    assert plan_passes(document.effective_graph())[0].feedback == {"trail"}
+    assert isinstance(document.passes["trail"].uniform_values["u_prev"], AutoSource)
+    assert plan_passes(document.effective_wiring())[0].feedback == {"trail"}

@@ -1,9 +1,9 @@
-import keyword
 from pathlib import Path
 
 from imgui_bundle import imgui
 
 from shaderbox.app import App
+from shaderbox.completion import CompletionContext, offer
 from shaderbox.core import Pass
 from shaderbox.editor.ffi import EDITOR_RESOURCES_DIR, CursorPos, Editor, Mode
 from shaderbox.editor.render import (
@@ -309,114 +309,63 @@ def _draw_error_strip(
     imgui.pop_style_color(1)
 
 
-# GLSL completion seeds beyond the live lib index + uniforms: the keywords and
-# builtins the lexer knows are a fine floor for a fragment shader.
-_GLSL_WORDS: tuple[str, ...] = (
-    "attribute",
-    "bool",
-    "break",
-    "const",
-    "continue",
-    "discard",
-    "else",
-    "float",
-    "for",
-    "highp",
-    "if",
-    "in",
-    "int",
-    "ivec2",
-    "ivec3",
-    "ivec4",
-    "lowp",
-    "mat2",
-    "mat3",
-    "mat4",
-    "mediump",
-    "out",
-    "return",
-    "sampler2D",
-    "uniform",
-    "uint",
-    "varying",
-    "vec2",
-    "vec3",
-    "vec4",
-    "void",
-    "while",
-    "abs",
-    "ceil",
-    "clamp",
-    "cos",
-    "cross",
-    "distance",
-    "dot",
-    "exp",
-    "floor",
-    "fract",
-    "length",
-    "max",
-    "min",
-    "mix",
-    "mod",
-    "normalize",
-    "pow",
-    "reflect",
-    "sin",
-    "smoothstep",
-    "sqrt",
-    "step",
-    "tan",
-    "texture",
-)
-
-
-def _completion_vocabulary(app: App, tab: EditorTab) -> list[str]:
-    if tab.kind == "script":
-        return list(keyword.kwlist)
-    words: list[str] = list(app.shader_lib_index.functions)
-    ui_document = app.ui_documents.get(tab.document_id)
-    if ui_document is not None:
-        edited = _pass_for_tab(app, tab)
-        if edited is not None:
-            words.extend(edited.uniform_values)
-    words.extend(_GLSL_WORDS)
-    return words
+def _completion_context(
+    app: App, editor: Editor, tab: EditorTab, explicit: bool
+) -> CompletionContext:
+    cursor = editor.get_current_cursor_position()
+    lines = editor.get_text().split("\n")
+    line = lines[cursor.line] if cursor.line < len(lines) else ""
+    edited = _pass_for_tab(app, tab)
+    return CompletionContext(
+        tab_kind=tab.kind,
+        line_before_caret=line[: cursor.column],
+        prefix=editor.complete_prefix(),
+        lib_functions=tuple(app.shader_lib_index.functions),
+        pass_uniforms=tuple(edited.uniform_values) if edited is not None else (),
+        explicit=explicit,
+    )
 
 
 def _drive_completion(app: App, editor: Editor, tab: EditorTab) -> None:
-    # Host-driven autocomplete on the deliberate-offer rule (pushing IS opening):
-    # the drain marks a consumed insert-mode Ctrl+N; this offers the filtered
-    # vocabulary in response, re-filters while the popup stays open and the
-    # prefix moves, and cancels when nothing matches. The built-in buffer-word
-    # source is suppressed at session creation, so the popup shows only this.
-    # Runs BEFORE layout so the popup primitives appear the same frame.
+    # Host-driven autocomplete (pushing IS opening; the built-in buffer-word source is
+    # suppressed at session creation, so the popup shows only what the providers say).
+    # Three ways in: the deliberate Ctrl+N / Ctrl+P (explicit), a keystroke in insert mode
+    # that changed the buffer (auto, 073 W-B), and a re-filter while the popup stays open
+    # and the prefix moves. Runs BEFORE layout so the popup primitives appear the same frame.
+    revision = editor.get_undo_index()
+    edited = app.editor_completion_seen != (tab.path, revision)
+    app.editor_completion_seen = (tab.path, revision)
+    was_open = app.editor_completion_was_open
+    app.editor_completion_was_open = editor.complete_open()
     if app.editor_completion_requested:
         app.editor_completion_requested = False
-        _offer_completion(app, editor, tab)
+        _offer_completion(app, editor, tab, explicit=True)
     elif editor.complete_open():
         prefix = editor.complete_prefix()
         if prefix != app.editor_completion_prefix:
-            _offer_completion(app, editor, tab)
+            _offer_completion(app, editor, tab, explicit=not app.editor_completion_auto)
+    elif edited and not was_open and editor.get_mode() == Mode.INSERT:
+        # `not was_open`: the edit that closed a popup was an accept (or the keystroke
+        # that emptied the prefix), and re-opening on the word just accepted is churn.
+        _offer_completion(app, editor, tab, explicit=False)
     else:
         app.editor_completion_prefix = None
 
 
-def _offer_completion(app: App, editor: Editor, tab: EditorTab) -> None:
-    prefix = editor.complete_prefix()
-    matches = [
-        word
-        for word in _completion_vocabulary(app, tab)
-        if word.startswith(prefix) and word != prefix
-    ]
-    if not matches or not prefix:
+def _offer_completion(app: App, editor: Editor, tab: EditorTab, explicit: bool) -> None:
+    context = _completion_context(app, editor, tab, explicit)
+    matches = offer(context)
+    if not matches:
         editor.complete_cancel()
         app.editor_completion_prefix = None
+        app.editor_completion_auto = False
         return
     editor.complete_begin()
-    for word in matches[:50]:
+    for word in matches:
         editor.complete_push(word)
-    app.editor_completion_prefix = prefix
+    app.editor_completion_prefix = context.prefix
+    app.editor_completion_auto = not explicit
+    app.editor_completion_navigated = False
 
 
 def draw_chrome(app: App) -> None:

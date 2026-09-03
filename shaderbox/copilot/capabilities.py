@@ -209,7 +209,6 @@ class PassView:
     uniforms: list[str]
     errors: list[CompileErrorInfo]
     is_output: bool
-    inputs: list[str]  # "u_src <- scene" rows; an unwired sampler reads BLACK
 
 
 @dataclass(frozen=True)

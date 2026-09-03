@@ -16,7 +16,6 @@ from pydantic import BaseModel
 
 from shaderbox.constants import (
     DEFAULT_FPS,
-    DEFAULT_IMAGE_FILE_PATH,
     DEFAULT_TEMPORAL_QUALITY,
     DEFAULT_TEMPORAL_SIGMA,
     DEFAULT_TEMPORAL_WINDOW_SIZE,
@@ -174,16 +173,6 @@ class Image(MediaWithTexture):
         if self._texture is not None:
             self._texture.release()
             self._texture = None
-
-
-def is_default_image(value: object) -> bool:
-    # A sampler still holding the shipped default image = "unbound". Document.seed_uniform_values fills an
-    # unbound sampler with Image(DEFAULT_IMAGE_FILE_PATH); its source path is the sole marker. Callers
-    # rely on this holding at SAVE time (in-memory the path is the resource path) so save can skip
-    # persisting a default sampler, letting seed re-establish it on load.
-    return isinstance(value, Image) and value.details.file_details.path == str(
-        DEFAULT_IMAGE_FILE_PATH
-    )
 
 
 # Forward-decode budget for Video.update: a gap up to this many frames is closed with

@@ -1,14 +1,18 @@
-"""The pass graph: which passes a document has, what fills each one's inputs, and in what
-order they draw (065).
+"""The pass graph: which passes a document has, how each target is configured, which pass is the
+output, and the planner that orders the draw (065, reshaped by 072).
 
 A document holds several passes forming a DAG. Each pass is its own `.glsl` file with its own
 `main()` and its own render target; one pass is the document's output. A pass declares an input
-as an ordinary `uniform sampler2D`, and the graph says which pass fills it -- binding is BY NAME,
-never by position.
+as an ordinary `uniform sampler2D`, and that sampler's VALUE says what fills it (072): a
+`PassSource` names a pass, a `NoSource` reads black by decision, an `AutoSource` lets the
+sampler's NAME decide (069 D9), and a texture the user bound is itself. `wired_pass` is the one
+function that turns a value into "the pass this sampler reads", and the planner takes the
+resulting WIRING (pass -> uniform -> pass), so nothing here knows about textures or GL.
 
-Everything here is engine-level machinery persisted in `graph.json`, never parsed out of comments,
-and everything here is GL-free pure data: the model, the topological order, the cycle check and the
-feedback marking are unit-testable with no context and importable from anywhere without a cycle.
+`graph.json` holds the rest: the output choice and each pass's target and run count. It is
+app-written derived state, never parsed out of comments, and everything here is pure data:
+the model, the topological order, the cycle check and the feedback marking are unit-testable
+with no context and importable from anywhere without a cycle.
 
 It also owns the canvas-dimension bounds (`MIN_CANVAS_PX` / `MAX_CANVAS_PX`) and the
 `clamp_canvas_size` both entry points funnel through, beside `TargetConfig.scale`'s bound, which
@@ -18,14 +22,14 @@ Two rules the rest of the engine leans on:
 
 - **A pass reading itself is FEEDBACK, not a cycle.** It consumes the previous frame, so it
   contributes no ordering constraint. Excluding the self-edge from the cycle check while keeping it
-  in the model is the trap that sinks a naive implementation.
+  in the wiring is the trap that sinks a naive implementation.
 - **A pass appears at most ONCE in the order.** A diamond's shared ancestor draws once, not once per
   consuming path. A duplicated pass renders the CORRECT picture, just N times, so it reads as slow
   rather than wrong and no pixel test can see it: `assert_plan_invariants` is the observable, and
   `evaluation_order` runs it on the path that actually draws.
 """
 
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -41,7 +45,7 @@ DEFAULT_FILTER_LINEAR = True
 DEFAULT_WRAP = False
 DEFAULT_SCALE = 1.0
 
-GRAPH_JSON_VERSION = 1
+GRAPH_JSON_VERSION = 2
 
 # 64 doublings covers a 2^64 canvas, so this bounds the frame cost without bounding any real
 # effect: JFA needs ceil(log2(max_dim)) and a cascade stack ceil(log4(diagonal)) + 1.
@@ -89,16 +93,13 @@ class TargetConfig(BaseModel):
 
 
 class PassEntry(BaseModel):
-    """One pass's graph entry: what fills its inputs, and how its target is configured.
+    """One pass's graph entry: how its target is configured and how many times it runs.
 
-    `inputs` maps THIS pass's sampler uniform name to the pass that fills it, so an entry naming
-    its own pass is feedback. An input naming a pass that does not exist is not an error: it reads
-    black (`unresolved_inputs`), which is what keeps a half-built graph usable while you build it.
+    What fills its inputs is not here: that is each sampler's VALUE (072, `wired_pass`).
     """
 
     model_config = ConfigDict(frozen=True)
 
-    inputs: dict[str, str] = {}
     target: TargetConfig = TargetConfig()
     # Draw this pass N times in sequence within one frame, feeding `u_pass_iteration` /
     # `u_pass_iterations` so one shader can be the whole chain -- a cascade level, a jump
@@ -114,18 +115,8 @@ class PassEntry(BaseModel):
     iterations: int = Field(default=1, ge=1, le=MAX_ITERATIONS)
 
 
-class PassLayout(BaseModel):
-    """A pass's position in a spatial editor. Cosmetic, and kept in its own key so losing it never
-    costs the effect."""
-
-    model_config = ConfigDict(frozen=True)
-
-    x: float = 0.0
-    y: float = 0.0
-
-
 class PassGraph(BaseModel):
-    """The whole `graph.json`: the passes, the wiring, the targets and the output choice.
+    """The whole `graph.json`: the passes, their targets and run counts, and the output choice.
 
     App-written derived state, exactly as `document.json` is. The user edits it through the panel,
     never by hand.
@@ -138,7 +129,6 @@ class PassGraph(BaseModel):
     version: int = GRAPH_JSON_VERSION
     output: str = ""
     passes: dict[str, PassEntry] = {}
-    layout: dict[str, PassLayout] = {}
 
     @model_validator(mode="after")
     def _reject_unnamed_pass(self) -> "PassGraph":
@@ -149,20 +139,16 @@ class PassGraph(BaseModel):
         return self
 
     def with_passes(
-        self,
-        entries: dict[str, "PassEntry"],
-        output: str | None = None,
-        layout: dict[str, "PassLayout"] | None = None,
+        self, entries: dict[str, "PassEntry"], output: str | None = None
     ) -> "PassGraph":
-        """A copy carrying `entries` (and optionally a new output / layout).
+        """A copy carrying `entries` (and optionally a new output).
 
         Every edit funnels through here rather than calling `model_copy` at each call site: the
         field name and the passes/ DIRECTORY share a word, so a bare string is indistinguishable
         from the path and the single-home guard cannot tell them apart.
 
         The funnel is the point; the COPY inside it still goes through `model_copy`, so a field
-        added to this model tomorrow survives every edit rather than silently resetting. That is
-        the same trap `with_input`/`with_target` fell into with `PassEntry.iterations`.
+        added to this model tomorrow survives every edit rather than silently resetting.
         """
         # The keys come from the model's own field names rather than string literals: the field
         # is spelled the same as the passes/ DIRECTORY, and `test_basename_is_never_respelled`
@@ -170,34 +156,7 @@ class PassGraph(BaseModel):
         update: dict[str, object] = {_PASSES_FIELD: entries}
         if output is not None:
             update[_OUTPUT_FIELD] = output
-        if layout is not None:
-            update[_LAYOUT_FIELD] = layout
         return self.model_copy(update=update)
-
-    def with_input(self, consumer: str, uniform: str, producer: str) -> "PassGraph":
-        """Fill `consumer`'s `uniform` from `producer`, or store an explicit none when empty.
-
-        `""` is a DECISION, not an absence: `effective_inputs` fills an absent key from the
-        uniform's name (069 D9) and must not undo a user who chose nothing. `without_input`
-        is how a key goes back to undecided.
-        """
-        entry = self.passes.get(consumer, PassEntry())
-        inputs = {**entry.inputs, uniform: producer}
-        # model_copy, never a field-by-field rebuild: an entry gains fields (`iterations`, 068),
-        # and a constructor call here silently resets every one it does not name.
-        return self.with_passes(
-            {**self.passes, consumer: entry.model_copy(update={"inputs": inputs})}
-        )
-
-    def without_input(self, consumer: str, uniform: str) -> "PassGraph":
-        """Forget `consumer`'s decision about `uniform`, so the name rule decides again."""
-        entry = self.passes.get(consumer, PassEntry())
-        if uniform not in entry.inputs:
-            return self
-        inputs = {u: src for u, src in entry.inputs.items() if u != uniform}
-        return self.with_passes(
-            {**self.passes, consumer: entry.model_copy(update={"inputs": inputs})}
-        )
 
     def with_target(self, name: str, target: "TargetConfig") -> "PassGraph":
         entry = self.passes.get(name, PassEntry())
@@ -226,6 +185,32 @@ _AUTO_PREFIX = "u_"
 _FEEDBACK_UNIFORM = "u_prev"
 
 
+@dataclass(frozen=True)
+class PassSource:
+    """A sampler reads the named pass's live canvas; naming its OWN pass reads the previous
+    frame (feedback)."""
+
+    name: str
+
+
+@dataclass(frozen=True)
+class NoSource:
+    """A sampler reads black, by decision: the name rule must not fill it."""
+
+
+@dataclass(frozen=True)
+class AutoSource:
+    """A sampler nobody decided about: its NAME fills it at bind time (069 D9), or it reads
+    black."""
+
+
+SamplerSource = PassSource | NoSource | AutoSource
+
+# pass -> sampler uniform -> the pass it reads. Every pass of the document is a key, so the
+# planner orders all of them; a sampler that reads no pass has no entry.
+Wiring = Mapping[str, Mapping[str, str]]
+
+
 def _auto_source(uniform: str, consumer: str) -> str:
     """The pass `uniform`'s NAME points at, or `""` when the name says nothing (069 D9).
 
@@ -240,41 +225,24 @@ def _auto_source(uniform: str, consumer: str) -> str:
     return uniform[len(_AUTO_PREFIX) :]
 
 
-def effective_inputs(
-    entry: PassEntry,
-    samplers: Sequence[str],
-    passes: Collection[str],
-    consumer: str = "",
-    bound: Collection[str] = (),
-) -> dict[str, str]:
-    """Which pass fills each of `consumer`'s samplers, stored edges and name defaults together.
+def wired_pass(
+    source: object, uniform: str, consumer: str, passes: Collection[str]
+) -> str | None:
+    """The pass `consumer`'s `uniform` reads, given the sampler's VALUE, or None when it reads
+    no pass: a `NoSource`, a texture the user bound, or a name that matches no pass.
 
-    Three states per sampler, and they are distinct on purpose:
+    A `PassSource` naming a pass that does not exist reads black rather than raising: that is
+    what keeps a half-built graph usable while you build it (065 D3).
 
-    - a name in `entry.inputs` -> that pass, when it exists (a stale name is left in place; the
-      planner reports it as unresolved and the renderer binds black);
-    - `""` in `entry.inputs`   -> nothing, explicitly. The user picked "(none)" and the default
-      rule must not undo it;
-    - no key at all            -> undecided, so the NAME decides: `u_<x>` fills from pass `<x>`
-      when a pass called `<x>` exists, and `u_prev` from `consumer` itself.
-
-    A sampler named in `bound` never auto-wires: its value is a texture the user bound, and the
-    name rule would silently replace it.
-
-    Every stored edge is carried through whether or not `samplers` names it: `samplers` comes
-    from a COMPILED program, and a pass that has not compiled yet must not lose the wiring
-    `graph.json` holds for it.
-
-    GL-free: `samplers` are NAMES, so nothing here compiles, binds or touches a context.
+    GL-free: `passes` are NAMES and `source` is only inspected by type, so nothing here compiles,
+    binds or touches a context.
     """
-    resolved = {u: src for u, src in entry.inputs.items() if src}
-    for uniform in samplers:
-        if uniform in entry.inputs or uniform in bound:
-            continue
-        source = _auto_source(uniform, consumer)
-        if source and source in passes:
-            resolved[uniform] = source
-    return resolved
+    if isinstance(source, PassSource):
+        return source.name if source.name in passes else None
+    if isinstance(source, AutoSource):
+        auto = _auto_source(uniform, consumer)
+        return auto if auto and auto in passes else None
+    return None
 
 
 @dataclass(frozen=True)
@@ -282,14 +250,12 @@ class PassPlan:
     """The resolved evaluation order, plus what each pass reads.
 
     `order` lists producers before consumers, each pass exactly once. `reads` excludes the
-    self-edge (that is `feedback`); `unresolved_inputs` names the inputs pointing at a pass that
-    does not exist, which read black.
+    self-edge (that is `feedback`).
     """
 
     order: list[str]
     reads: dict[str, set[str]] = field(default_factory=dict)
     feedback: set[str] = field(default_factory=set)
-    unresolved_inputs: dict[str, dict[str, str]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -312,10 +278,10 @@ def _cycle_message(trail: list[str], name: str) -> str:
     )
 
 
-def plan_passes(graph: PassGraph) -> tuple[PassPlan, list[GraphError]]:
-    """Topologically order `graph`'s passes by which of each other's outputs they read.
+def plan_passes(wiring: Wiring) -> tuple[PassPlan, list[GraphError]]:
+    """Topologically order the passes of `wiring` by which of each other's outputs they read.
 
-    Passes are visited in sorted name order, so the plan is deterministic for a given graph
+    Passes are visited in sorted name order, so the plan is deterministic for a given wiring
     regardless of dict insertion order -- an unstable order would make two exports of the same
     document differ.
 
@@ -323,27 +289,18 @@ def plan_passes(graph: PassGraph) -> tuple[PassPlan, list[GraphError]]:
     rest of the graph still plans, so one bad loop does not cost the document its other passes.
     """
     errors: list[GraphError] = []
-    names = sorted(graph.passes)
-    known = set(names)
+    names = sorted(wiring)
 
     reads: dict[str, set[str]] = {}
     feedback: set[str] = set()
-    unresolved: dict[str, dict[str, str]] = {}
     for name in names:
-        entry = graph.passes[name]
         deps: set[str] = set()
-        missing: dict[str, str] = {}
-        for uniform, source in sorted(entry.inputs.items()):
-            if source not in known:
-                missing[uniform] = source
-                continue
+        for source in wiring[name].values():
             if source == name:
                 feedback.add(name)  # previous frame: no ordering constraint
                 continue
             deps.add(source)
         reads[name] = deps
-        if missing:
-            unresolved[name] = missing
 
     order: list[str] = []
     state: dict[str, int] = {}  # 0 = visiting, 1 = done, 2 = failed
@@ -384,15 +341,10 @@ def plan_passes(graph: PassGraph) -> tuple[PassPlan, list[GraphError]]:
         visit(name, [])
     errors.extend(failures[name] for name in sorted(failures))
 
-    return PassPlan(
-        order=order,
-        reads=reads,
-        feedback=feedback,
-        unresolved_inputs=unresolved,
-    ), errors
+    return PassPlan(order=order, reads=reads, feedback=feedback), errors
 
 
-def assert_plan_invariants(plan: PassPlan, graph: PassGraph) -> None:
+def assert_plan_invariants(plan: PassPlan, wiring: Wiring) -> None:
     """Assert everything the renderer relies on. Run on EVERY plan a test builds.
 
     The memoization bug this exists for reads as slow rather than wrong, so a test that only
@@ -402,22 +354,18 @@ def assert_plan_invariants(plan: PassPlan, graph: PassGraph) -> None:
     assert len(plan.order) == len(set(plan.order)), (
         f"a pass appears twice in the order: {plan.order}"
     )
-    assert set(plan.order) <= set(graph.passes), (
-        f"the order names passes the graph does not have: "
-        f"{sorted(set(plan.order) - set(graph.passes))}"
+    assert set(plan.order) <= set(wiring), (
+        f"the order names passes the wiring does not have: "
+        f"{sorted(set(plan.order) - set(wiring))}"
     )
     position = {name: i for i, name in enumerate(plan.order)}
     for name in plan.order:
-        # `reads` is audited against the GRAPH, not taken as given: it is produced by the very
+        # `reads` is audited against the WIRING, not taken as given: it is produced by the very
         # function under test, so a planner that drops an edge would otherwise be self-consistent
         # and its order would pass while a pass drew before its input.
-        expected = {
-            source
-            for source in graph.passes[name].inputs.values()
-            if source in graph.passes and source != name
-        }
+        expected = {source for source in wiring[name].values() if source != name}
         assert plan.reads[name] == expected, (
-            f"'{name}' reads {sorted(plan.reads[name])}, but the graph wires "
+            f"'{name}' reads {sorted(plan.reads[name])}, but the wiring says "
             f"{sorted(expected)}"
         )
         for dep in expected:
@@ -428,10 +376,8 @@ def assert_plan_invariants(plan: PassPlan, graph: PassGraph) -> None:
                 f"'{name}' draws before its input '{dep}'"
             )
     for name in plan.feedback:
-        assert name in graph.passes, (
-            f"feedback names a pass that does not exist: '{name}'"
-        )
-        assert name in graph.passes[name].inputs.values(), (
+        assert name in wiring, f"feedback names a pass that does not exist: '{name}'"
+        assert name in wiring[name].values(), (
             f"'{name}' is marked feedback but wires no input to itself"
         )
         assert name not in plan.reads[name], (
@@ -439,16 +385,14 @@ def assert_plan_invariants(plan: PassPlan, graph: PassGraph) -> None:
         )
 
 
-def plan_for_output(
-    graph: PassGraph, target: str
-) -> tuple[list[str], list[GraphError]]:
-    """`evaluation_order` plus the graph's errors, so a renderer plans the graph ONCE per frame."""
-    plan, errors = plan_passes(graph)
-    assert_plan_invariants(plan, graph)
+def plan_for_output(wiring: Wiring, target: str) -> tuple[list[str], list[GraphError]]:
+    """`evaluation_order` plus the wiring's errors, so a renderer plans the graph ONCE per frame."""
+    plan, errors = plan_passes(wiring)
+    assert_plan_invariants(plan, wiring)
     return _order_for(plan, errors, target), errors
 
 
-def evaluation_order(graph: PassGraph, target: str) -> list[str]:
+def evaluation_order(wiring: Wiring, target: str) -> list[str]:
     """The passes to draw, in order, to produce `target` -- and nothing else.
 
     A document whose output is one branch of a wide graph does not pay for the branches nothing
@@ -457,7 +401,7 @@ def evaluation_order(graph: PassGraph, target: str) -> list[str]:
     This is the function the renderer calls, so it asserts the plan itself rather than trusting a
     test to have done it: the draw-once invariant has to hold on the path that actually draws.
     """
-    return plan_for_output(graph, target)[0]
+    return plan_for_output(wiring, target)[0]
 
 
 def _order_for(plan: PassPlan, errors: list[GraphError], target: str) -> list[str]:
@@ -481,4 +425,25 @@ def _order_for(plan: PassPlan, errors: list[GraphError], target: str) -> list[st
 # (`test_basename_is_never_respelled`). Deriving them also keeps a rename honest.
 _PASSES_FIELD = next(f for f in PassGraph.model_fields if f.startswith("pass"))
 _OUTPUT_FIELD = next(f for f in PassGraph.model_fields if f.startswith("out"))
-_LAYOUT_FIELD = next(f for f in PassGraph.model_fields if f.startswith("lay"))
+
+
+def strip_order(names: Iterable[str], wiring: Wiring) -> list[str]:
+    """The pass strip's tile order: producers left of consumers, STABLE across output changes.
+
+    `plan_passes` gives the deterministic topological order and never looks at the output, so
+    picking a different output cannot shuffle the tiles. Passes it leaves out (cycle members,
+    passes with no wiring entry) are appended by name so every pass still gets a tile.
+    """
+    known = set(names)
+    order = [n for n in plan_passes(wiring)[0].order if n in known]
+    return order + sorted(known - set(order))
+
+
+def step_in_order(order: Sequence[str], current: str, step: int) -> str | None:
+    """The name `step` tiles away from `current` in `order`, wrapping at both ends; the first
+    tile when `current` is not in the order; None when the order is empty."""
+    if not order:
+        return None
+    if current not in order:
+        return order[0]
+    return order[(order.index(current) + step) % len(order)]

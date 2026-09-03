@@ -12,13 +12,12 @@ from OpenGL.GL import GL_SAMPLER_2D, glUseProgram
 from shaderbox.constants import (
     DEFAULT_CANVAS_SIZE,
     DEFAULT_FS_FILE_PATH,
-    DEFAULT_IMAGE_FILE_PATH,
     DEFAULT_VS_FILE_PATH,
     FULLSCREEN_QUAD_VERTICES,
 )
 from shaderbox.glyph_tables import TABLE_UNIFORMS
-from shaderbox.media import Image, MediaWithTexture, Video
-from shaderbox.pass_graph import TargetConfig
+from shaderbox.media import MediaWithTexture, Video
+from shaderbox.pass_graph import AutoSource, TargetConfig
 from shaderbox.shader_errors import ShaderError, SourceMap, parse_shader_errors
 from shaderbox.shader_lib import active as active_lib_index
 from shaderbox.shader_lib import resolve_usage
@@ -141,7 +140,6 @@ class Pass:
 
     _DEFAULT_VS_FILE_PATH = DEFAULT_VS_FILE_PATH
     _DEFAULT_FS_FILE_PATH = DEFAULT_FS_FILE_PATH
-    _DEFAULT_IMAGE_FILE_PATH = DEFAULT_IMAGE_FILE_PATH
 
     def __init__(
         self,
@@ -173,6 +171,10 @@ class Pass:
         self.drawn_frame: int = -1
         self.first_render_done: bool = False
         self.uniform_values: dict[str, Any] = {}
+        # What a sampler reads when its value is a source and no document bound a texture for
+        # it: a pass drawn on its own has no pass to read, and an unfilled input reads BLACK
+        # (065 D3), never a picture.
+        self._black: moderngl.Texture | None = None
         self.compile_unit: CompileUnit = CompileUnit.empty(self.source)
         self.program: moderngl.Program | None = None
         self.vbo: moderngl.Buffer | None = None
@@ -232,7 +234,15 @@ class Pass:
         for value in self.uniform_values.values():
             try_to_release(value)
         self.uniform_values.clear()
+        if self._black is not None:
+            self._black.release()
+            self._black = None
         self.canvas.release()
+
+    def _black_texture(self) -> moderngl.Texture:
+        if self._black is None:
+            self._black = self._gl.texture((1, 1), 4, data=b"\x00\x00\x00\xff")
+        return self._black
 
     @property
     def script_ready(self) -> bool:
@@ -350,7 +360,7 @@ class Pass:
         if isinstance(uniform, moderngl.UniformBlock):
             return self._gl.buffer(np.zeros(uniform.size, dtype=np.int8))
         if getattr(uniform, "gl_type", None) == GL_SAMPLER_2D:
-            return Image(self._DEFAULT_IMAGE_FILE_PATH)
+            return AutoSource()
         return uniform.value
 
     def render(
@@ -364,9 +374,11 @@ class Pass:
         """Draw this pass into `canvas`, or into its own target.
 
         `inputs` binds sampler uniforms to textures another pass produced. They are applied for
-        THIS draw only and never enter `uniform_values`: the graph owns those bindings, the pass
-        owns the ones the user set, and a document-owned texture persisted into a pass's state
-        would be saved and then released underneath it.
+        THIS draw only and never enter `uniform_values`: the document owns those textures, the
+        pass owns the SOURCE the user chose, and a document-owned texture persisted into a
+        pass's state would be saved and then released underneath it. A sampler whose value is a
+        source (`PassSource`, `NoSource`, `AutoSource`) and that `inputs` does not fill reads
+        black.
 
         `iteration` / `iterations` reach the shader as `u_pass_iteration` / `u_pass_iterations`
         (068). The INDEX is handed over, never a value derived from it -- a `u_jfa_offset` would
@@ -408,9 +420,7 @@ class Pass:
                 elif isinstance(value, moderngl.Texture):
                     texture = value
                 else:
-                    raise ValueError(
-                        f"Uniform value must have a type MediaWithTexture or moderngl.Texture, but this one is {type(value)}"
-                    )
+                    texture = self._black_texture()
 
                 texture.use(location=texture_unit)
                 value_for_program = texture_unit

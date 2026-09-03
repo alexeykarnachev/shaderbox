@@ -1,7 +1,7 @@
 import math
 import re
 import webbrowser
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 
@@ -597,20 +597,29 @@ def parse_markdown_lines(text: str) -> list[MarkdownLine]:
     return out
 
 
-def _code_chip(text: str) -> None:
-    # Inline-code chip: a faded CHIP_BG rect behind the text (trailing whitespace
-    # rides outside the chip). Drawn at the current cursor; caller owns line placement.
+_TEXT_CHIP_PAD = 2.0
+
+
+def text_chip(
+    text: str, text_color: tuple[float, float, float, float], dim: bool = False
+) -> None:
+    """A word on a faded CHIP_BG rect (an inline code span, a pass's read). Drawn at the
+    current cursor, `_TEXT_CHIP_PAD` wider than the text on each side; the caller owns line
+    placement. Trailing whitespace rides outside the chip."""
     visible = text.rstrip()
-    pad = 2.0
     pos = imgui.get_cursor_screen_pos()
     size = imgui.calc_text_size(visible)
     imgui.get_window_draw_list().add_rect_filled(
-        (pos.x - pad, pos.y),
-        (pos.x + size.x + pad, pos.y + size.y),
-        imgui.color_convert_float4_to_u32(fade(COLOR.CHIP_BG, 0.4)),
+        (pos.x - _TEXT_CHIP_PAD, pos.y),
+        (pos.x + size.x + _TEXT_CHIP_PAD, pos.y + size.y),
+        imgui.color_convert_float4_to_u32(fade(COLOR.CHIP_BG, 0.2 if dim else 0.4)),
         3.0,
     )
-    imgui.text_colored(COLOR.FG_PRIMARY, text)
+    imgui.text_colored(text_color, text)
+
+
+def _code_chip(text: str) -> None:
+    text_chip(text, COLOR.FG_PRIMARY)
 
 
 def markdown_text(text: str, bold_font: imgui.ImFont) -> None:
@@ -902,6 +911,44 @@ class PreviewCellResult:
     delete_cancelled: bool = False  # `No` on the in-cell confirm wash
 
 
+def _chip_row(
+    chips: Sequence[str], font: imgui.ImFont, max_width: float, dim: bool
+) -> None:
+    # As many chips as fit, then `+N` for the rest; the row is centered in `max_width`.
+    imgui.push_font(font, font.legacy_size)
+    gap: float = float(SPACE.SM)
+    chip_w = [imgui.calc_text_size(c).x + 2 * _TEXT_CHIP_PAD for c in chips]
+    shown: int = len(chips)
+    while shown > 0:
+        rest = f"+{len(chips) - shown}" if shown < len(chips) else ""
+        rest_w = imgui.calc_text_size(rest).x + gap if rest else 0.0
+        row_w = sum(chip_w[:shown]) + gap * (shown - 1) + rest_w
+        if row_w <= max_width:
+            break
+        shown -= 1
+    rest = f"+{len(chips) - shown}" if shown < len(chips) else ""
+    row_w = (
+        sum(chip_w[:shown])
+        + gap * max(0, shown - 1)
+        + (imgui.calc_text_size(rest).x + gap if rest else 0.0)
+    )
+    color = COLOR.FG_DIM if dim else COLOR.CHIP_FG
+    pos = imgui.get_cursor_screen_pos()
+    if not chips:
+        # The row is reserved even when empty; an item must cover it or the cursor move
+        # asserts as a window-boundary extension.
+        imgui.dummy((max_width, imgui.get_text_line_height()))
+    x: float = pos.x + max(0.0, (max_width - row_w) / 2) + _TEXT_CHIP_PAD
+    for chip, w in zip(chips[:shown], chip_w[:shown], strict=True):
+        imgui.set_cursor_screen_pos((x, pos.y))
+        text_chip(chip, color, dim)
+        x += w + gap
+    if rest:
+        imgui.set_cursor_screen_pos((x - _TEXT_CHIP_PAD, pos.y))
+        imgui.text_colored(color, rest)
+    imgui.pop_font()
+
+
 def preview_cell(
     id_: str,
     cell_w: float,
@@ -914,6 +961,8 @@ def preview_cell(
     footer: str = "",
     overlay: Callable[[float], None] | None = None,
     stale: bool = False,
+    chips: Sequence[str] | None = None,
+    chip_font: imgui.ImFont | None = None,
 ) -> PreviewCellResult:
     """A bordered preview tile: a `cell_w`-wide square image + whole-cell click
     target + selection border + a top-right delete-✕ arming an in-cell `Delete?` wash.
@@ -924,13 +973,22 @@ def preview_cell(
     is its own child window so the overlays' absolute cursor moves can't perturb the
     parent (no jitter / SetCursorPos assert).
 
-    `stale` marks a texture that is no longer being rendered — the image is drawn darkened
-    and the footer dims, so a frozen picture cannot be read as a live one.
+    `stale` marks a texture that is no longer being rendered — the footer and chips dim and
+    the tile takes the corner tick; the picture itself is left as it is.
 
+    `chips` adds one more line under the footer, drawn in `chip_font`: each word on its own
+    small chip, centered as a row. The line is reserved whenever `chips` is given (an empty
+    row keeps every cell in a strip the same height); the chips that do not fit the width
+    collapse into a `+N` count, so the row never clips.
     """
     line_h: float = imgui.get_text_line_height_with_spacing()
     footer_h: float = line_h if footer else 0.0
-    cell_h: float = cell_w + footer_h
+    chips_h: float = 0.0
+    if chips is not None and chip_font is not None:
+        imgui.push_font(chip_font, chip_font.legacy_size)
+        chips_h = imgui.get_text_line_height() + float(SPACE.XS)
+        imgui.pop_font()
+    cell_h: float = cell_w + footer_h + chips_h
     result = PreviewCellResult()
     n_styles = 0
     if border_color is not None:
@@ -950,7 +1008,9 @@ def preview_cell(
         origin = imgui.get_cursor_screen_pos()
         avail = imgui.get_content_region_avail()
         dl = imgui.get_window_draw_list()
-        img_h: float = avail.y - footer_h  # footer occupies the last line
+        img_h: float = (
+            avail.y - footer_h - chips_h
+        )  # the text lines sit under the image
 
         if texture_glo is not None and min(texture_size) > 0:
             tw, th = texture_size
@@ -964,9 +1024,7 @@ def preview_cell(
                 (ix + dw, iy + dh),
                 (0, 1),
                 (1, 0),
-                imgui.color_convert_float4_to_u32(
-                    COLOR.STALE_TINT if stale else COLOR.WHITE
-                ),
+                imgui.color_convert_float4_to_u32(COLOR.WHITE),
             )
 
         # allow_overlap so the buttons drawn on top win the click; the transparent
@@ -992,6 +1050,15 @@ def preview_cell(
                 imgui.text_colored(COLOR.FG_DIM, label)
             else:
                 imgui.text(label)
+
+        if chips is not None and chip_font is not None:
+            # The row spans the cell's width to a small inset, not the padded content region:
+            # the padding frames the image, and three short names need every pixel of it.
+            inset: float = float(SPACE.XS)
+            imgui.set_cursor_screen_pos(
+                (imgui.get_window_pos().x + inset, origin.y + img_h + footer_h)
+            )
+            _chip_row(chips, chip_font, imgui.get_window_size().x - 2 * inset, stale)
 
         if selected and armed:
             choice: bool | None = cell_delete_confirm(

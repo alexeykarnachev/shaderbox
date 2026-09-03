@@ -112,7 +112,7 @@ def test_an_export_drives_a_non_output_pass(app: Any, tmp_path: Path) -> None:
         output=output,
         passes={
             "seed": PassEntry(),
-            output: PassEntry(inputs={"u_seed": "seed"}),
+            output: PassEntry(),
         },
     )
 

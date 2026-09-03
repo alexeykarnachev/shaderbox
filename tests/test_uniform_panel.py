@@ -11,6 +11,7 @@ import moderngl
 import pytest
 
 from shaderbox.constants import DOCUMENT_EXAMPLES_DIR
+from shaderbox.pass_graph import AutoSource, NoSource, PassSource
 from shaderbox.paths import shader_lib_root
 from shaderbox.shader_lib import ShaderLibIndex, set_active
 from shaderbox.ui_models import load_document_from_dir
@@ -46,17 +47,20 @@ def test_a_wired_sampler_names_its_pass_and_an_unwired_one_reads_black(
     # The walk's case: composite's two samplers read cascade and paint, never the default image.
     assert document.sampler_source("composite", "u_cascade") == "cascade"
     assert document.sampler_source("composite", "u_paint") == "paint"
-    # An explicit "(none)" and a stale name both read black, which the renderer binds for them.
-    document.graph = document.graph.with_input("composite", "u_paint", "")
+    # An explicit none and a stale name both read black, which the renderer binds for them.
+    composite = document.passes["composite"].uniform_values
+    composite["u_paint"] = NoSource()
     assert document.sampler_source("composite", "u_paint") is None
-    document.graph = document.graph.with_input("composite", "u_paint", "gone")
+    composite["u_paint"] = PassSource("gone")
     assert document.sampler_source("composite", "u_paint") is None
     # A pass that declares no such sampler, and a pass that does not exist.
     assert document.sampler_source("paint", "u_paint") is None
     assert document.sampler_source("nope", "u_paint") is None
-    # The NAME rule (069 D9), which only the effective graph knows: with the stored edge gone,
-    # `u_cascade` still reads `cascade`. Falsifier: resolve from `document.graph` instead.
-    document.graph = document.graph.without_input("composite", "u_cascade")
+    # The NAME rule (069 D9): an undecided `u_cascade` reads `cascade`. Falsifier: resolve
+    # from the rows alone.
+    composite["u_cascade"] = AutoSource()
+    assert document.sampler_source("composite", "u_cascade") == "cascade"
+    del composite["u_cascade"]
     assert document.sampler_source("composite", "u_cascade") == "cascade"
     document.release()
 

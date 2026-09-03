@@ -208,36 +208,44 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   within a frame) — then the memo key stops being the pass name.
 
 - **An unfilled pass input reads BLACK, and something must BIND that black (feature 065).** D3's
-  graceful degradation is what keeps a half-built graph usable, and it is only safe because the
-  panel wires from a closed set of the document's own pass names — an input can never name a pass
-  that does not exist by typo. The corollary that is easy to miss: "reads black" has to be an
-  explicit 1x1 zero texture bound for the draw, NOT an unbound sampler. An unbound sampler falls
-  through to the pass's own default, which is a 960x1280 photo, so a mis-wire would show a picture
-  rather than nothing. The same rule makes DELETE and RENAME transactional: an edge left naming a
-  gone or renamed pass reads black and says nothing, so both verbs rewrite every edge, the output
-  choice and the open editor tab together. Revisit if a "no input" state ever needs to be visibly
-  distinct from "black input" (then it is an error state, not a default).
+  graceful degradation is what keeps a half-built graph usable, and it is only safe because a
+  source is chosen from a closed set of the document's own pass names — a sampler can never name
+  a pass that does not exist by typo. The corollary that is easy to miss: "reads black" has to be
+  an explicit 1x1 zero texture bound for the draw, NOT an unbound sampler falling through to a
+  default picture. `Pass.render` binds its own black for any sampler whose value is a source the
+  document did not fill (072), so a mis-wire shows nothing rather than an image. The same rule
+  makes DELETE and RENAME transactional: a source left naming a gone or renamed pass reads black
+  and says nothing, so both verbs rewrite every sampler's source (`Document.forget_pass_sources`
+  / `rename_pass_sources`), the output choice and the open editor tab together. Revisit if a "no
+  input" state ever needs to be visibly distinct from "black input" (then it is an error state,
+  not a default).
+  **A sampler has ONE source, and it is the sampler's VALUE (072).** A `sampler2D`'s entry in
+  `Pass.uniform_values` is a `PassSource(name)` (another pass's live canvas; its own name is
+  feedback), a `NoSource()` (black, by decision), an `AutoSource()` (undecided), or a texture the
+  user bound (`MediaWithTexture` / `moderngl.Texture`). There is no second store and no
+  precedence rule: whatever is written is what binds, the panel row is the one place it is
+  chosen, and `document.json`'s uniform row is the one place it persists (`{"pass": ...}`,
+  `{"none": true}`, the file dicts; an undecided sampler writes no row). The seeded value of a
+  fresh sampler is `AutoSource()`, never a placeholder picture that a predicate has to recognize.
+  Revisit if a source ever needs to carry more than a name (a channel swizzle, a mip level):
+  then `PassSource` grows a field, the row grows a key, and nothing else moves.
   **An input uniform's NAME is its default wire, and the resolution happens at render time (069
-  D9).** A sampler called `u_<pass>` is filled from the pass called `<pass>` when the graph stores
-  no decision for it; `u_prev` reads the pass's own previous frame, and a name without the `u_`
-  prefix names no pass. One pure function resolves it (`pass_graph.effective_inputs`), and every
-  consumer that needs a WHOLE resolved graph goes through `Document.effective_graph` — the
-  renderer's binder, the planner, the strip (tile order + stale tint) and the
-  copilot's working set — which is
-  what makes "the renderer draws it" and "the strip says it is live" the same claim. The gear's
-  wiring combo is the one caller that asks per-uniform, so it calls `effective_inputs` directly
-  (`popups/pass_settings.py::_draw_inputs`); a new WHOLE-graph reader uses `effective_graph`. What is
-  SAVED stays only what the user DECIDED: an absent key means the name decides, `""` is an
-  explicit none the rule must not undo, a name is that pass. A resolved edge never reaches disk,
-  because it would then be indistinguishable from a chosen one the next time the rule changed.
-  Sampler names come from a pass's COMPILED program, never from `get_active_uniforms()` (that
-  would compile the whole document on frame one and invert 066 D1), and a user-bound texture is
-  never auto-wired. Every sampler a pass DECLARES starts bound to the 1x1 black texture and a
-  resolved edge overwrites it, so an unfilled input reads black exactly as D3 says rather than
-  falling through to its own seeded default photo — and that seed skips a user-bound sampler by
-  the same predicate, since `inputs` SHADOWS `uniform_values` and seeding one there would undo
-  the media exclusion at the seam after the one that applies it. Revisit if a second naming shape is wanted —
-  then the rule is a table, not one function.
+  D9).** A sampler called `u_<pass>` is filled from the pass called `<pass>` when its value is
+  undecided; `u_prev` reads the pass's own previous frame, and a name without the `u_` prefix
+  names no pass. One pure function resolves a sampler (`pass_graph.wired_pass`), and every
+  consumer that needs the WHOLE wiring goes through `Document.effective_wiring` — the renderer's
+  binder, the planner, the strip (tile order, live fill, read chips) and the copilot's working
+  set — which is what makes "the renderer draws it" and "the strip says it is live" the same
+  claim. The panel row is the one caller that asks per uniform, through `Document.sampler_source`,
+  which reads the same wiring. What is SAVED stays only what the user DECIDED: an absent row means
+  the name decides, `{"none": true}` is an explicit black the rule must not undo, `{"pass": x}`
+  is that pass. A resolved edge never reaches disk, because it would then be indistinguishable
+  from a chosen one the next time the rule changed. Sampler names come from a pass's COMPILED
+  program, never from `get_active_uniforms()` (that would compile the whole document on frame one
+  and invert 066 D1), so the name rule waits for the program while an explicit `PassSource` row
+  is wired before any compile; the output's chain is compiled by discovery on the frame that
+  first draws it (`Document._bring_chain_online`), which is what an explicit edge always cost.
+  Revisit if a second naming shape is wanted — then the rule is a table, not one function.
 
 - **A pass compiles when something first NEEDS its program — never at load (feature 066).**
   `Document.load_from_dir` builds passes, graph and uniform VALUES with zero compiles (the values
@@ -887,12 +895,9 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   emoji, dynamic glyph loading, `push_font` rasterized-size, `image()` lost `tint_col`, glfw
   cursor sync gap, pfd non-blocking handles, the `.pyi`-only stub pyright warning, the
   SetCursorPos assert. Non-UI library quirks (telegram, moderngl, GLSL `#line`) stay below.
-- **Three "unused" surfaces are DELIBERATE — a sweep will re-find them; do not delete them.**
+- **Two "unused" surfaces are DELIBERATE — a sweep will re-find them; do not delete them.**
   Each was confirmed dead by grep and then rejected on inspection, so the grep evidence alone is
   not the test.
-  - `PassLayout.x`/`.y` and `PassGraph.layout`: 065 designed them for a spatial pass editor that
-    has not landed, "kept in a separate key so losing layout never costs the effect". An unread
-    field with a written reason is a decision.
   - `editor/ffi.py`'s unused methods, flag members and `PRIM_STRIDE`: that module is a ctypes
     MIRROR of the vendored C ABI. Completeness against the ABI is the point; deleting the unused
     half would make the binding lie about the library's surface. Two tests in

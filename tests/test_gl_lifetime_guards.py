@@ -173,9 +173,7 @@ def _feedback_document(gl: moderngl.Context) -> Document:
     doc.passes["fb"] = render_pass
     doc.graph = PassGraph(
         output="fb",
-        passes={
-            "fb": PassEntry(inputs={"u_prev": "fb"}, target=TargetConfig(dtype="f1"))
-        },
+        passes={"fb": PassEntry(target=TargetConfig(dtype="f1"))},
     )
     doc.begin_frame(0)
     doc.render()

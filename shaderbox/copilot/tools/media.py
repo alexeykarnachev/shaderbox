@@ -37,7 +37,12 @@ def media_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
         res = caps.unbind_media(args["document"], args["uniform"])
         if not res.ok:
             return False, f"error: {res.error}", None
-        return True, f"reset {args['uniform']} to the default (no media bound).", None
+        return (
+            True,
+            f"unbound {args['uniform']}: it is undecided again (its name wires it, or it "
+            "reads BLACK).",
+            None,
+        )
 
     return [
         ToolDefinition(
@@ -62,8 +67,9 @@ def media_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             label_live="Unbinding media",
             label_done="Unbound media",
             description=(
-                "Reset a sampler2D uniform to the default image (removes the bound texture, so its "
-                "working-set row reads '(no media bound)')."
+                "Remove the media bound to a sampler2D uniform. The sampler is undecided again: "
+                "a `u_<pass>` name reads that pass, otherwise its working-set row reads "
+                "'(nothing; reads BLACK)'."
             ),
             args_model=_BindMediaArgs,
             handler=unbind_media,

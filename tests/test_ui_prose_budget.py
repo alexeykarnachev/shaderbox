@@ -122,6 +122,11 @@ _CLAUSE_JOINERS: tuple[str, ...] = (";", " — ", " -- ")
 # Sites the gate CANNOT measure, each with why. A `ui_primitives` entry is a shared helper
 # forwarding a caller's text -- the CALLERS are the measured sites.
 _UNMEASURABLE: dict[tuple[str, str], str] = {
+    (
+        "shaderbox/ui.py",
+        "_draw_app_panel",
+    ): "the channel view's name from CHANNEL_VIEW_LABELS; "
+    "test_channel_view.py::test_every_label_is_within_the_control_budget measures it",
     ("shaderbox/popups/emoji_picker.py", "_draw_body"): "an emoji group/entry name",
     ("shaderbox/widgets/uniform.py", "_draw_pass_source"): "the producing pass's name",
     ("shaderbox/popups/lib_picker/preview.py", "draw_preview"): "the file's own path",
@@ -137,10 +142,6 @@ _UNMEASURABLE: dict[tuple[str, str], str] = {
         "shaderbox/popups/lib_picker/tree.py",
         "_draw_function_leaf",
     ): "the function's own doc line, ellipsized per frame",
-    (
-        "shaderbox/popups/pass_settings.py",
-        "_draw_inputs",
-    ): "the sampler uniform's own name",
     (
         "shaderbox/popups/pass_settings.py",
         "_draw_target",
@@ -197,6 +198,8 @@ _UNMEASURABLE: dict[tuple[str, str], str] = {
         "unconnected_gate",
     ): "forwards the caller's hint and action label",
     ("shaderbox/ui_primitives.py", "row_label"): "forwards the caller's label",
+    ("shaderbox/ui_primitives.py", "_code_chip"): "a code span of the Help body",
+    ("shaderbox/ui_primitives.py", "_chip_row"): "the caller's chips (a pass name)",
     (
         "shaderbox/widgets/copilot_chat.py",
         "_draw_result_widget",

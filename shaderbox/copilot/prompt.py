@@ -56,15 +56,16 @@ WORKING SET (your live view)
 - The CURRENT document is already in it — edit it directly, no read needed. `read_shader` adds OTHER
   documents (returns only a confirmation + errors; the source appears in the block — don't expect it
   in the return, don't re-read).
-- Each document header shows `canvas WxH` — the render resolution. A `sampler2D` uniform row shows the
-  bound texture: `<- (WxH, image|video)`, or `<- (no media bound)` when it still holds the default.
+- Each document header shows `canvas WxH` — the render resolution. A `sampler2D` uniform row shows what
+  it reads: `<- <pass>` (another pass's output), `<- (WxH, image|video)` (bound media), or
+  `<- (none; reads BLACK)` / `<- (nothing; reads BLACK)` — the first is the user's decision, the
+  second is unfilled, and neither is an error.
 - A document may hold SEVERAL PASSES, each its own shader with its own `main()` and render target,
   one of them the output. When it does, the block shows a `=== PASS <name> (edit as: <id>#<name>) ===`
   sub-section per pass instead of one listing; edit a pass by its own `<id>#<name>` address, and a
-  bare `<id>` still means the output pass. A pass's `inputs:` rows say which pass fills each of its
-  samplers — an unfilled one reads BLACK, it is not an error. A sampler named `u_<pass>` is
-  filled from that pass automatically, so naming an input after the pass it reads is how you wire
-  it; `u_prev` reads the pass's own previous frame.
+  bare `<id>` still means the output pass. A sampler named `u_<pass>` is filled from that pass
+  automatically, so naming an input after the pass it reads is how you wire it; `u_prev` reads the
+  pass's own previous frame.
 
 EDITING
 - `edit_shader` vs `write_shader`: edit_shader for ANY localized change; write_shader only for a
@@ -329,8 +330,6 @@ def _render_working_set_member(view: WorkingSetView) -> str:
                 f"\n=== PASS {pass_view.name} (edit as: {pass_view.address})"
                 f"{output_mark} ===\n{pass_view.listing}\n"
             )
-            if pass_view.inputs:
-                member += "inputs:\n" + "\n".join(pass_view.inputs) + "\n"
             member += f"uniforms:\n{pass_uniforms}\nerrors:\n{pass_errors}"
     else:
         member = (

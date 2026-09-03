@@ -12,3 +12,32 @@ class DocumentTab(StrEnum):
     DOCUMENT = auto()
     RENDER = auto()
     SHARE = auto()
+
+
+class ChannelView(StrEnum):
+    # What the viewer shows of the output texture. COLOR is the plain frame over the quiet
+    # checker; COLOR_ALPHA composites over a loud checker so transparency reads; ALPHA shows
+    # the alpha channel alone as grayscale.
+    COLOR = auto()
+    COLOR_ALPHA = auto()
+    ALPHA = auto()
+
+
+_CHANNEL_VIEW_CYCLE: list[ChannelView] = [
+    ChannelView.COLOR,
+    ChannelView.COLOR_ALPHA,
+    ChannelView.ALPHA,
+]
+
+
+def next_channel_view(view: ChannelView) -> ChannelView:
+    return _CHANNEL_VIEW_CYCLE[
+        (_CHANNEL_VIEW_CYCLE.index(view) + 1) % len(_CHANNEL_VIEW_CYCLE)
+    ]
+
+
+CHANNEL_VIEW_LABELS: dict[ChannelView, str] = {
+    ChannelView.COLOR: "Color",
+    ChannelView.COLOR_ALPHA: "Color+Alpha",
+    ChannelView.ALPHA: "Alpha",
+}

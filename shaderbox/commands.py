@@ -39,6 +39,9 @@ class CommandId(StrEnum):
     CLOSE_CODE_TAB = auto()
     OPEN_PASS_SETTINGS = auto()
     ADD_PASS = auto()
+    CYCLE_CHANNEL_VIEW = auto()
+    NEXT_PASS = auto()
+    PREV_PASS = auto()
 
 
 class CommandCategory(StrEnum):
@@ -128,6 +131,18 @@ COMMAND_SPECS: list[CommandSpec] = [
         _chord(K.f6),
         C.DOCUMENT,
     ),
+    CommandSpec(
+        CommandId.NEXT_PASS,
+        "Next pass",
+        _chord(K.right_arrow, K.mod_alt),
+        C.DOCUMENT,
+    ),
+    CommandSpec(
+        CommandId.PREV_PASS,
+        "Previous pass",
+        _chord(K.left_arrow, K.mod_alt),
+        C.DOCUMENT,
+    ),
     CommandSpec(CommandId.OPEN_SHADER, "Open shader", _chord(K.c, K.mod_alt), C.EDITOR),
     CommandSpec(CommandId.OPEN_SCRIPT, "Open script", _chord(K.r, K.mod_alt), C.EDITOR),
     # Ctrl+Tab is ours: imgui's built-in window-cycle needs nav_enable_keyboard, which is
@@ -160,6 +175,12 @@ COMMAND_SPECS: list[CommandSpec] = [
     ),
     CommandSpec(
         CommandId.FOCUS_TAB_SHARE, "Share tab", _chord(K._3, K.mod_ctrl), C.VIEW
+    ),
+    CommandSpec(
+        CommandId.CYCLE_CHANNEL_VIEW,
+        "Cycle channel view",
+        _chord(K.v, K.mod_alt),
+        C.VIEW,
     ),
     CommandSpec(
         CommandId.TOGGLE_COPILOT, "Toggle copilot", _chord(K.j, K.mod_alt), C.VIEW

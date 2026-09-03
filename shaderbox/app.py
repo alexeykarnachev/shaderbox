@@ -12,6 +12,7 @@ from imgui_bundle import portable_file_dialogs as pfd
 from imgui_bundle.python_backends.glfw_backend import GlfwRenderer
 from loguru import logger
 
+from shaderbox.alpha_view import AlphaView
 from shaderbox.commands import (
     COMMAND_SPECS,
     SPEC_BY_ID,
@@ -55,6 +56,7 @@ from shaderbox.exporters.youtube import YouTubeExporter
 from shaderbox.help_content import help_sections
 from shaderbox.integrations import IntegrationsStore
 from shaderbox.notifications import Notifications
+from shaderbox.pass_graph import step_in_order, strip_order
 from shaderbox.paths import ProjectPaths, app_data_dir, pass_name_of, shader_lib_root
 from shaderbox.project_session import ProjectSession
 from shaderbox.render_defer import RenderDefer
@@ -75,7 +77,7 @@ from shaderbox.ui_models import (
     UIDocumentState,
     load_document_from_dir,
 )
-from shaderbox.ui_regions import DocumentTab
+from shaderbox.ui_regions import DocumentTab, next_channel_view
 from shaderbox.util import (
     open_in_file_manager,
     pfd_block,
@@ -102,15 +104,18 @@ def _create_dir_if_needed(path: Path | str) -> Path:
     return path
 
 
-def _make_checker_texture() -> moderngl.Texture:
+def _make_checker_texture(
+    light_color: tuple[float, float, float, float],
+    dark_color: tuple[float, float, float, float],
+) -> moderngl.Texture:
     """The viewer's alpha checkerboard as a 2x2 NEAREST/repeat texture.
 
     One `add_image` per frame instead of one `add_rect_filled` per cell: the per-cell loop
     measured 3.8 ms/frame at 1600x900 and 9.8 ms at 2560x1400, paid whether or not the output
     has any transparency.
     """
-    light = bytes(round(c * 255) for c in COLOR.CHECKER_LIGHT)
-    dark = bytes(round(c * 255) for c in COLOR.CHECKER_DARK)
+    light = bytes(round(c * 255) for c in light_color)
+    dark = bytes(round(c * 255) for c in dark_color)
     texture = moderngl.get_context().texture(
         size=(2, 2), components=4, data=light + dark + dark + light, dtype="f1"
     )
@@ -225,9 +230,12 @@ class App:
         self.font_emoji = self.get_emoji_font(24)
 
         self.preview_canvas: Canvas
-        # 2x2 alpha checkerboard, drawn as ONE repeating image behind the viewer. Created
-        # beside preview_canvas and released with it.
+        # 2x2 alpha checkerboards, drawn as ONE repeating image behind the viewer: the quiet
+        # one under the Color view, the loud one under Color+Alpha. Created beside
+        # preview_canvas and released with it, as is the Alpha view's blit.
         self.checker_texture: moderngl.Texture
+        self.checker_loud_texture: moderngl.Texture
+        self.alpha_view: AlphaView
 
         self.exporter_registry = ExporterRegistry()
         self.exporter_registry.register(TelegramExporter())
@@ -261,6 +269,14 @@ class App:
         self.editor_completion_requested: bool = False
         # The prefix the last offer was filtered by; a moving prefix re-filters.
         self.editor_completion_prefix: str | None = None
+        # The auto-trigger's bookkeeping (073 W-B): the (path, revision) the driver last saw,
+        # so only an EDIT offers; whether the open popup was offered unasked (Enter then
+        # inserts a newline unless the user navigated into the list); whether it was open
+        # last frame (the edit that closed it was an accept, not a keystroke to re-offer on).
+        self.editor_completion_seen: tuple[Path, int] | None = None
+        self.editor_completion_auto: bool = False
+        self.editor_completion_navigated: bool = False
+        self.editor_completion_was_open: bool = False
         # Rows the editor panel showed last frame — follow-the-cursor scrolling
         # steps in view units.
         self.editor_visible_rows: int = 0
@@ -531,6 +547,9 @@ class App:
             CommandId.OPEN_PASS_SETTINGS: self.open_pass_settings_for_panel_pass,
             CommandId.ADD_PASS: self.open_add_pass,
             CommandId.RESET_DOCUMENT: self.reset_current_document,
+            CommandId.CYCLE_CHANNEL_VIEW: self.cycle_channel_view,
+            CommandId.NEXT_PASS: lambda: self.step_output_pass(1),
+            CommandId.PREV_PASS: lambda: self.step_output_pass(-1),
         }
 
     # ---- copilot-cluster forwarders (feature 025) ----
@@ -1065,7 +1084,13 @@ class App:
         self.release()
 
         self.preview_canvas = Canvas()
-        self.checker_texture = _make_checker_texture()
+        self.checker_texture = _make_checker_texture(
+            COLOR.CHECKER_LIGHT, COLOR.CHECKER_DARK
+        )
+        self.checker_loud_texture = _make_checker_texture(
+            COLOR.CHECKER_LIGHT_LOUD, COLOR.CHECKER_DARK_LOUD
+        )
+        self.alpha_view = AlphaView()
 
         self.frame_idx = 0
         # Wall-clock of the previous script-engine tick (feature 040), for the per-frame dt.
@@ -1441,6 +1466,36 @@ class App:
         # "Reset document": the session funnel restarts the current document whole.
         self.session.reset_document(self.current_document_id)
 
+    def cycle_channel_view(self) -> None:
+        self.app_state.channel_view = next_channel_view(self.app_state.channel_view)
+
+    def pick_pass(self, document_id: str, name: str, focus_editor: bool) -> None:
+        """What a strip tile click does: the pass becomes the output and its shader tab comes
+        to the front. `focus_editor` says whether the editor takes keyboard focus with it."""
+        self.ensure_shader_tab(document_id, name, focus_editor=focus_editor)
+        ui_document = self.ui_documents.get(document_id)
+        if ui_document is None or ui_document.document.graph.output == name:
+            return
+        error = self.session.set_output_pass(document_id, name)
+        if error:
+            self.notifications.push(error)
+
+    def step_output_pass(self, step: int) -> None:
+        # Next / previous pass walk the strip's drawn order and wrap. The editor keeps focus
+        # when it had it and is left alone when it did not.
+        document_id = self.current_document_id
+        ui_document = self.ui_documents.get(document_id)
+        if ui_document is None:
+            return
+        document = ui_document.document
+        name = step_in_order(
+            strip_order(document.passes, document.effective_wiring()),
+            document.graph.output,
+            step,
+        )
+        if name is not None:
+            self.pick_pass(document_id, name, focus_editor=self.editor_focused)
+
     def toggle_current_document_play(self) -> None:
         # The hotkey mirror of the document-tab play/stop toggle — a no-op when the current document has no
         # script (matching the button, which only renders for a present script).
@@ -1583,6 +1638,10 @@ class App:
         self.editor_drag_anchor = None
         self.editor_completion_requested = False
         self.editor_completion_prefix = None
+        self.editor_completion_seen = None
+        self.editor_completion_auto = False
+        self.editor_completion_navigated = False
+        self.editor_completion_was_open = False
         if self.editor_panel is not None:
             self.editor_panel.release()
             self.editor_panel = None
@@ -1602,6 +1661,12 @@ class App:
 
         if hasattr(self, "checker_texture"):
             self.checker_texture.release()
+
+        if hasattr(self, "checker_loud_texture"):
+            self.checker_loud_texture.release()
+
+        if hasattr(self, "alpha_view"):
+            self.alpha_view.release()
 
     def open_project(self) -> None:
         if self._copilot_busy_blocked("Opening a project"):

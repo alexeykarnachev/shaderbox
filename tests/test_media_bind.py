@@ -23,7 +23,8 @@ from shaderbox.copilot.gate import (
 )
 from shaderbox.copilot.tools.registry import build_registry
 from shaderbox.document import Document
-from shaderbox.media import is_default_image
+from shaderbox.media import MediaWithTexture
+from shaderbox.pass_graph import AutoSource
 from shaderbox.ui_models import UIDocument
 from tests._caps import minimal_caps
 
@@ -168,11 +169,12 @@ def test_bind_picked_media_binds_and_is_path_free(
     )
     assert outcome.ok and outcome.basename == "fire.png"
     assert (outcome.width, outcome.height) == (8, 8)
-    # The bind took: the sampler no longer holds the default.
-    assert not is_default_image(
+    # The bind took: the sampler holds the media, not a source.
+    assert isinstance(
         stub._get_ui_documents()[document_id].document.render_pass.uniform_values[
             "u_image"
-        ]
+        ],
+        MediaWithTexture,
     )
     # Corollary-1: the absolute path / sentinel dir is nowhere in the result.
     assert "SENTINEL_SECRET_DIR" not in str(outcome)
@@ -186,17 +188,19 @@ def test_bind_picked_media_binds_and_is_path_free(
     assert payload is None or "SENTINEL_SECRET_DIR" not in str(payload)
 
 
-def test_unbind_resets_to_default(gl_ctx: moderngl.Context, tmp_path: Path) -> None:
+def test_unbind_returns_the_sampler_to_undecided(
+    gl_ctx: moderngl.Context, tmp_path: Path
+) -> None:
     stub, document_id = _sampler_stub(gl_ctx, tmp_path / "proj")
     img_path = tmp_path / "x.png"
     PILImage.new("RGB", (8, 8), (0, 255, 0)).save(img_path)
     CopilotBackend.bind_picked_media.__get__(stub)(document_id, "u_image", img_path)
     document = stub._get_ui_documents()[document_id].document
-    assert not is_default_image(document.render_pass.uniform_values["u_image"])
+    assert isinstance(document.render_pass.uniform_values["u_image"], MediaWithTexture)
 
     res = CopilotBackend.unbind_media.__get__(stub)("", "u_image")
     assert res.ok
-    assert is_default_image(document.render_pass.uniform_values["u_image"])
+    assert isinstance(document.render_pass.uniform_values["u_image"], AutoSource)
 
     # A non-sampler / unknown uniform rejects honestly.
     assert not CopilotBackend.unbind_media.__get__(stub)("", "u_nope").ok
@@ -250,8 +254,8 @@ def test_import_picked_document_creates_and_is_path_free(
 def test_unbind_then_save_removes_the_orphan_media_file(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
-    # save() skips a default sampler; the file a PREVIOUS bind wrote must not linger
-    # (disk-cleanliness leak that also rode along duplicate_document's copytree).
+    # save() writes no file for an undecided sampler; the file a PREVIOUS bind wrote must not
+    # linger (disk-cleanliness leak that also rode along duplicate_document's copytree).
     stub, document_id = _sampler_stub(gl_ctx, tmp_path / "proj")
     img_path = tmp_path / "x.png"
     PILImage.new("RGB", (8, 8), (0, 255, 0)).save(img_path)
