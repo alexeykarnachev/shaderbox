@@ -336,7 +336,6 @@ def _drive_completion(app: App, editor: Editor, tab: EditorTab) -> None:
     edited = app.editor_completion_seen != (tab.path, revision)
     app.editor_completion_seen = (tab.path, revision)
     was_open = app.editor_completion_was_open
-    app.editor_completion_was_open = editor.complete_open()
     if app.editor_completion_requested:
         app.editor_completion_requested = False
         _offer_completion(app, editor, tab, explicit=True)
@@ -350,6 +349,8 @@ def _drive_completion(app: App, editor: Editor, tab: EditorTab) -> None:
         _offer_completion(app, editor, tab, explicit=False)
     else:
         app.editor_completion_prefix = None
+    # Recorded after the offer, so the frame that opens a popup is seen as open by the next.
+    app.editor_completion_was_open = editor.complete_open()
 
 
 def _offer_completion(app: App, editor: Editor, tab: EditorTab, explicit: bool) -> None:

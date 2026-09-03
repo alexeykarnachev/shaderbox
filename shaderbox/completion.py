@@ -2,7 +2,7 @@
 
 The editor library owns the popup and the word prefix; the host owns the vocabulary and the
 decision to offer (`docs/embedding.md` in the editor repo: pushing IS opening). This module is
-the decision, GL-free: a table of providers, each a context predicate on the line before the
+the decision, creating no GL context: a table of providers, each a context predicate on the line before the
 caret plus a candidate list, evaluated in order, the first that fires is offered. `K`'s lookup
 reads the same tables the other way, word -> what it is.
 """
@@ -105,7 +105,10 @@ class CompletionProvider:
 
 
 def builtin_uniform_declarations() -> list[str]:
-    return [f"{glsl_type} {name};" for name, (glsl_type, _doc) in ENGINE_UNIFORM_DOCS.items()]
+    return [
+        f"{glsl_type} {name};"
+        for name, (glsl_type, _doc) in ENGINE_UNIFORM_DOCS.items()
+    ]
 
 
 def _glsl_words(context: CompletionContext) -> list[str]:
@@ -158,7 +161,19 @@ def matches(candidate: str, prefix: str) -> bool:
     )
 
 
-def choose_provider(context: CompletionContext) -> CompletionProvider | None:
+_LINE_COMMENT: dict[str, str] = {"shader": "//", "lib": "//", "script": "#"}
+
+
+def in_line_comment(tab_kind: str, line_before_caret: str) -> bool:
+    marker = _LINE_COMMENT.get(tab_kind)
+    return marker is not None and marker in line_before_caret
+
+
+def eligible_providers(context: CompletionContext) -> list[CompletionProvider]:
+    """The providers whose tab kind, context and prefix floor all hold, in table order."""
+    if in_line_comment(context.tab_kind, context.line_before_caret):
+        return []
+    found: list[CompletionProvider] = []
     for provider in PROVIDERS:
         if context.tab_kind not in provider.tab_kinds:
             continue
@@ -167,20 +182,28 @@ def choose_provider(context: CompletionContext) -> CompletionProvider | None:
         ):
             continue
         floor = (
-            provider.min_prefix_explicit if context.explicit else provider.min_prefix_auto
+            provider.min_prefix_explicit
+            if context.explicit
+            else provider.min_prefix_auto
         )
         if len(context.prefix) < floor:
             continue
-        return provider
-    return None
+        found.append(provider)
+    return found
 
 
 def offer(context: CompletionContext) -> list[str]:
-    """The candidates to push, in order; empty means cancel."""
-    provider = choose_provider(context)
-    if provider is None:
-        return []
-    found = [c for c in provider.candidates(context) if matches(c, context.prefix)]
+    """The candidates to push: every eligible provider's matches, in table order, without
+    repeats; empty means cancel. Concatenation rather than first-wins, so `uniform sam`
+    still finds `sampler2D` from the glsl provider after the builtin one found nothing."""
+    seen: set[str] = set()
+    found: list[str] = []
+    for provider in eligible_providers(context):
+        for candidate in provider.candidates(context):
+            if candidate in seen or not matches(candidate, context.prefix):
+                continue
+            seen.add(candidate)
+            found.append(candidate)
     return found[:MAX_CANDIDATES]
 
 

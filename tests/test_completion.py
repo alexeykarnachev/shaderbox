@@ -11,7 +11,7 @@ from typing import Any
 from shaderbox.completion import (
     CompletionContext,
     builtin_uniform_declarations,
-    choose_provider,
+    eligible_providers,
     matches,
     offer,
     symbol_doc,
@@ -46,16 +46,41 @@ def test_uniform_context_offers_every_builtin_declaration() -> None:
 
 def test_uniform_context_filters_by_type_or_name() -> None:
     by_type = offer(_context(line_before_caret="uniform fl", prefix="fl"))
-    assert by_type and all(c.startswith("float ") for c in by_type)
+    declarations = [c for c in by_type if " " in c]
+    assert declarations and all(c.startswith("float ") for c in declarations)
+    assert by_type[: len(declarations)] == declarations, "declarations come first"
     by_name = offer(_context(line_before_caret="uniform u_ti", prefix="u_ti"))
     assert by_name == ["float u_time;"]
 
 
 def test_an_identifier_opens_by_itself_at_two_letters_and_on_ctrl_n_at_one() -> None:
     assert offer(_context(prefix="S")) == []
-    assert offer(_context(prefix="S", explicit=True)) == ["SB_hash", "SB_hash2", "SB_noise"]
+    assert offer(_context(prefix="S", explicit=True)) == [
+        "SB_hash",
+        "SB_hash2",
+        "SB_noise",
+    ]
     assert offer(_context(prefix="SB_h")) == ["SB_hash", "SB_hash2"]
     assert offer(_context(prefix="u_")) == ["u_speed"]
+
+
+def test_after_uniform_the_glsl_words_still_come() -> None:
+    # The builtin provider fires first but does not shadow the rest: a custom uniform's type
+    # is what the user types most often after `uniform`.
+    assert offer(
+        _context(line_before_caret="uniform sam", prefix="sam", explicit=True)
+    ) == ["sampler2D"]
+    found = offer(_context(line_before_caret="uniform vec", prefix="vec"))
+    assert found[0] == "vec2 u_resolution;"
+    assert {"vec2", "vec3", "vec4"} <= set(found)
+
+
+def test_a_line_comment_offers_nothing() -> None:
+    assert offer(_context(line_before_caret="// uniform ")) == []
+    assert offer(_context(line_before_caret="x; // SB", prefix="SB")) == []
+    assert (
+        offer(_context(tab_kind="script", line_before_caret="# wh", prefix="wh")) == []
+    )
 
 
 def test_a_complete_word_is_not_its_own_candidate() -> None:
@@ -66,7 +91,10 @@ def test_a_complete_word_is_not_its_own_candidate() -> None:
 def test_the_script_tab_offers_python_keywords_only() -> None:
     found = offer(_context(tab_kind="script", prefix="wh"))
     assert found == ["while"]
-    assert choose_provider(_context(tab_kind="script", line_before_caret="uniform ")) is None
+    assert (
+        eligible_providers(_context(tab_kind="script", line_before_caret="uniform "))
+        == []
+    )
 
 
 def test_symbol_doc_reads_the_lib_index_then_the_builtin_table() -> None:
@@ -120,6 +148,21 @@ def test_typing_opens_the_popup_on_the_second_letter(app: Any) -> None:
     editor.close()
 
 
+def test_an_accept_does_not_reopen_the_popup(app: Any) -> None:
+    editor = Editor("")
+    editor.set_language(Language.GLSL)
+    editor.set_host_completion(True)
+    tab = _shader_tab(app)
+    _drive(app, editor, tab, "iSB")
+    assert editor.complete_open()
+    editor.key(KeyCode.TAB)
+    accepted = editor.get_text()
+    assert accepted.startswith("SB_") and not editor.complete_open()
+    _drive_completion(app, editor, tab)
+    assert not editor.complete_open(), "the frame after an accept must not re-offer"
+    editor.close()
+
+
 def test_uniform_space_opens_the_builtin_list(app: Any) -> None:
     editor = Editor("")
     editor.set_language(Language.GLSL)
@@ -130,9 +173,9 @@ def test_uniform_space_opens_the_builtin_list(app: Any) -> None:
     assert editor.complete_open()
     assert editor.complete_count() == len(builtin_uniform_declarations())
     editor.key(KeyCode.ENTER)
-    assert editor.get_text().startswith("uniform float u_time;") or editor.get_text().startswith(
-        "uniform " + builtin_uniform_declarations()[0]
-    )
+    assert editor.get_text().startswith(
+        "uniform float u_time;"
+    ) or editor.get_text().startswith("uniform " + builtin_uniform_declarations()[0])
     editor.close()
 
 
@@ -147,10 +190,15 @@ def test_enter_on_an_unasked_popup_is_a_newline_until_the_user_navigates(
     assert editor.complete_open() and app.editor_completion_auto
     enter = KeyEvent(code=KeyCode.ENTER, mods=KeyMod.NONE)
     _track_completion_intent(app, editor, enter)
-    assert not editor.complete_open(), "the unasked popup is cancelled before Enter lands"
+    assert not editor.complete_open(), (
+        "the unasked popup is cancelled before Enter lands"
+    )
     editor.key(enter.code, enter.mods, enter.text)
     assert editor.get_text() == "SB\n"
     assert editor.get_mode() == Mode.INSERT
+    # The frame Enter landed in: the edit that closed the popup re-offers nothing.
+    _drive_completion(app, editor, tab)
+    assert not editor.complete_open()
 
     _drive(app, editor, tab, "SB")
     assert editor.complete_open()

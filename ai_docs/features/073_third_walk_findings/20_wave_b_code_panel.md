@@ -5,10 +5,12 @@ on the seam W-A settles (see the end).
 
 ## What landed (completion)
 
-- **`shaderbox/completion.py`**, GL-free: the provider table. A `CompletionProvider` is a
+- **`shaderbox/completion.py`**, creating no GL context: the provider table. A `CompletionProvider` is a
   name, the tab kinds it serves, an optional context regex anchored at the caret, two prefix
-  floors (auto / explicit) and a candidate function. `choose_provider` takes the first that
-  fires in table order; `offer` filters its candidates through `matches` and caps at 50.
+  floors (auto / explicit) and a candidate function. `offer` concatenates every eligible
+  provider's matches in table order, without repeats, capped at 50, so after `uniform ` the
+  builtin declarations come first and the glsl words (`sampler2D`, `vec3`) still follow; a
+  caret inside a line comment (`//`, or `#` on the script) gets nothing.
   Providers: `builtin uniforms` (shader tabs, context `\buniform\s+\w*$`, floors 0 / 0,
   candidates `float u_time;`-style declarations from `ENGINE_UNIFORM_DOCS`); `glsl` (shader
   and lib tabs, no context, floors 2 / 1, `SB_*` functions + the pass's uniforms +
@@ -30,6 +32,14 @@ on the seam W-A settles (see the end).
 - **`symbol_doc(word, lib_functions)`**: `K`'s lookup, ready for the popup: the `SB_*`
   signature + `///` doc from the lib index, else `uniform <type> <name>;` + the doc line from
   `ENGINE_UNIFORM_DOCS`, else None.
+
+## Review history
+
+Round 1 (opus, demonstrated by probes): PARTIAL. Three findings, all fixed: the `was_open`
+guard was recorded before the offer and so never fired (an accept re-opened the popup one
+frame later); the first-firing provider shadowed the glsl words after `uniform` (`uniform sam`
+offered nothing); `// uniform ` fired inside a comment. Fixes: the flag is recorded after the
+offer; providers concatenate; a line comment offers nothing. Block comments are not tracked.
 
 ## Pinned by tests
 

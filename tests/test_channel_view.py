@@ -41,7 +41,9 @@ def test_the_default_is_color_and_the_choice_persists(tmp_path: Path) -> None:
     assert state.channel_view == ChannelView.COLOR
     state.channel_view = ChannelView.ALPHA
     state.save(tmp_path / "app_state.json")
-    assert UIAppState.load(tmp_path / "app_state.json").channel_view == ChannelView.ALPHA
+    assert (
+        UIAppState.load(tmp_path / "app_state.json").channel_view == ChannelView.ALPHA
+    )
 
 
 def test_the_command_cycles_the_view(app: Any) -> None:
@@ -62,6 +64,13 @@ def test_the_alpha_view_is_the_alpha_channel_as_grayscale(app: Any) -> None:
     assert pixels[0, 0].tolist() == [255, 255, 255, 255]
     assert pixels[0, 1].tolist() == [0, 0, 0, 255]
     assert np.frombuffer(source.read(), dtype=np.uint8).tolist() == [
-        255, 0, 0, 255, 0, 255, 0, 0,
+        255,
+        0,
+        0,
+        255,
+        0,
+        255,
+        0,
+        0,
     ]
     source.release()
