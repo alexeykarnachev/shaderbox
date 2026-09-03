@@ -67,6 +67,17 @@ Host binding:
   rect + text origin + cell, minus the scroll). Any key or click dismisses it, and the key
   still does its own work.
 
+## Review history
+
+Round 1 (opus, demonstrated by probes): PARTIAL. The library half PASS on every item. Two host
+findings, fixed: `VERSION` still named `d2f19556` (the copy chain had aborted on a wrong atlas
+path before writing it); and a Ctrl+N popup, closed by the next typed character as host-driven
+popups are, was re-offered by the auto branch as UNASKED, so it lost its row-0 highlight and
+Enter stopped accepting mid-word. The driver now tells an accept (the prefix is one of the
+pushed items) from a character that continued the word, and re-offers a continued word with
+the batch's own asked-for-ness. Named and accepted: with the caret on the bottom row the `K`
+note extends below the editor rect.
+
 ## Pinned by tests
 
 `tests/test_editor_ffi.py`: `complete_select(-1)` leaves nothing highlighted, Enter is a

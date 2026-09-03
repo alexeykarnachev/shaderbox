@@ -216,6 +216,35 @@ def test_enter_on_an_unasked_popup_is_a_newline_until_the_user_navigates(
     editor.close()
 
 
+def test_a_ctrl_n_batch_keeps_its_highlight_while_the_word_continues(app: Any) -> None:
+    # A typed character closes a host-driven popup; the next frame re-offers the SAME batch
+    # kind: explicit stays explicit (row 0), unasked stays unasked (nothing highlighted).
+    editor = Editor("")
+    editor.set_language(Language.GLSL)
+    editor.set_host_completion(True)
+    tab = _shader_tab(app)
+    editor.feed("iS")
+    app.editor_completion_requested = True
+    _drive_completion(app, editor, tab)
+    assert editor.complete_open() and editor.complete_selected() == 0
+    for key in "B_f":
+        _drive(app, editor, tab, key)
+        assert editor.complete_open(), key
+        assert editor.complete_selected() == 0, key
+    editor.key(KeyCode.ENTER)
+    assert editor.get_text().startswith("SB_f") and "\n" not in editor.get_text()
+    _drive_completion(app, editor, tab)  # the accept's own frame re-offers nothing
+    assert not editor.complete_open()
+
+    _drive(app, editor, tab, "<Esc>oSB")
+    assert editor.complete_open() and editor.complete_selected() == -1
+    _drive(app, editor, tab, "_")
+    assert editor.complete_open() and editor.complete_selected() == -1
+    editor.key(KeyCode.ENTER)
+    assert editor.get_text().endswith("SB_\n")
+    editor.close()
+
+
 def test_word_at_takes_the_word_under_or_after_the_column() -> None:
     assert word_at("float a = SB_hash(p);", 12) == "SB_hash"
     assert word_at("float a = SB_hash(p);", 9) == "SB_hash"

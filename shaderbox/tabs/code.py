@@ -355,10 +355,27 @@ def _drive_completion(app: App, editor: Editor, tab: EditorTab) -> None:
         prefix = editor.complete_prefix()
         if prefix != app.editor_completion_prefix:
             _offer_completion(app, editor, tab, explicit=not app.editor_completion_auto)
-    elif edited and not was_open and editor.get_mode() == Mode.INSERT:
-        # `not was_open`: the edit that closed a popup was an accept (or the keystroke
-        # that emptied the prefix), and re-opening on the word just accepted is churn.
-        _offer_completion(app, editor, tab, explicit=False)
+    elif edited and editor.get_mode() == Mode.INSERT:
+        if was_open:
+            # The edit closed the popup (a typed character does, under host-driven
+            # completion). An accept, or a character that ended the word, re-offers
+            # nothing; a character that CONTINUED the word re-offers the same batch with
+            # the same asked-for-ness, so a Ctrl+N list keeps its row-0 highlight while
+            # the user keeps typing.
+            prefix = editor.complete_prefix()
+            continued = (
+                prefix not in app.editor_completion_items
+                and bool(app.editor_completion_prefix)
+                and prefix.startswith(app.editor_completion_prefix)
+            )
+            if continued:
+                _offer_completion(
+                    app, editor, tab, explicit=not app.editor_completion_auto
+                )
+            else:
+                app.editor_completion_prefix = None
+        else:
+            _offer_completion(app, editor, tab, explicit=False)
     else:
         app.editor_completion_prefix = None
     # Recorded after the offer, so the frame that opens a popup is seen as open by the next.
@@ -404,12 +421,14 @@ def _offer_completion(app: App, editor: Editor, tab: EditorTab, explicit: bool) 
     if not matches:
         editor.complete_cancel()
         app.editor_completion_prefix = None
+        app.editor_completion_items = []
         app.editor_completion_auto = False
         return
     editor.complete_begin()
     for word in matches:
         editor.complete_push(word)
     app.editor_completion_prefix = context.prefix
+    app.editor_completion_items = matches
     app.editor_completion_auto = not explicit
     if not explicit:
         # Unasked, so nothing is highlighted: Enter stays a newline until the user moves

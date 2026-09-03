@@ -277,6 +277,9 @@ class App:
         self.editor_completion_seen: tuple[Path, int] | None = None
         self.editor_completion_auto: bool = False
         self.editor_completion_was_open: bool = False
+        # The last batch pushed: a prefix that equals one of them after the popup closed was
+        # an accept, which must not re-offer.
+        self.editor_completion_items: list[str] = []
         # `K` (073 W-B): the drain raises the request, the panel resolves it into a popup
         # that the next key or click dismisses.
         self.editor_lookup_requested: bool = False
@@ -1645,6 +1648,7 @@ class App:
         self.editor_completion_seen = None
         self.editor_completion_auto = False
         self.editor_completion_was_open = False
+        self.editor_completion_items = []
         self.editor_lookup_requested = False
         self.editor_lookup = None
         if self.editor_panel is not None:
