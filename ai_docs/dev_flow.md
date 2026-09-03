@@ -109,7 +109,12 @@ corrects.
    for a high-blast-radius diff a *spec-fidelity audit* (walks the spec end-to-end against the diff —
    every locked decision actually landed). Each reviewer runs `git show --stat <impl-commit>` first to
    know the full surface, reads every changed file end-to-end, and states which it skipped and why (a
-   finding list without a coverage statement = under-read). Findings → triage → **fix inline in this
+   finding list without a coverage statement = under-read). **A reviewer never runs `git stash`,
+   `git checkout`, or anything else that rewrites the shared working tree**: the implementer is
+   working in it concurrently, and one reviewer's "clean checkout" reverted a whole wave's edits
+   before their commit (071 W-A). A clean baseline is `git worktree add` with the worktree first on
+   `PYTHONPATH` (the editable install otherwise imports the main checkout); say so in every
+   reviewer prompt. Findings → triage → **fix inline in this
    wave** (`todo.md` is frozen drain-only — a real finding does NOT get filed for later) / record the
    durable knowledge in the feature's ledger or spec / promote new design decisions to
    `conventions.md ## Design decisions`.
