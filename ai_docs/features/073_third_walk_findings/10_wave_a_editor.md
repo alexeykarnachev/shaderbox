@@ -78,6 +78,11 @@ pushed items) from a character that continued the word, and re-offers a continue
 the batch's own asked-for-ness. Named and accepted: with the caret on the bottom row the `K`
 note extends below the editor rect.
 
+Round 2 (same reviewer, patched tree): PASS, both closed against the original probes; the
+vendored seven compared byte-for-byte against `git show 5e0e8a2:`. The one residue it named, a
+Ctrl+N batch dropping its highlight after a backspace inside the word, was closed on the spot:
+a prefix that shrinks within the cached one is a continued word too.
+
 ## Pinned by tests
 
 `tests/test_editor_ffi.py`: `complete_select(-1)` leaves nothing highlighted, Enter is a

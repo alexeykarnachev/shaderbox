@@ -359,14 +359,16 @@ def _drive_completion(app: App, editor: Editor, tab: EditorTab) -> None:
         if was_open:
             # The edit closed the popup (a typed character does, under host-driven
             # completion). An accept, or a character that ended the word, re-offers
-            # nothing; a character that CONTINUED the word re-offers the same batch with
-            # the same asked-for-ness, so a Ctrl+N list keeps its row-0 highlight while
-            # the user keeps typing.
+            # nothing; a character that CONTINUED the word, or a backspace inside it,
+            # re-offers the same batch with the same asked-for-ness, so a Ctrl+N list
+            # keeps its row-0 highlight while the user keeps typing or corrects.
             prefix = editor.complete_prefix()
+            cached = app.editor_completion_prefix
             continued = (
-                prefix not in app.editor_completion_items
-                and bool(app.editor_completion_prefix)
-                and prefix.startswith(app.editor_completion_prefix)
+                bool(prefix)
+                and bool(cached)
+                and prefix not in app.editor_completion_items
+                and (prefix.startswith(cached) or cached.startswith(prefix))
             )
             if continued:
                 _offer_completion(

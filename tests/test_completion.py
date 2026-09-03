@@ -231,6 +231,10 @@ def test_a_ctrl_n_batch_keeps_its_highlight_while_the_word_continues(app: Any) -
         _drive(app, editor, tab, key)
         assert editor.complete_open(), key
         assert editor.complete_selected() == 0, key
+    _drive(app, editor, tab, "<BS>")
+    assert editor.complete_open() and editor.complete_selected() == 0, "backspace"
+    _drive(app, editor, tab, "f")
+    assert editor.complete_open() and editor.complete_selected() == 0
     editor.key(KeyCode.ENTER)
     assert editor.get_text().startswith("SB_f") and "\n" not in editor.get_text()
     _drive_completion(app, editor, tab)  # the accept's own frame re-offers nothing
