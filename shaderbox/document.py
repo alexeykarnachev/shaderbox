@@ -469,6 +469,19 @@ class Document:
             canvas.set_size(live.texture.size)
         return canvas
 
+    def sampler_source(self, pass_name: str, uniform: str) -> str | None:
+        """The pass `uniform` of `pass_name` reads from, or None when it reads black.
+
+        The same resolution the renderer binds with: a stored edge or the name default (069
+        D9) naming a pass that exists. A stale name and an explicit `""` both read black, so
+        both answer None; a user-bound texture is the caller's next question.
+        """
+        entry = self.effective_graph().passes.get(pass_name)
+        if entry is None:
+            return None
+        source = entry.inputs.get(uniform, "")
+        return source if source in self.passes else None
+
     def effective_graph(self) -> PassGraph:
         """`self.graph` with every sampler's effective source filled in (069 D9).
 

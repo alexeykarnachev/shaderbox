@@ -37,7 +37,9 @@ def test_the_follow_brings_a_line_the_edit_just_added_into_view() -> None:
     cursor = code_tab.layout_following_cursor(e, size, 16.0, rows, last)
     first = e.get_scroll()
     assert cursor.line == 10
-    assert first <= cursor.line < first + rows, f"caret row {cursor.line - first} of {rows}"
+    assert first <= cursor.line < first + rows, (
+        f"caret row {cursor.line - first} of {rows}"
+    )
     e.close()
 
 
@@ -53,7 +55,9 @@ def test_the_follow_leaves_an_idle_caret_alone() -> None:
 
 def test_the_display_order_permutes_the_model_and_keeps_the_active_tab() -> None:
     tabs = [SimpleNamespace(path=f"/p{i}") for i in range(3)]
-    app = SimpleNamespace(editor_tabs=list(tabs), active_tab_index=2, active_tab=tabs[2])
+    app = SimpleNamespace(
+        editor_tabs=list(tabs), active_tab_index=2, active_tab=tabs[2]
+    )
     code_tab._apply_display_order(app, [2, 0, 1])  # the eye sees p2 first
     assert app.editor_tabs == [tabs[2], tabs[0], tabs[1]]
     assert app.active_tab_index == 0
@@ -96,7 +100,7 @@ def test_ctrl_tab_focuses_an_unfocused_editor_first_then_cycles(
     _frames(app, 5)
     assert len(app.editor_tabs) == 2
     io = imgui.get_io()
-    x, y, w, h = app.editor_rect
+    x, y, w, _h = app.editor_rect
     io.add_mouse_pos_event(x + w + 200, y + 300)  # the app panel, right of the editor
     _frames(app, 2)
     io.add_mouse_button_event(0, True)

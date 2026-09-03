@@ -11,6 +11,7 @@ from OpenGL.GL import GL_FLOAT, GL_UNSIGNED_INT
 from shaderbox.app import App
 from shaderbox.constants import MEDIA_EXTENSIONS
 from shaderbox.core import UniformValue
+from shaderbox.document import is_user_bound
 from shaderbox.editor_types import HoverMark, JumpRequest
 from shaderbox.media import MediaWithTexture, Video, media_class_for
 from shaderbox.paths import pass_name_of
@@ -173,6 +174,35 @@ def _draw_play_stop(
     imgui.end_disabled()
 
 
+def _thumb_size(texture: moderngl.Texture) -> tuple[int, int]:
+    height = int(SIZE.THUMB_SM)
+    return int(height * texture.width / max(texture.height, 1)), height
+
+
+def _draw_pass_source(texture: moderngl.Texture, source: str) -> None:
+    # A live thumbnail of the producing pass, captioned with its name; wiring is the gear's.
+    imgui.set_cursor_pos_x(_CTRL_X)
+    imgui.image(
+        imgui.ImTextureRef(texture.glo),
+        image_size=_thumb_size(texture),
+        uv0=(0, 1),
+        uv1=(1, 0),
+    )
+    imgui.same_line()
+    caption_text(source)
+
+
+def _draw_black_swatch() -> None:
+    side = int(SIZE.THUMB_SM)
+    pos = imgui.get_cursor_screen_pos()
+    imgui.get_window_draw_list().add_rect_filled(
+        (pos.x, pos.y),
+        (pos.x + side, pos.y + side),
+        imgui.color_convert_float4_to_u32(COLOR.BLACK),
+    )
+    imgui.dummy((side, side))
+
+
 def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
     if app.current_document_id not in app.ui_documents:
         return
@@ -241,45 +271,51 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
 
     elif ui_uniform.input_type == "texture":
         assert isinstance(current_value, MediaWithTexture)
-
-        image_height = SIZE.THUMB_SM
-        image_width = int(
-            image_height
-            * current_value.texture.width
-            / max(current_value.texture.height, 1)
-        )
-
-        if button("Load" + hidden):
-            # Both cases: Linux glob filters are case-sensitive, phone cameras emit .MOV/.JPG.
-            patterns = " ".join(f"*{ext} *{ext.upper()}" for ext in MEDIA_EXTENSIONS)
-            results = pfd_block(
-                pfd.open_file(
-                    "Select image or video",
-                    default_path=".",
-                    filters=["Media", patterns],
+        # The row shows what the sampler READS (071 D9): a pass it is wired to, the texture the
+        # user bound, or the black every other sampler starts from. The seeded default image in
+        # the slot is a placeholder the renderer never binds, so it is never shown.
+        document = app.ui_documents[document_id].document
+        source = document.sampler_source(panel_pass_name, name)
+        if source is not None:
+            _draw_pass_source(document.passes[source].canvas.texture, source)
+        else:
+            if button("Load" + hidden):
+                # Both cases: Linux glob filters are case-sensitive, phone cameras emit
+                # .MOV/.JPG.
+                patterns = " ".join(
+                    f"*{ext} *{ext.upper()}" for ext in MEDIA_EXTENSIONS
                 )
-            )
-            file_path = Path(results[0]) if results else Path()
+                results = pfd_block(
+                    pfd.open_file(
+                        "Select image or video",
+                        default_path=".",
+                        filters=["Media", patterns],
+                    )
+                )
+                file_path = Path(results[0]) if results else Path()
 
-            if file_path.suffix.lower() in MEDIA_EXTENSIONS:
-                new_value = media_class_for(file_path.suffix)(file_path)
+                if file_path.suffix.lower() in MEDIA_EXTENSIONS:
+                    new_value = media_class_for(file_path.suffix)(file_path)
 
-        imgui.same_line()
-        caption_text(get_resolution_str(None, *current_value.texture.size))
-
-        imgui.set_cursor_pos_x(_CTRL_X)
-        imgui.image(
-            imgui.ImTextureRef(current_value.texture.glo),
-            image_size=(image_width, image_height),
-            uv0=(0, 1),
-            uv1=(1, 0),
-        )
-
-        if isinstance(current_value, Video):
-            imgui.same_line(spacing=float(SPACE.LG))
-            video_value = draw_video_filters(app, current_value)
-            if video_value is not current_value:
-                new_value = video_value
+            imgui.same_line()
+            if is_user_bound(current_value):
+                caption_text(get_resolution_str(None, *current_value.texture.size))
+                imgui.set_cursor_pos_x(_CTRL_X)
+                imgui.image(
+                    imgui.ImTextureRef(current_value.texture.glo),
+                    image_size=_thumb_size(current_value.texture),
+                    uv0=(0, 1),
+                    uv1=(1, 0),
+                )
+                if isinstance(current_value, Video):
+                    imgui.same_line(spacing=float(SPACE.LG))
+                    video_value = draw_video_filters(app, current_value)
+                    if video_value is not current_value:
+                        new_value = video_value
+            else:
+                caption_text("unwired")
+                imgui.set_cursor_pos_x(_CTRL_X)
+                _draw_black_swatch()
 
     elif ui_uniform.input_type == "color":
         assert isinstance(current_value, Sequence)

@@ -123,6 +123,7 @@ _CLAUSE_JOINERS: tuple[str, ...] = (";", " — ", " -- ")
 # forwarding a caller's text -- the CALLERS are the measured sites.
 _UNMEASURABLE: dict[tuple[str, str], str] = {
     ("shaderbox/popups/emoji_picker.py", "_draw_body"): "an emoji group/entry name",
+    ("shaderbox/widgets/uniform.py", "_draw_pass_source"): "the producing pass's name",
     ("shaderbox/popups/lib_picker/preview.py", "draw_preview"): "the file's own path",
     (
         "shaderbox/popups/lib_picker/search.py",

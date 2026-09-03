@@ -114,6 +114,8 @@ class _ColorBag:
 
     # untinted image blit; the neutral value for a draw-list image tint
     WHITE: tuple[float, float, float, float] = (1.0, 1.0, 1.0, 1.0)
+    # what an unwired sampler reads: the swatch a panel shows for it
+    BLACK: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0)
 
     # a preview whose texture is no longer being rendered: the tile dims and takes a
     # corner tick, so a frozen picture cannot be misread as a live one.
