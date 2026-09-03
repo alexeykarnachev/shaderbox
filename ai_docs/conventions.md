@@ -105,7 +105,12 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   commit under a suite that had reported green against the good one. So: restore, `git diff
   --quiet <file>` (or re-read it), and only then run anything. **A green suite that predates a file
   write proves nothing about what is on disk.** Corollary: never mutate the live working tree while
-  another agent may be committing — copy the file elsewhere.
+  another agent may be committing — copy the file elsewhere. That corollary covers WHOLE-TREE verbs
+  too: a `git stash` or `git checkout -- <path>` run to "get back to clean" reverts every concurrent
+  agent's probe and edit, not just yours. And a git WORKTREE is not the escape it looks like — this
+  package is installed editable, so `uv run` inside a worktree imports the MAIN checkout and a
+  mutation there changes nothing the suite reads. The mutation goes to a copy, and the restore is
+  verified, in the one tree.
 
 - **Structural impossibility over guard-piles — the first question of any validation-heavy review.**
   If you find yourself adding a SECOND wave of guards to second-guess what an actor (a model, a caller,
@@ -211,11 +216,13 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   **An input uniform's NAME is its default wire, and the resolution happens at render time (069
   D9).** A sampler called `u_<pass>` is filled from the pass called `<pass>` when the graph stores
   no decision for it; `u_prev` reads the pass's own previous frame, and a name without the `u_`
-  prefix names no pass. One pure function resolves it (`pass_graph.effective_inputs`) and
-  `Document.effective_graph` is the one thing all SIX consumers read — the renderer's binder, the
-  planner, the strip's tile order, the strip's stale wash, `has_feedback`, the gear's combo and
-  the copilot's working set — which is
-  what makes "the renderer draws it" and "the strip says it is live" the same claim. What is
+  prefix names no pass. One pure function resolves it (`pass_graph.effective_inputs`), and every
+  consumer that needs a WHOLE resolved graph goes through `Document.effective_graph` — the
+  renderer's binder, the planner, `has_feedback`, the strip (tile order + stale wash) and the
+  copilot's working set — which is
+  what makes "the renderer draws it" and "the strip says it is live" the same claim. The gear's
+  wiring combo is the one caller that asks per-uniform, so it calls `effective_inputs` directly
+  (`popups/pass_settings.py::_draw_inputs`); a new WHOLE-graph reader uses `effective_graph`. What is
   SAVED stays only what the user DECIDED: an absent key means the name decides, `""` is an
   explicit none the rule must not undo, a name is that pass. A resolved edge never reaches disk,
   because it would then be indistinguishable from a chosen one the next time the rule changed.
@@ -370,7 +377,8 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
 - **`tabs/*.py`: free `draw(app: App)` + optional `update(app: App)`.** `draw()` does imgui calls
   only; `update()` runs *before* imgui draws, for GL/canvas/mtime work outside the frame body. Tab
   state goes on `App` directly; a state-only sibling module (e.g. `tabs/share_state.py`) may hold
-  its dataclass to keep `app.py` import-cycle-free. Revisit when a 4th tab module exists.
+  its dataclass to keep `app.py` import-cycle-free. Revisit if a tab ever needs polymorphic
+  dispatch rather than the direct call the tab-bar makes.
 - **Color roles are SWAPPABLE accent vs FIXED semantic; fixed hues must not collide with any accent
   preset.** `theme.py`: `_P` (palette, the only home for literal colors) → `_ACCENTS` (presets; the one
   user-chosen "active/interactive" hue, rewritten by `apply_theme`) → `_ColorBag` role tokens (each
@@ -385,9 +393,9 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   organizational convention, not a polymorphic contract — no `Widget` ABC, no shared return shape;
   each gets the shape that fits its job. Revisit if a polymorphic `list[Widget]` dispatcher materializes.
 - **`popups/*.py`: free `draw(app: App)` functions; open/closed state lives on `App` as a single
-  `PopupState` enum field.** The five modal popups (examples browser, help, settings, emoji
-  picker, shader-lib picker) share one `app.popup_state` field — `CLOSED` / `EXAMPLES` / `HELP` /
-  `SETTINGS` / `EMOJI_PICKER` / `SHADER_LIB_PICKER`. Each `app.open_*()` helper sets `popup_state`; the single field IS the mutex
+  `PopupState` enum field.** Every modal popup shares one `app.popup_state` field, whose members
+  ARE the roster — `CLOSED` plus one per modal (examples browser, help, settings, pass settings,
+  emoji picker, shader-lib picker). Each `app.open_*()` helper sets `popup_state`; the single field IS the mutex
   ("at most one modal open" holds by construction — one field can't be two states). A new modal popup
   adds an enum member + its `open_*()` + a self-close to `CLOSED`. `app.any_popup_open()`
   (`popup_state != CLOSED`) is the render-gate question. The command palette (`is_palette_open`) stays
@@ -924,30 +932,21 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
 - **Re-vendoring the editor: rebuild, copy, then delete the mitigations the new sha makes dead.**
   Rebuild from a committed sha, copy the seven files (including `ffi/probe.py` as `abi_probe.py`,
   which is what makes the binding's argtypes gate track the new ABI), update `VERSION`, then remove
-  whatever host workarounds that sha obsoletes. Verifying the editor's own vim surface belongs to the editor
-  repo, which has its own gates for it; what this repo checks is the INTEGRATION — the host
-  mitigations it drops, and whether `make gates` still passes without them. The `bf0f8d5` re-vendor removed two: the Ctrl+N completion intercept
-  (the keymap now advances the selection itself) and the visual-scroll consume-noop (the six
-  scrolls are keymap motions in visual mode too). Removing the first exposed a live bug our test
-  suite caught — the input drain still queued a completion re-offer on a Ctrl+N the keymap had
-  consumed, which would have reset the selection to zero on every press; the drain now queues
-  only when the popup is CLOSED. MEASURED, and why our integration specifically was exposed to
-  the c-family undo bug that `0143217` fixed: the trigger is a HOST CURSOR JUMP mid-insert, not a
-  keystroke — reproduced through the C ABI alone (`Vc`, type, `ed_set_cursor(0,0)`, type, undo).
-  Our completion path and jump-to-error both move the cursor mid-insert.
-  The `22df77e` re-vendor (069 W-F) removed three, all of them second derivations of furniture
-  `ed_layout` now emits behind `ed_set_draw_chrome`: the host `_draw_gutter` (imgui line numbers in
-  the app UI font), the bottom bar's vim half (mode badge, `line:col` ruler, the `:`/`/`/`?` line),
-  and the marker's fill-only error mark (the ABI gained a text colour, so the glyphs on an error
-  line stop being red on red). MEASURED, and the reason the wave landed `22df77e` rather than its
-  parent `c5c6ae2`: at `c5c6ae2` the text-colour override skipped the glyph at COLUMN 0, because the
-  recolour pass tested each glyph's LEFT EDGE against the text origin and the first glyph's ink
-  overhangs its cell to the left. `22df77e` tests the centre instead; there is no ABI delta between
-  the two (`ffi.odin` byte-identical, the same 93 `nm -D` names), and
-  `tests/test_editor_ffi.py::test_a_marker_text_colour_reaches_the_glyph_at_column_0` pins it — red
-  against the older binary, so the next re-vendor cannot silently reintroduce it. That commit also
-  touched `ffi/probe.py` and `docs/standard_keymap.md`, which is why a "no ABI delta" re-vendor
-  still copied three files plus `VERSION`: the vendored set is the whole set, always.
+  whatever host workarounds that sha obsoletes. **The vendored set is the WHOLE set, always** — a
+  re-vendor with no ABI delta still copies every file plus `VERSION`, because upstream moves docs
+  and the probe independently of `ffi.odin`. Verifying the editor's own vim surface belongs to the
+  editor repo, which has its own gates for it; what this repo checks is the INTEGRATION — the host
+  mitigations it drops, and whether `make gates` still passes without them. Every re-vendor so far
+  has deleted host code that was a second derivation of something the library now emits itself, so
+  the question to ask of a new sha is which host workaround it makes redundant, not whether it
+  breaks anything. One rendering fact each re-vendor must re-clear rather than assume: a marker's
+  text colour must reach the glyph at COLUMN 0 (a version tested each glyph's LEFT EDGE against the
+  text origin and the first glyph's ink overhangs its cell, so column 0 stayed red-on-red —
+  `tests/test_editor_ffi.py::test_a_marker_text_colour_reaches_the_glyph_at_column_0` pins it; the
+  two facts the bullet above names must survive too). A host CURSOR JUMP mid-insert is this integration's specific exposure to
+  upstream undo bugs — the completion path and jump-to-error both do it — so an undo regression is
+  reproduced through the C ABI alone (`Vc`, type, `ed_set_cursor(0,0)`, type, undo), not through
+  the app.
 - **A live moderngl context must exist before constructing `Image` / `Video` / `Font` / `Canvas` /
   `Document`** — they call `moderngl.get_context()` lazily. In the app,
   `glfw.make_context_current(window)` handles it.
@@ -972,7 +971,7 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
 - **`@dataclass(slots=True)` removes class-level defaults.** `Cls.field` on a slotted dataclass
   returns a `member_descriptor`, not the default VALUE — the default only exists on an instance.
   Anything sourcing defaults from the class (a pydantic model mirroring a config dataclass) must read
-  them off an INSTANCE: `exporters/integrations.py` keeps one `_COPILOT_DEFAULTS = CopilotConfig()`
+  them off an INSTANCE: `integrations.py` keeps one `_COPILOT_DEFAULTS = CopilotConfig()`
   module-level instance and every field default reads `_COPILOT_DEFAULTS.<name>`. Reading the class
   attribute instead type-checks fine and ships a `member_descriptor` as the default.
 - **The sanctioned `# type: ignore` allowlist (upstream stub gaps only).** The no-suppression rule

@@ -199,8 +199,8 @@ def main() -> int:
             assert app.popup_state == PopupState.CLOSED, (
                 f"popup auto-opened for an explicit-dir App ({app.popup_state!r})"
             )
-            # Decision-15 regression canary (048): _init opens the restored current document's shader tab
-            # (it used to stay blank until a document switch). A non-empty project must have a tab now.
+            # 048 D15: _init opens the restored current document's shader tab, so a non-empty
+            # project always has one.
             assert app.editor_tabs, (
                 "smoke: editor_tabs empty after _init — the restored current document's shader tab "
                 "was not opened (the load->ensure_shader_tab wire is missing)"

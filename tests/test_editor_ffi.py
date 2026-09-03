@@ -35,7 +35,7 @@ from shaderbox.editor.render import (
     should_redraw,
 )
 from shaderbox.editor_types import EditorSession
-from shaderbox.hotkeys import _drain_editor_input
+from shaderbox.hotkeys import _delete_word_back, _drain_editor_input, spec_eligible
 from shaderbox.shader_source import ShaderSource
 
 
@@ -290,9 +290,6 @@ def test_ctrl_d_moves_the_cursor_and_suppresses_delete_document() -> None:
     app.editor_key_events = [_ctrl("d")]
     _drain_editor_input(app)
     assert e.get_current_cursor_position().line == 10, "half a 20-row page down"
-    from shaderbox.commands import SPEC_BY_ID
-    from shaderbox.hotkeys import spec_eligible
-
     spec = SPEC_BY_ID[CommandId.DELETE_DOCUMENT]
     chord = int(imgui.Key.d) | int(imgui.Key.mod_ctrl)
     assert spec_eligible(app, spec, chord, popup_open=False) is False, (
@@ -635,9 +632,6 @@ def test_dd_then_p_round_trips() -> None:
 
 
 def test_consumed_chord_suppresses_the_registry_spec() -> None:
-    from shaderbox.commands import SPEC_BY_ID
-    from shaderbox.hotkeys import spec_eligible
-
     spec = SPEC_BY_ID[CommandId.OPEN_SCRIPT]
     chord = int(imgui.Key.r) | int(imgui.Key.mod_ctrl)
     app = SimpleNamespace(
@@ -795,9 +789,6 @@ def test_repeated_ctrl_n_advances_the_completion_selection() -> None:
 
 
 def test_spec_eligible_scope_and_popup_gates() -> None:
-    from shaderbox.commands import SPEC_BY_ID
-    from shaderbox.hotkeys import spec_eligible
-
     editor_spec = SPEC_BY_ID[CommandId.CLOSE_CODE_TAB]  # scope EDITOR
     copilot_spec = SPEC_BY_ID[CommandId.CYCLE_COPILOT_LAYOUT]  # scope COPILOT
     global_spec = SPEC_BY_ID[CommandId.SAVE]
@@ -816,8 +807,6 @@ def test_spec_eligible_scope_and_popup_gates() -> None:
 
 
 def test_delete_word_back_whitespace_and_punct_runs() -> None:
-    from shaderbox.hotkeys import _delete_word_back
-
     e = Editor("word   ")
     e.set_language(Language.GLSL)
     e.feed("A")

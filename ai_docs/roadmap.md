@@ -26,49 +26,35 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-03 (069 complete: all eight waves landed; W-H closed it). -->
-**NEXT SESSION: 069 is done — the maintainer walks the rewritten tutorial.** The maintainer walked
-the 068 tutorial and filed 37 findings; eight workstreams and twelve locked decisions are in
-`ai_docs/features/069_tutorial_walk_findings/01_spec.md` (ledger `00_findings.md`; scripting
-design `01_design_scripting.md`). Each wave has its own spec in that directory (`10_wave_c_*`,
-`20_wave_a_*`, ...) with pre/post reviews under `reviews/`, per `dev_flow.md`. **Landed: W-C**
-(rename crash, commit-on-deactivate at six sites, add-pass activation, Alt+P / Alt+A), **W-A**
-(canvas `W x H` + presets through the `set_canvas_size` funnel, checkerboard viewer), **W-B** (UI
-prose cut to budget and gated), **W-F** (editor `22df77e` vendored, all 93 exports bound behind
-a names gate and an argtypes gate against upstream's own `abi_probe.py`, `set_draw_chrome(True)`
-per session, the host's gutter, mode badge and command line deleted for the library's own),
-**W-E** (019's region system removed whole, `nav_enable_keyboard` off, the keymap a Setting, seven
-chords moved to the Alt / F-key tier so no chord means two things — pinned by a test reading both
-vendored keymap docs), **W-G** (a script drives many uniforms across many passes through a nested
-dict, mouse `down` + previous position in the context), **W-D** (a sampler's name is its default
-wire), and **W-H** (the tutorial rewritten: six pass steps whose cards and code are GENERATED from
-the shipped example, four interludes, a paint-with-the-mouse script, and a `jfa` offset derived
-from the canvas). The remaining verification is the maintainer's own walk
-(`80_wave_h_tutorial.md § Manual verification`). The maintainer wants no editor GitHub
-issues. The graph view of the pass strip is feature 070, direction fixed in 069 § Out of scope.
+<!-- As of 2026-09-03 (069 closed: eight waves landed, sanitize swept). -->
+**NEXT SESSION: 069 is DONE in code; what remains is the maintainer's own walk.** All eight waves
+landed and every gate is green, but the sign-off needs a DISPLAY, and this box reports every monitor
+disconnected (`App.__init__` aborts in `glfw.get_video_mode` with no monitor; the gate runs under
+`xvfb-run -a` with the `make test` MESA overrides -- `dev_flow.md ### make gates`). Two things to
+walk: the regenerated tutorial at `ai_docs/features/068_radiance_cascades/tutorial.html`, and the
+`## Manual verification` list in each wave spec under
+`ai_docs/features/069_tutorial_walk_findings/` (`01_spec.md` is the index; `00_findings.md` the
+ledger).
 
-**068 radiance cascades: DONE**, and 069 W-H rewrote its tutorial (six pass steps whose cards and
-code blocks are generated from the shipped example by `build_tutorial.py`, gated by
-`tests/test_tutorial_build.py`). `oracle.py` measures 3.65% relMAE. Spec:
-`ai_docs/features/068_radiance_cascades/01_spec.md` — D3 and D7 are RETRACTED in place; 069 lifted
-both (W-G gave the script context mouse `down` + previous position; W-H made the `jfa` offset
-canvas-derived, so the run count is right at every canvas rather than at 512).
+**Still owed from before 069:** 065's checks 13-15 (a display) and 16 (`/dogfood`, real API cost),
+and the Windows `libeditor.dll`, which needs a Windows host at the next `/ship` -- 069 W-F
+re-vendored the Linux `.so` only, at editor commit `22df77e`.
 
-**067: DONE, v0.27.0 on GitHub (not itch).** The Windows `libeditor.dll` needs a Windows host at
-the next `/ship` — 069 W-F re-vendored the Linux `.so` only.
+**Next feature is 070: the graph view of the pass strip.** Its direction is already fixed in
+`069/01_spec.md § Out of scope` -- 069 W-D shipped the interim (the strip lost its wiring sublines),
+and 070 draws the DAG. No spec yet.
 
-**Still owed from 065:** checks 13-15 (a display) and 16 (`/dogfood`, real API cost).
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 069 | tutorial_walk_findings | done | The maintainer's walk of the 068 tutorial, 37 findings grouped into eight workstreams (canvas size, UI prose diet, pass verbs, naming + default wiring, keyboard ownership incl. the removal of 019's regions, editor chrome + lib re-vendor, scripting across passes via a nested dict, the tutorial rewrite), twelve decisions locked during the walk. All eight waves landed; W-H closed it by regenerating the tutorial from the shipped example. Spec: `ai_docs/features/069_tutorial_walk_findings/01_spec.md`. |
+| 069 | tutorial_walk_findings | done | The maintainer's walk of the 068 tutorial: 37 findings, eight waves, twelve locked decisions, all landed. Spec: `ai_docs/features/069_tutorial_walk_findings/01_spec.md`. |
 | — | repo_sweep | done | A ten-agent sweep over the defect classes this repo's history keeps producing (incomplete fix-sweeps, unwired mechanisms, tests that cannot fail, docs that drift from code): four blockers fixed — a crash loading a corrupt `document.json` from the per-frame sync, and three feedback-lifecycle bugs in the 068 machinery, one silently corrupting output — plus two skills that would crash a reader following them literally. What was REJECTED, and why, is in `conventions.md`. Spec: commits `70144d2..7e977bf`. |
 | 068 | radiance_cascades | done | A pass may declare `iterations` and the engine draws it N times per frame (`u_pass_iteration` / `u_pass_iterations`, per-iteration ping-pong), plus a six-pass Radiance Cascades example built on it and a tutorial rewriting both source articles for this engine. 069 W-H rewrote that tutorial to generate every pass card and code block from the example itself. Spec: `ai_docs/features/068_radiance_cascades/01_spec.md`. |
 | 066 | perf_and_test_diet | done | Lazy pass compilation (no load-time warm-up; compile+seed on first need; one first-render per frame in the live loop), lazy openai/google seams, starter-only test fixture, and an 18-test falsifier-criterion cull — startup 3.66s -> 0.67s, suite 39.2s -> ~16s / 925 tests. Spec: `ai_docs/features/066_perf_and_test_diet/01_spec.md`. |
 | 067 | custom_editor | done | The code panel runs the maintainer's own vim-modal editor (vendored `libeditor.so`, C ABI, host-rendered MTSDF primitives) instead of imgui's TextEditor — modal keymap with vim-reserved hotkeys, register-unified clipboard, host-drawn chrome, host-fed completion, host-served ex commands. Spec: `ai_docs/features/067_custom_editor.md`. |
-| 065 | pass_graph | partial | A document holds several passes forming a DAG, each pass its own `.glsl` file with its own `main()` and render target; "node" is retired for `document` + `pass`. All nine stages landed: the GL-free graph model + planner, the `Pass`/`Document` split, chain evaluation with feedback and cold exports, the `passes/` + `graph.json` + per-pass-asset layout, the `node` -> `document` rename across the package and on-disk paths, per-pass hot reload, the pass-list panel with D15's six verbs, the copilot's `<id>#<pass>` address with a pass-aware working set, and a five-pass "Bloom Chain" example. Checks 13-16 need a display and a dogfood run. Spec: `ai_docs/features/065_pass_graph/01_spec.md`. |
+| 065 | pass_graph | partial | A document holds several passes forming a DAG, each pass its own `.glsl` file with its own `main()` and render target; "node" is retired for `document` + `pass`. All nine stages landed: the GL-free graph model + planner, the `Pass`/`Document` split, chain evaluation with feedback and cold exports, the `passes/` + `graph.json` + per-pass-asset layout, the `node` -> `document` rename across the package and on-disk paths, per-pass hot reload, the pass-list panel with D15's six verbs, the copilot's `<id>#<pass>` address with a pass-aware working set, and a five-pass "Bloom Chain" example. Checks 13-16 need a display and a dogfood run; its D12 (one script per pass) is superseded by 069 D3 -- one document script returning `{pass: {uniform: value}}`, landed in W-G. Spec: `ai_docs/features/065_pass_graph/01_spec.md`. |
 | 064 | multistep | superseded | Multi-pass steps as functions inside ONE shader file. Built, reviewed to convergence, then REVERTED (`34f6d19`) when the maintainer used it: separate shader files per pass are what every surveyed tool does. Nine bug fixes it surfaced were kept. Superseder: `ai_docs/features/065_pass_graph/`. Spec: `ai_docs/features/064_multistep/02_decision.md`. |
 | 063 | radiance_cascades_gaps | done | Research-only wave (no code): can ShaderBox host radiance cascades, and what is actually missing — GPU capability all present and measured, the script-GL route proven unusable, the seam decision handed to 064. Spec: `ai_docs/features/063_radiance_cascades_gaps/README.md`. |
 | — | copilot_engine_tuning | done | reasoning effort=none engine knob (+30k turn budget: effort flag is ignored on compound asks — measured), user/engine config split with slots enforcement, final-reply token cap. Spec: commits 289c12f + 6ed3c4d + 779d4b2 + this wave. |
@@ -115,7 +101,7 @@ the next `/ship` — 069 W-F re-vendored the Linux `.so` only.
 | 022 | copilot_chat_persistence | done | The copilot conversation is tied to its project + restored on reopen (was memory-only, dropped on switch/exit). `copilot/persistence.py` (`ConversationStore`, versioned + fail-soft like `app_state.json`) persists both the UI render messages and the LLM history + usage to `project_dir/copilot/conversation.json`; `CopilotSession.save_conversation`/`load_conversation`; App saves the outgoing project's chat in `release()` (top of `_init` + shutdown) and loads the incoming one after `reset_conversation`; a `begin_disabled`-during-turn clear button archives to `copilot/archive/`. Folded the trace-bleed deferral: the orphaned-history append is guarded on `_cancel`, and the worker-is-idle invariant (020·15's `open_project` gate) closes the trace-bleed window (the residual `_ensure_open` structural weakness later hardened by a permanent-closed latch). Spec: `ai_docs/features/022_copilot_chat_persistence.md`. |
 | 021 | logging_refactor | done | Three-stream logging: a terse INFO+ console, a rotated DEBUG+ file (`logs/`) that is a strict superset, and a full-fidelity copilot transcript (`copilot_traces/copilot_<slug>_<stamp>.transcript` — human/agent-readable plain text replacing the old jsonl). `shaderbox/logging_setup.py` configures all loguru sinks once; `LoggingConfig` holds the internal config (console/file levels, rotation, retention, trace-retention=20); the 118-call logger survey audited 24 modules with ~37 calls shifted (lifecycle→DEBUG, user events stay INFO, fallback-config ERROR→WARNING); trace gains a transcript renderer + `tool_args_parse_error` event + mtime-pruned retention. Maintainer-verified live (console terse, transcript readable cold). Spec: `ai_docs/features/021_logging_refactor.md`. |
 | 020 | copilot_agent | partial | In-app coding-copilot agent: free-form chat over OpenRouter that works the whole project with in-process compile feedback as the differentiator (`shaderbox/copilot/` — capabilities / LLM client / worker→main bridge / chat state / agent loop / prompt tiers / trace). All planned waves landed and SHIPPED in v0.13.0: content-addressed editing (`edit_shader`/`write_shader`, the line/anchor scheme removed by 039), cross-project read/grep/set_uniform/create/switch_node, the gate UI (confirm + credential + setup-panel), render/publish tools, Telegram connect + pack CRUD, and the UX-polish + correctness waves. `partial` for a deferred tail of parked SCOPE decisions (not bugs): the lazy tool-catalogue (D5), `delete_lib_file`, semantic editing, and `bind_media`/`undo_edit` — each documented in the spec, picked up when its own use-case lands. The slice-by-slice development trail lives in the spec. Spec: `ai_docs/features/020_copilot_agent/` (`11_capability_wave_spec.md §16` + `12`–`30`). |
-| 019 | keyboard_navigation | superseded | The focus/nav layer (018's deferred half): app-wide `nav_enable_keyboard` + a two-level focus model — `Ctrl+`` ` `` cycles 3 regions (editor/grid/panel, region-confined via `no_nav_inputs`, active region shown by a live-focus accent outline), `Ctrl+1/2/3` jump the inner Node/Render/Share tab; editor is a permanent focus-stop; grid cells are nav-reachable `selectable`s; 018 bare-arrow node-prev/next removed. The polish wave added a selection-vs-accent color split (fixed `COLOR.SELECT`) + a theme-portability invariant, Ctrl+Tab suppression, glfw-layer Esc swallowing, `nav_flattened` uniforms. Removed whole by 069 W-E (regions, outline, cycle chord and app-wide nav all gone; `DocumentTab` + `FOCUS_TAB_*` and the `no_nav_inputs` / `no_nav_focus` flags survive). Spec: `ai_docs/features/019_keyboard_navigation.md`. |
+| 019 | keyboard_navigation | superseded | App-wide imgui keyboard nav plus a three-region focus model with a live-focus accent outline, a region-cycle chord and `Ctrl+1/2/3` inner-tab jumps. Removed whole by 069 W-E (D4); `DocumentTab`, `FOCUS_TAB_*` and the `no_nav_inputs` / `no_nav_focus` flags survive. Spec: `ai_docs/features/019_keyboard_navigation.md`. |
 | 018 | keyboard_control | done | The command layer: a central `commands.py` registry drives rebindable chord shortcuts + an opt-out cheatsheet overlay + an `imgui_command_palette` (Ctrl+Shift+P); dispatch split pre-frame/in-frame; rebindings persist diff-from-default on `UIAppState`. The focus/navigation layer (nav widget-traversal + tab-cycling) was split out and shipped as feature 019. Spec: `ai_docs/features/018_keyboard_control.md`. |
 | 017 | structure_reorg | done | Domain-separation refactoring wave (no behavior change): `lib_*`→`shader_lib/` package + total rename, shader_lib split into index/resolver/parser, `lib_picker`→package, `util.py`→`shader_errors.py`+`editor_types.py`, `ui_models` de-tangled from UI, exporters/ tidy, App shader-lib CRUD→`ShaderLibFileManager`. `ui/`+`render/` packages rejected. Spec: `ai_docs/features/017_structure_reorg.md`. |
 | 016 | lib_file_management | done | Unified tree+preview lib picker with right-click context menus for create / rename / delete (armed-confirm, file or recursive subdir) / reveal; `.trash/` filter shared by `LibIndex.build` and the mtime watcher; `Library` menu in the main menu bar. Spec: `ai_docs/features/016_lib_file_management.md`. |

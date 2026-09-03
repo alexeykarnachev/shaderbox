@@ -11,8 +11,9 @@ Each test here names one consumer of the active tab and pins it to the tab's PAT
 
 from typing import Any
 
+from shaderbox.editor_types import EditorTab
 from shaderbox.paths import pass_shader_name
-from shaderbox.tabs.code import tab_label
+from shaderbox.tabs.code import _pass_for_tab, tab_label
 
 _GREEN = """#version 460 core
 in vec2 vs_uv;
@@ -190,9 +191,6 @@ def test_pass_for_tab_matches_by_path_not_output(app: Any) -> None:
     # The 065 bug's falsifier (sweep finding): resolving "the document's output
     # pass" instead of matching the TAB's path gave every pass tab the output's
     # errors/chrome. Each tab must resolve its OWN pass.
-    from shaderbox.editor_types import EditorTab
-    from shaderbox.tabs.code import _pass_for_tab
-
     document_id = _two_pass(app)
     document = app.ui_documents[document_id].document
     assert len(document.passes) == 2

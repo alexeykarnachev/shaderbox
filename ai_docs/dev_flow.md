@@ -535,6 +535,13 @@ pyright alike, so a wave that adds a test file gets a green gate on a tree whose
 never linted, and the commit that stages it is red. Two 069 commits landed exactly that way.
 `git add` every new file (or `git add -N` it) before the gate, then judge the exit code.
 
+**On a box whose monitors report disconnected, run the gate under `xvfb-run -a`.** `App.__init__`
+aborts inside `glfw.get_video_mode` (`monitor != NULL` assertion) when glfw finds no monitor, so
+`make gates` dies before the smoke frames start. `xvfb-run -a make gates` supplies one; the MESA
+overrides `make test` sets are load-bearing there too, because `xvfb`'s llvmpipe is a bare 4.5
+context and this repo's `#version 460` shaders segfault it -- `make smoke` does not set them, so a
+standalone smoke under `xvfb` needs them in the environment. A `skipped` smoke is not a pass.
+
 ### `make check`
 The single canonical lint/typecheck command — delegates to `uv run pre-commit run --all-files`:
 ruff fix, ruff format, then **pyright** (chosen over mypy on purpose — fewer false positives, less
@@ -558,7 +565,8 @@ noise**: `MESA_GL_VERSION_OVERRIDE=4.6` + `MESA_GLSL_VERSION_OVERRIDE=460` becau
 repo's `#version 460` shaders on a bare llvmpipe 4.5 context SEGFAULTS Mesa, and
 `GLCONTEXT_LINUX_LIBGL=libGL.so.1` to avoid a dlopen failure on boxes without libgl-dev. Run it
 through `make test` rather than a bare `pytest` so you inherit them. Modules using the `app` fixture
-skip without a display. Not wired into `make check` (needs a GL context).
+skip without a display. Not wired into `make check` (needs a GL context). On a monitor-less box,
+`xvfb-run -a` gives those modules a display -- see `### make gates`.
 
 ### `make smoke`
 Headless smoke test (`scripts/smoke.py`) — runs ~200 frames of `update_and_draw` against a THROWAWAY
@@ -571,7 +579,9 @@ declaring done; **not** wired into `make check` (needs a real GL context). It do
 `~/.local/share/shaderbox/project_dir` pointer — `App` only persists that pointer for a REAL launch
 (`project_dir` resolved from the saved pointer/default); an explicit-dir process (smoke, the pytest `app`
 fixture) constructs `App(project_dir=…)` with `persist_pointer=False`, so a test run can never leave the
-next launch aimed at a deleted tmp project (`conventions.md ## Known quirks`).
+next launch aimed at a deleted tmp project (`conventions.md ## Known quirks`). It SKIPS for want of
+a display, and a skip is not a pass; on a box whose monitors report disconnected, run it under
+`xvfb-run -a` WITH the `make test` MESA overrides in the environment -- see `### make gates`.
 
 ### Build / ship to itch.io
 **The full ship procedure is the `/ship` skill** (`.claude/skills/ship/SKILL.md`) — the canonical home
