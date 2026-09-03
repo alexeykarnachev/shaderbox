@@ -88,8 +88,7 @@ def _load(path: Path) -> ET.Element | None:
     raw = re.sub(r"<!DOCTYPE[^>]*\[.*?\]>", "", raw, count=1, flags=re.S)
     raw = re.sub(r"<!DOCTYPE[^>]*>", "", raw, count=1)
     entities = "".join(
-        f'<!ENTITY {name} "{value}">'
-        for name, value in _ENTITIES.items()
+        f'<!ENTITY {name} "{value}">' for name, value in _ENTITIES.items()
     )
     doc = f"<!DOCTYPE refentry [{entities}]>{raw}"
     try:
@@ -196,6 +195,12 @@ def parse_lexer_words(path: Path) -> tuple[list[str], list[str]]:
     return block("GLSL_KEYWORDS"), block("GLSL_TYPES")
 
 
+def _q(text: str) -> str:
+    """A double-quoted Python string literal, which is what ruff-format emits."""
+    body = text.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{body}"'
+
+
 def render(
     builtins: dict[str, tuple[list[str], str]],
     source: str,
@@ -206,13 +211,16 @@ def render(
     rows: list[str] = []
     for name in sorted(builtins):
         signatures, purpose = builtins[name]
-        sig_lines = "\n".join(f"            {sig!r}," for sig in signatures)
-        rows.append(
-            f"    {name!r}: (\n"
-            f"        (\n{sig_lines}\n        ),\n"
-            f"        {purpose!r},\n"
-            f"    ),"
-        )
+        # Double quotes and a trailing comma: the repo formats with ruff, and a generated
+        # file it wants to rewrite produces a spurious diff on every run.
+        if len(signatures) == 1:
+            # ruff-format collapses a one-element tuple onto its own line; emit that shape
+            # so the generated file is already formatted.
+            sig_block = f"        ({_q(signatures[0])},),"
+        else:
+            sig_lines = "\n".join(f"            {_q(sig)}," for sig in signatures)
+            sig_block = f"        (\n{sig_lines}\n        ),"
+        rows.append(f"    {_q(name)}: (\n{sig_block}\n        {_q(purpose)},\n    ),")
     body = "\n".join(rows)
     return f'''"""GLSL builtin functions: every overload and the spec's own one-line purpose.
 
@@ -233,9 +241,13 @@ BUILTINS: dict[str, tuple[tuple[str, ...], str]] = {{
 # The language's reserved words and type names, from the editor library's GLSL lexer
 # ({lexer_source}) -- the same list that colors the text, so completion offers exactly what
 # the highlighter knows.
-KEYWORDS: tuple[str, ...] = {tuple(keywords)!r}
+KEYWORDS: tuple[str, ...] = (
+{chr(10).join(f"    {_q(w)}," for w in keywords)}
+)
 
-TYPES: tuple[str, ...] = {tuple(types)!r}
+TYPES: tuple[str, ...] = (
+{chr(10).join(f"    {_q(w)}," for w in types)}
+)
 '''
 
 

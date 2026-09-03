@@ -11,650 +11,605 @@ Khronos publishes rather than anything typed from memory.
 
 # name -> (overload signatures, one-line purpose)
 BUILTINS: dict[str, tuple[tuple[str, ...], str]] = {
-    'abs': (
+    "abs": (
         (
-            'genType abs(genType x)',
-            'genIType abs(genIType x)',
+            "genType abs(genType x)",
+            "genIType abs(genIType x)",
         ),
-        'return the absolute value of the parameter',
+        "return the absolute value of the parameter",
     ),
-    'acos': (
-        (
-            'genType acos(genType x)',
-        ),
-        'return the arccosine of the parameter',
+    "acos": (
+        ("genType acos(genType x)",),
+        "return the arccosine of the parameter",
     ),
-    'acosh': (
-        (
-            'genType acosh(genType x)',
-        ),
-        'return the arc hyperbolic cosine of the parameter',
+    "acosh": (
+        ("genType acosh(genType x)",),
+        "return the arc hyperbolic cosine of the parameter",
     ),
-    'all': (
-        (
-            'bool all(bvec x)',
-        ),
-        'check whether all elements of a boolean vector are true',
+    "all": (
+        ("bool all(bvec x)",),
+        "check whether all elements of a boolean vector are true",
     ),
-    'any': (
-        (
-            'bool any(bvec x)',
-        ),
-        'check whether any element of a boolean vector is true',
+    "any": (
+        ("bool any(bvec x)",),
+        "check whether any element of a boolean vector is true",
     ),
-    'asin': (
-        (
-            'genType asin(genType x)',
-        ),
-        'return the arcsine of the parameter',
+    "asin": (
+        ("genType asin(genType x)",),
+        "return the arcsine of the parameter",
     ),
-    'asinh': (
-        (
-            'genType asinh(genType x)',
-        ),
-        'return the arc hyperbolic sine of the parameter',
+    "asinh": (
+        ("genType asinh(genType x)",),
+        "return the arc hyperbolic sine of the parameter",
     ),
-    'atan': (
+    "atan": (
         (
-            'genType atan(genType y, genType x)',
-            'genType atan(genType y_over_x)',
+            "genType atan(genType y, genType x)",
+            "genType atan(genType y_over_x)",
         ),
-        'return the arc-tangent of the parameters',
+        "return the arc-tangent of the parameters",
     ),
-    'atanh': (
-        (
-            'genType atanh(genType x)',
-        ),
-        'return the arc hyperbolic tangent of the parameter',
+    "atanh": (
+        ("genType atanh(genType x)",),
+        "return the arc hyperbolic tangent of the parameter",
     ),
-    'ceil': (
-        (
-            'genType ceil(genType x)',
-        ),
-        'find the nearest integer that is greater than or equal to the parameter',
+    "ceil": (
+        ("genType ceil(genType x)",),
+        "find the nearest integer that is greater than or equal to the parameter",
     ),
-    'clamp': (
+    "clamp": (
         (
-            'genType clamp(genType x, genType minVal, genType maxVal)',
-            'genType clamp(genType x, float minVal, float maxVal)',
-            'genIType clamp(genIType x, genIType minVal, genIType maxVal)',
-            'genIType clamp(genIType x, int minVal, int maxVal)',
-            'genUType clamp(genUType x, genUType minVal, genUType maxVal)',
-            'genUType clamp(genUType x, uint minVal, uint maxVal)',
+            "genType clamp(genType x, genType minVal, genType maxVal)",
+            "genType clamp(genType x, float minVal, float maxVal)",
+            "genIType clamp(genIType x, genIType minVal, genIType maxVal)",
+            "genIType clamp(genIType x, int minVal, int maxVal)",
+            "genUType clamp(genUType x, genUType minVal, genUType maxVal)",
+            "genUType clamp(genUType x, uint minVal, uint maxVal)",
         ),
-        'constrain a value to lie between two further values',
+        "constrain a value to lie between two further values",
     ),
-    'cos': (
-        (
-            'genType cos(genType angle)',
-        ),
-        'return the cosine of the parameter',
+    "cos": (
+        ("genType cos(genType angle)",),
+        "return the cosine of the parameter",
     ),
-    'cosh': (
-        (
-            'genType cosh(genType x)',
-        ),
-        'return the hyperbolic cosine of the parameter',
+    "cosh": (
+        ("genType cosh(genType x)",),
+        "return the hyperbolic cosine of the parameter",
     ),
-    'cross': (
-        (
-            'vec3 cross(vec3 x, vec3 y)',
-        ),
-        'calculate the cross product of two vectors',
+    "cross": (
+        ("vec3 cross(vec3 x, vec3 y)",),
+        "calculate the cross product of two vectors",
     ),
-    'dFdx': (
-        (
-            'genType dFdx(genType p)',
-        ),
-        'return the partial derivative of an argument with respect to x or y',
+    "dFdx": (
+        ("genType dFdx(genType p)",),
+        "return the partial derivative of an argument with respect to x or y",
     ),
-    'dFdy': (
-        (
-            'genType dFdy(genType p)',
-        ),
-        'return the partial derivative of an argument with respect to x or y',
+    "dFdy": (
+        ("genType dFdy(genType p)",),
+        "return the partial derivative of an argument with respect to x or y",
     ),
-    'degrees': (
-        (
-            'genType degrees(genType radians)',
-        ),
-        'convert a quantity in radians to degrees',
+    "degrees": (
+        ("genType degrees(genType radians)",),
+        "convert a quantity in radians to degrees",
     ),
-    'determinant': (
+    "determinant": (
         (
-            'float determinant(mat2 m)',
-            'float determinant(mat3 m)',
-            'float determinant(mat4 m)',
+            "float determinant(mat2 m)",
+            "float determinant(mat3 m)",
+            "float determinant(mat4 m)",
         ),
-        'calculate the determinant of a matrix',
+        "calculate the determinant of a matrix",
     ),
-    'distance': (
-        (
-            'float distance(genType p0, genType p1)',
-        ),
-        'calculate the distance between two points',
+    "distance": (
+        ("float distance(genType p0, genType p1)",),
+        "calculate the distance between two points",
     ),
-    'dot': (
-        (
-            'float dot(genType x, genType y)',
-        ),
-        'calculate the dot product of two vectors',
+    "dot": (
+        ("float dot(genType x, genType y)",),
+        "calculate the dot product of two vectors",
     ),
-    'equal': (
+    "equal": (
         (
-            'bvec equal(vec x, vec y)',
-            'bvec equal(bvec x, bvec y)',
-            'bvec equal(ivec x, ivec y)',
-            'bvec equal(uvec x, uvec y)',
+            "bvec equal(vec x, vec y)",
+            "bvec equal(bvec x, bvec y)",
+            "bvec equal(ivec x, ivec y)",
+            "bvec equal(uvec x, uvec y)",
         ),
-        'perform a component-wise equal-to comparison of two vectors',
+        "perform a component-wise equal-to comparison of two vectors",
     ),
-    'exp': (
-        (
-            'genType exp(genType x)',
-        ),
-        'return the natural exponentiation of the parameter',
+    "exp": (
+        ("genType exp(genType x)",),
+        "return the natural exponentiation of the parameter",
     ),
-    'exp2': (
-        (
-            'genType exp2(genType x)',
-        ),
-        'return 2 raised to the power of the parameter',
+    "exp2": (
+        ("genType exp2(genType x)",),
+        "return 2 raised to the power of the parameter",
     ),
-    'faceforward': (
-        (
-            'genType faceforward(genType N, genType I, genType Nref)',
-        ),
-        'return a vector pointing in the same direction as another',
+    "faceforward": (
+        ("genType faceforward(genType N, genType I, genType Nref)",),
+        "return a vector pointing in the same direction as another",
     ),
-    'floatBitsToInt': (
-        (
-            'genIType floatBitsToInt(genType x)',
-        ),
-        'produce the encoding of a floating point value as an integer',
+    "floatBitsToInt": (
+        ("genIType floatBitsToInt(genType x)",),
+        "produce the encoding of a floating point value as an integer",
     ),
-    'floor': (
-        (
-            'genType floor(genType x)',
-        ),
-        'find the nearest integer less than or equal to the parameter',
+    "floor": (
+        ("genType floor(genType x)",),
+        "find the nearest integer less than or equal to the parameter",
     ),
-    'fract': (
-        (
-            'genType fract(genType x)',
-        ),
-        'compute the fractional part of the argument',
+    "fract": (
+        ("genType fract(genType x)",),
+        "compute the fractional part of the argument",
     ),
-    'fwidth': (
-        (
-            'genType fwidth(genType p)',
-        ),
-        'return the sum of the absolute derivatives in x and y',
+    "fwidth": (
+        ("genType fwidth(genType p)",),
+        "return the sum of the absolute derivatives in x and y",
     ),
-    'greaterThan': (
+    "greaterThan": (
         (
-            'bvec greaterThan(vec x, vec y)',
-            'bvec greaterThan(ivec x, ivec y)',
-            'bvec greaterThan(uvec x, uvec y)',
+            "bvec greaterThan(vec x, vec y)",
+            "bvec greaterThan(ivec x, ivec y)",
+            "bvec greaterThan(uvec x, uvec y)",
         ),
-        'perform a component-wise greater-than comparison of two vectors',
+        "perform a component-wise greater-than comparison of two vectors",
     ),
-    'greaterThanEqual': (
+    "greaterThanEqual": (
         (
-            'bvec greaterThanEqual(vec x, vec y)',
-            'bvec greaterThanEqual(ivec x, ivec y)',
-            'bvec greaterThanEqual(uvec x, uvec y)',
+            "bvec greaterThanEqual(vec x, vec y)",
+            "bvec greaterThanEqual(ivec x, ivec y)",
+            "bvec greaterThanEqual(uvec x, uvec y)",
         ),
-        'perform a component-wise greater-than-or-equal comparison of two vectors',
+        "perform a component-wise greater-than-or-equal comparison of two vectors",
     ),
-    'intBitsToFloat': (
-        (
-            'genType intBitsToFloat(genIType x)',
-        ),
-        'produce a floating point using an encoding supplied as an integer',
+    "intBitsToFloat": (
+        ("genType intBitsToFloat(genIType x)",),
+        "produce a floating point using an encoding supplied as an integer",
     ),
-    'inverse': (
+    "inverse": (
         (
-            'mat2 inverse(mat2 m)',
-            'mat3 inverse(mat3 m)',
-            'mat4 inverse(mat4 m)',
+            "mat2 inverse(mat2 m)",
+            "mat3 inverse(mat3 m)",
+            "mat4 inverse(mat4 m)",
         ),
-        'calculate the inverse of a matrix',
+        "calculate the inverse of a matrix",
     ),
-    'inversesqrt': (
-        (
-            'genType inversesqrt(genType x)',
-        ),
-        'return the inverse of the square root of the parameter',
+    "inversesqrt": (
+        ("genType inversesqrt(genType x)",),
+        "return the inverse of the square root of the parameter",
     ),
-    'isinf': (
-        (
-            'genBType isinf(genType x)',
-        ),
-        'determine whether the parameter is positive or negative infinity',
+    "isinf": (
+        ("genBType isinf(genType x)",),
+        "determine whether the parameter is positive or negative infinity",
     ),
-    'isnan': (
-        (
-            'genBType isnan(genType x)',
-        ),
-        'determine whether the parameter is a number',
+    "isnan": (
+        ("genBType isnan(genType x)",),
+        "determine whether the parameter is a number",
     ),
-    'length': (
-        (
-            'float length(genType x)',
-        ),
-        'calculate the length of a vector',
+    "length": (
+        ("float length(genType x)",),
+        "calculate the length of a vector",
     ),
-    'lessThan': (
+    "lessThan": (
         (
-            'bvec lessThan(vec x, vec y)',
-            'bvec lessThan(ivec x, ivec y)',
-            'bvec lessThan(uvec x, uvec y)',
+            "bvec lessThan(vec x, vec y)",
+            "bvec lessThan(ivec x, ivec y)",
+            "bvec lessThan(uvec x, uvec y)",
         ),
-        'perform a component-wise less-than comparison of two vectors',
+        "perform a component-wise less-than comparison of two vectors",
     ),
-    'lessThanEqual': (
+    "lessThanEqual": (
         (
-            'bvec lessThanEqual(vec x, vec y)',
-            'bvec lessThanEqual(ivec x, ivec y)',
-            'bvec lessThanEqual(uvec x, uvec y)',
+            "bvec lessThanEqual(vec x, vec y)",
+            "bvec lessThanEqual(ivec x, ivec y)",
+            "bvec lessThanEqual(uvec x, uvec y)",
         ),
-        'perform a component-wise less-than-or-equal comparison of two vectors',
+        "perform a component-wise less-than-or-equal comparison of two vectors",
     ),
-    'log': (
-        (
-            'genType log(genType x)',
-        ),
-        'return the natural logarithm of the parameter',
+    "log": (
+        ("genType log(genType x)",),
+        "return the natural logarithm of the parameter",
     ),
-    'log2': (
-        (
-            'genType log2(genType x)',
-        ),
-        'return the base 2 logarithm of the parameter',
+    "log2": (
+        ("genType log2(genType x)",),
+        "return the base 2 logarithm of the parameter",
     ),
-    'matrixCompMult': (
-        (
-            'mat matrixCompMult(mat x, mat y)',
-        ),
-        'perform a component-wise multiplication of two matrices',
+    "matrixCompMult": (
+        ("mat matrixCompMult(mat x, mat y)",),
+        "perform a component-wise multiplication of two matrices",
     ),
-    'max': (
+    "max": (
         (
-            'genType max(genType x, genType y)',
-            'genType max(genType x, float y)',
-            'genIType max(genIType x, genIType y)',
-            'genIType max(genIType x, int y)',
-            'genUType max(genUType x, genUType y)',
-            'genUType max(genUType x, uint y)',
+            "genType max(genType x, genType y)",
+            "genType max(genType x, float y)",
+            "genIType max(genIType x, genIType y)",
+            "genIType max(genIType x, int y)",
+            "genUType max(genUType x, genUType y)",
+            "genUType max(genUType x, uint y)",
         ),
-        'return the greater of two values',
+        "return the greater of two values",
     ),
-    'min': (
+    "min": (
         (
-            'genType min(genType x, genType y)',
-            'genType min(genType x, float y)',
-            'genIType min(genIType x, genIType y)',
-            'genIType min(genIType x, int y)',
-            'genUType min(genUType x, genUType y)',
-            'genUType min(genUType x, uint y)',
+            "genType min(genType x, genType y)",
+            "genType min(genType x, float y)",
+            "genIType min(genIType x, genIType y)",
+            "genIType min(genIType x, int y)",
+            "genUType min(genUType x, genUType y)",
+            "genUType min(genUType x, uint y)",
         ),
-        'return the lesser of two values',
+        "return the lesser of two values",
     ),
-    'mix': (
+    "mix": (
         (
-            'genType mix(genType x, genType y, genType a)',
-            'genType mix(genType x, genType y, float a)',
-            'genType mix(genType x, genType y, genBType a)',
+            "genType mix(genType x, genType y, genType a)",
+            "genType mix(genType x, genType y, float a)",
+            "genType mix(genType x, genType y, genBType a)",
         ),
-        'linearly interpolate between two values',
+        "linearly interpolate between two values",
     ),
-    'mod': (
+    "mod": (
         (
-            'genType mod(genType x, float y)',
-            'genType mod(genType x, genType y)',
+            "genType mod(genType x, float y)",
+            "genType mod(genType x, genType y)",
         ),
-        'compute value of one parameter modulo another',
+        "compute value of one parameter modulo another",
     ),
-    'modf': (
-        (
-            'genType modf(genType x, out genType i)',
-        ),
-        'separate a value into its integer and fractional components',
+    "modf": (
+        ("genType modf(genType x, out genType i)",),
+        "separate a value into its integer and fractional components",
     ),
-    'normalize': (
-        (
-            'genType normalize(genType v)',
-        ),
-        'calculates the unit vector in the same direction as the original vector',
+    "normalize": (
+        ("genType normalize(genType v)",),
+        "calculates the unit vector in the same direction as the original vector",
     ),
-    'not': (
-        (
-            'bvec not(bvec x)',
-        ),
-        'logically invert a boolean vector',
+    "not": (
+        ("bvec not(bvec x)",),
+        "logically invert a boolean vector",
     ),
-    'notEqual': (
+    "notEqual": (
         (
-            'bvec notEqual(vec x, vec y)',
-            'bvec notEqual(ivec x, ivec y)',
-            'bvec notEqual(bvec x, bvec y)',
-            'bvec notEqual(uvec x, uvec y)',
+            "bvec notEqual(vec x, vec y)",
+            "bvec notEqual(ivec x, ivec y)",
+            "bvec notEqual(bvec x, bvec y)",
+            "bvec notEqual(uvec x, uvec y)",
         ),
-        'perform a component-wise not-equal-to comparison of two vectors',
+        "perform a component-wise not-equal-to comparison of two vectors",
     ),
-    'outerProduct': (
+    "outerProduct": (
         (
-            'mat2 outerProduct(vec2 c, vec2 r)',
-            'mat3 outerProduct(vec3 c, vec3 r)',
-            'mat4 outerProduct(vec4 c, vec4 r)',
-            'mat2x3 outerProduct(vec3 c, vec2 r)',
-            'mat3x2 outerProduct(vec2 c, vec3 r)',
-            'mat2x4 outerProduct(vec4 c, vec2 r)',
-            'mat4x2 outerProduct(vec2 c, vec4 r)',
-            'mat3x4 outerProduct(vec4 c, vec3 r)',
-            'mat4x3 outerProduct(vec3 c, vec4 r)',
+            "mat2 outerProduct(vec2 c, vec2 r)",
+            "mat3 outerProduct(vec3 c, vec3 r)",
+            "mat4 outerProduct(vec4 c, vec4 r)",
+            "mat2x3 outerProduct(vec3 c, vec2 r)",
+            "mat3x2 outerProduct(vec2 c, vec3 r)",
+            "mat2x4 outerProduct(vec4 c, vec2 r)",
+            "mat4x2 outerProduct(vec2 c, vec4 r)",
+            "mat3x4 outerProduct(vec4 c, vec3 r)",
+            "mat4x3 outerProduct(vec3 c, vec4 r)",
         ),
-        'calculate the outer product of a pair of vectors',
+        "calculate the outer product of a pair of vectors",
     ),
-    'packHalf2x16': (
-        (
-            'uint packHalf2x16(vec2 v)',
-        ),
-        'convert two 32-bit floating-point quantities to 16-bit quantities and pack them into a single 32-bit integer',
+    "packHalf2x16": (
+        ("uint packHalf2x16(vec2 v)",),
+        "convert two 32-bit floating-point quantities to 16-bit quantities and pack them into a single 32-bit integer",
     ),
-    'packSnorm2x16': (
-        (
-            'uint packSnorm2x16(vec2 v)',
-        ),
-        'pack floating-point values into an unsigned integer',
+    "packSnorm2x16": (
+        ("uint packSnorm2x16(vec2 v)",),
+        "pack floating-point values into an unsigned integer",
     ),
-    'packUnorm2x16': (
-        (
-            'uint packUnorm2x16(vec2 v)',
-        ),
-        'pack floating-point values into an unsigned integer',
+    "packUnorm2x16": (
+        ("uint packUnorm2x16(vec2 v)",),
+        "pack floating-point values into an unsigned integer",
     ),
-    'pow': (
-        (
-            'genType pow(genType x, genType y)',
-        ),
-        'return the value of the first parameter raised to the power of the second',
+    "pow": (
+        ("genType pow(genType x, genType y)",),
+        "return the value of the first parameter raised to the power of the second",
     ),
-    'radians': (
-        (
-            'genType radians(genType degrees)',
-        ),
-        'convert a quantity in degrees to radians',
+    "radians": (
+        ("genType radians(genType degrees)",),
+        "convert a quantity in degrees to radians",
     ),
-    'reflect': (
-        (
-            'genType reflect(genType I, genType N)',
-        ),
-        'calculate the reflection direction for an incident vector',
+    "reflect": (
+        ("genType reflect(genType I, genType N)",),
+        "calculate the reflection direction for an incident vector",
     ),
-    'refract': (
-        (
-            'genType refract(genType I, genType N, float eta)',
-        ),
-        'calculate the refraction direction for an incident vector',
+    "refract": (
+        ("genType refract(genType I, genType N, float eta)",),
+        "calculate the refraction direction for an incident vector",
     ),
-    'round': (
-        (
-            'genType round(genType x)',
-        ),
-        'find the nearest integer to the parameter',
+    "round": (
+        ("genType round(genType x)",),
+        "find the nearest integer to the parameter",
     ),
-    'roundEven': (
-        (
-            'genType roundEven(genType x)',
-        ),
-        'find the nearest even integer to the parameter',
+    "roundEven": (
+        ("genType roundEven(genType x)",),
+        "find the nearest even integer to the parameter",
     ),
-    'sign': (
+    "sign": (
         (
-            'genType sign(genType x)',
-            'genIType sign(genIType x)',
+            "genType sign(genType x)",
+            "genIType sign(genIType x)",
         ),
-        'extract the sign of the parameter',
+        "extract the sign of the parameter",
     ),
-    'sin': (
-        (
-            'genType sin(genType angle)',
-        ),
-        'return the sine of the parameter',
+    "sin": (
+        ("genType sin(genType angle)",),
+        "return the sine of the parameter",
     ),
-    'sinh': (
-        (
-            'genType sinh(genType x)',
-        ),
-        'return the hyperbolic sine of the parameter',
+    "sinh": (
+        ("genType sinh(genType x)",),
+        "return the hyperbolic sine of the parameter",
     ),
-    'smoothstep': (
+    "smoothstep": (
         (
-            'genType smoothstep(genType edge0, genType edge1, genType x)',
-            'genType smoothstep(float edge0, float edge1, genType x)',
+            "genType smoothstep(genType edge0, genType edge1, genType x)",
+            "genType smoothstep(float edge0, float edge1, genType x)",
         ),
-        'perform Hermite interpolation between two values',
+        "perform Hermite interpolation between two values",
     ),
-    'sqrt': (
-        (
-            'genType sqrt(genType x)',
-        ),
-        'return the square root of the parameter',
+    "sqrt": (
+        ("genType sqrt(genType x)",),
+        "return the square root of the parameter",
     ),
-    'step': (
+    "step": (
         (
-            'genType step(genType edge, genType x)',
-            'genType step(float edge, genType x)',
+            "genType step(genType edge, genType x)",
+            "genType step(float edge, genType x)",
         ),
-        'generate a step function by comparing two values',
+        "generate a step function by comparing two values",
     ),
-    'tan': (
-        (
-            'genType tan(genType angle)',
-        ),
-        'return the tangent of the parameter',
+    "tan": (
+        ("genType tan(genType angle)",),
+        "return the tangent of the parameter",
     ),
-    'tanh': (
-        (
-            'genType tanh(genType x)',
-        ),
-        'return the hyperbolic tangent of the parameter',
+    "tanh": (
+        ("genType tanh(genType x)",),
+        "return the hyperbolic tangent of the parameter",
     ),
-    'texelFetch': (
+    "texelFetch": (
         (
-            'gvec4 texelFetch(gsampler2D sampler, ivec2 P, int lod)',
-            'gvec4 texelFetch(gsampler3D sampler, ivec3 P, int lod)',
-            'gvec4 texelFetch(gsampler2DArray sampler, ivec3 P, int lod)',
+            "gvec4 texelFetch(gsampler2D sampler, ivec2 P, int lod)",
+            "gvec4 texelFetch(gsampler3D sampler, ivec3 P, int lod)",
+            "gvec4 texelFetch(gsampler2DArray sampler, ivec3 P, int lod)",
         ),
-        'perform a lookup of a single texel within a texture',
+        "perform a lookup of a single texel within a texture",
     ),
-    'texelFetchOffset': (
+    "texelFetchOffset": (
         (
-            'gvec4 texelFetchOffset(gsampler2D sampler, ivec2 P, int lod, ivec2 offset)',
-            'gvec4 texelFetchOffset(gsampler3D sampler, ivec3 P, int lod, ivec3 offset)',
-            'gvec4 texelFetchOffset(gsampler2DArray sampler, ivec3 P, int lod, ivec2 offset)',
+            "gvec4 texelFetchOffset(gsampler2D sampler, ivec2 P, int lod, ivec2 offset)",
+            "gvec4 texelFetchOffset(gsampler3D sampler, ivec3 P, int lod, ivec3 offset)",
+            "gvec4 texelFetchOffset(gsampler2DArray sampler, ivec3 P, int lod, ivec2 offset)",
         ),
-        'perform a lookup of a single texel within a texture with an offset',
+        "perform a lookup of a single texel within a texture with an offset",
     ),
-    'texture': (
+    "texture": (
         (
-            'gvec4 texture(gsampler2D sampler, vec2 P [, float bias])',
-            'gvec4 texture(gsampler3D sampler, vec3 P [, float bias])',
-            'gvec4 texture(gsamplerCube sampler, vec3 P [, float bias])',
-            'float texture(sampler2DShadow sampler, vec3 P [, float bias])',
-            'float texture(samplerCubeShadow sampler, vec4 P [, float bias])',
-            'gvec4 texture(gsampler2DArray sampler, vec3 P [, float bias])',
-            'float texture(sampler2DArrayShadow sampler, vec4 P)',
+            "gvec4 texture(gsampler2D sampler, vec2 P [, float bias])",
+            "gvec4 texture(gsampler3D sampler, vec3 P [, float bias])",
+            "gvec4 texture(gsamplerCube sampler, vec3 P [, float bias])",
+            "float texture(sampler2DShadow sampler, vec3 P [, float bias])",
+            "float texture(samplerCubeShadow sampler, vec4 P [, float bias])",
+            "gvec4 texture(gsampler2DArray sampler, vec3 P [, float bias])",
+            "float texture(sampler2DArrayShadow sampler, vec4 P)",
         ),
-        'retrieves texels from a texture',
+        "retrieves texels from a texture",
     ),
-    'textureGrad': (
+    "textureGrad": (
         (
-            'gvec4 textureGrad(gsampler2D sampler, vec2 P, vec2 dPdx, vec2 dPdy)',
-            'gvec4 textureGrad(gsampler3D sampler, vec3 P, vec3 dPdx, vec3 dPdy)',
-            'gvec4 textureGrad(gsamplerCube sampler, vec3 P, vec3 dPdx, vec3 dPdy)',
-            'float textureGrad(sampler2DShadow sampler, vec3 P, vec2 dPdx, vec2 dPdy)',
-            'float textureGrad(samplerCubeShadow sampler, vec4 P, vec3 dPdx, vec3 dPdy)',
-            'gvec4 textureGrad(gsampler2DArray sampler, vec3 P, vec2 dPdx, vec2 dPdy)',
-            'float textureGrad(sampler2DArrayShadow sampler, vec4 P, vec2 dPdx, vec2 dPdy)',
+            "gvec4 textureGrad(gsampler2D sampler, vec2 P, vec2 dPdx, vec2 dPdy)",
+            "gvec4 textureGrad(gsampler3D sampler, vec3 P, vec3 dPdx, vec3 dPdy)",
+            "gvec4 textureGrad(gsamplerCube sampler, vec3 P, vec3 dPdx, vec3 dPdy)",
+            "float textureGrad(sampler2DShadow sampler, vec3 P, vec2 dPdx, vec2 dPdy)",
+            "float textureGrad(samplerCubeShadow sampler, vec4 P, vec3 dPdx, vec3 dPdy)",
+            "gvec4 textureGrad(gsampler2DArray sampler, vec3 P, vec2 dPdx, vec2 dPdy)",
+            "float textureGrad(sampler2DArrayShadow sampler, vec4 P, vec2 dPdx, vec2 dPdy)",
         ),
-        'perform a texture lookup with explicit gradients',
+        "perform a texture lookup with explicit gradients",
     ),
-    'textureGradOffset': (
+    "textureGradOffset": (
         (
-            'gvec4 textureGradOffset(gsampler2D sampler, vec2 P, vec2 dPdx, vec2 dPdy, ivec2 offset)',
-            'gvec4 textureGradOffset(gsampler3D sampler, vec3 P, vec3 dPdx, vec3 dPdy, ivec3 offset)',
-            'float textureGradOffset(sampler2DShadow sampler, vec3 P, vec2 dPdx, vec2 dPdy, ivec2 offset)',
-            'gvec4 textureGradOffset(gsampler2DArray sampler, vec3 P, vec2 dPdx, vec2 dPdy, ivec2 offset)',
-            'float textureGradOffset(sampler2DArrayShadow sampler, vec4 P, vec2 dPdx, vec2 dPdy, ivec2 offset)',
+            "gvec4 textureGradOffset(gsampler2D sampler, vec2 P, vec2 dPdx, vec2 dPdy, ivec2 offset)",
+            "gvec4 textureGradOffset(gsampler3D sampler, vec3 P, vec3 dPdx, vec3 dPdy, ivec3 offset)",
+            "float textureGradOffset(sampler2DShadow sampler, vec3 P, vec2 dPdx, vec2 dPdy, ivec2 offset)",
+            "gvec4 textureGradOffset(gsampler2DArray sampler, vec3 P, vec2 dPdx, vec2 dPdy, ivec2 offset)",
+            "float textureGradOffset(sampler2DArrayShadow sampler, vec4 P, vec2 dPdx, vec2 dPdy, ivec2 offset)",
         ),
-        'perform a texture lookup with explicit gradients and offset',
+        "perform a texture lookup with explicit gradients and offset",
     ),
-    'textureLod': (
+    "textureLod": (
         (
-            'gvec4 textureLod(gsampler2D sampler, vec2 P, float lod)',
-            'gvec4 textureLod(gsampler3D sampler, vec3 P, float lod)',
-            'gvec4 textureLod(gsamplerCube sampler, vec3 P, float lod)',
-            'float textureLod(sampler2DShadow sampler, vec3 P, float lod)',
-            'gvec4 textureLod(gsampler2DArray sampler, vec3 P, float lod)',
+            "gvec4 textureLod(gsampler2D sampler, vec2 P, float lod)",
+            "gvec4 textureLod(gsampler3D sampler, vec3 P, float lod)",
+            "gvec4 textureLod(gsamplerCube sampler, vec3 P, float lod)",
+            "float textureLod(sampler2DShadow sampler, vec3 P, float lod)",
+            "gvec4 textureLod(gsampler2DArray sampler, vec3 P, float lod)",
         ),
-        'perform a texture lookup with explicit level-of-detail',
+        "perform a texture lookup with explicit level-of-detail",
     ),
-    'textureLodOffset': (
+    "textureLodOffset": (
         (
-            'gvec4 textureLodOffset(gsampler2D sampler, vec2 P, float lod, ivec2 offset)',
-            'gvec4 textureLodOffset(gsampler3D sampler, vec3 P, float lod, ivec3 offset)',
-            'float textureLodOffset(sampler2DShadow sampler, vec3 P, float lod, ivec2 offset)',
-            'gvec4 textureLodOffset(gsampler2DArray sampler, vec3 P, float lod, ivec2 offset)',
+            "gvec4 textureLodOffset(gsampler2D sampler, vec2 P, float lod, ivec2 offset)",
+            "gvec4 textureLodOffset(gsampler3D sampler, vec3 P, float lod, ivec3 offset)",
+            "float textureLodOffset(sampler2DShadow sampler, vec3 P, float lod, ivec2 offset)",
+            "gvec4 textureLodOffset(gsampler2DArray sampler, vec3 P, float lod, ivec2 offset)",
         ),
-        'perform a texture lookup with explicit level-of-detail and offset',
+        "perform a texture lookup with explicit level-of-detail and offset",
     ),
-    'textureOffset': (
+    "textureOffset": (
         (
-            'gvec4 textureOffset(gsampler2D sampler, vec2 P, ivec2 offset [, float bias])',
-            'gvec4 textureOffset(gsampler3D sampler, vec3 P, ivec3 offset [, float bias])',
-            'float textureOffset(sampler2DShadow sampler, vec3 P, ivec2 offset [, float bias])',
-            'gvec4 textureOffset(gsampler2DArray sampler, vec3 P, ivec2 offset [, float bias])',
+            "gvec4 textureOffset(gsampler2D sampler, vec2 P, ivec2 offset [, float bias])",
+            "gvec4 textureOffset(gsampler3D sampler, vec3 P, ivec3 offset [, float bias])",
+            "float textureOffset(sampler2DShadow sampler, vec3 P, ivec2 offset [, float bias])",
+            "gvec4 textureOffset(gsampler2DArray sampler, vec3 P, ivec2 offset [, float bias])",
         ),
-        'perform a texture lookup with offset',
+        "perform a texture lookup with offset",
     ),
-    'textureProj': (
+    "textureProj": (
         (
-            'gvec4 textureProj(gsampler2D sampler, vec3 P [, float bias])',
-            'gvec4 textureProj(gsampler2D sampler, vec4 P [, float bias])',
-            'gvec4 textureProj(gsampler3D sampler, vec4 P [, float bias])',
-            'float textureProj(sampler2DShadow sampler, vec4 P [, float bias])',
+            "gvec4 textureProj(gsampler2D sampler, vec3 P [, float bias])",
+            "gvec4 textureProj(gsampler2D sampler, vec4 P [, float bias])",
+            "gvec4 textureProj(gsampler3D sampler, vec4 P [, float bias])",
+            "float textureProj(sampler2DShadow sampler, vec4 P [, float bias])",
         ),
-        'perform a texture lookup with projection',
+        "perform a texture lookup with projection",
     ),
-    'textureProjGrad': (
+    "textureProjGrad": (
         (
-            'gvec4 textureProjGrad(gsampler2D sampler, vec3 P, vec2 dPdx, vec2 dPdy)',
-            'gvec4 textureProjGrad(gsampler2D sampler, vec4 P, vec2 dPdx, vec2 dPdy)',
-            'gvec4 textureProjGrad(gsampler3D sampler, vec4 P, vec3 dPdx, vec3 dPdy)',
-            'float textureProjGrad(sampler2DShadow sampler, vec4 P, vec2 dPdx, vec2 dPdy)',
+            "gvec4 textureProjGrad(gsampler2D sampler, vec3 P, vec2 dPdx, vec2 dPdy)",
+            "gvec4 textureProjGrad(gsampler2D sampler, vec4 P, vec2 dPdx, vec2 dPdy)",
+            "gvec4 textureProjGrad(gsampler3D sampler, vec4 P, vec3 dPdx, vec3 dPdy)",
+            "float textureProjGrad(sampler2DShadow sampler, vec4 P, vec2 dPdx, vec2 dPdy)",
         ),
-        'perform a texture lookup with projection and explicit gradients',
+        "perform a texture lookup with projection and explicit gradients",
     ),
-    'textureProjGradOffset': (
+    "textureProjGradOffset": (
         (
-            'gvec4 textureProjGradOffset(gsampler2D sampler, vec3 P, vec2 dPdx, vec2 dPdy, ivec2 offset)',
-            'gvec4 textureProjGradOffset(gsampler2D sampler, vec4 P, vec2 dPdx, vec2 dPdy, ivec2 offset)',
-            'gvec4 textureProjGradOffset(gsampler3D sampler, vec4 P, vec3 dPdx, vec3 dPdy, ivec3 offset)',
-            'float textureProjGradOffset(sampler2DShadow sampler, vec4 P, vec2 dPdx, vec2 dPdy, ivec2 offset)',
+            "gvec4 textureProjGradOffset(gsampler2D sampler, vec3 P, vec2 dPdx, vec2 dPdy, ivec2 offset)",
+            "gvec4 textureProjGradOffset(gsampler2D sampler, vec4 P, vec2 dPdx, vec2 dPdy, ivec2 offset)",
+            "gvec4 textureProjGradOffset(gsampler3D sampler, vec4 P, vec3 dPdx, vec3 dPdy, ivec3 offset)",
+            "float textureProjGradOffset(sampler2DShadow sampler, vec4 P, vec2 dPdx, vec2 dPdy, ivec2 offset)",
         ),
-        'perform a texture lookup with projection, explicit gradients and offset',
+        "perform a texture lookup with projection, explicit gradients and offset",
     ),
-    'textureProjLod': (
+    "textureProjLod": (
         (
-            'gvec4 textureProjLod(gsampler2D sampler, vec3 P, float lod)',
-            'gvec4 textureProjLod(gsampler2D sampler, vec4 P, float lod)',
-            'gvec4 textureProjLod(gsampler3D sampler, vec4 P, float lod)',
-            'float textureProjLod(sampler2DShadow sampler, vec4 P, float lod)',
+            "gvec4 textureProjLod(gsampler2D sampler, vec3 P, float lod)",
+            "gvec4 textureProjLod(gsampler2D sampler, vec4 P, float lod)",
+            "gvec4 textureProjLod(gsampler3D sampler, vec4 P, float lod)",
+            "float textureProjLod(sampler2DShadow sampler, vec4 P, float lod)",
         ),
-        'perform a texture lookup with projection and explicit level-of-detail',
+        "perform a texture lookup with projection and explicit level-of-detail",
     ),
-    'textureProjLodOffset': (
+    "textureProjLodOffset": (
         (
-            'gvec4 textureProjLodOffset(gsampler2D sampler, vec3 P, float lod, ivec2 offset)',
-            'gvec4 textureProjLodOffset(gsampler2D sampler, vec4 P, float lod, ivec2 offset)',
-            'gvec4 textureProjLodOffset(gsampler3D sampler, vec4 P, float lod, ivec3 offset)',
-            'float textureProjLodOffset(sampler2DShadow sampler, vec4 P, float lod, ivec2 offset)',
+            "gvec4 textureProjLodOffset(gsampler2D sampler, vec3 P, float lod, ivec2 offset)",
+            "gvec4 textureProjLodOffset(gsampler2D sampler, vec4 P, float lod, ivec2 offset)",
+            "gvec4 textureProjLodOffset(gsampler3D sampler, vec4 P, float lod, ivec3 offset)",
+            "float textureProjLodOffset(sampler2DShadow sampler, vec4 P, float lod, ivec2 offset)",
         ),
-        'perform a texture lookup with projection and explicit level-of-detail and offset',
+        "perform a texture lookup with projection and explicit level-of-detail and offset",
     ),
-    'textureProjOffset': (
+    "textureProjOffset": (
         (
-            'gvec4 textureProjOffset(gsampler2D sampler, vec3 P, ivec2 offset [, float bias])',
-            'gvec4 textureProjOffset(gsampler2D sampler, vec4 P, ivec2 offset [, float bias])',
-            'gvec4 textureProjOffset(gsampler3D sampler, vec4 P, ivec3 offset [, float bias])',
-            'float textureProjOffset(sampler2DShadow sampler, vec4 P, ivec2 offset [, float bias])',
+            "gvec4 textureProjOffset(gsampler2D sampler, vec3 P, ivec2 offset [, float bias])",
+            "gvec4 textureProjOffset(gsampler2D sampler, vec4 P, ivec2 offset [, float bias])",
+            "gvec4 textureProjOffset(gsampler3D sampler, vec4 P, ivec3 offset [, float bias])",
+            "float textureProjOffset(sampler2DShadow sampler, vec4 P, ivec2 offset [, float bias])",
         ),
-        'perform a texture lookup with projection and offset',
+        "perform a texture lookup with projection and offset",
     ),
-    'textureSize': (
+    "textureSize": (
         (
-            'ivec2 textureSize(gsampler2D sampler, int lod)',
-            'ivec3 textureSize(gsampler3D sampler, int lod)',
-            'ivec2 textureSize(gsamplerCube sampler, int lod)',
-            'ivec2 textureSize(sampler2DShadow sampler, int lod)',
-            'ivec2 textureSize(samplerCubeShadow sampler, int lod)',
-            'ivec3 textureSize(gsampler2DArray sampler, int lod)',
-            'ivec3 textureSize(sampler2DArrayShadow sampler, int lod)',
+            "ivec2 textureSize(gsampler2D sampler, int lod)",
+            "ivec3 textureSize(gsampler3D sampler, int lod)",
+            "ivec2 textureSize(gsamplerCube sampler, int lod)",
+            "ivec2 textureSize(sampler2DShadow sampler, int lod)",
+            "ivec2 textureSize(samplerCubeShadow sampler, int lod)",
+            "ivec3 textureSize(gsampler2DArray sampler, int lod)",
+            "ivec3 textureSize(sampler2DArrayShadow sampler, int lod)",
         ),
-        'retrieve the dimensions of a level of a texture',
+        "retrieve the dimensions of a level of a texture",
     ),
-    'transpose': (
+    "transpose": (
         (
-            'mat2 transpose(mat2 m)',
-            'mat3 transpose(mat3 m)',
-            'mat4 transpose(mat4 m)',
-            'mat2x3 transpose(mat3x2 m)',
-            'mat2x4 transpose(mat4x2 m)',
-            'mat3x2 transpose(mat2x3 m)',
-            'mat3x4 transpose(mat4x3 m)',
-            'mat4x2 transpose(mat2x4 m)',
-            'mat4x3 transpose(mat3x4 m)',
+            "mat2 transpose(mat2 m)",
+            "mat3 transpose(mat3 m)",
+            "mat4 transpose(mat4 m)",
+            "mat2x3 transpose(mat3x2 m)",
+            "mat2x4 transpose(mat4x2 m)",
+            "mat3x2 transpose(mat2x3 m)",
+            "mat3x4 transpose(mat4x3 m)",
+            "mat4x2 transpose(mat2x4 m)",
+            "mat4x3 transpose(mat3x4 m)",
         ),
-        'calculate the transpose of a matrix',
+        "calculate the transpose of a matrix",
     ),
-    'trunc': (
-        (
-            'genType trunc(genType x)',
-        ),
-        'find the truncated value of the parameter',
+    "trunc": (
+        ("genType trunc(genType x)",),
+        "find the truncated value of the parameter",
     ),
-    'uintBitsToFloat': (
-        (
-            'genType uintBitsToFloat(genUType x)',
-        ),
-        'produce a floating point using an encoding supplied as an integer',
+    "uintBitsToFloat": (
+        ("genType uintBitsToFloat(genUType x)",),
+        "produce a floating point using an encoding supplied as an integer",
     ),
-    'unpackHalf2x16': (
-        (
-            'vec2 unpackHalf2x16(uint v)',
-        ),
-        'convert two 16-bit floating-point values packed into a single 32-bit integer into a vector of two 32-bit floating-point quantities',
+    "unpackHalf2x16": (
+        ("vec2 unpackHalf2x16(uint v)",),
+        "convert two 16-bit floating-point values packed into a single 32-bit integer into a vector of two 32-bit floating-point quantities",
     ),
-    'unpackSnorm2x16': (
-        (
-            'vec2 unpackSnorm2x16(uint p)',
-        ),
-        'unpack floating-point values from an unsigned integer',
+    "unpackSnorm2x16": (
+        ("vec2 unpackSnorm2x16(uint p)",),
+        "unpack floating-point values from an unsigned integer",
     ),
-    'unpackUnorm2x16': (
-        (
-            'vec2 unpackUnorm2x16(uint p)',
-        ),
-        'unpack floating-point values from an unsigned integer',
+    "unpackUnorm2x16": (
+        ("vec2 unpackUnorm2x16(uint p)",),
+        "unpack floating-point values from an unsigned integer",
     ),
 }
 
 # The language's reserved words and type names, from the editor library's GLSL lexer
 # (lex_glsl.odin) -- the same list that colors the text, so completion offers exactly what
 # the highlighter knows.
-KEYWORDS: tuple[str, ...] = ('attribute', 'break', 'case', 'centroid', 'const', 'continue', 'default', 'discard', 'do', 'else', 'flat', 'for', 'highp', 'if', 'in', 'inout', 'invariant', 'layout', 'lowp', 'mediump', 'noperspective', 'out', 'precision', 'return', 'smooth', 'struct', 'switch', 'uniform', 'varying', 'void', 'while')
+KEYWORDS: tuple[str, ...] = (
+    "attribute",
+    "break",
+    "case",
+    "centroid",
+    "const",
+    "continue",
+    "default",
+    "discard",
+    "do",
+    "else",
+    "flat",
+    "for",
+    "highp",
+    "if",
+    "in",
+    "inout",
+    "invariant",
+    "layout",
+    "lowp",
+    "mediump",
+    "noperspective",
+    "out",
+    "precision",
+    "return",
+    "smooth",
+    "struct",
+    "switch",
+    "uniform",
+    "varying",
+    "void",
+    "while",
+)
 
-TYPES: tuple[str, ...] = ('bool', 'bvec2', 'bvec3', 'bvec4', 'double', 'float', 'int', 'isampler2D', 'isampler3D', 'ivec2', 'ivec3', 'ivec4', 'mat2', 'mat3', 'mat4', 'sampler1D', 'sampler2D', 'sampler2DShadow', 'sampler3D', 'samplerCube', 'uint', 'usampler2D', 'uvec2', 'uvec3', 'uvec4', 'vec2', 'vec3', 'vec4')
+TYPES: tuple[str, ...] = (
+    "bool",
+    "bvec2",
+    "bvec3",
+    "bvec4",
+    "double",
+    "float",
+    "int",
+    "isampler2D",
+    "isampler3D",
+    "ivec2",
+    "ivec3",
+    "ivec4",
+    "mat2",
+    "mat3",
+    "mat4",
+    "sampler1D",
+    "sampler2D",
+    "sampler2DShadow",
+    "sampler3D",
+    "samplerCube",
+    "uint",
+    "usampler2D",
+    "uvec2",
+    "uvec3",
+    "uvec4",
+    "vec2",
+    "vec3",
+    "vec4",
+)

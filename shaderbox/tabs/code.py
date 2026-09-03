@@ -404,6 +404,27 @@ def _consume_lookup_request(app: App, editor: Editor) -> None:
     )
 
 
+# Columns between the caret and a note pinned beside it, so the note clears the glyph the
+# caret sits on instead of covering the word being looked up.
+_NOTE_COLUMN_GAP = 3
+
+
+def _note_anchor(app: App, editor: Editor, column_offset: int) -> tuple[float, float]:
+    """Screen point one row below the caret, `column_offset` columns to its right.
+
+    The ONE place this arithmetic lives: `K` and the completion detail both pin a note
+    beside the caret, and computing it in two places is how the two drift apart.
+    """
+    cursor = editor.get_current_cursor_position()
+    origin_x, origin_y = editor.get_text_origin()
+    cell_w, cell_h = editor.get_cell_size()
+    rect_x, rect_y = app.editor_rect[0], app.editor_rect[1]
+    return (
+        rect_x + origin_x + (cursor.column + column_offset) * cell_w,
+        rect_y + origin_y + (cursor.line - editor.get_scroll() + 1) * cell_h,
+    )
+
+
 def _draw_lookup_popup(app: App, editor: Editor) -> None:
     lookup = app.editor_lookup
     if lookup is None:
@@ -411,16 +432,12 @@ def _draw_lookup_popup(app: App, editor: Editor) -> None:
     if imgui.is_mouse_clicked(0) or imgui.is_mouse_clicked(1):
         app.editor_lookup = None
         return
-    # Under the caret's cell: the editor rect, the text origin inside it, then the cell.
-    cursor = editor.get_current_cursor_position()
-    origin_x, origin_y = editor.get_text_origin()
-    cell_w, cell_h = editor.get_cell_size()
-    rect_x, rect_y = app.editor_rect[0], app.editor_rect[1]
-    anchor = (
-        rect_x + origin_x + cursor.column * cell_w,
-        rect_y + origin_y + (cursor.line - editor.get_scroll() + 1) * cell_h,
+    anchored_note(
+        "##lookup",
+        _note_anchor(app, editor, _NOTE_COLUMN_GAP),
+        lookup.signature,
+        lookup.doc,
     )
-    anchored_note("##lookup", anchor, lookup.signature, lookup.doc)
 
 
 def _draw_candidate_doc(app: App, editor: Editor) -> None:
@@ -441,20 +458,12 @@ def _draw_candidate_doc(app: App, editor: Editor) -> None:
     found = candidate_doc(candidate, app.shader_lib_index.functions)
     if found is None:
         return
-    # Beside the popup rather than under it: the popup itself hangs under the caret, and a
-    # note under BOTH would cover the code the user is completing into.
-    cursor = editor.get_current_cursor_position()
-    origin_x, origin_y = editor.get_text_origin()
-    cell_w, cell_h = editor.get_cell_size()
-    rect_x, rect_y = app.editor_rect[0], app.editor_rect[1]
+    # Clear of the popup, which is as wide as its widest row.
     widest = max(
         (len(editor.complete_item(i) or "") for i in range(editor.complete_count())),
         default=0,
     )
-    anchor = (
-        rect_x + origin_x + (cursor.column + widest + 3) * cell_w,
-        rect_y + origin_y + (cursor.line - editor.get_scroll() + 1) * cell_h,
-    )
+    anchor = _note_anchor(app, editor, widest + _NOTE_COLUMN_GAP)
     anchored_note("##candidate_doc", anchor, found[0], found[1])
 
 
