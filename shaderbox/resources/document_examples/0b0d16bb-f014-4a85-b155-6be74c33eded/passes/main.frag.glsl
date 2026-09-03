@@ -189,11 +189,28 @@ vec3 embers(vec2 p, float t) {
 // Render "LABEL\nMATH" (one codepoint array, 10 = newline) as TWO centred lines:
 // label at u_text_pos, math one u_text_line_gap below (smaller). Each line is
 // centred on its own char count. Returns combined ink coverage [0,1].
-float draw_caption(vec2 p, uint s[TLEN], float ch, float weight) {
+// The step's codepoint at index i. A runtime `step` keeps ONE draw_caption in the program:
+// dispatching whole arrays instantiated it nine times, and the driver spent seconds
+// compiling nine unrolled copies of the glyph SDF loop.
+uint caption_char(int step, int i) {
+    switch (step) {
+        case 1: return u_step1text[i];
+        case 2: return u_step2text[i];
+        case 3: return u_step3text[i];
+        case 4: return u_step4text[i];
+        case 5: return u_step5text[i];
+        case 6: return u_step6text[i];
+        case 7: return u_step7text[i];
+        case 8: return u_step8text[i];
+        default: return u_step9text[i];
+    }
+}
+
+float draw_caption(vec2 p, int step, float ch, float weight) {
     // Pass 1: per-line char counts (line 0 = label, line 1 = math).
     int cnt0 = 0, cnt1 = 0, line = 0;
     for (int i = 0; i < TLEN; ++i) {
-        uint c = s[i];
+        uint c = caption_char(step, i);
         if (c == 0u) break;
         if (c == 10u) { line = 1; continue; }
         if (line == 0) cnt0++; else cnt1++;
@@ -219,7 +236,7 @@ float draw_caption(vec2 p, uint s[TLEN], float ch, float weight) {
     float d = 1e9;
     int k0 = 0, k1 = 0; line = 0;
     for (int i = 0; i < TLEN; ++i) {
-        uint cp = s[i];
+        uint cp = caption_char(step, i);
         if (cp == 0u) break;
         if (cp == 10u) { line = 1; continue; }
         if (line == 0) {
@@ -244,22 +261,6 @@ float caption_alpha(float i) {
     float fin = smoothstep(start, start + max(u_text_fade_in, 0.001), rt);
     float fout = 1.0 - smoothstep(slotEnd - max(u_text_fade_out, 0.001), slotEnd, rt);
     return fin * fout;
-}
-
-// Coverage of step `i`'s two-line caption at pixel p. GLSL can't index an
-// array-of-arrays, so dispatch the per-step uniform array.
-float step_caption(int i, vec2 p) {
-    float w = u_text_weight;
-    float ch = u_text_size;
-    if (i == 1) return draw_caption(p, u_step1text, ch, w);
-    if (i == 2) return draw_caption(p, u_step2text, ch, w);
-    if (i == 3) return draw_caption(p, u_step3text, ch, w);
-    if (i == 4) return draw_caption(p, u_step4text, ch, w);
-    if (i == 5) return draw_caption(p, u_step5text, ch, w);
-    if (i == 6) return draw_caption(p, u_step6text, ch, w);
-    if (i == 7) return draw_caption(p, u_step7text, ch, w);
-    if (i == 8) return draw_caption(p, u_step8text, ch, w);
-    return draw_caption(p, u_step9text, ch, w);
 }
 
 void main() {
@@ -319,10 +320,14 @@ void main() {
     // --- Step captions on top (each step's text, faded per its window) ---
     // Only the 1-2 steps whose windows overlap `t` contribute; accumulate their
     // ink * per-step alpha, then composite as opaque text over the flame.
+    // Only the steps whose windows can overlap `t` are drawn: the current slot's and the two
+    // before it (a caption lingers past its slot by u_text_hold_extra). Runtime bounds keep the
+    // loop from unrolling into more copies of draw_caption.
     float ink = 0.0;
-    for (int i = 1; i <= 9; ++i) {
-        float a = caption_alpha(float(i));
-        if (a > 0.0) ink = max(ink, step_caption(i, tp) * a);
+    int cur = int(min(floor(reveal_time() / STEP_DUR), N_STEPS - 1.0)) + 1;
+    for (int k = max(cur - 2, 1); k <= cur; ++k) {
+        float a = caption_alpha(float(k));
+        if (a > 0.0) ink = max(ink, draw_caption(tp, k, u_text_size, u_text_weight) * a);
     }
     color = mix(color, u_text_color, clamp(ink, 0.0, 1.0));
 
