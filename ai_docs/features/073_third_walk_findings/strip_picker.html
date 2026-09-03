@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Pass strip picker</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #1d2021; color: #ebdbb2; font: 14px/1.4 system-ui, sans-serif; }
+  .wrap { display: grid; grid-template-columns: 1fr 360px; gap: 24px; padding: 24px; max-width: 1180px; }
+  h1 { font-size: 16px; margin: 0 0 12px; color: #fbf1c7; }
+  h2 { font-size: 13px; margin: 18px 0 6px; color: #a89984; text-transform: uppercase; letter-spacing: .04em; }
+  .panel { background: #1d2021; border: 1px solid #3c3836; padding: 12px; border-radius: 4px; }
+  .caption { color: #928374; font-size: 12px; margin-bottom: 8px; }
+  .strip { display: flex; gap: 8px; flex-wrap: wrap; }
+  .tile { width: 112px; border: 1px solid #3c3836; box-sizing: content-box; position: relative; border-radius: 2px; }
+  .tile canvas { display: block; width: 112px; height: 112px; }
+  .footer { text-align: center; font-size: 13px; line-height: 19px; height: 19px; overflow: hidden; }
+  .chips { display: flex; gap: 4px; justify-content: center; padding: 0 2px 4px; min-height: 16px; }
+  .chip { font-size: 11px; line-height: 14px; padding: 0 5px; border-radius: 8px; }
+  .tick { position: absolute; right: 3px; top: 3px; width: 8px; height: 8px; border-radius: 50%; }
+  .ctrl { display: grid; grid-template-columns: 110px 1fr 56px; gap: 8px; align-items: center; margin: 6px 0; }
+  .ctrl label { color: #a89984; font-size: 12px; }
+  .ctrl input[type=range] { width: 100%; }
+  .ctrl input[type=color] { width: 40px; height: 22px; padding: 0; border: 1px solid #3c3836; background: none; }
+  .ctrl select { background: #282828; color: #ebdbb2; border: 1px solid #3c3836; padding: 2px 4px; }
+  .val { font-family: ui-monospace, monospace; font-size: 12px; color: #d5c4a1; text-align: right; }
+  .sw { display: inline-block; width: 12px; height: 12px; vertical-align: -2px; border: 1px solid #665c54; margin-right: 4px; }
+  .contrast { display: grid; grid-template-columns: 1fr auto auto; gap: 4px 12px; font-size: 12px; }
+  .contrast .n { font-family: ui-monospace, monospace; }
+  .ok { color: #b8bb26; } .warn { color: #fabd2f; } .bad { color: #fb4934; }
+  pre { background: #161819; border: 1px solid #3c3836; padding: 10px; font-size: 12px; overflow: auto; }
+  .row { display: flex; gap: 8px; margin-top: 8px; }
+  button { background: #282828; color: #ebdbb2; border: 1px solid #3c3836; padding: 4px 10px; cursor: pointer; }
+  button:hover { background: #3c3836; }
+  .presets { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+  .presets button { font-size: 12px; padding: 3px 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div>
+    <h1>Pass strip picker</h1>
+    <div class="caption">The strip as the panel draws it: 112 px tiles on the panel ground, footer name, chips naming what the pass reads. Left to right: a live ancestor, the output (accent border), a live pass with colored output, two dormant tiles (one with an error border). Tune on the right; copy the block at the bottom.</div>
+    <div class="panel">
+      <div class="strip" id="strip"></div>
+    </div>
+
+    <h2>Contrast (WCAG, over the composited ground)</h2>
+    <div class="panel contrast" id="contrast"></div>
+
+    <h2>Values to hand back</h2>
+    <pre id="out"></pre>
+    <div class="row"><button id="copy">Copy</button><button id="reset">Reset to current app values</button></div>
+  </div>
+
+  <div>
+    <h2>Presets</h2>
+    <div class="presets" id="presets"></div>
+
+    <h2>Live tile fill</h2>
+    <div class="ctrl"><label>fill color</label><span><select id="fillSel"></select> <input type="color" id="fillCustom"></span><span class="val" id="fillHex"></span></div>
+    <div class="ctrl"><label>fill alpha</label><input type="range" id="fillA" min="0" max="1" step="0.01"><span class="val" id="fillAv"></span></div>
+    <div class="ctrl"><label>fill covers</label><select id="fillMode"><option value="cell">whole cell (under the image)</option><option value="band">footer + chips band only</option></select><span></span></div>
+
+    <h2>Footer name</h2>
+    <div class="ctrl"><label>live name</label><span><select id="nameSel"></select> <input type="color" id="nameCustom"></span><span class="val" id="nameHex"></span></div>
+    <div class="ctrl"><label>dormant name</label><span><select id="dimSel"></select> <input type="color" id="dimCustom"></span><span class="val" id="dimHex"></span></div>
+
+    <h2>Chips (pass inputs)</h2>
+    <div class="ctrl"><label>chip text</label><span><select id="chipFgSel"></select> <input type="color" id="chipFgCustom"></span><span class="val" id="chipFgHex"></span></div>
+    <div class="ctrl"><label>chip ground</label><span><select id="chipBgSel"></select> <input type="color" id="chipBgCustom"></span><span class="val" id="chipBgHex"></span></div>
+    <div class="ctrl"><label>chip ground alpha</label><input type="range" id="chipBgA" min="0" max="1" step="0.01"><span class="val" id="chipBgAv"></span></div>
+    <div class="ctrl"><label>dormant chip text</label><span><select id="chipDimSel"></select> <input type="color" id="chipDimCustom"></span><span class="val" id="chipDimHex"></span></div>
+
+    <h2>Borders</h2>
+    <div class="ctrl"><label>tile border</label><span><select id="borderSel"></select> <input type="color" id="borderCustom"></span><span class="val" id="borderHex"></span></div>
+    <div class="ctrl"><label>live border = fill</label><input type="checkbox" id="liveBorder"><span></span></div>
+  </div>
+</div>
+
+<script>
+const P = {
+  bg_0h:"#161819", bg_0:"#1d2021", bg_0s:"#222526", bg_1:"#282828", bg_2:"#3c3836", bg_3:"#504945", bg_4:"#665c54",
+  gray:"#928374", fg_4:"#a89984", fg_3:"#bdae93", fg_2:"#d5c4a1", fg_1:"#ebdbb2", fg_0:"#fbf1c7",
+  red_b:"#fb4934", green_b:"#b8bb26", yellow_b:"#fabd2f", blue_b:"#83a598", purple_b:"#d3869b", aqua_b:"#8ec07c", orange_b:"#fe8019",
+  yellow_n:"#d79921", aqua_n:"#689d6a", orange_n:"#d65d0e", blue_n:"#458588",
+};
+const PANEL = P.bg_0;
+
+// The app's current values (theme.py tokens).
+const CURRENT = {
+  fill: P.yellow_b, fillA: 0.32, fillMode: "cell",
+  name: P.fg_1, dim: P.gray,
+  chipFg: P.fg_3, chipBg: P.bg_3, chipBgA: 1.0, chipDim: P.gray,
+  border: P.bg_2, liveBorder: false,
+};
+const PRESETS = {
+  "current app (yellow 0.32)": {...CURRENT},
+  "first guess (yellow 0.12)": {...CURRENT, fillA: 0.12},
+  "grey lift (bg_3 solid)": {...CURRENT, fill: P.bg_3, fillA: 1.0},
+  "grey band only": {...CURRENT, fill: P.bg_3, fillA: 1.0, fillMode: "band"},
+  "aqua 0.22 band": {...CURRENT, fill: P.aqua_b, fillA: 0.22, fillMode: "band", chipBg: P.bg_0h, chipFg: P.fg_2},
+  "yellow band + bright name": {...CURRENT, fillA: 0.28, fillMode: "band", name: P.fg_0, chipBg: P.bg_0h, chipBgA: 0.8, chipFg: P.fg_1},
+  "no fill, live border": {...CURRENT, fillA: 0.0, liveBorder: true, fill: P.yellow_b},
+};
+
+let S = {...CURRENT};
+
+function hexToRgb(h){ const n=parseInt(h.slice(1),16); return [(n>>16)&255,(n>>8)&255,n&255]; }
+function rgbToHex(r){ return "#"+r.map(v=>Math.round(v).toString(16).padStart(2,"0")).join(""); }
+function over(fg, a, bg){ const f=hexToRgb(fg), b=hexToRgb(bg); return rgbToHex(f.map((v,i)=>v*a+b[i]*(1-a))); }
+function lum(h){ const c=hexToRgb(h).map(v=>{v/=255; return v<=0.03928? v/12.92 : Math.pow((v+0.055)/1.055,2.4);}); return 0.2126*c[0]+0.7152*c[1]+0.0722*c[2]; }
+function contrast(a,b){ const l1=lum(a), l2=lum(b); const [hi,lo]= l1>l2?[l1,l2]:[l2,l1]; return (hi+0.05)/(lo+0.05); }
+function rgba(h,a){ const [r,g,b]=hexToRgb(h); return `rgba(${r},${g},${b},${a})`; }
+
+// --- thumbnails: mostly black with a glow, like the cascades example ------------------
+function paint(canvas, kind){
+  const ctx = canvas.getContext("2d"); const w=canvas.width, h=canvas.height;
+  ctx.fillStyle="#000"; ctx.fillRect(0,0,w,h);
+  const blobs = {
+    scene:  [[0.3,0.4,0.18,"#ffd27a"],[0.72,0.65,0.12,"#7ac7ff"]],
+    cascade:[[0.5,0.5,0.45,"#3a2a10"],[0.3,0.4,0.2,"#a67a2e"]],
+    radiance:[[0.3,0.4,0.35,"#ffb347"],[0.72,0.65,0.3,"#5aa0ff"],[0.5,0.85,0.2,"#ff5a5a"]],
+    paint:  [[0.5,0.5,0.5,"#101418"],[0.45,0.55,0.2,"#2b3a4a"]],
+    blur:   [[0.5,0.5,0.55,"#241a08"]],
+  }[kind];
+  for (const [x,y,r,c] of blobs){
+    const g = ctx.createRadialGradient(x*w,y*h,0,x*w,y*h,r*w);
+    g.addColorStop(0,c); g.addColorStop(1,"rgba(0,0,0,0)");
+    ctx.fillStyle=g; ctx.fillRect(0,0,w,h);
+  }
+}
+
+const TILES = [
+  {name:"scene", kind:"scene", live:true, output:false, chips:[]},
+  {name:"cascade", kind:"cascade", live:true, output:true, chips:["scene","prev"]},
+  {name:"radiance", kind:"radiance", live:true, output:false, chips:["scene","cascade"]},
+  {name:"paint", kind:"paint", live:false, output:false, chips:["prev"]},
+  {name:"blur", kind:"blur", live:false, output:false, error:true, chips:["paint"]},
+];
+
+function build(){
+  const strip = document.getElementById("strip"); strip.innerHTML="";
+  for (const t of TILES){
+    const el = document.createElement("div"); el.className="tile"; el.dataset.name=t.name;
+    const c = document.createElement("canvas"); c.width=112; c.height=112; paint(c,t.kind);
+    el.appendChild(c);
+    const f = document.createElement("div"); f.className="footer"; f.textContent=t.name; el.appendChild(f);
+    const ch = document.createElement("div"); ch.className="chips";
+    for (const n of t.chips){ const s=document.createElement("span"); s.className="chip"; s.textContent=n; ch.appendChild(s); }
+    el.appendChild(ch);
+    if (!t.live){ const k=document.createElement("div"); k.className="tick"; el.appendChild(k); }
+    strip.appendChild(el);
+  }
+}
+
+function render(){
+  const fillOver = over(S.fill, S.fillA, PANEL);
+  for (const el of document.querySelectorAll(".tile")){
+    const t = TILES.find(x=>x.name===el.dataset.name);
+    const band = el.querySelector(".footer"), chips = el.querySelector(".chips");
+    if (t.live){
+      if (S.fillMode==="cell"){ el.style.background = rgba(S.fill,S.fillA); band.style.background=""; chips.style.background=""; }
+      else { el.style.background=""; band.style.background = rgba(S.fill,S.fillA); chips.style.background = rgba(S.fill,S.fillA); }
+    } else { el.style.background=""; band.style.background=""; chips.style.background=""; }
+    let border = S.border;
+    if (t.error) border = P.red_b; else if (t.output) border = P.yellow_b; else if (t.live && S.liveBorder) border = over(S.fill, Math.max(S.fillA,0.5), PANEL);
+    el.style.borderColor = border;
+    band.style.color = t.live ? S.name : S.dim;
+    const ground = t.live ? fillOver : PANEL;
+    for (const s of chips.querySelectorAll(".chip")){
+      s.style.color = t.live ? S.chipFg : S.chipDim;
+      s.style.background = rgba(S.chipBg, S.chipBgA);
+    }
+    const tick = el.querySelector(".tick"); if (tick) tick.style.background = S.dim;
+  }
+  // contrast
+  const chipGround = over(S.chipBg, S.chipBgA, fillOver);
+  const chipGroundDormant = over(S.chipBg, S.chipBgA, PANEL);
+  const rows = [
+    ["live name on fill", S.name, fillOver],
+    ["dormant name on panel", S.dim, PANEL],
+    ["chip text on chip (live)", S.chipFg, chipGround],
+    ["chip text on chip (dormant)", S.chipDim, chipGroundDormant],
+    ["chip ground vs fill", chipGround, fillOver],
+    ["fill vs panel", fillOver, PANEL],
+  ];
+  const c = document.getElementById("contrast"); c.innerHTML="";
+  for (const [label,a,b] of rows){
+    const r = contrast(a,b);
+    const cls = r>=4.5?"ok":(r>=3?"warn":"bad");
+    c.insertAdjacentHTML("beforeend", `<span>${label}</span><span class="n">${r.toFixed(2)}:1</span><span class="${cls}">${r>=4.5?"AA":(r>=3?"large only":"low")}</span>`);
+  }
+  document.getElementById("out").textContent =
+`fill:            ${S.fill} @ ${S.fillA.toFixed(2)}  (${S.fillMode})   composited: ${fillOver}
+live name:       ${S.name}
+dormant name:    ${S.dim}
+chip text:       ${S.chipFg}      dormant: ${S.chipDim}
+chip ground:     ${S.chipBg} @ ${S.chipBgA.toFixed(2)}
+tile border:     ${S.border}      live border = fill: ${S.liveBorder}`;
+  syncControls();
+}
+
+function paletteSelect(id, customId, hexId, key){
+  const sel = document.getElementById(id);
+  sel.innerHTML = Object.keys(P).map(k=>`<option value="${P[k]}">${k} ${P[k]}</option>`).join("") + `<option value="custom">custom</option>`;
+  sel.addEventListener("change", e=>{ if (e.target.value!=="custom"){ S[key]=e.target.value; render(); } });
+  document.getElementById(customId).addEventListener("input", e=>{ S[key]=e.target.value; render(); });
+}
+function syncControls(){
+  const pairs = [["fillSel","fillCustom","fillHex","fill"],["nameSel","nameCustom","nameHex","name"],["dimSel","dimCustom","dimHex","dim"],
+    ["chipFgSel","chipFgCustom","chipFgHex","chipFg"],["chipBgSel","chipBgCustom","chipBgHex","chipBg"],["chipDimSel","chipDimCustom","chipDimHex","chipDim"],["borderSel","borderCustom","borderHex","border"]];
+  for (const [id,cid,hid,key] of pairs){
+    const sel=document.getElementById(id); const v=S[key];
+    sel.value = [...sel.options].some(o=>o.value===v) ? v : "custom";
+    document.getElementById(cid).value = v;
+    document.getElementById(hid).innerHTML = `<span class="sw" style="background:${v}"></span>${v}`;
+  }
+  document.getElementById("fillA").value=S.fillA; document.getElementById("fillAv").textContent=S.fillA.toFixed(2);
+  document.getElementById("chipBgA").value=S.chipBgA; document.getElementById("chipBgAv").textContent=S.chipBgA.toFixed(2);
+  document.getElementById("fillMode").value=S.fillMode;
+  document.getElementById("liveBorder").checked=S.liveBorder;
+}
+
+build();
+paletteSelect("fillSel","fillCustom","fillHex","fill");
+paletteSelect("nameSel","nameCustom","nameHex","name");
+paletteSelect("dimSel","dimCustom","dimHex","dim");
+paletteSelect("chipFgSel","chipFgCustom","chipFgHex","chipFg");
+paletteSelect("chipBgSel","chipBgCustom","chipBgHex","chipBg");
+paletteSelect("chipDimSel","chipDimCustom","chipDimHex","chipDim");
+paletteSelect("borderSel","borderCustom","borderHex","border");
+document.getElementById("fillA").addEventListener("input", e=>{ S.fillA=parseFloat(e.target.value); render(); });
+document.getElementById("chipBgA").addEventListener("input", e=>{ S.chipBgA=parseFloat(e.target.value); render(); });
+document.getElementById("fillMode").addEventListener("change", e=>{ S.fillMode=e.target.value; render(); });
+document.getElementById("liveBorder").addEventListener("change", e=>{ S.liveBorder=e.target.checked; render(); });
+document.getElementById("copy").addEventListener("click", ()=>navigator.clipboard.writeText(document.getElementById("out").textContent));
+document.getElementById("reset").addEventListener("click", ()=>{ S={...CURRENT}; render(); });
+const pr = document.getElementById("presets");
+for (const [name, v] of Object.entries(PRESETS)){ const b=document.createElement("button"); b.textContent=name; b.addEventListener("click",()=>{ S={...v}; render(); }); pr.appendChild(b); }
+render();
+</script>
+</body>
+</html>
