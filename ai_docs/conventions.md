@@ -297,8 +297,14 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
 
 - **Three-layer UI architecture.** `app.py` = UI/glfw/imgui owner + lifecycle wrapper (windowing, GL
   context, editor sessions, popups, nav, the exporter panels) — no imgui drawing in the orchestrator
-  sense, but it owns all imgui-bound state. `ui.py` = thin orchestrator owning the frame loop (`run` +
-  `update_and_draw`). `widgets`/`popups`/`tabs` = pure draw functions taking `app: App`. (The split is
+  sense, but it owns all imgui-bound state. `ui.py` = the frame loop (`run` + `update_and_draw`)
+  AND the top-level window layout it composes — the menu bar, the editor/app split and its
+  splitter, the canvas viewer, the control-panel scaffold. Those live there as private `_draw_*`
+  functions because they position siblings and pass geometry between each other
+  (`_draw_document_image` returns an anchor that the FPS chip and the control panel both place
+  from), which is layout rather than a surface. `widgets`/`popups`/`tabs` = pure draw functions
+  taking `app: App`, each a LEAF surface: it draws inside the box it is handed and never
+  positions its siblings. (The split is
   forced by the no-`TYPE_CHECKING` rule: a draw fn annotating `app: App` while `App` imports it would
   cycle — so `App` lives in its own module.) Prior extractions already lifted the copilot backend
   (`copilot/backend.py`) and the headless project core (`project_session.py`) out of `App`; what

@@ -163,3 +163,59 @@ ruled out: deriving either set from the registry — the spec's struck W-2, and
 re-reading the code confirms its refutation (`_edit_target_key` keys the streak
 on the artifact axis, `agent.py:1012`'s `tc.name in _WRITE_TOOLS` on the verb
 axis, and `registry.is_edit_tool` is already the gate one line above it).
+
+## W-4 ui.py draw code — RECOMMENDATION: LEAVE (no move)
+
+done-condition: a written recommendation answering the spec's three questions,
+and — if it says leave — the reason recorded so a later session does not
+re-open it.
+
+**Recommendation: leave all seven `_draw_*` functions in `ui.py`.** The doc was
+the inaccurate half, and the doc is what changed.
+
+The basis, checked directly rather than argued from the spec:
+
+- **The repo has no layout-module shape to move them INTO.** Every module in
+  `tabs/`, `widgets/`, `popups/` is a leaf surface — a small public entry point
+  plus private helpers serving it (`tabs/render.py` = `draw` + one private;
+  `popups/help.py` = `draw_help` + three; `widgets/pass_list.py` = `draw` +
+  five). Not one of them positions siblings, owns a child-region tree, or
+  returns geometry for a caller to place other things by. Creating the first
+  such module to hold these would invent a shape the repo does not use.
+- **`tabs/document.py` is the wrong home specifically.** It draws ONE tab inside
+  the document-settings tab bar, and it is one of three peers in `_NODE_TABS`
+  (`ui.py:763`). The app panel is the surface CONTAINING that tab bar, three
+  levels up (`_draw_app_panel` → `control_panel` child → `_draw_document_settings`
+  → tab bar → `document_tab.draw`). Moving the container into a file holding one
+  of its grandchildren inverts the containment.
+- **The cluster is not separable.** `_draw_app_panel` → `_draw_document_image` →
+  `_draw_canvas_backdrop` is one surface split three ways for reading length.
+  `_draw_document_image`'s own docstring says why it returns geometry rather
+  than drawing self-contained. It also latches per-frame mouse state consumed by
+  `app.session.tick(..., mouse=app.script_mouse)` at `ui.py:243` — same file,
+  and the ordering hazard between them is only visible in one read.
+- **No pain signal.** All seven are private with exactly one caller each, in the
+  same file: blast radius is one grep. 817 lines is unremarkable beside
+  `app.py`'s 1728 and `ui_primitives.py`'s 1320.
+
+did: fixed `conventions.md`'s "Three-layer UI architecture" bullet instead. It
+called `ui.py` a "thin orchestrator owning the frame loop", which described a
+file a third smaller than the real one and sent a reader looking for the canvas
+viewer in the wrong layer. It now says `ui.py` owns the frame loop AND the
+top-level window layout, and says what makes `widgets`/`popups`/`tabs` different
+(a leaf draws inside the box it is handed and never positions its siblings) —
+so the distinction is checkable rather than a word. `dev_flow.md`'s module map
+was ALREADY accurate (it names `_draw_splitter`, `_draw_app_panel`,
+`_draw_document_settings` and the left/right split); the two docs now agree.
+verification: `make gates` exit 0 unpiped, GREEN, all three stages ran. The
+leaf-surface claim was checked against every module in the three directories
+before being written down, and softened once: an earlier draft said "one public
+entry point", which is false for `popups/lib_picker/filtering.py` and
+`search.py` (pure-logic helper modules) and for `widgets/details.py`.
+ruled out: moving `_draw_menu_bar` + `_hint` alone — it is the one genuinely
+self-contained function of the seven, but moving 38 lines to leave 235 behind
+buys nothing and makes the remainder look MORE anomalous. Also ruled out
+rewriting the feature specs that cite `ui.py::_draw_app_panel` by name: those
+are historical records, and a move would have left the archive permanently
+pointing at a file no longer holding the function — a worse doc drift than the
+one being fixed.
