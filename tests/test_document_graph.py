@@ -21,7 +21,7 @@ from shaderbox.constants import DEFAULT_FS_FILE_PATH
 from shaderbox.core import Canvas, Pass
 from shaderbox.document import DEFAULT_PASS_NAME, Document
 from shaderbox.media import MediaDetails, texture_to_rgba8
-from shaderbox.pass_graph import PassEntry, PassGraph, TargetConfig
+from shaderbox.pass_graph import PassEntry, PassGraph, TargetConfig, plan_passes
 from shaderbox.shader_source import ShaderSource
 from shaderbox.tabs.document import _apply_canvas_size
 from shaderbox.ui_models import UIDocument
@@ -684,14 +684,13 @@ def test_an_unchanged_size_pushes_no_notification(gl_ctx: moderngl.Context) -> N
     doc.release()
 
 
-def test_has_feedback_reads_the_graph_not_the_allocation_cache(
+def test_feedback_is_read_from_the_graph_not_the_allocation_cache(
     gl_ctx: moderngl.Context,
 ) -> None:
-    # `has_feedback` gates the "Clear canvas" button (069 W-G), so it must answer from the GRAPH's
-    # own declaration: True BEFORE any render, and still True right after a clear. Falsifier: derive
-    # it from `_feedback` — that dict is filled on demand during render() and emptied by
-    # reset_feedback itself, so the button would be absent before the first frame and would hide
-    # itself the instant it is clicked.
+    # The feedback set comes from the GRAPH's own declaration: present BEFORE any render, and still
+    # present right after a reset. Falsifier: derive it from `_feedback` — that dict is filled on
+    # demand during render() and emptied by reset_feedback, so it would be empty before the first
+    # frame and empty again the instant a reset runs.
     doc = _document(
         gl_ctx,
         {"trail": _ACCUMULATE},
@@ -700,14 +699,17 @@ def test_has_feedback_reads_the_graph_not_the_allocation_cache(
             passes={"trail": PassEntry(inputs={"u_prev": "trail"})},
         ),
     )
-    assert doc.has_feedback  # before any render
+    assert plan_passes(doc.effective_graph())[0].feedback == {
+        "trail"
+    }  # before any render
 
     doc.begin_frame()
     doc.render(u_time=0.0)
     doc.reset_feedback()
-    assert doc.has_feedback  # a clear does not retire the declaration
+    # A reset does not retire the declaration.
+    assert plan_passes(doc.effective_graph())[0].feedback == {"trail"}
     doc.release()
 
     plain = _document(gl_ctx, {"trail": _ACCUMULATE}, PassGraph(output="trail"))
-    assert not plain.has_feedback
+    assert not plan_passes(plain.effective_graph())[0].feedback
     plain.release()

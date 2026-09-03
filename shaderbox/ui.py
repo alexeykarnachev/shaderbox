@@ -20,6 +20,7 @@ from shaderbox.constants import (
 )
 from shaderbox.copilot.capabilities import DocumentImportResult, MediaBindResult
 from shaderbox.copilot.gate import GateResponse
+from shaderbox.core import process_time
 from shaderbox.hotkeys import dispatch_commands, process_hotkeys
 from shaderbox.logging_setup import configure_logging
 from shaderbox.paths import log_dir
@@ -205,7 +206,7 @@ def _tick_frame_state(app: App) -> list[str] | None:
     # document-render block below draws this same set). Matching that set keeps a scripted
     # uniform animating identically live and in export.
     app.session.reload_scripts()
-    now = glfw.get_time()
+    now = process_time()
     dt = (
         now - app.last_tick_time
         if app.last_tick_time
@@ -708,20 +709,16 @@ def _draw_app_panel(app: App) -> None:
             target_fps=app.app_state.global_target_fps,
             is_open=app.fps_details_open,
         )
-        # "Clear canvas" over the preview's top-LEFT — the opposite corner from the FPS chip, so the
-        # two never collide whatever the canvas aspect. Drawn only for a document that DECLARES a
-        # feedback pass; clearing nothing is a control that does nothing. The chord stays live
-        # either way.
-        if app.ui_documents[app.current_document_id].document.has_feedback:
-            imgui.set_cursor_screen_pos(
-                (cursor_pos.x + float(SPACE.MD), cursor_pos.y + float(SPACE.MD))
-            )
-            if ghost_button("Clear"):
-                app.reset_current_document_feedback()
-            if imgui.is_item_hovered():
-                imgui.set_tooltip(
-                    f"Clear canvas  {_hint(app, CommandId.RESET_FEEDBACK)}"
-                )
+        # "Reset document" over the preview's top-LEFT — the opposite corner from the FPS chip, so
+        # the two never collide whatever the canvas aspect. Always drawn: every document has a
+        # clock to restart, whether or not it accumulates anything.
+        imgui.set_cursor_screen_pos(
+            (cursor_pos.x + float(SPACE.MD), cursor_pos.y + float(SPACE.MD))
+        )
+        if ghost_button("Reset"):
+            app.reset_current_document()
+        if imgui.is_item_hovered():
+            imgui.set_tooltip(f"Reset document  {_hint(app, CommandId.RESET_DOCUMENT)}")
 
     imgui.set_cursor_screen_pos(
         (cursor_pos.x, cursor_pos.y + image_height + float(SPACE.MD))

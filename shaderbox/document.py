@@ -32,7 +32,7 @@ from shaderbox.constants import (
     WEBM_CPU_USED_VALUES,
     WEBM_CRF_VALUES,
 )
-from shaderbox.core import Canvas, Pass
+from shaderbox.core import Canvas, Pass, process_time
 from shaderbox.media import (
     Image,
     MediaDetails,
@@ -282,6 +282,11 @@ class Document:
         self._feedback: dict[str, Canvas] = {}
         # Which Pass.target_generation each history was built from.
         self._feedback_generation: dict[str, int] = {}
+        # The live clock's zero for this document, on the process clock: set at open and by
+        # `reset`, so both paths start a document at u_time 0. A live render (no explicit
+        # u_time) sees `live_time()`; export and the probe pass their own u_time and never
+        # read this.
+        self.time_origin: float = process_time()
         self._black: moderngl.Texture | None = None
         self._frame: int = -1
         self._graph_errors: list[GraphError] = []
@@ -386,22 +391,30 @@ class Document:
         self._feedback[name] = render_pass.canvas
         render_pass.canvas = previous
 
-    @property
-    def has_feedback(self) -> bool:
-        # Whether the GRAPH declares any feedback pass (an entry naming itself as an input). Read
-        # from the plan, never from `_feedback`: that dict is an allocation cache filled on demand
-        # during render() and emptied by release/drop/reset_feedback, so a check over it would be
-        # False before the first frame and False again the instant a clear runs.
-        # The EFFECTIVE graph (069 D9): a `u_prev` sampler with no stored edge reads the pass's
-        # own previous frame, so a document wired by name alone has feedback the raw graph cannot
-        # see -- and the Clear canvas button it gates would never appear.
-        return bool(plan_passes(self.effective_graph())[0].feedback)
+    def reset(self) -> None:
+        """Restart the document as if it had just been opened: histories gone, clock at zero.
+
+        The clock is what makes this whole: `u_time` restarts, and every bound video is a
+        function of `u_time` (`Pass.render` calls `update(render_time)` on it), so the videos
+        rewind with it. The script instance is the engine's to restart, through the session
+        funnel that calls this.
+        """
+        self.reset_feedback()
+        self.time_origin = process_time()
+
+    def live_time(self, now: float | None = None) -> float:
+        """Seconds on this document's clock: the live loop's u_time and the script's ctx.t.
+
+        `now` is a process-clock instant for a caller that sampled one for several documents
+        (the live tick); omitted, the clock is read here.
+        """
+        return (process_time() if now is None else now) - self.time_origin
 
     def reset_feedback(self) -> None:
         """Drop every feedback history, so the next frame starts from black.
 
-        Export enters this (D10), and so does anything that wants a document to render as if the
-        app had just opened.
+        Export enters this (D10); a live Reset comes through `reset`, which also restarts the
+        clock.
         """
         for canvas in self._feedback.values():
             canvas.release()
@@ -498,6 +511,8 @@ class Document:
         """
         if canvas is None and target is None:
             self.first_render_done = True
+        if u_time is None:
+            u_time = self.live_time()
         resolved_graph = self.effective_graph()
         resolved = target if target is not None else self.graph.output_pass
         output = self.graph.output_pass

@@ -52,11 +52,11 @@ def test_no_two_specs_share_a_chord_in_overlapping_scopes() -> None:
                 )
 
 
-def test_reset_feedback_is_a_legal_standalone_key() -> None:
-    # "Clear canvas" must survive editor focus, so the audit put it on an F-key rather than a
+def test_reset_document_is_a_legal_standalone_key() -> None:
+    # "Reset document" must survive editor focus, so the audit put it on an F-key rather than a
     # letter (069 W-E rule 3). A bare F-key is legal by DESIGN here, not by accident: the registry
     # exempts F1-F12 from the modifier requirement. Falsifier: bind it to a bare letter —
     # chord_needs_modifier returns True and this goes red.
-    spec = next(s for s in COMMAND_SPECS if s.id is CommandId.RESET_FEEDBACK)
+    spec = next(s for s in COMMAND_SPECS if s.id is CommandId.RESET_DOCUMENT)
     assert spec.default_chord == int(K.f6)
     assert not chord_needs_modifier(spec.default_chord)

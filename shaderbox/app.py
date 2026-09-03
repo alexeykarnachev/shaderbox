@@ -175,6 +175,10 @@ class App:
             glfw.maximize_window(window)
 
         glfw.make_context_current(window)
+        # moderngl's process-wide default context is bound once, to whatever GL context is
+        # current at the first get_context(); this makes it THIS window's, whatever context the
+        # process (a test's standalone fixture) had current before.
+        moderngl.init_context()
 
         # moderngl defaults to gc_mode=None, which never frees dropped GL objects: 50 script
         # edits leaked 103 textures / ~206 MiB. "auto" leaves a bounded residual because the
@@ -525,7 +529,7 @@ class App:
             CommandId.CLOSE_CODE_TAB: self.close_active_tab,
             CommandId.OPEN_PASS_SETTINGS: self.open_pass_settings_for_panel_pass,
             CommandId.ADD_PASS: self.open_add_pass,
-            CommandId.RESET_FEEDBACK: self.reset_current_document_feedback,
+            CommandId.RESET_DOCUMENT: self.reset_current_document,
         }
 
     # ---- copilot-cluster forwarders (feature 025) ----
@@ -1427,12 +1431,9 @@ class App:
             return
         self.session.set_document_all_stopped(document_id, stopped)
 
-    def reset_current_document_feedback(self) -> None:
-        # "Clear canvas": drop every feedback history so the next frame starts from black. A
-        # document with no feedback pass has nothing to drop and the call is a no-op.
-        ui_document = self.ui_documents.get(self.current_document_id)
-        if ui_document is not None:
-            ui_document.document.reset_feedback()
+    def reset_current_document(self) -> None:
+        # "Reset document": the session funnel restarts the current document whole.
+        self.session.reset_document(self.current_document_id)
 
     def toggle_current_document_play(self) -> None:
         # The hotkey mirror of the document-tab play/stop toggle — a no-op when the current document has no

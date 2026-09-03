@@ -29,6 +29,13 @@ from shaderbox.util import try_to_release
 # enough to launch, and it only has to be a fixed origin, not an exact one.
 _PROCESS_START: float = time.monotonic()
 
+
+def process_time() -> float:
+    """Seconds since this process started: the one clock the live loop, the script tick and a
+    document's time origin all read, so a reset can subtract it from itself."""
+    return time.monotonic() - _PROCESS_START
+
+
 # Engine-driven: never pass-intrinsic defaults — seed_uniform_values skips them and
 # UIDocument.save excludes them. Two kinds: per-frame values Pass.render() recomputes
 # from time/canvas, and the program-resident glyph tables Pass.compile() writes once
@@ -380,9 +387,7 @@ class Pass:
         # bare, so it falls through to this clock; export and the probe pass u_time. Measured
         # from process start, not `time.monotonic()` raw — that counts from BOOT, so a shader
         # opened on a long-uptime box starts at whatever the machine had been running for.
-        render_time = (
-            u_time if u_time is not None else time.monotonic() - _PROCESS_START
-        )
+        render_time = u_time if u_time is not None else process_time()
         self.seed_uniform_values()
         for uniform in self.get_active_uniforms():
             if uniform.name in TABLE_UNIFORMS:  # program-resident, set at compile

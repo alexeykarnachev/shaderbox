@@ -588,17 +588,22 @@ class ProjectSession:
         *,
         mouse: MouseState = EXPORT_MOUSE,
     ) -> None:
-        # The live per-frame tick: tick exactly the documents this frame will render (the ui.py render
-        # gate), so a scripted uniform animates identically live and in export. `mouse` is the live
-        # cursor App passes in (headless callers omit it → EXPORT_MOUSE, deterministic).
+        """The live per-frame tick over exactly the documents this frame renders.
+
+        `t` is a process-clock instant (`core.process_time()`); each document's script sees it
+        on the document's own clock, `document.live_time(t)`, the zero its shaders' u_time counts
+        from. `mouse` is the live cursor App passes in; headless callers omit it (EXPORT_MOUSE,
+        deterministic) and, never resetting a document, may pass any monotonic clock as `t`.
+        """
         for document_id in document_ids:
             ui_document = self.ui_documents.get(document_id)
             if ui_document is None:
                 continue
+            document = ui_document.document
             self.script_engine.tick(
                 document_id,
-                ui_document.document,
-                EngineContext(t=t, dt=dt, frame=frame, mouse=mouse),
+                document,
+                EngineContext(t=document.live_time(t), dt=dt, frame=frame, mouse=mouse),
                 self._stopped_for(document_id),
             )
 
@@ -744,6 +749,15 @@ class ProjectSession:
             keys.append(key)
         elif not stopped and key in keys:
             keys.remove(key)
+
+    def reset_document(self, document_id: str) -> None:
+        # The one Reset funnel: the document restarts (histories, clock, and with the clock every
+        # bound video) and the script re-runs __init__. Nothing else knows what a reset consists of.
+        ui_document = self.ui_documents.get(document_id)
+        if ui_document is None:
+            return
+        ui_document.document.reset()
+        self.script_engine.reset(document_id)
 
     def set_document_all_stopped(self, document_id: str, stopped: bool) -> None:
         # The whole-document play/stop: freeze/resume every driven uniform's write at once. The script keeps

@@ -95,9 +95,10 @@ import numpy as np  # noqa: E402
 from PIL import Image as PILImage  # noqa: E402
 from PIL import ImageDraw  # noqa: E402
 
-# core.py's render path reads glfw.get_time() for the default u_time; glfw is never init()'d
-# here (we use EGL, not a glfw window), so it warns "not initialized" and returns 0.0 — which
-# is exactly the static t=0 frame the dogfood wants. Silence the cosmetic warning.
+# glfw is never init()'d here (EGL, not a glfw window), so any glfw call the app modules make
+# on import warns "not initialized". Silence the cosmetic warning. The default u_time does not
+# depend on it: core.py's render path reads the process clock, and every render here passes an
+# explicit t anyway.
 glfw.set_error_callback(lambda code, desc: None)
 
 from shaderbox.constants import (  # noqa: E402

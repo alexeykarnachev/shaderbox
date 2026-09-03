@@ -388,8 +388,9 @@ def test_every_multi_pass_example_compiles_every_pass(
 def test_a_u_prev_pass_has_feedback_without_a_stored_edge(
     gl: moderngl.Context, tmp_path: Path
 ) -> None:
-    # `has_feedback` gates the Clear canvas button, so it must see the auto edge too: a pass
-    # declaring `u_prev` and nothing else reads its own previous frame.
+    # The plan of the EFFECTIVE graph must see the auto edge too: a pass declaring `u_prev` and
+    # nothing else reads its own previous frame, and the renderer allocates its history from
+    # that plan.
     # Bloom's `trail` is the only feedback in the example and its edge is EXPLICIT, so it is
     # rewired to a fresh `u_prev`-only pass that stores nothing.
     document_dir = tmp_path / "document"
@@ -400,8 +401,10 @@ def test_a_u_prev_pass_has_feedback_without_a_stored_edge(
         "trail", "u_scene"
     )
     assert document.graph.passes["trail"].inputs == {}
-    assert not document.has_feedback, "nothing has compiled yet, so no auto edge exists"
+    assert not plan_passes(document.effective_graph())[0].feedback, (
+        "nothing has compiled yet, so no auto edge exists"
+    )
 
     _render_until_online(document, len(document.passes) + 4)
     assert document.graph.passes["trail"].inputs == {}
-    assert document.has_feedback
+    assert plan_passes(document.effective_graph())[0].feedback == {"trail"}

@@ -21,7 +21,7 @@ class CommandId(StrEnum):
     HELP = auto()
     DELETE_DOCUMENT = auto()
     TOGGLE_DOCUMENT_PLAY = auto()
-    RESET_FEEDBACK = auto()
+    RESET_DOCUMENT = auto()
     OPEN_SETTINGS = auto()
     OPEN_LIB_PICKER = auto()
     OPEN_PALETTE = auto()
@@ -123,8 +123,8 @@ COMMAND_SPECS: list[CommandSpec] = [
         C.DOCUMENT,
     ),
     CommandSpec(
-        CommandId.RESET_FEEDBACK,
-        "Clear canvas",
+        CommandId.RESET_DOCUMENT,
+        "Reset document",
         _chord(K.f6),
         C.DOCUMENT,
     ),

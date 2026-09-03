@@ -6,7 +6,9 @@ cheap to write and the thing they protect is invisible until it is expensive —
 as the app slowly eating VRAM, not as a failure anyone can point at.
 """
 
+from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import moderngl
 import pytest
@@ -216,3 +218,28 @@ def test_a_target_format_change_never_leaves_the_pair_disagreeing(
             f"wrong format"
         )
     doc.release()
+
+
+@pytest.fixture
+def stale_default_context() -> Iterator[moderngl.Context]:
+    # Binds moderngl's process-wide default to a standalone context and releases that context,
+    # leaving the dead wrapper a later App would inherit. Requested BEFORE `app` in a test's
+    # signature so it runs first.
+    stale = moderngl.create_standalone_context(require=460)
+    moderngl.init_context()
+    yield moderngl.get_context()
+    stale.release()
+
+
+def test_the_app_rebinds_the_default_context_to_its_window(
+    stale_default_context: moderngl.Context, app: Any
+) -> None:
+    # moderngl binds its process-wide default context ONCE, to whatever GL context is current at
+    # the first get_context(). A standalone fixture context that took that role leaves a wrapper
+    # every later App would inherit: module-order-only failures (an export rendered garbage after
+    # test_document_graph + test_default_wiring). App.__init__ therefore re-initialises the default
+    # to its own window. Falsifier: drop that init_context() call -- `after` is then the very
+    # object the stale fixture handed out.
+    after = moderngl.get_context()
+    assert after is not stale_default_context
+    assert app.ui_documents  # the App built its documents on the rebound context
