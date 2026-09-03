@@ -17,7 +17,7 @@ from imgui_bundle import imgui
 from shaderbox.app import App
 from shaderbox.core import Pass
 from shaderbox.pass_graph import Wiring, evaluation_order, strip_order
-from shaderbox.theme import COLOR, SIZE, SPACE, fade
+from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_primitives import (
     context_menu_style,
     ghost_button,
@@ -115,8 +115,9 @@ def _draw_pass_tile(
         selected=is_output,
         armed=app.pass_delete_armed == name,
         border_color=border,
-        bg_color=None if stale else fade(COLOR.ACCENT_PRIMARY, COLOR.ACCENT_TINT_ALPHA),
         footer=name,
+        footer_font=None if stale else app.font_14_bold,
+        footer_color=COLOR.FG_DORMANT if stale else COLOR.FG_TITLE,
         overlay=_settings_overlay,
         stale=stale,
         chips=reads,

@@ -6,11 +6,11 @@ Parent: `01_spec.md § W-D`. Host-only; landed second.
 
 - **The dormant tint is gone.** `COLOR.STALE_TINT` is deleted; `preview_cell` blits every
   image white-tinted. A dormant tile keeps its dim footer, dim chips and the corner tick.
-- **A live tile carries a fill.** `_draw_pass_tile` passes
-  `bg_color=fade(COLOR.ACCENT_PRIMARY, COLOR.ACCENT_TINT_ALPHA)` (`0.32`, the active tab's own tint, shared by one token after the maintainer's first look at `0.12`) for every pass in
-  the output's chain, which `preview_cell` sets as the cell's `child_bg`: the ground under the
-  picture, the footer and the chips. Computed at draw time because `apply_theme` swaps the
-  accent at runtime. The output's accent border and error red are as they were.
+- **No fill either.** An accent fill at `0.12`, then at the active tab's `0.32`, were both
+  rejected at the display, and an HTML picker over the palette found nothing better. Landed
+  shape: a live tile's name is bold (`app.font_14_bold`) in `FG_TITLE`, a dormant tile's name
+  is `FG_DORMANT` (`bg_4`) in the regular face; `preview_cell` gained `footer_font` /
+  `footer_color` for it. The output's accent border and error red are as they were.
 - **`strip_order`** moved from the widget to `pass_graph.py` (GL-free, reachable from `App`
   without a widget import), with `step_in_order` beside it (wrap at both ends, first tile when
   the current is unknown, None on empty).
@@ -33,8 +33,8 @@ flag the frame had, and the output follows. `tests/test_pass_verbs.py` follows t
 
 ## Manual verification (the maintainer, in the app)
 
-1. On the cascades example: dormant tiles show their picture untouched plus the tick; live
-   tiles carry the fill; the output keeps its accent border. The fill is the active tab's tint.
+1. On the cascades example: every tile shows its picture untouched; a live tile's name is
+   bold and bright, a dormant one's darker with the tick; the output keeps its accent border.
 2. Click into the editor, `Alt+Right`: the output moves one tile right (wrapping at the end),
    the tab follows, the caret is still yours. `Alt+Left` walks back.
 3. Click the strip (editor unfocused), `Alt+Right`: the output moves and the editor is NOT

@@ -54,6 +54,8 @@ focus; and Reset sits with the other document-level verbs.
   dormant image is blitted untinted; every pass in the output's chain gets an accent-derived
   fill as the cell ground; dormant tiles keep the plain ground and the corner tick; the output's
   accent border and error red are unchanged. Fill color tuned by eye. Supersedes 071 D2.
+  *(Landed: after two fills were rejected by eye, no fill at all; a live name is bold
+  `FG_TITLE`, a dormant name `FG_DORMANT`. `40_wave_d_strip.md`.)*
 - **D4. `Alt+Right` / `Alt+Left` are next / previous pass, and switching keeps the focus where
   it was.** A switch is what a tile click is (output pass + shader tab), in the strip's drawn
   order, wrapping. Both are registered commands.

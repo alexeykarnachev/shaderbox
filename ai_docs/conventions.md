@@ -808,11 +808,11 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   newline until the user moves into the list. `K` is vim's `keywordprg` and the host is that
   program: the library leaves the key unbound and the host draws the note. Revisit if a provider
   needs the library's lexer state (a block comment, a string) rather than the line text.
-- **The pass strip marks what is LIVE, never what is dormant.** A tile in the output's chain
-  carries a quiet accent fill as its cell ground; a dormant tile keeps its picture untouched
-  plus the corner tick and dim footer (073 D3, which replaced 071 D2's multiplicative tint after
-  the maintainer read the tint as a color change). Revisit if the strip gains a state beyond
-  live / dormant / output.
+- **The pass strip marks a tile by its NAME, never by a fill or a tint over the picture.** The
+  picture is left as rendered on every tile; the output carries the accent border, a live
+  tile's name is bold `FG_TITLE`, a dormant tile's name is `FG_DORMANT` with the corner tick
+  (073 D3, after both a multiplicative tint and an accent fill were rejected by eye as a color
+  change). Revisit if the strip gains a state beyond live / dormant / output.
 
 *(Each bullet is a generic constraint on future code + a revisit trigger — NOT a feature changelog.
 The `/sanitize` noise audit deletes bullets that narrate a one-off implementation choice; per-feature

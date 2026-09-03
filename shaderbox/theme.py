@@ -117,9 +117,7 @@ class _ColorBag:
     # what an unwired sampler reads: the swatch a panel shows for it
     BLACK: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0)
 
-    # The accent's tint alpha wherever the accent marks a SELECTED surface: the active tab's
-    # fill and a live pass tile's cell ground share it, so the two read as one state. Applied
-    # at draw time off ACCENT_PRIMARY, which apply_theme swaps at runtime.
+    # The accent's tint alpha where the accent fills a selected surface (the active tab).
     ACCENT_TINT_ALPHA: float = 0.32
 
     # neutrals
@@ -147,6 +145,9 @@ class _ColorBag:
     FG_MUTED: tuple[float, float, float, float] = _P["fg_4"]
     FG_DIM: tuple[float, float, float, float] = _P["gray"]
     FG_TITLE: tuple[float, float, float, float] = _P["fg_0"]
+    # A dormant pass tile's name: darker than FG_DIM, so a tile the output does not need
+    # reads as off next to a live one's bold FG_TITLE.
+    FG_DORMANT: tuple[float, float, float, float] = _P["bg_4"]
 
     CHIP_BG: tuple[float, float, float, float] = _P["bg_3"]
     CHIP_BG_HOVER: tuple[float, float, float, float] = _P["bg_4"]

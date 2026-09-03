@@ -984,6 +984,8 @@ def preview_cell(
     border_color: tuple[float, float, float, float] | None = None,
     bg_color: tuple[float, float, float, float] | None = None,
     footer: str = "",
+    footer_font: imgui.ImFont | None = None,
+    footer_color: tuple[float, float, float, float] | None = None,
     overlay: Callable[[float], None] | None = None,
     stale: bool = False,
     chips: Sequence[str] | None = None,
@@ -999,7 +1001,9 @@ def preview_cell(
     parent (no jitter / SetCursorPos assert).
 
     `stale` marks a texture that is no longer being rendered — the footer and chips dim and
-    the tile takes the corner tick; the picture itself is left as it is.
+    the tile takes the corner tick; the picture itself is left as it is. `footer_font` /
+    `footer_color` override the footer's face and color (the strip's live names are bold and
+    bright, its dormant ones darker than the default dim).
 
     `chips` adds one more line under the footer, drawn in `chip_font`: each word on its own
     small chip, centered as a row. The line is reserved whenever `chips` is given (an empty
@@ -1067,14 +1071,19 @@ def preview_cell(
         imgui.pop_style_color(3)
 
         if footer:
+            if footer_font is not None:
+                imgui.push_font(footer_font, footer_font.legacy_size)
             label: str = _ellipsize(footer, avail.x)
             fw = imgui.calc_text_size(label)
             fy: float = origin.y + img_h
             imgui.set_cursor_screen_pos((origin.x + (avail.x - fw.x) / 2, fy))
-            if stale:
-                imgui.text_colored(COLOR.FG_DIM, label)
+            color = footer_color or (COLOR.FG_DIM if stale else None)
+            if color is not None:
+                imgui.text_colored(color, label)
             else:
                 imgui.text(label)
+            if footer_font is not None:
+                imgui.pop_font()
 
         if chips is not None and chip_font is not None:
             # The row spans the cell's width to a small inset, not the padded content region:

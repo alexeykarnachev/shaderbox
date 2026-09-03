@@ -222,7 +222,6 @@ _UNMEASURABLE: dict[tuple[str, str], str] = {
     ("shaderbox/ui_primitives.py", "setup_steps"): "forwards the step's own url",
     ("shaderbox/ui_primitives.py", "small_caption"): "forwards the caller's text",
     ("shaderbox/ui_primitives.py", "gauge_bar"): "forwards the caller's tooltip",
-    ("shaderbox/ui_primitives.py", "preview_cell"): "forwards the caller's footer text",
     ("shaderbox/ui_primitives.py", "label_row"): "forwards the caller's label",
     (
         "shaderbox/ui_primitives.py",
