@@ -20,7 +20,7 @@ void main() {
     // to flat white, which matters because emitters here are far above 1.
     vec3 mapped = light / (1.0 + light);
     vec4 scene = texture(u_paint, vs_uv);
-    // A solid texel draws itself: an emitter its colour, a wall its black. Without this the
+    // A solid texel draws itself: an emitter its color, a wall its black. Without this the
     // walls would be lit by the light in front of them and stop reading as occluders.
     vec3 rgb = mix(mapped, scene.rgb / (1.0 + scene.rgb), scene.a);
     // Linear -> sRGB. Skipping it makes everything look muddy and crushes the falloff.

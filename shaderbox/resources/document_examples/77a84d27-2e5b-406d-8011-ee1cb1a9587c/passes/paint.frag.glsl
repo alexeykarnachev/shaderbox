@@ -2,7 +2,7 @@
 
 // PAINT -- the scene the light bounces around in.
 //
-// RGB is emitted colour, ALPHA is "this texel is solid". A wall is opaque and black; a light is
+// RGB is emitted color, ALPHA is "this texel is solid". A wall is opaque and black; a light is
 // opaque and bright. Everything downstream keys off that alpha: the seed pass marks the solid
 // texels, and a ray stops at the first one it reaches.
 //

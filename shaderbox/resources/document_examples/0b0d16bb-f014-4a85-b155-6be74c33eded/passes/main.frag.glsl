@@ -282,7 +282,7 @@ void main() {
     float n = interior_field(p, t);
     float heat = flame_heat(p, t, n, w5);                // warp/edge-eat eases in (step 5)
 
-    // --- build the colour by stacking steps ---
+    // --- build the color by stacking steps ---
     // Step 1: base vertical heat gradient (greyscale), the very first thing shown.
     float base = exp(-1.4 * p.y);
     vec3 color = vec3(base) * w1;
@@ -293,7 +293,7 @@ void main() {
     // Step 3: cross-fade into the carved flame silhouette (still greyscale heat).
     color = mix(color, vec3(heat), w3);
 
-    // Step 4: cross-fade greyscale heat into the temperature ramp (colour).
+    // Step 4: cross-fade greyscale heat into the temperature ramp (color).
     color = mix(color, fire_ramp(heat), w4);
 
     // (Step 5 already folded into `heat` via w5 -- the shape starts moving/fraying.)

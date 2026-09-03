@@ -182,7 +182,7 @@ def render_facts(rgba: bytes, width: int, height: int) -> str:
         0.0,
         0.0,
         0.0,
-    ]  # alpha-weighted mean colour of the DRAWN region (chroma is
+    ]  # alpha-weighted mean color of the DRAWN region (chroma is
     ink_w = 0.0  # otherwise blind — "make it warmer/bluer" has no signal without it)
     for y in range(height):
         row = y * width

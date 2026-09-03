@@ -242,7 +242,7 @@ def test_a_user_bound_texture_survives_the_black_seed(
     drawn = np.asarray(texture_to_rgba8(document.render_pass.canvas.texture))[:, :, :3]
     assert int(drawn.max()) > 0, "the user's bound media was replaced by the black seed"
     # A real picture, not one bright texel: the seed's failure mode is uniform black, and a
-    # colour count separates the bound image from any flat fill.
+    # color count separates the bound image from any flat fill.
     assert len(np.unique(drawn.reshape(-1, 3), axis=0)) > 1000, (
         "the output is a flat fill rather than the bound image"
     )

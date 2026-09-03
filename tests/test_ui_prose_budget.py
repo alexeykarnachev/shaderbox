@@ -105,7 +105,7 @@ def _derived_rows() -> list[tuple[str, str, int | None, int]]:
 
 
 # imgui's own calls carry no signature this module can reflect over, so they stay explicit.
-# `text_colored` is scored only when its colour is `COLOR.FG_DIM` — the dim readout.
+# `text_colored` is scored only when its color is `COLOR.FG_DIM` — the dim readout.
 _IMGUI_ROWS: list[tuple[str, str, int | None, int]] = [
     # `help_marker`'s own budget is 8, not the 4 its `text` parameter name would give it:
     # § 2 grants the (?) marker one clause where a dim readout gets a fragment.

@@ -22,7 +22,7 @@ This is a **living skill**: every run, fix the steps you tripped on and add to `
   contract · Versioning · NOTES.md · Rendering · Researching/Past-labs. These run the loop; read top
   to bottom at session start.
 - **CONSULT WHEN RELEVANT (GRAPHICS CRAFT):** Shader craft · Raymarching/SDF *(marched scene)* ·
-  Lighting *(a render reads flat)* · Colour & tone · Motion & timing · Step-reveal+crossfade *(a reveal
+  Lighting *(a render reads flat)* · Color & tone · Motion & timing · Step-reveal+crossfade *(a reveal
   document)*. These name LEVERS; the working code lives in the reference labs (`## Past labs`).
 - **ONLY IF the effect runs a Python sim (CPU-SIM):** CPU scripting · Specific-algorithm sims ·
   Selective-variant tuning · Verify the premise. Pure-GLSL effects skip this whole block.
@@ -82,7 +82,7 @@ doc change) and let them decide. Don't silently build on another session's in-fl
      build stages. This is the mode the realism meta-lever assumes; the `us_flag` arc (v01→v18, each a
      full flag) is its shape.
    - **Component progression (a "how it's built" teaching decomposition):** each version ADDS one
-     mechanic on top of the previous (e.g. fire: base gradient → warped-noise → flame shape → colour
+     mechanic on top of the previous (e.g. fire: base gradient → warped-noise → flame shape → color
      ramp → glow → embers → smoke); early versions are intentionally incomplete. Good when the
      deliverable is a learning reel (see the reveal-reel pattern near the end).
    - Ask verbatim: "Each version a COMPLETE standalone attempt we critique & improve, or INCREMENTAL
@@ -268,7 +268,7 @@ uv run python .claude/skills/shader-lab/render_document.py video <document_dir> 
 When an effect needs a technique you don't have cold (how real fire avoids a flat core, a teardrop
 silhouette, lightning branching, how a night cityscape gets depth, etc.), **WebSearch / WebFetch real
 sources** — Shadertoy breakdowns, iquilezles.org, Cyanilux, game-engine VFX writeups, and for
-art-direction questions (value/contrast/colour) digital-painting + concept-art sources (Mitch Albala,
+art-direction questions (value/contrast/color) digital-painting + concept-art sources (Mitch Albala,
 ctrl+paint, Marco Bucci, art blogs). Working example code is the canonical pattern; read it, find the
 divergence from your code. Put the technique + URL in NOTES.md.
 
@@ -299,7 +299,7 @@ real thing would.** The examples below are just instances — the rule is effect
 
 - **Real model > "looks about right" fake.** Every hand-rolled approximation hit a ceiling and got
   rejected as "cheap/fake"; the real model read right immediately. (Instances from one lab: a sine-wave
-  displacement "cloth" → real Verlet mass-spring sim; a hand-picked colour-stop sunset → analytic
+  displacement "cloth" → real Verlet mass-spring sim; a hand-picked color-stop sunset → analytic
   Rayleigh/Mie single-scatter; an ad-hoc `pow(1-NdotV)` rim → the Charlie/Ashikhmin cloth sheen BRDF; a
   diffuse yellow disc → a metal sphere shaded by environment reflection.)
 - **Organic motion EMERGES from feedback; it is not imposed.** An applied oscillating field (a travelling
@@ -327,8 +327,8 @@ real thing would.** The examples below are just instances — the rule is effect
   projecting it onto a receding plane (detail compresses toward the horizon/vanishing point) gives depth +
   crisp structure. (Cloudscape, terrain haze, any far backdrop.)
 - **Drama = value contrast + saturation, NOT more detail; structured texture reads as material, random
-  colour-mottle reads as cheap.** "Looks garish/cheap" is usually washed mid-tones + random colour noise;
-  deepen the base colours, raise contrast, and replace mottle with a STRUCTURED texture (a real weave/
+  color-mottle reads as cheap.** "Looks garish/cheap" is usually washed mid-tones + random color noise;
+  deepen the base colors, raise contrast, and replace mottle with a STRUCTURED texture (a real weave/
   grain). A soft occluder over a blown highlight (a cloud across the sun) beats just dimming it.
 - **Process discipline this lab paid for:** verify the premise in ISOLATION before rendering (a sim's
   stability/ranges/amplitude/autocorrelation in numpy catches a blow-up the render only shows as a black
@@ -356,16 +356,16 @@ from real maintainer corrections; the parenthetical is the evidence, not a presc
   noise-gated one read as flame.)
 - **Domain-warp the noise for organic motion:** `fbm(p + k·fbm(p + k·fbm(p)))` curls where plain
   `fbm` only clouds — the single biggest "reads as alive" lever for fluid/fire/smoke.
-- **For interior detail, feed the RAW continuous field to the colour ramp — don't threshold-then-fill.**
-  A binary burn mask × a flat colour = a flat slab; mapping the raw field through the ramp keeps the
+- **For interior detail, feed the RAW continuous field to the color ramp — don't threshold-then-fill.**
+  A binary burn mask × a flat color = a flat slab; mapping the raw field through the ramp keeps the
   internal veins/structure. (A whole iteration came out flat-yellow because the field was thresholded
   into a mask, then filled.)
 - **Animate the BOUNDARY, not just the interior.** If the envelope is a static function of position
   and only the texture inside scrolls, it reads as "static shape with stuff moving inside" — displace
   the silhouette's sample point by a flow field so the whole outline licks/sways.
-- **Light a scene by what it CASTS, not by recolouring the emitter.** A flame's flicker belongs on the
+- **Light a scene by what it CASTS, not by recoloring the emitter.** A flame's flicker belongs on the
   glow it throws into the scene (a wide, scene-covering, sharp-falloff radial bloom), not on the flame
-  body's colour. (Maintainer: "the light spreads, it doesn't work like this" — the flicker was wrongly
+  body's color. (Maintainer: "the light spreads, it doesn't work like this" — the flicker was wrongly
   on the body.)
 - **Self-illuminate anything meant to read on BLACK.** Smoke/haze over black has nothing to occlude →
   invisible unless it emits a little. (And if it still won't read after a fair attempt, cutting it is a
@@ -450,7 +450,7 @@ Levers for any SDF-raymarched scene (cities, terrain, abstract solids — anythi
 
 When a render reads FLAT, the cause is almost always a value/contrast problem, not a missing feature.
 General rule: **work the VALUE structure first** (large dark masses + a few bright accents + readable
-fore/mid/background value groups); colour and detail come after. Hue is the *weakest* depth cue —
+fore/mid/background value groups); color and detail come after. Hue is the *weakest* depth cue —
 lean on value + saturation + contrast.
 
 **Night-scene rules (web-researched, broadly reusable; sources in `night_city/NOTES.md` v06):**
@@ -461,13 +461,13 @@ lean on value + saturation + contrast.
   face toward the sky/moon catches more (cooler) light, the away face is darker/warmer. Keep it
   SUBTLE (~1.3–1.6× value spread between faces) — night contrast is gentle. Apply to the SURFACE term
   only; split out emissive (lit windows/lights) so the key doesn't dim them.
-- **Aerial perspective AT NIGHT fades distant solids TOWARD the horizon-glow colour** (not pale grey):
+- **Aerial perspective AT NIGHT fades distant solids TOWARD the horizon-glow color** (not pale grey):
   `mix(surface, horizonColor, f)` up to ~0.6–0.8 at max distance, drop saturation, collapse internal
   contrast — so receding rows separate into fore/mid/background value groups.
 - **Reserve the only near-whites for the actual light sources** (windows, lamps). If walls, sky and
   lights all sit mid-grey it reads flat — let shadow masses go near-black, keep the bright accents rare.
 
-## Colour & tone (generic)
+## Color & tone (generic)
 
 Levers for how light VALUES read, independent of the effect. (Reference: `lightning` lab for the
 HDR-core + posterize electric look; `night_city` for the value-structure + emissive-split discipline.)
@@ -536,7 +536,7 @@ A step that "develops in" (texture, detail) is usually gated by a binary `USE_DE
    weight)`.
 2. **EVERY branch inside that switch must scale by the crossfade weight** — including AO, sills,
    curtains, a plinth/early-return, a cornice. An unscaled additive term, a hard bool passed into a
-   helper, or an early `return` that swaps the whole pixel will pop even if the main colour crossfades.
+   helper, or an early `return` that swaps the whole pixel will pop even if the main color crossfades.
    Convert bools to eased amounts (`has_curtains ? MIX : 0.0`); lerp early-return paths
    (`mix(normal, special, MIX)`).
 
@@ -644,7 +644,7 @@ The experiment's *output* is knowledge, not just a pretty document. At the end:
     INSIDE the ShaderBox app on the user's own machine: the rendered preview is always on the user's
     screen, so the user does the visual judging through the app — there is no "render a file and send
     it" / "compare clips" step, no external delivery channel. Promote only the GRAPHICS CRAFT
-    (shader/SDF/lighting/colour/motion levers) and generic engineering discipline; drop the lab's
+    (shader/SDF/lighting/color/motion levers) and generic engineering discipline; drop the lab's
     orchestration (offscreen rendering, file delivery, session-versioning, NOTES bookkeeping).
 - Ask the user whether to **preserve** the lab project (promote a document dir out of `projects/_lab/`
   into a real project + `git add`) or let it stay gitignored/disposable.
@@ -665,7 +665,7 @@ and are reliable references on any machine; LOCAL-ONLY labs exist only where the
 
 **Need it? → go here:**
 - **Turbulent flame / fire / organic rising heat / smoke** → **`fire`** (committed). Domain-warp
-  turbulence, fuel-envelope + eroded silhouette, blackbody/temperature colour ramp, flicker-on-the-
+  turbulence, fuel-envelope + eroded silhouette, blackbody/temperature color ramp, flicker-on-the-
   cast-glow (not on the body), volumetric-ish smoke, and the **timed-reveal document** pattern (its seed).
   NOTES: `projects/_lab/fire/NOTES.md`. Matured flame: `documents/<fire v09…>/shader.frag.glsl`; domain-warp
   + CPU-script wind: `documents/<fire v03…>/`; reveal reel: `documents/<fire timed reveal>/` (NOTES lists ids).
@@ -696,7 +696,7 @@ and are reliable references on any machine; LOCAL-ONLY labs exist only where the
   - **CPU self-shadow**: ray from each vertex to the sun vs the mesh triangles (Möller-Trumbore, jittered
     for penumbra) → `u_shadow[NV]`; grazing light. The depth cue that killed the flat look.
   - **Cloth BRDF**: Charlie sheen (Sony Imageworks) + Ashikhmin visibility + subsurface wrap diffuse;
-    deep saturated albedo + structured plain-weave (not colour mottle). `v13`.
+    deep saturated albedo + structured plain-weave (not color mottle). `v13`.
   - **Analytic scattering sky**: Rayleigh+Mie+ozone single-scatter + transmittance → the sunset gradient
     emerges from physics; PERSPECTIVE-projected multi-octave lit cloudscape; sun occluded by cloud cover.
     `v11`/`v16`/`v18`.

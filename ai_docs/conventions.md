@@ -22,6 +22,10 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
 - Full type annotations on all params and variables. Never use `from __future__ import
   annotations` — it's noise.
 - Imports at module top only — never inside function bodies.
+- **American spelling wherever a reader sees words: `color`.** Comments, docstrings, UI
+  strings, prompts, examples, docs, test names. `tests/test_prose_spelling.py` is the gate; it
+  walks every tracked text file except the vendored editor set, the feature records and the
+  dogfood transcripts, each excluded for the reason stated there.
 - **Default to NO comment.** A comment restating what the code plainly says (`# re-focus the input`
   over `focus_pending = True`, `# send the message` over `send(...)`) is noise — delete it. The bar:
   would a competent reader be confused WITHOUT it? Only then does it earn a line. The bias to watch:
@@ -940,9 +944,9 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   has deleted host code that was a second derivation of something the library now emits itself, so
   the question to ask of a new sha is which host workaround it makes redundant, not whether it
   breaks anything. One rendering fact each re-vendor must re-clear rather than assume: a marker's
-  text colour must reach the glyph at COLUMN 0 (a version tested each glyph's LEFT EDGE against the
+  text color must reach the glyph at COLUMN 0 (a version tested each glyph's LEFT EDGE against the
   text origin and the first glyph's ink overhangs its cell, so column 0 stayed red-on-red —
-  `tests/test_editor_ffi.py::test_a_marker_text_colour_reaches_the_glyph_at_column_0` pins it; the
+  `tests/test_editor_ffi.py::test_a_marker_text_color_reaches_the_glyph_at_column_0` pins it; the
   two facts the bullet above names must survive too). A host CURSOR JUMP mid-insert is this integration's specific exposure to
   upstream undo bugs — the completion path and jump-to-error both do it — so an undo regression is
   reproduced through the C ABI alone (`Vc`, type, `ed_set_cursor(0,0)`, type, undo), not through

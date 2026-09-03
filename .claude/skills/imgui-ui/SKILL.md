@@ -58,9 +58,9 @@ Tiers, chosen by the action's *role*:
 |---|---|---|
 | `primary_button` | filled accent, contrasting text | the ONE call-to-action of a section (e.g. "Add", "Create") |
 | `button` | filled neutral grey (imgui default) | an ordinary, repeatable action (e.g. "Render") |
-| `ghost_button` | transparent fill, secondary-colour text | low-emphasis / secondary ("New", "Cancel", "Re-render") |
+| `ghost_button` | transparent fill, secondary-color text | low-emphasis / secondary ("New", "Cancel", "Re-render") |
 | `toggle_button(label, active)` | filled accent when `active`, bordered ghost when off | a stateful on/off control — SAME label both states, the style carries the state (don't switch the label, e.g. not "Copilot"/"Hide Copilot") |
-| `danger_button` | transparent fill, error-colour text | destructive ("Delete") — prominence comes from a confirm step, NOT a filled-red fill |
+| `danger_button` | transparent fill, error-color text | destructive ("Delete") — prominence comes from a confirm step, NOT a filled-red fill |
 
 Each is a 3-line wrapper: push 3-4 `Col_` slots, call `imgui.button(label, size=(width, 0.0))`, pop.
 `width=0.0` ⇒ content-width (the default; use it). Reserve full-width for the single dominant CTA in a
@@ -136,7 +136,7 @@ genuinely narrow container — never a stack of full-width bars.
 Symptom: clicking between items in a grid makes the whole layout shift a pixel or two. Causes and the
 durable fix:
 
-- **A selection highlight must change *colour*, never *size*.** A thicker selected border must be
+- **A selection highlight must change *color*, never *size*.** A thicker selected border must be
   drawn **inset** (inside the cell rect), never straddling the edge (which bleeds into the inter-cell
   gap and looks like motion).
 - **An overlay control (a delete-✕ pinned to a tile corner, a badge) that uses
@@ -225,7 +225,7 @@ Rules to avoid it:
 
 ## 6. Architecture / encapsulation (so the system stays reusable)
 
-- **A UI sub-library lives in its own modules:** a `theme` (colour/size/spacing token bags — no
+- **A UI sub-library lives in its own modules:** a `theme` (color/size/spacing token bags — no
   hardcoded hex or magic px anywhere else) and a `ui_primitives` (the button tiers + shared draw
   primitives: copyable text, a labelled slider, an overlay close-✕, a caption text). Non-UI helpers
   live separately (a `util` module), never mixed in with the draw primitives. Everything visual flows

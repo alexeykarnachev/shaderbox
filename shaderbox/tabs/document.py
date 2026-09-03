@@ -271,7 +271,7 @@ def _entry_row_label(active: bool, label: str) -> None:
     # One entry-point row label: an inset accent tick (049) marking the editor's active tab, then the
     # label in a fixed-width column so the `open` buttons line up across rows. align_text_to_frame_
     # padding centres the text on the button's row height (the font mix used to float it high). The tick
-    # is a draw-list line (presence/colour only, never size — /imgui-ui §3) drawn over the gutter.
+    # is a draw-list line (presence/color only, never size — /imgui-ui §3) drawn over the gutter.
     imgui.align_text_to_frame_padding()
     pos = imgui.get_cursor_screen_pos()
     if active:

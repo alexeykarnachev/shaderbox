@@ -228,7 +228,7 @@ def _apply_markers(
     app.editor_marker_state[current_path] = fingerprint
     editor.clear_markers()
     # Marker fills are translucent by necessity — they draw behind the glyphs.
-    # STATE_ERROR and SYN_KEYWORD are the same palette entry, so the text colour
+    # STATE_ERROR and SYN_KEYWORD are the same palette entry, so the text color
     # is replaced rather than left to the lexer: red on red is unreadable.
     err_fill = fade(COLOR.STATE_ERROR, 0.20)
     for line, message in fingerprint[0]:

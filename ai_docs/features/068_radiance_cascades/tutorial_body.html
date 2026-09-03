@@ -83,7 +83,7 @@
 <h1>Radiance Cascades in ShaderBox</h1>
 <p class="lede">
   Build real-time 2D global illumination from nothing, one pass at a time. Build a scene of lights
-  and walls, then paint into it with the mouse in step 1; watch light bounce, mix colour and cast
+  and walls, then paint into it with the mouse in step 1; watch light bounce, mix color and cast
   soft shadows — with no ray tracing, no noise and no temporal accumulation.
 </p>
 
@@ -323,7 +323,7 @@ class Brush(ScriptBehavior):
 <figure>
   <img src="{{IMG:seed}}" alt="Faint red-green gradient dots where the scene was solid">
   <figcaption>
-    <b>seed</b> — position encoded as colour. Red is x, green is y, so a texel's tint <em>is</em>
+    <b>seed</b> — position encoded as color. Red is x, green is y, so a texel's tint <em>is</em>
     its coordinate. Only solid texels have one; the rest are black.
   </figcaption>
 </figure>
@@ -338,7 +338,7 @@ class Brush(ScriptBehavior):
 </p>
 
 <div class="note">
-  <b>Why the card says 32-bit float.</b> It stores coordinates, not colours. At 8-bit a UV
+  <b>Why the card says 32-bit float.</b> It stores coordinates, not colors. At 8-bit a UV
   quantizes to 1/255 and the distance field comes out visibly blocky; at 16-bit it is subtly
   wrong. This is the one pass where <code>f4</code> genuinely earns its cost.
 </div>
@@ -589,7 +589,7 @@ class Brush(ScriptBehavior):
 </p>
 
 <figure>
-  <img src="{{IMG:composite}}" alt="Two coloured lights casting soft shadows past a wall">
+  <img src="{{IMG:composite}}" alt="Two colored lights casting soft shadows past a wall">
   <figcaption>
     <b>composite</b> — warm and cool light mixing, soft-edged shadows widening with distance from
     the wall, no noise anywhere. The faint rings around each emitter are the known ringing

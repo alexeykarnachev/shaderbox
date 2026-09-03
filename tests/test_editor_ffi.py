@@ -1003,10 +1003,10 @@ def test_text_origin_moves_right_by_the_gutter_under_chrome() -> None:
     e.close()
 
 
-def test_a_marker_text_colour_reaches_the_glyph_at_column_0() -> None:
+def test_a_marker_text_color_reaches_the_glyph_at_column_0() -> None:
     # Finding #14's own repro: a keyword in the first cell of an error line.
     # STATE_ERROR and SYN_KEYWORD are one palette entry, so a column-0 glyph
-    # left at its syntax colour is the exact red-on-red case the override fixes.
+    # left at its syntax color is the exact red-on-red case the override fixes.
     marker_rgb = (0.92, 0.86, 0.70)
     e = _editor("vec3 c = fn(x);")
     e.set_language(Language.GLSL)
@@ -1024,8 +1024,8 @@ def test_a_marker_text_colour_reaches_the_glyph_at_column_0() -> None:
     # The first glyph's ink overhangs its cell to the left, past the origin —
     # which is what made a left-edge test skip it.
     assert row[0][0] < origin_x
-    assert {colour for _, colour in row} == {marker_rgb}, (
-        f"column 0 kept its syntax colour: {row[0]}"
+    assert {color for _, color in row} == {marker_rgb}, (
+        f"column 0 kept its syntax color: {row[0]}"
     )
     e.close()
 

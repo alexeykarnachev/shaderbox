@@ -31,7 +31,7 @@ def _ellipsize(text: str, max_width: float) -> str:
 def faint_hline(
     dl: imgui.ImDrawList, x0: float, x1: float, y: float, alpha: float = 1.0
 ) -> None:
-    """A thin horizontal rule in the faded border colour, drawn onto the given draw list.
+    """A thin horizontal rule in the faded border color, drawn onto the given draw list.
     Caller picks the list (window vs foreground) + coords + alpha, so it serves both a
     layout-flow divider and an absolute foreground overlay."""
     col = imgui.color_convert_float4_to_u32(fade(COLOR.BORDER, alpha))
@@ -168,7 +168,7 @@ def play_stop_toggle(id_: str, playing: bool, *, tooltip: str = "") -> bool:
     """The per-uniform / whole-document play/stop control (feature 048). A small word button — `stop`
     (accent) when the script is driving the slot, `play` (dim) when stopped — clearer than an
     ambiguous icon (/imgui-ui §1: use words for icon-ambiguous controls). Returns True on click; the
-    caller flips the stopped state. SAME slot for both states; the label + colour carry the state."""
+    caller flips the stopped state. SAME slot for both states; the label + color carry the state."""
     label, color = ("stop", COLOR.ACCENT_PRIMARY) if playing else ("play", COLOR.FG_DIM)
     imgui.push_style_color(imgui.Col_.button, COLOR.TRANSPARENT)
     imgui.push_style_color(imgui.Col_.button_hovered, COLOR.BG_FRAME)
@@ -705,7 +705,7 @@ def close_cross_button(id_: str, side: float) -> bool:
 
 def tune_icon_button(id_: str, side: float) -> bool:
     """A framed square with a drawn sliders glyph (three rails, offset knobs) — the
-    settings affordance for a preview tile. The frame-coloured fill keeps the glyph
+    settings affordance for a preview tile. The frame-colored fill keeps the glyph
     readable over any image. No font dependency. Returns True on click."""
     clicked, origin = _glyph_button(
         id_, side, COLOR.BG_FRAME, COLOR.BORDER, COLOR.BORDER
@@ -796,7 +796,7 @@ def layout_icon_button(id_: str, variant: int, side: float) -> bool:
 def gauge_bar(id_: str, fraction: float, tooltip: str, width: float) -> None:
     """A thin horizontal fill bar (`fraction` pre-clamped [0, 1] by the caller), vertically
     centred within one frame-height row, with a hover tooltip. Owns the hit rect + the
-    tooltip — geometry/colour live here so richer visuals can replace it without touching the
+    tooltip — geometry/color live here so richer visuals can replace it without touching the
     caller."""
     bar_h: float = float(SIZE.USAGE_BAR_H)
     row_h: float = imgui.get_frame_height()
@@ -835,7 +835,7 @@ def step_squares(
     `imgui.get_time()` (the live/pending head). Reserves its own layout height and overlays one
     hit-rect; returns True while hovered (the caller shows a breakdown tooltip). No font dependency.
 
-    The caller owns the colour language (e.g. done=ok/fail, a gray pulsing head, a final answer
+    The caller owns the color language (e.g. done=ok/fail, a gray pulsing head, a final answer
     square) so this primitive stays feature-agnostic."""
     side: float = float(SPACE.MD)
     gap: float = float(SPACE.XS)
@@ -970,7 +970,7 @@ def preview_cell(
             )
 
         # allow_overlap so the buttons drawn on top win the click; the transparent
-        # header colours leave the image/border carrying the visual.
+        # header colors leave the image/border carrying the visual.
         imgui.push_style_color(imgui.Col_.header, COLOR.TRANSPARENT)
         imgui.push_style_color(imgui.Col_.header_hovered, COLOR.TRANSPARENT)
         imgui.push_style_color(imgui.Col_.header_active, COLOR.TRANSPARENT)
@@ -1173,8 +1173,8 @@ def clickable_label(
     """A fixed-width clickable text cell (the uniform name -> jump-to-code).
 
     Fixed width so a following `same_line(x)` column stays put; the hover affordance is
-    a colour change only (jitter-free). `highlight` paints the translucent accent wash.
-    `text_color` overrides the label colour (default: dim foreground); `accent`
+    a color change only (jitter-free). `highlight` paints the translucent accent wash.
+    `text_color` overrides the label color (default: dim foreground); `accent`
     overrides the hover/active wash (default: ACCENT_PRIMARY). Returns True on click.
     """
     imgui.align_text_to_frame_padding()

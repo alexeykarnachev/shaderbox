@@ -41,7 +41,7 @@ Quick routing (full version → `dev_flow.md`):
 - Comments: **default to none**; when warranted, state what's non-obvious about the code AS IT IS NOW — never narrate development history (the "bug we hit / why we changed it" story belongs in `conventions.md ## Known quirks` / commit message / spec). Full rule: `conventions.md ## Code rules`.
 - No `@staticmethod` / `@classmethod` (except genuine alternate constructors). A method that doesn't use `self` is a free function.
 - No `if TYPE_CHECKING:` — a circular import is a design bug.
-- All UI work flows through `ui_primitives.py` (button tiers + shared draw helpers) and `theme.py` (colour/size/spacing tokens). Never hand-roll `push_style_color(Col_.button, …)` at a call site.
+- All UI work flows through `ui_primitives.py` (button tiers + shared draw helpers) and `theme.py` (color/size/spacing tokens). Never hand-roll `push_style_color(Col_.button, …)` at a call site.
 - Library docs + source are the source of truth — verify against the installed package (`.venv/lib/python*/site-packages/<lib>`) or upstream repo, never guess from training data.
 
 Full design decisions, library quirks, and the sanctioned type-ignore allowlist → `ai_docs/conventions.md`. Read it at spec-drafting, impl, and review time per `dev_flow.md`.

@@ -17,7 +17,7 @@ recompiling again. ShaderBox removes that loop:
 
 ```glsl
 uniform float u_glow = 0.8;      // a drag appears
-uniform vec3  u_tint_color;      // a colour picker appears
+uniform vec3  u_tint_color;      // a color picker appears
 uniform sampler2D u_image;       // an image slot appears
 ```
 

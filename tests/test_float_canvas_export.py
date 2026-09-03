@@ -54,9 +54,9 @@ def test_texture_read_is_sized_by_dtype(gl: moderngl.Context, dtype: str) -> Non
     assert frame.dtype == np.uint8
 
 
-def test_float_export_keeps_the_true_colours(gl: moderngl.Context) -> None:
+def test_float_export_keeps_the_true_colors(gl: moderngl.Context) -> None:
     # Every texel mid-grey. Read as uint8 the f4 buffer truncates to a quarter of the
-    # image and the rest is garbage, so a wrong read shows up as a wrong colour.
+    # image and the rest is garbage, so a wrong read shows up as a wrong color.
     payload = np.full((4, 4, 4), 0.5, dtype=np.float32)
     payload[:, :, 3] = 1.0
     texture = gl.texture((4, 4), 4, data=payload.tobytes(), dtype="f4")

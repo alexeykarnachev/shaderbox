@@ -24,7 +24,7 @@ class _ProbeRenderArgs(ToolArgs):
 
 _PROBE_RENDER_DESC = (
     "A read-only MEASUREMENT of a shader's frame at a chosen time `t`: the facts line (ink %, "
-    "bbox, ink mean colour, luma rows, or FLAT — one uniform colour). Use it to check an animated "
+    "bbox, ink mean color, luma rows, or FLAT — one uniform color). Use it to check an animated "
     "shader past t=0, to re-measure after a set_uniform, and before you state what the frame "
     "contains. Unlike render_image (a heavy, gated, file-writing deliverable) it never confirms or "
     "writes a file, and it is free. It measures — it does not SEE: the numbers are all you get, "

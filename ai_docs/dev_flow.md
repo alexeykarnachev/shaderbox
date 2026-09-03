@@ -351,7 +351,7 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   `lib_picker/` (package: `__init__` entry+orchestrator, `tree`, `preview`, `search`, `filtering` —
   the tree+preview shader-library browser with right-click file/dir/function context menus).
 - **The small leaves** — one concept each, imported across packages:
-  **`theme.py`** (the ONLY home for colour/size/spacing tokens: `COLOR` / `SIZE` / `SPACE`; every
+  **`theme.py`** (the ONLY home for color/size/spacing tokens: `COLOR` / `SIZE` / `SPACE`; every
   UI module reads these, nothing hard-codes a literal) / **`ui_regions.py`** (`DocumentTab` — the
   settings-panel tab enum, kept out of `commands.py` so the persisted model layer doesn't
   pull in imgui) / **`render_preset.py`** (the pydantic `RenderPreset` value type) /

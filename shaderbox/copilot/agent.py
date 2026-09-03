@@ -896,7 +896,7 @@ def run_turn(
                 logger.info(f"copilot tool {tc.name} | precheck handoff")
                 tr.event("tool_precheck_handoff", name=tc.name, message=handoff)
                 # ok=True on both the record and the card: a deflection is not a failure (the
-                # snippet square colours on ok, and the ledger would otherwise persist "(FAILED)").
+                # snippet square colors on ok, and the ledger would otherwise persist "(FAILED)").
                 # total_tool_calls stays put — it feeds the incompatible heuristic + giveup notes.
                 ran.record(tc.name, True, handoff, args, {"handoff": True})
                 yield AgentToolCard(

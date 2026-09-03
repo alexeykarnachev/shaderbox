@@ -43,7 +43,7 @@ vec4 march(vec2 o, vec2 d, float t0, float t1) {
         float h = texture(u_df, p).r;
         if (h < 0.0012) {
             vec4 hit = texture(u_paint, p);
-            // Solid: emit its colour and STOP. A wall is solid and black, which is how a
+            // Solid: emit its color and STOP. A wall is solid and black, which is how a
             // shadow happens -- the ray is consumed and contributes nothing.
             return vec4(hit.rgb, 1.0);
         }

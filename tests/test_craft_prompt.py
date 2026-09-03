@@ -157,7 +157,7 @@ def test_craft_block_teaches_local_frames() -> None:
 
 def test_feedback_keeps_the_pre_action_rules_and_sheds_the_legend() -> None:
     # 059 D7: only the POST-action gloss travels with the facts line. The three pre-action rules
-    # each fix a recorded regression (618af96 relative-colour verify, c39caac blank-cold-t0-develops,
+    # each fix a recorded regression (618af96 relative-color verify, c39caac blank-cold-t0-develops,
     # 2ff249f no-op-don't-reapply) and must stay in STATIC — on the turn the user says "make it
     # warmer" there is no facts line yet to carry them.
     # Both texts are hard-wrapped, so a multi-word phrase can straddle a line break — assert
@@ -165,7 +165,7 @@ def test_feedback_keeps_the_pre_action_rules_and_sheds_the_legend() -> None:
     p = _flat(_SYSTEM_PROMPT)
     legend = _flat(_RENDER_FACTS_LEGEND)
     for stays in (
-        "ink mean rgb",  # 618af96: verify a relative colour ask against the measurement
+        "ink mean rgb",  # 618af96: verify a relative color ask against the measurement
         "read it back after the edit",
         "DEVELOPS over time",  # c39caac: blank/cold t=0 + ANIMATES is not a failed edit
         "re-apply the same edit",  # 2ff249f: a no-op means find the cause, don't repeat it

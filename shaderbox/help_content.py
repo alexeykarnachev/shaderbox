@@ -129,7 +129,7 @@ def help_sections() -> list[HelpSection]:
                 "Declare a uniform the engine does not own and it shows up in the **Document** tab as a "
                 "control, picked from the type: a drag for numbers, a text field for a glyph array, "
                 "an image slot for a `sampler2D`. Name a `vec3`/`vec4` so it ends in `color` and it "
-                "gets a colour picker — otherwise switch the control by hand on its row.\n"
+                "gets a color picker — otherwise switch the control by hand on its row.\n"
                 "\n"
                 "Give it a value in the declaration and that becomes its default. Tuned values are "
                 "saved with the document, so a shader reopens exactly as you left it.\n"
@@ -142,7 +142,7 @@ def help_sections() -> list[HelpSection]:
             ),
             snippet=(
                 "uniform float u_radius = 0.35;                     // drag\n"
-                "uniform vec3  u_tint_color = vec3(1.0, 0.6, 0.2);  // colour picker\n"
+                "uniform vec3  u_tint_color = vec3(1.0, 0.6, 0.2);  // color picker\n"
                 "uniform sampler2D u_image;                         // image slot"
             ),
         ),

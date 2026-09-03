@@ -49,7 +49,7 @@ def uniform_name_label(
     accent: tuple[float, float, float, float] | None = None,
 ) -> None:
     """Clickable uniform-name cell — jump-to-declaration on click, code<->panel
-    hover bridge on hover. `text_color`/`accent` override the row's colour.
+    hover bridge on hover. `text_color`/`accent` override the row's color.
     """
     clicked = clickable_label(
         name,
@@ -102,7 +102,7 @@ def _begin_ctrl(
     Call after the chip; positions the cursor at the control column and sets
     the next item's width. The control's own imgui label must be hidden (##).
     `count_suffix` (text/array `len/cap`) renders dim in the name column (045 B6 —
-    out of the trailing column the play/stop button now owns). `playing` colours the
+    out of the trailing column the play/stop button now owns). `playing` colors the
     name `STATE_INFO` blue — the at-a-glance "the script drives this" cue (048).
     """
     imgui.same_line(_NAME_X)

@@ -539,8 +539,8 @@ class Editor:
         gutter_glyph: str = "",
         tooltip: str = "",
     ) -> None:
-        """A line mark. `text` at alpha 0 leaves the syntax colours alone; a
-        non-zero alpha replaces every glyph colour on the line. `gutter_glyph`
+        """A line mark. `text` at alpha 0 leaves the syntax colors alone; a
+        non-zero alpha replaces every glyph color on the line. `gutter_glyph`
         draws only in a gutter the layout reserved."""
         self._lib.ed_add_marker(
             self._h,
