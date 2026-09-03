@@ -38,7 +38,9 @@ Ruled out during the scan, with reasons, so no later wave re-opens them:
   prior extractions already happened and forbid a further split without a fresh pain signal.
 - **Backward compatibility of any kind.** The maintainer confirmed explicitly that breaking old
   projects and old saves is fine. No compat shim, no migration, no old-format reader.
-- **Anything needing the running app.** No monitor overnight: the GUI smoke skips (exit 87,
-  gate stays green), so a green proves check + tests only. Record per wave which stages ran.
+- **Anything needing the running app.** No monitor overnight, so the GUI smoke skips on its own
+  (exit 87, gate stays green) — no action needed. Coverage stays strong: ~30 test modules drive
+  real GL headless, including the GL-lifetime guards; only the real-window frame loop goes
+  unchecked. Note per wave which stages ran.
 - **Any behaviour work.** No oracle decides rendering correctness, and the visual half cannot be
   checked on this machine.

@@ -213,20 +213,21 @@ stale references, update the roadmap banner and row, run the cold-context check.
 `make gates > /tmp/g.log 2>&1; echo $?`. A pipe reports the pipe's status, not the gate's; the
 target itself warns about this when stdout is not a terminal.
 
-**Overnight there is NO MONITOR on this machine, so the GUI smoke will SKIP every run.** The
-skip path exits 87, `gates` prints `smoke SKIPPED (no GPU window on this box)`, and the overall
-exit stays 0. That is by design and is not a failure — but it means a green gate overnight
-proves `check` (ruff + pyright) and `test` (the pytest suite) only, and proves NOTHING about the
-app starting, drawing a frame, or holding a GL context. Read the gate's own summary line rather
-than just its exit code, and record in the progress file which of the three stages actually ran.
+**Overnight there is no monitor, so the GUI smoke skips every run.** This needs no action: the
+smoke detects the missing display itself, exits 87, and `gates` prints `smoke SKIPPED` and stays
+green. Read the gate's summary line rather than only its exit code, and note in the progress
+file which stages ran.
 
-What that costs, concretely: a change that breaks window creation, the frame loop, or GL
-lifetime passes the night green and is found by the maintainer at the display. So the waves are
-scoped to keep that risk near zero — deletions of symbols nothing reaches, a case-list derived
-from the registry that already owns it, comment text, and a pure move only if W-4 recommends
-one. **Anything that would need the smoke to prove it is out of scope for the night**; report it
-instead. If a wave's done-condition can only be checked by looking at the running app, that wave
-does not run unattended.
+**Coverage is not meaningfully weaker for this sweep.** The pytest suite drives real GL headless
+— on the order of thirty test modules use moderngl or glfw directly, including a dedicated set
+of GL-lifetime guards — so context handling, program compilation and resource lifetime are all
+still covered. What the smoke uniquely adds is opening a real window on hardware GL and running
+the frame loop in it. The remaining gap is therefore narrow, and the waves as scoped (deleting
+symbols nothing reaches, deriving a case-list from the registry that owns it, comment text, and
+a pure move only if W-4 recommends one) do not touch window creation or the frame loop.
+
+The rule that keeps it that way: **a wave whose done-condition can only be checked by looking at
+the running app does not run unattended** — report it for the morning instead.
 
 **A changed test expectation in a structural wave is a defect in the refactor, not a test to
 update.** The tests are the only evidence that behaviour was preserved; weakening one to get a
