@@ -8,9 +8,8 @@ first wave enumerates the real inventory and that is what the later waves act on
 ## Status
 
 Updated as each wave lands, so a session resuming after a crash learns from this file how far
-the night got. All waves have landed; `00_progress.md` is the log. The green baseline this sweep starts from — the commit,
-the gate result and the test count — is recorded in `00_progress.md`; **re-measure it** at the
-start of the night rather than trusting the snapshot.
+the night got. All waves have landed; `00_progress.md` is the log. The green baseline this
+sweep started from — the commit, the gate result and the test count — is recorded there too.
 
 This spec was reviewed adversarially before any wave ran. The review's verdict on the first
 draft was DO NOT RUN, on two grounds now fixed: W-2 rested on a refuted premise and is struck,
