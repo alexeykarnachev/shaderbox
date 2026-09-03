@@ -219,3 +219,42 @@ rewriting the feature specs that cite `ui.py::_draw_app_panel` by name: those
 are historical records, and a move would have left the archive permanently
 pointing at a file no longer holding the function — a worse doc drift than the
 one being fixed.
+
+## W-0 inventory — DONE  1b159f1
+
+done-condition: as written above. Met — `00_inventory.md` exists with per-symbol
+evidence, the kept list, and a coverage claim per scan.
+did: six parallel sonnet agents, one per symbol kind (module functions+classes,
+methods, enum members + type aliases, constants + fields, whole modules +
+scripts/tests, private helpers), plus ruff and vulture first. The main session
+closed the one gap an agent declared in its own coverage claim (private CLASSES,
+which its `def`/module-var pattern could not match — all 51 checked, all live).
+verification: measurement only, no source file changed by this wave.
+surprise: the repo is far cleaner than the spec's seeds implied. Zero dead
+functions, classes, modules, private helpers, enum members or type aliases. The
+one category the tools cannot see — write-only dataclass FIELDS — is where every
+real find was, and the spec did not predict that category at all.
+ruled out: the 14 "dead" enum members in `editor/ffi.py` (the deliberate ABI
+mirror `conventions.md` warns a sweep will re-find); the ~8 dogfood harness
+methods; every pydantic validator and `model_config`.
+
+## W-1 deletion — DONE  1b159f1
+
+done-condition: every SAFE- and CAREFUL-tier symbol from the inventory is gone,
+`make gates` is green with a test count no lower than the 1700 baseline, and
+every kept symbol has its reason recorded.
+did: removed 1 constant, 1 method, 8 fields (see the inventory table), plus the
+`kind` parameter that the `PublishResult.kind` removal orphaned.
+verification: `make gates` exit 0 read unpiped, `GREEN -- check passed, test
+passed, smoke passed`. All three stages ran — a display is attached tonight, so
+the smoke did NOT skip. 1701 tests collected (1700 baseline + the W-2 subset
+test).
+ruled out: `ScriptError.uniform_name`, `PromptBlock.name`,
+`CompletionProvider.name` — kept, with reasons, in the inventory. Also
+`shaderbox/resources/textures/default.jpeg`: unreferenced now, but deleting a
+resource file is out of this sweep's scope, so it is reported, not removed.
+surprise: the gate went red once, on three tests, and every one was CONSTRUCTING
+a removed field while asserting on something else. Fixed at the call sites in one
+attempt with no assertion weakened. One of them (`fake_publish` in
+`test_youtube_exporter.py`) stubs `_copilot_publish` and so mirrors its
+signature — which is how the orphaned `kind` parameter announced itself.
