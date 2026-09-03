@@ -26,25 +26,29 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-03 (071 landed in code; the maintainer's hands-on pass is next). -->
-**NEXT SESSION: the maintainer verifies 071 in the running app, and the session records what they
-find.** A display is connected on this box now (`make run` works; gates ran on it). What to
-walk: the `## Manual verification` list in each 071 wave file --
-`ai_docs/features/071_second_walk_findings/{10_wave_c_reset,20_wave_b_code_panel,30_wave_d_panel,
-50_wave_a_editor,60_wave_f_tutorial}.md` -- and the new closing chapter of
-`068_radiance_cascades/tutorial.html` followed literally on the shipped example. One value is
-tuned by eye: `COLOR.STALE_TINT` for dormant tiles (D2). Findings go into a new ledger per
-`dev_flow.md ### How a tutorial walk runs`; a walk session fixes nothing.
+<!-- As of 2026-09-03 (071 shipped as v0.28.0 on GitHub; 070 stubbed). -->
+**NEXT SESSION: brainstorm 070, the graph view of the pass strip.** The stub
+`ai_docs/features/070_pass_graph_view/01_spec.md` carries what is fixed (the strip stays the
+default; nodes in evaluation order, edges labelled by uniform, feedback as a loop mark, read-only,
+draw-list not `imgui_node_editor`) and the open questions (tree vs graph, where it lives, what a
+click does, layout at panel width, editable edges). The maintainer opens with "I'm not sure how
+we'll do this": the session's job is the brainstorm, then the full spec, per `dev_flow.md
+## Feature flow`.
 
-**Also due at that display:** `todo.md`'s live-only UI checks and 065's checks 13-16. The
-Windows `libeditor.dll` still needs a Windows host at the next `/ship`.
+**Still due at the display, whenever the maintainer sits down to it:** 071's per-wave
+`## Manual verification` lists (`ai_docs/features/071_second_walk_findings/{10,20,30,50,60}_*.md`),
+the tutorial's closing chapter followed literally, `COLOR.STALE_TINT` tuned by eye, `todo.md`'s
+live-only checks and 065's checks 13-16. Findings go into a new ledger per `dev_flow.md ### How a
+tutorial walk runs`.
 
-**Then 070, the graph view of the pass strip** (`069/01_spec.md § Out of scope`); no spec yet.
+**Shipped:** v0.28.0 is a GitHub release only; the itch channels stay at v0.27.0. The Windows
+`libeditor.dll` still needs a Windows host before the next itch cut.
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 070 | pass_graph_view | spec | The graph view of the pass strip: thumbnails as nodes in evaluation order, edges labelled by uniform, feedback as a loop mark, read-only, draw-list drawn; the strip stays the default view. Stub only; the brainstorm and the full spec are the next session's. Spec: `ai_docs/features/070_pass_graph_view/01_spec.md`. |
 | 071 | second_walk_findings | done | The maintainer's second walk of the 068 tutorial: 11 findings, six decisions, six waves landed -- a document-wide Reset (histories, clock, script, videos), the code panel's cursor follow and Ctrl+Tab, sampler rows showing what they read, American spelling with a gate, four editor-library items re-vendored from `aa8c6719`, and the tutorial cut to the cascades with a drawing chapter at the end; the maintainer's hands-on pass per wave is outstanding. Spec: `ai_docs/features/071_second_walk_findings/01_spec.md`. |
 | 069 | tutorial_walk_findings | done | The maintainer's walk of the 068 tutorial: 37 findings, eight waves, twelve locked decisions, all landed. Spec: `ai_docs/features/069_tutorial_walk_findings/01_spec.md`. |
 | — | repo_sweep | done | A ten-agent sweep over the defect classes this repo's history keeps producing (incomplete fix-sweeps, unwired mechanisms, tests that cannot fail, docs that drift from code): four blockers fixed — a crash loading a corrupt `document.json` from the per-frame sync, and three feedback-lifecycle bugs in the 068 machinery, one silently corrupting output — plus two skills that would crash a reader following them literally. What was REJECTED, and why, is in `conventions.md`. Spec: commits `70144d2..7e977bf`. |
