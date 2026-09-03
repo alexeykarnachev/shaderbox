@@ -26,24 +26,25 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-03 (069 closed: eight waves landed, sanitize swept). -->
-**NEXT SESSION: 069 is DONE in code; what remains is the maintainer's own walk.** All eight waves
-landed and every gate is green, but the sign-off needs a DISPLAY, and this box reports every monitor
-disconnected (`App.__init__` aborts in `glfw.get_video_mode` with no monitor; the gate runs under
-`xvfb-run -a` with the `make test` MESA overrides -- `dev_flow.md ### make gates`). Two things to
-walk: the regenerated tutorial at `ai_docs/features/068_radiance_cascades/tutorial.html`, and the
-`## Manual verification` list in each wave spec under
-`ai_docs/features/069_tutorial_walk_findings/` (`01_spec.md` is the index; `00_findings.md` the
-ledger).
+<!-- As of 2026-09-03 (069 closed in code; the maintainer's walk is next). -->
+**NEXT SESSION: the maintainer walks the tutorial, and the session records what they find.**
+069's eight waves landed green, but its sign-off is a walk no gate can run. How a walk session
+runs -- the ledger to open, verbatim quoting, verifying each finding against the code before filing
+it, turning the set into a spec -- is `dev_flow.md ### How a tutorial walk runs`. Read it first.
 
-**Still owed from before 069:** 065's checks 13-15 (a display) and 16 (`/dogfood`, real API cost),
-and the Windows `libeditor.dll`, which needs a Windows host at the next `/ship` -- 069 W-F
-re-vendored the Linux `.so` only, at editor commit `22df77e`.
+**What gets walked:** `ai_docs/features/068_radiance_cascades/tutorial.html` (in a browser, beside
+the app), plus the `## Manual verification` list in every wave spec under
+`ai_docs/features/069_tutorial_walk_findings/` -- 069's acceptance checks for the code this walk
+exercises. `01_spec.md` is the index, `00_findings.md` the ledger the new one copies.
 
-**Next feature is 070: the graph view of the pass strip.** Its direction is already fixed in
-`069/01_spec.md § Out of scope` -- 069 W-D shipped the interim (the strip lost its wiring sublines),
-and 070 draws the DAG. No spec yet.
+**A walk needs a DISPLAY** (`make run`), and this box reports every monitor disconnected:
+`App.__init__` aborts in `glfw.get_video_mode`. Gates here run under `xvfb-run -a` with the
+`make test` MESA overrides (`dev_flow.md ### make gates`); the walk itself cannot.
 
+**Also due at that display:** 065's checks 13-15 and the live-only UI checks (`todo.md`), plus
+check 16 (`/dogfood`). The Windows `libeditor.dll` still needs a Windows host at the next `/ship`.
+**070 is the graph view of the pass strip**, direction fixed in `069/01_spec.md § Out of scope`;
+no spec yet.
 
 ## Features
 

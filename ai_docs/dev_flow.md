@@ -473,7 +473,8 @@ mechanics that avoid the foot-guns hit in practice:
   revert-fix → confirm-the-test-goes-red → restore). Checkout restores the *committed* version and
   silently eats your uncommitted fix; re-apply via Edit instead.
 - **Render a document headless to eyeball it** (the loop the copilot can't run — it's render-blind, you
-  aren't). `set_active(ShaderLibIndex.build(shader_lib_root()))` first so `SB_*` resolves, on a standalone
+  aren't). `set_active(ShaderLibIndex.build(shader_lib_root()))` first (`set_active` / `ShaderLibIndex`
+  from `shaderbox.shader_lib`, `shader_lib_root` from `shaderbox.paths`) so `SB_*` resolves, on a standalone
   EGL context with `MESA_GL_VERSION_OVERRIDE=4.6 MESA_GLSL_VERSION_OVERRIDE=460` set BEFORE context
   creation:
 
@@ -499,6 +500,34 @@ mechanics that avoid the foot-guns hit in practice:
   `SB_center_uv` scales x by it, so a vertical effect keeps its proportions with NO shader change.
 - **Tuned uniform values persist only on SAVE** (document-switch / app shutdown), into `document.json`'s
   `uniforms`. To read a user's live-tuned values off disk, have them save (switch documents / close) first.
+
+### How a tutorial walk runs
+
+The maintainer drives a shipped document end-to-end in the running app -- today
+`ai_docs/features/068_radiance_cascades/tutorial.html`, a self-contained page with its images
+embedded, opened in a browser beside the app (regenerate it with
+`uv run python ai_docs/features/068_radiance_cascades/build_tutorial.py`, which rebuilds every pass
+card and code block from the shipped example so neither can drift). The walk is the acceptance test
+no gate can run: it is done on a real display via `make run`, never headless and never under
+`xvfb-run`, because the finding is what the maintainer SEES and reaches for.
+
+The session's job is to catch what they say and turn it into a plan:
+
+- **Open a new feature dir** `ai_docs/features/NNN_<name>/` with `00_findings.md` as the raw ledger,
+  in the format 069 used: one table, columns `# | Class | Step | Reported | What the code does
+  (verified)`, findings numbered in walk order and never renumbered once filed.
+- **Quote the maintainer verbatim** in `Reported`. Their words are the external anchor every later
+  review is checked against, so paraphrase loses the evidence.
+- **Verify each finding against the code BEFORE filing it**, and write what the code actually does
+  with the file and symbol that proves it. A finding is a claim about the app until a citation
+  settles it; the class (`DEFECT` / `UX` / `ENGINE`) follows from that check, not from how the
+  report sounded.
+- **Fix nothing during the walk.** The ledger only records; interrupting the walk to patch loses
+  the next finding and biases the ones after it.
+- **Then write `01_spec.md` from the ledger**: group the findings into workstreams, order them, and
+  write the maintainer's calls as `## Locked decisions` -- constraints for every later wave and
+  review, never options to re-litigate. Each workstream lands as its own wave file with its own
+  `## Manual verification` list, which the maintainer walks in turn.
 
 ### `make gates`
 **The one command to run before declaring anything done.** Runs `check` -> `test` -> `smoke` in that
