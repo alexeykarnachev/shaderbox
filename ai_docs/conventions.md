@@ -303,9 +303,12 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   functions because they position siblings and pass geometry between each other
   (`_draw_document_image` returns an anchor that the FPS chip and the control panel both place
   from), which is layout rather than a surface. `widgets`/`popups`/`tabs` = pure draw functions
-  taking `app: App`, each a LEAF surface: it lays out freely INSIDE the box it is handed
-  (`tabs/render.py` places its own two columns) but never positions a sibling and never hands
-  one geometry. (The split is
+  taking `app: App`, each a LEAF surface: it lays out freely INSIDE its own box
+  (`tabs/render.py` places its own two columns) but never positions a sibling and never hands one
+  geometry. Two of them are their own top-level windows rather than children — the cheatsheet and
+  the copilot chat, drawn after the full-screen window closes so nothing obscures them; the chat
+  anchors ITSELF to `app.editor_rect` each frame (`_apply_layout`), which is the one place a leaf
+  reads the layout's geometry. (The split is
   forced by the no-`TYPE_CHECKING` rule: a draw fn annotating `app: App` while `App` imports it would
   cycle — so `App` lives in its own module.) Prior extractions already lifted the copilot backend
   (`copilot/backend.py`) and the headless project core (`project_session.py`) out of `App`; what
@@ -572,12 +575,13 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   CREDENTIAL secret / CONFIG setup-panel). A new such affordance picks its vehicle by blocking-ness and
   reuses the existing channel — never a raw URL in `msg`, never a new event type, never overloading one
   `GateKind` for both. An inline setup panel REUSES the exporter's `draw_config_ui()` verbatim (entropy:
-  the Settings widget set is the source of truth) + a Cancel the chat adds. There is a THIRD channel for
-  the agent-vs-user split: when a tool's `msg` is heavy (read_shader's full source listing) the AGENT
-  still needs it (it edits by line number) but the USER doesn't (the editor shows the code), so the tool
-  puts a terse `payload["display"]` summary that the chat shows INSTEAD of `msg` (`AgentToolCard.display`,
-  feature 020·23) — the full `msg` still rides the model's context + history. Revisit if a widget needs to
-  carry typed input back (then it's a gate, not a result widget) or persist live state.
+  the Settings widget set is the source of truth) + a Cancel the chat adds. The agent-vs-user split has no
+  third channel: a tool's `msg` is the AGENT's (it edits by line number) and the chat never shows it,
+  collapsing each call to one square in the turn snippet plus a `[verb - outcome]` line. Feature 020·23's
+  terse `payload["display"]` summary WAS that channel; the chat stopped reading it in `58018f8` and the
+  card field it fed was removed in 074, so `read_shader` still produces the key and nothing consumes it.
+  Revisit if a widget needs to carry typed input back (then it's a gate, not a result widget) or persist
+  live state.
 - **A static per-tool fact is a `ToolDefinition` field; a per-RESULT rendering trigger is a payload-shape
   key.** Everything true of a tool regardless of any one call (labels, gate prompt + policy, schema,
   precheck) lives ON the entity at its single definition site (`tools/{shader,publish,telegram,youtube}.py`)

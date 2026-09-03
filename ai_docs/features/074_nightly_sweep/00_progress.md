@@ -275,3 +275,45 @@ of its items — a deflected publish rendering a neutral "handed off" line — r
 the same handoff card path W-1 edited; `test_handoff_card_reads_as_handed_off_
 not_failed` covers it and passes, but the LOOK of the line is still a display
 check and stays outstanding.
+
+## Adversarial review of the landed sweep — PASS, two doc fixes
+
+An opus reviewer was pointed at the five wave commits and told to anchor every
+finding to something this session did not write: the code at `91104c7`, the
+suite's behaviour when run, the pre-sweep docs, and features 052/069/072.
+
+**Verdict: zero code defects.** Each of the ten removed symbols was re-checked
+per-symbol at the baseline tree for any reader at all — including `getattr`
+(30 dynamic-access sites swept, none touching them), `asdict`/`replace`/
+`model_dump`/`**` splat, and every JSON on disk. None had one. The three edited
+tests were diffed function-body-wide: every `assert` line is byte-identical and
+only constructor argument lists moved. The `seed.py` hoist was verified by
+differential execution over 27 case shapes (missing file, hash mismatch, `..`
+and absolute escapes, `sub/../` normalisation) — zero divergences. Independently,
+this session ran its own 40-case differential and also got zero.
+
+Two DOC defects found, both now fixed:
+
+1. **`conventions.md:577` documented `AgentToolCard.display` as a live "THIRD
+   channel"** — a terse summary the chat shows instead of the heavy `msg`. That
+   claim was ALREADY FALSE before the sweep: `58018f8` (June) replaced
+   `shown = ev.display or ev.result` with `_tool_card_line`, which reads only
+   `ok` and `payload`. Verified at the source with `git show 58018f8`. W-1's
+   removal turned a false claim into a dangling symbol reference. The bullet now
+   records that there is no third channel, that 020·23's mechanism lost its
+   reader in `58018f8`, and that `read_shader` still produces a
+   `payload["display"]` key nothing consumes. **This also answers the behaviour
+   question W-0 escalated:** the terse line did not regress tonight — it stopped
+   rendering three months ago, so the user sees exactly what they saw before.
+2. **The leaf-surface rule W-4 wrote had a real counterexample.** The copilot
+   chat is its OWN top-level window (with the cheatsheet), drawn after the
+   full-screen window closes, and `_apply_layout` anchors it to `app.editor_rect`
+   every frame — so it does read the layout's geometry. The bullet now names both
+   windows and that one exception, rather than stating an absolute the code
+   breaks. (An earlier pass had already loosened "draws inside the box handed to
+   it", which reads as banning the internal column layout `tabs/render.py` does.)
+
+ruled out by the reviewer and not to be re-checked: the trace log (no card
+serialization), `_publish_result`'s body, `read_lib`'s handler, the archive
+conversation JSONs (their `"kind"` is `ResultWidget.kind`, a live field on an
+untouched type), and `7b2352d` (test-only, cannot change behaviour).
