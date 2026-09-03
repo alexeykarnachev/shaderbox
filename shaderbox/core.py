@@ -383,10 +383,11 @@ class Pass:
             return
 
         texture_unit = 0
-        # No glfw here: this module is imported by the headless core. The live loop renders
-        # bare, so it falls through to this clock; export and the probe pass u_time. Measured
-        # from process start, not `time.monotonic()` raw — that counts from BOOT, so a shader
-        # opened on a long-uptime box starts at whatever the machine had been running for.
+        # A Pass drawn outside a Document (nothing passes u_time) falls through to the process
+        # clock; a Document resolves its own clock before reaching here, and export and the
+        # probe pass u_time. Measured from process start, not `time.monotonic()` raw — that
+        # counts from BOOT, so a shader opened on a long-uptime box starts at whatever the
+        # machine had been running for.
         render_time = u_time if u_time is not None else process_time()
         self.seed_uniform_values()
         for uniform in self.get_active_uniforms():

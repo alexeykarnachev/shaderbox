@@ -222,12 +222,12 @@ def test_a_target_format_change_never_leaves_the_pair_disagreeing(
 
 @pytest.fixture
 def stale_default_context() -> Iterator[moderngl.Context]:
-    # Binds moderngl's process-wide default to a standalone context and releases that context,
-    # leaving the dead wrapper a later App would inherit. Requested BEFORE `app` in a test's
-    # signature so it runs first.
+    # create_standalone_context installs its context as moderngl's process-wide default; a
+    # later App would inherit that wrapper. Requested BEFORE `app` in a test's signature so it
+    # runs first.
     stale = moderngl.create_standalone_context(require=460)
-    moderngl.init_context()
-    yield moderngl.get_context()
+    assert moderngl.get_context() is stale
+    yield stale
     stale.release()
 
 

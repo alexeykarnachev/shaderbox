@@ -72,6 +72,24 @@ Reset (a document opened mid-session never saw it at 0 either); script module-le
 survives a reset where a recompile would restart it; the always-drawn button has no test beyond
 smoke's draw path and manual step 1.
 
+**Post-impl, code correctness (opus).** Same format blocker (fixed above). Three test-hygiene
+findings taken in the second fix-up: the histories test seeded `_feedback` with the pass's own
+live canvas, which the reset then released out from under the pass (a throwaway `Canvas` now);
+`time_origin > 0` was vacuous since the origin is set at open (now `> before`); the stale-context
+fixture called `init_context()` after `create_standalone_context`, which already installs its
+context as the default, so it yielded a third wrapper (now yields the standalone one). One
+comment in `core.py` still called the fallback clock "the live loop's" (reworded). Recorded, not
+changed: `moderngl.create_standalone_context` installs itself as the process default
+unconditionally, so a standalone context created AFTER an App steals the default back for the
+App's lifetime; nothing in the app or the suite does that (fixtures build standalone contexts
+before an App, never during one), and the durable fix is an App-owned `moderngl.Context` in
+place of the per-frame `get_context()` at `ui.py:473`, which is its own change. Everything else
+cleared: gc_mode and the imgui renderer come after the re-init, `Document` has one construction
+site so the origin is always set, the origin never persists, every non-live render passes an
+explicit `u_time`, `ScriptEngine.reset` handles no-script / compile-error / raising `__init__`,
+Reset is correctly ungated mid-copilot-turn (a runtime restart like play/stop), the button and
+tooltip pass the prose budget, six mutations each turn the expected test red.
+
 ## Manual verification (the maintainer, in the app)
 
 1. Open the Radiance Cascades example; the Reset button sits at the preview's top-left on every

@@ -10,7 +10,7 @@ from typing import Any
 import numpy as np
 
 from shaderbox.commands import CommandId
-from shaderbox.core import process_time
+from shaderbox.core import Canvas, process_time
 from shaderbox.paths import DOCUMENT_SCRIPT_BASENAME
 
 # Red is the live clock, clamped: a document whose origin lies seconds in the past renders 255,
@@ -101,14 +101,17 @@ def test_reset_drops_the_feedback_histories(app: Any) -> None:
     # The funnel must call the history reset, not only restart the clock. Falsifier: drop the
     # `reset_feedback()` call from `Document.reset`.
     document = app.ui_documents[app.current_document_id].document
-    document._feedback["phantom"] = document.render_pass.canvas
+    document._feedback["phantom"] = Canvas(size=(4, 4))  # released by the reset
+    before = document.time_origin
     app.session.reset_document(app.current_document_id)
     assert document._feedback == {}
-    assert document.time_origin > 0.0
+    assert document.time_origin > before
 
 
 def test_the_command_reaches_the_funnel(app: Any, monkeypatch: Any) -> None:
     seen: list[str] = []
-    monkeypatch.setattr(app.session, "reset_document", lambda document_id: seen.append(document_id))
+    monkeypatch.setattr(
+        app.session, "reset_document", lambda document_id: seen.append(document_id)
+    )
     app.command_callbacks[CommandId.RESET_DOCUMENT]()
     assert seen == [app.current_document_id]
