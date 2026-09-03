@@ -117,10 +117,10 @@ class _ColorBag:
     # what an unwired sampler reads: the swatch a panel shows for it
     BLACK: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0)
 
-    # A pass tile in the output's chain carries the accent at this alpha as its cell ground;
-    # a dormant tile keeps the plain ground, its picture untouched, and the corner tick.
-    # Computed at draw time off ACCENT_PRIMARY, which apply_theme swaps at runtime.
-    PASS_LIVE_FILL_ALPHA: float = 0.12
+    # The accent's tint alpha wherever the accent marks a SELECTED surface: the active tab's
+    # fill and a live pass tile's cell ground share it, so the two read as one state. Applied
+    # at draw time off ACCENT_PRIMARY, which apply_theme swaps at runtime.
+    ACCENT_TINT_ALPHA: float = 0.32
 
     # neutrals
     BG_APP: tuple[float, float, float, float] = _P["bg_0"]
@@ -514,8 +514,8 @@ def _set_colors(
 
     # tabs (Dear ImGui 1.91+ names)
     style.set_color_(col.tab, _P["bg_1"])
-    style.set_color_(col.tab_hovered, fade(accent_primary, 0.32))
-    style.set_color_(col.tab_selected, fade(accent_primary, 0.32))
+    style.set_color_(col.tab_hovered, fade(accent_primary, COLOR.ACCENT_TINT_ALPHA))
+    style.set_color_(col.tab_selected, fade(accent_primary, COLOR.ACCENT_TINT_ALPHA))
     style.set_color_(col.tab_selected_overline, accent_primary)
     style.set_color_(col.tab_dimmed, _P["bg_0h"])
     style.set_color_(col.tab_dimmed_selected, fade(accent_primary, 0.20))

@@ -115,9 +115,7 @@ def _draw_pass_tile(
         selected=is_output,
         armed=app.pass_delete_armed == name,
         border_color=border,
-        bg_color=None
-        if stale
-        else fade(COLOR.ACCENT_PRIMARY, COLOR.PASS_LIVE_FILL_ALPHA),
+        bg_color=None if stale else fade(COLOR.ACCENT_PRIMARY, COLOR.ACCENT_TINT_ALPHA),
         footer=name,
         overlay=_settings_overlay,
         stale=stale,
