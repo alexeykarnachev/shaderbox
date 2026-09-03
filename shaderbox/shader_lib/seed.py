@@ -75,6 +75,21 @@ def _trash_file(root: Path, path: Path) -> None:
     shutil.move(str(path), str(dest))
 
 
+def _stale_shipped_file(root: Path, rel: str, seeded_hash: str) -> Path | None:
+    """The live file for a manifest entry the shipped set no longer has, if it is still pristine.
+
+    `root / rel` ESCAPES the root for an absolute or `..` key (pathlib semantics) — a corrupt
+    manifest must never unlink outside the root.
+    """
+    rel_path = Path(rel)
+    if rel_path.is_absolute() or ".." in rel_path.parts:
+        return None
+    stale = root / rel_path
+    if not stale.exists() or _sha1(stale.read_bytes()) != seeded_hash:
+        return None
+    return stale
+
+
 def sync_shipped_lib(seed_dir: Path, root: Path) -> int:
     """Per-file shipped->live sync, run once at startup (before the first index build).
 
@@ -135,14 +150,10 @@ def _sync_shipped_lib(seed_dir: Path, root: Path) -> int:
         elif disk_hash == seed_hash:
             manifest[rel] = seed_hash
     for rel in [r for r in manifest if r not in seed]:
-        rel_path = Path(rel)
-        # `root / rel` ESCAPES the root for an absolute or `..` key (pathlib
-        # semantics) — a corrupt manifest must never unlink outside the root.
-        if not rel_path.is_absolute() and ".." not in rel_path.parts:
-            stale = root / rel_path
-            if stale.exists() and _sha1(stale.read_bytes()) == manifest[rel]:
-                stale.unlink()
-                logger.info(f"shader-lib seed: removed stale shipped file '{rel}'")
+        stale = _stale_shipped_file(root, rel, manifest[rel])
+        if stale is not None:
+            stale.unlink()
+            logger.info(f"shader-lib seed: removed stale shipped file '{rel}'")
         del manifest[rel]
     _save_manifest(root, manifest)
     if written:
@@ -183,14 +194,10 @@ def reset_to_shipped(seed_dir: Path, root: Path) -> tuple[int, int]:
         written += 1
     removed = 0
     for rel in [r for r in old_manifest if r not in seed]:
-        rel_path = Path(rel)
-        # `root / rel` ESCAPES the root for an absolute or `..` key (pathlib
-        # semantics) — a corrupt manifest must never unlink outside the root.
-        if not rel_path.is_absolute() and ".." not in rel_path.parts:
-            stale = root / rel_path
-            if stale.exists() and _sha1(stale.read_bytes()) == old_manifest[rel]:
-                stale.unlink()
-                removed += 1
+        stale = _stale_shipped_file(root, rel, old_manifest[rel])
+        if stale is not None:
+            stale.unlink()
+            removed += 1
     _save_manifest(root, manifest)
     logger.info(
         f"shader-lib reset: {written} restored, {trashed} trashed, {removed} stale removed"

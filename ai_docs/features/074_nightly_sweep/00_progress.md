@@ -62,3 +62,83 @@ Ruled out during the scan, with reasons, so no later wave re-opens them:
 - **Dependency removal.** Never in scope — every declared dependency is used by a shipped
   feature. Four are reached through the lazy-SDK function-body imports, so a top-level import
   scan calls them unreferenced; that is a scan artifact, not a finding.
+
+---
+
+## Night baseline — re-measured at start of the night
+
+At `91104c7`, branch `dev`, tree clean.
+
+- `make gates` → exit 0, `GREEN -- check passed, test passed, smoke passed`.
+  A display WAS attached at this moment, so the smoke actually ran. Later
+  waves may report it skipped; that is the expected overnight shape.
+
+## W-0 inventory — done-condition (written before the wave)
+
+`00_inventory.md` exists beside this file, listing every dead-symbol candidate
+found, each classified SAFE / CAREFUL / RISKY / NOT-DEAD with the evidence for
+its tier, covering all eight symbol kinds the spec names (module functions,
+methods, classes, pydantic/dataclass fields, enum members individually, module
+constants, private helpers, type aliases individually, whole modules) across
+`shaderbox/` and every subpackage, `scripts/`, `tests/`. Tool output recorded.
+No source file changed by this wave.
+
+## W-3 comment duplicates — done-condition (written before the wave)
+
+The exact-text duplicate detector run over `shaderbox/` reports zero multi-line
+comment blocks appearing more than once, and `make gates` is green. Nothing that
+explains a footgun at its own call site is deleted.
+
+### W-3 measurement (done before touching anything)
+
+Re-measured with a duplicate detector over every `.py` under `shaderbox/`
+(excluding the vendored `resources/editor/`), at both block and single-line
+granularity, plus `scripts/` and `tests/` for the block detector.
+
+- **Multi-line duplicates: exactly one.** `shader_lib/seed.py:139` and `:187` —
+  the `root / rel` escape note above two stale-removal loops. This is the one the
+  spec seeded, and it is the one copy-paste defect: same file, two adjacent
+  functions, the comment carried along with the loop.
+- **The spec's "one restating comment" was a FALSE POSITIVE.** It is
+  `ui.py:336`'s `# Process hotkeys` above `process_hotkeys(app)` — but that is a
+  *section banner label*, part of the `# ----` + label pattern that delimits
+  ~14 phases of `update_and_draw` (`:259 Render previews`, `:292 Render
+  documents`, `:340 Prepare new frame`, …). Deleting it alone would break the
+  pattern; deleting all of them would destroy the file's only navigation aid.
+  **No restating comment is removed.**
+- **The 4-site imgui note is KEPT, deliberately.** `# Read on the line after the
+  input: the item-scoped queries see the LAST submitted item.` appears at
+  `popups/lib_picker/tree.py:223,303`, `popups/pass_settings.py:91`,
+  `widgets/pass_list.py:204`. Four genuinely different call sites, each with the
+  same footgun one line below. This is the spec's keep case — a comment naming a
+  failure it prevents, at the site where it prevents it. Hoisting it to one place
+  would leave three sites where the reader must go looking.
+- **The 5-site EGL fixture note in `tests/` is KEPT.** It quotes a measured
+  segfault (module-order-dependent EGL display poisoning); `tests/` is outside
+  W-3's scope and the comment is the convention working.
+- Section rulers (`# ----`, `# ====`) and the three shared banner labels in
+  `exporters/telegram.py` / `exporters/youtube.py` are structure, not prose.
+
+`scanned: multi-line comment blocks and single-line comments >40 chars across
+shaderbox/ and every subpackage, plus block-level across scripts/ and tests/;
+not scanned: docstrings, non-.py files.`
+
+### W-3 — DONE
+
+did: hoisted the shared half of the two stale-shipped-file loops in
+`shader_lib/seed.py` into `_stale_shipped_file`, which carries the escape note
+ONCE in its docstring. Each caller keeps its own distinct follow-up (the sync
+logs and drops the manifest entry; the reset counts) — the hoist takes only the
+question both were asking, so it does not couple two things that must move apart.
+verification: `make gates` exit 0 read unpiped, `GREEN -- check passed, test
+passed, smoke passed`. **All three stages ran** (a display was still attached).
+Mutation-tested the hoisted guard: replacing `if rel_path.is_absolute() or ".."
+in rel_path.parts` with `if False` makes
+`test_corrupt_manifest_key_cannot_delete_outside_root` fail; restored, 16 passed.
+ruled out: deleting one of the two comment copies (both loops need the note —
+the duplication was in the CODE, and removing the comment alone would have left
+the real defect); the 4-site imgui note (kept, see measurement above); every
+section-banner label (structure); the `tests/` EGL note (out of scope, and it
+quotes a measurement).
+surprise: the spec's second W-3 item — "one restating comment" — did not exist.
+It is a section-banner label in `ui.py`, and the file has ~14 of them.
