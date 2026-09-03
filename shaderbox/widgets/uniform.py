@@ -277,7 +277,7 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
         document = app.ui_documents[document_id].document
         source = document.sampler_source(panel_pass_name, name)
         if source is not None:
-            _draw_pass_source(document.passes[source].canvas.texture, source)
+            _draw_pass_source(document.input_texture(panel_pass_name, source), source)
         else:
             if button("Load" + hidden):
                 # Both cases: Linux glob filters are case-sensitive, phone cameras emit

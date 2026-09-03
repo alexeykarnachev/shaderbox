@@ -54,4 +54,28 @@ def test_a_wired_sampler_names_its_pass_and_an_unwired_one_reads_black(
     # A pass that declares no such sampler, and a pass that does not exist.
     assert document.sampler_source("paint", "u_paint") is None
     assert document.sampler_source("nope", "u_paint") is None
+    # The NAME rule (069 D9), which only the effective graph knows: with the stored edge gone,
+    # `u_cascade` still reads `cascade`. Falsifier: resolve from `document.graph` instead.
+    document.graph = document.graph.without_input("composite", "u_cascade")
+    assert document.sampler_source("composite", "u_cascade") == "cascade"
+    document.release()
+
+
+def test_a_self_reading_sampler_shows_the_history_the_shader_reads(
+    gl: moderngl.Context, tmp_path: Path
+) -> None:
+    # `cascade` reads itself through `u_prev`: the renderer binds the feedback history (the
+    # previous frame), which after the frame-boundary swap is a different texture from the live
+    # canvas. The row must show that one. Falsifier: hand the row the live canvas.
+    shutil.copytree(_RC, tmp_path / "rc")
+    document = load_document_from_dir(tmp_path / "rc").document
+    _online(document)
+    assert document.sampler_source("cascade", "u_prev") == "cascade"
+    history = document.input_texture("cascade", "cascade")
+    assert history is not document.passes["cascade"].canvas.texture
+    # Another pass reading cascade sees its live canvas.
+    assert (
+        document.input_texture("composite", "cascade")
+        is document.passes["cascade"].canvas.texture
+    )
     document.release()

@@ -482,6 +482,14 @@ class Document:
         source = entry.inputs.get(uniform, "")
         return source if source in self.passes else None
 
+    def input_texture(self, consumer: str, source: str) -> moderngl.Texture:
+        """The texture `consumer` reads from pass `source`: the source's live canvas, or, when a
+        pass reads itself, its feedback history -- the previous frame, which is what the swap at
+        the frame boundary put there -- once one exists."""
+        if source == consumer and source in self._feedback:
+            return self._feedback[source].texture
+        return self.passes[source].canvas.texture
+
     def effective_graph(self) -> PassGraph:
         """`self.graph` with every sampler's effective source filled in (069 D9).
 
