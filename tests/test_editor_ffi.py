@@ -1127,3 +1127,23 @@ def test_render_state_reacts_to_the_search_highlight_going_out() -> None:
     e.layout((640.0, 480.0), 16.0)
     assert should_redraw(lit, _state(e)), "the highlight went out and nothing repainted"
     e.close()
+
+
+def test_search_bands_stop_at_the_status_row() -> None:
+    # Editor d2f19556: a decoration drawn after the status Frame is clipped to the text viewport,
+    # so the band on the partial last row ends where the status row begins instead of painting
+    # over it. Falsifier: the sixth band ends at 126, past the frame's top at 110.
+    e = Editor("\n".join(f"foo {i}" for i in range(30)))
+    e.set_draw_chrome(True)
+    e.layout((400.0, 200.0), 16.0)
+    cell_h = e.get_cell_size()[1]
+    height = cell_h * 6 + 5.0  # five text rows, the status row, a five-pixel remainder
+    e.feed("/foo<CR>")
+    e.layout((400.0, height), 16.0)
+    text_bottom = height - cell_h
+    bands = [p for p in e.prims_list() if p.kind == int(Kind.SEARCH_MATCH)]
+    assert bands, "the pattern is lit"
+    assert all(p.y1 <= text_bottom + 0.01 for p in bands), [
+        (p.y0, p.y1) for p in bands if p.y1 > text_bottom
+    ]
+    e.close()

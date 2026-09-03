@@ -66,6 +66,15 @@ the gate's colour. A follow-up commit adds the last layout's primitive count to 
 redraw fingerprint, since Esc putting the highlight out changes nothing else the fingerprint
 reads.
 
+## Second re-vendor: `d2f19556`
+
+The maintainer saw the highlight band leak through the status row. Reproduced through the ABI:
+five text rows plus a five-pixel remainder lays out a sixth, partial row, and its band
+(y 105-126) drew over the status frame (110-131), since `Search_Match` draws after `Frame` while
+the row's glyphs are hidden under it. The editor session clipped every decoration kind that
+draws after the frame to the text viewport (`d2f19556`, no ABI change); re-vendored the same
+way, `VERSION` updated, pinned by `test_search_bands_stop_at_the_status_row`.
+
 ## Manual verification (the maintainer, in the app)
 
 1. A file ending in an empty line: `G`, `dd` removes it. Falsifier: the line stays.
