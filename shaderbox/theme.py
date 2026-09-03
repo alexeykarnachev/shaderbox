@@ -117,9 +117,10 @@ class _ColorBag:
 
     # a preview whose texture is no longer being rendered: the tile dims and takes a
     # corner tick, so a frozen picture cannot be misread as a live one.
-    # Drawn OVER a stale preview image: blends every pixel toward mid-grey (alpha = how far),
-    # which reads as desaturation — a multiplicative tint would darken instead.
-    STALE_WASH: tuple[float, float, float, float] = (0.50, 0.50, 0.50, 0.60)
+    # The tint a stale preview image is blitted with: multiplicative, so black stays black
+    # and the picture keeps its shape while its lights go down — a grey wash over it read
+    # as a solid slab on dark content.
+    STALE_TINT: tuple[float, float, float, float] = (0.45, 0.45, 0.45, 1.0)
 
     # neutrals
     BG_APP: tuple[float, float, float, float] = _P["bg_0"]

@@ -924,9 +924,8 @@ def preview_cell(
     is its own child window so the overlays' absolute cursor moves can't perturb the
     parent (no jitter / SetCursorPos assert).
 
-    `stale` marks a texture that is no longer being rendered — the image washes toward grey
-    (desaturated, not darkened) and the footer dims, so a frozen picture cannot be read as a
-    live one.
+    `stale` marks a texture that is no longer being rendered — the image is drawn darkened
+    and the footer dims, so a frozen picture cannot be read as a live one.
 
     """
     line_h: float = imgui.get_text_line_height_with_spacing()
@@ -965,14 +964,10 @@ def preview_cell(
                 (ix + dw, iy + dh),
                 (0, 1),
                 (1, 0),
-                imgui.color_convert_float4_to_u32(COLOR.WHITE),
+                imgui.color_convert_float4_to_u32(
+                    COLOR.STALE_TINT if stale else COLOR.WHITE
+                ),
             )
-            if stale:
-                dl.add_rect_filled(
-                    (ix, iy),
-                    (ix + dw, iy + dh),
-                    imgui.color_convert_float4_to_u32(COLOR.STALE_WASH),
-                )
 
         # allow_overlap so the buttons drawn on top win the click; the transparent
         # header colours leave the image/border carrying the visual.
