@@ -51,6 +51,21 @@ check), the whole-word `*` skipping `foobar`, and the search bands counted from 
 through the `/fo` prefix, the closed line, Esc, and `n`. The argtypes gate against
 `abi_probe.py` and `tests/test_keymap_disjoint.py`'s parse of `vim_coverage.md` pass unchanged.
 
+## What went wrong the first time
+
+Commit `63e4c87` claimed this re-vendor and carried only this file. The vendored copies, the
+enum extensions, the slot and the four tests had been reverted from the working tree before the
+`git add`: a post-impl reviewer running concurrently tested "a clean checkout" of its commit in
+the shared tree, and the gate that commit reported green ran on the old binary, since the tests
+it named no longer existed (a `pytest -k` count of 0 for them was seen and dismissed). The
+maintainer found it in the app: no `*`, no highlight. Redone in `ae94086`, each test seen
+PASSED by name against the new binary, `git show --stat` checked for the seven files. Two rules
+follow, both filed: a reviewer never stashes or checks out in the shared tree
+(`dev_flow.md ## Feature flow` step 6), and a re-vendor commit is verified by its stat, not by
+the gate's colour. A follow-up commit adds the last layout's primitive count to the panel's
+redraw fingerprint, since Esc putting the highlight out changes nothing else the fingerprint
+reads.
+
 ## Manual verification (the maintainer, in the app)
 
 1. A file ending in an empty line: `G`, `dd` removes it. Falsifier: the line stays.

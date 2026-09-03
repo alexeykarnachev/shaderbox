@@ -110,6 +110,9 @@ def render_state(
         editor.complete_selected(),
         editor.complete_count(),
         completion_prefix,
+        # The last layout's primitive count: library-side picture changes with no host-visible
+        # state of their own (the search highlight going out on Esc) change what it emitted.
+        editor.prims_array()[1],
         size,
         px_per_em,
         text_origin,

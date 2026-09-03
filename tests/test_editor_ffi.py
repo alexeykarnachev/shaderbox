@@ -1114,3 +1114,16 @@ def test_search_matches_are_lit_and_esc_puts_them_out() -> None:
     e.feed("n")
     assert _search_bands(e) == 2, "n keeps the pattern and lights it again"
     e.close()
+
+
+def test_render_state_reacts_to_the_search_highlight_going_out() -> None:
+    # Esc in normal mode clears the search bands and changes no other dimension the fingerprint
+    # reads; the primitive count carries it. Falsifier: drop the count from render_state.
+    e = _editor("foo bar foo")
+    e.feed("/foo<CR>")
+    e.layout((640.0, 480.0), 16.0)
+    lit = _state(e)
+    e.feed("<Esc>")
+    e.layout((640.0, 480.0), 16.0)
+    assert should_redraw(lit, _state(e)), "the highlight went out and nothing repainted"
+    e.close()
