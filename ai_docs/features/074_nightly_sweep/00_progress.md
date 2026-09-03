@@ -36,5 +36,7 @@ Ruled out during the scan, with reasons, so no later wave re-opens them:
   "leaf module, imports only X" docstring that a reviewer can check mechanically.
 - **Splitting `app.py` or `copilot/backend.py` on size.** The repo's conventions record that
   prior extractions already happened and forbid a further split without a fresh pain signal.
+- **Backward compatibility of any kind.** The maintainer confirmed explicitly that breaking old
+  projects and old saves is fine. No compat shim, no migration, no old-format reader.
 - **Any behaviour work.** No oracle decides rendering correctness, and the visual half cannot be
   checked on this machine.

@@ -147,6 +147,15 @@ Classify every candidate into the three tiers below BEFORE removing anything. Th
 sizes the rest of the night; nothing after it can be scoped until it has run. Its done-condition:
 a written list, per tier, with the evidence for each, committed as `00_inventory.md`.
 
+**A symbol is not kept alive by an old save.** The repo ships no backward-compatibility or
+migration code, by standing rule: nothing pre-release ships to users, and the only data is the
+dev sandbox. So "an existing `document.json` might still carry this field" is NOT a reason to
+keep a field, and a removal that makes an old file unloadable is acceptable — the fix is to
+hand-edit the affected files under `projects/dev/` (or regenerate them through the normal
+load-and-save path) and `git add projects/dev` in the SAME commit. Never write a compat shim, an
+old-format reader, or a migration step; if one seems necessary, that is the signal to stop and
+report rather than to build it.
+
 **False positives — these are NOT dead, do not remove them:** anything reached dynamically (a
 name built as a string, a `getattr`, a registry lookup); pytest fixtures and test functions;
 pydantic fields populated from JSON; enum members serialized to or from disk; a function stored
@@ -261,6 +270,10 @@ re-litigates a decision already settled.
 Settled already, as CONSTRAINTS rather than open questions:
 
 - No behaviour work. Structural only.
+- **Breaking old saves and old projects is allowed.** No backward compatibility, no migration
+  code, no old-format readers — the maintainer confirmed this explicitly for this sweep, and it
+  is the repo's standing rule. A reshaped on-disk format is fixed by hand-editing
+  `projects/dev/` in the same commit, never by a compat path.
 - No file split on size alone; the repo's pain-signal rule governs (§ What looks wrong).
 - No comment sweep to a density target; attempt-narration is already absent.
 - Misfiling was scanned and found absent — there is no relocation wave beyond W-4's question.
