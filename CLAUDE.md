@@ -21,7 +21,6 @@ Quick routing (full version → `dev_flow.md`):
 
 ## Hard rules
 
-- **Commits.** Per global `## Commits`, plus: ASCII-only subject. **Commit and push every time work is green, without asking** -- the maintainer's standing instruction; a session that asks whether to commit is the defect.
 - **Commit on `dev`, never `master`** — no per-feature branches. The dev→master ship promotion lives in `dev_flow.md ## Branch model`.
 - **Never leave `projects/dev/` unstaged** — sandbox drift gets `git add projects/dev && commit`ed in the same wave; never `checkout`-ed away. Stripped from shipped bundle by `build.sh`. (Full rule: `dev_flow.md`.)
 - **NO backward-compatibility / migration code, EVER — unless the maintainer explicitly asks.** Nothing pre-release ships to users (the only data is the dev sandbox). When a change reshapes a model / file / on-disk format, just CHANGE it and **fix the `projects/dev/` files BY HAND** (hand-edit them, or regenerate via the normal load+save path) and `git add projects/dev` in the same wave — never write a migration path, a compat shim, an old-format reader, a "fold the old thing in" step, or a deprecation. Manual is the ONLY sanctioned fix; not even a throwaway one-off migration script is warranted unless the maintainer explicitly asks. The persistence-evolution posture (`conventions.md`) is about a model staying *loadable*, NOT about migrating old data. If a spec/review/swarm proposes migration code, that's the signal to delete the proposal. (Full rule: `conventions.md ## Design decisions`.)

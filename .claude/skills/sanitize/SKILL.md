@@ -115,7 +115,6 @@ A sweep without the full table is incomplete. Then one final line — `/clear` r
 - Don't rewrite docs wider than the work requires.
 - Don't delete `todo.md` entries whose fix isn't in this same commit.
 - Don't append to the roadmap banner — rewrite it in full.
-- Don't commit autonomously — that's the user's call (unless they've given a standing instruction).
 - Don't give long explanations — terse.
 
 > Want this to run automatically (a Stop-hook)? Set it up via the `update-config` skill; by default

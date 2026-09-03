@@ -46,13 +46,12 @@ git log --oneline master..dev            # everything unshipped since last ship
 ```
 
 ### 3. Commit + push everything on `dev`
-Stage all intended changes, commit with a single-line ASCII message (per `CLAUDE.md ## Commits`), push:
+Stage all intended changes, commit and push:
 ```
 git add -A
 git commit -m "<concise subject>"
 git push origin dev
 ```
-If the work spans multiple logical units, prefer separate commits; one is fine for a single feature.
 
 ### 4. Auto-pick the semver bump
 Read `git diff master..dev` (everything since the last ship) and pick the bump yourself — the

@@ -127,6 +127,10 @@ _UNMEASURABLE: dict[tuple[str, str], str] = {
         "_draw_lookup_popup",
     ): "the `K` lookup's signature and doc, read from the lib index and ENGINE_UNIFORM_DOCS",
     (
+        "shaderbox/tabs/code.py",
+        "_draw_candidate_doc",
+    ): "the highlighted candidate's signature and doc, from the same tables as `K`",
+    (
         "shaderbox/ui_primitives.py",
         "anchored_note",
     ): "the caller's title and body; the one caller is _draw_lookup_popup",

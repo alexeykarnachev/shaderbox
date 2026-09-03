@@ -153,8 +153,7 @@ corrects.
      INVALIDATES every prior baseline: the comparison then measures the flag, not the change. Run a
      fresh control BEFORE the change, or demote the gate to an observation and say so.
 
-8. **Sanitization sweep** — the `/sanitize` skill. Separate commit (or its own line in the commit
-   message).
+8. **Sanitization sweep** — the `/sanitize` skill.
 
 9. **Done** — add or flip the feature's `roadmap.md` row (status + `Spec:` pointer) and **rewrite**
    the Active-context banner if "what's next" changed. Anything still open lands in the feature's
@@ -444,8 +443,8 @@ a fixture). It's where features get tested, so its `app_state.json` / `documents
 between runs every time the app runs. **The rule is binary: the working tree must never sit with
 unstaged `projects/dev/` changes.** Either it's gitignored or it's committed — no "leave it
 uncommitted, it's fine" middle state (that just re-surfaces as staging noise next time). So:
-**always `git add projects/dev && commit` the config/document drift in the same wave as your work**
-(it's an authorized sandbox-sync, no review needed — a `chore: sync dev sandbox` commit is fine).
+**`git add projects/dev` the config/document drift so it goes in with your work** (it's an
+authorized sandbox-sync, no review needed).
 The sticker-thumbnail cache `projects/*/media/` (Telegram `file_id`-named `.webm`/`.webp`) is
 **gitignored** — it's regenerable download cache, not fixture data; never commit it.
 `imgui.ini` in the repo root is layout cruft (gitignored). Telegram credentials live in the global

@@ -9,8 +9,10 @@ from pathlib import Path
 from typing import Any
 
 from shaderbox.completion import (
+    GLSL_BUILTIN_DOCS,
     CompletionContext,
     builtin_uniform_declarations,
+    candidate_doc,
     eligible_providers,
     matches,
     offer,
@@ -115,7 +117,8 @@ def test_symbol_doc_reads_the_lib_index_then_the_builtin_table() -> None:
         "uniform float u_time;",
         ENGINE_UNIFORM_DOCS["u_time"][1],
     )
-    assert symbol_doc("mix", lib) is None
+    assert symbol_doc("mix", lib) is not None, "GLSL builtins are documented too"
+    assert symbol_doc("nosuchname", lib) is None
 
 
 def _shader_tab(app: Any) -> EditorTab:
@@ -290,3 +293,33 @@ def test_a_lookup_request_resolves_the_word_under_the_caret(app: Any) -> None:
     _consume_lookup_request(app, editor)
     assert app.editor_lookup is None, "`uniform` is a keyword with no doc"
     editor.close()
+
+
+def test_every_callable_glsl_word_carries_a_doc() -> None:
+    # The domain is the vocabulary itself, enumerated rather than sampled: a builtin added to
+    # _GLSL_WORDS without a doc entry fails here instead of showing an empty popup.
+    from shaderbox.completion import _GLSL_WORDS
+
+    documented = set(GLSL_BUILTIN_DOCS)
+    vocabulary = set(_GLSL_WORDS)
+    assert documented <= vocabulary, documented - vocabulary
+    # Every documented name is callable; the rest of the vocabulary is types and keywords.
+    for name, (signature, doc) in GLSL_BUILTIN_DOCS.items():
+        assert f"{name}(" in signature, (name, signature)
+        assert doc and not doc.endswith("."), (name, doc)
+
+
+def test_symbol_doc_answers_for_a_glsl_builtin() -> None:
+    signature, doc = symbol_doc("smoothstep", {})
+    assert signature.startswith("genType smoothstep(")
+    assert "|" in signature, "the overload set is spelled out where shapes differ"
+    assert doc
+    assert symbol_doc("vec3", {}) is None, "a type is not a call"
+
+
+def test_candidate_doc_reads_a_bare_name_and_a_declaration() -> None:
+    bare = candidate_doc("mix", {})
+    assert bare is not None and bare[0].startswith("genType mix(")
+    declared = candidate_doc("float u_time;", {})
+    assert declared is not None and declared[0] == "uniform float u_time;"
+    assert candidate_doc("while", {}) is None

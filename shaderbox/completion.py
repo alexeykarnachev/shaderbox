@@ -79,6 +79,72 @@ _GLSL_WORDS: tuple[str, ...] = (
 )
 
 
+# GLSL builtins the completion vocabulary offers: signature + one line of what it does, so
+# `K` and the completion popup can say what a name IS. Not the full ES 3.0 library -- the
+# entries here are exactly the callable names in _GLSL_WORDS, pinned by a test.
+#
+# Nearly all of these are OVERLOADED. `genType` is the spec's own notation for "float, vec2,
+# vec3 or vec4, the same one throughout"; where a parameter does NOT follow the others
+# (mix's t, clamp's bounds, pow's exponent) the overload set is spelled out, because that is
+# the difference a caller actually trips over.
+GLSL_BUILTIN_DOCS: dict[str, tuple[str, str]] = {
+    "abs": ("genType abs(genType x)", "distance from zero, sign discarded"),
+    "ceil": ("genType ceil(genType x)", "up to the nearest integer"),
+    "clamp": (
+        "genType clamp(genType x, genType lo, genType hi) | (genType x, float lo, float hi)",
+        "x held inside [lo, hi]",
+    ),
+    "cos": ("genType cos(genType angle)", "cosine, angle in radians"),
+    "cross": ("vec3 cross(vec3 a, vec3 b)", "vector perpendicular to both"),
+    "distance": ("float distance(genType a, genType b)", "length of a - b"),
+    "dot": (
+        "float dot(genType a, genType b)",
+        "sum of the products; 1 when parallel, 0 when perpendicular for unit vectors",
+    ),
+    "exp": ("genType exp(genType x)", "e raised to x"),
+    "floor": ("genType floor(genType x)", "down to the nearest integer"),
+    "fract": ("genType fract(genType x)", "the part after the point: x - floor(x)"),
+    "length": ("float length(genType x)", "the vector's magnitude"),
+    "max": (
+        "genType max(genType a, genType b) | (genType a, float b)",
+        "the larger of the two",
+    ),
+    "min": (
+        "genType min(genType a, genType b) | (genType a, float b)",
+        "the smaller of the two",
+    ),
+    "mix": (
+        "genType mix(genType a, genType b, genType t) | (genType a, genType b, float t)",
+        "linear blend: a at t=0, b at t=1; a bvec t selects per component",
+    ),
+    "mod": (
+        "genType mod(genType x, genType y) | (genType x, float y)",
+        "remainder, sign follows y",
+    ),
+    "normalize": ("genType normalize(genType x)", "same direction, length 1"),
+    "pow": ("genType pow(genType x, genType y)", "x raised to y; x must be >= 0"),
+    "reflect": (
+        "genType reflect(genType i, genType n)",
+        "i bounced off the surface with unit normal n",
+    ),
+    "sin": ("genType sin(genType angle)", "sine, angle in radians"),
+    "smoothstep": (
+        "genType smoothstep(genType e0, genType e1, genType x) | (float e0, float e1, genType x)",
+        "0 below e0, 1 above e1, an S-curve between -- step without the hard edge",
+    ),
+    "sqrt": ("genType sqrt(genType x)", "square root"),
+    "step": (
+        "genType step(genType edge, genType x) | (float edge, genType x)",
+        "0 below edge, 1 at or above",
+    ),
+    "tan": ("genType tan(genType angle)", "tangent, angle in radians"),
+    "texture": (
+        "vec4 texture(sampler2D s, vec2 uv [, float bias])",
+        "sample s at uv; uv 0..1 spans the image",
+    ),
+}
+
+
 @dataclass(frozen=True)
 class CompletionContext:
     tab_kind: str
@@ -231,4 +297,13 @@ def symbol_doc(
     if builtin is not None:
         glsl_type, doc = builtin
         return f"uniform {glsl_type} {word};", doc
-    return None
+    return GLSL_BUILTIN_DOCS.get(word)
+
+
+def candidate_doc(
+    candidate: str, lib_functions: Mapping[str, ShaderLibFunction]
+) -> tuple[str, str] | None:
+    """What the popup shows beside the highlighted row. A candidate is either a bare name or
+    a whole declaration (`float u_time;`), so the name is taken off the end."""
+    word = candidate.rstrip(";").split()[-1] if " " in candidate else candidate
+    return symbol_doc(word.rstrip(";"), lib_functions)

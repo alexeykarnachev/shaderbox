@@ -3,7 +3,13 @@ from pathlib import Path
 from imgui_bundle import imgui
 
 from shaderbox.app import App
-from shaderbox.completion import CompletionContext, offer, symbol_doc, word_at
+from shaderbox.completion import (
+    CompletionContext,
+    candidate_doc,
+    offer,
+    symbol_doc,
+    word_at,
+)
 from shaderbox.core import Pass
 from shaderbox.editor.ffi import EDITOR_RESOURCES_DIR, CursorPos, Editor, Mode
 from shaderbox.editor.render import (
@@ -417,6 +423,41 @@ def _draw_lookup_popup(app: App, editor: Editor) -> None:
     anchored_note("##lookup", anchor, lookup.signature, lookup.doc)
 
 
+def _draw_candidate_doc(app: App, editor: Editor) -> None:
+    """The doc for the completion popup's highlighted row, beside the popup.
+
+    The library draws the list and owns the selection; the detail is the host's, read from
+    the same tables `K` uses. Nothing is drawn while the row is unhighlighted (an unasked
+    batch) or the candidate has no doc.
+    """
+    if not editor.complete_open():
+        return
+    index = editor.complete_selected()
+    if index < 0:
+        return
+    candidate = editor.complete_item(index)
+    if candidate is None:
+        return
+    found = candidate_doc(candidate, app.shader_lib_index.functions)
+    if found is None:
+        return
+    # Beside the popup rather than under it: the popup itself hangs under the caret, and a
+    # note under BOTH would cover the code the user is completing into.
+    cursor = editor.get_current_cursor_position()
+    origin_x, origin_y = editor.get_text_origin()
+    cell_w, cell_h = editor.get_cell_size()
+    rect_x, rect_y = app.editor_rect[0], app.editor_rect[1]
+    widest = max(
+        (len(editor.complete_item(i) or "") for i in range(editor.complete_count())),
+        default=0,
+    )
+    anchor = (
+        rect_x + origin_x + (cursor.column + widest + 3) * cell_w,
+        rect_y + origin_y + (cursor.line - editor.get_scroll() + 1) * cell_h,
+    )
+    anchored_note("##candidate_doc", anchor, found[0], found[1])
+
+
 def _offer_completion(app: App, editor: Editor, tab: EditorTab, explicit: bool) -> None:
     context = _completion_context(app, editor, tab, explicit)
     matches = offer(context)
@@ -724,6 +765,7 @@ def draw(app: App) -> None:
         )
 
     _draw_lookup_popup(app, editor)
+    _draw_candidate_doc(app, editor)
     app.editor_focused = focused
     if app.editor_focused:
         # Sticky: stays True across popups/menus until an explicit defocus.
