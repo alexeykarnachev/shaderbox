@@ -517,10 +517,10 @@ def layout_following_cursor(
 ) -> CursorPos:
     """Lay the editor out, bring a MOVED cursor into view, and lay out again if that scrolled.
 
-    The follow runs AFTER this frame's layout on purpose: `scroll_to_line` answers against the
-    last `ed_layout`, and a line the edit just added is not in the previous one, so following
-    first left `o` on the last line with its caret under the status row. `rows` is the text
-    rows the host shows (the status row excluded); 0 means no metrics yet, and nothing follows.
+    The follow runs AFTER this frame's layout: `scroll_to_line` answers against the last
+    `ed_layout`, and only this frame's layout knows a line the edit just added. `rows` is the
+    text rows the host shows (the status row excluded); 0 means no metrics yet, and nothing
+    follows.
     """
     editor.layout(size, px_per_em)
     cursor = editor.get_current_cursor_position()

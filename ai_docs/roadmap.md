@@ -26,30 +26,26 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-03 (069 closed in code; the maintainer's walk is next). -->
-**NEXT SESSION: the maintainer walks the tutorial, and the session records what they find.**
-069's eight waves landed green, but its sign-off is a walk no gate can run. How a walk session
-runs -- the ledger to open, verbatim quoting, verifying each finding against the code before filing
-it, turning the set into a spec -- is `dev_flow.md ### How a tutorial walk runs`. Read it first.
+<!-- As of 2026-09-03 (071 landed in code; the maintainer's hands-on pass is next). -->
+**NEXT SESSION: the maintainer verifies 071 in the running app, and the session records what they
+find.** A display is connected on this box now (`make run` works; gates ran on it). What to
+walk: the `## Manual verification` list in each 071 wave file --
+`ai_docs/features/071_second_walk_findings/{10_wave_c_reset,20_wave_b_code_panel,30_wave_d_panel,
+50_wave_a_editor,60_wave_f_tutorial}.md` -- and the new closing chapter of
+`068_radiance_cascades/tutorial.html` followed literally on the shipped example. One value is
+tuned by eye: `COLOR.STALE_TINT` for dormant tiles (D2). Findings go into a new ledger per
+`dev_flow.md ### How a tutorial walk runs`; a walk session fixes nothing.
 
-**What gets walked:** `ai_docs/features/068_radiance_cascades/tutorial.html` (in a browser, beside
-the app), plus the `## Manual verification` list in every wave spec under
-`ai_docs/features/069_tutorial_walk_findings/` -- 069's acceptance checks for the code this walk
-exercises. `01_spec.md` is the index, `00_findings.md` the ledger the new one copies.
+**Also due at that display:** `todo.md`'s live-only UI checks and 065's checks 13-16. The
+Windows `libeditor.dll` still needs a Windows host at the next `/ship`.
 
-**A walk needs a DISPLAY** (`make run`), and this box reports every monitor disconnected:
-`App.__init__` aborts in `glfw.get_video_mode`. Gates here run under `xvfb-run -a` with the
-`make test` MESA overrides (`dev_flow.md ### make gates`); the walk itself cannot.
-
-**Also due at that display:** 065's checks 13-15 and the live-only UI checks (`todo.md`), plus
-check 16 (`/dogfood`). The Windows `libeditor.dll` still needs a Windows host at the next `/ship`.
-**070 is the graph view of the pass strip**, direction fixed in `069/01_spec.md § Out of scope`;
-no spec yet.
+**Then 070, the graph view of the pass strip** (`069/01_spec.md § Out of scope`); no spec yet.
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 071 | second_walk_findings | done | The maintainer's second walk of the 068 tutorial: 11 findings, six decisions, six waves landed -- a document-wide Reset (histories, clock, script, videos), the code panel's cursor follow and Ctrl+Tab, sampler rows showing what they read, American spelling with a gate, four editor-library items re-vendored from `aa8c6719`, and the tutorial cut to the cascades with a drawing chapter at the end; the maintainer's hands-on pass per wave is outstanding. Spec: `ai_docs/features/071_second_walk_findings/01_spec.md`. |
 | 069 | tutorial_walk_findings | done | The maintainer's walk of the 068 tutorial: 37 findings, eight waves, twelve locked decisions, all landed. Spec: `ai_docs/features/069_tutorial_walk_findings/01_spec.md`. |
 | — | repo_sweep | done | A ten-agent sweep over the defect classes this repo's history keeps producing (incomplete fix-sweeps, unwired mechanisms, tests that cannot fail, docs that drift from code): four blockers fixed — a crash loading a corrupt `document.json` from the per-frame sync, and three feedback-lifecycle bugs in the 068 machinery, one silently corrupting output — plus two skills that would crash a reader following them literally. What was REJECTED, and why, is in `conventions.md`. Spec: commits `70144d2..7e977bf`. |
 | 068 | radiance_cascades | done | A pass may declare `iterations` and the engine draws it N times per frame (`u_pass_iteration` / `u_pass_iterations`, per-iteration ping-pong), plus a six-pass Radiance Cascades example built on it and a tutorial rewriting both source articles for this engine. 069 W-H rewrote that tutorial to generate every pass card and code block from the example itself. Spec: `ai_docs/features/068_radiance_cascades/01_spec.md`. |

@@ -902,6 +902,15 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
     ctypes pushes what the binding declares and the callee reads its tail off the stack.
   - `PassGraph.version`: round-trip-only by design. A schema version's whole job is to already be
     there when a reader finally needs it.
+- **A document restarts through ONE funnel, `ProjectSession.reset_document`: histories, clock,
+  script instance, and every bound video through the clock.** `Document.reset` owns the document
+  half (feedback histories dropped, `time_origin` set on the process clock -- `core.process_time`,
+  the same clock the live tick and every live `u_time` read, so `ctx.t` and `u_time` share one
+  zero) and `ScriptEngine.reset` the script half (re-run `__init__`, no recompile). Export and the
+  copilot probe pass their own `u_time` and never read the origin. Nothing outside those three
+  knows what a reset consists of; a new reset-shaped need (a copilot tool, a chord) calls the App
+  forwarder and nothing else. A video needs no reset code of its own: `Video.update(t)` is a
+  function of the clock. Revisit if a document ever needs a clock that is NOT reset with it.
 - **The vendored editor binary (`shaderbox/resources/editor/`) rebuilds from a COMMITTED editor-repo
   sha, never a dirty tree.** SEVEN files ship together (feature 067): `libeditor.so`, `atlas.png`,
   `atlas.json`, `VERSION` (the sha), `vim_coverage.md`, `standard_keymap.md`, `abi_probe.py`
@@ -940,8 +949,9 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   re-vendor with no ABI delta still copies every file plus `VERSION`, because upstream moves docs
   and the probe independently of `ffi.odin`. Verifying the editor's own vim surface belongs to the
   editor repo, which has its own gates for it; what this repo checks is the INTEGRATION — the host
-  mitigations it drops, and whether `make gates` still passes without them. Every re-vendor so far
-  has deleted host code that was a second derivation of something the library now emits itself, so
+  mitigations it drops, and whether `make gates` still passes without them. Most re-vendors
+  delete host code that was a second derivation of something the library now emits itself (the
+  aa8c6719 one, 071 W-A, was additions only and deleted nothing), so
   the question to ask of a new sha is which host workaround it makes redundant, not whether it
   breaks anything. One rendering fact each re-vendor must re-clear rather than assume: a marker's
   text color must reach the glyph at COLUMN 0 (a version tested each glyph's LEFT EDGE against the

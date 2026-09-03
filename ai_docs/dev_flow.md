@@ -521,7 +521,11 @@ The session's job is to catch what they say and turn it into a plan:
 - **Verify each finding against the code BEFORE filing it**, and write what the code actually does
   with the file and symbol that proves it. A finding is a claim about the app until a citation
   settles it; the class (`DEFECT` / `UX` / `ENGINE`) follows from that check, not from how the
-  report sounded.
+  report sounded. Where a reproduction is cheap, run it instead of reading: the vendored editor
+  through `Editor.feed` (`shaderbox/editor/ffi.py`), the app through `update_and_draw` frames with
+  imgui input injected via `io.add_mouse_*` / `io.add_key_event` (`tests/test_code_panel.py` is
+  the shape). The 071 walk filed one "by the code this cannot happen" from a reading that a
+  five-line frame-loop probe refuted.
 - **Fix nothing during the walk.** The ledger only records; interrupting the walk to patch loses
   the next finding and biases the ones after it.
 - **Then write `01_spec.md` from the ledger**: group the findings into workstreams, order them, and
