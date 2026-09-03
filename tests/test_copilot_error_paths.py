@@ -137,7 +137,7 @@ def test_empty_turn_persists_a_placeholder_assistant_message(tmp_path: Path) -> 
 
 
 def test_handoff_card_reads_as_handed_off_not_failed(tmp_path: Path) -> None:
-    card = AgentToolCard("publish_telegram", True, {"handoff": True}, result="no creds")
+    card = AgentToolCard("publish_telegram", True, {"handoff": True})
     assert _tool_card_outcome(card) == "handed off"
     # ...and the outcome is REACHABLE: a handoff has no widget, so without its own branch the
     # line never renders and the user still sees nothing.

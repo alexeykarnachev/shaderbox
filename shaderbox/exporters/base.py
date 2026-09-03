@@ -92,7 +92,6 @@ class ExporterStatus:
     auth_state: AuthState = AuthState.UNCONFIGURED
     auth_message: str = ""
     last_progress: ExportProgress | None = None
-    in_flight: bool = False
 
 
 class Exporter(ABC):

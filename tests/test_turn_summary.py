@@ -82,9 +82,7 @@ def test_fact4_irreversible_ledger_carries_identity() -> None:
     # "continue" after a cutoff must not re-publish: the ledger must name WHAT was published (the
     # url/pack), which lives in payload, not the tool msg. publish_telegram is ALWAYS-gated -> approve.
     caps = minimal_caps(
-        publish_telegram=lambda _e: PublishResult(
-            ok=True, url="t.me/packX", kind="telegram"
-        ),
+        publish_telegram=lambda _e: PublishResult(ok=True, url="t.me/packX"),
         telegram_connected=lambda: True,
         telegram_has_default_pack=lambda: True,
         has_current_document=lambda: True,

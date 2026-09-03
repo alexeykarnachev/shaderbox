@@ -162,7 +162,6 @@ class LibFunctionBody:
     # One lib function's full body for read_lib (only the found case; misses are
     # handled tool-side).
     name: str
-    signature: str
     lib_address: str
     body: str
 
@@ -301,11 +300,10 @@ class RenderResult:
 @dataclass(frozen=True)
 class PublishResult:
     # ok=False carries the terminal error (or "cancelled" / "timed out"). On ok=True,
-    # `url` is the pack/Studio link; `kind` is the target ("telegram"/"youtube").
+    # `url` is the pack/Studio link.
     ok: bool
     error: str = ""
     url: str = ""
-    kind: str = ""
 
 
 @dataclass(frozen=True)

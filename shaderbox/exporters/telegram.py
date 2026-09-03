@@ -144,7 +144,6 @@ class _LinkEvent:
     user_id: str
     user_username: str
     bot_username: str
-    message: str = ""
 
 
 @dataclass
@@ -204,7 +203,6 @@ class TelegramExporter(Exporter):
             auth_state=self._render_state.auth_state,
             auth_message=self._render_state.auth_message,
             last_progress=self._render_state.last_progress,
-            in_flight=self._render_state.in_flight,
         )
 
     def set_integrations(self, store: IntegrationsStore) -> None:

@@ -897,7 +897,6 @@ class CopilotBackend:
             bodies.append(
                 LibFunctionBody(
                     name=fn.name,
-                    signature=fn.signature,
                     lib_address=lib_address(rel),
                     body=fn.body,
                 )
@@ -1469,7 +1468,6 @@ class CopilotBackend:
     def _copilot_publish(
         self,
         exporter: Exporter,
-        kind: str,
         preset: RenderPreset,
         settings: dict[str, Any],
     ) -> PublishResult:
@@ -1478,9 +1476,7 @@ class CopilotBackend:
         # sleeps + checks cancel between polls.
         document_id = self._get_current_document_id()
         if document_id is None or document_id not in self._get_ui_documents():
-            return PublishResult(
-                ok=False, error="no current document to publish", kind=kind
-            )
+            return PublishResult(ok=False, error="no current document to publish")
         ui_document = self._get_ui_documents()[document_id]
 
         def _render_and_enqueue() -> ExportProgress | None:
@@ -1501,12 +1497,12 @@ class CopilotBackend:
                 defer=True,
             )
         except CopilotToolError:
-            return PublishResult(ok=False, error="render failed (see logs)", kind=kind)
+            return PublishResult(ok=False, error="render failed (see logs)")
 
         deadline = time.monotonic() + COPILOT_ENGINE.publish_await_timeout_s
         while time.monotonic() < deadline:
             if self._get_is_cancelled():
-                return PublishResult(ok=False, error="cancelled", kind=kind)
+                return PublishResult(ok=False, error="cancelled")
             time.sleep(COPILOT_ENGINE.publish_poll_interval_s)
             try:
                 status: ExporterStatus = self._bridge.run_on_main(
@@ -1518,36 +1514,31 @@ class CopilotBackend:
             prog = status.last_progress
             if prog is not None and prog.is_terminal and prog is not baseline:
                 if prog.is_error:
-                    return PublishResult(ok=False, error=prog.message, kind=kind)
-                return PublishResult(ok=True, url=prog.url or "", kind=kind)
+                    return PublishResult(ok=False, error=prog.message)
+                return PublishResult(ok=True, url=prog.url or "")
         return PublishResult(
             ok=False,
             error="the upload is taking too long — check the Share tab for progress",
-            kind=kind,
         )
 
     def publish_telegram(self, emoji: str) -> PublishResult:
         exporter = self._get_exporter_registry().get("telegram")
         if not isinstance(exporter, TelegramExporter):
-            return PublishResult(
-                ok=False, error="Telegram exporter unavailable", kind="telegram"
-            )
+            return PublishResult(ok=False, error="Telegram exporter unavailable")
         preset = exporter.render_preset()
         settings: dict[str, Any] = {
             "pack_set_name": exporter.current_default_pack(),
             "emoji": emoji,
             "seconds": preset.duration_max or 3.0,
         }
-        return self._copilot_publish(exporter, "telegram", preset, settings)
+        return self._copilot_publish(exporter, preset, settings)
 
     def publish_youtube(
         self, title: str, description: str, shape: RenderShape
     ) -> PublishResult:
         exporter = self._get_exporter_registry().get("youtube")
         if not isinstance(exporter, YouTubeExporter):
-            return PublishResult(
-                ok=False, error="YouTube exporter unavailable", kind="youtube"
-            )
+            return PublishResult(ok=False, error="YouTube exporter unavailable")
 
         # Drive the shape from the arg so the render preset + the #Shorts upload flag agree; restore
         # the user's Share-tab shape after (a FULL RenderShape, so a WIDE_1440 choice round-trips
@@ -1568,7 +1559,7 @@ class CopilotBackend:
                 "is_short": is_short_now,
                 "seconds": preset.duration_max or 6.0,
             }
-            return self._copilot_publish(exporter, "youtube", preset, settings)
+            return self._copilot_publish(exporter, preset, settings)
         finally:
             self._bridge.run_on_main(lambda: exporter.set_shape(prior_shape))
 

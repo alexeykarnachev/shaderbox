@@ -151,15 +151,9 @@ class AgentToolCard:
     name: str
     ok: bool
     payload: dict | None
-    # The tool's result string (render path / publish URL / error text) for a result line under
-    # the card. Goes to the LLM history + trace too.
-    result: str = ""
     # Engine-rendered result widget from payload["widget"]: a button; the raw target never reaches
     # the model. None = no widget.
     widget: ResultWidget | None = None
-    # Terse chat-display line from payload["display"]: when `result` is heavy (read_shader's full
-    # source), the USER sees this summary while the full result still goes to the AGENT. "" = show `result`.
-    display: str = ""
 
 
 @dataclass(frozen=True)
@@ -870,9 +864,7 @@ def run_turn(
                     payload=None,
                 )
                 ran.record(tc.name, True, load_msg, args, None)
-                yield AgentToolCard(
-                    tc.name, True, None, result=load_msg, widget=None, display=""
-                )
+                yield AgentToolCard(tc.name, True, None, widget=None)
                 messages.append(_tool_message(tc.id, load_msg))
                 continue
             yield AgentStatus(registry.status_for(tc.name, args))
@@ -899,9 +891,7 @@ def run_turn(
                 # snippet square colors on ok, and the ledger would otherwise persist "(FAILED)").
                 # total_tool_calls stays put — it feeds the incompatible heuristic + giveup notes.
                 ran.record(tc.name, True, handoff, args, {"handoff": True})
-                yield AgentToolCard(
-                    tc.name, True, {"handoff": True}, result=handoff, display=""
-                )
+                yield AgentToolCard(tc.name, True, {"handoff": True})
                 messages.append(_tool_message(tc.id, handoff))
                 continue
             # Gate a destructive/publish tool on a user Yes/No before it runs. On decline: record +
@@ -955,14 +945,11 @@ def run_turn(
                 payload=payload,
             )
             ran.record(tc.name, ok, msg, args, payload)
-            display = str((payload or {}).get("display", ""))
             yield AgentToolCard(
                 tc.name,
                 ok,
                 payload,
-                result=msg,
                 widget=_widget_from_payload(payload),
-                display=display,
             )
 
             # Before any nudge appends below, so the legend sits directly under the facts/motion

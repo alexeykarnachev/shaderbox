@@ -79,7 +79,6 @@ class ProjectPaths:
     media_dir: Path
     trash_dir: Path
     renders_dir: Path
-    copilot_dir: Path
     copilot_conversation_path: Path
     copilot_checkpoints_dir: Path
 
@@ -100,7 +99,6 @@ class ProjectPaths:
             media_dir=media_dir,
             trash_dir=trash_dir,
             renders_dir=renders_dir,
-            copilot_dir=copilot_dir,
             copilot_conversation_path=copilot_dir / "conversation.json",
             copilot_checkpoints_dir=copilot_dir / "checkpoints",
         )

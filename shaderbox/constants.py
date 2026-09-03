@@ -24,7 +24,6 @@ STARTER_EXAMPLE_ID = EXAMPLE_ORDER[0]
 # Default file paths
 DEFAULT_VS_FILE_PATH = RESOURCES_DIR / "shaders" / "default.vert.glsl"
 DEFAULT_FS_FILE_PATH = RESOURCES_DIR / "shaders" / "default.frag.glsl"
-DEFAULT_IMAGE_FILE_PATH = RESOURCES_DIR / "textures" / "default.jpeg"
 
 # Canvas and texture sizes
 DEFAULT_CANVAS_SIZE = (64, 64)

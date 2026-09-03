@@ -145,7 +145,6 @@ class YouTubeExporter(Exporter):
             auth_state=self._render_state.auth_state,
             auth_message=self._render_state.auth_message,
             last_progress=self._render_state.last_progress,
-            in_flight=self._render_state.in_flight,
         )
 
     def set_integrations(self, store: IntegrationsStore) -> None:

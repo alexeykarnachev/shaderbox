@@ -368,12 +368,12 @@ def test_publish_youtube_restores_prior_shape_and_derives_is_short() -> None:
     captured: dict[str, Any] = {}
 
     def fake_publish(
-        _exporter: Any, kind: str, _preset: Any, settings: dict[str, Any]
+        _exporter: Any, _preset: Any, settings: dict[str, Any]
     ) -> PublishResult:
         captured["settings"] = settings
         # the shape must be the PUBLISHED one while the publish runs
         captured["is_short_during"] = exp.current_is_short()
-        return PublishResult(ok=True, kind=kind)
+        return PublishResult(ok=True)
 
     stub = types.SimpleNamespace(
         _get_exporter_registry=lambda: {"youtube": exp},
