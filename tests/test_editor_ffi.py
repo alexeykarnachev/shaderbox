@@ -26,6 +26,7 @@ from shaderbox.editor.ffi import (
     Language,
     Mode,
     Prim,
+    Slot,
 )
 from shaderbox.editor.input import KeyEvent, translate_char, translate_key
 from shaderbox.editor.render import (
@@ -1007,18 +1008,22 @@ def test_a_marker_text_color_reaches_the_glyph_at_column_0() -> None:
     # Finding #14's own repro: a keyword in the first cell of an error line.
     # STATE_ERROR and SYN_KEYWORD are one palette entry, so a column-0 glyph
     # left at its syntax color is the exact red-on-red case the override fixes.
+    # The caret sits on the second line: the glyph under a normal-mode caret is recolored
+    # AFTER markers (reverse video), so it would mask the very fact this test pins.
     marker_rgb = (0.92, 0.86, 0.70)
-    e = _editor("vec3 c = fn(x);")
+    e = _editor("vec3 c = fn(x);\nx")
     e.set_language(Language.GLSL)
+    e.feed("j")
     e.set_chrome_flag(ChromeFlag.LINE_NUMBERS, True)
     e.set_draw_chrome(True)
     e.add_marker(0, fill=(0.8, 0.1, 0.1, 0.2), text=(*marker_rgb, 1.0))
     e.layout((600.0, 300.0), 16.0)
-    origin_x = e.get_text_origin()[0]
+    origin_x, origin_y = e.get_text_origin()
+    first_row_bottom = origin_y + e.get_cell_size()[1]
     row = sorted(
         (p.x0, (round(p.r, 2), round(p.g, 2), round(p.b, 2)))
         for p in e.prims_list()
-        if p.kind == int(Kind.GLYPH) and p.x1 > origin_x
+        if p.kind == int(Kind.GLYPH) and p.x1 > origin_x and p.y0 < first_row_bottom
     )
     assert len(row) == len("vec3 c = fn(x);".replace(" ", ""))
     # The first glyph's ink overhangs its cell to the left, past the origin —
@@ -1146,4 +1151,62 @@ def test_search_bands_stop_at_the_status_row() -> None:
     assert all(p.y1 <= text_bottom + 0.01 for p in bands), [
         (p.y0, p.y1) for p in bands if p.y1 > text_bottom
     ]
+    e.close()
+
+
+def test_complete_select_minus_one_leaves_nothing_highlighted() -> None:
+    # editor 469eec4: the noselect state for host-pushed batches. Enter then acts as with no
+    # popup and closes it; Down picks row 0.
+    e = _editor("")
+    e.set_host_completion(True)
+    e.feed("iSB_n")
+    e.complete_begin()
+    e.complete_push("SB_noise")
+    e.complete_push("SB_normal")
+    assert e.complete_selected() == 0
+    assert e.complete_select(-1)
+    assert e.complete_selected() == -1 and e.complete_open()
+    e.key(KeyCode.ENTER)
+    assert e.get_text() == "SB_n\n" and not e.complete_open()
+    e.feed("SB_n")
+    e.complete_begin()
+    e.complete_push("SB_noise")
+    e.complete_select(-1)
+    e.key(KeyCode.DOWN)
+    assert e.complete_selected() == 0
+    e.key(KeyCode.ENTER)
+    assert e.get_text() == "SB_n\nSB_noise"
+    assert not e.complete_select(5), "an index past the list is refused"
+    e.close()
+
+
+def test_the_caret_glyph_is_emitted_in_the_caret_text_slot() -> None:
+    # editor 469eec4: reverse video. In normal mode the glyph under the caret takes slot
+    # CARET_TEXT's color and the caret quad is opaque; in insert mode the glyph is untouched.
+    e = _editor("abc")
+    e.set_palette(
+        {
+            Slot.CARET_TEXT: (0.1, 0.2, 0.3, 1.0),
+            Slot.TEXT: (0.9, 0.9, 0.9, 1.0),
+            Slot.SYNTAX_6: (0.9, 0.9, 0.9, 1.0),
+        }
+    )
+    e.layout((300.0, 100.0), 16.0)
+    glyphs = sorted(
+        (p.x0, (round(p.r, 2), round(p.g, 2), round(p.b, 2)))
+        for p in e.prims_list()
+        if p.kind == int(Kind.GLYPH)
+    )
+    assert glyphs[0][1] == (0.1, 0.2, 0.3), glyphs
+    assert glyphs[1][1] != (0.1, 0.2, 0.3), glyphs
+    carets = [p for p in e.prims_list() if p.kind == int(Kind.CARET)]
+    assert carets and all(round(p.a, 2) == 1.0 for p in carets)
+    e.feed("i")
+    e.layout((300.0, 100.0), 16.0)
+    glyphs = sorted(
+        (p.x0, (round(p.r, 2), round(p.g, 2), round(p.b, 2)))
+        for p in e.prims_list()
+        if p.kind == int(Kind.GLYPH)
+    )
+    assert glyphs[0][1] != (0.1, 0.2, 0.3), "insert mode leaves the glyph alone"
     e.close()

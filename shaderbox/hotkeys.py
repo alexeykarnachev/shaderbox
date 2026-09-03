@@ -64,10 +64,13 @@ def _drain_editor_input(app: App) -> None:
             continue
         if _handle_clipboard(app, editor, event):
             continue
-        if editor.complete_open():
-            _track_completion_intent(app, editor, event)
+        # Any key closes the `K` popup and still does its own work.
+        app.editor_lookup = None
         consumed = editor.key(event.code, event.mods, event.text)
         if not consumed and _handle_reserved_chord(app, editor, event):
+            continue
+        if not consumed and _is_lookup_key(editor, event):
+            app.editor_lookup_requested = True
             continue
         if consumed and event.imgui_chord:
             app.editor_consumed_chords.add(event.imgui_chord)
@@ -90,24 +93,15 @@ def _drain_editor_input(app: App) -> None:
     _serve_host_command(app, session)
 
 
-def _track_completion_intent(app: App, editor: Editor, event: KeyEvent) -> None:
-    # An auto-offered popup preselects its first row like any other, but the user never
-    # asked for it, so Enter stays a newline until they move into the list (Up / Down /
-    # Ctrl+N / Ctrl+P). Cancelling before the key is fed is what makes Enter a newline.
-    navigating = event.code in (KeyCode.UP, KeyCode.DOWN) or (
+def _is_lookup_key(editor: Editor, event: KeyEvent) -> bool:
+    # vim's K runs keywordprg, an external program; the host is that program. The library
+    # leaves K unbound in normal and visual mode (editor 469eec4), so it arrives unconsumed.
+    return (
         event.code == KeyCode.CHAR
-        and event.mods == KeyMod.CTRL
-        and event.text in ("n", "p")
+        and event.text == "K"
+        and event.mods in (KeyMod.NONE, KeyMod.SHIFT)
+        and editor.get_mode() in (Mode.NORMAL, Mode.VISUAL, Mode.VISUAL_LINE)
     )
-    if navigating:
-        app.editor_completion_navigated = True
-        return
-    if (
-        event.code == KeyCode.ENTER
-        and app.editor_completion_auto
-        and not app.editor_completion_navigated
-    ):
-        editor.complete_cancel()
 
 
 def _serve_host_command(app: App, session: EditorSession) -> None:

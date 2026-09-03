@@ -49,6 +49,7 @@ from shaderbox.editor_types import (
     HoverMark,
     InlineInput,
     JumpRequest,
+    LookupPopup,
 )
 from shaderbox.exporters.registry import ExporterRegistry
 from shaderbox.exporters.telegram import TelegramExporter
@@ -275,8 +276,11 @@ class App:
         # last frame (the edit that closed it was an accept, not a keystroke to re-offer on).
         self.editor_completion_seen: tuple[Path, int] | None = None
         self.editor_completion_auto: bool = False
-        self.editor_completion_navigated: bool = False
         self.editor_completion_was_open: bool = False
+        # `K` (073 W-B): the drain raises the request, the panel resolves it into a popup
+        # that the next key or click dismisses.
+        self.editor_lookup_requested: bool = False
+        self.editor_lookup: LookupPopup | None = None
         # Rows the editor panel showed last frame — follow-the-cursor scrolling
         # steps in view units.
         self.editor_visible_rows: int = 0
@@ -1640,8 +1644,9 @@ class App:
         self.editor_completion_prefix = None
         self.editor_completion_seen = None
         self.editor_completion_auto = False
-        self.editor_completion_navigated = False
         self.editor_completion_was_open = False
+        self.editor_lookup_requested = False
+        self.editor_lookup = None
         if self.editor_panel is not None:
             self.editor_panel.release()
             self.editor_panel = None

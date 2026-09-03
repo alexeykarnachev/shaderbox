@@ -31,6 +31,15 @@ KINDS = [
     "Frame", "Popup_Panel", "Popup_Glyph", "Missing_Glyph",
     "Whitespace", "Bracket_Match", "Search_Match",
 ]
+# The order ed_layout hands the array over in, which is NOT the numbering
+# above: the caret ranks under the glyph it carries, and the missing-glyph box
+# with the text it stands in for. primitive_draw_rank in src/types.odin is the
+# authority; this list is the host's copy of it.
+DRAW_ORDER = [
+    "Background", "Selection", "Caret", "Glyph", "Missing_Glyph",
+    "Frame", "Popup_Panel", "Popup_Glyph",
+    "Whitespace", "Bracket_Match", "Search_Match",
+]
 MODES = ["NORMAL", "INSERT", "VISUAL", "V-LINE"]
 # Key codes and modifier bits, matching the ED_KEY_* / ED_MOD_* constants.
 K_CHAR, K_ESC, K_ENTER, K_TAB, K_BS = 1, 2, 3, 4, 5
@@ -56,7 +65,7 @@ SLOTS = {
         "Background Text Caret Caret_Insert Selection Gutter_Text Gutter_Current "
         "Filler Status_Bg Status_Text Status_Accent Popup_Panel Popup_Text "
         "Popup_Selected Syntax_1 Syntax_2 Syntax_3 Syntax_4 Syntax_5 Syntax_6 "
-        "Syntax_7 Whitespace Bracket_Match Search_Match".split()
+        "Syntax_7 Whitespace Bracket_Match Search_Match Caret_Text".split()
     )
 }
 
@@ -90,6 +99,7 @@ _SIG = {
     "ed_complete_count": (ctypes.c_int32, [ctypes.c_void_p]),
     "ed_complete_item": (ctypes.c_int32, [ctypes.c_void_p, ctypes.c_int32, ctypes.POINTER(ctypes.c_ubyte), ctypes.c_int32]),
     "ed_complete_selected": (ctypes.c_int32, [ctypes.c_void_p]),
+    "ed_complete_select": (ctypes.c_bool, [ctypes.c_void_p, ctypes.c_int32]),
     "ed_complete_cancel": (None, [ctypes.c_void_p]),
     "ed_pending": (ctypes.c_bool, [ctypes.c_void_p]),
     "ed_command_line": (ctypes.c_int32, [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ubyte), ctypes.c_int32]),
@@ -359,7 +369,8 @@ def main() -> int:
         lib.ed_primitive(h, i, ctypes.byref(p))
         kinds.append(p.kind)
     check("a selection and a marker are both present", len(set(kinds)) >= 3, True)
-    check("and the array is in draw order", kinds, sorted(kinds))
+    ranks = [DRAW_ORDER.index(KINDS[k]) for k in kinds]
+    check("and the array is in draw order", ranks, sorted(ranks))
     lib.ed_clear_selection(h)
     lib.ed_clear_markers(h)
     check("index past the end refuses", lib.ed_primitive(h, n, ctypes.byref(p)), False)
@@ -375,6 +386,9 @@ def main() -> int:
     # A setter that stores a colour nothing draws with would pass a round-trip
     # check and still be useless, so ask the primitives what they got.
     lib.ed_set_text(h, b"abc")
+    # Off the first glyph: the one under the block caret is cut out in
+    # Caret_Text, so it is the wrong witness for the Text slot.
+    lib.ed_feed(h, b"$")
     n = lib.ed_layout(h, 0.0, 0.0, 800.0, 400.0, 16.0, True)
     glyph = None
     for i in range(n):
@@ -386,6 +400,93 @@ def main() -> int:
 
     lib.ed_reset_theme(h)
     check("reset restores the default", color(h, SLOTS["Text"]), (0.878, 0.886, 0.918, 1.0))
+
+    # The block caret is reverse video: an opaque block handed over BEFORE the
+    # glyph it sits on, and that glyph in the Caret_Text colour -- the
+    # background by default, so the character is cut out of the block.
+    print("reverse-video caret")
+    check("the block is opaque", color(h, SLOTS["Caret"])[3], 1.0)
+    check("caret text defaults to the background", color(h, SLOTS["Caret_Text"]), color(h, SLOTS["Background"]))
+
+    def caret_and_glyphs(h):
+        n = lib.ed_layout(h, 0.0, 0.0, 800.0, 400.0, 16.0, True)
+        caret, caret_at, glyphs = None, None, []
+        for i in range(n):
+            lib.ed_primitive(h, i, ctypes.byref(p))
+            if KINDS[p.kind] == "Caret":
+                caret, caret_at = (p.x0, p.y0, p.x1, p.y1), i
+            elif KINDS[p.kind] == "Glyph":
+                glyphs.append((i, (p.x0 + p.x1) / 2, (p.y0 + p.y1) / 2, (round(p.r, 3), round(p.g, 3), round(p.b, 3), round(p.a, 3))))
+        under = [g for g in glyphs if caret[0] <= g[1] < caret[2] and caret[1] <= g[2] < caret[3]]
+        return caret_at, glyphs, under
+
+    lib.ed_set_text(h, b"abc def")
+    lib.ed_feed(h, b"w")
+    lib.ed_set_color(h, SLOTS["Caret_Text"], 0.0, 1.0, 0.0, 1.0)
+    caret_at, glyphs, under = caret_and_glyphs(h)
+    check("the caret comes before every glyph in the array", caret_at < min(g[0] for g in glyphs), True)
+    check("one glyph sits under the block", len(under), 1)
+    check("and it takes the Caret_Text colour", under[0][3], (0.0, 1.0, 0.0, 1.0))
+    check("no other glyph does", sum(g[3] == (0.0, 1.0, 0.0, 1.0) for g in glyphs), 1)
+
+    # A marker's text colour on the cursor line -- the host's cursor-line or
+    # error-line flip -- recolours the line but not the glyph under the caret.
+    lib.ed_add_marker(h, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0, b"")
+    caret_at, glyphs, under = caret_and_glyphs(h)
+    check("the caret's glyph keeps its colour over a marker", under[0][3], (0.0, 1.0, 0.0, 1.0))
+    check("the rest of the line takes the marker's", sum(g[3] == (1.0, 0.0, 0.0, 1.0) for g in glyphs), len(glyphs) - 1)
+    lib.ed_clear_markers(h)
+
+    lib.ed_feed(h, b"i")
+    caret_at, glyphs, under = caret_and_glyphs(h)
+    check("the insert bar recolours nothing", sum(g[3] == (0.0, 1.0, 0.0, 1.0) for g in glyphs), 0)
+    lib.ed_key(h, K_ESC, 0, 0)
+    lib.ed_reset_theme(h)
+
+    # `K` is left to the host: unbound in every mode, so it comes back false
+    # with nothing changed, the seam a keyword-lookup popup hangs on.
+    print("K reaches the host")
+    lib.ed_set_text(h, b"SB_hash(p)")
+    lib.ed_feed(h, b"fh")
+    check("K is refused in normal mode", lib.ed_key(h, K_CHAR, M_SHIFT, ord("K")), False)
+    check("and changes nothing", text(h), "SB_hash(p)")
+    check("and leaves nothing pending", lib.ed_pending(h), False)
+    lib.ed_feed(h, b"v")
+    check("K is refused in visual mode too", lib.ed_key(h, K_CHAR, M_SHIFT, ord("K")), False)
+    lib.ed_key(h, K_ESC, 0, 0)
+
+    # The closer snap through the key path a host uses: the brace typed first
+    # on its line lands at its opener's indent, in one undo step with the rest.
+    # A host edit landing between a change operator and the typing closes
+    # the change; redo has to remove the word again and then replay both.
+    print("a host edit mid-change")
+    lib.ed_set_text(h, b"{\n    word")
+    lib.ed_feed(h, b"jwcw")
+    lib.ed_insert_at(h, 0, 0, b"Z")
+    lib.ed_key(h, K_CHAR, 0, ord("X"))
+    lib.ed_key(h, K_ESC, 0, 0)
+    after = text(h)
+    check("the edits landed, the caret after the host's text", after, "ZX{\n    ")
+    while lib.ed_undo(h):
+        pass
+    check("undo reaches the start", text(h), "{\n    word")
+    while lib.ed_redo(h):
+        pass
+    check("redo reaches the end", text(h), after)
+
+    print("closer snap")
+    lib.ed_set_text(h, b"void f() {")
+    lib.ed_feed(h, b"A")
+    lib.ed_key(h, K_ENTER, 0, 0)
+    for c in "x;":
+        lib.ed_key(h, K_CHAR, 0, ord(c))
+    lib.ed_key(h, K_ENTER, 0, 0)
+    check("the new line is indented", text(h), "void f() {\n    x;\n    ")
+    lib.ed_key(h, K_CHAR, M_SHIFT, ord("}"))
+    check("the brace snaps to the opener's line", text(h), "void f() {\n    x;\n}")
+    lib.ed_key(h, K_ESC, 0, 0)
+    lib.ed_feed(h, b"u")
+    check("one undo restores the line", text(h), "void f() {")
 
     print("markers")
     lib.ed_set_text(h, b"a\nb\nc")
@@ -399,15 +500,15 @@ def main() -> int:
     check("index past the end refuses", tooltip(h, 1, 1), None)
 
     # A marker must reach the drawn primitives, and its fill must sort BEFORE
-    # the glyphs -- draw order is enum order, so a fill emitted as any later
-    # kind would paint over the code it marks.
+    # the glyphs -- a fill emitted as a kind ranking after Glyph would paint
+    # over the code it marks.
     n = lib.ed_layout(h, 0.0, 0.0, 800.0, 400.0, 16.0, True)
     kinds = []
     for i in range(n):
         lib.ed_primitive(h, i, ctypes.byref(p))
         kinds.append(KINDS[p.kind])
     check("fill emitted", kinds.count("Background"), 1)
-    check("fill sorts before glyphs", KINDS.index("Background") < KINDS.index("Glyph"), True)
+    check("fill sorts before glyphs", DRAW_ORDER.index("Background") < DRAW_ORDER.index("Glyph"), True)
 
     # ed_layout draws no gutter, so a marker may not place anything in one.
     # Giving the emit a Vim Chrome put the gutter mark four cells left of the
@@ -1588,6 +1689,83 @@ def main() -> int:
     check("but inserts a newline while closed", lib.ed_complete_open(h), False)
     lib.ed_key(h, K_ENTER, 0, 0)
     check("a real newline", text(h), "SB_n\n")
+
+    # A list the host opened UNASKED highlights nothing -- vim's noselect --
+    # so the Enter after `in` is a newline and not `int`. Down enters at the
+    # top, Up at the bottom, and a selected row accepts as before.
+    print("noselect")
+    lib.ed_set_text(h, b"in")
+    lib.ed_feed(h, b"A")
+    check("select refuses while closed", lib.ed_complete_select(h, -1), False)
+    lib.ed_complete_begin(h)
+    lib.ed_complete_push(h, b"int")
+    lib.ed_complete_push(h, b"inout")
+    check("a row out of range refuses", lib.ed_complete_select(h, 2), False)
+    check("none is a valid choice", lib.ed_complete_select(h, -1), True)
+    check("and reads back as -1 while open", lib.ed_complete_selected(h), -1)
+    check("the popup stays open", lib.ed_complete_open(h), True)
+    n = lib.ed_layout(h, 0.0, 0.0, 400.0, 200.0, 13.0, True)
+    lib.ed_set_color(h, SLOTS["Popup_Selected"], 1.0, 0.0, 0.0, 1.0)
+    n = lib.ed_layout(h, 0.0, 0.0, 400.0, 200.0, 13.0, True)
+    highlighted = 0
+    for i in range(n):
+        lib.ed_primitive(h, i, ctypes.byref(p))
+        highlighted += KINDS[p.kind] == "Popup_Glyph" and (p.r, p.g, p.b) == (1.0, 0.0, 0.0)
+    check("no row is drawn highlighted", highlighted, 0)
+    lib.ed_reset_theme(h)
+    lib.ed_key(h, K_ENTER, 0, 0)
+    check("Enter is a newline with nothing highlighted", text(h), "in\n")
+    check("and the popup is gone", lib.ed_complete_open(h), False)
+    lib.ed_set_text(h, b"in")
+    lib.ed_feed(h, b"A")
+    lib.ed_complete_begin(h)
+    lib.ed_complete_push(h, b"int")
+    lib.ed_complete_push(h, b"inout")
+    lib.ed_complete_select(h, -1)
+    lib.ed_key(h, K_UP, 0, 0)
+    check("Up from none picks the last row", lib.ed_complete_selected(h), 1)
+    lib.ed_complete_select(h, -1)
+    lib.ed_key(h, K_DOWN, 0, 0)
+    check("Down from none picks the first", lib.ed_complete_selected(h), 0)
+    lib.ed_key(h, K_ENTER, 0, 0)
+    check("and Enter then accepts it", text(h), "int")
+    lib.ed_set_text(h, b"in")
+    lib.ed_feed(h, b"A")
+    lib.ed_complete_begin(h)
+    lib.ed_complete_push(h, b"int")
+    lib.ed_complete_select(h, -1)
+    lib.ed_key(h, K_TAB, 0, 0)
+    check("Tab with nothing highlighted indents", text(h), "in    ")
+    check("a pushed list still preselects its first row by default", (
+        lib.ed_complete_begin(h), lib.ed_complete_push(h, b"int"), lib.ed_complete_selected(h))[2], 0)
+    lib.ed_complete_cancel(h)
+    # Typing narrows the list and must keep nothing highlighted: the
+    # re-filter re-opens the popup, and a fresh open starts at row 0.
+    lib.ed_set_text(h, b"integer inside\n\nin")
+    lib.ed_feed(h, b"GA")
+    lib.ed_key(h, K_CHAR, M_CTRL, ord("n"))
+    check("the built-in source opens on Ctrl-N", lib.ed_complete_open(h), True)
+    lib.ed_complete_select(h, -1)
+    lib.ed_key(h, K_CHAR, 0, ord("t"))
+    check("a typed letter keeps nothing highlighted", lib.ed_complete_selected(h), -1)
+    check("with the list narrowed", lib.ed_complete_count(h), 1)
+    lib.ed_key(h, K_BS, 0, 0)
+    check("so does Backspace", lib.ed_complete_selected(h), -1)
+    lib.ed_key(h, K_ENTER, 0, 0)
+    check("and Enter is still a newline", text(h), "integer inside\n\nin\n")
+    # A host-pushed batch is a NEW list and starts at row 0 whatever the
+    # previous list had highlighted; the host says -1 again per batch.
+    lib.ed_set_text(h, b"in")
+    lib.ed_feed(h, b"A")
+    lib.ed_complete_begin(h)
+    lib.ed_complete_push(h, b"int")
+    lib.ed_complete_select(h, -1)
+    lib.ed_complete_begin(h)
+    lib.ed_complete_push(h, b"int")
+    lib.ed_complete_push(h, b"inout")
+    check("a re-pushed batch starts at row 0", lib.ed_complete_selected(h), 0)
+    check("and the host disarms it again", (lib.ed_complete_select(h, -1), lib.ed_complete_selected(h))[1], -1)
+    lib.ed_complete_cancel(h)
 
     print("host-driven completion")
     lib.ed_set_text(h, b"SB_noise SB_normal\nSB_n")

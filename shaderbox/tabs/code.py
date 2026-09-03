@@ -3,7 +3,7 @@ from pathlib import Path
 from imgui_bundle import imgui
 
 from shaderbox.app import App
-from shaderbox.completion import CompletionContext, offer
+from shaderbox.completion import CompletionContext, offer, symbol_doc, word_at
 from shaderbox.core import Pass
 from shaderbox.editor.ffi import EDITOR_RESOURCES_DIR, CursorPos, Editor, Mode
 from shaderbox.editor.render import (
@@ -12,11 +12,18 @@ from shaderbox.editor.render import (
     render_state,
     should_redraw,
 )
-from shaderbox.editor_types import EditorTab, HoverMark, JumpRequest
+from shaderbox.editor_types import EditorTab, HoverMark, JumpRequest, LookupPopup
 from shaderbox.paths import pass_name_of
 from shaderbox.shader_errors import ShaderError
-from shaderbox.theme import COLOR, EDITOR_UNFOCUSED_ALPHA, SIZE, SPACE, fade
-from shaderbox.ui_primitives import draw_copyable_text
+from shaderbox.theme import (
+    COLOR,
+    EDITOR_CURSOR_LINE_ALPHA,
+    EDITOR_UNFOCUSED_ALPHA,
+    SIZE,
+    SPACE,
+    fade,
+)
+from shaderbox.ui_primitives import anchored_note, draw_copyable_text
 from shaderbox.util import format_auto_value
 
 _MAX_ERROR_ROWS = 3
@@ -213,8 +220,11 @@ def _apply_markers(
     errors: list[ShaderError],
     hover: HoverMark | None,
     current_path: Path,
+    cursor_line: int,
 ) -> tuple:
-    """Push error line-fills + the hover mark into the editor, only on change.
+    """Push the cursor-line band, the error line-fills and the hover mark into the editor,
+    only on change. The cursor line goes FIRST: two markers on one line stack their fills and
+    the later text color wins, so an error line keeps its flipped text.
 
     Returns the marker fingerprint — a render_state member, so a marker change
     triggers exactly one redraw."""
@@ -228,11 +238,13 @@ def _apply_markers(
             if err.line >= 0 and err.path == current_path
         ),
         hover_line,
+        cursor_line,
     )
     if app.editor_marker_state.get(current_path) == fingerprint:
         return fingerprint
     app.editor_marker_state[current_path] = fingerprint
     editor.clear_markers()
+    editor.add_marker(cursor_line, fill=fade(COLOR.BORDER, EDITOR_CURSOR_LINE_ALPHA))
     # Marker fills are translucent by necessity — they draw behind the glyphs.
     # STATE_ERROR and SYN_KEYWORD are the same palette entry, so the text color
     # is replaced rather than left to the lexer: red on red is unreadable.
@@ -353,6 +365,39 @@ def _drive_completion(app: App, editor: Editor, tab: EditorTab) -> None:
     app.editor_completion_was_open = editor.complete_open()
 
 
+def _consume_lookup_request(app: App, editor: Editor) -> None:
+    if not app.editor_lookup_requested:
+        return
+    app.editor_lookup_requested = False
+    cursor = editor.get_current_cursor_position()
+    lines = editor.get_text().split("\n")
+    line = lines[cursor.line] if cursor.line < len(lines) else ""
+    word = word_at(line, cursor.column)
+    found = symbol_doc(word, app.shader_lib_index.functions) if word else None
+    app.editor_lookup = (
+        LookupPopup(word=word, signature=found[0], doc=found[1]) if found else None
+    )
+
+
+def _draw_lookup_popup(app: App, editor: Editor) -> None:
+    lookup = app.editor_lookup
+    if lookup is None:
+        return
+    if imgui.is_mouse_clicked(0) or imgui.is_mouse_clicked(1):
+        app.editor_lookup = None
+        return
+    # Under the caret's cell: the editor rect, the text origin inside it, then the cell.
+    cursor = editor.get_current_cursor_position()
+    origin_x, origin_y = editor.get_text_origin()
+    cell_w, cell_h = editor.get_cell_size()
+    rect_x, rect_y = app.editor_rect[0], app.editor_rect[1]
+    anchor = (
+        rect_x + origin_x + cursor.column * cell_w,
+        rect_y + origin_y + (cursor.line - editor.get_scroll() + 1) * cell_h,
+    )
+    anchored_note("##lookup", anchor, lookup.signature, lookup.doc)
+
+
 def _offer_completion(app: App, editor: Editor, tab: EditorTab, explicit: bool) -> None:
     context = _completion_context(app, editor, tab, explicit)
     matches = offer(context)
@@ -366,7 +411,10 @@ def _offer_completion(app: App, editor: Editor, tab: EditorTab, explicit: bool) 
         editor.complete_push(word)
     app.editor_completion_prefix = context.prefix
     app.editor_completion_auto = not explicit
-    app.editor_completion_navigated = False
+    if not explicit:
+        # Unasked, so nothing is highlighted: Enter stays a newline until the user moves
+        # into the list. Per batch -- every push batch starts at row 0.
+        editor.complete_select(-1)
 
 
 def draw_chrome(app: App) -> None:
@@ -525,7 +573,12 @@ def draw(app: App) -> None:
         else ui_document.document.render_pass.compile_unit.errors
     )
     marker_fingerprint = _apply_markers(
-        app, editor, errors, app.editor_hover_line, current_path
+        app,
+        editor,
+        errors,
+        app.editor_hover_line,
+        current_path,
+        editor.get_current_cursor_position().line,
     )
     app.editor_hover_line = None
     strip_height = 0.0
@@ -596,6 +649,7 @@ def draw(app: App) -> None:
     # rows=0, or a jump into it would never be followed.
     editor.take_scroll_request()  # absolute target; applied by the read itself
     _drive_completion(app, editor, tab)
+    _consume_lookup_request(app, editor)
     rows = app.editor_visible_rows
     cursor = layout_following_cursor(
         editor,
@@ -648,6 +702,7 @@ def draw(app: App) -> None:
             imgui.get_color_u32((1.0, 1.0, 1.0, alpha)),
         )
 
+    _draw_lookup_popup(app, editor)
     app.editor_focused = focused
     if app.editor_focused:
         # Sticky: stays True across popups/menus until an explicit defocus.

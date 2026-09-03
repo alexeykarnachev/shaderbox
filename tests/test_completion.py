@@ -15,14 +15,15 @@ from shaderbox.completion import (
     matches,
     offer,
     symbol_doc,
+    word_at,
 )
 from shaderbox.editor.ffi import Editor, KeyCode, KeyMod, Language, Mode
 from shaderbox.editor.input import KeyEvent
 from shaderbox.editor_types import EditorTab
 from shaderbox.help_content import ENGINE_UNIFORM_DOCS
-from shaderbox.hotkeys import _track_completion_intent
+from shaderbox.hotkeys import _is_lookup_key
 from shaderbox.shader_lib.index import ShaderLibFunction
-from shaderbox.tabs.code import _drive_completion
+from shaderbox.tabs.code import _consume_lookup_request, _drive_completion
 
 
 def _context(**overrides: Any) -> CompletionContext:
@@ -155,6 +156,7 @@ def test_an_accept_does_not_reopen_the_popup(app: Any) -> None:
     tab = _shader_tab(app)
     _drive(app, editor, tab, "iSB")
     assert editor.complete_open()
+    editor.key(KeyCode.DOWN)
     editor.key(KeyCode.TAB)
     accepted = editor.get_text()
     assert accepted.startswith("SB_") and not editor.complete_open()
@@ -172,6 +174,8 @@ def test_uniform_space_opens_the_builtin_list(app: Any) -> None:
     _drive(app, editor, tab, " ")
     assert editor.complete_open()
     assert editor.complete_count() == len(builtin_uniform_declarations())
+    assert editor.complete_selected() == -1, "unasked: nothing highlighted"
+    editor.key(KeyCode.DOWN)
     editor.key(KeyCode.ENTER)
     assert editor.get_text().startswith(
         "uniform float u_time;"
@@ -182,28 +186,74 @@ def test_uniform_space_opens_the_builtin_list(app: Any) -> None:
 def test_enter_on_an_unasked_popup_is_a_newline_until_the_user_navigates(
     app: Any,
 ) -> None:
+    # An unasked batch is pushed with nothing highlighted (complete_select(-1)); the
+    # library then treats Enter as if no popup were open. Down picks row 0 and Enter accepts.
     editor = Editor("")
     editor.set_language(Language.GLSL)
     editor.set_host_completion(True)
     tab = _shader_tab(app)
     _drive(app, editor, tab, "iSB")
     assert editor.complete_open() and app.editor_completion_auto
-    enter = KeyEvent(code=KeyCode.ENTER, mods=KeyMod.NONE)
-    _track_completion_intent(app, editor, enter)
-    assert not editor.complete_open(), (
-        "the unasked popup is cancelled before Enter lands"
-    )
-    editor.key(enter.code, enter.mods, enter.text)
+    assert editor.complete_selected() == -1
+    editor.key(KeyCode.ENTER)
     assert editor.get_text() == "SB\n"
     assert editor.get_mode() == Mode.INSERT
-    # The frame Enter landed in: the edit that closed the popup re-offers nothing.
+    assert not editor.complete_open()
     _drive_completion(app, editor, tab)
     assert not editor.complete_open()
 
     _drive(app, editor, tab, "SB")
-    assert editor.complete_open()
-    _track_completion_intent(app, editor, KeyEvent(code=KeyCode.DOWN, mods=KeyMod.NONE))
-    assert app.editor_completion_navigated
-    _track_completion_intent(app, editor, enter)
-    assert editor.complete_open(), "after navigating, Enter is the accept it always was"
+    assert editor.complete_open() and editor.complete_selected() == -1
+    editor.key(KeyCode.DOWN)
+    assert editor.complete_selected() == 0
+    editor.key(KeyCode.ENTER)
+    assert editor.get_text().startswith("SB\nSB_"), editor.get_text()
+
+    # An explicit Ctrl+N batch keeps the library's row-0 highlight.
+    app.editor_completion_requested = True
+    _drive(app, editor, tab, "<CR>SB")
+    assert editor.complete_open() and editor.complete_selected() == 0
+    editor.close()
+
+
+def test_word_at_takes_the_word_under_or_after_the_column() -> None:
+    assert word_at("float a = SB_hash(p);", 12) == "SB_hash"
+    assert word_at("float a = SB_hash(p);", 9) == "SB_hash"
+    assert word_at("float a = SB_hash(p);", 0) == "float"
+    assert word_at("   ", 1) == ""
+    assert word_at("x;", 2) == ""
+
+
+def test_k_is_the_lookup_key_in_normal_and_visual_mode_only() -> None:
+    editor = Editor("SB_hash(p);")
+    editor.set_language(Language.GLSL)
+    shift_k = KeyEvent(code=KeyCode.CHAR, mods=KeyMod.SHIFT, text="K")
+    assert _is_lookup_key(editor, shift_k)
+    assert not editor.key(shift_k.code, shift_k.mods, shift_k.text), "K is unbound"
+    editor.feed("v")
+    assert _is_lookup_key(editor, shift_k)
+    editor.feed("<Esc>i")
+    assert not _is_lookup_key(editor, shift_k), "insert mode types the letter"
+    editor.close()
+
+
+def test_a_lookup_request_resolves_the_word_under_the_caret(app: Any) -> None:
+    editor = Editor("uniform float u_time;\nfloat a = SB_fbm(p);")
+    editor.set_language(Language.GLSL)
+    editor.feed("jfS")
+    app.editor_lookup_requested = True
+    _consume_lookup_request(app, editor)
+    assert not app.editor_lookup_requested
+    assert app.editor_lookup is not None
+    assert app.editor_lookup.word == "SB_fbm"
+    assert "SB_fbm(" in app.editor_lookup.signature
+    editor.feed("gg0fu")
+    app.editor_lookup_requested = True
+    _consume_lookup_request(app, editor)
+    assert app.editor_lookup is not None
+    assert app.editor_lookup.signature == "uniform float u_time;"
+    editor.feed("0")
+    app.editor_lookup_requested = True
+    _consume_lookup_request(app, editor)
+    assert app.editor_lookup is None, "`uniform` is a keyword with no doc"
     editor.close()

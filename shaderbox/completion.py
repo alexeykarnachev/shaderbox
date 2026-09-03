@@ -207,6 +207,18 @@ def offer(context: CompletionContext) -> list[str]:
     return found[:MAX_CANDIDATES]
 
 
+_WORD = re.compile(r"[A-Za-z0-9_]+")
+
+
+def word_at(line: str, column: int) -> str:
+    """The identifier under `column`, or the first one after it on the line (vim's rule for
+    the word under the cursor); "" when the line has none there."""
+    for found in _WORD.finditer(line):
+        if found.end() > column:
+            return found.group(0)
+    return ""
+
+
 def symbol_doc(
     word: str, lib_functions: Mapping[str, ShaderLibFunction]
 ) -> tuple[str, str] | None:

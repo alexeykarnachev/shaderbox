@@ -234,6 +234,8 @@ class SIZE:
     ICON_SM: int = 16
 
     CHIP_W: int = 64
+    # The `K` lookup note's widest line, in px; longer docs wrap.
+    NOTE_W: int = 420
     CHIP_ROUNDING: int = 8
 
     SORT_COMBO_W: int = 150
@@ -322,6 +324,8 @@ def fade(
 # Whole-pane alpha for the code editor when it lacks keyboard focus; style.Alpha
 # reaches the editor's glyph draws.
 EDITOR_UNFOCUSED_ALPHA: float = 0.6
+# The cursor line's band under the caret's line, off BORDER; syntax colors are left alone.
+EDITOR_CURSOR_LINE_ALPHA: float = 0.45
 
 # Fill alpha for chrome floating over the render image (the FPS overlay).
 OVERLAY_ALPHA: float = 0.7
@@ -539,10 +543,11 @@ def editor_palette() -> dict["editor_ffi.Slot", tuple[float, float, float, float
     return {
         slot.BACKGROUND: COLOR.BG_SURFACE,
         slot.TEXT: COLOR.SYN_IDENT,
-        # Translucent block caret: the glyph under it stays readable (the caret
-        # quad draws over the glyph in the primitive order).
-        slot.CARET: fade(COLOR.ACCENT_PRIMARY, 0.55),
+        # Reverse-video block caret: the quad is opaque and the glyph under it is
+        # emitted in CARET_TEXT, the panel ground, so it reads cut out of the block.
+        slot.CARET: COLOR.ACCENT_PRIMARY,
         slot.CARET_INSERT: COLOR.ACCENT_ACTIVE,
+        slot.CARET_TEXT: COLOR.BG_SURFACE,
         slot.SELECTION: fade(COLOR.SELECT, 0.35),
         slot.GUTTER_TEXT: COLOR.FG_DIM,
         slot.GUTTER_CURRENT: COLOR.FG_SECONDARY,

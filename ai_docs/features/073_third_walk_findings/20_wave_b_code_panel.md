@@ -1,7 +1,7 @@
 # 073 W-B — Code panel: completion providers, auto-trigger, `K` lookup (#2 #3 host halves)
 
-Parent: `01_spec.md § W-B`. Host-only. The completion half landed third; the `K` half lands
-on the seam W-A settles (see the end).
+Parent: `01_spec.md § W-B`. Host-only. The completion half landed third; the `K` half with
+W-A's re-vendor.
 
 ## What landed (completion)
 
@@ -23,12 +23,11 @@ on the seam W-A settles (see the end).
   popup is open and the prefix moved. An edit is a change of `(tab.path, revision)` since the
   last frame, so cursor motion never opens anything. The edit that CLOSED a popup (an accept,
   or the keystroke that emptied the prefix) does not re-offer.
-- **Enter on an unasked popup is a newline** (`hotkeys.py::_track_completion_intent`): the
-  library preselects row 0 and Enter accepts it, which on an auto-opened list would eat the
-  newline after `in` because `int` matched. The drain cancels the popup before feeding Enter
-  unless the user navigated into the list (Up / Down / Ctrl+N / Ctrl+P). Tab still accepts.
-  The row-0 highlight on an unasked popup is therefore a small lie; a `noselect` state in the
-  library would make it honest and is raised with the editor session.
+- **An unasked popup highlights nothing** (`_offer_completion` calls `complete_select(-1)`
+  after an auto batch; editor `469eec4`'s noselect state, W-A): Enter and Tab then act as with
+  no popup and close it, so `in` + Enter is a newline and not `int`; Down / Ctrl+N pick row 0
+  and Enter accepts. An explicit Ctrl+N batch keeps the library's row-0 highlight. The earlier
+  host workaround (cancel before Enter unless navigated) is deleted with it.
 - **`symbol_doc(word, lib_functions)`**: `K`'s lookup, ready for the popup: the `SB_*`
   signature + `///` doc from the lib index, else `uniform <type> <name>;` + the doc line from
   `ENGINE_UNIFORM_DOCS`, else None.
@@ -56,10 +55,12 @@ index then the builtin table; through a real `Editor` with host completion: the 
 opens, a no-edit frame leaves it alone, `uniform ` opens the builtin list and Enter lands the
 whole declaration, and Enter on an unasked popup inserts a newline until the user navigates.
 
-## Pending: the `K` half
+## The `K` half
 
-Waits for the editor session's answer on the seam (claimed key + callback, or unbound key the
-host catches; library chrome or host imgui). The host lookup is `symbol_doc` either way.
+Landed with W-A on the seam the editor session chose: `K` stays unbound in the library and
+the host catches it through `ed_key`'s false (`hotkeys.py::_is_lookup_key`), resolves the
+word under the caret (`completion.word_at` + `symbol_doc`) and pins `anchored_note` one cell
+below the caret; any key or click dismisses it. Details in `10_wave_a_editor.md`.
 
 ## Manual verification (the maintainer, in the app)
 

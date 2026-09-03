@@ -103,6 +103,7 @@ class Slot(IntEnum):
     WHITESPACE = 21
     BRACKET_MATCH = 22
     SEARCH_MATCH = 23
+    CARET_TEXT = 24
 
 
 class ViewFlag(IntEnum):
@@ -196,6 +197,7 @@ _SIG: dict[str, tuple[object, Sequence[object]]] = {
     "ed_complete_open": (ctypes.c_bool, [ctypes.c_void_p]),
     "ed_complete_count": (ctypes.c_int32, [ctypes.c_void_p]),
     "ed_complete_selected": (ctypes.c_int32, [ctypes.c_void_p]),
+    "ed_complete_select": (ctypes.c_bool, [ctypes.c_void_p, ctypes.c_int32]),
     "ed_complete_item": (
         ctypes.c_int32,
         [ctypes.c_void_p, ctypes.c_int32, _P(ctypes.c_ubyte), ctypes.c_int32],
@@ -638,7 +640,14 @@ class Editor:
         return self._lib.ed_complete_count(self._h)
 
     def complete_selected(self) -> int:
+        """-1 when nothing is highlighted, and also when the popup is closed."""
         return self._lib.ed_complete_selected(self._h)
+
+    def complete_select(self, index: int) -> bool:
+        """Highlight row `index`, or nothing with -1: Enter and Tab then act as with no
+        popup and close it, Down / Ctrl+N pick row 0. Per push batch -- every
+        complete_begin starts a new list at row 0."""
+        return self._lib.ed_complete_select(self._h, index)
 
     def complete_item(self, index: int) -> str | None:
         n = self._lib.ed_complete_item(self._h, index, _TEXT_BUF, len(_TEXT_BUF))

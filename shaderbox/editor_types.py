@@ -32,6 +32,14 @@ class HoverMark:
     line: int
 
 
+@dataclass(frozen=True)
+class LookupPopup:
+    # What `K` found for the word under the caret: a signature or declaration, and its doc.
+    word: str
+    signature: str
+    doc: str
+
+
 @dataclass
 class EditorSession:
     # A live libeditor instance bound to a specific on-disk file. `source` is

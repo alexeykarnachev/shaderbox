@@ -424,6 +424,47 @@ pattern containing a slash needs. Measured, and again not what intuition says:
 - The cursor lands on the first non-blank of the LAST substituted line, not
   where it started.
 
+## Indenting while typing (`:help 'smartindent'`)
+
+Not keymap and not oracle-decided: `nvim --clean` has `autoindent` on and
+`smartindent` and `cindent` off (measured: `ai=true si=false cin=false`), so the
+corpus carries plain autoindent and nothing of the rest; these are pinned by
+hand in `src/behavior_test.odin`, each switchable through `Behavior`.
+
+- [x] a new line carries the indent of the line it came from (`autoindent`)
+- [x] a line ending in `:` or `{` indents the next one a step further
+- [x] a closing bracket typed as the first non-blank of its line takes the
+  indent of the line holding its matching opener
+
+**The closer snap is `smartindent`'s `}` rule, generalized by decision.**
+Measured in nvim with `smartindent` on: `A<CR>x;<CR>}<Esc>` on `void f() {`
+puts the brace at column 0, the nested `if` inside it puts the inner brace at 4
+and the outer at 0, and one `u` restores the original line — the snap is part
+of the insert session's single undo step. Three places this editor departs
+from `smartindent`, each measured. It snaps `)` and `]` as well as `}`, since
+the pair table knows them and the alternative is a paren list whose closer
+drifts a step right (smartindent leaves `)` where it was typed). It snaps a
+closer whether or not the line's indent was typed in the same session
+(smartindent moves a `}` only when autoindent placed that indent, so `A}` on a
+line indented before the session stays at its indent; `cindent` moves it, as
+this does). And it takes the OPENER'S line indent exactly — `x = (` with an
+over-indented body puts `)` at 0 here, where smartindent leaves it at the
+body's 8 and cindent puts it at 4 — because the maintainer asked for the
+opener's indent, and because the current indent is already wrong once one
+closer above was left unsnapped: the new-line indent copies it down and the
+error compounds through the block. An unmatched closer stays where it was
+typed (measured: `A}` on a blank indented line leaves `    }`), and a closer
+typed after text on its line moves nothing.
+
+## Various (`:help various`)
+
+- [ ] `K` — keyword lookup. **Deliberately unbound in normal and visual
+  mode** (insert mode types the letter, as vim does). vim's `K` runs
+  `keywordprg`, an external program; here the external program is the host,
+  which owns the documentation for the words it knows. The key reaches it as a
+  false from `ed_key` with nothing changed, the seam every unbound key uses, and
+  `src/chord_test.odin` pins that a binding cannot silently take it back.
+
 ## Out of scope
 
 Marks, macros, named and numbered registers, and the ex language beyond the

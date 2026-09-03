@@ -306,6 +306,31 @@ def modal_window(
         yield popup.visible
 
 
+def anchored_note(id_: str, anchor: tuple[float, float], title: str, body: str) -> None:
+    """A small non-interactive note pinned at a screen point (the `K` lookup under the caret):
+    an accent title line and a wrapped dim body, capped at `SIZE.NOTE_W`."""
+    imgui.set_next_window_pos(imgui.ImVec2(*anchor), imgui.Cond_.always)
+    imgui.set_next_window_size_constraints(
+        imgui.ImVec2(0.0, 0.0), imgui.ImVec2(float(SIZE.NOTE_W), 1.0e6)
+    )
+    imgui.set_next_window_bg_alpha(OVERLAY_ALPHA)
+    flags = (
+        imgui.WindowFlags_.no_decoration
+        | imgui.WindowFlags_.no_inputs
+        | imgui.WindowFlags_.no_nav
+        | imgui.WindowFlags_.no_saved_settings
+        | imgui.WindowFlags_.always_auto_resize
+        | imgui.WindowFlags_.no_focus_on_appearing
+    )
+    with imgui_ctx.begin(id_, flags=flags) as window:
+        if window:
+            imgui.push_text_wrap_pos(float(SIZE.NOTE_W) - 2.0 * float(SPACE.MD))
+            imgui.text_colored(COLOR.ACCENT_PRIMARY, title)
+            if body:
+                imgui.text_colored(COLOR.FG_DIM, body)
+            imgui.pop_text_wrap_pos()
+
+
 def rendering_overlay(text: str) -> None:
     # A centered, non-interactive cue painted one frame before the encode freezes the
     # frame loop. NOT a begin_popup_modal — it stays off the popup ID stack + the
