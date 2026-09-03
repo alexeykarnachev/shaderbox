@@ -218,7 +218,7 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   no decision for it; `u_prev` reads the pass's own previous frame, and a name without the `u_`
   prefix names no pass. One pure function resolves it (`pass_graph.effective_inputs`), and every
   consumer that needs a WHOLE resolved graph goes through `Document.effective_graph` — the
-  renderer's binder, the planner, `has_feedback`, the strip (tile order + stale wash) and the
+  renderer's binder, the planner, the strip (tile order + stale tint) and the
   copilot's working set — which is
   what makes "the renderer draws it" and "the strip says it is live" the same claim. The gear's
   wiring combo is the one caller that asks per-uniform, so it calls `effective_inputs` directly
