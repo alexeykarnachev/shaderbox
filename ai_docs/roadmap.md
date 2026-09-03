@@ -26,18 +26,19 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-03 (073 spec written; 070 + 072 still uncommitted in the working tree). -->
-**073 is in progress.** The maintainer's third walk filed 8 findings and 5 decisions
-(`ai_docs/features/073_third_walk_findings/00_findings.md`); the spec (`01_spec.md`) splits them
-into W-A (editor library: closer snap, reverse-video caret, `K` seam, done by the editor session
-from one batch message, then re-vendored here), W-B (completion providers + auto-trigger + `K`
-lookup), W-C (viewer channel view + Reset moves to the grid row), W-D (live-tile fill replaces the
-dormant tint, `Alt+Left`/`Alt+Right` pass switching), W-E (sanitize). Host waves land here in the
-order W-C, W-D, W-B while the editor session works; W-A's re-vendor when it pings back.
+<!-- As of 2026-09-03 (073 landed: W-A re-vendored, W-B/W-C/W-D reviewed; W-E sanitize in progress). -->
+**073 is landing its last wave.** All four code waves are on `dev`
+(`ai_docs/features/073_third_walk_findings/`): the editor library re-vendored at `5e0e8a2`
+(closer snap on the matching-opener rule, reverse-video caret, noselect batches, `K` left to the
+host), completion as a provider table that opens unasked and knows `uniform `, the `K` lookup
+note, the viewer's three-state channel view with Reset moved to the grid row, the live-tile fill
+in place of the dormant tint and `Alt+Left` / `Alt+Right` pass switching. Host waves reviewed
+to PASS; W-A's review is the last gate before W-E (sanitize).
 
-**Still due at the display:** 073's `## Manual verification`, then 072's five checks
-(`072_sampler_source/01_spec.md`), 070's (`070_pass_reads/01_spec.md`), 071's per-wave lists,
-`todo.md`'s live-only checks and 065's checks 13-16.
+**Still due at the display:** 073's per-wave `## Manual verification` lists
+(`10_wave_a_editor.md`, `20_wave_b_code_panel.md`, `30_wave_c_main_view.md`,
+`40_wave_d_strip.md`), then 072's five checks, 070's, 071's per-wave lists, `todo.md`'s
+live-only checks and 065's checks 13-16.
 
 **Shipped:** v0.28.0 is a GitHub release only; the itch channels stay at v0.27.0. The Windows
 `libeditor.dll` still needs a Windows host before the next itch cut.

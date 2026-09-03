@@ -795,6 +795,25 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   no-opping. A new knob picks its home by one question: *would the maintainer tune this from the UI?*
   Revisit if a knob needs per-project rather than per-install scope.
 
+- **A view of the render is a separate texture; the output texture is never swizzled or redrawn
+  for display.** Whatever the viewer shows besides the plain frame (the Alpha channel view, 073
+  D2) is blitted into its own canvas (`alpha_view.py`), because the output texture is also what
+  feedback reads, exports and the strip sample -- a display-only change to it would leak into
+  every consumer. Revisit if a view needs a shader the blit cannot express in one quad.
+- **Completion policy is host data; the library holds the popup and the word prefix.** What the
+  code panel offers and when is a provider table (`completion.py`: a context predicate on the
+  line before the caret, prefix floors, a candidate function), evaluated on the host with the
+  host's own read of the line; every eligible provider's matches concatenate in table order. An
+  unasked batch is pushed with nothing highlighted (`complete_select(-1)`), so Enter stays a
+  newline until the user moves into the list. `K` is vim's `keywordprg` and the host is that
+  program: the library leaves the key unbound and the host draws the note. Revisit if a provider
+  needs the library's lexer state (a block comment, a string) rather than the line text.
+- **The pass strip marks what is LIVE, never what is dormant.** A tile in the output's chain
+  carries a quiet accent fill as its cell ground; a dormant tile keeps its picture untouched
+  plus the corner tick and dim footer (073 D3, which replaced 071 D2's multiplicative tint after
+  the maintainer read the tint as a color change). Revisit if the strip gains a state beyond
+  live / dormant / output.
+
 *(Each bullet is a generic constraint on future code + a revisit trigger — NOT a feature changelog.
 The `/sanitize` noise audit deletes bullets that narrate a one-off implementation choice; per-feature
 mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
