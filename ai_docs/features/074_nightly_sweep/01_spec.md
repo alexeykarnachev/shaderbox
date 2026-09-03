@@ -120,9 +120,11 @@ Each of these was run or read directly, not inferred:
   construction — it decides whether the probes are correct, never whether a rendered frame looks
   right. The one byte-for-byte oracle is the vendored ABI probe, which decides only that the
   vendored artifact matches upstream, not that this repo's use of it is correct.
-- **The visual blind spot.** This box cannot screenshot the running app, and headless imgui
-  reports focus, nav and post-`end_child` geometry differently from the real window. A headless
-  pass on any of those is not verification. Anything that must be judged by eye is left for the
+- **The visual blind spot, and no monitor overnight.** This box cannot screenshot the running
+  app, and headless imgui reports focus, nav and post-`end_child` geometry differently from the
+  real window. A headless pass on any of those is not verification. Overnight the machine has no
+  display at all, so the GUI smoke skips (exit 87, gate still green) and the suite is the only
+  net — see § How correctness is decided. Anything that must be judged by eye is left for the
   maintainer, not asserted by the sweep.
 
 ## The waves
@@ -209,7 +211,22 @@ stale references, update the roadmap banner and row, run the cold-context check.
 
 **The command is `make gates`.** Read its exit code, captured unpiped:
 `make gates > /tmp/g.log 2>&1; echo $?`. A pipe reports the pipe's status, not the gate's; the
-target itself warns about this when stdout is not a terminal. A skipped smoke is not a pass.
+target itself warns about this when stdout is not a terminal.
+
+**Overnight there is NO MONITOR on this machine, so the GUI smoke will SKIP every run.** The
+skip path exits 87, `gates` prints `smoke SKIPPED (no GPU window on this box)`, and the overall
+exit stays 0. That is by design and is not a failure — but it means a green gate overnight
+proves `check` (ruff + pyright) and `test` (the pytest suite) only, and proves NOTHING about the
+app starting, drawing a frame, or holding a GL context. Read the gate's own summary line rather
+than just its exit code, and record in the progress file which of the three stages actually ran.
+
+What that costs, concretely: a change that breaks window creation, the frame loop, or GL
+lifetime passes the night green and is found by the maintainer at the display. So the waves are
+scoped to keep that risk near zero — deletions of symbols nothing reaches, a case-list derived
+from the registry that already owns it, comment text, and a pure move only if W-4 recommends
+one. **Anything that would need the smoke to prove it is out of scope for the night**; report it
+instead. If a wave's done-condition can only be checked by looking at the running app, that wave
+does not run unattended.
 
 **A changed test expectation in a structural wave is a defect in the refactor, not a test to
 update.** The tests are the only evidence that behaviour was preserved; weakening one to get a
@@ -279,6 +296,8 @@ Settled already, as CONSTRAINTS rather than open questions:
 - Misfiling was scanned and found absent — there is no relocation wave beyond W-4's question.
 - The vendored editor directory and the generated modules are off limits.
 - Write each wave's done-condition, as a checkable statement, before starting that wave.
+- No monitor overnight: the GUI smoke skips every run, so a green gate proves check and tests
+  only. Nothing whose correctness needs the running app may land unattended.
 - Report against the milestone, not against effort. If a wave turns out bigger than this spec
   assumed, say so rather than silently narrowing it.
 

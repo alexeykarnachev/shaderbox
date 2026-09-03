@@ -38,5 +38,7 @@ Ruled out during the scan, with reasons, so no later wave re-opens them:
   prior extractions already happened and forbid a further split without a fresh pain signal.
 - **Backward compatibility of any kind.** The maintainer confirmed explicitly that breaking old
   projects and old saves is fine. No compat shim, no migration, no old-format reader.
+- **Anything needing the running app.** No monitor overnight: the GUI smoke skips (exit 87,
+  gate stays green), so a green proves check + tests only. Record per wave which stages ran.
 - **Any behaviour work.** No oracle decides rendering correctness, and the visual half cannot be
   checked on this machine.
