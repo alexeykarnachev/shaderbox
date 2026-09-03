@@ -5,8 +5,9 @@ The roster is every tracked text file except three kinds, each excluded for a re
 can check: the vendored editor set (`shaderbox/resources/editor/`, upstream's files, re-copied
 whole on every re-vendor), the feature records under `ai_docs/features/` other than the living
 tutorial body (they quote what was said at the time, the maintainer's own words included), and
-dogfood run transcripts (records of what a model wrote). Identifiers already use `color`, so a
-hit is prose: a comment, a docstring, a string, a doc.
+dogfood run transcripts (records of what a model wrote), and this file, which has to name the
+word it bans. Identifiers already use `color`, so a hit is prose: a comment, a docstring, a
+string, a doc.
 """
 
 import re
@@ -19,9 +20,23 @@ _EXCLUDED_PREFIXES = (
     "shaderbox/resources/editor/",
     "ai_docs/features/",
     "scripts/dogfood/runs/",
+    "tests/test_prose_spelling.py",
 )
-_INCLUDED_UNDER_EXCLUDED = ("ai_docs/features/068_radiance_cascades/tutorial_body.html",)
-_TEXT_SUFFIXES = {".py", ".md", ".html", ".glsl", ".json", ".toml", ".txt", ".sh", ".yaml", ".yml"}
+_INCLUDED_UNDER_EXCLUDED = (
+    "ai_docs/features/068_radiance_cascades/tutorial_body.html",
+)
+_TEXT_SUFFIXES = {
+    ".py",
+    ".md",
+    ".html",
+    ".glsl",
+    ".json",
+    ".toml",
+    ".txt",
+    ".sh",
+    ".yaml",
+    ".yml",
+}
 
 
 def _roster() -> list[Path]:
@@ -30,14 +45,16 @@ def _roster() -> list[Path]:
     ).stdout.splitlines()
     files: list[Path] = []
     for rel in tracked:
-        excluded = rel.startswith(_EXCLUDED_PREFIXES) and rel not in _INCLUDED_UNDER_EXCLUDED
+        excluded = (
+            rel.startswith(_EXCLUDED_PREFIXES) and rel not in _INCLUDED_UNDER_EXCLUDED
+        )
         if excluded or Path(rel).suffix not in _TEXT_SUFFIXES:
             continue
         files.append(_ROOT / rel)
     return files
 
 
-def test_no_surface_a_reader_sees_spells_colour_the_british_way() -> None:
+def test_no_surface_a_reader_sees_uses_the_british_spelling() -> None:
     hits: list[str] = []
     for path in _roster():
         try:

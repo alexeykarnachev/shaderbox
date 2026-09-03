@@ -300,3 +300,23 @@ def test_the_tutorial_names_no_chord_the_command_table_does_not_have(body: str) 
     quoted = {html.unescape(m) for m in _BODY_CHORD.findall(body)}
     for chord in sorted(quoted):
         assert chord in known, f"tutorial quotes {chord}, which no CommandSpec binds"
+
+
+_CONTRAST = re.compile(r", not |— not |-- not |rather than")
+
+
+def test_the_prose_says_what_a_thing_is(body: str) -> None:
+    # 071 D7: "X, not Y" and "Y rather than X" are out of the tutorial and the help. The
+    # allowance is for the rare sentence where the excluded thing is the point; a rewrite that
+    # states the fact and gives the other thing its own sentence is the fix, never a bigger
+    # allowance. `help_content.py` is measured through the same bar.
+    prose = re.sub(r"<pre><code>.*?</code></pre>", " ", body, flags=re.S)
+    surfaces = {"tutorial_body.html": prose}
+    for section in help_sections():
+        surfaces[f"help:{section.key}"] = section.body
+    for where, text in surfaces.items():
+        hits = [m.start() for m in _CONTRAST.finditer(text)]
+        assert len(hits) <= 2, (
+            f"{where}: {len(hits)} contrast constructions; "
+            f"first at {text[max(0, hits[0] - 60) : hits[0] + 30]!r}"
+        )

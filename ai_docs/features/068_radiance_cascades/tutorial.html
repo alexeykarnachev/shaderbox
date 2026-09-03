@@ -82,9 +82,9 @@
 
 <h1>Radiance Cascades in ShaderBox</h1>
 <p class="lede">
-  Build real-time 2D global illumination from nothing, one pass at a time. Build a scene of lights
-  and walls, then paint into it with the mouse in step 1; watch light bounce, mix color and cast
-  soft shadows — with no ray tracing, no noise and no temporal accumulation.
+  Build real-time 2D global illumination from nothing, one pass at a time: a scene of lights and
+  walls, then the light bouncing, mixing color and casting soft shadows — with no ray tracing, no
+  noise and no temporal accumulation. At the end, a canvas you draw into.
 </p>
 
 <div class="why">
@@ -92,15 +92,14 @@
   <a href="https://jason.today/rc">jason.today/rc</a>) rewritten against this engine. Where the
   original drives WebGL from JavaScript, here every stage is a ShaderBox <b>pass</b> and the
   chain is <code>graph.json</code>. The merge is the step that is easiest to get wrong while
-  still looking right; the explanation in step 5 says how, and <code>oracle.py</code> beside this
-  file is what proves it.
+  still looking right; step 5 says how.
 </div>
 
 <div class="toc">
   <b>What you'll build</b>
   <ol>
     <li><a href="#paint"><code>paint</code></a> — the scene to light</li>
-    <li><a href="#seed"><code>seed</code></a> — positions, not distances</li>
+    <li><a href="#seed"><code>seed</code></a> — each texel's nearest solid</li>
     <li><a href="#jfa"><code>jfa</code></a> — the jump flood</li>
     <li><a href="#df"><code>df</code></a> — one line of real work</li>
     <li><a href="#cascade"><code>cascade</code></a> — the cascade stack</li>
@@ -111,7 +110,7 @@
     <li><a href="#naive">Naive global illumination</a> — correct, beautiful, far too slow</li>
     <li><a href="#march">Sphere marching</a> — the same picture, 20× faster</li>
     <li><a href="#idea">The cascade idea</a> — why direction and position trade off</li>
-    <li><a href="#verify">Verifying it</a> — why a good-looking render proves nothing</li>
+    <li><a href="#draw">Draw into it</a> — the mouse, a script, a canvas that remembers</li>
   </ul>
 </div>
 
@@ -227,87 +226,6 @@ void main() {
   bright one is where light comes from.
 </p>
 
-<h3>Paint it with the mouse</h3>
-
-<p>
-  The shipped example draws its scene analytically and ships no script, so an exported video is
-  the same every time. Everything below is yours to add on top.
-</p>
-
-<p>
-  First the uniforms. Add three declarations to <code>paint.frag.glsl</code>, beside the ones
-  already there:
-</p>
-
-<pre><code>uniform vec2 u_brush;        // where the cursor is, 0..1
-uniform vec2 u_brush_prev;   // where it was last frame
-uniform float u_brush_down;  // 1 while the left button is held</code></pre>
-
-<p>
-  Then, inside <code>main()</code>, immediately before the final
-  <code>fs_color = vec4(0.0);</code>:
-</p>
-
-<pre><code>    // Distance to the SEGMENT from last frame's cursor to this one, so a fast drag paints a
-    // continuous stroke instead of one disc per frame.
-    vec2 ab = u_brush - u_brush_prev;
-    float h = clamp(dot(p - u_brush_prev, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
-    if (u_brush_down &gt; 0.5 &amp;&amp; length(p - (u_brush_prev + ab * h)) &lt; 0.02) {
-        fs_color = vec4(4.0, 3.3, 2.0, 1.0);
-        return;
-    }</code></pre>
-
-<p>
-  Now the script that feeds them. Press <code>Alt+R</code>: the document's
-  <code>scripts/script.py</code> is written for you and opens in a tab, with a stub in it. Paste
-  this over the stub:
-</p>
-
-<pre><code>from shaderbox.scripting import ScriptBehavior, Ctx, Vec2
-
-
-class Brush(ScriptBehavior):
-    """Paint into the scene with the left mouse button."""
-
-    def update(self, ctx: Ctx) -&gt; dict:
-        return {
-            "paint": {
-                "u_brush": Vec2(ctx.mouse.x, ctx.mouse.y),
-                "u_brush_prev": Vec2(ctx.mouse.prev_x, ctx.mouse.prev_y),
-                "u_brush_down": 1.0 if ctx.mouse.down else 0.0,
-            },
-        }</code></pre>
-
-<p>
-  The key is <code>"paint"</code>, not the output pass: a script addresses a pass by NAME, so this
-  one drives <code>paint</code> while you are looking at <code>composite</code>. The value under
-  it is a dict, and that is what makes it a <b>pass block</b> — one pass only. A bare
-  <code>"u_brush": …</code> at the top level would instead broadcast to every pass declaring
-  <code>u_brush</code>, which here is only <code>paint</code> and would work too; the block form
-  is the one that scales.
-</p>
-
-<p>
-  Two smaller things. <code>ctx.mouse.down</code> is a bool and the uniform is a float, so the
-  script converts. And <code>prev_x</code> / <code>prev_y</code> come from the engine rather than
-  from <code>self</code>: a script keeping its own previous position would miss the re-entry
-  reset the engine performs, so a cursor that left the canvas and came back would draw a line
-  across the gap.
-</p>
-
-<p>
-  Hold the left button over the canvas and it paints; hover with no button and nothing happens; a
-  fast drag leaves a continuous line rather than spaced discs.
-</p>
-
-<div class="note">
-  <b>There is nothing to clear.</b> <code>paint</code> redraws from scratch every frame, so
-  releasing the button leaves the analytic scene and the next frame has no brush in it.
-  <code>F6</code> (Clear canvas) and its <code>Clear</code> button appear only once a pass reads
-  itself, which is why they belong to the persistent-canvas suggestion in Things to try rather
-  than to this step.
-</div>
-
 <h2 id="naive">Naive global illumination</h2>
 
 <p>
@@ -363,7 +281,7 @@ class Brush(ScriptBehavior):
   can possibly be hit before then.
 </p>
 
-<h2 id="seed"><span class="step">2</span><code>seed</code> — positions, not distances</h2>
+<h2 id="seed"><span class="step">2</span><code>seed</code> — each texel's nearest solid</h2>
 
 <p>Add a pass called <code>seed</code> (<code>Alt+A</code>).</p>
 
@@ -420,7 +338,7 @@ void main() {
 </p>
 
 <div class="note">
-  <b>Why the card says 32-bit float.</b> It stores coordinates, not colors. At 8-bit a UV
+  <b>Why the card says 32-bit float.</b> It stores coordinates. At 8-bit a UV
   quantizes to 1/255 and the distance field comes out visibly blocky; at 16-bit it is subtly
   wrong. This is the one pass where <code>f4</code> genuinely earns its cost.
 </div>
@@ -441,7 +359,7 @@ void main() {
 </table>
 
 <p class="produces">
-  Every texel — not just the solid ones — holds the coordinate of the nearest solid texel.
+  Every texel, the empty ones included, holds the coordinate of the nearest solid texel.
 </p>
 
 <figure>
@@ -521,7 +439,7 @@ void main() {
 </p>
 
 <p>
-  The offset is derived from the canvas, not from the run count: run <code>i</code> jumps
+  The offset is derived from the canvas: run <code>i</code> jumps
   <code>exp2(ceil(log2(max side)) - 1 - i)</code> texels, so the chain is complete after
   <code>ceil(log2(max side))</code> runs and any run past that has nothing left to spread and
   copies its input forward. The card says <b>12</b>, which is <code>ceil(log2(4096))</code> and
@@ -536,10 +454,9 @@ void main() {
 </div>
 
 <div class="note">
-  <b>The engine hands over the index, not the offset.</b> <code>u_pass_iteration</code> says
-  <em>which</em> run this is; turning that into a halving offset is the algorithm's business,
-  not the engine's. That is why there is no <code>u_jfa_offset</code> — the engine stays a
-  general tool and this stays one line of shader.
+  <b>The engine hands over the run index.</b> <code>u_pass_iteration</code> says <em>which</em>
+  run this is, and the halving offset is one line in the shader. That is why there is no
+  <code>u_jfa_offset</code>: the engine stays a general tool.
 </div>
 
 <div class="note">
@@ -547,7 +464,7 @@ void main() {
   canvas the app can make: 12 runs are <code>ceil(log2(4096))</code>, and 4096 is the largest
   side the width and height fields accept. Raise it only if you raise that limit. A short chain
   would still render, just with a subtly wrong distance field and no error anywhere, which is why
-  the number covers the whole range rather than the size you happen to be using.
+  the number covers the whole range.
 </div>
 
 <h2 id="df"><span class="step">4</span><code>df</code> — one line of real work</h2>
@@ -940,54 +857,6 @@ void main() {
   crushed.
 </p>
 
-<h2 id="verify">Verifying it</h2>
-
-<p><b>Nothing to build here.</b> This is how you find out whether what you built is right.</p>
-
-<div class="warn">
-  <b>A good-looking render proves nothing.</b> This repo's own earlier attempt at this algorithm
-  rendered convincing shadows, beat brute force 16:1, and was <b>30% wrong</b> — every one of its
-  1364 merge directions read the wrong slot. It was believed because the picture looked right.
-  Check the number.
-</div>
-
-<p>
-  <code>ai_docs/features/068_radiance_cascades/oracle.py</code> runs this same algorithm on an
-  analytic scene and compares it against brute force. Two numbers, because they say different
-  things:
-</p>
-
-<pre><code>  2 cascades (reach 0.060,  13881 bounced texels): ratio 1.0090, relMAE  9.57%
-  3 cascades (reach 0.252, 116572 bounced texels): ratio 1.0102, relMAE  4.39%
-  4 cascades (reach 1.020, 239331 bounced texels): ratio 1.0134, relMAE  3.65%</code></pre>
-
-<p>
-  3.65% at full depth against a converged 16&nbsp;384-ray reference, scored over bounced light
-  only, with each depth measured against a reference marched to that depth's own reach. The error
-  falls as the stack deepens, which is the shape you want. That
-  matches the 4.5% an earlier corrected implementation of this algorithm measured — and the
-  number means something because the gate is <b>mutation-tested</b>: disabling the merge scores
-  98%, and a transposed slot address scores 30%, almost exactly the 30.3% that earlier broken
-  version measured for that same bug.
-</p>
-
-<div class="warn">
-  <b>Two ways to measure this wrong, both of which produced confident numbers here.</b> Testing
-  emission for "strictly inside a surface" while the marcher reports a hit slightly
-  <em>outside</em> one loses nearly all direct light: the reference goes dark, and the apparent
-  "21% overshoot" it produced was entirely a bug in the measuring harness, not the algorithm.
-  And scoring the whole frame rather than only the bounced texels measures the emitters — which
-  both methods write identically — so a stack computing <em>no</em> global illumination at all
-  scored inside the passing band.
-</div>
-
-<div class="note">
-  <b>Match your comparison or it measures nothing.</b> A stack of <code>n</code> levels resolves
-  <code>4ⁿ</code> directions and marches only as far as its own intervals reach. Compare it
-  against a coarser, shorter reference and you get a large "error" that is entirely the
-  reference — a 580% figure that cost real time here was exactly that.
-</div>
-
 <hr>
 
 <h2>What you built</h2>
@@ -1016,9 +885,120 @@ void main() {
   <li>Raise <code>jfa</code>'s runs above 12 and nothing changes: the extra runs copy their input
       forward. Lower it to 4 and the field goes blocky at range, which is the same experiment from
       the other side.</li>
-  <li>Wire <code>paint</code>'s <code>u_prev</code> to <code>paint</code> itself and stop clearing
-      every frame, so the brush accumulates. Now <code>F6</code> (Clear canvas) and its
-      <code>Clear</code> button have something to do.</li>
 </ul>
+
+<hr>
+
+<h2 id="draw">Draw into it</h2>
+
+<p>
+  The scene so far is analytic: <code>paint</code> redraws its lights and walls from formulas
+  every frame, which is what lets the warm light drift and keeps an exported video the same every
+  time. This chapter turns it into a canvas you draw on with the mouse, one that remembers.
+  Three mechanisms carry it: a pass that reads its own previous frame, a document script that
+  feeds the cursor to that pass, and Reset to wipe it. Everything here is pasted on top of the
+  finished example; the shipped one stays as it is.
+</p>
+
+<h3>A pass that remembers</h3>
+
+<p>
+  A pass has no memory of its own: its texture is rewritten every frame. Memory comes from
+  <b>feedback</b>. Declare <code>uniform sampler2D u_prev;</code> and, with no wiring at all,
+  that sampler reads the pass's own previous frame — the name rule reads <code>u_prev</code> as
+  "me, last frame". The engine keeps two textures for such a pass and swaps them at the frame
+  boundary, so what was just drawn is what the next frame reads. Add the declaration to
+  <code>paint.frag.glsl</code> beside the other uniforms, and make the fallthrough at the end of
+  <code>main()</code> keep what was there:
+</p>
+
+<pre><code>uniform sampler2D u_prev;    // this pass, last frame</code></pre>
+
+<pre><code>    fs_color = texture(u_prev, vs_uv);   // was: vec4(0.0)</code></pre>
+
+<p>
+  Nothing visible changes yet: every texel that is neither a light nor a wall now copies itself
+  forward, and it starts black. The gear's Reads section shows <code>u_prev</code> reading
+  <code>paint</code>, and the Reset button over the preview has a canvas to wipe.
+</p>
+
+<h3>The brush</h3>
+
+<p>Three more uniforms carry the cursor:</p>
+
+<pre><code>uniform vec2 u_brush;        // where the cursor is, 0..1
+uniform vec2 u_brush_prev;   // where it was last frame
+uniform float u_brush_down;  // 1 while the left button is held</code></pre>
+
+<p>
+  And the stamp, placed just before the fallthrough. It measures the distance to the segment
+  from last frame's cursor to this one, so a fast drag paints a continuous stroke; each frame
+  adds one segment on top of what <code>u_prev</code> carried forward, and the stroke is the
+  sum.
+</p>
+
+<pre><code>    vec2 ab = u_brush - u_brush_prev;
+    float h = clamp(dot(p - u_brush_prev, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
+    if (u_brush_down &gt; 0.5 &amp;&amp; length(p - (u_brush_prev + ab * h)) &lt; 0.02) {
+        fs_color = vec4(4.0, 3.3, 2.0, 1.0);   // paint an emitter
+        return;
+    }</code></pre>
+
+<h3>The script</h3>
+
+<p>
+  A uniform gets its value from a script. Press <code>Alt+R</code>: the document's
+  <code>scripts/script.py</code> opens in a tab with a stub in it. Paste this over the stub:
+</p>
+
+<pre><code>from shaderbox.scripting import ScriptBehavior, Ctx, Vec2
+
+
+class Brush(ScriptBehavior):
+    """Paint into the scene with the left mouse button."""
+
+    def update(self, ctx: Ctx) -&gt; dict:
+        return {
+            "paint": {
+                "u_brush": Vec2(ctx.mouse.x, ctx.mouse.y),
+                "u_brush_prev": Vec2(ctx.mouse.prev_x, ctx.mouse.prev_y),
+                "u_brush_down": 1.0 if ctx.mouse.down else 0.0,
+            },
+        }</code></pre>
+
+<p>
+  <code>update</code> runs once per frame and returns what to write. The key
+  <code>"paint"</code> names that pass, so the script drives <code>paint</code> while you look
+  at <code>composite</code>; the dict under it is a <b>pass block</b>, one pass only. A bare <code>"u_brush": …</code> at the top level would broadcast to every pass that
+  declares the uniform, which here is also only <code>paint</code>. <code>ctx.mouse</code> is the
+  cursor over the canvas in 0..1 with y up; <code>down</code> is the left button;
+  <code>prev_x</code> / <code>prev_y</code> are last frame's position, from the engine: when the
+  cursor leaves the canvas and comes back, the engine restarts <code>prev</code> at the new
+  position, so the stroke stays where it was instead of jumping across the gap.
+</p>
+
+<p>
+  Hold the left button over the canvas and draw. The stroke stays, glows, and lights the scene
+  the way the two emitters do: <code>seed</code> and every pass after it read <code>paint</code>
+  without knowing where its texels came from.
+</p>
+
+<h3>Wiping it</h3>
+
+<p>
+  <code>F6</code> resets the document: the feedback textures go back to black, the clock
+  restarts at zero, the script starts over from <code>__init__</code>, and a video bound to a
+  sampler rewinds. The Reset button over the preview does the same. It is document-wide on
+  purpose, so nothing asks which pass accumulates.
+</p>
+
+<h3>Why the example ships without it</h3>
+
+<p>
+  An exported video sees a fixed cursor at the center with the button up, so a script gated on
+  the button paints nothing in it; and a pass that reads itself is state, which an export starts
+  from black. The analytic scene renders the same picture every time, which is what an example
+  should do. The drawing version is yours.
+</p>
 
 </div>
