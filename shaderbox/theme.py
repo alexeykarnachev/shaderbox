@@ -559,8 +559,10 @@ def editor_palette() -> dict["editor_ffi.Slot", tuple[float, float, float, float
         slot.STATUS_TEXT: COLOR.FG_SECONDARY,
         slot.STATUS_ACCENT: COLOR.ACCENT_PRIMARY,
         slot.POPUP_PANEL: COLOR.BG_POPUP,
-        slot.POPUP_TEXT: COLOR.FG_PRIMARY,
-        slot.POPUP_SELECTED: fade(COLOR.ACCENT_PRIMARY, 0.30),
+        # The selected row is a TEXT color, not a fill: it must be the BRIGHTER of the two,
+        # so the unselected rows recede and the accent picks out the row Enter takes.
+        slot.POPUP_TEXT: COLOR.FG_MUTED,
+        slot.POPUP_SELECTED: COLOR.ACCENT_PRIMARY,
         slot.SYNTAX_1: COLOR.SYN_KEYWORD,
         slot.SYNTAX_2: COLOR.SYN_STRING,
         slot.SYNTAX_3: COLOR.SYN_COMMENT,
