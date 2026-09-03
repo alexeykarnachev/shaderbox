@@ -35,7 +35,9 @@ _EXAMPLES = (
     Path(__file__).resolve().parent.parent / "shaderbox/resources/document_examples"
 )
 _RC = _EXAMPLES / "77a84d27-2e5b-406d-8011-ee1cb1a9587c"
-_BLOOM = _EXAMPLES / "1c4f8a20-7b6e-4d31-9a55-2f0e6b8c31d4"
+_BLOOM = (
+    Path(__file__).parent / "fixtures" / "bloom_chain"
+)  # a test fixture, not shipped
 _MEDIA_INPUT = _EXAMPLES / "73ea2431-13f6-41e4-b923-04d846b678b0"
 
 _TRAIL = """#version 460 core

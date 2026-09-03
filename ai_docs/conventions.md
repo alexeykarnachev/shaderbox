@@ -935,7 +935,7 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   COVERAGE — every codepoint JetBrains Mono has, 1343 glyphs: Latin with diacritics, Greek,
   Cyrillic, punctuation, math, arrows, box-drawing. So what renders as a box is a fact about the
   font (CJK, emoji, Arabic), not a curated list anyone has to revisit. Cost: 7.87 MiB VRAM —
-  about ONE 960x960 f2 pass canvas, where the shipped Bloom Chain allocates five — and 1.6 MiB in
+  about ONE 960x960 f2 pass canvas, where a five-pass document (the bloom-chain test fixture) allocates five — and 1.6 MiB in
   the bundle, which is the number to revisit if the download ever becomes a complaint. A user
   pasting prose punctuation into a shader comment renders correctly; ASCII in shipped source
   stays the house style, but it is a convention, not a rendering constraint. `U+00A0` and `U+200B` are DELIBERATELY unbaked:

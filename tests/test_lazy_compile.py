@@ -24,9 +24,11 @@ from shaderbox.ui_models import load_document_from_dir
 _EXAMPLES = (
     Path(__file__).resolve().parent.parent / "shaderbox/resources/document_examples"
 )
-# The tuned single-pass example and the five-pass bloom chain.
+# The tuned single-pass example and the five-pass bloom-chain fixture.
 _TUNED = _EXAMPLES / "f90f5ff9-29c6-4bcf-aee7-090f20542353"
-_BLOOM = _EXAMPLES / "1c4f8a20-7b6e-4d31-9a55-2f0e6b8c31d4"
+# The five-pass bloom chain is a test fixture (it left the shipped examples once Radiance
+# Cascades covered multi-pass): scene -> bright -> blur -> trail (feedback) -> composite.
+_BLOOM = Path(__file__).parent / "fixtures" / "bloom_chain"
 
 
 @pytest.fixture(scope="module")
