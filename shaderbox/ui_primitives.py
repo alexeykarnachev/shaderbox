@@ -313,7 +313,9 @@ def anchored_note(id_: str, anchor: tuple[float, float], title: str, body: str) 
     imgui.set_next_window_size_constraints(
         imgui.ImVec2(0.0, 0.0), imgui.ImVec2(float(SIZE.NOTE_W), 1.0e6)
     )
-    imgui.set_next_window_bg_alpha(OVERLAY_ALPHA)
+    # Opaque: the note sits over code and a translucent one made both unreadable.
+    imgui.set_next_window_bg_alpha(1.0)
+    imgui.push_style_color(imgui.Col_.window_bg, COLOR.BG_POPUP)
     flags = (
         imgui.WindowFlags_.no_decoration
         | imgui.WindowFlags_.no_inputs
@@ -327,8 +329,9 @@ def anchored_note(id_: str, anchor: tuple[float, float], title: str, body: str) 
             imgui.push_text_wrap_pos(float(SIZE.NOTE_W) - 2.0 * float(SPACE.MD))
             imgui.text_colored(COLOR.ACCENT_PRIMARY, title)
             if body:
-                imgui.text_colored(COLOR.FG_DIM, body)
+                imgui.text_colored(COLOR.FG_SECONDARY, body)
             imgui.pop_text_wrap_pos()
+    imgui.pop_style_color()
 
 
 def rendering_overlay(text: str) -> None:

@@ -131,10 +131,6 @@ _UNMEASURABLE: dict[tuple[str, str], str] = {
         "_draw_candidate_doc",
     ): "the highlighted candidate's signature and doc, from the same tables as `K`",
     (
-        "shaderbox/ui_primitives.py",
-        "anchored_note",
-    ): "the caller's title and body; the one caller is _draw_lookup_popup",
-    (
         "shaderbox/ui.py",
         "_draw_app_panel",
     ): "the channel view's name from CHANNEL_VIEW_LABELS; "

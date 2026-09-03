@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any
 
 from shaderbox.completion import (
-    GLSL_BUILTIN_DOCS,
     CompletionContext,
     builtin_uniform_declarations,
     candidate_doc,
@@ -70,9 +69,10 @@ def test_an_identifier_opens_by_itself_at_two_letters_and_on_ctrl_n_at_one() -> 
 def test_after_uniform_the_glsl_words_still_come() -> None:
     # The builtin provider fires first but does not shadow the rest: a custom uniform's type
     # is what the user types most often after `uniform`.
-    assert offer(
+    after_uniform = offer(
         _context(line_before_caret="uniform sam", prefix="sam", explicit=True)
-    ) == ["sampler2D"]
+    )
+    assert "sampler2D" in after_uniform, after_uniform
     found = offer(_context(line_before_caret="uniform vec", prefix="vec"))
     assert found[0] == "vec2 u_resolution;"
     assert {"vec2", "vec3", "vec4"} <= set(found)
@@ -291,35 +291,46 @@ def test_a_lookup_request_resolves_the_word_under_the_caret(app: Any) -> None:
     editor.feed("0")
     app.editor_lookup_requested = True
     _consume_lookup_request(app, editor)
-    assert app.editor_lookup is None, "`uniform` is a keyword with no doc"
+    assert app.editor_lookup is not None
+    assert app.editor_lookup.doc == "GLSL keyword"
     editor.close()
 
 
-def test_every_callable_glsl_word_carries_a_doc() -> None:
-    # The domain is the vocabulary itself, enumerated rather than sampled: a builtin added to
-    # _GLSL_WORDS without a doc entry fails here instead of showing an empty popup.
+def test_every_offered_word_can_be_explained() -> None:
+    # The vocabulary and the docs come from the same generated module, so the popup can
+    # never offer a word it cannot describe. Enumerated, not sampled.
     from shaderbox.completion import _GLSL_WORDS
 
-    documented = set(GLSL_BUILTIN_DOCS)
-    vocabulary = set(_GLSL_WORDS)
-    assert documented <= vocabulary, documented - vocabulary
-    # Every documented name is callable; the rest of the vocabulary is types and keywords.
-    for name, (signature, doc) in GLSL_BUILTIN_DOCS.items():
-        assert f"{name}(" in signature, (name, signature)
-        assert doc and not doc.endswith("."), (name, doc)
+    unexplained = [w for w in _GLSL_WORDS if symbol_doc(w, {}) is None]
+    assert unexplained == [], unexplained
+
+
+def test_the_generated_table_covers_the_builtins_a_shader_uses() -> None:
+    from shaderbox.glsl_docs import BUILTINS
+
+    # Spot the ones a fragment shader reaches for constantly; the generator's own count
+    # (88 at ES 3.0) is not asserted, since a refpages update may legitimately change it.
+    for name in ("mix", "smoothstep", "texture", "dot", "clamp", "dFdx", "textureLod"):
+        signatures, purpose = BUILTINS[name]
+        assert signatures and all(f"{name}(" in s for s in signatures), name
+        assert purpose, name
+    # Overloads are kept whole rather than collapsed to one line.
+    assert len(BUILTINS["mix"][0]) == 3
 
 
 def test_symbol_doc_answers_for_a_glsl_builtin() -> None:
     signature, doc = symbol_doc("smoothstep", {})
-    assert signature.startswith("genType smoothstep(")
-    assert "|" in signature, "the overload set is spelled out where shapes differ"
+    assert "smoothstep(" in signature
+    assert "\n" in signature, "every overload is shown, one per line"
     assert doc
-    assert symbol_doc("vec3", {}) is None, "a type is not a call"
+    # A type or keyword is explained too, just not as a call.
+    assert symbol_doc("vec3", {}) == ("vec3", "GLSL type")
+    assert symbol_doc("discard", {}) == ("discard", "GLSL keyword")
 
 
 def test_candidate_doc_reads_a_bare_name_and_a_declaration() -> None:
     bare = candidate_doc("mix", {})
-    assert bare is not None and bare[0].startswith("genType mix(")
+    assert bare is not None and "mix(" in bare[0]
     declared = candidate_doc("float u_time;", {})
     assert declared is not None and declared[0] == "uniform float u_time;"
-    assert candidate_doc("while", {}) is None
+    assert candidate_doc("while", {}) == ("while", "GLSL keyword")
