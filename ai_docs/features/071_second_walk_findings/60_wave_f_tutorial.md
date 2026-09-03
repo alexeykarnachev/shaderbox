@@ -16,7 +16,7 @@ verify" (D6); "Don't use ... this 'bla bla bla, but not bla bla' construction" (
   1-6 are the six shipped passes and nothing else. `oracle.py` stays where it is: the example's
   test and the image build run on it.
 - **Rewritten under D7.** Every "X, not Y" / "rather than" site in what remains: the step-2
-  heading (contents and section) reads "each texel's nearest solid"; "coordinates, not colors"
+  heading (contents and section) reads "every solid texel's own position"; "coordinates, not colors"
   is "coordinates"; "not just the solid ones" is "the empty ones included"; "derived from the
   canvas, not from the run count" is "derived from the canvas"; the engine-index note (the
   maintainer's example) is "The engine hands over the run index. `u_pass_iteration` says which
