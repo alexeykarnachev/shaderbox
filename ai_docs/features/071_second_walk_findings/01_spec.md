@@ -128,7 +128,8 @@ Files: editor repo `src/keymap.odin`, `src/keymap_normal.odin`, `src/keymap_visu
    the last line and `p` of a linewise register there.
 2. **Ctrl+Tab in display order** (#9a). Inside `_draw_tab_row`, after the item loop, read
    imgui's order back (`imgui.internal.get_current_tab_bar`, `tab_bar_find_tab_by_order`,
-   `tab_bar_get_tab_name`, the `##tab{i}` suffix carries the model index) and permute
+   `tab_bar_get_tab_name`; landed with the tab's PATH as the id suffix, since an index-keyed id
+   made every moved tab a new tab to imgui) and permute
    `app.editor_tabs` + `active_tab_index` to match, so the model order IS the display order and
    every index-based verb agrees with the eye. Test: a permuted read-back reorders the list and
    keeps the active tab's identity.

@@ -30,7 +30,7 @@ def tab_label(app: App, tab: EditorTab) -> str:
     # The display label for a tab (048): document-derived so two documents' tabs are distinguishable
     # ("<document> (shader)" / "<document> (script)"), a lib by "library - <file>". The on-disk filename is
     # the same constant for every document, so the bare name can't tell tabs apart. Falls back to a short
-    # id slice when the document has no name. The imgui ##id keys on the stable path/index, NOT this label.
+    # id slice when the document has no name. The imgui ##id keys on the stable path, NOT this label.
     #
     # A MULTI-pass document names the pass instead of "shader" (065) — otherwise its tabs are all
     # "<document> (shader)" and tell each other apart by nothing. Taken from the tab's own PATH,
@@ -121,13 +121,19 @@ def _display_order(app: App) -> list[int]:
         item = imgui.internal.tab_bar_find_tab_by_order(bar, k)
         if item is None:
             return []
-        name = imgui.internal.tab_bar_get_tab_name(bar, item)
-        cut = name.find("##")
-        index = by_suffix.get(name[cut:]) if cut >= 0 else None
+        index = _model_index(imgui.internal.tab_bar_get_tab_name(bar, item), by_suffix)
         if index is None:
             return []
         order.append(index)
     return order
+
+
+def _model_index(tab_name: str, by_suffix: dict[str, int]) -> int | None:
+    # Matched by suffix, never by splitting: a document's display name is free text and may
+    # itself contain `##`, and the id suffix is what the name ENDS with.
+    return next(
+        (i for suffix, i in by_suffix.items() if tab_name.endswith(suffix)), None
+    )
 
 
 def _apply_display_order(app: App, order: list[int]) -> None:

@@ -40,14 +40,37 @@ words, and the behaviour change is in the handler.
 ## Tests (`tests/test_code_panel.py`)
 
 - The follow, against the vendored editor with the library-drawn status row: ten lines, five
-  text rows, `G` then `o`; the caret's row is inside the text rows. Falsifier: move the follow
-  back in front of the layout (the row reads 5 of 5). And an idle caret is left alone after a
-  wheel scroll.
+  text rows, `G` then `o`, Enter at the end of the last line, or `yyp`; the caret's row is inside
+  the text rows and the caret quad in the last layout's primitives lies above the status row.
+  Falsifier: run the follow before the layout (`G` already lands short). And an idle caret is
+  left alone after a wheel scroll.
 - The permutation helper on a bare tab list: `[2, 0, 1]` reorders and keeps the active tab;
   identity is a no-op.
 - The frame-loop test from the repro: click the app panel, Ctrl+Tab leaves the tab and focuses
   the editor, a second Ctrl+Tab cycles; and the order read-back reported `[0, 1]` once two tabs
   existed (proof the names resolve to model indices through imgui's state).
+
+## Review history
+
+**Post-impl (one reviewer, opus, code correctness + spec fidelity).** Verdict FIX, taken in a
+fix-up commit: (1) BLOCKER -- the read-back cut the imgui tab name at its first `##`, and a
+document name is free text, so a name containing `##` silently returned `[]` on every frame
+and Ctrl+Tab fell back to opening order; the model index is now matched by the name's SUFFIX,
+which also survives a `##` inside the path, pinned by a unit test on both shapes plus imgui's
+stale-tab name `N/A`. (2) the second layout after a follow, the fix the spec names, passed every
+test when deleted: the follow tests now also assert the caret quad lies above the status row in
+the last layout's primitives. (3) the spec's Enter and linewise-paste cases were missing; added
+through one helper. (4) the falsifier comment named the wrong assertion; reworded. (5) two
+comments still said the id keys on "path/index". (6) the ledger's #9 cell stated the chord was
+editor-scoped, which was never true; corrected in place, and the spec's `##tab{i}` sentence
+updated. Cleared by the reviewer with probes on the real app: the close-frame skip, the
+identity re-anchor of the active tab across a permutation, the same-frame `select_target`
+consumption, `tab_list_popup_button` adding no entry, duplicate paths impossible
+(`_focus_or_add_tab`), the `rows` / `lines_per_viewport` agreement at every fractional height,
+zero-tab and popup-open Ctrl+Tab harmless, and no other category-for-scope confusion in
+`COMMAND_SPECS` (the three other `C.EDITOR` specs are global by intent). The reviewer's own
+`make smoke` segfaulted under `xvfb-run`/llvmpipe at the parent commit too; the gate here ran
+on the real display.
 
 ## Manual verification (the maintainer, in the app)
 

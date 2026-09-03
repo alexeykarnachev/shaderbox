@@ -9,7 +9,7 @@ from typing import Any
 
 from imgui_bundle import imgui
 
-from shaderbox.editor.ffi import Editor
+from shaderbox.editor.ffi import Editor, Kind
 from shaderbox.tabs import code as code_tab
 from shaderbox.ui import update_and_draw
 
@@ -24,23 +24,46 @@ def _editor_with_status_row(lines: int) -> tuple[Editor, tuple[float, float], in
     return e, size, rows
 
 
-def test_the_follow_brings_a_line_the_edit_just_added_into_view() -> None:
-    # `o` on the last line: the new line is not in the previous layout, so a follow that runs
-    # before this frame's layout clamps to the old last line and leaves the caret under the
-    # status row. Falsifier: move the follow back in front of the layout.
+def _caret_is_drawn_above_the_status_row(e: Editor, size: tuple[float, float]) -> bool:
+    # The painted picture is the LAST layout's primitives: after a follow scrolled, only a second
+    # layout puts the caret quad inside the text rows.
+    cell_h = e.get_cell_size()[1]
+    carets = [p for p in e.prims_list() if p.kind == int(Kind.CARET)]
+    return bool(carets) and all(p.y1 <= size[1] - cell_h + 0.5 for p in carets)
+
+
+def _added_line_stays_in_view(keys: str) -> None:
+    # An edit that adds a line at the bottom while the last line is on the bottom row: the new
+    # line is not in the previous layout, so a follow that runs before this frame's layout clamps
+    # to the old last line and leaves the caret under the status row. Falsifier: run the follow
+    # before the layout -- `G` already lands short, and the caret quad sits on the status row.
     e, size, rows = _editor_with_status_row(10)
-    last = None
     e.feed("G")
-    last = code_tab.layout_following_cursor(e, size, 16.0, rows, last)
+    last = code_tab.layout_following_cursor(e, size, 16.0, rows, None)
     assert e.get_scroll() == 5 and last.line == 9
-    e.feed("o")
+    e.feed(keys)
     cursor = code_tab.layout_following_cursor(e, size, 16.0, rows, last)
     first = e.get_scroll()
     assert cursor.line == 10
     assert first <= cursor.line < first + rows, (
         f"caret row {cursor.line - first} of {rows}"
     )
+    assert _caret_is_drawn_above_the_status_row(e, size), (
+        "the follow's scroll was not laid out"
+    )
     e.close()
+
+
+def test_the_follow_brings_a_line_the_edit_just_added_into_view() -> None:
+    _added_line_stays_in_view("o")
+
+
+def test_the_follow_covers_enter_at_the_end_of_the_last_line() -> None:
+    _added_line_stays_in_view("A<CR>")
+
+
+def test_the_follow_covers_a_linewise_paste_on_the_last_line() -> None:
+    _added_line_stays_in_view("yyp")
 
 
 def test_the_follow_leaves_an_idle_caret_alone() -> None:
@@ -63,6 +86,15 @@ def test_the_display_order_permutes_the_model_and_keeps_the_active_tab() -> None
     assert app.active_tab_index == 0
     code_tab._apply_display_order(app, [0, 1, 2])  # identity: untouched
     assert app.editor_tabs == [tabs[2], tabs[0], tabs[1]]
+
+
+def test_the_model_index_cuts_at_the_last_separator() -> None:
+    # A document's display name is free text: "my ## doc##/p" must still resolve to its path,
+    # and so must a path that itself carries a "##".
+    by_suffix = {"##/a/b": 0, "##/x##y/z": 1}
+    assert code_tab._model_index("A##weird##/a/b", by_suffix) == 0
+    assert code_tab._model_index("Plain##/x##y/z", by_suffix) == 1
+    assert code_tab._model_index("N/A", by_suffix) is None  # imgui's stale-tab name
 
 
 def _frames(app: Any, n: int) -> None:
