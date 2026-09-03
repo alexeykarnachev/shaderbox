@@ -303,8 +303,9 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   functions because they position siblings and pass geometry between each other
   (`_draw_document_image` returns an anchor that the FPS chip and the control panel both place
   from), which is layout rather than a surface. `widgets`/`popups`/`tabs` = pure draw functions
-  taking `app: App`, each a LEAF surface: it draws inside the box it is handed and never
-  positions its siblings. (The split is
+  taking `app: App`, each a LEAF surface: it lays out freely INSIDE the box it is handed
+  (`tabs/render.py` places its own two columns) but never positions a sibling and never hands
+  one geometry. (The split is
   forced by the no-`TYPE_CHECKING` rule: a draw fn annotating `app: App` while `App` imports it would
   cycle — so `App` lives in its own module.) Prior extractions already lifted the copilot backend
   (`copilot/backend.py`) and the headless project core (`project_session.py`) out of `App`; what
