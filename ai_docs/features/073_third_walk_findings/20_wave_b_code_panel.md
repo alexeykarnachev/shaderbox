@@ -41,6 +41,12 @@ frame later); the first-firing provider shadowed the glsl words after `uniform` 
 offered nothing); `// uniform ` fired inside a comment. Fixes: the flag is recorded after the
 offer; providers concatenate; a line comment offers nothing. Block comments are not tracked.
 
+Round 2 (same reviewer, patched tree): PASS. Each finding closed against its original probe;
+the concatenation keeps declarations first, yields no duplicate rows, and the 50 cap applies
+to the concatenated list. Two named non-defects: a `//` inside a string literal on the script
+tab (a `#`, rather) suppresses the rest of that line, and a flood in one provider could starve
+the next at the cap; neither reachable at the real vocabulary sizes.
+
 ## Pinned by tests
 
 `tests/test_completion.py`: `uniform ` offers every builtin declaration and filters by type

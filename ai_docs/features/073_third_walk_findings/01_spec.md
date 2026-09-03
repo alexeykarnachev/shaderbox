@@ -188,4 +188,8 @@ each.
 
 ## Review history
 
-(filled per wave)
+- **Host waves W-C, W-D, W-B (completion half), post-implementation, one opus reviewer anchored
+  on the ledger's verbatim words and D2-D5, every claim demonstrated by a probe.** Round 1:
+  PARTIAL -- W-C and W-D PASS on every item; W-B carried three defects (an inert accept guard,
+  a first-wins provider that shadowed `sampler2D` after `uniform`, completion inside a line
+  comment). Fixed at the root (`20_wave_b_code_panel.md § Review history`). Round 2: PASS.
