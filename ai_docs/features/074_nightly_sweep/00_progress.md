@@ -258,3 +258,20 @@ a removed field while asserting on something else. Fixed at the call sites in on
 attempt with no assertion weakened. One of them (`fake_publish` in
 `test_youtube_exporter.py`) stubs `_copilot_publish` and so mirrors its
 signature — which is how the orphaned `kind` parameter announced itself.
+
+## W-5 sanitize — DONE
+
+done-condition: the roadmap banner and a 074 row describe the landed sweep, no
+doc names a symbol this sweep removed, `todo.md` is unchanged unless the sweep
+actually resolved an entry, and `make gates` is green.
+did: rewrote the Active-context banner (200 words, at the file's own cap) and
+added the 074 row. Checked `ai_docs/` and the skills for references to every
+removed symbol — there were NONE outside this feature's own files, so no doc
+needed repair.
+verification: `make gates` exit 0 unpiped, GREEN, all three stages.
+ruled out: touching `todo.md`. Its single open entry is the live-only UI check
+list, whose trigger (a `make run` with a display) this sweep does not fire. One
+of its items — a deflected publish rendering a neutral "handed off" line — rides
+the same handoff card path W-1 edited; `test_handoff_card_reads_as_handed_off_
+not_failed` covers it and passes, but the LOOK of the line is still a display
+check and stays outstanding.

@@ -26,13 +26,17 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-03 (073 done; every wave reviewed to PASS; nothing queued). -->
-**No feature is queued.** 073 landed whole on `dev`: the editor library re-vendored at
-`5e0e8a2` (closer snap on the matching-opener rule, reverse-video caret, noselect batches, `K`
-left to the host), completion as a provider table that opens unasked and knows `uniform `, the
-`K` lookup note under the caret, the viewer's three-state channel view with Reset moved to the
-grid row, the live-tile fill in place of the dormant tint, `Alt+Left` / `Alt+Right` pass
-switching. Two opus review loops, both at PASS after fixes.
+<!-- As of 2026-09-03 (074 done; the sweep's five waves all green; nothing queued). -->
+**No feature is queued.** 074, an unattended structural sweep, landed whole on `dev` — and its
+finding is that the repo was already clean. An inventory over every symbol kind across
+`shaderbox/`, `scripts/` and `tests/` found zero dead functions, classes, modules, private
+helpers, enum members or type aliases. What it removed is ten symbols nothing read: one
+constant completing 072's D2, one orphaned forwarder, and eight write-only dataclass fields —
+the one category static tools cannot see. Also `seed.py`'s duplicated escape check given one
+home, a subset test pinning the copilot's brake tool-sets to the registry, and
+`conventions.md`'s three-layer bullet rewritten to say what `ui.py` actually owns.
+`074_nightly_sweep/00_inventory.md` carries the per-symbol evidence and the things a later
+sweep will re-find and must not delete.
 
 **Still due at the display, whenever the maintainer sits down to it:** 073's per-wave
 `## Manual verification` lists (`ai_docs/features/073_third_walk_findings/{10,20,30,40}_*.md`),
@@ -47,6 +51,7 @@ new ledger per `dev_flow.md ### How a tutorial walk runs`.
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 074 | nightly_sweep | done | An unattended structural pass over the repo's shape: a dead-symbol inventory across every symbol kind, ten write-only or orphaned symbols removed, the duplicated stale-file check in `seed.py` given one home, a subset test pinning the copilot's brake tool-sets to the registry, and `ui.py`'s layering documented as it actually is. Spec: `ai_docs/features/074_nightly_sweep/01_spec.md`. |
 | 073 | third_walk_findings | done | The maintainer's third walk (the 070 + 072 tree): 8 findings, five decisions -- a matching-opener bracket snap and a reverse-video caret in the editor library, context-aware auto-completion and a `K` lookup popup, a three-state alpha view on the viewer, a live-tile fill instead of the dormant tint, `Alt+Left`/`Alt+Right` pass switching, Reset moved to the document row. Spec: `ai_docs/features/073_third_walk_findings/01_spec.md`. |
 | 072 | sampler_source | done | A sampler2D has ONE source, held as its value (`PassSource` / `NoSource` / `AutoSource` / a bound texture) and chosen on its own panel row; `graph.json` loses `inputs` and `layout`, the planner takes a wiring, the gear loses Reads, the copilot's sampler row says what it reads. Spec: `ai_docs/features/072_sampler_source/01_spec.md`. |
 | 070 | pass_reads | done | Each strip tile carries a row of chips naming the passes it reads (`prev` for its own previous frame), drawn from the effective graph; a six-layout brainstorm rejected the graph view the feature opened as. Spec: `ai_docs/features/070_pass_reads/01_spec.md`. |
