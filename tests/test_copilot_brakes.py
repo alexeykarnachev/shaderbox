@@ -10,6 +10,9 @@ from pathlib import Path
 from typing import Any
 
 from shaderbox.copilot.agent import (
+    _RENDER_AUTHORING_TOOLS,
+    _SCRIPT_EDIT_TOOLS,
+    _WRITE_TOOLS,
     AgentError,
     AgentTurnDone,
     _edit_target_key,
@@ -213,3 +216,19 @@ def test_batch_begin_clears_the_script_guard() -> None:
     assert CopilotBackend.write_script.__get__(stub)("first", "").ok is True
     CopilotBackend.batch_begin.__get__(stub)()
     assert CopilotBackend.write_script.__get__(stub)("second", "").ok is True
+
+
+def test_the_brake_tool_sets_name_tools_the_registry_still_has() -> None:
+    # `_SCRIPT_EDIT_TOOLS` and `_WRITE_TOOLS` partition the edit tools on two axes the
+    # registry does not carry (artifact: GLSL vs script.py; verb: whole-file write vs
+    # patch), so neither can be DERIVED from `is_edit` — a derived `_WRITE_TOOLS` would
+    # make every edit reset the streak and disable the runaway-edit brake. What can be
+    # checked is that each stays a SUBSET, so renaming a tool in the registry without
+    # renaming it here fails loudly instead of silently emptying a set.
+    registry = build_registry(minimal_caps())
+    edit_tools = {d.name for d in registry.definitions() if d.is_edit}
+    assert edit_tools >= _SCRIPT_EDIT_TOOLS
+    assert edit_tools >= _WRITE_TOOLS
+    # The authoring set is broader than is_edit (set_uniform authors without editing a
+    # file), so it is checked against the whole registry instead.
+    assert {d.name for d in registry.definitions()} >= _RENDER_AUTHORING_TOOLS

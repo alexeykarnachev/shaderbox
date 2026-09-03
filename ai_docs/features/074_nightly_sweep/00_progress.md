@@ -142,3 +142,24 @@ section-banner label (structure); the `tests/` EGL note (out of scope, and it
 quotes a measurement).
 surprise: the spec's second W-3 item — "one restating comment" — did not exist.
 It is a section-banner label in `ui.py`, and the file has ~14 of them.
+
+## W-2 replacement (the only sanctioned change in that area) — DONE
+
+done-condition: a test asserts `_SCRIPT_EDIT_TOOLS` and `_WRITE_TOOLS` are
+subsets of the registry's `is_edit` set, and it FAILS when a tool is renamed in
+one place — verified by mutation, not by reading. The two frozensets themselves
+are unchanged.
+
+did: `tests/test_copilot_brakes.py::test_the_brake_tool_sets_name_tools_the_
+registry_still_has`. Also covers `_RENDER_AUTHORING_TOOLS`, against the whole
+registry rather than the `is_edit` subset — `set_uniform` authors a render
+without editing a file, so that set is legitimately broader.
+verification: `make gates` exit 0 unpiped, `GREEN -- check passed, test passed,
+smoke passed`. Mutation-tested both assertions: renaming `write_shader` inside
+`_WRITE_TOOLS` fails at the `_WRITE_TOOLS` line; renaming `set_uniform` inside
+`_RENDER_AUTHORING_TOOLS` fails at the authoring line. `agent.py` restored to a
+zero-line diff after each.
+ruled out: deriving either set from the registry — the spec's struck W-2, and
+re-reading the code confirms its refutation (`_edit_target_key` keys the streak
+on the artifact axis, `agent.py:1012`'s `tc.name in _WRITE_TOOLS` on the verb
+axis, and `registry.is_edit_tool` is already the gate one line above it).
