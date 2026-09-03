@@ -20,6 +20,17 @@ surprise: <anything the spec did not predict>
 
 ---
 
+## Baseline — measured before any wave
+
+Snapshot at `9af08f4`, on branch `dev`. **Re-measure at the start of the night** rather than
+trusting these; they exist so a session hitting a red at 3am can tell a wave's damage from a
+pre-existing failure.
+
+- `make gates` → exit 0, `GREEN -- check passed, test passed, smoke passed`. Took ~40s.
+- `uv run pytest --collect-only -q` → 1700 tests collected.
+- Smoke PASSED here because this measurement ran with a display attached. **Overnight it will
+  skip instead** (exit 87, gate still green) — that is expected, not a regression.
+
 ## Phase 1 — spec prepared
 
 Presence scan by six parallel agents (dead code, duplication, misfiling + layering, file sizes,
@@ -44,3 +55,9 @@ Ruled out during the scan, with reasons, so no later wave re-opens them:
   unchecked. Note per wave which stages ran.
 - **Any behaviour work.** No oracle decides rendering correctness, and the visual half cannot be
   checked on this machine.
+- **W-2, the case-list wave — STRUCK before the night began.** Adversarial review refuted its
+  premise: `_SCRIPT_EDIT_TOOLS` / `_WRITE_TOOLS` partition the `is_edit` universe on two axes the
+  registry does not carry, and deriving either regresses the copilot's clean-edit brake silently.
+  Do not reinstate it; see the spec's W-2 section for the only defensible alternative.
+- **Dependency removal.** Four deps are reached only through sanctioned function-body imports and
+  no gate exercises them; removing one would pass every check and break the shipped app.

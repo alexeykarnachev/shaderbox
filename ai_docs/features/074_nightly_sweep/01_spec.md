@@ -8,13 +8,21 @@ first wave enumerates the real inventory and that is what the later waves act on
 ## Status
 
 Updated as each wave lands, so a session resuming after a crash learns from this file how far
-the night got. Nothing has landed yet.
+the night got. Nothing has landed yet. The green baseline this sweep starts from — the commit,
+the gate result and the test count — is recorded in `00_progress.md`; **re-measure it** at the
+start of the night rather than trusting the snapshot.
+
+This spec was reviewed adversarially before any wave ran. The review's verdict on the first
+draft was DO NOT RUN, on two grounds now fixed: W-2 rested on a refuted premise and is struck,
+and dependency removal has been taken out of the SAFE tier. Its other findings are folded in
+below. That review is why several sections read as prohibitions — each one is a defect that was
+demonstrated, not a precaution.
 
 | Wave | State | Commit |
 |---|---|---|
 | W-0 inventory | not started | — |
 | W-1 dead code | not started | — |
-| W-2 case-list duplication | not started | — |
+| W-2 case-list duplication | STRUCK (premise refuted in review) | — |
 | W-3 comment duplicates | not started | — |
 | W-4 ui.py draw code (recommend first) | not started | — |
 | W-5 sanitize | not started | — |
@@ -44,13 +52,17 @@ specifics with a measured list; if W-0 finds only what is named here, W-0 was ru
   - `scanned: module-level functions, methods, classes, pydantic fields, module constants,
     private helpers, whole-module import graph across shaderbox/ and its subpackages, scripts/,
     tests/; not scanned: enum members individually, type aliases individually, projects/.`
-- **Duplicated case-lists: PRESENT.** The higher-value duplication shape (the same set of cases
-  written in two places). Example: `ToolDefinition.is_edit` is the canonical flag, read through
-  `ToolRegistry.is_edit_tool`, yet `shaderbox/copilot/agent.py` re-spells the same universe as
-  literal frozensets `_SCRIPT_EDIT_TOOLS` and `_WRITE_TOOLS`. A new edit tool registered with
-  `is_edit=True` is picked up by the registry everywhere and silently missed by those two sets.
-  Verified at the source, not relayed. Note `_RENDER_AUTHORING_TOOLS` in the same file is NOT
-  this defect: it answers a different question and is correctly its own list.
+- **Duplicated case-lists: NOT FOUND.** The scan's one candidate was REFUTED on review, and the
+  refutation is worth carrying because the candidate looks compelling. `_SCRIPT_EDIT_TOOLS` and
+  `_WRITE_TOOLS` in `shaderbox/copilot/agent.py` are not a re-spelling of `ToolDefinition.is_edit`:
+  they are two ORTHOGONAL partitions OF the four tools `is_edit` already selects — one on the
+  artifact axis (script vs GLSL, used to namespace the streak key so a document's two files never
+  share a brake) and one on the verb axis (whole-file write vs patch, where a clean write RESETS
+  the streak because "finishing in one write must never be the straw that trips the stop").
+  `is_edit_tool` is already the gate on the line above the `_WRITE_TOOLS` test, so deriving that
+  set from `is_edit` would make every edit reset the streak and disable the runaway-edit brake —
+  a behaviour regression, and no test covers it. `ToolDefinition` carries neither axis. Leave both
+  literals alone. `_RENDER_AUTHORING_TOOLS` is likewise correctly its own list.
   - `scanned: enum definitions and their usages, the copilot tool registry against hand-written
     tool-name sets, shape/preset case tables, across shaderbox/, scripts/, tests/; not scanned:
     general repeated-block duplication outside the case-table shape.`
@@ -113,8 +125,19 @@ Each of these was run or read directly, not inferred:
   `test_lib_index.py`, and several document-example paths in `test_default_wiring.py`,
   `test_lazy_compile.py`, `test_raw_texture_round_trip.py`, `test_document_save_preserves_values.py`,
   `test_video_frame_stepping.py`, `test_gl_lifetime_guards.py`, `test_uniform_row_pruning.py`.
-  **`test_ui_prose_budget.py` is the one to watch**: it names both a file and a function, so
-  renaming a draw function breaks it even with no file move.
+  Beyond the machine-checked ones: **`ai_docs/dev_flow.md`'s module map** describes every module
+  path and its responsibility, and NOTHING checks it — any move or deletion makes it stale, so it
+  is updated in the same commit as the change. And **`projects/dev/` must never be left
+  unstaged** (a repo hard rule): the sandbox drifts when the app or the smoke runs, so check
+  `git status` for it before every wave's commit rather than committing selectively past it.
+
+  **`test_ui_prose_budget.py` is the one to watch**: it holds TWO registries, one keyed on
+  `(file, function)` and one on `(file, function, measured word count)`, and each has a checker
+  asserting its entries still name a real site. So renaming a draw function breaks it with no
+  file move, and editing a user-facing string inside one can break it too. `shaderbox/ui.py` is
+  directly in that list. When it fails, its message invites you to "update or delete the entry" —
+  which is exactly the edit § How correctness is decided forbids in a structural wave. Move the
+  entry alongside the code, never relax it.
 - **The oracle situation.** There is no golden-output oracle for rendering. `scripts/dogfood/judge.py`
   validates its own measurement primitives against synthetic images with answers known by
   construction — it decides whether the probes are correct, never whether a rendered frame looks
@@ -169,17 +192,30 @@ by hand rather than called from the package.
 
 | Tier | What | Rule |
 |---|---|---|
-| SAFE | unreferenced private helpers, dead module constants, unused dependencies | remove |
+| SAFE | unreferenced private helpers, dead module constants | remove |
 | CAREFUL | anything reachable dynamically — a registry name, a hook, a fixture by convention | prove dead before removing |
 | RISKY | any exported surface a consumer outside this repo could use | leave it, or ask |
+| OUT OF SCOPE | **declared dependencies** | never remove unattended — see below |
+
+**Dependency removal does not happen in this sweep.** Four declared dependencies have no
+module-top import anywhere, by design: `conventions.md` sanctions function-body imports for the
+lazy-SDK seams, so `openai` is reached only inside `copilot/llm/openrouter.py` and the Google and
+Telegram SDKs only through the exporter paths. None of them is exercised by `make gates` — the
+copilot path needs a key, the publish paths need credentials — so removing one passes every gate
+and breaks the shipped app at the user's first Connect or first copilot turn. Report an
+apparently-unused dependency for the morning; never remove it.
 
 Remove one tier and one category at a time, gates between batches, so a failure names its batch.
 
-### W-2 — The duplicated case-list
+### W-2 — STRUCK. Do not run.
 
-Derive `agent.py`'s edit-tool partitions from the registry that already owns the flag, rather
-than re-spelling them. Leave `_RENDER_AUTHORING_TOOLS` alone; it answers a different question.
-Done-condition: adding a tool with `is_edit=True` requires editing one place, shown by a test.
+This wave proposed deriving `agent.py`'s edit-tool sets from the registry. Adversarial review
+refuted its premise at the source: the sets partition the `is_edit` universe on two axes the
+registry does not carry, and deriving either one regresses the copilot's clean-edit brake with
+no test to catch it (see § What is present). **Do not reinstate this wave.** The only defensible
+change in this area is a TEST asserting both frozensets are subsets of the registry's `is_edit`
+set, so a tool renamed in one place fails loudly — implement that if a wave is wanted here, and
+nothing else.
 
 ### W-3 — Duplicated comment text
 
@@ -195,8 +231,14 @@ Do not start by moving anything. First produce a recommendation, in the progress
 answers: which of `ui.py`'s draw functions have a natural home in `tabs/document.py`; what the
 import churn would be; and whether the result is more readable than the status quo for someone
 who reads `update_and_draw` top to bottom. Then apply it only if the answer is clearly yes.
-**The repo's own rule wins over tidiness here** (see below). If the recommendation is "leave
-it", that is a successful wave: write down why and move on.
+
+**Get the basis right.** The "don't split further without a fresh pain signal" rule in
+`conventions.md` attaches to `App`, and to the extractions already performed on it — it does NOT
+forbid this move. What the same passage does say is positive and is the real basis here:
+`ui.py` is specified as "a thin orchestrator owning the frame loop (`run` + `update_and_draw`)",
+which the seven `_draw_*` functions it currently defines sit outside of. So the question is
+genuine rather than forbidden. It is still a judgement call, and "leave it" remains a successful
+outcome: write down why and move on.
 
 If it does proceed: pure moves, no edits to bodies, import churn in the same commit and named in
 the message; update every gate naming an old path in that same commit; then **re-verify each
@@ -261,6 +303,18 @@ up carries the burden of explaining how the thing it exists for still works.
 - **`_RENDER_AUTHORING_TOOLS` beside the edit-tool sets** is not part of the W-2 duplication.
 - **Long WHY comments quoting a measurement or naming a prevented failure** are the convention
   working, not clutter.
+- **The two surfaces `conventions.md` already names as deliberately unused.** That file has a
+  bullet written for exactly this sweep — *"Two 'unused' surfaces are DELIBERATE — a sweep will
+  re-find them; do not delete them. Each was confirmed dead by grep and then rejected on
+  inspection, so the grep evidence alone is not the test."* They are: **`editor/ffi.py`'s unused
+  methods, flag members and `PRIM_STRIDE`**, because that module is a ctypes MIRROR of the
+  vendored C ABI and completeness against the ABI is the point; and **`PassGraph.version`**,
+  round-trip-only by design. Vulture flags all of them loudly — they are the single largest block
+  in its output — and deleting the flag members or `PRIM_STRIDE` is SILENT, since only the
+  signature table is gate-compared.
+- **Vulture noise to expect and ignore:** pydantic `model_config` entries, `unused attribute`
+  hits on `app.py` (imgui style attributes read dynamically), and the dogfood harness's
+  hand-driven API.
 - **A dead constant does not mean its ASSET is dead** — and the reverse. Worked example, checked
   while writing this spec: `DEFAULT_IMAGE_FILE_PATH` has exactly one occurrence in the repo (its
   own definition) and is safe to remove, but `ai_docs/` still describes a default-image mechanism
@@ -269,6 +323,11 @@ up carries the burden of explaining how the thing it exists for still works.
   removing the ASSET is not, until the docs describing it are reconciled — a doc claiming a live
   mechanism is either stale (fix the doc) or the mechanism regressed (a defect, not a cleanup).
   **Deleting a resource file is out of scope for this sweep**; report it and leave it.
+  **And check WHY a symbol is dead before removing it**: this one is dead because feature 072
+  removed its readers deliberately (its spec's D2 says the default-photo marker "goes from every
+  reader"), and 072's manual checks are still outstanding at the display. Removing the constant
+  is right, but the same commit should note it completes 072's D2 rather than presenting it as
+  incidental cleanup.
 
 ## Cold start
 
@@ -299,6 +358,17 @@ Settled already, as CONSTRAINTS rather than open questions:
 - Write each wave's done-condition, as a checkable statement, before starting that wave.
 - No monitor overnight: the GUI smoke skips every run, so a green gate proves check and tests
   only. Nothing whose correctness needs the running app may land unattended.
+- **Branch: commit on `dev`, never `master`** (repo hard rule). Confirm the branch before the
+  first wave. Push after each wave — a tree left many commits ahead of `origin` at dawn is a
+  failure state, since the other machines pull from there.
+- **Abort condition.** If `make gates` goes red and the cause is not obvious within ONE fix
+  attempt, revert that wave (`git revert` or `git checkout` of the wave's own files), record the
+  red and what was tried in the progress file, and move to the next independent wave. Do not
+  retry a third time, do not weaken a test to get green, and do not carry a red tree into the
+  next wave. If two waves in a row go red, stop the night and leave the report.
+- **Concurrent trees.** Do not mutate the working tree while a sub-agent may be committing, and
+  note that a git worktree is not an escape here: the package is installed editable, so `uv run`
+  inside a worktree imports the MAIN checkout.
 - Report against the milestone, not against effort. If a wave turns out bigger than this spec
   assumed, say so rather than silently narrowing it.
 
