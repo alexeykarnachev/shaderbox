@@ -132,9 +132,15 @@ COMMAND_SPECS: list[CommandSpec] = [
     CommandSpec(CommandId.OPEN_SCRIPT, "Open script", _chord(K.r, K.mod_alt), C.EDITOR),
     # Ctrl+Tab is ours: imgui's built-in window-cycle needs nav_enable_keyboard, which is
     # off app-wide (069 W-E D4). WindowFlags_.no_nav_focus on the main window and the chat
-    # keeps it that way if nav is ever turned back on.
+    # keeps it that way if nav is ever turned back on. Scope GLOBAL on purpose (071 D8): the
+    # handler focuses an unfocused editor first and cycles only while focused. C.EDITOR is
+    # the cheatsheet CATEGORY, not the scope.
     CommandSpec(
-        CommandId.CYCLE_CODE_TAB, "Cycle code tab", _chord(K.tab, K.mod_ctrl), C.EDITOR
+        CommandId.CYCLE_CODE_TAB,
+        "Cycle code tab",
+        _chord(K.tab, K.mod_ctrl),
+        C.EDITOR,
+        scope=CommandScope.GLOBAL,
     ),
     CommandSpec(
         CommandId.CLOSE_CODE_TAB,

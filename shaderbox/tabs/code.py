@@ -5,7 +5,7 @@ from imgui_bundle import imgui
 
 from shaderbox.app import App
 from shaderbox.core import Pass
-from shaderbox.editor.ffi import EDITOR_RESOURCES_DIR, Editor, Mode
+from shaderbox.editor.ffi import EDITOR_RESOURCES_DIR, CursorPos, Editor, Mode
 from shaderbox.editor.render import (
     EditorPanel,
     EditorRenderer,
@@ -67,6 +67,7 @@ def _draw_tab_row(app: App) -> None:
         | imgui.TabBarFlags_.draw_selected_overline.value
     )
     close_index: int | None = None
+    display_order: list[int] = []
     if imgui.begin_tab_bar("##editor_tabs", flags):
         for i, tab in enumerate(app.editor_tabs):
             item_flags = 0
@@ -80,7 +81,7 @@ def _draw_tab_row(app: App) -> None:
                 imgui.push_style_color(imgui.Col_.tab_hovered, COLOR.STATE_ERROR)
                 imgui.push_style_color(imgui.Col_.tab_selected, COLOR.STATE_ERROR)
             opened, keep = imgui.begin_tab_item(
-                f"{tab_label(app, tab)}##tab{i}", True, item_flags
+                f"{tab_label(app, tab)}{_tab_id_suffix(tab)}", True, item_flags
             )
             if keep is not None and not keep:
                 close_index = i
@@ -92,9 +93,53 @@ def _draw_tab_row(app: App) -> None:
                 imgui.end_tab_item()
             if tinted:
                 imgui.pop_style_color(3)
+        display_order = _display_order(app)
         imgui.end_tab_bar()
     if close_index is not None:
         app.close_tab(close_index)
+    elif display_order:
+        _apply_display_order(app, display_order)
+
+
+def _tab_id_suffix(tab: EditorTab) -> str:
+    # The imgui id is the PATH, not the list index: the model list follows imgui's drag order
+    # (below), and an index-keyed id would make every moved tab a new tab to imgui, appended at
+    # the end and scrambling the order it had just been read from.
+    return f"##{tab.path}"
+
+
+def _display_order(app: App) -> list[int]:
+    """Model indices in the order the tab bar SHOWS them, read from imgui's own tab state.
+
+    A drag reorders imgui's list only; nothing else reports it. Empty when imgui's list and the
+    model disagree in size or names (the frame a tab is born or closed), so the caller skips
+    that frame. Valid only between begin_tab_bar and end_tab_bar."""
+    bar = imgui.internal.get_current_tab_bar()
+    by_suffix = {_tab_id_suffix(tab): i for i, tab in enumerate(app.editor_tabs)}
+    order: list[int] = []
+    for k in range(len(app.editor_tabs)):
+        item = imgui.internal.tab_bar_find_tab_by_order(bar, k)
+        if item is None:
+            return []
+        name = imgui.internal.tab_bar_get_tab_name(bar, item)
+        cut = name.find("##")
+        index = by_suffix.get(name[cut:]) if cut >= 0 else None
+        if index is None:
+            return []
+        order.append(index)
+    return order
+
+
+def _apply_display_order(app: App, order: list[int]) -> None:
+    """Permute the model tab list to `order` (model indices, display-ordered), keeping the
+    active tab's identity, so cycle / close / every index-based verb addresses what the eye
+    sees."""
+    if order == list(range(len(app.editor_tabs))):
+        return
+    active = app.active_tab
+    app.editor_tabs = [app.editor_tabs[i] for i in order]
+    if active is not None:
+        app.active_tab_index = app.editor_tabs.index(active)
 
 
 def _tab_has_error(app: App, tab: EditorTab) -> bool:
@@ -457,6 +502,30 @@ def _handle_wheel(app: App, editor: Editor, hovered: bool) -> None:
     io.mouse_wheel = 0.0
 
 
+def layout_following_cursor(
+    editor: Editor,
+    size: tuple[float, float],
+    px_per_em: float,
+    rows: int,
+    last_cursor: CursorPos | None,
+) -> CursorPos:
+    """Lay the editor out, bring a MOVED cursor into view, and lay out again if that scrolled.
+
+    The follow runs AFTER this frame's layout on purpose: `scroll_to_line` answers against the
+    last `ed_layout`, and a line the edit just added is not in the previous one, so following
+    first left `o` on the last line with its caret under the status row. `rows` is the text
+    rows the host shows (the status row excluded); 0 means no metrics yet, and nothing follows.
+    """
+    editor.layout(size, px_per_em)
+    cursor = editor.get_current_cursor_position()
+    if rows > 0 and cursor != last_cursor:
+        first = editor.get_scroll()
+        if not (first <= cursor.line < first + rows):
+            editor.scroll_to_line(cursor.line, align_middle=False)
+            editor.layout(size, px_per_em)
+    return cursor
+
+
 def draw(app: App) -> None:
     app.code_hovered_uniform = ""
     ui_document = app.ui_documents.get(app.current_document_id)
@@ -563,23 +632,24 @@ def draw(app: App) -> None:
 
     # View reconciliation, then layout (editor 4b110f0): apply a keymap-issued
     # view scroll (Ctrl+E/Y, zz/zt/zb — consumed by reading), then follow the
-    # cursor when a MOTION moved it outside the view (Ctrl+D, a jump, plain j
-    # below the fold; ed_layout clamps but never follows). Only a cursor CHANGE
-    # follows — wheel-scrolling away from an idle caret must not snap back —
-    # and only once the panel has real metrics (rows > 0): a fresh session's
-    # first frame must not record the cursor with rows=0, or a jump into it
-    # would never be followed.
+    # cursor when a MOTION or an EDIT moved it outside the view (Ctrl+D, a jump,
+    # plain j below the fold, `o` on the last line; ed_layout clamps but never
+    # follows). Only a cursor CHANGE follows — wheel-scrolling away from an idle
+    # caret must not snap back — and only once the panel has real metrics
+    # (rows > 0): a fresh session's first frame must not record the cursor with
+    # rows=0, or a jump into it would never be followed.
     editor.take_scroll_request()  # absolute target; applied by the read itself
-    rows = app.editor_visible_rows
-    if rows > 0:
-        cursor = editor.get_current_cursor_position()
-        if cursor != app.editor_last_cursor.get(current_path):
-            app.editor_last_cursor[current_path] = cursor
-            first = editor.get_scroll()
-            if not (first <= cursor.line < first + rows):
-                editor.scroll_to_line(cursor.line, align_middle=False)
     _drive_completion(app, editor, tab)
-    editor.layout((float(size_px[0]), float(size_px[1])), px_per_em)
+    rows = app.editor_visible_rows
+    cursor = layout_following_cursor(
+        editor,
+        (float(size_px[0]), float(size_px[1])),
+        px_per_em,
+        rows,
+        app.editor_last_cursor.get(current_path),
+    )
+    if rows > 0:
+        app.editor_last_cursor[current_path] = cursor
 
     settings_fingerprint = (
         settings.show_whitespace,

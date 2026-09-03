@@ -34,6 +34,7 @@ from shaderbox.copilot.state import CopilotLayout, Message
 from shaderbox.core import Canvas, Pass
 from shaderbox.editor.ffi import (
     ChromeFlag,
+    CursorPos,
     Editor,
     Style,
     ViewFlag,
@@ -265,7 +266,7 @@ class App:
         self.editor_visible_rows: int = 0
         # Per-path cursor as of last frame: follow-the-cursor fires only on a
         # cursor CHANGE (a wheel-scrolled-away view must not snap back).
-        self.editor_last_cursor: dict[Path, object] = {}
+        self.editor_last_cursor: dict[Path, CursorPos] = {}
 
         # Shipped-library sync BEFORE the session builds the first lib index: seeds a
         # fresh box, follows shipped updates on pristine files, never touches edits.
@@ -767,8 +768,13 @@ class App:
         return False
 
     def cycle_code_tab(self) -> None:
-        # Forward-only cycle through the open editor tabs (set_active_tab drives imgui's
-        # selection via tab_select_pending). No-op with 0/1 tabs.
+        # Ctrl+Tab is global (071 D8). On an unfocused editor the first press only focuses it,
+        # so the tab the eye is on stays; every press while focused cycles forward through the
+        # open tabs in the order the tab row shows them (the model list follows imgui's drag
+        # order). set_active_tab drives imgui's selection via tab_select_pending.
+        if not self.editor_focused:
+            self.editor_focus_requested = True
+            return
         if len(self.editor_tabs) < 2:
             return
         self.set_active_tab((self.active_tab_index + 1) % len(self.editor_tabs))
