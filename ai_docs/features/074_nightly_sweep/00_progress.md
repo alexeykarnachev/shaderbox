@@ -59,5 +59,6 @@ Ruled out during the scan, with reasons, so no later wave re-opens them:
   premise: `_SCRIPT_EDIT_TOOLS` / `_WRITE_TOOLS` partition the `is_edit` universe on two axes the
   registry does not carry, and deriving either regresses the copilot's clean-edit brake silently.
   Do not reinstate it; see the spec's W-2 section for the only defensible alternative.
-- **Dependency removal.** Four deps are reached only through sanctioned function-body imports and
-  no gate exercises them; removing one would pass every check and break the shipped app.
+- **Dependency removal.** Never in scope — every declared dependency is used by a shipped
+  feature. Four are reached through the lazy-SDK function-body imports, so a top-level import
+  scan calls them unreferenced; that is a scan artifact, not a finding.

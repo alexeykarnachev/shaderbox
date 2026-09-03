@@ -197,13 +197,11 @@ by hand rather than called from the package.
 | RISKY | any exported surface a consumer outside this repo could use | leave it, or ask |
 | OUT OF SCOPE | **declared dependencies** | never remove unattended — see below |
 
-**Dependency removal does not happen in this sweep.** Four declared dependencies have no
-module-top import anywhere, by design: `conventions.md` sanctions function-body imports for the
-lazy-SDK seams, so `openai` is reached only inside `copilot/llm/openrouter.py` and the Google and
-Telegram SDKs only through the exporter paths. None of them is exercised by `make gates` — the
-copilot path needs a key, the publish paths need credentials — so removing one passes every gate
-and breaks the shipped app at the user's first Connect or first copilot turn. Report an
-apparently-unused dependency for the morning; never remove it.
+**Dependencies are not part of this sweep at all.** Every declared dependency is in use by a
+shipped feature. Four of them (`openai`, the two Google SDKs, `python-telegram-bot`) are reached
+through function-body imports at the sanctioned lazy-SDK seams rather than at module top, so an
+import scan reports them as unreferenced — that is an artifact of the scan, not a finding. Do not
+put a dependency on the inventory, and do not report one as suspicious.
 
 Remove one tier and one category at a time, gates between batches, so a failure names its batch.
 
