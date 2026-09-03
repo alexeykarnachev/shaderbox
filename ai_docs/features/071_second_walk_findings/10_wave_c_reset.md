@@ -1,3 +1,6 @@
+> Placement superseded by 073 D5: the Reset button now sits in the documents grid row after
+> `Render all` (`073_third_walk_findings/30_wave_c_main_view.md`). The mechanism below stands.
+
 # 071 W-C — Document Reset (#7 + D4 D5)
 
 Parent: `01_spec.md § W-C`. Landed as commit `0e007a3` (plus the post-impl fix-ups recorded

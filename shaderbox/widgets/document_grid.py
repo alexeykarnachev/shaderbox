@@ -59,8 +59,7 @@ def draw_document_preview_grid(app: App, width: float, height: float) -> None:
                     "If checked, renders all documents, otherwise, renders only the selected one."
                 )
 
-        # Reset is a document-level verb (071 W-C), so it sits with the other two rather than
-        # over the preview.
+        # Reset is a document-level verb, so it sits with the other two.
         if app.current_document_id in app.ui_documents:
             imgui.same_line()
             if ghost_button("Reset"):

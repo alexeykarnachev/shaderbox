@@ -99,7 +99,8 @@ sha makes dead, `abi_probe.py` green, the vendored `vim_coverage.md` refreshed. 
   `uniform\s+$` on a shader tab -> builtin declarations from `ENGINE_UNIFORM_DOCS` (`float
   u_time;` form); identifier prefix on a shader tab -> `SB_*` functions + the pass's uniforms +
   `_GLSL_WORDS`; identifier prefix on a script tab -> Python keywords. The first provider that
-  fires is offered.
+  fires is offered. *(Landed shape, after review round 1: every eligible provider's matches
+  concatenate in table order; a line comment offers nothing. `20_wave_b_code_panel.md`.)*
 - `_drive_completion` offers on every insert-mode frame where the revision or cursor changed and
   a provider fires (auto-trigger, with a minimum prefix length for the identifier providers so
   one letter does not open a list), and on Ctrl+N / Ctrl+P as today. An offer that yields no

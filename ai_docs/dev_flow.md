@@ -219,7 +219,8 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   mutex: one pass's name, run count and target controls. Opens from a tile's gear, its context
   menu, or automatically on `add pass` — set-up-once choices live here, off the strip. What a
   pass reads is not here since 072: that is each sampler's own row.
-- **`pass_graph.py`** — leaf, GL-free (feature 065, reshaped by 072): the `graph.json` model
+- **`pass_graph.py`** — leaf, GL-free (feature 065, reshaped by 072; `strip_order` /
+  `step_in_order`, the strip's drawn order and the next/previous walk, live here since 073): the `graph.json` model
   (`PassGraph` / `PassEntry` / `TargetConfig`, edited through `with_passes` / `with_target` /
   `with_output` rather than `model_copy`), the sampler SOURCE kinds (`PassSource` / `NoSource` /
   `AutoSource`, the value a `sampler2D` holds in `uniform_values` beside a bound texture) and
@@ -361,8 +362,12 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
 - **The small leaves** — one concept each, imported across packages:
   **`theme.py`** (the ONLY home for color/size/spacing tokens: `COLOR` / `SIZE` / `SPACE`; every
   UI module reads these, nothing hard-codes a literal) / **`ui_regions.py`** (`DocumentTab` — the
-  settings-panel tab enum, kept out of `commands.py` so the persisted model layer doesn't
-  pull in imgui) / **`render_preset.py`** (the pydantic `RenderPreset` value type) /
+  settings-panel tab enum, and `ChannelView` — the viewer's Color / Color+Alpha / Alpha
+  state, both kept out of `commands.py` so the persisted model layer doesn't
+  pull in imgui) / **`alpha_view.py`** (the Alpha channel view's one-quad blit into its own
+  canvas; the output texture is never touched for display, 073) / **`completion.py`** (the
+  code panel's completion policy: the provider table, `word_at`, and `symbol_doc` for `K`;
+  creates no GL context, 073) / **`render_preset.py`** (the pydantic `RenderPreset` value type) /
   **`render_shape.py`** (the shape/aspect table shared by the Share tab + the copilot) /
   **`render_defer.py`** (the one-frame render latch `ui.py` reads) / **`render_job.py`**
   (`render_to` / `render_for` / `preset_ext` — the UI-free render-to-file job behind BOTH the Share

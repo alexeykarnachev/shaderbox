@@ -26,19 +26,19 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-03 (073 landed: W-A re-vendored, W-B/W-C/W-D reviewed; W-E sanitize in progress). -->
-**073 is landing its last wave.** All four code waves are on `dev`
-(`ai_docs/features/073_third_walk_findings/`): the editor library re-vendored at `5e0e8a2`
-(closer snap on the matching-opener rule, reverse-video caret, noselect batches, `K` left to the
-host), completion as a provider table that opens unasked and knows `uniform `, the `K` lookup
-note, the viewer's three-state channel view with Reset moved to the grid row, the live-tile fill
-in place of the dormant tint and `Alt+Left` / `Alt+Right` pass switching. Host waves reviewed
-to PASS; W-A's review is the last gate before W-E (sanitize).
+<!-- As of 2026-09-03 (073 done; every wave reviewed to PASS; nothing queued). -->
+**No feature is queued.** 073 landed whole on `dev`: the editor library re-vendored at
+`5e0e8a2` (closer snap on the matching-opener rule, reverse-video caret, noselect batches, `K`
+left to the host), completion as a provider table that opens unasked and knows `uniform `, the
+`K` lookup note under the caret, the viewer's three-state channel view with Reset moved to the
+grid row, the live-tile fill in place of the dormant tint, `Alt+Left` / `Alt+Right` pass
+switching. Two opus review loops, both at PASS after fixes.
 
-**Still due at the display:** 073's per-wave `## Manual verification` lists
-(`10_wave_a_editor.md`, `20_wave_b_code_panel.md`, `30_wave_c_main_view.md`,
-`40_wave_d_strip.md`), then 072's five checks, 070's, 071's per-wave lists, `todo.md`'s
-live-only checks and 065's checks 13-16.
+**Still due at the display, whenever the maintainer sits down to it:** 073's per-wave
+`## Manual verification` lists (`ai_docs/features/073_third_walk_findings/{10,20,30,40}_*.md`),
+then 072's five checks (`072_sampler_source/01_spec.md`), 070's (`070_pass_reads/01_spec.md`),
+071's per-wave lists, `todo.md`'s live-only checks and 065's checks 13-16. Findings go into a
+new ledger per `dev_flow.md ### How a tutorial walk runs`.
 
 **Shipped:** v0.28.0 is a GitHub release only; the itch channels stay at v0.27.0. The Windows
 `libeditor.dll` still needs a Windows host before the next itch cut.
@@ -47,7 +47,7 @@ live-only checks and 065's checks 13-16.
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 073 | third_walk_findings | in progress | The maintainer's third walk (the 070 + 072 tree): 8 findings, five decisions -- a matching-opener bracket snap and a reverse-video caret in the editor library, context-aware auto-completion and a `K` lookup popup, a three-state alpha view on the viewer, a live-tile fill instead of the dormant tint, `Alt+Left`/`Alt+Right` pass switching, Reset moved to the document row. Spec: `ai_docs/features/073_third_walk_findings/01_spec.md`. |
+| 073 | third_walk_findings | done | The maintainer's third walk (the 070 + 072 tree): 8 findings, five decisions -- a matching-opener bracket snap and a reverse-video caret in the editor library, context-aware auto-completion and a `K` lookup popup, a three-state alpha view on the viewer, a live-tile fill instead of the dormant tint, `Alt+Left`/`Alt+Right` pass switching, Reset moved to the document row. Spec: `ai_docs/features/073_third_walk_findings/01_spec.md`. |
 | 072 | sampler_source | done | A sampler2D has ONE source, held as its value (`PassSource` / `NoSource` / `AutoSource` / a bound texture) and chosen on its own panel row; `graph.json` loses `inputs` and `layout`, the planner takes a wiring, the gear loses Reads, the copilot's sampler row says what it reads. Spec: `ai_docs/features/072_sampler_source/01_spec.md`. |
 | 070 | pass_reads | done | Each strip tile carries a row of chips naming the passes it reads (`prev` for its own previous frame), drawn from the effective graph; a six-layout brainstorm rejected the graph view the feature opened as. Spec: `ai_docs/features/070_pass_reads/01_spec.md`. |
 | 071 | second_walk_findings | done | The maintainer's second walk of the 068 tutorial: 11 findings, six decisions, six waves landed -- a document-wide Reset (histories, clock, script, videos), the code panel's cursor follow and Ctrl+Tab, sampler rows showing what they read, American spelling with a gate, four editor-library items re-vendored from `aa8c6719`, and the tutorial cut to the cascades with a drawing chapter at the end; the maintainer's hands-on pass per wave is outstanding. Spec: `ai_docs/features/071_second_walk_findings/01_spec.md`. |
