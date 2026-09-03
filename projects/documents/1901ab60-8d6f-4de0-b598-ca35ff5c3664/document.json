@@ -5,14 +5,29 @@
     ],
     "uniforms": {
         "blur": {
-            "u_radius": 2.5999999046325684
+            "u_radius": 2.5999999046325684,
+            "u_src": {
+                "pass": "bright"
+            }
         },
         "bright": {
-            "u_threshold": 0.75
+            "u_threshold": 0.75,
+            "u_src": {
+                "pass": "scene"
+            }
         },
         "composite": {
             "u_bloom": 1.149999976158142,
-            "u_trail_mix": 0.550000011920929
+            "u_trail_mix": 0.550000011920929,
+            "u_lit": {
+                "pass": "scene"
+            },
+            "u_glow": {
+                "pass": "blur"
+            },
+            "u_trail": {
+                "pass": "trail"
+            }
         },
         "scene": {
             "u_blob_size": 0.12999999523162842,
@@ -20,7 +35,10 @@
         },
         "trail": {
             "u_decay": 0.9100000262260437,
-            "u_gain": 0.3499999940395355
+            "u_gain": 0.3499999940395355,
+            "u_src": {
+                "pass": "scene"
+            }
         }
     },
     "ui_state": {
