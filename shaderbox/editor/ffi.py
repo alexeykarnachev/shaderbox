@@ -62,6 +62,7 @@ class Kind(IntEnum):
     MISSING_GLYPH = 7
     WHITESPACE = 8
     BRACKET_MATCH = 9
+    SEARCH_MATCH = 10
 
 
 class Mode(IntEnum):
@@ -101,12 +102,14 @@ class Slot(IntEnum):
     SYNTAX_7 = 20
     WHITESPACE = 21
     BRACKET_MATCH = 22
+    SEARCH_MATCH = 23
 
 
 class ViewFlag(IntEnum):
     SHOW_SPACES = 0
     SHOW_TABS = 1
     SHOW_MATCHING_BRACKETS = 2
+    HIGHLIGHT_SEARCH = 3
 
 
 class ChromeFlag(IntEnum):

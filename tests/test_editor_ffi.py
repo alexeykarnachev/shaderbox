@@ -1053,3 +1053,64 @@ def test_the_status_band_sits_below_the_interactive_height() -> None:
         "the band answering no glyph would make the host's shrink unnecessary"
     )
     e.close()
+
+
+# --- 071 W-A re-vendor (editor aa8c6719): the four walk items, pinned through the ABI ----------
+
+
+def test_dd_removes_an_empty_last_line() -> None:
+    # 071 #1: the empty last line yielded an empty linewise range and the delete returned before
+    # its own last-line rule; a non-empty last line always worked.
+    e = _editor("a\n")
+    e.feed("jdd")
+    assert e.get_text() == "a"
+    assert e.get_current_cursor_position().line == 0
+    e.close()
+    e = _editor("a\n")
+    e.feed("jVd")
+    assert e.get_text() == "a"
+    e.close()
+
+
+def test_shift_operators_move_lines_by_one_indent() -> None:
+    e = _editor("a\nb")
+    e.feed(">>")
+    assert e.get_text() == "    a\nb"
+    e.feed("<<")
+    assert e.get_text() == "a\nb"
+    e.feed("Vj>")
+    assert e.get_text() == "    a\n    b"
+    e.feed("u")
+    assert e.get_text() == "a\nb", "a visual shift is one undo step"
+    e.close()
+
+
+def test_star_searches_the_whole_word_under_the_cursor() -> None:
+    # `foobar` contains `foo` and must be skipped: vim's `*` is `\<foo\>`.
+    e = _editor("foo bar\nfoobar foo")
+    e.feed("*")
+    assert e.get_current_cursor_position() == (1, 7)
+    e.feed("n")
+    assert e.get_current_cursor_position() == (0, 0), "n wraps with *'s whole-word rule"
+    e.close()
+
+
+def _search_bands(e: Editor) -> int:
+    e.layout((640.0, 480.0), 16.0)
+    return sum(1 for p in e.prims_list() if p.kind == int(Kind.SEARCH_MATCH))
+
+
+def test_search_matches_are_lit_and_esc_puts_them_out() -> None:
+    # D10: hlsearch on by default, incsearch while the line is open, Esc clears and keeps the
+    # pattern, n lights again.
+    e = _editor("foo bar foo\nbaz")
+    assert _search_bands(e) == 0
+    e.feed("/fo")
+    assert _search_bands(e) == 2, "the typed prefix is lit while the / line is open"
+    e.feed("o<CR>")
+    assert _search_bands(e) == 2
+    e.feed("<Esc>")
+    assert _search_bands(e) == 0
+    e.feed("n")
+    assert _search_bands(e) == 2, "n keeps the pattern and lights it again"
+    e.close()

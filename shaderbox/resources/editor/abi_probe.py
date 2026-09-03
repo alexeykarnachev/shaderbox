@@ -29,6 +29,7 @@ class Prim(ctypes.Structure):
 KINDS = [
     "Background", "Selection", "Glyph", "Caret",
     "Frame", "Popup_Panel", "Popup_Glyph", "Missing_Glyph",
+    "Whitespace", "Bracket_Match", "Search_Match",
 ]
 MODES = ["NORMAL", "INSERT", "VISUAL", "V-LINE"]
 # Key codes and modifier bits, matching the ED_KEY_* / ED_MOD_* constants.
@@ -55,9 +56,11 @@ SLOTS = {
         "Background Text Caret Caret_Insert Selection Gutter_Text Gutter_Current "
         "Filler Status_Bg Status_Text Status_Accent Popup_Panel Popup_Text "
         "Popup_Selected Syntax_1 Syntax_2 Syntax_3 Syntax_4 Syntax_5 Syntax_6 "
-        "Syntax_7 Whitespace Bracket_Match".split()
+        "Syntax_7 Whitespace Bracket_Match Search_Match".split()
     )
 }
+
+VIEW = {n: i for i, n in enumerate("Show_Spaces Show_Tabs Show_Matching_Brackets Highlight_Search".split())}
 
 lib = ctypes.CDLL(str(LIB))
 _SIG = {
@@ -702,6 +705,77 @@ def main() -> int:
     check("off again: the text starts at the rect's corner", ox.value, 0.0)
     check("and no status bar is drawn", frames, 0)
 
+    print("search highlight")
+    lib.ed_set_text(h, b"foo bar\nbaz foo\nfoobar foo")
+    lib.ed_set_draw_chrome(h, False)
+    lib.ed_clear_markers(h)
+    flag = ctypes.c_bool()
+    lib.ed_view_flag(h, VIEW["Highlight_Search"], ctypes.byref(flag))
+    check("on by default", flag.value, True)
+
+    def bands():
+        n = lib.ed_layout(h, 0.0, 0.0, 800.0, 400.0, 16.0, False)
+        out = []
+        for i in range(n):
+            lib.ed_primitive(h, i, ctypes.byref(p))
+            if KINDS[p.kind] == "Search_Match":
+                out.append((round(p.y0 / ch.value), round(p.x0 / cw.value), round(p.x1 / cw.value)))
+        return sorted(out)
+    lib.ed_cell_size(h, ctypes.byref(cw), ctypes.byref(ch))
+    check("nothing lit before a search", bands(), [])
+    check("a host find lights every match", (lib.ed_find(h, b"foo", False, False), bands())[1],
+          [(0, 0, 3), (1, 4, 7), (2, 0, 3), (2, 7, 10)])
+    check("Escape puts it out", (lib.ed_key(h, K_ESC, 0, 0), bands())[1], [])
+    lib.ed_feed(h, b"n")
+    check("and n brings it back", len(bands()), 4)
+    # `*` searches the word whole: "foobar" stays dark.
+    lib.ed_set_cursor(h, 0, 0)
+    lib.ed_feed(h, b"*")
+    check("* lands on the next whole word", cursor(h), (1, 4))
+    check("and lights only whole words", bands(), [(0, 0, 3), (1, 4, 7), (2, 7, 10)])
+    lib.ed_feed(h, b"n")
+    check("n keeps *'s whole-word rule", cursor(h), (2, 7))
+    lib.ed_set_cursor(h, 0, 0)
+    lib.ed_feed(h, b"g*")
+    check("g* takes substrings", cursor(h), (1, 4))
+    lib.ed_feed(h, b"n")
+    check("(n after g* too)", cursor(h), (2, 0))
+    # Typing a / line lights the text so far, before Enter.
+    lib.ed_key(h, K_ESC, 0, 0)
+    lib.ed_feed(h, b"/ba")
+    check("incsearch lights the typed prefix", bands(), [(0, 4, 6), (1, 0, 2), (2, 3, 5)])
+    lib.ed_key(h, K_ESC, 0, 0)
+    check("Escape on the line drops it", bands(), [])
+    check("the flag turns it off", (lib.ed_set_view_flag(h, VIEW["Highlight_Search"], False),
+                                    lib.ed_feed(h, b"n"), bands())[2], [])
+    lib.ed_set_view_flag(h, VIEW["Highlight_Search"], True)
+    check("the slot colours the band", lib.ed_set_color(h, SLOTS["Search_Match"], 0.1, 0.2, 0.3, 0.4), True)
+    lib.ed_feed(h, b"n")
+    n = lib.ed_layout(h, 0.0, 0.0, 800.0, 400.0, 16.0, False)
+    got = None
+    for i in range(n):
+        lib.ed_primitive(h, i, ctypes.byref(p))
+        if KINDS[p.kind] == "Search_Match":
+            got = tuple(round(c, 2) for c in (p.r, p.g, p.b, p.a))
+            break
+    check("and reaches the primitive", got, (0.1, 0.2, 0.3, 0.4))
+    lib.ed_reset_theme(h)
+    lib.ed_key(h, K_ESC, 0, 0)
+
+    print("shift and the empty last line")
+    lib.ed_set_text(h, b"a\nb\nc")
+    lib.ed_feed(h, b">>")
+    check(">> indents the line", text(h), "    a\nb\nc")
+    lib.ed_feed(h, b"jVj>")
+    check("visual > shifts the selection", text(h), "    a\n    b\n    c")
+    lib.ed_feed(h, b"gg<<")
+    check("<< takes it back", text(h), "a\n    b\n    c")
+    lib.ed_feed(h, b"u")
+    check("one undo step per shift", text(h), "    a\n    b\n    c")
+    lib.ed_set_text(h, b"a\n")
+    lib.ed_feed(h, b"jdd")
+    check("dd on an empty last line removes it", text(h), "a")
+
     print("keymap style")
     # The keymap style is separate from the chrome style: ed_set_chrome_style
     # never moves the keymap, and ed_set_style moves both.
@@ -1324,7 +1398,6 @@ def main() -> int:
     check("accepted", text(h), "uniform float u_time;\nvoid main(){ u_time }")
 
     print("view flags")
-    VIEW = {n: i for i, n in enumerate("Show_Spaces Show_Tabs Show_Matching_Brackets".split())}
     flag = ctypes.c_bool(True)
     check("default off", lib.ed_view_flag(h, VIEW["Show_Spaces"], ctypes.byref(flag)), True)
     check("and it is off", flag.value, False)

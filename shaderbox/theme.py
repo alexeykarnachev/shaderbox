@@ -562,4 +562,6 @@ def editor_palette() -> dict["editor_ffi.Slot", tuple[float, float, float, float
         slot.SYNTAX_7: COLOR.SYN_TYPE,
         slot.WHITESPACE: fade(COLOR.FG_DIM, 0.5),
         slot.BRACKET_MATCH: fade(COLOR.ACCENT_PRIMARY, 0.25),
+        # Drawn over the glyphs, so translucent; a different hue from the bracket box.
+        slot.SEARCH_MATCH: fade(COLOR.ACCENT_ACTIVE, 0.30),
     }
