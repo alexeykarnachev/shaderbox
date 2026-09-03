@@ -8,7 +8,7 @@ first wave enumerates the real inventory and that is what the later waves act on
 ## Status
 
 Updated as each wave lands, so a session resuming after a crash learns from this file how far
-the night got. Nothing has landed yet. The green baseline this sweep starts from — the commit,
+the night got. All waves have landed; `00_progress.md` is the log. The green baseline this sweep starts from — the commit,
 the gate result and the test count — is recorded in `00_progress.md`; **re-measure it** at the
 start of the night rather than trusting the snapshot.
 
@@ -20,12 +20,17 @@ demonstrated, not a precaution.
 
 | Wave | State | Commit |
 |---|---|---|
-| W-0 inventory | not started | — |
-| W-1 dead code | not started | — |
-| W-2 case-list duplication | STRUCK (premise refuted in review) | — |
-| W-3 comment duplicates | not started | — |
-| W-4 ui.py draw code (recommend first) | not started | — |
-| W-5 sanitize | not started | — |
+| W-0 inventory | DONE — see `00_inventory.md` | `1b159f1` |
+| W-1 dead code | DONE — 10 symbols removed, 3 kept with reasons | `1b159f1` |
+| W-2 case-list duplication | STRUCK (premise refuted in review); its sanctioned replacement, the subset test, landed | `7b2352d` |
+| W-3 comment duplicates | DONE — one duplicate, hoisted at the code root | `d050d53` |
+| W-4 ui.py draw code (recommend first) | DONE — recommendation is LEAVE; the doc was fixed instead | `76cbeea` |
+| W-5 sanitize | DONE | `8dec68e` |
+
+**Outcome:** every wave green, no wave abandoned, no test weakened. The sweep's
+headline finding is that the repo was already structurally clean — the only real
+category was write-only dataclass fields, which the spec did not predict and no
+static tool can see.
 
 ## Goal
 
