@@ -255,6 +255,12 @@ class ProjectSession:
             working_set_evicted=lambda: self._copilot_working_set_evicted,
             working_set_reset=self._copilot_ws_reset,
             get_active_checkpoint=lambda: self.copilot.checkpoints.active,
+            pass_add=self.add_pass,
+            pass_delete=self.delete_pass,
+            pass_rename=self.rename_pass,
+            pass_set_output=self.set_output_pass,
+            pass_set_target=self.set_pass_target,
+            pass_set_iterations=self.set_pass_iterations,
         )
         self.revert_executor = RevertExecutor(
             get_documents_dir=lambda: self.paths.documents_dir,

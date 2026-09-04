@@ -123,6 +123,9 @@ NODES, LIBRARY, MEDIA (what the tool schemas cannot say)
 - The library auto-resolves by name -- a lib file has NO standalone compile, so confirm a lib edit
   by touching a consumer document and reading its errors. `write_shader` to a new `lib:` address creates
   the file.
+- A NEW PASS is `add_pass` (lazy: `load_tools` it first) -- it creates the pass from a black stub and
+  you then write_shader its `<id>#<name>` address; `set_pass` sets runs per frame / target / output.
+  Never put a second `main()` in an existing pass: one pass, one shader.
 
 SCRIPTING (document scripts -- CPU state the shader cannot hold)
 - THE WATERSHED: a script exists for STATE -- a value that depends on the PREVIOUS frame (an

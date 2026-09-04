@@ -15,11 +15,12 @@ import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import moderngl
 import numpy as np
 from loguru import logger
+from pydantic import ValidationError
 
 from shaderbox import render_job
 from shaderbox.copilot.address import (
@@ -35,6 +36,7 @@ from shaderbox.copilot.address import (
 )
 from shaderbox.copilot.bridge import CopilotBridge
 from shaderbox.copilot.capabilities import (
+    PassOpResult,
     CompileErrorInfo,
     DeleteDocumentResult,
     DocumentImportResult,
@@ -96,7 +98,15 @@ from shaderbox.media import (
     MediaWithTexture,
     media_class_for,
 )
-from shaderbox.pass_graph import AutoSource, NoSource, clamp_canvas_size
+from shaderbox.pass_graph import (
+    AutoSource,
+    NoSource,
+    TARGET_DTYPES,
+    PassEntry,
+    TargetConfig,
+    TargetDtype,
+    clamp_canvas_size,
+)
 from shaderbox.paths import DOCUMENT_SCRIPT_BASENAME, pass_name_of, shader_lib_root
 from shaderbox.render_preset import RenderPreset
 from shaderbox.render_shape import RenderShape, shape_to_preset
@@ -401,6 +411,12 @@ class CopilotBackend:
         working_set_evicted: Callable[[], list[str]],
         working_set_reset: Callable[[], None],
         get_active_checkpoint: Callable[[], TurnCheckpoint | None],
+        pass_add: Callable[[str, str], str],
+        pass_delete: Callable[[str, str], str],
+        pass_rename: Callable[[str, str, str], str],
+        pass_set_output: Callable[[str, str], str],
+        pass_set_target: Callable[[str, str, TargetConfig], str],
+        pass_set_iterations: Callable[[str, str, int], str],
     ) -> None:
         self._get_bridge = get_bridge
         self._get_gate = get_gate
@@ -454,6 +470,13 @@ class CopilotBackend:
         # document's script keys as ("script", document_id) so it can't collide with a document address.
         self._batch_mutated: set[str | tuple[str, str]] = set()
         self._get_active_checkpoint = get_active_checkpoint
+        # The pass list's verbs (065 D15), each mutating the live document AND saving.
+        self._pass_add = pass_add
+        self._pass_delete = pass_delete
+        self._pass_rename = pass_rename
+        self._pass_set_output = pass_set_output
+        self._pass_set_target = pass_set_target
+        self._pass_set_iterations = pass_set_iterations
 
     def batch_begin(self) -> None:
         self._batch_mutated.clear()
@@ -1141,6 +1164,163 @@ class CopilotBackend:
             self._save_ui_document(ui_document)
             logger.info(f"copilot set canvas of {document_id} -> {w}x{h}")
             return DocumentOpResult(ok=True, width=w, height=h)
+
+        return self._bridge.run_on_main(_on_main)
+
+    # ---- passes (feature 076) ----
+
+    def _pass_table(self, document_id: str) -> str:
+        # The document's pass table as the model reads it back: one row per pass in graph order,
+        # runs, target, the output marked. The working set shows the same passes as sub-sections
+        # next step; this is the immediate echo.
+        document = self._get_ui_documents()[document_id].document
+        rows: list[str] = []
+        for name in document.passes:
+            entry = document.graph.passes.get(name, PassEntry())
+            t = entry.target
+            mark = " [output]" if name == document.graph.output else ""
+            rows.append(
+                f"- {name}{mark}: runs {entry.iterations}, target {t.dtype} x{t.scale:g}"
+                f"{', linear' if t.filter_linear else ''}{', wrap' if t.wrap else ''}"
+            )
+        short = self._copilot_short_ids().get(
+            document_id, document_id[:DOCUMENT_SHORT_ID_LEN]
+        )
+        return f"passes of document {short} (edit a pass as {short}#<name>):\n" + "\n".join(rows)
+
+    def _resolve_pass_document(self, document: str) -> str | PassOpResult:
+        # "" = the current document, as the edit tools read a bare target.
+        document_id = (
+            self._get_current_document_id()
+            if not document
+            else self._copilot_resolve_document_id(document)
+        )
+        if document_id is None or document_id not in self._get_ui_documents():
+            return PassOpResult(
+                ok=False,
+                error=f"no such document '{document}' — check the project map for ids",
+            )
+        return document_id
+
+    def _configure_pass(
+        self,
+        document_id: str,
+        name: str,
+        runs: int | None,
+        dtype: str | None,
+        scale: float | None,
+        filter_linear: bool | None,
+        wrap: bool | None,
+        output: bool,
+    ) -> str:
+        # Apply every given knob; the first error wins (the verbs validate and save one at a time).
+        document = self._get_ui_documents()[document_id].document
+        if any(v is not None for v in (dtype, scale, filter_linear, wrap)):
+            current = document.graph.passes.get(name, PassEntry()).target
+            if dtype is not None and dtype not in TARGET_DTYPES:
+                return f"dtype must be one of {', '.join(TARGET_DTYPES)}, not '{dtype}'"
+            try:
+                target = TargetConfig(
+                    scale=current.scale if scale is None else scale,
+                    dtype=current.dtype
+                    if dtype is None
+                    else cast(TargetDtype, dtype),
+                    filter_linear=current.filter_linear
+                    if filter_linear is None
+                    else filter_linear,
+                    wrap=current.wrap if wrap is None else wrap,
+                )
+            except ValidationError as exc:
+                return f"bad target: {exc.errors()[0].get('msg', exc)}"
+            error = self._pass_set_target(document_id, name, target)
+            if error:
+                return error
+        if runs is not None:
+            error = self._pass_set_iterations(document_id, name, runs)
+            if error:
+                return error
+        if output:
+            error = self._pass_set_output(document_id, name)
+            if error:
+                return error
+        return ""
+
+    def add_pass(
+        self,
+        document: str,
+        name: str,
+        runs: int | None,
+        dtype: str | None,
+        scale: float | None,
+        filter_linear: bool | None,
+        wrap: bool | None,
+        output: bool,
+    ) -> PassOpResult:
+        def _on_main() -> PassOpResult:
+            document_id = self._resolve_pass_document(document)
+            if isinstance(document_id, PassOpResult):
+                return document_id
+            self._capture_document(document_id)
+            error = self._pass_add(document_id, name) or self._configure_pass(
+                document_id, name, runs, dtype, scale, filter_linear, wrap, output
+            )
+            if error:
+                return PassOpResult(ok=False, error=error)
+            self._working_set_add(document_id)
+            logger.info(f"copilot added pass {name!r} to {document_id}")
+            return PassOpResult(ok=True, table=self._pass_table(document_id))
+
+        return self._bridge.run_on_main(_on_main)
+
+    def set_pass(
+        self,
+        document: str,
+        name: str,
+        runs: int | None,
+        dtype: str | None,
+        scale: float | None,
+        filter_linear: bool | None,
+        wrap: bool | None,
+        output: bool,
+        new_name: str,
+    ) -> PassOpResult:
+        def _on_main() -> PassOpResult:
+            document_id = self._resolve_pass_document(document)
+            if isinstance(document_id, PassOpResult):
+                return document_id
+            document_obj = self._get_ui_documents()[document_id].document
+            if name not in document_obj.passes:
+                return PassOpResult(
+                    ok=False,
+                    error=f"no such pass '{name}' — the passes are {sorted(document_obj.passes)}",
+                )
+            self._capture_document(document_id)
+            error = self._configure_pass(
+                document_id, name, runs, dtype, scale, filter_linear, wrap, output
+            )
+            final_name = name
+            if not error and new_name and new_name != name:
+                error = self._pass_rename(document_id, name, new_name)
+                final_name = new_name if not error else name
+            if error:
+                return PassOpResult(ok=False, error=error)
+            self._working_set_add(document_id)
+            logger.info(f"copilot configured pass {final_name!r} of {document_id}")
+            return PassOpResult(ok=True, table=self._pass_table(document_id))
+
+        return self._bridge.run_on_main(_on_main)
+
+    def delete_pass(self, document: str, name: str) -> PassOpResult:
+        def _on_main() -> PassOpResult:
+            document_id = self._resolve_pass_document(document)
+            if isinstance(document_id, PassOpResult):
+                return document_id
+            self._capture_document(document_id)
+            error = self._pass_delete(document_id, name)
+            if error:
+                return PassOpResult(ok=False, error=error)
+            logger.info(f"copilot deleted pass {name!r} of {document_id}")
+            return PassOpResult(ok=True, table=self._pass_table(document_id))
 
         return self._bridge.run_on_main(_on_main)
 

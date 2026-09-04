@@ -25,6 +25,7 @@ from shaderbox.copilot.capabilities import (
     LibFileResult,
     LibFunctionBody,
     MediaBindResult,
+    PassOpResult,
     PublishResult,
     RenderResult,
     ScriptView,
@@ -69,6 +70,9 @@ class _FakeCaps:
         [str, str, bool], tuple[str, list[CompileErrorInfo], str]
     ]
     delete_lib_file: Callable[[str], LibFileResult]
+    add_pass: Callable[..., PassOpResult]
+    set_pass: Callable[..., PassOpResult]
+    delete_pass: Callable[[str, str], PassOpResult]
     bind_media: Callable[[str, str], MediaBindResult]
     unbind_media: Callable[[str, str], MediaBindResult]
     import_document: Callable[[bool], DocumentImportResult]
@@ -118,6 +122,9 @@ def minimal_caps(**overrides: Any) -> CopilotCapabilities:
         ),
         "duplicate_document": lambda _n, _name, _sw: ("document-copy", [], ""),
         "delete_lib_file": lambda _p: LibFileResult(ok=True),
+        "add_pass": lambda _d, _n, _r, _t, _s, _f, _w, _o: PassOpResult(ok=True),
+        "set_pass": lambda _d, _n, _r, _t, _s, _f, _w, _o, _nn: PassOpResult(ok=True),
+        "delete_pass": lambda _d, _n: PassOpResult(ok=True),
         "bind_media": lambda _n, _u: MediaBindResult(
             ok=True, basename="x.png", width=8, height=8
         ),

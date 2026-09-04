@@ -102,6 +102,16 @@ class SwitchDocumentResult:
 
 
 @dataclass(frozen=True)
+class PassOpResult:
+    # A pass verb's outcome (feature 076). ok=True carries `table`, the document's pass table as
+    # the model should read it back (name, runs, target, which is the output); ok=False carries
+    # `error` (no such document / bad name / out-of-range runs / the last pass).
+    ok: bool
+    error: str = ""
+    table: str = ""
+
+
+@dataclass(frozen=True)
 class DocumentOpResult:
     # Shared result for the small document-file ops (feature 052): rename (name set) and set_canvas_size
     # (width/height = the APPLIED, clamped size). ok=False carries `error` (no such document / bad size).
@@ -423,6 +433,38 @@ class CopilotCapabilities(Protocol):
     # Delete a shader-library file (a "lib:<path>" address) to the shader-lib trash (recoverable);
     # consumers recompile with a missing-SB_* error next step. Destructive => always gated.
     def delete_lib_file(self, path: str, /) -> LibFileResult: ...
+
+    # ---- passes (feature 076): the pass list's verbs, for the copilot ----
+    # A pass is created from a stub (the copilot then write_shader's its `<id>#<name>` address),
+    # configured (runs per frame, target dtype/scale/filter/wrap, the output choice, a rename),
+    # or deleted (gated). Every result carries the document's pass table so the model reads the
+    # state it just changed. `runs`/`dtype`/`scale`/... None = leave as is.
+    def add_pass(
+        self,
+        document: str,
+        name: str,
+        runs: int | None,
+        dtype: str | None,
+        scale: float | None,
+        filter_linear: bool | None,
+        wrap: bool | None,
+        output: bool,
+        /,
+    ) -> PassOpResult: ...
+    def set_pass(
+        self,
+        document: str,
+        name: str,
+        runs: int | None,
+        dtype: str | None,
+        scale: float | None,
+        filter_linear: bool | None,
+        wrap: bool | None,
+        output: bool,
+        new_name: str,
+        /,
+    ) -> PassOpResult: ...
+    def delete_pass(self, document: str, name: str, /) -> PassOpResult: ...
 
     # ---- media / textures (feature 052 slice 2) ----
     # bind_media validates the sampler, then BLOCKS on a FILE gate while the UI opens the OS file

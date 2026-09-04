@@ -40,7 +40,9 @@ DTYPES: tuple[str, ...] = ("f1", "f2", "f4")
 # f2, not f1: 063 measured f1 saturating at 255 on the FIRST accumulate pass where f2 reached
 # exactly 7.0, so the safe value is the default and f1 is the opt-in. clamp inverts moderngl's
 # repeat_x/y=True, which is wrong for a feedback border.
-DEFAULT_DTYPE: Literal["f1", "f2", "f4"] = "f2"
+TargetDtype = Literal["f1", "f2", "f4"]
+TARGET_DTYPES: tuple[TargetDtype, ...] = ("f1", "f2", "f4")
+DEFAULT_DTYPE: TargetDtype = "f2"
 DEFAULT_FILTER_LINEAR = True
 DEFAULT_WRAP = False
 DEFAULT_SCALE = 1.0
@@ -81,7 +83,7 @@ class TargetConfig(BaseModel):
     # Upper bound as well as lower: a target LARGER than the canvas has no use case and is the
     # shape that exhausts VRAM.
     scale: float = Field(default=DEFAULT_SCALE, gt=0.0, le=1.0)
-    dtype: Literal["f1", "f2", "f4"] = DEFAULT_DTYPE
+    dtype: TargetDtype = DEFAULT_DTYPE
     filter_linear: bool = DEFAULT_FILTER_LINEAR
     wrap: bool = DEFAULT_WRAP
 
