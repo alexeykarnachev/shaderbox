@@ -77,7 +77,10 @@ def test_rejections_are_errors_not_silent_no_ops(app: Any) -> None:
     # An empty dtype is "unchanged", the way a model spells a field it is not setting.
     assert backend.add_pass("", "keep", None, "f4", None, None, None, False).ok
     assert backend.set_pass("", "keep", 2, "", None, None, None, False, "").ok
-    assert _graph(app, app.current_document_id)["passes"]["keep"]["target"]["dtype"] == "f4"
+    assert (
+        _graph(app, app.current_document_id)["passes"]["keep"]["target"]["dtype"]
+        == "f4"
+    )
     assert not backend.set_pass("", "nope", 2, None, None, None, None, False, "").ok
     assert not backend.delete_pass("", "nope").ok
     assert not backend.add_pass("zzzz", "x", None, None, None, None, None, False).ok
