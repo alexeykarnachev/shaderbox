@@ -13,6 +13,16 @@ from shaderbox.scripting.api_doc import API_NAMES, api_symbol_doc, ctx_field_glo
 
 _CONTEXT_CLASS = "shaderbox.scripting.context.EngineContext"
 
+# In-process inference: no child interpreter to reap, and the one shape measured safe when
+# the calls are serialized on one thread (`worker.py`). Built on first use, by that thread.
+_ENVIRONMENT: list[jedi.InterpreterEnvironment] = []
+
+
+def _script(text: str) -> jedi.Script:
+    if not _ENVIRONMENT:
+        _ENVIRONMENT.append(jedi.InterpreterEnvironment())
+    return jedi.Script(text, environment=_ENVIRONMENT[0])
+
 
 def _first_paragraph(doc: str) -> str:
     return doc.strip().split("\n\n", 1)[0].strip()
@@ -65,7 +75,7 @@ def python_completions(text: str, line: int, column: int) -> list[Symbol]:
     before = lines[line][:column]
     after_dot = _after_dot(before)
     found: list[Symbol] = []
-    for completion in jedi.Script(text).complete(line + 1, column):
+    for completion in _script(text).complete(line + 1, column):
         typed = completion.name[: len(completion.name) - len(completion.complete or "")]
         if completion.name.startswith("_") and not typed.startswith("_"):
             continue
@@ -99,7 +109,7 @@ def python_lookup(text: str, line: int, column: int) -> Symbol | None:
     if not 0 <= line < len(lines):
         return None
     column = min(column, len(lines[line]))
-    names = jedi.Script(text).help(line + 1, column)
+    names = _script(text).help(line + 1, column)
     if not names:
         return None
     name = names[0]

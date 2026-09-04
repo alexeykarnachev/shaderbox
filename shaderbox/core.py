@@ -30,6 +30,7 @@ from shaderbox.constants import (
     DEFAULT_VS_FILE_PATH,
     FULLSCREEN_QUAD_VERTICES,
 )
+from shaderbox.engine_uniforms import ENGINE_DRIVEN_UNIFORMS, ENGINE_UNIFORM_TYPES
 from shaderbox.glyph_tables import TABLE_UNIFORMS
 from shaderbox.media import MediaWithTexture, Video
 from shaderbox.pass_graph import AutoSource, TargetConfig
@@ -55,23 +56,6 @@ def process_time() -> float:
     return time.monotonic() - _PROCESS_START
 
 
-# Engine-driven: never pass-intrinsic defaults — seed_uniform_values skips them and
-# UIDocument.save excludes them. Two kinds: per-frame values Pass.render() recomputes
-# from time/canvas, and the program-resident glyph tables Pass.compile() writes once
-# (TABLE_UNIFORMS — render() skips those entirely).
-# The GLSL type each per-frame engine uniform must be declared with. The engine writes these
-# values itself, and moderngl refuses a value of the wrong shape, so a declaration of another
-# type would leave the uniform at zero every frame; compile() rejects it instead.
-ENGINE_UNIFORM_TYPES: dict[str, str] = {
-    "u_time": "float",
-    "u_aspect": "float",
-    "u_resolution": "vec2",
-    "u_pass_iteration": "float",
-    "u_pass_iterations": "float",
-}
-ENGINE_DRIVEN_UNIFORMS: frozenset[str] = frozenset(
-    ENGINE_UNIFORM_TYPES.keys() | TABLE_UNIFORMS.keys()
-)
 # The GL type enum behind each GLSL type this engine names, and back (for the message).
 _GL_TYPE_OF_GLSL: dict[str, int] = {
     "float": GL_FLOAT,

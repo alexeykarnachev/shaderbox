@@ -288,6 +288,14 @@ class ScriptEngine:
         # imported from core, which pulls in glfw — the headless boundary). Empty in a bare test engine.
         self._engine_driven = engine_driven
 
+    def cached_source(self, document_id: str) -> tuple[str, float] | None:
+        """The script text the engine last loaded and the mtime it loaded it at, or None:
+        what the editor's intelligence reads on a shader tab when the script tab is closed."""
+        scripts = self._documents.get(document_id)
+        if scripts is None or scripts.source is None or scripts.mtime is None:
+            return None
+        return scripts.source, scripts.mtime
+
     def script_driven_uniforms(self, document_id: str) -> set[tuple[str, str]]:
         # The (pass, name) pairs the script drove on its last tick (decision 10 — only known after a
         # tick). Used by the copilot set_uniform reject + the UI's play/stop button gate (a pair here

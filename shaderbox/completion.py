@@ -1,21 +1,21 @@
-"""Host-side completion policy (073 W-B): WHAT the code panel offers and WHEN.
+"""Host-side completion policy (073 W-B, re-based on the intel index in 078 W-A): WHAT the code
+panel offers and WHEN.
 
 The editor library owns the popup and the word prefix; the host owns the vocabulary and the
 decision to offer (`docs/embedding.md` in the editor repo: pushing IS opening). This module is
-the decision, creating no GL context: a table of providers, each a context predicate on the line before the
-caret plus a candidate list, evaluated in order, the first that fires is offered. `K`'s lookup
-reads the same tables the other way, word -> what it is.
+the decision: a table of providers, each a context predicate on the line before the caret plus
+a symbol source on the context, evaluated in order, every eligible provider's matches offered
+without repeats. The vocabulary itself is the index (`intel/`): the buffer's declarations, the
+engine's uniforms, the script's returns, the other passes, the library, the language -- and,
+on a script tab, what the jedi worker answered for this cursor. GL-free; creates no context.
 """
 
-import keyword
 import re
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, replace
 
-from shaderbox.core import ENGINE_UNIFORM_TYPES
-from shaderbox.glsl_docs import BUILTINS, KEYWORDS, TYPES
-from shaderbox.help_content import ENGINE_UNIFORM_DOCS
-from shaderbox.shader_lib.index import ShaderLibFunction
+from shaderbox.intel.index import GlslIndex
+from shaderbox.intel.symbols import Symbol
 
 MAX_CANDIDATES = 50
 
@@ -27,10 +27,13 @@ class CompletionContext:
     line_before_caret: str
     # The library's word prefix at the caret (identifier characters only).
     prefix: str
-    lib_functions: tuple[str, ...]
-    pass_uniforms: tuple[str, ...]
     # Ctrl+N / Ctrl+P, as opposed to a keystroke.
     explicit: bool
+    # A shader or lib tab's index; None on a script tab.
+    index: GlslIndex | None = None
+    # A script tab's candidates, as the jedi worker answered for THIS cursor; empty while
+    # the answer is still on its way (nothing is offered until it lands).
+    python_candidates: tuple[Symbol, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -42,37 +45,65 @@ class CompletionProvider:
     # The shortest prefix that opens the popup by itself, and on Ctrl+N.
     min_prefix_auto: int
     min_prefix_explicit: int
-    candidates: Callable[[CompletionContext], list[str]]
+    candidates: Callable[[CompletionContext], Sequence[Symbol]]
 
 
-def builtin_uniform_declarations() -> list[str]:
-    return [f"{ENGINE_UNIFORM_TYPES[name]} {name};" for name in ENGINE_UNIFORM_DOCS]
+_SITE = re.compile(r"\buniform\s+(?:(\w+)\s+)?(\w*)$")
 
 
-# Everything a shader author can type that this editor knows: the library's own functions and
-# the pass's uniforms, then the language itself -- builtins from Khronos, keywords and types
-# from the lexer that colors the text (`glsl_docs.py`, generated).
-_GLSL_WORDS: tuple[str, ...] = (*sorted(BUILTINS), *KEYWORDS, *TYPES)
+def _declaration_parts(symbol: Symbol) -> tuple[str, str]:
+    # A declaration symbol's insert text is `uniform <type> <name>;`.
+    words = symbol.inserted.rstrip(";").split()
+    return (words[1], words[2]) if len(words) == 3 else ("", symbol.name)
 
 
-def _glsl_words(context: CompletionContext) -> list[str]:
-    return [*context.lib_functions, *context.pass_uniforms, *_GLSL_WORDS]
+def _declarations(context: CompletionContext) -> Sequence[Symbol]:
+    """Whole declarations shaped to the site: after `uniform ` the type and name; after a
+    typed type only the names of that type (a name-only script uniform fits any type)."""
+    if context.index is None:
+        return ()
+    site = _SITE.search(context.line_before_caret)
+    typed_type = site.group(1) if site is not None else None
+    shaped: list[Symbol] = []
+    for symbol in context.index.declarations:
+        glsl_type, name = _declaration_parts(symbol)
+        if typed_type is None:
+            shaped.append(replace(symbol, insert_text=f"{glsl_type} {name};"))
+        elif glsl_type in ("", typed_type):
+            shaped.append(replace(symbol, insert_text=f"{name};"))
+    return shaped
 
 
-def _python_words(_context: CompletionContext) -> list[str]:
-    return list(keyword.kwlist)
+def _glsl_words(context: CompletionContext) -> Sequence[Symbol]:
+    # After `uniform <type> ` the line wants a NEW name: the buffer's declared names and the
+    # language's words are not candidates there, only the declarations provider's.
+    site = _SITE.search(context.line_before_caret)
+    if context.index is None or (site is not None and site.group(1)):
+        return ()
+    return context.index.words
 
+
+def _python_words(context: CompletionContext) -> Sequence[Symbol]:
+    return context.python_candidates
+
+
+# `uniform`, `uniform u_`, `uniform vec4 u_`, `uniform sampler2D u_`: a declaration site up to
+# and including a partial name; not `vec3 color = u_`, and not past the name.
+DECLARATION_SITE = re.compile(r"\buniform\s+(?:\w+\s+)?\w*$")
+# Where a Python completion makes sense: after a dot (member access, prefix may be empty) or
+# inside an identifier.
+PYTHON_SITE = re.compile(r"(?:\.\w*|\w+)$")
 
 PROVIDERS: tuple[CompletionProvider, ...] = (
-    # `uniform ` wants a builtin: the whole declaration lands, type and name, so the user
-    # never retypes what the engine already knows.
+    # A declaration site wants whole declarations the buffer lacks: the engine's uniforms,
+    # the script's returns, the samplers another pass could feed.
     CompletionProvider(
-        name="builtin uniforms",
+        name="declarations",
         tab_kinds=frozenset({"shader"}),
-        context=re.compile(r"\buniform\s+\w*$"),
+        context=DECLARATION_SITE,
         min_prefix_auto=0,
         min_prefix_explicit=0,
-        candidates=lambda _context: builtin_uniform_declarations(),
+        candidates=_declarations,
     ),
     CompletionProvider(
         name="glsl",
@@ -82,12 +113,14 @@ PROVIDERS: tuple[CompletionProvider, ...] = (
         min_prefix_explicit=1,
         candidates=_glsl_words,
     ),
+    # A member site (`ctx.`, `math.si`) opens by itself with an empty prefix; a bare
+    # identifier needs one letter. Nothing is asked of jedi anywhere else on a line.
     CompletionProvider(
         name="python",
         tab_kinds=frozenset({"script"}),
-        context=None,
-        min_prefix_auto=2,
-        min_prefix_explicit=1,
+        context=PYTHON_SITE,
+        min_prefix_auto=0,
+        min_prefix_explicit=0,
         candidates=_python_words,
     ),
 )
@@ -95,7 +128,7 @@ PROVIDERS: tuple[CompletionProvider, ...] = (
 
 def matches(candidate: str, prefix: str) -> bool:
     """A candidate is offered when it extends the prefix; a multi-word candidate (a
-    declaration) also when any of its words does, so `u_ti` finds `float u_time;`."""
+    declaration) also when any of its words does, so `u_ti` finds `uniform float u_time;`."""
     if candidate == prefix:
         return False
     if candidate.startswith(prefix):
@@ -136,18 +169,18 @@ def eligible_providers(context: CompletionContext) -> list[CompletionProvider]:
     return found
 
 
-def offer(context: CompletionContext) -> list[str]:
+def offer(context: CompletionContext) -> list[Symbol]:
     """The candidates to push: every eligible provider's matches, in table order, without
-    repeats; empty means cancel. Concatenation rather than first-wins, so `uniform sam`
-    still finds `sampler2D` from the glsl provider after the builtin one found nothing."""
+    repeats of the inserted text; empty means cancel."""
     seen: set[str] = set()
-    found: list[str] = []
+    found: list[Symbol] = []
     for provider in eligible_providers(context):
-        for candidate in provider.candidates(context):
-            if candidate in seen or not matches(candidate, context.prefix):
+        for symbol in provider.candidates(context):
+            text = symbol.inserted
+            if text in seen or not matches(text, context.prefix):
                 continue
-            seen.add(candidate)
-            found.append(candidate)
+            seen.add(text)
+            found.append(symbol)
     return found[:MAX_CANDIDATES]
 
 
@@ -161,35 +194,3 @@ def word_at(line: str, column: int) -> str:
         if found.end() > column:
             return found.group(0)
     return ""
-
-
-def symbol_doc(
-    word: str, lib_functions: Mapping[str, ShaderLibFunction]
-) -> tuple[str, str] | None:
-    """What `K` shows for the word under the caret: (signature or typed declaration, doc),
-    or None when nothing in the repo documents it."""
-    function = lib_functions.get(word)
-    if function is not None:
-        return function.signature, function.doc
-    doc = ENGINE_UNIFORM_DOCS.get(word)
-    if doc is not None:
-        return f"uniform {ENGINE_UNIFORM_TYPES[word]} {word};", doc
-    found = BUILTINS.get(word)
-    if found is not None:
-        signatures, purpose = found
-        # Every overload, one per line: which one applies is the question a caller has.
-        return "\n".join(signatures), purpose
-    if word in TYPES:
-        return f"{word}", "GLSL type"
-    if word in KEYWORDS:
-        return f"{word}", "GLSL keyword"
-    return None
-
-
-def candidate_doc(
-    candidate: str, lib_functions: Mapping[str, ShaderLibFunction]
-) -> tuple[str, str] | None:
-    """What the popup shows beside the highlighted row. A candidate is either a bare name or
-    a whole declaration (`float u_time;`), so the name is taken off the end."""
-    word = candidate.rstrip(";").split()[-1] if " " in candidate else candidate
-    return symbol_doc(word.rstrip(";"), lib_functions)

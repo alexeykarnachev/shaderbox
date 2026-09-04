@@ -570,6 +570,24 @@ _KIND_COLOR: dict[SymbolKind, tuple[float, float, float, float]] = {
 }
 
 
+# The library's syntax slot a host-classified identifier draws in (078 D2, D12): the GLSL lexer
+# emits 1 (keywords and types), 4 (numbers), 6 (builtins and functions); a host class fills
+# only the identifiers the lexer left plain. Engine uniforms take slot 7, pass samplers 8;
+# script uniforms and library functions share the builtin green (6); 9 is spare. CLASS numbers
+# are contiguous; the SLOTS they draw in are addressed by name (`SYNTAX_8` is 25). 0 is no
+# class: the word stays the lexer's.
+_KIND_SLOT: dict[SymbolKind, int] = {
+    SymbolKind.ENGINE_UNIFORM: 7,
+    SymbolKind.SCRIPT_UNIFORM: 6,
+    SymbolKind.LIB_FUNCTION: 6,
+    SymbolKind.PASS_SAMPLER: 8,
+}
+
+
+def kind_slot(kind: SymbolKind) -> int:
+    return _KIND_SLOT.get(kind, 0)
+
+
 def editor_palette() -> dict["editor_ffi.Slot", tuple[float, float, float, float]]:
     """The gruvbox palette in libeditor theme slots (feature 067). Applied at
     editor-session creation; the syntax slots follow the lexer's token classes
@@ -603,7 +621,9 @@ def editor_palette() -> dict["editor_ffi.Slot", tuple[float, float, float, float
         slot.SYNTAX_4: COLOR.SYN_NUMBER,
         slot.SYNTAX_5: COLOR.SYN_OP,
         slot.SYNTAX_6: COLOR.SYN_BUILTIN,
-        slot.SYNTAX_7: COLOR.SYN_TYPE,
+        slot.SYNTAX_7: COLOR.SYN_UNIFORM,
+        slot.SYNTAX_8: COLOR.SYN_PASS_SAMPLER,
+        slot.SYNTAX_9: COLOR.SYN_IDENT,
         slot.WHITESPACE: fade(COLOR.FG_DIM, 0.5),
         slot.BRACKET_MATCH: fade(COLOR.ACCENT_PRIMARY, 0.25),
         # Drawn over the glyphs, so translucent; a different hue from the bracket box.

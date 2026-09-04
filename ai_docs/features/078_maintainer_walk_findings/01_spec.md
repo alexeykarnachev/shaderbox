@@ -43,7 +43,7 @@ session owns. Quotes are the maintainer's words from `00_raw_findings.md`.
 | 5 | UX (design) | "red-ish for special words and builtin types (continue, if, vec3, etc), blue-ish for builtin uniforms (u_time, u_aspect ...), green for script uniforms" | The completion popup is drawn by the library from bare strings (`Editor.complete_push(word)`); the `Completion` item has no kind or color, and the popup's rows read one slot (`POPUP_TEXT` / `POPUP_SELECTED`). A per-item color is a library seam (`editor lib`). |
 | 6 | DEFECT | "under the u_aspect uniform I start to type "uniform vec4 u_" and it suggests me "u_time" ... why not u_aspect?" / "I'm typing "vec3 color = u_" and it suggests me "u_time" again. Only this fucking u_time" | The `u_` candidates come from `CompletionContext.pass_uniforms = tuple(edited.uniform_values)` (`tabs/code.py::_completion_context`), and `Pass.uniform_values` is the GL program's ACTIVE uniform set: `seed_uniform_values` fills it from `get_active_uniforms()` and `render()` writes the engine-driven ones into it (`core.py:540`). A declared uniform the shader body never reads is optimised out by the GLSL compiler and is not active, so `u_aspect` never appears; `u_time` is read, so it does. The source is wrong in kind: it lags compilation, drops unused declarations, and never sees the script's names. The `builtin uniforms` provider does not fire on `uniform vec4 u_` because its pattern is `\buniform\s+\w*$` (the type word breaks it), which is why the second form suggested nothing better either. Fix is the intelligence index of W-A (the buffer's declarations are the source; the GL active set never is). |
 | 7 | ENGINE, editor lib | "I perform "dd" the line disappears, good. But the cursor appears at the beginning of the next line, but not at the same position as it was before." | Reproduced on the vendored `f738744` through `Editor.feed`: `j$dd` from column 17 lands at column 0. The editor's own oracle is nvim with `'startofline'` off (its `vim_coverage.md` says so for `G`/`gg`), so the column should be kept and clamped. Sent to the editor session. |
-| 8 | ENGINE, editor lib + host check | "I undo this line deletion "u" and the line appears. But the current line (gray-ish strip) stays at the second line" | The strip is host-drawn: `tabs/code.py::_apply_markers` adds a cursor-line marker from `editor.get_current_cursor_position().line` each frame, fingerprinted so a change redraws. Headlessly the library's cursor LINE after `u` is the restored line in every case tried (last line, middle line, undo from another line), so the library is not the cause of a stale strip. What is not settled: the column vim puts the cursor at after `u` (asked of the editor session), and whether the strip is stale at the display for a reason the headless path cannot show (W-C's display check). |
+| 8 | ENGINE, editor lib + host check | "I undo this line deletion "u" and the line appears. But the current line (gray-ish strip) stays at the second line" | The strip is host-drawn: `tabs/code.py::_apply_markers` adds a cursor-line marker from `editor.get_current_cursor_position().line` each frame, fingerprinted so a change redraws. Headlessly the library's cursor LINE after `u` is the restored line in every case tried (last line, middle line, undo from another line), so the library is not the cause of a stale strip. What is not settled: the column vim puts the cursor at after `u` (asked of the editor session), and whether the strip is stale at the display for a reason the headless path cannot show (W-C's display check). | **Cause found (the formatter's display check, same class): the library MOVES a marker with the text it marks (`ffi/README.md`: "where the marked code is NOW"), and the host re-pushed its line markers only when the cursor line, errors or hover changed — `dd` then `u` leaves the cursor line equal and the band where the deleted line was; a whole-buffer replace drags it to the end. `_apply_markers`'s fingerprint now carries the buffer revision; `tests/test_marker_follow.py` pins both shapes.**
 | 9 | ENGINE, editor lib | "when I hold "->" or "l" and the cursor is at the end of the line, I don't jump to the next line" | Reproduced for insert-mode `<Right>`: on `ab\ncd`, `i` then `ed_key(RIGHT)` three times gives (0,1), (0,2), (1,0); nvim's default `'whichwrap'` is `b,s`, so it stops at column 2. Normal-mode `l`, `ed_key(CHAR,'l')` and `ed_key(RIGHT)` at `$` all stay put headlessly, so the `l` half is not reproduced; the editor session checks the repeat path. Sent. |
 | 10 | ENGINE, editor lib | "Why don't they catch this simple case? ... ask it to implement more robust end-to-end tests" | The editor repo's `fuzz_walk.py` has two oracles, crash and undo-to-root, neither looking at the cursor; `e2e_cases.tsv` is 137 hand-written cases. A wrong cursor after an ordinary operator is invisible to all of it. Asked for: a differential fuzzer against the nvim oracle comparing text, cursor and mode after every step, mutation-tested against #7 and #9. Sent. |
 | 11 | UX | "when the cursor is hovering the errored line it would be useful to highlight this specific error on the errors panel ... if we press "f8" - jump to the next error, we also show the popup explicitly; otherwise ... we only highlight the error at the bottom" | Today the strip's rows (`_draw_error_strip`) are plain selectables; nothing ties the caret's line to a row. The other direction exists for uniforms only: a hovered uniform-panel row marks its declaration line (`widgets/uniform.py:75` sets `app.editor_hover_line`). `F8` is `CommandId.JUMP_NEXT_ERROR` and moves the caret; the error marker carries `tooltip=message` for the mouse. The popup primitive exists: `anchored_note` at `_note_anchor`, what `K` draws. Decision D3. |
@@ -129,8 +129,47 @@ shaderbox/intel/
   `WIRABLE_SAMPLER`; a sampler re-sourced to a file flips `PASS_SAMPLER` → `PASS_UNIFORM`;
   `K` over `Ctx` on the script tab yields the gloss; the enum-domain test.
 
-Python's own completion (Q1) plugs in as `ScriptIndex`'s member source; the module boundary
-does not move whichever option wins.
+Python's own completion (D10) plugs in as the script side's member source; the module boundary
+does not move.
+
+**Amended after the pre-implementation review (round 1, PARTIAL; `## Review history`):**
+
+- The declarations provider's predicate is `\buniform\s+(?:\w+\s+)?\w*$` — it fires on
+  `uniform `, `uniform u_`, `uniform vec4 u_` and `uniform sampler2D u_`, and not on
+  `vec3 color = u_` (an identifier-prefix site) nor past the name. Pinned as that table.
+- `PASS_SAMPLER` vs `PASS_UNIFORM` is decided from the buffer's `sampler2D` declarations
+  joined to `pass_graph.wired_pass` with the sampler's VALUE (`Pass.uniform_values`, a dict; a
+  declared sampler with no value yet is `AutoSource`) and the graph's pass names — never from
+  `document.sampler_source` / `effective_wiring`, which read the compiled program's sampler set
+  and carry finding 6's two defects (lag, dropped declarations) into the classification.
+- The script text on a shader tab: the live script buffer when `app.editor_sessions` holds the
+  script path (fingerprint: its revision), else the engine's cached copy
+  (`ScriptEngine.cached_source`, fingerprint: its mtime). The pinned test exercises the live
+  buffer.
+- The script → GLSL type table, over the whole literal domain: `0.5` / `-2.0` → `float`;
+  `0` / `3` → `int` (`bool` → `bool`); `Vec2/3/4(...)` → `vec2/3/4`; `Array([...])` →
+  `float[N]` with N the literal list's length (`[x] * k` folded); `Array(<anything else>)`,
+  `Text(...)`, a str, and any non-literal → a NAME-ONLY candidate, never a guessed declaration.
+  This is not `_stub_kind`'s inverse: `_stub_kind` reads a compiled uniform's `gl_type` and
+  lengths, the walk reads a literal, and they differ exactly there.
+- `intel/`'s GLSL half (`symbols`, `glsl`, `script`, `index`, `document`) and `completion.py`
+  are GL-free and gated in a fresh interpreter: `ENGINE_UNIFORM_TYPES` /
+  `ENGINE_DRIVEN_UNIFORMS` moved to the leaf `shaderbox/engine_uniforms.py` (core re-imports
+  them). The Python half (`python`, `worker`) reads the API glosses from
+  `shaderbox.scripting.api_doc`, and that package's `__init__` re-exports the engine, so it is
+  App-free and context-free but loads `moderngl` by import; the gate names the halves.
+- jedi: constructed with `jedi.InterpreterEnvironment` (in-process, no child interpreter;
+  measured faster cold and warm, and safe under concurrent use where the default corrupts);
+  exactly ONE thread calls it — a worker the App owns, whose first queued job on a script tab's
+  open is the warm-up — and the frame thread never does; every request carries the editor
+  revision and cursor it was computed for and a result is dropped unless both are still
+  current.
+- Text colors and the library's slots (measured: the GLSL lexer emits classes 1 keyword —
+  types included — 4 number, 6 builtin and functions; 7 is free, a host class fills only plain
+  identifiers): engine uniform → slot 7 (`SYN_UNIFORM`, blue); script uniform and library
+  function → slot 6 (builtin green, the same token); pass sampler → slot 8, requested from the
+  editor session with a spare 9 (`Theme.syntax` widened on this measurement). `SYNTAX_7` stops
+  mapping `SYN_TYPE`, which the GLSL lexer never emitted.
 
 ## Answered at plan-lock (2026-09-04)
 
@@ -189,6 +228,25 @@ decisions. The options considered stay in git history (`6ddfdaa`).
 5. After the editor session lands the seams: bind `Completion.kind` and the word-class table
    in `editor/ffi.py`, feed both from the index; delete the dead `SYN_UNIFORM`.
 6. The stub docstrings per D14.
+
+*(Landed, steps 1-6: `shaderbox/intel/` — `symbols` (the enum), `glsl` (the buffer read as
+text), `script` (`update`'s returns by `ast`), `python` (jedi, in-process environment, the
+engine's glosses and the injected API overlaid), `worker` (the one jedi thread; newest request
+per kind wins; results stamped with path, revision and cursor), `index` (`build_glsl_index`
+over a `GlslContext` of explicit, GL-free inputs), `document` (the per-path fingerprint cache).
+`completion.py` re-based: providers yield `Symbol`s; the declarations site regex from the
+review; declaration inserts shaped to the site (`float u_time;` after `uniform `, `u_time;`
+after `uniform float `); the identifier site never offers a declaration; a Python member site
+opens with an empty prefix. `tabs/code.py` builds the index on every frame's cheap fingerprint
+(revision, script revision or mtime, pass set, sampler source kinds, lib index identity),
+re-feeds `ed_set_word_class` on a rebuild, pushes candidates with `ed_complete_push_class`, and
+answers `K` from the index or through the worker. `theme.kind_color` and `theme.kind_slot` are
+the two tables; slots 7 and 8 are host classes (engine uniform, pass sampler), script
+uniforms and library functions share the builtin green. `engine_uniforms.py` is the GL-free
+home of the engine tables. Tests: the sources, the index, the completion policy (the
+maintainer's two lines pinned), the panel through the real driver (colors in the text, `ctx.`
+members and `K` through the worker), the GL-free gate in a fresh interpreter. Display checks
+owed: items 1-4 of `## Manual verification`.)*
 
 ### W-B — Formatter (#3, D9, D11)
 
@@ -291,6 +349,21 @@ known.
 
 `/sanitize`: `conventions.md` gains the intel module's boundary (a GL-free leaf read by the
 code panel) and the formatter dependency note; roadmap row + banner; cold-context check.
+
+## Review history
+
+- **W-A pre-implementation, round 1, one opus reviewer anchored on `00_raw_findings.md`, the
+  design section and the landed editor seam (`011_symbol_classes`), every claim probed.**
+  Verdict PARTIAL: the architecture and the finding-6 diagnosis right; seven findings, all
+  accepted and folded into the design amendments above — the predicate that did not fire on
+  the maintainer's line, `sampler_source` reading the GL program, the unnamed script source
+  on a shader tab, the incomplete type table, the GL-free claim failing through
+  `help_content`, jedi's one-thread rule and `InterpreterEnvironment`, the slot budget (three
+  colors, one free slot; the widening was already requested). Unverified concerns it listed
+  and this session's answer: the selected popup row keeps the selection color by the
+  library's design (fine); the 50-candidate cap is met by ordering the document's own symbols
+  before the language's; the full re-push per rebuild is ~0.1 ms by the editor's measurement;
+  the glyph-table uniforms (`SBT_*`) are engine-driven and get no kind (they are never typed).
 
 ## Order
 

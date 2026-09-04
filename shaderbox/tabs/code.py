@@ -1,13 +1,14 @@
 from pathlib import Path
 
+import moderngl
 from imgui_bundle import imgui
 
 from shaderbox.app import App
 from shaderbox.completion import (
+    PYTHON_SITE,
     CompletionContext,
-    candidate_doc,
+    in_line_comment,
     offer,
-    symbol_doc,
     word_at,
 )
 from shaderbox.core import Pass
@@ -19,6 +20,13 @@ from shaderbox.editor.render import (
     should_redraw,
 )
 from shaderbox.editor_types import EditorTab, HoverMark, JumpRequest, LookupPopup
+from shaderbox.engine_uniforms import ENGINE_UNIFORM_TYPES
+from shaderbox.help_content import ENGINE_UNIFORM_DOCS
+from shaderbox.intel.index import GlslContext, GlslIndex, build_glsl_index
+from shaderbox.intel.script import returned_uniforms
+from shaderbox.intel.symbols import Symbol
+from shaderbox.intel.worker import PythonRequest, PythonRequestKind
+from shaderbox.pass_graph import AutoSource, NoSource, PassSource
 from shaderbox.paths import pass_name_of
 from shaderbox.shader_errors import ShaderError, error_at_line
 from shaderbox.theme import (
@@ -28,6 +36,7 @@ from shaderbox.theme import (
     SIZE,
     SPACE,
     fade,
+    kind_slot,
 )
 from shaderbox.ui_primitives import anchored_note, draw_copyable_text
 from shaderbox.util import format_auto_value
@@ -232,6 +241,11 @@ def _apply_markers(
     only on change. The cursor line goes FIRST: two markers on one line stack their fills and
     the later text color wins, so an error line keeps its flipped text.
 
+    The fingerprint carries the buffer revision: the library moves a marker with the text
+    it marks (a whole-buffer replace drags it to the end, `dd` then `u` leaves it where the
+    deleted line was), while the host's markers are line numbers of the text as it is NOW,
+    so every edit re-pushes them even when the cursor line reads the same.
+
     Returns the marker fingerprint — a render_state member, so a marker change
     triggers exactly one redraw."""
     hover_line = (
@@ -245,6 +259,7 @@ def _apply_markers(
         ),
         hover_line,
         cursor_line,
+        editor.get_undo_index(),
     )
     if app.editor_marker_state.get(current_path) == fingerprint:
         return fingerprint
@@ -334,20 +349,183 @@ def _draw_error_strip(
     imgui.pop_style_color(1)
 
 
+def _script_source(app: App, document_id: str) -> tuple[str, tuple[str, object]] | None:
+    """The document script's text and a stamp that moves when it does: the live buffer when
+    its tab is open (revision), else the engine's cached copy (mtime), else None."""
+    path = app.session.script_path_for(document_id)
+    session = app.editor_sessions.get(path)
+    if session is not None:
+        return session.editor.get_text(), ("live", session.editor.get_undo_index())
+    cached = app.session.script_engine.cached_source(document_id)
+    if cached is None:
+        return None
+    return cached[0], ("disk", cached[1])
+
+
+def _source_stamp(value: object) -> str:
+    if isinstance(value, PassSource):
+        return f"pass:{value.name}"
+    if isinstance(value, NoSource):
+        return "none"
+    if isinstance(value, AutoSource):
+        return "auto"
+    return "texture"
+
+
+def _feed_classes(editor: Editor, index: GlslIndex) -> None:
+    # The whole table, every rebuild: the library measured the re-push at a fraction of a
+    # millisecond, and a class that changed without an edit (a re-sourced sampler) reaches the
+    # screen on the next layout.
+    editor.clear_word_classes()
+    for word, kind in index.classes().items():
+        slot = kind_slot(kind)
+        if slot:
+            editor.set_word_class(word, slot)
+
+
+def _glsl_index_for(app: App, editor: Editor, tab: EditorTab) -> GlslIndex:
+    """The buffer's index, rebuilt when its fingerprint moves; a rebuild re-feeds the
+    identifier classes that color the text."""
+    edited = _pass_for_tab(app, tab)
+    ui_document = app.ui_documents.get(tab.document_id)
+    passes = tuple(sorted(ui_document.document.passes)) if ui_document else ()
+    pass_name = pass_name_of(tab.path) if edited is not None else None
+    script = _script_source(app, tab.document_id) if edited is not None else None
+    sampler_values: dict[str, object] = (
+        {
+            name: value
+            for name, value in edited.uniform_values.items()
+            if isinstance(value, PassSource | NoSource | AutoSource)
+            or hasattr(value, "texture")
+            or isinstance(value, moderngl.Texture)
+        }
+        if edited is not None
+        else {}
+    )
+    fingerprint = (
+        editor.get_undo_index(),
+        script[1] if script is not None else None,
+        passes,
+        tuple(sorted((name, _source_stamp(v)) for name, v in sampler_values.items())),
+        id(app.shader_lib_index),
+    )
+
+    def build() -> GlslIndex:
+        return build_glsl_index(
+            GlslContext(
+                text=editor.get_text(),
+                engine_types=ENGINE_UNIFORM_TYPES,
+                engine_docs=ENGINE_UNIFORM_DOCS,
+                lib_functions={
+                    name: (f.signature, f.doc)
+                    for name, f in app.shader_lib_index.functions.items()
+                },
+                script_returns=returned_uniforms(script[0]) if script else (),
+                pass_name=pass_name,
+                passes=passes,
+                sampler_values=sampler_values,
+            )
+        )
+
+    index, changed = app.intel_cache.index_for(tab.path, fingerprint, build)
+    if changed:
+        _feed_classes(editor, index)
+    return index
+
+
+def _python_request(
+    app: App,
+    editor: Editor,
+    tab: EditorTab,
+    kind: PythonRequestKind,
+    explicit: bool = False,
+) -> PythonRequest:
+    cursor = editor.get_current_cursor_position()
+    return PythonRequest(
+        kind,
+        tab.path,
+        editor.get_text(),
+        cursor.line,
+        cursor.column,
+        editor.get_undo_index(),
+        explicit,
+    )
+
+
+def _python_candidates(
+    app: App, editor: Editor, tab: EditorTab, explicit: bool
+) -> tuple[Symbol, ...]:
+    """The worker's answer for THIS caret, or empty with a request on its way."""
+    cursor = editor.get_current_cursor_position()
+    revision = editor.get_undo_index()
+    answered = app.python_candidates
+    if answered is not None and answered.request.matches(
+        tab.path, revision, cursor.line, cursor.column
+    ):
+        return answered.symbols
+    last = app.python_last_request
+    if last is None or not last.matches(tab.path, revision, cursor.line, cursor.column):
+        request = _python_request(
+            app, editor, tab, PythonRequestKind.COMPLETE, explicit=explicit
+        )
+        app.python_last_request = request
+        app.ensure_python_worker().submit(request)
+    return ()
+
+
+def _pump_python(app: App, editor: Editor, tab: EditorTab) -> None:
+    """Land the worker's answers that are still about the current caret: a completion
+    re-offers, a lookup opens the note. Stale answers are dropped."""
+    worker = app.python_worker
+    if worker is None:
+        return
+    cursor = editor.get_current_cursor_position()
+    revision = editor.get_undo_index()
+    for result in worker.poll():
+        request = result.request
+        if not request.matches(tab.path, revision, cursor.line, cursor.column):
+            continue
+        if request.kind == PythonRequestKind.COMPLETE:
+            app.python_candidates = result
+            _offer_completion(app, editor, tab, explicit=request.explicit)
+        elif request.kind == PythonRequestKind.LOOKUP:
+            symbol = result.symbols[0] if result.symbols else None
+            app.editor_lookup = (
+                LookupPopup(
+                    word=symbol.name, signature=symbol.signature, doc=symbol.doc
+                )
+                if symbol is not None
+                else None
+            )
+
+
 def _completion_context(
     app: App, editor: Editor, tab: EditorTab, explicit: bool
 ) -> CompletionContext:
     cursor = editor.get_current_cursor_position()
     lines = editor.get_text().split("\n")
     line = lines[cursor.line] if cursor.line < len(lines) else ""
-    edited = _pass_for_tab(app, tab)
+    before = line[: cursor.column]
+    if tab.kind == "script":
+        # jedi is asked only where the provider could offer: a member or identifier site.
+        candidates = (
+            _python_candidates(app, editor, tab, explicit)
+            if PYTHON_SITE.search(before) and not in_line_comment(tab.kind, before)
+            else ()
+        )
+        return CompletionContext(
+            tab_kind=tab.kind,
+            line_before_caret=before,
+            prefix=editor.complete_prefix(),
+            explicit=explicit,
+            python_candidates=candidates,
+        )
     return CompletionContext(
         tab_kind=tab.kind,
         line_before_caret=line[: cursor.column],
         prefix=editor.complete_prefix(),
-        lib_functions=tuple(app.shader_lib_index.functions),
-        pass_uniforms=tuple(edited.uniform_values) if edited is not None else (),
         explicit=explicit,
+        index=_glsl_index_for(app, editor, tab),
     )
 
 
@@ -357,6 +535,7 @@ def _drive_completion(app: App, editor: Editor, tab: EditorTab) -> None:
     # Three ways in: the deliberate Ctrl+N / Ctrl+P (explicit), a keystroke in insert mode
     # that changed the buffer (auto, 073 W-B), and a re-filter while the popup stays open
     # and the prefix moves. Runs BEFORE layout so the popup primitives appear the same frame.
+    _pump_python(app, editor, tab)
     revision = editor.get_undo_index()
     edited = app.editor_completion_seen != (tab.path, revision)
     app.editor_completion_seen = (tab.path, revision)
@@ -397,17 +576,25 @@ def _drive_completion(app: App, editor: Editor, tab: EditorTab) -> None:
     app.editor_completion_was_open = editor.complete_open()
 
 
-def _consume_lookup_request(app: App, editor: Editor) -> None:
+def _consume_lookup_request(app: App, editor: Editor, tab: EditorTab) -> None:
     if not app.editor_lookup_requested:
         return
     app.editor_lookup_requested = False
+    if tab.kind == "script":
+        # Answered by the worker; `_pump_python` opens the note when it lands.
+        app.ensure_python_worker().submit(
+            _python_request(app, editor, tab, PythonRequestKind.LOOKUP)
+        )
+        return
     cursor = editor.get_current_cursor_position()
     lines = editor.get_text().split("\n")
     line = lines[cursor.line] if cursor.line < len(lines) else ""
     word = word_at(line, cursor.column)
-    found = symbol_doc(word, app.shader_lib_index.functions) if word else None
+    found = _glsl_index_for(app, editor, tab).lookup(word) if word else None
     app.editor_lookup = (
-        LookupPopup(word=word, signature=found[0], doc=found[1]) if found else None
+        LookupPopup(word=word, signature=found.signature, doc=found.doc)
+        if found is not None and (found.signature or found.doc)
+        else None
     )
 
 
@@ -462,9 +649,10 @@ def _draw_candidate_doc(app: App, editor: Editor) -> None:
     candidate = editor.complete_item(index)
     if candidate is None:
         return
-    found = candidate_doc(candidate, app.shader_lib_index.functions)
-    if found is None:
+    symbol = app.editor_completion_offered.get(candidate)
+    if symbol is None or not (symbol.signature or symbol.doc):
         return
+    found = (symbol.signature or symbol.name, symbol.doc)
     # Clear of the popup, which is as wide as its widest row.
     widest = max(
         (len(editor.complete_item(i) or "") for i in range(editor.complete_count())),
@@ -481,13 +669,15 @@ def _offer_completion(app: App, editor: Editor, tab: EditorTab, explicit: bool) 
         editor.complete_cancel()
         app.editor_completion_prefix = None
         app.editor_completion_items = []
+        app.editor_completion_offered = {}
         app.editor_completion_auto = False
         return
     editor.complete_begin()
-    for word in matches:
-        editor.complete_push(word)
+    for symbol in matches:
+        editor.complete_push_class(symbol.inserted, kind_slot(symbol.kind))
     app.editor_completion_prefix = context.prefix
-    app.editor_completion_items = matches
+    app.editor_completion_items = [symbol.inserted for symbol in matches]
+    app.editor_completion_offered = {symbol.inserted: symbol for symbol in matches}
     app.editor_completion_auto = not explicit
     if not explicit:
         # Unasked, so nothing is highlighted: Enter stays a newline until the user moves
@@ -743,8 +933,10 @@ def draw(app: App) -> None:
     # (rows > 0): a fresh session's first frame must not record the cursor with
     # rows=0, or a jump into it would never be followed.
     editor.take_scroll_request()  # absolute target; applied by the read itself
+    if tab.kind != "script":
+        _glsl_index_for(app, editor, tab)
     _drive_completion(app, editor, tab)
-    _consume_lookup_request(app, editor)
+    _consume_lookup_request(app, editor, tab)
     rows = app.editor_visible_rows
     cursor = layout_following_cursor(
         editor,

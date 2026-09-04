@@ -109,6 +109,10 @@ class Slot(IntEnum):
     BRACKET_MATCH = 22
     SEARCH_MATCH = 23
     CARET_TEXT = 24
+    # Appended after the chrome slots (the library keeps every value stable); classes
+    # 8 and 9 index them by NAME, never as SYNTAX_1 + n.
+    SYNTAX_8 = 25
+    SYNTAX_9 = 26
 
 
 class ViewFlag(IntEnum):

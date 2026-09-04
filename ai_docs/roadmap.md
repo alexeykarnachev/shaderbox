@@ -26,19 +26,20 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-04, plan-locked; W-D W-E W-H W-I(indent) landed; editor session holds the bugs batch and the two seams. -->
-**Next: 078 W-F (add pass through the modal, D13) and W-G (grouped sampler-source list), then
-W-A.** `ai_docs/features/078_maintainer_walk_findings/01_spec.md` is the verified ledger (19
-findings), fourteen locked decisions (D10-D14 are the plan-lock answers: `jedi` for Python,
-`ruff` + `clang-format` wheel with the nvim arguments for formatting, the library seams left
-to the editor session, a pending-draft create mode, dense stub docstrings kept), the
-editor-intelligence design (`shaderbox/intel/`, one `SymbolKind` enum read by completion, `K`
-and the color feed), and eleven workstreams in order. Landed: the caret's error row + the `F8`
-note, Reset on the Document tab, the settings field outline after a jump, the copilot edit's
-first-line indent. The editor session `editor-c8` holds two messages: the bugs batch (`dd`
-column, insert-mode `<Right>` wrap, cursor after `u`, the differential-fuzz harness) and the two
-seams (completion item kinds, host-classified identifiers); W-C re-vendors when it pings, W-A
-step 5 binds the seams. Display checks owed for every landed wave (`## Manual verification`).
+<!-- As of 2026-09-04, W-A through W-I landed; post-implementation review of W-A next, then the display checks and W-J. -->
+**Next: 078's post-implementation review of W-A, then the maintainer's display checks
+(`01_spec.md ## Manual verification`, 13 items) and W-J (the checkerboard during a copilot
+turn, display-only).** Landed today: W-D error row + `F8` note, W-E Reset on the Document tab,
+W-H settings outline, W-I the copilot edit's indent, W-F the pass draft modal, W-G the grouped
+source list, W-B `Ctrl+Shift+I` formatting (`ruff` / `clang-format`, shipped), W-C the editor
+re-vendored three times (`4f35ba2`: `dd` column, insert `<Right>`, seven fuzzer finds, the two
+seams, the widened palette), and W-A editor intelligence: `shaderbox/intel/` (one `SymbolKind`
+enum, the buffer read as text, the script's returns by `ast`, jedi on one worker thread), the
+completion re-base that ends the `u_time`-only behavior, `K` on both tabs, host classes
+coloring engine uniforms and pass samplers in the text. The maintainer's first display check
+found the cursor band jumping after a format; cause: the library moves markers with edits and
+the host's fingerprint lacked the revision — fixed and pinned, and it is finding #8's cause
+too. Then W-K sanitize.
 
 **After that: the sweep over the 077 material** — `ai_docs/features/077_rc_model_comparison/`
 (both rounds, the "left for the sweep" list) and the station pages (`dogfood/index.html`,

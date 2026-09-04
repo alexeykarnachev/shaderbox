@@ -57,6 +57,14 @@ from shaderbox.exporters.youtube import YouTubeExporter
 from shaderbox.formatting import formatter_for
 from shaderbox.help_content import help_sections
 from shaderbox.integrations import IntegrationsStore
+from shaderbox.intel.document import IntelCache
+from shaderbox.intel.symbols import Symbol
+from shaderbox.intel.worker import (
+    PythonRequest,
+    PythonRequestKind,
+    PythonResult,
+    PythonWorker,
+)
 from shaderbox.notifications import Notifications
 from shaderbox.pass_graph import PassEntry, step_in_order, strip_order
 from shaderbox.paths import ProjectPaths, app_data_dir, pass_name_of, shader_lib_root
@@ -290,6 +298,15 @@ class App:
         self.editor_errors: list[ShaderError] = []
         self.editor_error_note_pending: bool = False
         self.editor_lookup: LookupPopup | None = None
+        # What the editor knows about each buffer (078 W-A): the per-path index cache, the
+        # one thread that talks to jedi (made on the first script tab), its latest answer for
+        # the caret it was asked about, and the last request sent so a frame does not resend.
+        self.intel_cache: IntelCache = IntelCache()
+        self.python_worker: PythonWorker | None = None
+        self.python_candidates: PythonResult | None = None
+        self.python_last_request: PythonRequest | None = None
+        # The batch last pushed, by inserted text, for the candidate note beside the popup.
+        self.editor_completion_offered: dict[str, Symbol] = {}
         # Rows the editor panel showed last frame — follow-the-cursor scrolling
         # steps in view units.
         self.editor_visible_rows: int = 0
@@ -1314,6 +1331,7 @@ class App:
         if closed is not None:
             closed.editor.close()
         self.editor_marker_state.pop(path, None)
+        self.intel_cache.drop(path)
         self.editor_last_cursor.pop(path, None)
         self._close_tab_for_path(path)
 
@@ -1425,6 +1443,16 @@ class App:
         if path is None:
             return None
         return self.editor_sessions.get(path)
+
+    def ensure_python_worker(self) -> PythonWorker:
+        """The jedi thread, started on the first script tab; its first job is the warm-up,
+        queued here so the ~0.7 s first inference never lands on the frame thread."""
+        if self.python_worker is None:
+            self.python_worker = PythonWorker()
+            self.python_worker.submit(
+                PythonRequest(PythonRequestKind.WARM, Path(), "import math\n", 0, 0, 0)
+            )
+        return self.python_worker
 
     def format_current_editor(self) -> None:
         """Format the active buffer with its language's formatter (078 D9): one undo step,
@@ -1721,6 +1749,9 @@ class App:
         self.editor_completion_items = []
         self.editor_lookup_requested = False
         self.editor_lookup = None
+        self.python_candidates = None
+        self.python_last_request = None
+        self.editor_completion_offered = {}
         if self.editor_panel is not None:
             self.editor_panel.release()
             self.editor_panel = None

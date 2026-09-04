@@ -65,7 +65,13 @@ SLOTS = {
         "Background Text Caret Caret_Insert Selection Gutter_Text Gutter_Current "
         "Filler Status_Bg Status_Text Status_Accent Popup_Panel Popup_Text "
         "Popup_Selected Syntax_1 Syntax_2 Syntax_3 Syntax_4 Syntax_5 Syntax_6 "
-        "Syntax_7 Whitespace Bracket_Match Search_Match Caret_Text".split()
+        # Syntax_8 and Syntax_9 are at the END, not beside Syntax_1..7 where
+        # they belong by meaning: inserting them there would have shifted
+        # Whitespace and the three after it, and a host holding a stored slot
+        # number would silently paint the wrong thing. Order here mirrors the
+        # enum, so this list is also the assertion that the order held.
+        "Syntax_7 Whitespace Bracket_Match Search_Match Caret_Text "
+        "Syntax_8 Syntax_9".split()
     )
 }
 
@@ -1870,11 +1876,63 @@ def main() -> int:
     check("matching is case-sensitive", magenta_lines(), set())
     lib.ed_clear_word_classes(h)
     check("clear drops everything", magenta_lines(), set())
+
+    # THREE host-free classes, which is what the palette was widened for: an
+    # embedder needed engine uniform, script uniform and pass sampler to differ
+    # from each other and from plain text, and one spare slot could not carry
+    # them. 7, 8 and 9 are the classes; their SLOT numbers are not contiguous,
+    # because 8 and 9 were appended at the end of the enum rather than inserted
+    # after Syntax_7 -- inserting would have shifted Whitespace and the three
+    # after it, and a host holding 21 for Whitespace would paint syntax with it.
+    SLOT_OF_CLASS = {7: SLOTS["Syntax_7"], 8: SLOTS["Syntax_8"], 9: SLOTS["Syntax_9"]}
+    # The two new ones are at the END, after Caret_Text -- which is the whole
+    # point, and is asserted rather than described so a later insertion fails
+    # here instead of in an embedder's theme.
+    check("Syntax_8 follows Caret_Text", SLOTS["Syntax_8"], SLOTS["Caret_Text"] + 1)
+    check("Syntax_9 follows Syntax_8", SLOTS["Syntax_9"], SLOTS["Syntax_8"] + 1)
+    lib.ed_set_text(h, b"uniform float uOne;\nvec3 c = uTwo;\nfloat s = uThree;\n")
+    DISTINCT = {7: (1.0, 0.0, 1.0), 8: (1.0, 0.0, 0.0), 9: (0.0, 1.0, 0.0)}
+    for cls, rgb in DISTINCT.items():
+        lib.ed_set_color(h, SLOT_OF_CLASS[cls], *rgb, 1.0)
+    for word, cls in ((b"uOne", 7), (b"uTwo", 8), (b"uThree", 9)):
+        lib.ed_set_word_class(h, word, cls)
+    count = lib.ed_layout(h, 0.0, 0.0, 900.0, 900.0, 13.0, False)
+    tally, q = {}, Prim()
+    for i in range(count):
+        lib.ed_primitive(h, i, ctypes.byref(q))
+        if KINDS[q.kind] == "Glyph":
+            tally[(q.r, q.g, q.b)] = tally.get((q.r, q.g, q.b), 0) + 1
+    # One name per class, and the glyph counts are the name lengths -- so this
+    # fails if two classes collapse onto one slot as well as if one goes unread.
+    check("class 7 colours its name", tally.get(DISTINCT[7], 0), len("uOne"))
+    check("class 8 colours its name", tally.get(DISTINCT[8], 0), len("uTwo"))
+    check("class 9 colours its name", tally.get(DISTINCT[9], 0), len("uThree"))
+    # A class PAST the palette is safe and silent: both draw paths bound-check,
+    # so a host on a newer build than the library gets plain text rather than a
+    # crash or a garbage colour. ed_class_at still reports what was set, which
+    # is how a host tells "no slot for this class" from "table never applied".
+    lib.ed_clear_word_classes(h)
+    lib.ed_set_word_class(h, b"uOne", 99)
+    count = lib.ed_layout(h, 0.0, 0.0, 900.0, 900.0, 13.0, False)
+    strange = 0
+    for i in range(count):
+        lib.ed_primitive(h, i, ctypes.byref(q))
+        if KINDS[q.kind] == "Glyph" and not (0.0 <= q.r <= 1.0 and 0.0 <= q.g <= 1.0):
+            strange += 1
+    check("a class past the palette draws no garbage", strange, 0)
+    check("and ed_class_at still reports it", lib.ed_class_at(h, 0, 14), 99)
+
+    lib.ed_clear_word_classes(h)
+    lib.ed_reset_theme(h)
     lib.ed_set_language(h, LANGS["None"])
 
     print("a completion row carries its class")
     lib.ed_load_atlas(h, b"assets/atlas.json")
-    lib.ed_set_color(h, 16, 0.0, 1.0, 0.0, 1.0)  # Syntax_3 green
+    # BOTH colours set here rather than relying on the ones an earlier section
+    # happened to leave: this row read magenta from three hundred lines up, and
+    # a reset in between turned it into a failure that looked like the popup's.
+    lib.ed_set_color(h, SLOTS["Syntax_7"], *MAGENTA, 1.0)
+    lib.ed_set_color(h, SLOTS["Syntax_3"], 0.0, 1.0, 0.0, 1.0)
     lib.ed_set_text(h, b"x")
     lib.ed_feed(h, b"A")
     lib.ed_complete_begin(h)

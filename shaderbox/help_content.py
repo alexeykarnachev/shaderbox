@@ -17,7 +17,7 @@ from shaderbox.commands import (
     COMMAND_SPECS,
     chord_to_str,
 )
-from shaderbox.core import ENGINE_DRIVEN_UNIFORMS, ENGINE_UNIFORM_TYPES
+from shaderbox.engine_uniforms import ENGINE_DRIVEN_UNIFORMS, ENGINE_UNIFORM_TYPES
 from shaderbox.glyph_tables import TABLE_UNIFORMS
 
 
