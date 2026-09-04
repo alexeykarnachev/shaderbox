@@ -26,7 +26,7 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-04 (075 landed, 076 landed, the first experiment built; the maintainer's eye is next). -->
+<!-- As of 2026-09-04 (075 + 076 landed, the first experiment built and its findings fixed; the maintainer's eye is next). -->
 **Next: the maintainer looks at `rc_full_build`** — `dogfood/index.html` → attempt 3, and the
 project itself in the app (`scripts/dogfood/runs/proj-m3pqx_c0`, document `RC`): draw into it, judge
 the light. The copilot built a working radiance-cascades document — seven passes (jfa x12, cascade
@@ -34,10 +34,12 @@ x6), an emitter script, a drawing canvas on `u_prev` — over three attempts and
 GLSL and Python is its own, every scene decision the driver's. What the run found, all landed:
 **076** (the copilot had no way to add a pass — attempt 1 died on it), a wrong-typed engine builtin
 is now a compile error, the harness resizes a multi-pass document through the document's funnel,
-`set_pass` reads an empty dtype as unchanged. Open findings on the page, not fixed: the churn brake
-has a hole for repeated no-op whole-file rewrites (gpt-5.6-luna hit `max_iterations` on it four
-turns running); codex-mini stalls on a compound shader step with a hidden-reasoning burn; the probe
-draws an iterated OUTPUT pass's last run at probe size while its input stays native.
+`set_pass` reads an empty dtype as unchanged; a no-op brake (edits whose probe frames did not
+change: a nudge at 3, a stop at 6 — the model style-passed to `max_iterations` four turns running);
+the probe renders at the document's size and downscales (an iterated output pass sampled its own
+previous run off-grid). The default model moved off codex-mini after it stalled twice on a compound
+shader step with hidden-reasoning burns; `CopilotIntegration.model` is the one place that names it.
+The station's store is local and gitignored (one experiment ran to 28 MB).
 
 **Still due at the display:** 073's per-wave `## Manual verification` lists, 072's five checks,
 070's, 071's, `todo.md`'s live-only checks and 065's 13-16.

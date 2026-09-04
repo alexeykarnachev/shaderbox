@@ -32,6 +32,7 @@ sys.path.insert(0, str(ROOT))
 from shaderbox.copilot.config import COPILOT_CONFIG, COPILOT_ENGINE  # noqa: E402
 from shaderbox.copilot.prompt import _RENDER_FACTS_LEGEND, _SYSTEM_PROMPT  # noqa: E402
 from shaderbox.copilot.prompt_context import _CONVENTIONS  # noqa: E402
+from shaderbox.integrations import CopilotIntegration  # noqa: E402
 from shaderbox.scripting.api_doc import script_api_summary  # noqa: E402
 
 sys.path.insert(0, str(ROOT / "tests"))
@@ -381,7 +382,7 @@ def main() -> None:
         "<p>Полный срез копайлота ShaderBox: промпт, интерфейс, рамки движка и все тестовые прогоны "
         "с диалогами и медиа. Технические секции сняты с живого кода на момент генерации; вердикты "
         "прогонов — курируемая оценка сессии. Страница — хаб для комментариев: ссылайся на § секций.</p>"
-        f"<p class='dim'>commit {esc(commit)} · модель прогонов: openai/gpt-5.1-codex-mini · "
+        f"<p class='dim'>commit {esc(commit)} · модель по умолчанию: {esc(CopilotIntegration().model)} · "
         "сгенерировано scripts/agent_hub/generate.py</p>"
     )
     parts.append(section("intro", "О странице", intro, toc))
