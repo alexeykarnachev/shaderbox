@@ -1,11 +1,12 @@
 """The pass-settings modal: a pass's name, how many times it runs, and the target it draws
-into (065, 068).
+into (065, 068), and the one place a pass is CREATED (078 D5).
 
 These are set-up-once choices, and as an always-open block under the strip they spent the
 panel's vertical budget on rows nobody touches after the first minute. The modal opens from a
-tile's gear, the tile's context menu, and automatically when a pass is created (the one moment
-the choices are actually made). What a pass READS is not here: a sampler's source is chosen on
-its own row of the uniforms panel (072).
+tile's gear, the tile's context menu, and from `add pass` — in create mode it edits a draft
+(`App.pass_draft`) that becomes a pass only on `Create`; `Cancel` or Escape makes nothing.
+What a pass READS is not here: a sampler's source is chosen on its own row of the uniforms
+panel (072).
 """
 
 from imgui_bundle import imgui
@@ -18,6 +19,7 @@ from shaderbox.ui_primitives import (
     help_marker,
     label_row,
     modal_window,
+    primary_button,
 )
 
 _LABEL = "Pass settings##popup"
@@ -56,9 +58,46 @@ def draw_pass_settings(app: App) -> None:
     ) as visible:
         if not visible:
             return
-        if not _draw_body(app):
+        keep_open = _draw_draft(app) if app.pass_draft is not None else _draw_body(app)
+        if not keep_open:
             app.close_pass_settings()
             imgui.close_current_popup()
+
+
+def _draw_draft(app: App) -> bool:
+    """Create mode: every control edits the draft; nothing reaches the document until
+    `Create`. Enter in the name field is `Create` too."""
+    draft = app.pass_draft
+    assert draft is not None
+    document_id = app.current_document_id
+    ui_document = app.ui_documents.get(document_id)
+    if ui_document is None:
+        return False
+
+    imgui.separator_text("Pass")
+    label_row(app.font_12, "name", _CTRL_W, _ROW_LABEL_W)
+    if draft.needs_focus:
+        imgui.set_keyboard_focus_here(0)
+        draft.needs_focus = False
+    entered, draft.name_buf = imgui.input_text(
+        "##pass_draft_name",
+        draft.name_buf,
+        flags=imgui.InputTextFlags_.enter_returns_true,
+    )
+    imgui.same_line()
+    help_marker("names its shader file and its wires")
+
+    imgui.dummy((0.0, float(SPACE.MD)))
+    draft.entry = _draw_target(
+        app, "draft", draft.entry, ui_document.document.canvas_size, is_output=False
+    )
+    draft.entry = _draw_repeat(app, "draft", draft.entry)
+
+    imgui.dummy((0.0, float(SPACE.MD)))
+    created = (primary_button("Create") or entered) and app.create_pass_from_draft()
+    imgui.same_line()
+    cancelled = ghost_button("Cancel")
+    return not (created or cancelled)
 
 
 def _draw_body(app: App) -> bool:
@@ -71,11 +110,36 @@ def _draw_body(app: App) -> bool:
     imgui.separator_text("Pass")
     renamed = _draw_name(app, document_id, name)
     if not renamed:
+        document = ui_document.document
+        entry = document.graph.passes.get(name, PassEntry())
         imgui.dummy((0.0, float(SPACE.MD)))
-        _draw_target(app, document_id, name)
+        new_entry = _draw_target(
+            app,
+            name,
+            entry,
+            document.canvas_size,
+            is_output=name == document.graph.output,
+        )
+        new_entry = _draw_repeat(app, name, new_entry)
+        _apply_entry(app, document_id, name, entry, new_entry)
 
     imgui.dummy((0.0, float(SPACE.MD)))
     return not ghost_button("Close")
+
+
+def _apply_entry(
+    app: App, document_id: str, name: str, before: PassEntry, after: PassEntry
+) -> None:
+    # Edit mode writes straight through the session's verbs, one per changed field, so the
+    # document (and its `graph.json`) follows every control the frame it moves.
+    if after.target != before.target:
+        error = app.session.set_pass_target(document_id, name, after.target)
+        if error:
+            app.notifications.push(error)
+    if after.iterations != before.iterations:
+        error = app.session.set_pass_iterations(document_id, name, after.iterations)
+        if error:
+            app.notifications.push(error)
 
 
 def _draw_name(app: App, document_id: str, name: str) -> bool:
@@ -112,14 +176,19 @@ def _commit_pass_name(app: App, document_id: str, name: str) -> bool:
     return True
 
 
-def _draw_target(app: App, document_id: str, name: str) -> None:
-    # What this pass DRAWS INTO. Every control names the thing it changes about the picture, not
-    # the field it writes: a target's dtype is "format / 16-bit float", not "f2".
-    document = app.ui_documents[document_id].document
-    entry = document.graph.passes.get(name, PassEntry())
+def _draw_target(
+    app: App,
+    name: str,
+    entry: PassEntry,
+    canvas_size: tuple[int, int],
+    is_output: bool,
+) -> PassEntry:
+    """What this pass DRAWS INTO, drawn over `entry`; returns the entry as the controls left
+    it (the caller decides whether that is a document write or a draft)."""
+    # Every control names the thing it changes about the picture, not the field it writes: a
+    # target's dtype is "format / 16-bit float", not "f2".
     target = entry.target
     new_target = target
-    is_output = name == document.graph.output
 
     imgui.separator_text("Draws into")
 
@@ -132,7 +201,7 @@ def _draw_target(app: App, document_id: str, name: str) -> None:
     imgui.same_line()
     help_marker(_FORMATS[_FORMAT_CODES.index(target.dtype)][2])
 
-    canvas_w, canvas_h = document.canvas_size
+    canvas_w, canvas_h = canvas_size
     w = max(1, round(canvas_w * target.scale))
     h = max(1, round(canvas_h * target.scale))
     label_row(app.font_12, "size", _CTRL_W, _ROW_LABEL_W)
@@ -162,21 +231,14 @@ def _draw_target(app: App, document_id: str, name: str) -> None:
     if tile_changed:
         new_target = new_target.model_copy(update={"wrap": tile})
 
-    if new_target != target:
-        error = app.session.set_pass_target(document_id, name, new_target)
-        if error:
-            app.notifications.push(error)
+    return (
+        entry
+        if new_target == target
+        else entry.model_copy(update={"target": new_target})
+    )
 
-    _draw_repeat(app, document_id, name, entry, document.canvas_size)
 
-
-def _draw_repeat(
-    app: App,
-    document_id: str,
-    name: str,
-    entry: PassEntry,
-    canvas_size: tuple[int, int],
-) -> None:
+def _draw_repeat(app: App, name: str, entry: PassEntry) -> PassEntry:
     # How many times this pass draws per frame (068). Named for what it does to the picture --
     # "runs" of the same shader, each seeing the one before it -- not for the model field.
     imgui.separator_text("Runs")
@@ -187,12 +249,11 @@ def _draw_repeat(
     )
     imgui.same_line()
     help_marker("redraws per frame, each reading the last")
-    if changed and runs != entry.iterations:
-        error = app.session.set_pass_iterations(document_id, name, runs)
-        if error:
-            app.notifications.push(error)
 
     # No engine-side "your count is short" warning: the engine cannot tell a base-2 jump flood
     # from the base-4 cascade stack beside it, so a check assuming one warns falsely on the
     # other -- it fired on this repo's own shipped cascade pass at its shipped size. The help
     # text explains the number; the shader's author owns it.
+    if changed and runs != entry.iterations:
+        return entry.model_copy(update={"iterations": runs})
+    return entry

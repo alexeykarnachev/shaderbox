@@ -19,11 +19,13 @@ from shaderbox.shader_errors import find_uniform_declaration_line
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_models import UIUniform
 from shaderbox.ui_primitives import (
+    ComboRow,
     button,
     caption_text,
     chip_button,
     clickable_label,
     clipped_caption,
+    grouped_combo,
     play_stop_toggle,
 )
 from shaderbox.util import (
@@ -287,11 +289,20 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
         document = app.ui_documents[document_id].document
         passes = sorted(document.passes)
         auto = wired_pass(AutoSource(), name, panel_pass_name, passes)
-        choices = [f"auto ({auto or 'none'})", "none", *passes, "file..."]
+        # Three groups (078 D6): the two rules, the passes in the pass-sampler color, a file.
+        rules: list[ComboRow] = [
+            (f"auto ({auto or 'none'})", COLOR.FG_SECONDARY),
+            ("none", COLOR.FG_DIM),
+        ]
+        pass_rows: list[ComboRow] = [(p, COLOR.SYN_PASS_SAMPLER) for p in passes]
+        file_row: ComboRow = ("file...", COLOR.FG_SECONDARY)
+        choices: list[ComboRow] = [*rules, *pass_rows, file_row]
         file_item = len(choices) - 1
         if isinstance(current_value, PassSource):
             index = (
-                choices.index(current_value.name) if current_value.name in passes else 1
+                2 + passes.index(current_value.name)
+                if current_value.name in passes
+                else 1
             )
         elif isinstance(current_value, NoSource):
             index = 1
@@ -299,18 +310,24 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
             index = 0
         else:
             index = file_item
-        changed, picked = imgui.combo(f"##source_{name}", index, choices)
+        picked = grouped_combo(
+            f"##source_{name}",
+            choices[index],
+            [("", rules), ("pass", pass_rows), ("", [file_row])],
+            SIZE.UNIFORM_CTRL_W,
+        )
+        changed = picked is not None and picked != index
         if changed and picked == file_item:
             file_path = _pick_media_file()
             if file_path.suffix.lower() in MEDIA_EXTENSIONS:
                 new_value = media_class_for(file_path.suffix)(file_path)
-        elif changed:
+        elif changed and picked is not None:
             source = (
                 AutoSource()
                 if picked == 0
                 else NoSource()
                 if picked == 1
-                else PassSource(choices[picked])
+                else PassSource(passes[picked - 2])
             )
             error = app.session.set_sampler_source(
                 document_id, panel_pass_name, name, source

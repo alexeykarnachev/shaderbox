@@ -463,8 +463,7 @@ def test_a_rejected_rename_snaps_the_buffer_back(app: Any) -> None:
 
 def test_add_pass_activates_the_new_pass(app: Any) -> None:
     # #28 / D10: a created pass is what the document SHOWS — tab, output and gear together.
-    # Driven through the real widget: focus the input, type a character, move focus away, which
-    # is the click-away D11 commits on.
+    # 078 D5: the pass is made from the settings modal's draft, by `Create` alone.
     document_id = _document_id(app)
     before_output = app.ui_documents[document_id].document.graph.output
     opened: list[str] = []
@@ -475,31 +474,16 @@ def test_add_pass_activates_the_new_pass(app: Any) -> None:
         real_ensure(doc_id, pass_name, focus_editor=focus_editor)
 
     app.ensure_shader_tab = spy
-    app.pass_add.open(app.session.paths.passes_dir_for(document_id))
-    app.pass_add.buf = "b"
-
-    for frame in range(6):
-        if frame == 2:
-            imgui.get_io().add_input_character(ord("z"))
-
-        def body(frame: int = frame) -> None:
-            if frame in (0, 1):
-                imgui.set_keyboard_focus_here(0)
-            if frame == 3:
-                imgui.set_keyboard_focus_here(1)
-            if app.pass_add.is_open:
-                pass_list._draw_add_input(app, document_id)
-            imgui.input_text("##sink", "sink")
-
-        _imgui_frame(body)
+    app.open_add_pass()
+    assert app.popup_state == PopupState.PASS_SETTINGS
+    app.pass_draft.name_buf = "z"
+    assert app.create_pass_from_draft() is True
 
     document = app.ui_documents[document_id].document
-    assert "z" in document.passes, "the click-away never created the pass"
+    assert "z" in document.passes
     assert document.graph.output == "z" != before_output
     assert opened == ["z"]
-    assert app.popup_state == PopupState.PASS_SETTINGS
-    assert app.pass_settings_name == "z"
-    assert not app.pass_add.is_open
+    assert app.pass_draft is None
 
 
 def test_closing_the_gear_on_a_retired_pass_stays_silent(app: Any) -> None:

@@ -253,15 +253,18 @@ def test_an_uncompiled_pass_contributes_no_auto_edge_and_compiles_nothing(
 
 
 def _combo_capture(monkeypatch: pytest.MonkeyPatch) -> list[tuple[int, list[str]]]:
+    # The source combo is a grouped one (078 D6); the capture flattens its groups back to the
+    # (selected index, labels) reading the three states are asserted on.
     seen: list[tuple[int, list[str]]] = []
-    real = imgui.combo
+    real = uniform_widget.grouped_combo
 
-    def spy(label: str, current: int, items: list[str], *a: Any, **kw: Any) -> Any:
-        if label.startswith("##source_"):
-            seen.append((current, list(items)))
-        return real(label, current, items, *a, **kw)
+    def spy(id_: str, current: Any, groups: Any, width: float) -> int | None:
+        if id_.startswith("##source_"):
+            labels = [label for _, rows in groups for label, _ in rows]
+            seen.append((labels.index(current[0]), labels))
+        return real(id_, current, groups, width)
 
-    monkeypatch.setattr(uniform_widget.imgui, "combo", spy)
+    monkeypatch.setattr(uniform_widget, "grouped_combo", spy)
     return seen
 
 

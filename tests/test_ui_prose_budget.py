@@ -123,6 +123,10 @@ _CLAUSE_JOINERS: tuple[str, ...] = (";", " — ", " -- ")
 # forwarding a caller's text -- the CALLERS are the measured sites.
 _UNMEASURABLE: dict[tuple[str, str], str] = {
     (
+        "shaderbox/ui_primitives.py",
+        "grouped_combo",
+    ): "the group captions of a grouped combo, passed in by the caller (one word each)",
+    (
         "shaderbox/tabs/code.py",
         "_draw_lookup_popup",
     ): "the `K` lookup's signature and doc, read from the lib index and ENGINE_UNIFORM_DOCS",

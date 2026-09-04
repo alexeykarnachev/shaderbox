@@ -48,7 +48,6 @@ from shaderbox.editor_types import (
     EditorSession,
     EditorTab,
     HoverMark,
-    InlineInput,
     JumpRequest,
     LookupPopup,
 )
@@ -58,7 +57,7 @@ from shaderbox.exporters.youtube import YouTubeExporter
 from shaderbox.help_content import help_sections
 from shaderbox.integrations import IntegrationsStore
 from shaderbox.notifications import Notifications
-from shaderbox.pass_graph import step_in_order, strip_order
+from shaderbox.pass_graph import PassEntry, step_in_order, strip_order
 from shaderbox.paths import ProjectPaths, app_data_dir, pass_name_of, shader_lib_root
 from shaderbox.project_session import ProjectSession
 from shaderbox.render_defer import RenderDefer
@@ -74,6 +73,7 @@ from shaderbox.tabs import share_state
 from shaderbox.theme import COLOR, SETTINGS_MARK_S, apply_theme, editor_palette
 from shaderbox.ui_models import (
     EditorSettings,
+    PassDraft,
     UIAppState,
     UIDocument,
     UIDocumentState,
@@ -333,7 +333,8 @@ class App:
         self.canvas_h_editing: bool = False
 
         # The pass list's inline add input (name a new pass).
-        self.pass_add: InlineInput = InlineInput()
+        # The pass being created in the settings modal; None outside create mode.
+        self.pass_draft: PassDraft | None = None
         # The pass whose settings modal is open (a PopupState.PASS_SETTINGS payload), or "",
         # and the modal's rename buffer (seeded on open, committed on Enter).
         self.pass_settings_name: str = ""
@@ -927,6 +928,7 @@ class App:
         self.popup_state = PopupState.CLOSED
         self.pass_settings_name = ""
         self.pass_settings_name_buf = ""
+        self.pass_draft = None
 
     def open_pass_settings_for_panel_pass(self) -> None:
         document_id = self.current_document_id
@@ -935,10 +937,43 @@ class App:
         self.open_pass_settings(pass_name_of(self.panel_pass(document_id).source.path))
 
     def open_add_pass(self) -> None:
+        # The settings modal in create mode (078 D5): a draft the modal edits, made real only
+        # by `create_pass_from_draft`; Escape and Cancel both reach `close_pass_settings`,
+        # which drops it.
         document_id = self.current_document_id
         if document_id not in self.ui_documents:
             return
-        self.pass_add.open(self.session.paths.passes_dir_for(document_id))
+        self.pass_draft = PassDraft()
+        self._open_popup(PopupState.PASS_SETTINGS)
+
+    def create_pass_from_draft(self) -> bool:
+        """Make the draft a pass; True when it landed (the modal closes on it). A refused
+        name toasts and keeps the draft, so the user corrects it in place."""
+        draft = self.pass_draft
+        document_id = self.current_document_id
+        if draft is None or document_id not in self.ui_documents:
+            return False
+        name = draft.name_buf.strip()
+        error = self.session.add_pass(document_id, name)
+        if error:
+            self.notifications.push(error)
+            return False
+        entry = draft.entry
+        if entry.target != PassEntry().target:
+            error = self.session.set_pass_target(document_id, name, entry.target)
+            if error:
+                self.notifications.push(error)
+        if entry.iterations != PassEntry().iterations:
+            error = self.session.set_pass_iterations(
+                document_id, name, entry.iterations
+            )
+            if error:
+                self.notifications.push(error)
+        self.pass_draft = None
+        # A new pass is what the document shows: the editor tab, the viewer and the gear all
+        # follow it.
+        self.pick_pass(document_id, name, focus_editor=False)
+        return True
 
     def open_emoji_picker(self, target: Callable[[str], None] | None = None) -> None:
         self._open_popup(PopupState.EMOJI_PICKER)

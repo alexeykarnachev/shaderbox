@@ -231,11 +231,23 @@ D5.
 name error as a toast. Tests: create mode commits nothing until `Create`; a duplicate name
 stays in the modal.
 
+*(Landed: `PassDraft` (`ui_models.py`) held on `App.pass_draft`; `add pass` and `Alt+A` open
+the modal in create mode; the target and runs controls draw over a `PassEntry` and return it,
+so edit mode writes through the session's verbs and create mode into the draft; `Create` (or
+Enter in the name field) calls `App.create_pass_from_draft`, `Cancel` and Escape reach
+`close_pass_settings`, which drops the draft. The inline `InlineInput` for passes is gone.
+Pinned by `tests/test_pass_draft.py`. Display check owed.)*
+
 ### W-G — Sampler-source list (#15, D6)
 
 `widgets/uniform.py`'s combo becomes `begin_combo` with three groups and per-row colors from
 the D2 table; the current source shown with its color on the closed combo. Test: the row
 order and the group captions.
+
+*(Landed: `ui_primitives.grouped_combo` — captioned groups of colored rows, the closed
+control in the current row's color; the source row uses three groups: the two rules, the
+passes in `COLOR.SYN_PASS_SAMPLER`, `file...`. `SYN_SCRIPT_UNIFORM` / `SYN_PASS_SAMPLER` are
+the first two D2 tokens; W-A's kind table reads them. Display check owed: the look.)*
 
 ### W-H — Settings focus mark (#17, D7)
 

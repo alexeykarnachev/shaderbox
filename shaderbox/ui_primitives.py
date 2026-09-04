@@ -474,6 +474,43 @@ class FieldFocus:
 NO_FOCUS = FieldFocus()
 
 
+ComboRow = tuple[str, tuple[float, float, float, float]]
+
+
+def grouped_combo(
+    id_: str,
+    current: ComboRow,
+    groups: Sequence[tuple[str, Sequence[ComboRow]]],
+    width: float,
+) -> int | None:
+    """A combo whose list reads as groups: each group a dim caption (or none, for a bare
+    run) over its rows, every row in its own color, a gap between groups. The closed control
+    shows `current` in its color. Returns the picked row's index across all groups, else
+    None."""
+    imgui.set_next_item_width(width)
+    imgui.push_style_color(imgui.Col_.text, current[1])
+    opened = imgui.begin_combo(id_, current[0])
+    imgui.pop_style_color(1)
+    if not opened:
+        return None
+    picked: int | None = None
+    index = 0
+    for g, (caption, rows) in enumerate(groups):
+        if g > 0:
+            imgui.dummy(imgui.ImVec2(0.0, float(SPACE.XS)))
+        if caption:
+            caption_text(caption)
+        for label, color in rows:
+            imgui.push_style_color(imgui.Col_.text, color)
+            chosen = imgui.selectable(f"{label}##{index}", label == current[0])[0]
+            imgui.pop_style_color(1)
+            if chosen:
+                picked = index
+            index += 1
+    imgui.end_combo()
+    return picked
+
+
 @contextmanager
 def focus_field(focus: FieldFocus) -> Iterator[None]:
     """Wrap the ONE widget a jump points at. The caller owns the timing: `keyboard` True only

@@ -232,11 +232,12 @@ def main() -> int:
                     app.pass_delete_armed = "smoke_pass"
                 if frame_idx == 35:
                     app.pass_delete_armed = ""
-                    app.pass_add.open(
-                        app.session.paths.passes_dir_for(app.current_document_id)
-                    )
+                    # The modal's create mode (078 D5): a draft drawn for a few frames.
+                    app.open_add_pass()
                 if frame_idx == 40:
-                    app.pass_add.close()
+                    app.close_pass_settings()
+                    assert app.pass_draft is None, "smoke: closing kept the pass draft"
+                    app.open_pass_settings("smoke_pass")
                     # Deleting the pass while its settings modal is open exercises the modal's
                     # missing-pass close branch on the next frame.
                     assert (

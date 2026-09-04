@@ -190,6 +190,10 @@ class _ColorBag:
     SYN_COMMENT: tuple[float, float, float, float] = _P["gray"]
     SYN_PREPROC: tuple[float, float, float, float] = _P["aqua_b"]
     SYN_UNIFORM: tuple[float, float, float, float] = _P["blue_b"]
+    # What a name IS, beyond the lexer (078 D2): a uniform the script returns, a sampler wired
+    # to another pass. Read by the sampler-source list now and by the intel color table.
+    SYN_SCRIPT_UNIFORM: tuple[float, float, float, float] = _P["green_b"]
+    SYN_PASS_SAMPLER: tuple[float, float, float, float] = _P["aqua_b"]
     SYN_IDENT: tuple[float, float, float, float] = _P["fg_1"]
     SYN_OP: tuple[float, float, float, float] = _P["fg_3"]
 

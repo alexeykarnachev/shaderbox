@@ -1,6 +1,6 @@
 import base64
 import json
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal, Self, get_args
 from uuid import uuid4
@@ -22,7 +22,7 @@ from shaderbox.document import Document
 from shaderbox.glyph_tables import TABLE_UNIFORMS
 from shaderbox.media import MediaDetails, MediaWithTexture
 from shaderbox.model_salvage import drop_invalid, load_model
-from shaderbox.pass_graph import AutoSource, NoSource, PassSource
+from shaderbox.pass_graph import AutoSource, NoSource, PassEntry, PassSource
 from shaderbox.paths import (
     DOCUMENT_JSON_BASENAME,
     GRAPH_JSON_BASENAME,
@@ -549,3 +549,14 @@ def load_documents_from_dir(root_dir: Path) -> dict[str, UIDocument]:
             logger.error(f"Skipping unreadable document '{document_dir.name}': {e}")
 
     return ui_documents
+
+
+@dataclass
+class PassDraft:
+    """A pass being made in the settings modal (078 D5): its name and entry live here until
+    `Create` turns them into a pass; dropping the draft makes nothing."""
+
+    name_buf: str = ""
+    entry: PassEntry = field(default_factory=PassEntry)
+    # One-shot: the name field's first draw takes keyboard focus.
+    needs_focus: bool = True
