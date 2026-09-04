@@ -26,31 +26,30 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-03 (074 done; the sweep's five waves all green; nothing queued). -->
-**No feature is queued.** 074, an unattended structural sweep, landed whole on `dev` — and its
-finding is that the repo was already clean. An inventory over every symbol kind across
-`shaderbox/`, `scripts/` and `tests/` found zero dead functions, classes, modules, private
-helpers, enum members or type aliases. What it removed is ten symbols nothing read: one
-constant completing 072's D2, one orphaned forwarder, and eight write-only dataclass fields —
-the one category static tools cannot see. Also `seed.py`'s duplicated escape check given one
-home, a subset test pinning the copilot's brake tool-sets to the registry, and
-`conventions.md`'s three-layer bullet rewritten to say what `ui.py` actually owns.
-`074_nightly_sweep/00_inventory.md` carries the per-symbol evidence and the things a later
-sweep will re-find and must not delete.
+<!-- As of 2026-09-04 (075 specced, not started; 074 + an editor re-vendor landed). -->
+**Next: implement 075, the dogfooding station** (`ai_docs/features/075_dogfood_station/01_spec.md`)
+— a static site over an append-only JSONL log, plus the per-block `context_breakdown` deferred since
+026. Five waves, unstarted. **The first experiment — a full radiance-cascades build with script,
+drawing and multipass — runs only after it lands.** The spec carries the standing rules for those
+runs: the driver plays a real user in a mode chosen up front, and **no scripted oracle decides
+anything — the maintainer is the final oracle**, looking at renders ad hoc instead.
 
-**Still due at the display, whenever the maintainer sits down to it:** 073's per-wave
-`## Manual verification` lists (`ai_docs/features/073_third_walk_findings/{10,20,30,40}_*.md`),
-then 072's five checks (`072_sampler_source/01_spec.md`), 070's (`070_pass_reads/01_spec.md`),
-071's per-wave lists, `todo.md`'s live-only checks and 065's checks 13-16. Findings go into a
-new ledger per `dev_flow.md ### How a tutorial walk runs`.
+Landed since: 074's structural sweep (the repo was already clean — ten write-only symbols removed,
+nothing else dead) and an **editor re-vendor to `f738744`**, closing two live read-only holes where
+`>>` and `<<` edited a buffer locked for a copilot turn. That sha also appended a `Mode`, which is
+why `editor/ffi.py`'s enums are now gated against the vendored probe.
 
-**Shipped:** v0.28.0 is a GitHub release only; the itch channels stay at v0.27.0. The Windows
-`libeditor.dll` still needs a Windows host before the next itch cut.
+**Still due at the display:** 073's per-wave `## Manual verification` lists, 072's five checks,
+070's, 071's, `todo.md`'s live-only checks and 065's 13-16.
+
+**Shipped:** v0.28.0 is a GitHub release only; itch stays at v0.27.0. The Windows `libeditor.dll`
+still needs a Windows host before the next cut.
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 075 | dogfood_station | spec | A durable browsable home for every dogfooding experiment: a static site over an append-only event log, with the per-block context breakdown deferred since 026, so a run's conversation, renders and context are inspectable live and after the fact. Spec: `ai_docs/features/075_dogfood_station/01_spec.md`. |
 | 074 | nightly_sweep | done | An unattended structural pass over the repo's shape: a dead-symbol inventory across every symbol kind, ten write-only or orphaned symbols removed, the duplicated stale-file check in `seed.py` given one home, a subset test pinning the copilot's brake tool-sets to the registry, and `ui.py`'s layering documented as it actually is. Spec: `ai_docs/features/074_nightly_sweep/01_spec.md`. |
 | 073 | third_walk_findings | done | The maintainer's third walk (the 070 + 072 tree): 8 findings, five decisions -- a matching-opener bracket snap and a reverse-video caret in the editor library, context-aware auto-completion and a `K` lookup popup, a three-state alpha view on the viewer, a live-tile fill instead of the dormant tint, `Alt+Left`/`Alt+Right` pass switching, Reset moved to the document row. Spec: `ai_docs/features/073_third_walk_findings/01_spec.md`. |
 | 072 | sampler_source | done | A sampler2D has ONE source, held as its value (`PassSource` / `NoSource` / `AutoSource` / a bound texture) and chosen on its own panel row; `graph.json` loses `inputs` and `layout`, the planner takes a wiring, the gear loses Reads, the copilot's sampler row says what it reads. Spec: `ai_docs/features/072_sampler_source/01_spec.md`. |
