@@ -37,3 +37,33 @@ Verified directly while writing the spec, not assumed:
 - The dogfood harness is mature — ~30 public methods including `render_strip`, `script_values`,
   `render_video_mp4`, `clear_context`, resume-by-project-dir. The station OBSERVES it; W-3 wires
   logging in rather than reshaping how turns are driven.
+
+## Spec revised twice before any wave started
+
+The spec was written, then reviewed against what the maintainer actually said, then corrected
+again on his instruction. Both rounds are recorded because a session reading only the final text
+would not know which parts were argued for.
+
+**Round 1 (`b2c7f0f`) — seven gaps, four of them things stated in conversation that no line of
+the spec carried.** The driving discipline was missing entirely (driver-as-real-user, the mode
+chosen up front, and the three-way rule when the copilot is stuck: file it / sub-feature it /
+stop and ask). So were videos and gifs as artifacts, the first experiment's actual target, and
+the "sizes AND concrete text" halves of the context view. Two gaps were omissions rather than
+errors: the spec did not cite feature 027, which was drafted as a dogfood SERVER and had that
+killed by a devil's-advocate pass on the same reasoning D1 reaches independently; and it said
+nothing about the seven existing dogfood reports or the six report axes.
+
+The W-1 notes were rewritten from a reading of `prompt.py` rather than from memory, which turned
+up the fact that decides where the wave's code goes: **`working_set` renders `[]` at build time
+and is spliced in live per iteration by `run_turn`**, so a breakdown emitted at `build_messages`
+would report the block holding the actual shader source as EMPTY. Its falsifier is now a
+done-condition. Same for `dialogue` being trimmed, where the trim is itself the signal.
+
+**Round 2 (`89fee18`) — the standing oracle was struck, by explicit instruction.** The first
+draft told the RC experiment to check the copilot's output against feature 068's numerical
+oracle. The maintainer's words: *"Don't rely on the scripted oracles. This never works, you are
+overfitting the noise. I AM THE FINAL ORACLE."* So no fixed checker is wired into any run's
+verdict; judgement is his, by looking at renders and videos ad hoc. Ad-hoc measurement answering
+ONE question and then deleted is still welcome — the distinction is what a measurement CLAIMS,
+not how it is computed. **Do not re-introduce this**; the "station does not judge" bullet now
+warns that it is the line most likely to be mistaken for an improvement later.
