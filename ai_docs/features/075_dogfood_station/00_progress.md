@@ -86,7 +86,7 @@ ruled out: a shared lock file or a single long-lived handle — the harness's tu
 process, so nothing can be shared; O_APPEND single-write lines are the whole concurrency story.
 surprise: none.
 
-## W-1 `context_breakdown` — DONE   9266c6f
+## W-1 `context_breakdown` — DONE   c81c3ae
 done-condition: a test asserts every block appears in the event, enumerated from the block list;
 a test asserts `working_set` is reported non-empty and LIVE (its text changes between iterations
 when the splice changes); the composed prompt is byte-identical with a listener attached and
@@ -109,7 +109,7 @@ names); parsing the breakdown back out of the plain-text transcript (the listene
 nobody has to); a second `LLMClient` wrapper to observe requests (the trace already sees them).
 surprise: `RUF005` on a list concatenation, otherwise none.
 
-## W-2 the static site — DONE   dd5bedd
+## W-2 the static site — DONE   0827115
 done-condition: the site builds from a fixture log with no network; every turn in the log
 appears on the attempt page; `index.html` opened from a `file://` URL shows images and
 disclosures.
@@ -134,7 +134,7 @@ moment a run appends without a rebuild).
 surprise: the growth legend keyed off the LAST row and showed only `tools ~0` when that row was
 an in-progress turn with no blocks; it now merges names across rows.
 
-## W-3 harness + skill integration — DONE   8abf894
+## W-3 harness + skill integration — DONE   fb7a85f
 done-condition: driving a turn writes its record with no explicit logging call in the command,
 and the skill's §1 commands produce a browsable page.
 did: `dogfood/report/station.py::StationRecorder` — a trace listener that folds one turn's
@@ -165,7 +165,7 @@ surfaced once the file was staged. Not a discovery: `dev_flow.md ### make gates`
 "stage new files before running it" (069 hit the same thing). The rule was there; it was not
 followed. Every later gate in this feature staged first.
 
-## W-4 sanitize — DONE   259f423
+## W-4 sanitize — DONE   38603e5
 done-condition: roadmap banner and row, conventions if a decision here constrains future code,
 the cold-context check.
 did: roadmap banner rewritten (next: the first RC experiment, driven per the skill; 075 landed)

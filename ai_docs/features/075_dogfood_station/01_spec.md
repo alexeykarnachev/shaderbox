@@ -15,7 +15,7 @@ runs AFTER this lands, on finished tooling.
 | W-1 `context_breakdown` trace event | done | `c81c3ae` |
 | W-2 the static site | done | `0827115` |
 | W-3 harness + skill integration | done | `fb7a85f` |
-| W-4 sanitize | done | `259f423` |
+| W-4 sanitize | done | `38603e5` |
 
 ## Why this exists
 
