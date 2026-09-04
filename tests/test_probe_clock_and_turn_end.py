@@ -15,27 +15,26 @@ from shaderbox.copilot.tools.registry import build_registry
 from tests._caps import minimal_caps
 
 
-class _FakeCanvas:
-    def __init__(self) -> None:
-        self.texture = types.SimpleNamespace(
-            size=(64, 64), read=lambda: b"\x00" * (64 * 64 * 4)
-        )
-
-    def set_size(self, _size: tuple[int, int]) -> None:
-        pass
-
-
 def _facts_for(t: float | None) -> str:
     # Run the REAL _render_facts_for bound to a stub backend: record the u_time the probe renders
-    # at, and feed render_facts a stand-in so the stamp logic runs without GL. Returns the stamp.
+    # at, and give the document's output texture a stand-in the downscale can read, so the stamp
+    # logic runs without GL. Returns the stamp.
     rendered_at: list[float] = []
+    texture = types.SimpleNamespace(
+        size=(64, 64),
+        width=64,
+        height=64,
+        components=4,
+        dtype="f1",
+        read=lambda: b"\x00" * (64 * 64 * 4),
+    )
     document = types.SimpleNamespace(
         render_pass=types.SimpleNamespace(
-            canvas=types.SimpleNamespace(texture=types.SimpleNamespace(size=(64, 64)))
+            canvas=types.SimpleNamespace(texture=texture)
         ),
-        render=lambda u_time, canvas: rendered_at.append(u_time),
+        render=lambda u_time: rendered_at.append(u_time),
     )
-    stub = types.SimpleNamespace(_probe_canvas=_FakeCanvas())
+    stub = types.SimpleNamespace(_last_probe={})
     fn = CopilotBackend._render_facts_for.__get__(stub)
     out = fn(document) if t is None else fn(document, t=t)
     return f"rendered_at={rendered_at[0]}|{out}"

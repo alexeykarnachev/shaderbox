@@ -27,6 +27,8 @@ _LIMIT_FIELDS = (
     "max_compile_failures",
     "clean_edit_soft_streak",
     "clean_edit_hard_streak",
+    "noop_edit_soft_streak",
+    "noop_edit_hard_streak",
     "auto_revert_after_failed_edits",
     "turn_time_budget_s",
 )
@@ -67,6 +69,8 @@ def test_apply_limits_reaches_the_live_config_with_floors() -> None:
             max_compile_failures=0,  # 0 = off, legal
             clean_edit_soft_streak=9,
             clean_edit_hard_streak=15,
+            noop_edit_soft_streak=4,
+            noop_edit_hard_streak=7,
             auto_revert_after_failed_edits=0,
         ).apply_limits()
         assert COPILOT_CONFIG.max_iterations == 1
@@ -76,6 +80,8 @@ def test_apply_limits_reaches_the_live_config_with_floors() -> None:
         assert COPILOT_CONFIG.max_compile_failures == 0
         assert COPILOT_CONFIG.clean_edit_soft_streak == 9
         assert COPILOT_CONFIG.clean_edit_hard_streak == 15
+        assert COPILOT_CONFIG.noop_edit_soft_streak == 4
+        assert COPILOT_CONFIG.noop_edit_hard_streak == 7
         assert COPILOT_CONFIG.auto_revert_after_failed_edits == 0
     finally:
         _restore(snap)

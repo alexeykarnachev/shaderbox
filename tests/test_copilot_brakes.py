@@ -21,6 +21,7 @@ from shaderbox.copilot.agent import (
 from shaderbox.copilot.backend import CopilotBackend
 from shaderbox.copilot.capabilities import EditResult, ScriptWriteResult
 from shaderbox.copilot.config import COPILOT_CONFIG, CopilotConfig
+from shaderbox.copilot.edit_hints import NOOP_FACTS_PREFIX
 from shaderbox.copilot.gate import GateChannel
 from shaderbox.copilot.llm.api import LLMDone, LLMStreamEvent, LLMTextDelta
 from shaderbox.copilot.tools.registry import build_registry
@@ -232,3 +233,68 @@ def test_the_brake_tool_sets_name_tools_the_registry_still_has() -> None:
     # The authoring set is broader than is_edit (set_uniform authors without editing a
     # file), so it is checked against the whole registry instead.
     assert {d.name for d in registry.definitions()} >= _RENDER_AUTHORING_TOOLS
+
+
+# ---- the no-op brake (the first station experiment: thirteen rewrites that changed nothing) ----
+
+
+def _noop_edit_result() -> EditResult:
+    # What the backend returns when the probe frames matched the frames before the mutation.
+    return EditResult(
+        matches=1,
+        errors=[],
+        render_facts=f"{NOOP_FACTS_PREFIX} on screen vs the frame before it",
+    )
+
+
+def test_noop_edits_nudge_then_force_end_across_files_and_writes() -> None:
+    # Alternating write_shader and edit_shader on two files: the per-file clean brake never
+    # trips (a write resets it), the no-op brake counts them all.
+    config = replace(
+        COPILOT_CONFIG,
+        clean_edit_soft_streak=0,
+        clean_edit_hard_streak=0,
+        noop_edit_soft_streak=2,
+        noop_edit_hard_streak=4,
+    )
+    write_a = _tool_call("wa", "write_shader", '{"new_text": "x", "target": "7f3a"}')
+    edit_b = _tool_call(
+        "eb", "edit_shader", '{"old_str": "a", "new_str": "b", "target": "9c1d"}'
+    )
+    events, trace = _run(
+        [write_a, edit_b, write_a, edit_b, write_a, _DONE],
+        config,
+        apply_shader_edit=lambda _o, _n, _r, _t: _noop_edit_result(),
+        apply_full_rewrite=lambda _t, _tg: _noop_edit_result(),
+    )
+    assert trace.kinds.count("noop_streak_nudge") == 3  # the 2nd, 3rd and 4th no-ops
+    assert "noop_streak_giveup" in trace.kinds
+    assert (
+        isinstance(events[-1], AgentError) and "changed nothing" in events[-1].message
+    )
+
+
+def test_an_edit_that_changes_the_frame_resets_the_noop_streak() -> None:
+    config = replace(
+        COPILOT_CONFIG,
+        clean_edit_soft_streak=0,
+        clean_edit_hard_streak=0,
+        noop_edit_soft_streak=2,
+        noop_edit_hard_streak=3,
+    )
+    results = iter(
+        [
+            _noop_edit_result(),
+            _noop_edit_result(),
+            EditResult(matches=1, errors=[], render_facts="render@t=0.0s: ink 10%"),
+            _noop_edit_result(),
+            _noop_edit_result(),
+        ]
+    )
+    events, trace = _run(
+        [_EDIT_SHADER] * 5 + [_DONE],
+        config,
+        apply_shader_edit=lambda _o, _n, _r, _t: next(results),
+    )
+    assert "noop_streak_giveup" not in trace.kinds
+    assert isinstance(events[-1], AgentTurnDone)

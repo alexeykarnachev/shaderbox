@@ -20,6 +20,7 @@ from typing import Any, cast
 import moderngl
 import numpy as np
 from loguru import logger
+from PIL import Image as PILImage
 from pydantic import ValidationError
 
 from shaderbox import render_job
@@ -66,6 +67,7 @@ from shaderbox.copilot.checkpoint import TurnCheckpoint
 from shaderbox.copilot.config import COPILOT_CONFIG, COPILOT_ENGINE
 from shaderbox.copilot.edit_hints import (
     FACTS_PREFIX,
+    NOOP_FACTS_PREFIX,
     STAMPED_FACTS_PREFIX,
     compile_hints,
     render_facts,
@@ -82,7 +84,7 @@ from shaderbox.copilot.errors import CopilotToolError
 from shaderbox.copilot.gate import GateChannel, GateKind, GateRequest
 from shaderbox.copilot.glsl_lex import span_drops_comment, token_match
 from shaderbox.copilot.sanitize import sanitize_display
-from shaderbox.core import ENGINE_DRIVEN_UNIFORMS, Canvas, Pass
+from shaderbox.core import ENGINE_DRIVEN_UNIFORMS, Pass
 from shaderbox.document import Document, document_dir_of
 from shaderbox.exporters.base import (
     AuthState,
@@ -97,6 +99,7 @@ from shaderbox.glyph_tables import TABLE_UNIFORMS
 from shaderbox.media import (
     MediaWithTexture,
     media_class_for,
+    texture_to_rgba8,
 )
 from shaderbox.pass_graph import (
     TARGET_DTYPES,
@@ -130,6 +133,20 @@ from shaderbox.util import try_to_release
 # Mean abs per-channel pixel delta (0-255) between two probe frames above which a shader counts as
 # ANIMATING — small enough to catch any real u_time motion, large enough to ignore FP noise.
 _MOTION_EPS = 1.5
+
+
+def _probe_frame(document: Document, t: float, width: int, height: int) -> bytes:
+    # The document rendered at ITS OWN size, then box-filtered down to the probe size. Drawing
+    # the output pass straight into a probe-sized canvas would give it a `u_resolution` its
+    # inputs do not share -- an iterated output pass (a cascade) reads its own previous run at
+    # native size and would sample it off-grid on the last run. GL orientation is kept: the
+    # facts read the buffer bottom-up, as a texture read is.
+    document.render(u_time=t)
+    frame = texture_to_rgba8(document.render_pass.canvas.texture)
+    small = PILImage.fromarray(frame, "RGBA").resize(
+        (width, height), PILImage.Resampling.BOX
+    )
+    return small.tobytes()
 
 
 def _stamp_facts(facts: str, t: float) -> str:
@@ -420,7 +437,6 @@ class CopilotBackend:
     ) -> None:
         self._get_bridge = get_bridge
         self._get_gate = get_gate
-        self._probe_canvas: Canvas | None = None  # lazy 033 render-facts target
         # Per-document last probe frames (raw0, raw1) — a mutation whose frames match the previous
         # ones changed NOTHING on screen (dead code / wrong target / script-overridden value).
         self._last_probe: dict[str, tuple[bytes, bytes]] = {}
@@ -2041,20 +2057,14 @@ class CopilotBackend:
             # aspect-corrected shaders (u_aspect) differently from the preview.
             cw, ch = document.render_pass.canvas.texture.size
             h = min(4 * size, max(8, round(size * ch / cw))) if cw else size
-            if self._probe_canvas is None:
-                self._probe_canvas = Canvas(size=(size, h))
-            else:
-                self._probe_canvas.set_size((size, h))
-            document.render(u_time=t, canvas=self._probe_canvas)
-            raw0 = self._probe_canvas.texture.read()
+            raw0 = _probe_frame(document, t, size, h)
             # Stamp the sample time: an animated shader's facts change with phase,
             # which otherwise reads as an edit effect.
             line0 = _stamp_facts(render_facts(raw0, size, h), t)
             if not motion or not line0:
                 return line0
             t2 = COPILOT_ENGINE.render_facts_motion_t
-            document.render(u_time=t2, canvas=self._probe_canvas)
-            raw1 = self._probe_canvas.texture.read()
+            raw1 = _probe_frame(document, t2, size, h)
             a0 = np.frombuffer(raw0, dtype=np.uint8).astype(np.int16)
             a1 = np.frombuffer(raw1, dtype=np.uint8).astype(np.int16)
             if float(np.mean(np.abs(a0 - a1))) < _MOTION_EPS:
@@ -2070,7 +2080,7 @@ class CopilotBackend:
                 self._last_probe[cache_key] = (raw0, raw1)
                 if prev is not None and prev[0] == raw0 and prev[1] == raw1:
                     result = (
-                        "this mutation changed NOTHING on screen vs the frame before it — "
+                        f"{NOOP_FACTS_PREFIX} on screen vs the frame before it — "
                         "dead code, the wrong document/target, a value a script overrides, or a "
                         "change only visible between t=0 and t=1.5s\n" + result
                     )
@@ -2174,7 +2184,7 @@ class CopilotBackend:
         )
         if prev_samples is not None and prev_samples == probe.samples:
             motion_facts += (
-                "\nthis edit changed NOTHING in the driven values vs the edit before it "
+                f"\n{NOOP_FACTS_PREFIX} in the driven values vs the edit before it "
                 "(identical sampled values) — a dead store your own later code overwrites, "
                 "dead code, or a text-only change. Do NOT re-apply the same edit; find where "
                 "the EFFECTIVE value is computed."

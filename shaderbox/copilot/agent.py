@@ -9,6 +9,7 @@ from loguru import logger
 from shaderbox.copilot.address import is_example_address, is_lib_address
 from shaderbox.copilot.config import COPILOT_ENGINE, CopilotConfig
 from shaderbox.copilot.context_breakdown import breakdown_request
+from shaderbox.copilot.edit_hints import NOOP_FACTS_PREFIX
 from shaderbox.copilot.errors import CopilotConfigError
 from shaderbox.copilot.gate import GateChannel, GateKind, GateRequest
 from shaderbox.copilot.llm.api import (
@@ -90,6 +91,17 @@ _COMPILE_THRASH_NUDGE = (
 _RENDER_AUTHORING_TOOLS = frozenset(
     {"edit_shader", "write_shader", "set_uniform", "edit_script", "write_script"}
 )
+
+
+def _noop_streak_fact(n: int) -> str:
+    # Rides every no-op mutation past the soft threshold. Two readings, both of which end in
+    # "stop editing": a formatting pass is finished after one, and a change that keeps not
+    # landing has a cause to find before the next edit.
+    return (
+        f"\n\n[hint] your last {n} edits changed NOTHING on screen. If they were formatting "
+        "or renames, that work is done: stop editing and reply. If they were meant to change "
+        "the picture, they are not landing: find the cause before another edit."
+    )
 
 
 def _clean_streak_fact(n: int) -> str:
@@ -477,6 +489,7 @@ def run_turn(
     clean_edits_by_file: dict[
         tuple[str, str], int
     ] = {}  # per-(kind, file) clean-edit streak (spree brake)
+    consecutive_noops = 0  # successful edits in a row whose probe frames did not change
     first_input_tokens: int | None = None  # iter-0 context size for the usage bar
     logger.info(f"copilot turn start | user={_trunc(user_text, 80)!r}")
     logger.debug(
@@ -842,6 +855,7 @@ def run_turn(
         clean_streak_giveup = (
             False  # hard clean-edit cap: force-end the turn (vs the failed-edit giveup)
         )
+        noop_streak_giveup = False  # hard no-op cap: the same force-end
         for tc in calls:
             args = _parse_args(tc.arguments)
             if args is None:
@@ -1043,17 +1057,59 @@ def run_turn(
                     ):
                         clean_streak_giveup = True
 
+            # The no-op brake: successful edits whose probe frames matched the frames before
+            # them, counted across files and kinds and NOT reset by a whole-file write -- the
+            # per-file clean-edit brake above is reset by exactly that, so a run of no-op
+            # rewrites never trips it.
+            if registry.is_edit_tool(tc.name) and ok:
+                if NOOP_FACTS_PREFIX in msg:
+                    consecutive_noops += 1
+                    if (
+                        config.noop_edit_soft_streak > 0
+                        and consecutive_noops >= config.noop_edit_soft_streak
+                    ):
+                        msg += _noop_streak_fact(consecutive_noops)
+                        tr.event(
+                            "noop_streak_nudge",
+                            iteration=iteration,
+                            streak=consecutive_noops,
+                        )
+                    if (
+                        config.noop_edit_hard_streak > 0
+                        and consecutive_noops >= config.noop_edit_hard_streak
+                    ):
+                        noop_streak_giveup = True
+                else:
+                    consecutive_noops = 0
+
             messages.append(_tool_message(tc.id, msg))
 
             if consecutive_failed_edits >= config.max_edit_retries:
                 giveup = True
                 break
-            if clean_streak_giveup:
+            if clean_streak_giveup or noop_streak_giveup:
                 giveup = True
                 break
 
         if giveup:
-            if clean_streak_giveup:
+            if noop_streak_giveup:
+                logger.warning(
+                    f"copilot no-op edit hard stop at {config.noop_edit_hard_streak} "
+                    f"edits that changed nothing | total_in={usage.input_tokens} "
+                    f"cost=${usage.cost_usd:.6f}"
+                )
+                tr.event(
+                    "noop_streak_giveup",
+                    streak=config.noop_edit_hard_streak,
+                    usage=usage,
+                )
+                note = (
+                    f"[engine] I hit my own limit of {config.noop_edit_hard_streak} edits in "
+                    "a row that changed nothing on screen (NOT a pause you asked for), so I "
+                    "stopped to keep from churning. If more is needed, tell me what should "
+                    "look different and I'll continue."
+                )
+            elif clean_streak_giveup:
                 logger.warning(
                     f"copilot clean-edit hard stop at {config.clean_edit_hard_streak} "
                     f"edits on one file | total_in={usage.input_tokens} "

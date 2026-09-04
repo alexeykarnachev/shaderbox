@@ -51,6 +51,14 @@ class CopilotConfig:
     # Per-file; a write_shader resets it. Must exceed clean_edit_soft_streak to leave room for the
     # advisory to work first.
     clean_edit_hard_streak: int = 12
+    # Consecutive edits (any file, any kind) whose probe frames MATCHED the frames before them --
+    # the `changed NOTHING` line -- before a nudge rides the result (0 = off): a formatting pass is
+    # done after one, and a change that keeps not landing needs a cause, not another edit. Not
+    # per-file and not reset by a write: the run this brakes was thirteen whole-file rewrites of
+    # two files that changed nothing on screen, to max_iterations.
+    noop_edit_soft_streak: int = 3
+    # ... and before the engine FORCE-ENDS the turn (0 = off). Must exceed the soft one.
+    noop_edit_hard_streak: int = 6
 
 
 @dataclass(slots=True)
@@ -136,6 +144,8 @@ def apply_user_limits(
     max_compile_failures: int,
     clean_edit_soft_streak: int,
     clean_edit_hard_streak: int,
+    noop_edit_soft_streak: int,
+    noop_edit_hard_streak: int,
     auto_revert_after_failed_edits: int,
     turn_time_budget_s: int,
 ) -> None:
@@ -148,6 +158,8 @@ def apply_user_limits(
     COPILOT_CONFIG.max_compile_failures = max(0, max_compile_failures)  # 0 = off
     COPILOT_CONFIG.clean_edit_soft_streak = max(0, clean_edit_soft_streak)  # 0 = off
     COPILOT_CONFIG.clean_edit_hard_streak = max(0, clean_edit_hard_streak)  # 0 = off
+    COPILOT_CONFIG.noop_edit_soft_streak = max(0, noop_edit_soft_streak)  # 0 = off
+    COPILOT_CONFIG.noop_edit_hard_streak = max(0, noop_edit_hard_streak)  # 0 = off
     COPILOT_CONFIG.auto_revert_after_failed_edits = max(
         0, auto_revert_after_failed_edits
     )  # 0 = off

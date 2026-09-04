@@ -16,6 +16,9 @@ from shaderbox.shader_lib import parser
 # facts-bearing tool result is recognised by downstream (prompt.py splices the legend on it).
 FACTS_PREFIX = "render:"
 STAMPED_FACTS_PREFIX = "render@t="
+# The line a mutation's result opens with when the probe frames match the ones before it. The
+# agent loop counts consecutive results carrying it (the no-op brake), so it is a marker.
+NOOP_FACTS_PREFIX = "this mutation changed NOTHING"
 
 # Duplicate-declaration wordings across the closed vendor set (Mesa GLSL-IR,
 # glslang/Apple/Intel-Windows, NVIDIA, AMD) — the hint itself is source-verified

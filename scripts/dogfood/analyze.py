@@ -109,6 +109,7 @@ TERMINAL_KINDS: frozenset[str] = frozenset(
         "turn_done",
         "edit_giveup",
         "clean_streak_giveup",
+        "noop_streak_giveup",
         "stream_error",
         "turn_truncated",
         "model_incompatible",
@@ -120,7 +121,9 @@ HARD_FAIL_TERMINALS: frozenset[str] = frozenset(
 # Terminals where the engine STOPPED the agent at a limit but still delivered a visible reply —
 # degraded, not failed. They share the ⚠️ glyph with a `cutoff=` turn_done and are the honesty
 # axis's own turn class (the reply was forced past the eye).
-LIMIT_TERMINALS: frozenset[str] = frozenset({"clean_streak_giveup"})
+LIMIT_TERMINALS: frozenset[str] = frozenset(
+    {"clean_streak_giveup", "noop_streak_giveup"}
+)
 # The `key: value` field lines the section parser keeps. Anything absent here is dropped, so a new
 # trace field must be added BOTH to the emitter and to this set.
 _FIELD_KEYS: frozenset[str] = frozenset(
