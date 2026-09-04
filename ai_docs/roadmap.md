@@ -26,17 +26,19 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-04, session end (077 done, hy4-preview is the default; 078 is the maintainer's raw findings, unrefined). -->
-**Next: 078 — refine the maintainer's walk findings and decompose them into tasks, THEN fix.**
-`ai_docs/features/078_maintainer_walk_findings/00_raw_findings.md` is his verbatim stream (editor
-autocomplete / `shift+k` / formatting as one architecture question; a `u_time`-only suggestion stub
-he wants gone, not patched; vim `dd` / `l` / current-line bugs that go to the editor library's own
-session as a bugs compilation with a demand for a stronger e2e harness; error highlighting from the
-hovered line; Reset into the Document tab; the add-pass flow through the settings modal; grouped
-sampler-source options; coloured builtin uniforms; the Settings key field highlighted when the
-copilot widget sends you there; code colouring breaking and a first-line offset when the copilot
-edits; a checkerboard instead of black alpha while the copilot thinks). First session: `01_spec.md`
-from the stream, one entry per finding, then tasks. Following sessions: the fixes.
+<!-- As of 2026-09-04, spec session (078 ledger + tasks written, awaiting plan-lock; editor bugs sent to editor-c8). -->
+**Next: 078 plan-lock, then the fixes in wave order.**
+`ai_docs/features/078_maintainer_walk_findings/01_spec.md` is the verified ledger (19 findings),
+nine locked decisions, the editor-intelligence design (`shaderbox/intel/`, one `SymbolKind` enum
+read by completion, `K` and the color feed), eleven workstreams W-A..W-K with their order, and
+five open questions the maintainer answers before anything is built: Q1 Python completion depth
+(recommend `jedi` in-process + own `ast` walk), Q2 formatter backends (recommend `ruff` +
+`clang-format` wheel), Q3 the two library seams (recommend a host-fed word-class table), Q4 the
+modal's create mode (recommend a pending draft), Q5 dropping the stub docstrings. The editor
+library items (`dd` column, insert-mode `<Right>` wrap, cursor after `u`, the differential-fuzz
+harness ask) were sent to the editor session `editor-c8` with headless reproductions; W-C
+re-vendors when it pings. First fixes after lock: W-E Reset, W-H settings mark, W-I indent, W-D
+error row — small and host-only.
 
 **After that: the sweep over the 077 material** — `ai_docs/features/077_rc_model_comparison/`
 (both rounds, the "left for the sweep" list) and the station pages (`dogfood/index.html`,
@@ -58,7 +60,7 @@ still needs a Windows host before the next cut.
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 078 | maintainer_walk_findings | spec | The maintainer's raw walk findings of 2026-09-04, kept verbatim; the next session refines them into a spec and tasks before any fix. Spec: `ai_docs/features/078_maintainer_walk_findings/00_raw_findings.md`. |
+| 078 | maintainer_walk_findings | spec | The maintainer's fourth walk: 19 findings verified against the code, nine locked decisions, an editor-intelligence design (`shaderbox/intel/`) and eleven workstreams; the editor-library bugs went to the editor session with headless reproductions. Spec: `ai_docs/features/078_maintainer_walk_findings/01_spec.md`. |
 | 077 | rc_model_comparison | done | Eight babysat attempts on seven models, then the three finishers given the whole build as one design document: hy4-preview and gemini-3.8-flash built it end to end, luna did not; the engine findings each attempt surfaced (all landed), and what is left for the sweep. Spec: `ai_docs/features/077_rc_model_comparison/01_report.md`. |
 | 076 | copilot_pass_tools | done | Three lazy tools over the session's pass verbs — `add_pass` (with runs/target/output in the same call), `set_pass` (only the fields given; rename), gated `delete_pass` — each echoing the document's pass table; built under 075's stuck rule when the first experiment's attempt 1 could not create a second pass. Spec: `ai_docs/features/076_copilot_pass_tools/01_spec.md`. |
 | 075 | dogfood_station | done | A durable browsable home for every dogfooding experiment: `dogfood/runs/<id>/events.jsonl` appended by the harness's own `dump()`, a static site regenerated from it (conversation, tool calls, renders and videos inline, per-request context panel with every block's size and text), and the `context_breakdown` trace event deferred since 026; the station records and never judges. Spec: `ai_docs/features/075_dogfood_station/01_spec.md`. |
