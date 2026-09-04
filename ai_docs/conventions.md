@@ -983,16 +983,21 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   delete host code that was a second derivation of something the library now emits itself (the
   aa8c6719 one, 071 W-A, was additions only and deleted nothing), so
   the question to ask of a new sha is which host workaround it makes redundant, not whether it
-  breaks anything. **Waiting at the next re-vendor past `5e0e8a2`: upstream appended a fifth
-  `Mode` member (replace mode, `ed_mode` returns `4`, entered by `R`).** `editor/ffi.py`'s `Mode`
-  IntEnum declares four, and `get_mode` does `Mode(self._lib.ed_mode(self._h))` — an IntEnum
-  RAISES `ValueError` on an unknown value, so the first `R` a user presses throws out of
-  `get_mode` rather than reading a stale index. Values 0-3 keep their numbers, so this is the
-  whole host-side delta; add the member in the SAME commit as the copy. Upstream also closed
-  three read-only holes (`~`, `>`, `<` edited a buffer the host had locked) — two of them predate
-  `5e0e8a2`, so this repo HAS them today, and `tabs/code.py` locks the editor for the whole
-  copilot turn (`set_read_only_enabled(app.copilot_turn_active)`), which is exactly the state
-  they need. One rendering fact each re-vendor must re-clear rather than assume: a marker's
+  breaks anything. **The `5e0e8a2` -> `f738744` re-vendor is the worked example of the
+  host-side half.** Upstream APPENDED a fifth `Mode` member (replace, `ed_mode` returns `4`,
+  entered by `R`). Values 0-3 kept their numbers, so a compiled host would have been fine — but
+  this host is not compiled: `get_mode` does `Mode(self._lib.ed_mode(self._h))`, and a Python
+  IntEnum RAISES on a value it lacks, so a missing member is a CRASH on the first `R`, not the
+  stale reading upstream's note anticipated. **The general rule: values are appended, never
+  renumbered, so a host mapping the value through anything narrower than an int — an enum, a
+  fixed-length array, an exhaustive branch — widens that map in the same commit as the copy.**
+  `test_the_mode_enum_covers_every_value_upstream_can_return` now gates it against the vendored
+  probe's own `MODES` table, so the next appended mode fails the suite instead of shipping.
+  That re-vendor also closed three read-only holes (`~`, `>`, `<` edited a buffer the host had
+  locked): measured here, `>>` DID indent a locked line under `5e0e8a2`, and `tabs/code.py` locks
+  the editor for the whole copilot turn, so it was live.
+  `test_read_only_refuses_every_editing_key_not_just_insert` pins the class — the old test drove
+  only `i`, which is how `>` and `<` drifted out unnoticed. One rendering fact each re-vendor must re-clear rather than assume: a marker's
   text color must reach the glyph at COLUMN 0 (a version tested each glyph's LEFT EDGE against the
   text origin and the first glyph's ink overhangs its cell, so column 0 stayed red-on-red —
   `tests/test_editor_ffi.py::test_a_marker_text_color_reaches_the_glyph_at_column_0` pins it; the

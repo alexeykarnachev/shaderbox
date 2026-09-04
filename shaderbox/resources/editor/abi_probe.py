@@ -40,7 +40,7 @@ DRAW_ORDER = [
     "Frame", "Popup_Panel", "Popup_Glyph",
     "Whitespace", "Bracket_Match", "Search_Match",
 ]
-MODES = ["NORMAL", "INSERT", "VISUAL", "V-LINE"]
+MODES = ["NORMAL", "INSERT", "VISUAL", "V-LINE", "REPLACE"]
 # Key codes and modifier bits, matching the ED_KEY_* / ED_MOD_* constants.
 K_CHAR, K_ESC, K_ENTER, K_TAB, K_BS = 1, 2, 3, 4, 5
 K_DEL, K_LEFT, K_RIGHT, K_UP, K_DOWN = 6, 7, 8, 9, 10

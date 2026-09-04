@@ -113,6 +113,27 @@ def test_read_only_blocks_user_not_host() -> None:
     e.close()
 
 
+def test_read_only_refuses_every_editing_key_not_just_insert() -> None:
+    # The library decided what read-only refuses from a hand-written list of editing keys,
+    # so a key added to the keymap later reached the buffer through a locked editor. `>` and
+    # `<` had drifted out of it and DID edit under read-only at the sha this repo shipped
+    # before f738744 (measured: `>>` indented a locked line). tabs/code.py locks the editor
+    # for the whole copilot turn, so that was a live path to a buffer the host believed
+    # frozen. One key per shape rather than one key: the point is the CLASS.
+    text = "  alpha beta\n"
+    for keys in ("~", ">>", "<<", "RXY", "x", "dd", "J", "S"):
+        e = _editor(text)
+        e.set_read_only_enabled(True)
+        e.set_cursor(
+            0, 2
+        )  # off the leading whitespace, or ~ is a no-op and proves nothing
+        e.feed(keys)
+        assert e.get_text() == text, (
+            f"{keys!r} edited a read-only buffer: {e.get_text()!r}"
+        )
+        e.close()
+
+
 def test_replace_text_in_current_cursor_falls_back_to_caret() -> None:
     e = _editor("abc")
     e.replace_text_in_current_cursor("X")
