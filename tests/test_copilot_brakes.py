@@ -249,13 +249,14 @@ def _noop_edit_result() -> EditResult:
 
 def test_noop_edits_nudge_then_force_end_across_files_and_writes() -> None:
     # Alternating write_shader and edit_shader on two files: the per-file clean brake never
-    # trips (a write resets it), the no-op brake counts them all.
+    # trips (a write resets it); unchanged frames count per file, writes included -- file a
+    # reaches three.
     config = replace(
         COPILOT_CONFIG,
         clean_edit_soft_streak=0,
         clean_edit_hard_streak=0,
         noop_edit_soft_streak=2,
-        noop_edit_hard_streak=4,
+        noop_edit_hard_streak=3,
     )
     write_a = _tool_call("wa", "write_shader", '{"new_text": "x", "target": "7f3a"}')
     edit_b = _tool_call(
@@ -355,3 +356,26 @@ def test_an_alternating_pair_of_repeated_calls_is_churn_too() -> None:
     events, trace = _run([a, b, a, b, a, b, a, b, _DONE], config)
     assert "noop_streak_giveup" in trace.kinds
     assert isinstance(events[-1], AgentError)
+
+
+def test_a_sweep_touching_many_files_once_is_not_churn() -> None:
+    # hy4-preview on the station: a dead-code sweep over seven files, every edit an unchanged
+    # frame by nature, was stopped by the brake at six. Unchanged frames count per file.
+    config = replace(
+        COPILOT_CONFIG,
+        clean_edit_soft_streak=0,
+        clean_edit_hard_streak=0,
+        noop_edit_soft_streak=2,
+        noop_edit_hard_streak=3,
+    )
+    edits = [
+        _tool_call(f"c{i}", "edit_shader", f'{{"old_str": "a", "new_str": "b", "target": "f{i}"}}')
+        for i in range(7)
+    ]
+    events, trace = _run(
+        [*edits, _DONE],
+        config,
+        apply_shader_edit=lambda _o, _n, _r, _t: _noop_edit_result(),
+    )
+    assert "noop_streak_nudge" not in trace.kinds
+    assert isinstance(events[-1], AgentTurnDone)

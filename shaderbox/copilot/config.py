@@ -51,11 +51,12 @@ class CopilotConfig:
     # Per-file; a write_shader resets it. Must exceed clean_edit_soft_streak to leave room for the
     # advisory to work first.
     clean_edit_hard_streak: int = 12
-    # Consecutive edits (any file, any kind) whose probe frames MATCHED the frames before them --
-    # the `changed NOTHING` line -- before a nudge rides the result (0 = off): a formatting pass is
-    # done after one, and a change that keeps not landing needs a cause, not another edit. Not
-    # per-file and not reset by a write: the run this brakes was thirteen whole-file rewrites of
-    # two files that changed nothing on screen, to max_iterations.
+    # Consecutive edits to ONE file whose probe frames MATCHED the frames before them -- the
+    # `changed NOTHING` line -- or calls already made this turn with the same arguments, before
+    # a nudge rides the result (0 = off): a formatting pass is done after one, and a change that
+    # keeps not landing needs a cause, not another edit. Per file (a sweep touching seven files
+    # once is not churn) and not reset by a write: the run this brakes was thirteen whole-file
+    # rewrites of two files that changed nothing on screen, to max_iterations.
     noop_edit_soft_streak: int = 3
     # ... and before the engine FORCE-ENDS the turn (0 = off). Must exceed the soft one.
     noop_edit_hard_streak: int = 6

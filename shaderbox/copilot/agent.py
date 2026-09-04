@@ -103,10 +103,9 @@ def _noop_streak_fact(n: int, repeated: bool) -> str:
             "row that brought nothing new). It already did what it does: move on, or reply."
         )
     return (
-        f"\n\n[hint] your last {n} calls brought nothing new: the edits changed NOTHING on "
-        "screen. If they were formatting or renames, that work is done: stop editing and reply. "
-        "If they were meant to change the picture, they are not landing: find the cause before "
-        "another edit."
+        f"\n\n[hint] your last {n} edits to this file changed NOTHING on screen. If they were "
+        "formatting or renames, that work is done for this file: move on or reply. If they were "
+        "meant to change the picture, they are not landing: find the cause before another edit."
     )
 
 
@@ -495,9 +494,10 @@ def run_turn(
     clean_edits_by_file: dict[
         tuple[str, str], int
     ] = {}  # per-(kind, file) clean-edit streak (spree brake)
-    consecutive_noops = (
-        0  # calls in a row that brought nothing new (see the no-op brake)
-    )
+    # The no-op brake's two counters (see below): unchanged-frame edits per file, and calls
+    # already made this turn, across everything.
+    noops_by_file: dict[tuple[str, str], int] = {}
+    consecutive_repeats = 0
     seen_calls: set[tuple[str, str]] = set()  # (name, raw args) made earlier this turn
     first_input_tokens: int | None = None  # iter-0 context size for the usage bar
     logger.info(f"copilot turn start | user={_trunc(user_text, 80)!r}")
@@ -1069,38 +1069,44 @@ def run_turn(
                     ):
                         clean_streak_giveup = True
 
-            # The no-op brake: a call that brought nothing new -- a successful edit whose probe
-            # frames matched the frames before it, or a call already made with the same
-            # arguments earlier this turn (an A,B,A,B cycle repeats without two identical
-            # calls in a row) -- counted across files, kinds and tools, and NOT reset by a
-            # whole-file write (the per-file clean-edit brake above is reset by exactly that,
-            # so a run of no-op rewrites never trips it).
+            # The no-op brake: a call that brought nothing new. Two shapes, two counters. A
+            # successful edit whose probe frames matched the frames before it counts PER FILE
+            # and is not reset by a whole-file write (the clean-edit brake above is reset by
+            # exactly that, so a run of no-op rewrites never trips it; per file, so a sweep
+            # that touches seven files once is not churn). A call already made with the same
+            # arguments earlier this turn counts across everything (an A,B,A,B cycle repeats
+            # without two identical calls in a row).
             signature = (tc.name, tc.arguments)
             repeated = signature in seen_calls
             seen_calls.add(signature)
             unchanged_frame = (
                 registry.is_edit_tool(tc.name) and ok and NOOP_FACTS_PREFIX in msg
             )
+            consecutive_repeats = consecutive_repeats + 1 if repeated else 0
+            streak = consecutive_repeats
+            if registry.is_edit_tool(tc.name) and ok:
+                file_key = _edit_target_key(tc.name, args)
+                noops_by_file[file_key] = (
+                    noops_by_file.get(file_key, 0) + 1 if unchanged_frame else 0
+                )
+                streak = max(streak, noops_by_file[file_key])
             if repeated or unchanged_frame:
-                consecutive_noops += 1
                 if (
                     config.noop_edit_soft_streak > 0
-                    and consecutive_noops >= config.noop_edit_soft_streak
+                    and streak >= config.noop_edit_soft_streak
                 ):
-                    msg += _noop_streak_fact(consecutive_noops, repeated)
+                    msg += _noop_streak_fact(streak, repeated)
                     tr.event(
                         "noop_streak_nudge",
                         iteration=iteration,
-                        streak=consecutive_noops,
+                        streak=streak,
                         repeated=repeated,
                     )
                 if (
                     config.noop_edit_hard_streak > 0
-                    and consecutive_noops >= config.noop_edit_hard_streak
+                    and streak >= config.noop_edit_hard_streak
                 ):
                     noop_streak_giveup = True
-            else:
-                consecutive_noops = 0
 
             messages.append(_tool_message(tc.id, msg))
 
@@ -1124,10 +1130,11 @@ def run_turn(
                     usage=usage,
                 )
                 note = (
-                    f"[engine] I hit my own limit of {config.noop_edit_hard_streak} calls in "
-                    "a row that brought nothing new (NOT a pause you asked for), so I stopped "
-                    "to keep from churning. If more is needed, tell me what should look "
-                    "different and I'll continue."
+                    f"[engine] I hit my own limit of {config.noop_edit_hard_streak} calls that "
+                    "brought nothing new -- edits to one file that changed nothing on screen, "
+                    "or the same call repeated (NOT a pause you asked for), so I stopped to "
+                    "keep from churning. If more is needed, tell me what should look different "
+                    "and I'll continue."
                 )
             elif clean_streak_giveup:
                 logger.warning(

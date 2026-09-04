@@ -135,6 +135,16 @@ from shaderbox.util import try_to_release
 _MOTION_EPS = 1.5
 
 
+def _probe_target_for(document: Document, render_pass: Pass) -> str | None:
+    # The pass an edit's probe measures: the edited pass itself when it is not the output. The
+    # output frame does not change when a pass nothing shows yet is written, and "changed
+    # NOTHING on screen" on every such write read as churn -- the no-op brake ended a
+    # seven-pass build on its second pass.
+    if render_pass is document.render_pass:
+        return None
+    return next((n for n, p in document.passes.items() if p is render_pass), None)
+
+
 def _probe_frame(
     document: Document, t: float, width: int, height: int, target: str | None = None
 ) -> bytes:
@@ -2038,7 +2048,12 @@ class CopilotBackend:
                 f"compiles (likely a library change):\n{err_lines}"
             )
         facts = (
-            self._render_facts_for(document, motion=True, cache_key=ws_address)
+            self._render_facts_for(
+                document,
+                motion=True,
+                cache_key=ws_address,
+                target=_probe_target_for(document, render_pass),
+            )
             if not restore_errors
             else ""
         )
@@ -2491,7 +2506,10 @@ class CopilotBackend:
             self._broken_streak[tgt.document_id] = 0
             self._last_clean[tgt.document_id] = new_text
             facts = self._render_facts_for(
-                tgt.document, motion=True, cache_key=tgt.document_id
+                tgt.document,
+                motion=True,
+                cache_key=tgt.ws_address,
+                target=_probe_target_for(tgt.document, tgt.render_pass),
             )
             loop_note = self._oscillation_note(tgt.document_id, tgt.source, new_text)
             if loop_note:

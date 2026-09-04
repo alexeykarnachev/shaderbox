@@ -122,3 +122,19 @@ def test_probe_render_measures_one_pass_by_address(app: Any) -> None:
     facts = backend.probe_render(f"{short}#red", 0.0)
     assert "rgba(255,0,0,255)" in facts, facts
     assert backend.probe_render(f"{short}#nope", 0.0).startswith("error: no pass")
+
+
+def test_an_edit_to_a_non_output_pass_is_probed_as_that_pass(app: Any) -> None:
+    # hy4-preview on the station: writing paint and canvas while the output was still the
+    # stub read "changed NOTHING on screen" six times, and the no-op brake ended the turn.
+    backend = app.copilot_backend
+    assert backend.add_pass("", "glow", None, None, None, None, None, False).ok
+    short = backend._copilot_short_ids()[app.current_document_id]
+    red = "#version 460 core\nin vec2 vs_uv;\nout vec4 fs_color;\nvoid main() { fs_color = vec4(1.0, 0.0, 0.0, 1.0); }\n"
+    facts = backend.apply_full_rewrite(red, f"{short}#glow").render_facts
+    assert "rgba(255,0,0,255)" in facts, facts
+    assert "changed NOTHING" not in facts
+    # The same frame again IS a no-op, judged on that pass (a new batch: one write per file per batch).
+    backend.batch_begin()
+    facts = backend.apply_full_rewrite(red + "// again\n", f"{short}#glow").render_facts
+    assert "changed NOTHING" in facts
