@@ -22,6 +22,7 @@ from shaderbox.editor.ffi import (
     EDITOR_RESOURCES_DIR,
     ChromeFlag,
     Editor,
+    HostCommandKind,
     KeyCode,
     KeyMod,
     Kind,
@@ -1122,19 +1123,37 @@ def test_every_binding_enum_is_gated_against_the_probe() -> None:
     # domain by type. Ask instead: of every IntEnum this binding declares, which one is gated?
     gated = {enum.__name__ for enum in _PROBE_TABLE_TO_ENUM.values()}
     gated |= {KeyCode.__name__, KeyMod.__name__}  # the scalar test above
+    gated |= {HostCommandKind.__name__}  # test_host_command_kind_covers_the_abi below
     declared = {
         name
         for name, obj in vars(ffi).items()
         if isinstance(obj, type) and issubclass(obj, IntEnum) and obj is not IntEnum
     }
-    # HostCommandKind is host-facing only: the library returns it, but the binding never
-    # constructs it from an unvalidated int -- `take_host_command` returns None on anything
-    # unrecognised rather than calling HostCommandKind(value). Nothing upstream mirrors it.
-    assert declared - gated == {"HostCommandKind"}, (
-        f"these binding enums are gated against nothing: {sorted(declared - gated - {'HostCommandKind'})}. "
+    assert declared == gated, (
+        f"these binding enums are gated against nothing: {sorted(declared - gated)}. "
         "Each is constructed from a raw library int and raises on a value it lacks, so add it "
-        "to _PROBE_TABLE_TO_ENUM (if upstream ships a table) or to the scalar test (if upstream "
+        "to _PROBE_TABLE_TO_ENUM (if upstream ships a table) or to a scalar test (if upstream "
         "mirrors it as constants), or record here why the host never constructs it."
+    )
+
+
+def test_host_command_kind_covers_the_abi() -> None:
+    # Upstream mirrors this in NEITHER form -- no probe table, no scalar constants -- so both
+    # gates above are blind to it, and an earlier version of this file exempted it with a claim
+    # that turned out false: that `take_host_command` never constructs the enum from a raw int.
+    # It does (`HostCommandKind(kind)`), guarding only kind == 0, so a fourth ex-command upstream
+    # would raise here rather than degrade. Values are pinned against the ABI's own enum, which
+    # ships in the vendored keymap doc; 0 is the "no command" sentinel the caller returns None on
+    # and is deliberately absent from the binding.
+    ours = {int(m) for m in HostCommandKind}
+    assert ours == {1, 2, 3}, (
+        f"HostCommandKind declares {sorted(ours)}; upstream's Host_Command_Kind is "
+        "None=0, Write=1, Quit=2, Write_Quit=3. If upstream added a kind, add the member -- "
+        "take_host_command constructs this enum from the raw value and raises otherwise."
+    )
+    assert 0 not in ours, (
+        "0 is upstream's None sentinel; take_host_command returns None for it before "
+        "constructing the enum, so a ZERO member would make that guard ambiguous"
     )
 
 
