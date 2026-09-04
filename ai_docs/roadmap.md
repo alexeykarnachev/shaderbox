@@ -26,17 +26,27 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-04 (077 both rounds done, hy4-preview is the default; the maintainer reads the reports, then the sweep). -->
-**Next: the maintainer reads `ai_docs/features/077_rc_model_comparison/01_report.md` (both rounds)
-and the attempt pages (`dogfood/index.html` → `rc_full_build` 1–8, `rc_end_to_end` 1–3), then the large sweep over
-engine, prompting, caching and tooling that the report's "left for the sweep" list seeds.** Seven models
-drove the same babysat radiance-cascades build for $2.53: hy4-preview, gemini-3.8-flash and luna
-built it; deepseek stalled at the merge; kimi, glm and codex-mini were unusable. The round landed
-a client that drops the reasoning-effort setting for a provider that refuses it, a torn-stream
-reading of `finish_reason: error`, engine-uniform markers in the working set, a no-op brake that
-also counts a call already made this turn, `probe_render` on a pass address, and
-`scripts/dogfood/drive.py` (one command per turn). The default model is `tencent/hy4-preview` since the end-to-end round, named in
-`CopilotIntegration.model` only.
+<!-- As of 2026-09-04, session end (077 done, hy4-preview is the default; 078 is the maintainer's raw findings, unrefined). -->
+**Next: 078 — refine the maintainer's walk findings and decompose them into tasks, THEN fix.**
+`ai_docs/features/078_maintainer_walk_findings/00_raw_findings.md` is his verbatim stream (editor
+autocomplete / `shift+k` / formatting as one architecture question; a `u_time`-only suggestion stub
+he wants gone, not patched; vim `dd` / `l` / current-line bugs that go to the editor library's own
+session as a bugs compilation with a demand for a stronger e2e harness; error highlighting from the
+hovered line; Reset into the Document tab; the add-pass flow through the settings modal; grouped
+sampler-source options; coloured builtin uniforms; the Settings key field highlighted when the
+copilot widget sends you there; code colouring breaking and a first-line offset when the copilot
+edits; a checkerboard instead of black alpha while the copilot thinks). First session: `01_spec.md`
+from the stream, one entry per finding, then tasks. Following sessions: the fixes.
+
+**After that: the sweep over the 077 material** — `ai_docs/features/077_rc_model_comparison/`
+(both rounds, the "left for the sweep" list) and the station pages (`dogfood/index.html`,
+local): engine, prompting, caching, tooling, the dogfood skill itself. The sharpest item is the
+zero-call narration after an engine stop (five turns, three models).
+
+**Landed this session:** 075 (the station), 076 (pass tools), 077 (seven models, two rounds,
+$3.51), the default model `tencent/hy4-preview` (one place: `CopilotIntegration.model`), and
+twelve engine fixes the runs surfaced (`git log 2678126..`). The station store is local and
+gitignored; `uv run python -m dogfood.report.build` regenerates the pages.
 
 **Still due at the display:** 073's per-wave `## Manual verification` lists, 072's five checks,
 070's, 071's, `todo.md`'s live-only checks and 065's 13-16.
@@ -48,6 +58,7 @@ still needs a Windows host before the next cut.
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 078 | maintainer_walk_findings | spec | The maintainer's raw walk findings of 2026-09-04, kept verbatim; the next session refines them into a spec and tasks before any fix. Spec: `ai_docs/features/078_maintainer_walk_findings/00_raw_findings.md`. |
 | 077 | rc_model_comparison | done | Eight babysat attempts on seven models, then the three finishers given the whole build as one design document: hy4-preview and gemini-3.8-flash built it end to end, luna did not; the engine findings each attempt surfaced (all landed), and what is left for the sweep. Spec: `ai_docs/features/077_rc_model_comparison/01_report.md`. |
 | 076 | copilot_pass_tools | done | Three lazy tools over the session's pass verbs — `add_pass` (with runs/target/output in the same call), `set_pass` (only the fields given; rename), gated `delete_pass` — each echoing the document's pass table; built under 075's stuck rule when the first experiment's attempt 1 could not create a second pass. Spec: `ai_docs/features/076_copilot_pass_tools/01_spec.md`. |
 | 075 | dogfood_station | done | A durable browsable home for every dogfooding experiment: `dogfood/runs/<id>/events.jsonl` appended by the harness's own `dump()`, a static site regenerated from it (conversation, tool calls, renders and videos inline, per-request context panel with every block's size and text), and the `context_breakdown` trace event deferred since 026; the station records and never judges. Spec: `ai_docs/features/075_dogfood_station/01_spec.md`. |
