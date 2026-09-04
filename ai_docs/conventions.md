@@ -983,7 +983,16 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   delete host code that was a second derivation of something the library now emits itself (the
   aa8c6719 one, 071 W-A, was additions only and deleted nothing), so
   the question to ask of a new sha is which host workaround it makes redundant, not whether it
-  breaks anything. One rendering fact each re-vendor must re-clear rather than assume: a marker's
+  breaks anything. **Waiting at the next re-vendor past `5e0e8a2`: upstream appended a fifth
+  `Mode` member (replace mode, `ed_mode` returns `4`, entered by `R`).** `editor/ffi.py`'s `Mode`
+  IntEnum declares four, and `get_mode` does `Mode(self._lib.ed_mode(self._h))` — an IntEnum
+  RAISES `ValueError` on an unknown value, so the first `R` a user presses throws out of
+  `get_mode` rather than reading a stale index. Values 0-3 keep their numbers, so this is the
+  whole host-side delta; add the member in the SAME commit as the copy. Upstream also closed
+  three read-only holes (`~`, `>`, `<` edited a buffer the host had locked) — two of them predate
+  `5e0e8a2`, so this repo HAS them today, and `tabs/code.py` locks the editor for the whole
+  copilot turn (`set_read_only_enabled(app.copilot_turn_active)`), which is exactly the state
+  they need. One rendering fact each re-vendor must re-clear rather than assume: a marker's
   text color must reach the glyph at COLUMN 0 (a version tested each glyph's LEFT EDGE against the
   text origin and the first glyph's ink overhangs its cell, so column 0 stayed red-on-red —
   `tests/test_editor_ffi.py::test_a_marker_text_color_reaches_the_glyph_at_column_0` pins it; the
