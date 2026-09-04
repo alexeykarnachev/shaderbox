@@ -184,7 +184,6 @@ class _ColorBag:
     # Syntax tokens for the inline editor, applied via editor_palette() below
     # (the Color->SYNTAX_* slot mapping).
     SYN_KEYWORD: tuple[float, float, float, float] = _P["red_b"]
-    SYN_TYPE: tuple[float, float, float, float] = _P["yellow_b"]
     SYN_BUILTIN: tuple[float, float, float, float] = _P["green_b"]
     SYN_NUMBER: tuple[float, float, float, float] = _P["purple_b"]
     SYN_STRING: tuple[float, float, float, float] = _P["green_b"]

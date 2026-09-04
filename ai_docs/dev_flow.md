@@ -213,7 +213,7 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   hand the strip sorted-name order. A tile is a picture, a name, and a row of chips naming the
   passes it reads (070); the source itself is chosen on the sampler's row of the uniforms panel
   (072). The six verbs of D15 are reachable from the strip (gear overlay / context menu); holds no
-  state of its own beyond `App.pass_add`.
+  state of its own -- `add pass` opens the settings modal on `App.pass_draft` (078).
 - **`popups/pass_settings.py`** — the pass-settings modal (feature 065), in the `PopupState`
   mutex: one pass's name, run count and target controls. Opens from a tile's gear, its context
   menu, or automatically on `add pass` — set-up-once choices live here, off the strip. What a
@@ -365,8 +365,13 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   state, both kept out of `commands.py` so the persisted model layer doesn't
   pull in imgui) / **`alpha_view.py`** (the Alpha channel view's one-quad blit into its own
   canvas; the output texture is never touched for display, 073) / **`completion.py`** (the
-  code panel's completion policy: the provider table, `word_at`, and `symbol_doc` for `K`;
-  creates no GL context, 073) / **`render_preset.py`** (the pydantic `RenderPreset` value type) /
+  code panel's completion policy: the provider table over the intel index and `word_at`;
+  GL-free, 073 / 078) / **`intel/`** (what the editor knows about a buffer, 078: `symbols`
+  the kind enum, `glsl` the buffer as text, `script` the returns by `ast`, `index` the
+  `GlslIndex` from explicit inputs, `document` the per-handle cache, `python` + `worker` jedi on
+  its one thread; read by completion, `K` and the text's color feed) / **`engine_uniforms.py`**
+  (the engine-driven uniform tables, GL-free; `core` re-imports them) / **`formatting.py`**
+  (`ruff` / `clang-format` over subprocess, one formatter per tab kind, 078 W-B) / **`render_preset.py`** (the pydantic `RenderPreset` value type) /
   **`render_shape.py`** (the shape/aspect table shared by the Share tab + the copilot) /
   **`render_defer.py`** (the one-frame render latch `ui.py` reads) / **`render_job.py`**
   (`render_to` / `render_for` / `preset_ext` — the UI-free render-to-file job behind BOTH the Share

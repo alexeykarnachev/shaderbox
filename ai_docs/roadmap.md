@@ -26,20 +26,19 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-04, W-A through W-I landed; post-implementation review of W-A next, then the display checks and W-J. -->
-**Next: 078's post-implementation review of W-A, then the maintainer's display checks
-(`01_spec.md ## Manual verification`, 13 items) and W-J (the checkerboard during a copilot
-turn, display-only).** Landed today: W-D error row + `F8` note, W-E Reset on the Document tab,
-W-H settings outline, W-I the copilot edit's indent, W-F the pass draft modal, W-G the grouped
-source list, W-B `Ctrl+Shift+I` formatting (`ruff` / `clang-format`, shipped), W-C the editor
-re-vendored three times (`4f35ba2`: `dd` column, insert `<Right>`, seven fuzzer finds, the two
-seams, the widened palette), and W-A editor intelligence: `shaderbox/intel/` (one `SymbolKind`
-enum, the buffer read as text, the script's returns by `ast`, jedi on one worker thread), the
-completion re-base that ends the `u_time`-only behavior, `K` on both tabs, host classes
-coloring engine uniforms and pass samplers in the text. The maintainer's first display check
-found the cursor band jumping after a format; cause: the library moves markers with edits and
-the host's fingerprint lacked the revision — fixed and pinned, and it is finding #8's cause
-too. Then W-K sanitize.
+<!-- As of 2026-09-04, 078 built and reviewed to convergence; the maintainer's display checks and W-J are what is left. -->
+**Next: the maintainer's display checks of 078 (`01_spec.md ## Manual verification`, 13 items),
+then W-J (the checkerboard during a copilot turn, display-only), then the 077 sweep.** Everything
+else of 078 landed today and is reviewed: the error row + `F8` note, Reset on the Document tab,
+the settings outline, the copilot edit's indent, the pass draft modal, the grouped source list,
+`Ctrl+Shift+I` formatting, three editor re-vendors (now `4f35ba2`: `dd` column, insert
+`<Right>`, seven fuzzer finds, the two seams, the ten-slot palette), and W-A editor
+intelligence (`shaderbox/intel/`: the buffer read as text, the script's returns, jedi on one
+thread; completion re-based, `K` on both tabs, host classes coloring the text) through two
+review rounds of two opus reviewers each, every finding fixed and pinned. The maintainer's first
+display check found the cursor band jumping after a format: markers move with edits, the host
+fingerprint lacked the revision; fixed, and it was finding #8's cause. A failed display check
+gets fixed in the wave that runs it; nothing of 078 is queued in `todo.md`.
 
 **After that: the sweep over the 077 material** — `ai_docs/features/077_rc_model_comparison/`
 (both rounds, the "left for the sweep" list) and the station pages (`dogfood/index.html`,
@@ -61,7 +60,7 @@ still needs a Windows host before the next cut.
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 078 | maintainer_walk_findings | spec | The maintainer's fourth walk: 19 findings verified against the code, nine locked decisions, an editor-intelligence design (`shaderbox/intel/`) and eleven workstreams; the editor-library bugs went to the editor session with headless reproductions. Spec: `ai_docs/features/078_maintainer_walk_findings/01_spec.md`. |
+| 078 | maintainer_walk_findings | partial | The maintainer's fourth walk: 19 findings verified against the code, fourteen locked decisions, ten workstreams landed and reviewed to convergence (the editor-intelligence module `shaderbox/intel/`, formatting, the pass draft modal, the error row, three editor re-vendors); the 13 display checks and W-J (the checkerboard during a copilot turn) are outstanding. Spec: `ai_docs/features/078_maintainer_walk_findings/01_spec.md`. |
 | 077 | rc_model_comparison | done | Eight babysat attempts on seven models, then the three finishers given the whole build as one design document: hy4-preview and gemini-3.8-flash built it end to end, luna did not; the engine findings each attempt surfaced (all landed), and what is left for the sweep. Spec: `ai_docs/features/077_rc_model_comparison/01_report.md`. |
 | 076 | copilot_pass_tools | done | Three lazy tools over the session's pass verbs — `add_pass` (with runs/target/output in the same call), `set_pass` (only the fields given; rename), gated `delete_pass` — each echoing the document's pass table; built under 075's stuck rule when the first experiment's attempt 1 could not create a second pass. Spec: `ai_docs/features/076_copilot_pass_tools/01_spec.md`. |
 | 075 | dogfood_station | done | A durable browsable home for every dogfooding experiment: `dogfood/runs/<id>/events.jsonl` appended by the harness's own `dump()`, a static site regenerated from it (conversation, tool calls, renders and videos inline, per-request context panel with every block's size and text), and the `context_breakdown` trace event deferred since 026; the station records and never judges. Spec: `ai_docs/features/075_dogfood_station/01_spec.md`. |
