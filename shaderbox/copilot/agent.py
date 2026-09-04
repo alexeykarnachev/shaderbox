@@ -8,6 +8,7 @@ from loguru import logger
 
 from shaderbox.copilot.address import is_example_address, is_lib_address
 from shaderbox.copilot.config import COPILOT_ENGINE, CopilotConfig
+from shaderbox.copilot.context_breakdown import breakdown_request
 from shaderbox.copilot.errors import CopilotConfigError
 from shaderbox.copilot.gate import GateChannel, GateKind, GateRequest
 from shaderbox.copilot.llm.api import (
@@ -20,7 +21,7 @@ from shaderbox.copilot.llm.api import (
     LLMToolCallStarted,
     LLMUsage,
 )
-from shaderbox.copilot.prompt import build_messages, facts_legend_splicer
+from shaderbox.copilot.prompt import build_blocks, facts_legend_splicer, render_blocks
 from shaderbox.copilot.prompt_context import CopilotContext
 from shaderbox.copilot.state import RESULT_WIDGET_KINDS, ResultWidget, TurnStats
 from shaderbox.copilot.tools.registry import LOAD_TOOLS_NAME, ToolRegistry
@@ -458,7 +459,9 @@ def run_turn(
     # `messages` is the within-turn context: full assistant/tool pairs accumulate here as the loop
     # runs (the provider 400s on an orphaned tool_call_id). Never persisted — at commit the turn
     # collapses to one engine-derived NL TurnSummary, so history stays natural-language only.
-    messages = build_messages(context, history, user_text)
+    rendered = render_blocks(build_blocks(context, history, user_text))
+    messages = [m for rb in rendered for m in rb.messages]
+    built_len = len(messages)  # everything past it is this turn's tool exchange
     loaded_tools: set[str] = set()  # lazily-loaded tools, turn-scoped (feature 052 §0)
     specs = registry.assemble_specs(
         loaded_tools
@@ -503,15 +506,26 @@ def run_turn(
         nudge = _final_reply_nudge(
             cause, splice_facts_legend(_forced_reply_facts(registry, ran))
         )
-        request_messages = (
-            messages + render_scratchpad() + [LLMMessage(role="user", content=nudge)]
-        )
+        scratchpad = render_scratchpad()
+        nudge_message = LLMMessage(role="user", content=nudge)
+        request_messages = messages + scratchpad + [nudge_message]
         tr.event(
             "llm_request",
             iteration=-1,
             messages=request_messages,
             tools=[],
             max_tokens=COPILOT_ENGINE.final_reply_max_tokens,
+        )
+        tr.event(
+            "context_breakdown",
+            breakdown=breakdown_request(
+                rendered,
+                [*messages[built_len:], nudge_message],
+                scratchpad,
+                [],
+                iteration=-1,
+                history_len=len(history),
+            ),
         )
         buf = ""
         done: LLMDone | None = None
@@ -575,13 +589,27 @@ def run_turn(
         # Rebuild the working-set scratchpad ONCE per iteration and splice it onto the bottom for
         # both the trace AND the stream (two render_scratchpad calls could diverge if a mutation
         # interleaved). The durable `messages` is never mutated.
-        request_messages = messages + render_scratchpad()
+        scratchpad = render_scratchpad()
+        request_messages = messages + scratchpad
         tr.event(
             "llm_request",
             iteration=iteration,
             messages=request_messages,
             tools=specs,
             max_tokens=config.max_tokens_per_turn,
+        )
+        # Measured HERE, where the request is assembled: the working set is live per iteration,
+        # so a build-time breakdown would report the block that holds the shader source as empty.
+        tr.event(
+            "context_breakdown",
+            breakdown=breakdown_request(
+                rendered,
+                messages[built_len:],
+                scratchpad,
+                specs,
+                iteration=iteration,
+                history_len=len(history),
+            ),
         )
         # Same containment as stream_final_reply: a stream torn mid-turn (tools may already
         # have run) must terminate as an error terminal CARRYING the accumulated summary +

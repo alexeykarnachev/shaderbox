@@ -39,7 +39,7 @@ from shaderbox.copilot.state import (
 )
 from shaderbox.copilot.tools.base import mask_secret
 from shaderbox.copilot.tools.registry import build_registry
-from shaderbox.copilot.trace import TraceLog, new_trace_log
+from shaderbox.copilot.trace import TraceListener, TraceLog, new_trace_log
 
 
 def _trace_stamp() -> str:
@@ -123,11 +123,15 @@ class CopilotSession:
             False  # True only after release() — gates the shutdown sentinel
         )
         # Full-transcript sink, per-session file separate from the log stream. Fresh file
-        # per project switch (reset_conversation).
+        # per project switch (reset_conversation). The listeners outlive every rotation: an
+        # observer registers once and hears each trace the session opens.
+        self.trace_listeners: list[TraceListener] = []
         self.trace = self._new_trace()
 
     def _new_trace(self) -> TraceLog:
-        return new_trace_log(_slugify(self._get_project_slug()), _trace_stamp())
+        return new_trace_log(
+            _slugify(self._get_project_slug()), _trace_stamp(), self.trace_listeners
+        )
 
     @property
     def checkpoints(self) -> CheckpointStore:

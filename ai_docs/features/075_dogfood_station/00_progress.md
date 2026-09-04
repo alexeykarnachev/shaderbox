@@ -68,7 +68,7 @@ ONE question and then deleted is still welcome — the distinction is what a mea
 not how it is computed. **Do not re-introduce this**; the "station does not judge" bullet now
 warns that it is the line most likely to be mistaken for an improvement later.
 
-## W-0 event log + writer — DONE
+## W-0 event log + writer — DONE   0de87cd
 done-condition: the writer appends valid JSONL under concurrent-ish use (one writer object per
 appender, open+append+close each time), a reader reconstructs a full run from the log alone, and
 a test pins that an interrupted write does not corrupt the file.
@@ -85,3 +85,26 @@ verification: make gates GREEN (exit 0, read unpiped), smoke ran on this box.
 ruled out: a shared lock file or a single long-lived handle — the harness's turn is its own
 process, so nothing can be shared; O_APPEND single-write lines are the whole concurrency story.
 surprise: none.
+
+## W-1 `context_breakdown` — DONE   9266c6f
+done-condition: a test asserts every block appears in the event, enumerated from the block list;
+a test asserts `working_set` is reported non-empty and LIVE (its text changes between iterations
+when the splice changes); the composed prompt is byte-identical with a listener attached and
+without; a trimmed dialogue reports `trimmed` and the dropped count. The billed-vs-estimate
+tolerance needs a real request, so it is measured in W-3 when the recorder joins the two.
+did: `prompt.py` splits `build_messages` into `build_blocks` (the tier list) + `render_blocks`
+(each tier rendered ONCE, kept per tier) + `build_prompt` (the flattened view); the two tiers
+other code addresses by name are constants (`DIALOGUE_BLOCK`, `WORKING_SET_BLOCK`).
+`context_breakdown.py::breakdown_request` measures one request: every built tier, the
+within-turn tool exchange (`turn_exchange`), the LIVE working-set splice, and the `tools=` block
+(compact-JSON chars / 4), each with its full text. `run_turn` emits it as a `context_breakdown`
+trace event at both places a request is assembled (the loop and the forced final reply).
+`TraceLog` grew a listener list — every event also reaches `(kind, fields)` observers as the
+structured objects, on the emitting thread, exceptions swallowed with a warning — and
+`CopilotSession.trace_listeners` threads it through every trace rotation. The transcript renders
+the breakdown as a sizes table (the texts are the `llm_request` just above it).
+verification: make gates GREEN (exit 0, read unpiped).
+ruled out: emitting at `build_messages` (the working set is empty there — the trap the spec
+names); parsing the breakdown back out of the plain-text transcript (the listener seam exists so
+nobody has to); a second `LLMClient` wrapper to observe requests (the trace already sees them).
+surprise: `RUF005` on a list concatenation, otherwise none.

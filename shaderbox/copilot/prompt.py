@@ -36,12 +36,30 @@ class PromptBlock:
     render: Callable[[], list[LLMMessage]]
 
 
+# The two tiers other code addresses by name: the one the trim shortens, and the one that renders
+# empty at build time and is spliced live per iteration (`build_blocks` says why).
+DIALOGUE_BLOCK = "dialogue"
+WORKING_SET_BLOCK = "working_set"
+
+
+@dataclass(frozen=True)
+class RenderedBlock:
+    block: PromptBlock
+    messages: list[LLMMessage]
+
+
+def render_blocks(blocks: list[PromptBlock]) -> list[RenderedBlock]:
+    # Stable sort by volatility, render each ONCE. Kept per block so a request can be measured
+    # tier by tier; `build_prompt` is the flattened view of the same render.
+    return [
+        RenderedBlock(block, block.render())
+        for block in sorted(blocks, key=lambda b: b.volatility)
+    ]
+
+
 def build_prompt(blocks: list[PromptBlock]) -> list[LLMMessage]:
-    # Stable sort by volatility, render each, flatten (empties drop themselves).
-    out: list[LLMMessage] = []
-    for block in sorted(blocks, key=lambda b: b.volatility):
-        out.extend(block.render())
-    return out
+    # Render, flatten (empties drop themselves).
+    return [m for rb in render_blocks(blocks) for m in rb.messages]
 
 
 _SYSTEM_PROMPT = """\
@@ -369,7 +387,7 @@ def render_working_set(
     return [LLMMessage(role="user", content=body)]
 
 
-def _estimate_tokens(messages: list[LLMMessage]) -> int:
+def estimate_tokens(messages: list[LLMMessage]) -> int:
     # Char-count / ratio over content + tool-call args (echoed args are real prompt bytes too).
     chars = 0
     for m in messages:
@@ -398,28 +416,28 @@ def _trim_history(
     # Drop leading turns until it fits max_input_tokens, always keeping COPILOT_ENGINE.history_min_kept_turns.
     # fixed_overhead_tokens = the non-history prefix, so the budget covers the whole request.
     budget = COPILOT_CONFIG.max_input_tokens
-    if fixed_overhead_tokens + _estimate_tokens(history) <= budget:
+    if fixed_overhead_tokens + estimate_tokens(history) <= budget:
         return history
     turns = _split_turns(history)
     while len(turns) > COPILOT_ENGINE.history_min_kept_turns:
         kept = [m for turn in turns for m in turn]
-        if fixed_overhead_tokens + _estimate_tokens(kept) <= budget:
+        if fixed_overhead_tokens + estimate_tokens(kept) <= budget:
             break
         turns.pop(0)
     trimmed = [m for turn in turns for m in turn]
     if len(trimmed) < len(history):
         logger.debug(
             f"copilot history trimmed: {len(history)} -> {len(trimmed)} messages "
-            f"(~{fixed_overhead_tokens + _estimate_tokens(trimmed)} tok, budget {budget})"
+            f"(~{fixed_overhead_tokens + estimate_tokens(trimmed)} tok, budget {budget})"
         )
     return trimmed
 
 
-def build_messages(
+def build_blocks(
     context: CopilotContext,
     history: list[LLMMessage],
     user_text: str,
-) -> list[LLMMessage]:
+) -> list[PromptBlock]:
     # The working-set block renders [] HERE — it's injected live per-iteration by run_turn (a
     # build-time real-source block would go write-only). Its only build-time job is the trim reserve.
     static = LLMMessage(role="system", content=_SYSTEM_PROMPT)
@@ -428,16 +446,25 @@ def build_messages(
     # Reserve the scratchpad budget here: the working set is spliced AFTER the trim runs, so without
     # the reserve a near-budget history would overflow every stream by the full scratchpad.
     overhead = (
-        _estimate_tokens([static, rare, new_user])
+        estimate_tokens([static, rare, new_user])
         + COPILOT_ENGINE.scratchpad_reserve_tokens
     )
-    blocks = [
+    return [
         PromptBlock("static", Volatility.STATIC, lambda: [static]),
         PromptBlock("project_context", Volatility.RARE, lambda: [rare]),
         PromptBlock(
-            "dialogue", Volatility.DIALOGUE, lambda: _trim_history(history, overhead)
+            DIALOGUE_BLOCK,
+            Volatility.DIALOGUE,
+            lambda: _trim_history(history, overhead),
         ),
         PromptBlock("pending_user", Volatility.PER_TURN, lambda: [new_user]),
-        PromptBlock("working_set", Volatility.PER_TURN, lambda: []),
+        PromptBlock(WORKING_SET_BLOCK, Volatility.PER_TURN, lambda: []),
     ]
-    return build_prompt(blocks)
+
+
+def build_messages(
+    context: CopilotContext,
+    history: list[LLMMessage],
+    user_text: str,
+) -> list[LLMMessage]:
+    return build_prompt(build_blocks(context, history, user_text))
