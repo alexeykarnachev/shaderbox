@@ -420,8 +420,8 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
 - **`dogfood/`** — the dogfooding STATION (feature 075): `report/log.py` (the append-only JSONL
   records, writer + reader + `reconstruct`), `report/station.py` (`StationRecorder`, a
   `TraceLog` listener the harness hands its turns to), `report/build.py` (the log -> static
-  site; `uv run python -m dogfood.report.build [--watch]`), `runs/<experiment>/` (the committed
-  record: `events.jsonl` + the renders), `index.html` (the bookmark; generated, gitignored). It
+  site; `uv run python -m dogfood.report.build [--watch]`), `runs/<experiment>/` (the local,
+  gitignored record: `events.jsonl` + the renders + the pages), `index.html` (the bookmark; generated). It
   records; it does not judge (`conventions.md ## Design decisions`).
 - **`scripts/smoke.py`** — headless smoke test (see `## Recipes > make smoke`). Not part of
   `shaderbox/` proper; one-off script that imports `App` + `update_and_draw` and runs frames in

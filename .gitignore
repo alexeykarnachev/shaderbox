@@ -45,7 +45,8 @@ tabbar_spike.ini
 scripts/agent_hub/site/
 .claude/worktrees/
 
-# Dogfooding station (feature 075): the log + media under dogfood/runs/ are the record and are
-# committed; the HTML is a view regenerated from them (`uv run python -m dogfood.report.build`).
+# Dogfooding station (feature 075): the store -- one dir per experiment holding its event log, the
+# renders and the generated pages -- is local, like the harness's run dirs. The record lives on the
+# box that ran it; `uv run python -m dogfood.report.build` regenerates the pages from the log.
 dogfood/index.html
-dogfood/runs/**/*.html
+dogfood/runs/

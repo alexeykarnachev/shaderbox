@@ -200,7 +200,9 @@ check.
 - **No behaviour change to the copilot engine.** W-1 adds a trace event; it must not alter what is
   SENT to the model. A test pins that the composed prompt is byte-identical with the event on and off.
 - **No secrets in the log.** Run data dirs hold a live OpenRouter key in `integrations.json`; the
-  station records model IDs and costs, never credentials. The log is committed; the runs store is not.
+  station records model IDs and costs, never credentials. Neither the log nor the harness's run
+  dirs are committed: the store is local (the maintainer's call after the first experiment --
+  one experiment came to 28 MB of block text and media, which is not repo material).
 - **`make gates` green before and after each wave**, exit code read unpiped.
 - **The harness's one-process-per-turn shape stays.** The station observes; it does not restructure
   how turns are driven.

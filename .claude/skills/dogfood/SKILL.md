@@ -17,8 +17,8 @@ model and SIMPLE tasks; it will make mistakes, that's fine).
 Features 026 (the harness) + 027 (interactive resume/dump) + 075 (the station). The harness DRIVES a
 run and lives under `scripts/dogfood/` — `harness.py`, `scenarios/`, and ALL run artifacts (per-run
 project dirs, the data dir, JSON dumps, traces, PNGs) in `scripts/dogfood/runs/` (gitignored). The
-**station** RECORDS it: every turn appends to `dogfood/runs/<experiment>/events.jsonl` (committed —
-the durable record, with the renders copied beside it) and `dogfood/index.html` is the one bookmark,
+**station** RECORDS it: every turn appends to `dogfood/runs/<experiment>/events.jsonl` (local,
+gitignored — the durable record on this box, with the renders copied beside it) and `dogfood/index.html` is the one bookmark,
 regenerated on every `dump()`. The public import is unchanged: `from scripts.dogfood import
 DogfoodHarness`. This skill is the operating manual — the process + every gotcha already hit, so you
 don't re-discover them.
@@ -41,15 +41,16 @@ standing checker is the failure.
   **On another box (WSL / a fresh clone) the key may NOT be preset** — check `bash -ic 'echo
   ${OPENROUTER_API_KEY:+SET}'`; if empty, the maintainer must export it (or add it to that box's
   `~/.bashrc`). Don't assume the Pi's setup exists elsewhere.
-- **Model:** the in-tree default (`CopilotIntegration.model`) is `openai/gpt-5.1-codex-mini` (cheap:
-  ~USD 0.25 in / 2.00 out per Mtok, tool-call compatible, 400k ctx — no `$N` literals in this file:
-  the skill runner substitutes `$0`/`$1`/… with invocation args), used automatically — no `OPENROUTER_MODEL`
-  override needed. Chosen over grok: grok writes BAD GLSL (you can't dogfood the authoring pipeline on a
-  model that can't write a shader); codex-mini is the cheap-but-competent-at-code pick. Set
-  `OPENROUTER_MODEL` only to try a different model. Models go deprecated (grok-4-fast 404'd a prior run) —
-  if a run 404s, `curl -s https://openrouter.ai/api/v1/models` and filter for the current cheap codex,
-  confirm `tools` is in its `supported_parameters` (the agent rejects tool-incompatible models), bump the
-  in-tree default.
+- **Model:** the in-tree default is `CopilotIntegration.model` (`shaderbox/integrations.py`) — the ONE
+  place it is defined; nothing else names it, no test gates on it, and this file does not repeat it.
+  Read it with `uv run python -c "from shaderbox.integrations import CopilotIntegration;
+  print(CopilotIntegration().model)"` and check its price and `tools` support against
+  `curl -s https://openrouter.ai/api/v1/models` when it matters. Used automatically — set
+  `OPENROUTER_MODEL` only to try a different one. (No `$N` literals in this file: the skill runner
+  substitutes `$0`/`$1`/… with invocation args.) The station's experiment pages record which model
+  each attempt ran on, and that is where a model comparison belongs (`dogfood/runs/<experiment>/`). Models go deprecated (grok-4-fast 404'd a prior run) —
+  if a run 404s, `curl -s https://openrouter.ai/api/v1/models`, pick a replacement with `tools` in its
+  `supported_parameters` (the agent rejects tool-incompatible models), and change the one default.
 - **Display-less box.** `glfw.init()` FAILS (no window); `import glfw`/`import imgui` SUCCEED. The whole
   point of the headless harness is to bypass glfw via a standalone EGL context — works on Pi V3D, WSL
   Mesa, a CI runner, anything with EGL. `h.render()` uses the DIRECT context-thread render
@@ -461,8 +462,8 @@ No throwaway driver to delete (the one-blocking-call-per-turn shape has none). A
 next run; the dumps are the stray `*.json`). NOTE: these data dirs hold the LIVE OpenRouter key in their
 `integrations.json`, so purging them is also key hygiene. **The station record survives the purge**:
 `dogfood/runs/<experiment>/` holds the log, every render the run produced, and the full text of every
-context block, so nothing in a run dir needs copying out first — `git add dogfood/runs` and commit it
-with the attempt. The generated HTML is gitignored (one command rebuilds it). Keep a markdown report
+context block, so nothing in a run dir needs copying out first. The store is local and gitignored
+(an experiment runs to tens of MB); the findings that must outlive the box go to the feature spec. Keep a markdown report
 (when a scenario run wrote one) in `ai_docs/features/`. The harness + analyzer + template + scenarios +
 this skill stay. Prioritized findings live on the attempt page as notes (or in the REPORT §9 for a
 scenario run) and their durable half goes to the feature ledger / spec or `conventions.md` — `todo.md`
