@@ -11,11 +11,11 @@ runs AFTER this lands, on finished tooling.
 
 | Wave | State | Commit |
 |---|---|---|
-| W-0 event log + writer | not started | — |
-| W-1 `context_breakdown` trace event | not started | — |
-| W-2 the static site | not started | — |
-| W-3 harness + skill integration | not started | — |
-| W-4 sanitize | not started | — |
+| W-0 event log + writer | done | `0de87cd` |
+| W-1 `context_breakdown` trace event | done | `c81c3ae` |
+| W-2 the static site | done | `0827115` |
+| W-3 harness + skill integration | done | `fb7a85f` |
+| W-4 sanitize | done | `259f423` |
 
 ## Why this exists
 

@@ -160,6 +160,22 @@ ruled out: writing context records at breakdown time (append-only means no later
 billed usage; the kill path is covered by `flush()` instead); parsing renders out of tool
 payloads (a snapshot diff of `renders/` catches the harness helpers and the copilot's tools
 alike).
-surprise: `pre-commit --all-files` checks TRACKED files only, so W-2's gate ran green over an
-untracked `build.py` that carried five RUF001 hits; they surfaced once the file was staged. Stage
-new files before `make gates`.
+surprise: W-2's gate ran green over an UNTRACKED `build.py` carrying five RUF001 hits — they
+surfaced once the file was staged. Not a discovery: `dev_flow.md ### make gates` already says
+"stage new files before running it" (069 hit the same thing). The rule was there; it was not
+followed. Every later gate in this feature staged first.
+
+## W-4 sanitize — DONE   259f423
+done-condition: roadmap banner and row, conventions if a decision here constrains future code,
+the cold-context check.
+did: roadmap banner rewritten (next: the first RC experiment, driven per the skill; 075 landed)
+and the 075 row flipped to done; `conventions.md ## Design decisions` gained one bullet — the
+station records and never judges, and an engine observer reads the `TraceLog` listener seam, not
+the transcript; `dev_flow.md`'s module map gained `scripts/dogfood/` and `dogfood/`; the two
+specs that still called `context_breakdown` deferred (026, 057) point at 075; the spec's status
+table carries every wave's sha; `context_breakdown.py`'s docstring states the now, not the
+history. `todo.md` walked: its one entry (live-only UI checks) does not fire. No suppressions,
+inline imports or TODOs in the new code.
+verification: make gates GREEN (exit 0, read unpiped), every new file staged first.
+ruled out: a `todo.md` entry for anything — frozen drain-only; nothing was deferred.
+surprise: none.

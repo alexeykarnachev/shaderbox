@@ -820,6 +820,16 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   program: the library leaves the key unbound and the host draws the note. Revisit if a provider
   needs the library's lexer state (a block comment, a string) rather than the line text.
 
+- **The dogfooding station records; it never judges.** `dogfood/` holds an append-only log and a
+  site regenerated from it; no pass/fail about shader quality and no standing checker (068's
+  oracle, `judge.py`) is wired into a run's verdict — the maintainer is the final oracle, and a
+  scripted one overfits the noise and becomes the thing the work is optimised against. A
+  measurement that answers one question in the moment and is then deleted is fine; one that
+  stands is the failure. An observer of the copilot engine reads the `TraceLog` listener seam
+  (`CopilotSession.trace_listeners`, structured `(kind, fields)`), never the plain-text transcript.
+  Revisit: never for the judging half; the seam if a second observer needs events the trace does
+  not emit.
+
 *(Each bullet is a generic constraint on future code + a revisit trigger — NOT a feature changelog.
 The `/sanitize` noise audit deletes bullets that narrate a one-off implementation choice; per-feature
 mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*

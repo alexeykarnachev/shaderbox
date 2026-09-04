@@ -45,7 +45,7 @@ turn. It does NOT reconstruct or stub the backend — that's the whole point of 
 - **Per-section token-breakdown trace event** (`context_breakdown`: per-section char/approx-token counts
   for system / project-map / lib-catalog / template-catalog / working-set / history). Deferred to a
   follow-up — it's a nice-to-have AFTER the human finds eyeballing the existing `llm_request` blocks too
-  tedious, NOT a v1 prerequisite. Trigger: `todo.md` entry filed at impl time.
+  tedious, NOT a v1 prerequisite. Trigger: `todo.md` entry filed at impl time. (Landed in 075: `context_breakdown.py`, one event per LLM request.)
 - **App / glfw path (variant A)** — building the harness on `App(headless=True)` + the one-line bridge
   patch (`tests/conftest.py:44`) works on a machine WITH a display, but glfw cannot init on this
   display-less Pi (verified: `glfw.init()` returns 0, "X11: DISPLAY missing"). The harness targets the

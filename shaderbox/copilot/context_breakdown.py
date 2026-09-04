@@ -1,10 +1,11 @@
-"""What one LLM request CONTAINED, block by block: the trace event feature 026 deferred.
+"""What one LLM request CONTAINED, block by block.
 
 `build_messages` composes named prompt tiers, but the request the model sees is assembled
 per iteration: the built tiers, then the within-turn tool exchange, then the live working set,
 plus the `tools=` block beside the messages. `breakdown_request` measures every one of those
 at the moment the request is assembled and keeps each part's text, so a run's record can show
-both the map (sizes) and the territory (what the block actually said).
+both the map (sizes) and the territory (what the block actually said). Emitted by `run_turn` as
+the `context_breakdown` trace event; the dogfooding station is its consumer.
 """
 
 import json

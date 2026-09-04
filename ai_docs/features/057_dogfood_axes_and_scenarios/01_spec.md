@@ -102,7 +102,7 @@ Everything here is dogfood-infra (`scripts/dogfood/*` + docs + tests) — ZERO e
 - **The analyzer's multi-line `user_text` display gap** (indented continuation lines aren't
   parsed; per-turn "Ask (head)" renders empty for multi-line asks — display-only; no stat uses
   it). **Trigger:** next feature touching the trace field parser.
-- **Per-section context_breakdown** — unchanged from 035.
+- **Per-section context_breakdown** — unchanged from 035. (Landed in 075 as the station's context panel.)
 
 ## Design decisions (locked)
 
