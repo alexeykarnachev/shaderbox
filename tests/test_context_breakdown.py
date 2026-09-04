@@ -61,7 +61,9 @@ class _RecordingClient:
         return iter(self._scripts[len(self.requests) - 1])
 
 
-def _breakdowns(trace_events: list[tuple[str, dict[str, Any]]]) -> list[ContextBreakdown]:
+def _breakdowns(
+    trace_events: list[tuple[str, dict[str, Any]]],
+) -> list[ContextBreakdown]:
     return [f["breakdown"] for k, f in trace_events if k == "context_breakdown"]
 
 
@@ -89,7 +91,10 @@ def _drive(
         build_registry(minimal_caps()),
         COPILOT_CONFIG,
         _fake_context(),
-        history=[LLMMessage(role="user", content="earlier"), LLMMessage(role="assistant", content="ok")],
+        history=[
+            LLMMessage(role="user", content="earlier"),
+            LLMMessage(role="assistant", content="ok"),
+        ],
         user_text="read the shader",
         gate=GateChannel(),
         cancel=threading.Event(),
@@ -130,7 +135,9 @@ def test_breakdown_does_not_change_what_is_sent() -> None:
     # And the measured sizes ARE the request's: block chars sum to the request's message chars.
     for (messages, tool_names), bd in zip(observed.requests, breakdowns, strict=True):
         request_chars = sum(len(m.content or "") for m in messages) + sum(
-            len(tc.name) + len(tc.arguments) for m in messages for tc in m.tool_calls or ()
+            len(tc.name) + len(tc.arguments)
+            for m in messages
+            for tc in m.tool_calls or ()
         )
         assert sum(b.chars for b in bd.blocks) == request_chars
         assert list(bd.tools) == tool_names

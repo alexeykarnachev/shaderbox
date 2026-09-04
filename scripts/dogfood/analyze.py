@@ -101,7 +101,7 @@ DEFAULT_MODEL_NOTE = "unknown (in-tree default)"
 # The trace event kinds that END a turn. A clean turn closes on turn_done; the rest are failure
 # terminals that emit no turn_done. The result glyph keys on which of these closed the turn — NOT
 # on whether some mid-turn attempt errored (an attempt the agent recovered from is not a failure).
-_TERMINAL_KINDS: frozenset[str] = frozenset(
+TERMINAL_KINDS: frozenset[str] = frozenset(
     {
         "turn_done",
         "edit_giveup",
@@ -111,13 +111,13 @@ _TERMINAL_KINDS: frozenset[str] = frozenset(
         "model_incompatible",
     }
 )
-_HARD_FAIL_TERMINALS: frozenset[str] = frozenset(
+HARD_FAIL_TERMINALS: frozenset[str] = frozenset(
     {"edit_giveup", "stream_error", "model_incompatible"}
 )
 # Terminals where the engine STOPPED the agent at a limit but still delivered a visible reply —
 # degraded, not failed. They share the ⚠️ glyph with a `cutoff=` turn_done and are the honesty
 # axis's own turn class (the reply was forced past the eye).
-_LIMIT_TERMINALS: frozenset[str] = frozenset({"clean_streak_giveup"})
+LIMIT_TERMINALS: frozenset[str] = frozenset({"clean_streak_giveup"})
 # The `key: value` field lines the section parser keeps. Anything absent here is dropped, so a new
 # trace field must be added BOTH to the emitter and to this set.
 _FIELD_KEYS: frozenset[str] = frozenset(
@@ -348,7 +348,7 @@ def _parse_transcript(path: Path, turns: list[Turn], warnings: list[str]) -> Non
             cur_turn.gate_approvals += 1
         elif kind == "gate_declined" and cur_turn is not None:
             cur_turn.gate_declines += 1
-        if kind in _TERMINAL_KINDS and cur_turn is not None:
+        if kind in TERMINAL_KINDS and cur_turn is not None:
             cur_turn.terminal_kind = kind
         if kind == "turn_done" and cur_turn is not None:
             cur_turn.cutoff = _as_str(cur.get("cutoff", ""))
@@ -605,7 +605,7 @@ def analyze(target: Path, cli_model: str) -> RunAnalysis:
     #    correctly answered without re-editing (which ends on a clean turn_done, so glyph ✅).
     #  - failed_turns: the turn ended on a hard-fail terminal (giveup / stream error / incompatible).
     unrecovered_attempts = sum(1 for t in turns if t.errored and not t.recovered)
-    failed_turns = sum(1 for t in turns if t.terminal_kind in _HARD_FAIL_TERMINALS)
+    failed_turns = sum(1 for t in turns if t.terminal_kind in HARD_FAIL_TERMINALS)
     glerr = sum(1 for a in errored if "GLError 1282" in a.result_head)
     recovery_summary = (
         f"{len(recoveries)} compile-error recoveries; {failed_turns} failed turns; "
@@ -654,12 +654,12 @@ def _result_glyph(turn: Turn) -> str:
     # mid-turn attempt error the agent handled — a turn that deliberately probes a bad-id/bad-range
     # path and ends on a clean turn_done is a PASS, not a failure. ⚠️ = recovered or degraded
     # (recovered-from-error, or truncated-but-replied).
-    if turn.terminal_kind in _HARD_FAIL_TERMINALS:
+    if turn.terminal_kind in HARD_FAIL_TERMINALS:
         return "🔴"
     if (
         turn.recovered
         or turn.terminal_kind == "turn_truncated"
-        or turn.terminal_kind in _LIMIT_TERMINALS
+        or turn.terminal_kind in LIMIT_TERMINALS
         or turn.cutoff
     ):
         return "⚠️"
@@ -699,7 +699,7 @@ def _cutoff_turns(an: RunAnalysis) -> str:
     hits = [
         f"turn {i} ({t.cutoff or t.terminal_kind})"
         for i, t in enumerate(an.turns, 1)
-        if t.cutoff or t.terminal_kind in _LIMIT_TERMINALS
+        if t.cutoff or t.terminal_kind in LIMIT_TERMINALS
     ]
     return ", ".join(hits) or "none (every turn finished on its own)"
 

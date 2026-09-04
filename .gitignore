@@ -44,3 +44,8 @@ shaderbox-design-handoff-*.tar.gz
 tabbar_spike.ini
 scripts/agent_hub/site/
 .claude/worktrees/
+
+# Dogfooding station (feature 075): the log + media under dogfood/runs/ are the record and are
+# committed; the HTML is a view regenerated from them (`uv run python -m dogfood.report.build`).
+dogfood/index.html
+dogfood/runs/**/*.html

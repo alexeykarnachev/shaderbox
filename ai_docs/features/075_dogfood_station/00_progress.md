@@ -108,3 +108,28 @@ ruled out: emitting at `build_messages` (the working set is empty there — the 
 names); parsing the breakdown back out of the plain-text transcript (the listener seam exists so
 nobody has to); a second `LLMClient` wrapper to observe requests (the trace already sees them).
 surprise: `RUF005` on a list concatenation, otherwise none.
+
+## W-2 the static site — DONE   dd5bedd
+done-condition: the site builds from a fixture log with no network; every turn in the log
+appears on the attempt page; `index.html` opened from a `file://` URL shows images and
+disclosures.
+did: `dogfood/report/build.py` — `build_site(root)` writes `index.html` (every experiment,
+newest activity first, plus the seven prior markdown reports linked by relative path), one
+page per experiment (attempts side by side, what landed between them), one page per attempt
+(the six axes, then the conversation: user text, tool calls with args/result/payload behind a
+disclosure, the copilot's reply, renders inline — PNG as `<img>`, webm/mp4 as `<video>` — the
+driver's notes for that turn, and the context panel per request: a proportional bar, each block
+expandable to its text, the trim flag, billed vs estimated with the cache share). A
+"Context growth" table draws each turn's first request on one absolute scale. Inline CSS, no
+script, no CDN; a live attempt's pages carry a 5s meta-refresh; `--watch` rebuilds on log
+change. The process and honesty halves the analyzer computes are filled from the log (per-turn
+table with the analyzer's glyph rule, coverage against `REACHABLE_TOOLS`, limit-forced turns,
+token/cost mechanics); the analyzer's terminal sets went public for that. Verified by a headless
+Chrome screenshot of the fixture attempt page from `file://` — image, video control, bar,
+disclosures all present. Generated HTML is gitignored; the log and media are not.
+verification: make gates GREEN (exit 0, read unpiped).
+ruled out: a JS-rendered page reading the JSONL (blocked from file:// by browsers; and the
+static build is a one-liner); committing the generated HTML (it would drift from the log the
+moment a run appends without a rebuild).
+surprise: the growth legend keyed off the LAST row and showed only `tools ~0` when that row was
+an in-progress turn with no blocks; it now merges names across rows.
