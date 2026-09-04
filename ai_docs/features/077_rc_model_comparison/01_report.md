@@ -92,3 +92,36 @@ a brake). "Zero calls" = a reply describing tools it never called, counted from 
 An `end_to_end` ask (the whole build in one message) on hy4, gemini and luna would measure the
 autonomy this babysat round could not; and hy4 against luna on an equal footing (both from an
 empty project) decides the default on data rather than on one continued attempt.
+
+## The end-to-end round (`rc_end_to_end`)
+
+The three finishers got the whole build as ONE message — the design document in
+`02_design_document.md` — on empty projects; after it the driver only reacted to the result as a
+whole ("continue", "it is dark, the wall is missing", the sweep), never per stage.
+
+| # | model | outcome | turns | requests | cost | s/turn | hidden reasoning | engine-ended turns | zero-call claims |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | tencent/hy4-preview | **built** | 4 | 32 | $0.27 | 11–168 | 0% | 3 | 1 |
+| 2 | google/gemini-3.8-flash | **built** | 3 | 37 | $0.52 | 36–246 | 87% | 2 | 0 |
+| 3 | openai/gpt-5.6-luna | abandoned — never lit | 4 | 56 | $0.18 | 52–60 | 0% | 3 | 0 |
+
+$0.98 for the round. **hy4 and gemini both built the whole pipeline from the document in two turns**
+(the first turn ends at `max_iterations` for everyone — seven passes and a script do not fit in
+one turn's step budget; "continue" is all it takes), with a lit scene, the wall's shadow and moving
+emitters. Two of hy4's three engine-ended turns were false stops by the no-op brake (below), and
+its sweep report after the second one listed a cascade edit that never happened. **luna could not
+carry the design on its own**: every shader compiled, nothing lit, and two diagnostic turns with
+pointers (paint edited 24 times) found nothing — the model that finished the babysat build, where
+each stage was checked, is not the one for a whole spec.
+
+Engine findings this round, both landed in `b54baad`: the edit probe measured the document's
+OUTPUT even when the edit targeted another pass, so every write to `paint` or `canvas` while the
+output was still the stub read "changed NOTHING on screen" and the no-op brake ended a seven-pass
+build on its second pass; it now probes the edited pass. And a dead-code sweep is a run of unchanged
+frames by nature, so unchanged-frame edits count per file (the repeated-call count stays global).
+
+**On the default.** hy4-preview finished both rounds, fastest and cheapest of the finishers per
+turn, with no hidden reasoning; its faults (a zero-call narration after an engine stop) are the
+shared class, not its own. gemini is the smoothest picture and never fabricated, at twice the cost
+and with reasoning it cannot switch off. luna, the current default, failed the end-to-end. The data
+says hy4; the choice is the maintainer's, and it is one line (`CopilotIntegration.model`).

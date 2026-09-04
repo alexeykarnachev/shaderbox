@@ -26,10 +26,11 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-04 (077 model comparison done; the maintainer reads the reports next, then the sweep). -->
-**Next: the maintainer reads `ai_docs/features/077_rc_model_comparison/01_report.md` and the attempt
-pages (`dogfood/index.html` → `rc_full_build`, attempts 1–8), then the large sweep over engine,
-prompting, caching and tooling that the report's "left for the sweep" list seeds.** Seven models
+<!-- As of 2026-09-04 (077 both rounds done; the maintainer reads the reports and picks the default next, then the sweep). -->
+**Next: the maintainer reads `ai_docs/features/077_rc_model_comparison/01_report.md` (both rounds)
+and the attempt pages (`dogfood/index.html` → `rc_full_build` 1–8, `rc_end_to_end` 1–3), decides the
+default model (the data says hy4-preview; luna failed the end-to-end), then the large sweep over
+engine, prompting, caching and tooling that the report's "left for the sweep" list seeds.** Seven models
 drove the same babysat radiance-cascades build for $2.53: hy4-preview, gemini-3.8-flash and luna
 built it; deepseek stalled at the merge; kimi, glm and codex-mini were unusable. The round landed
 a client that drops the reasoning-effort setting for a provider that refuses it, a torn-stream
@@ -48,7 +49,7 @@ still needs a Windows host before the next cut.
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 077 | rc_model_comparison | done | Eight attempts of the radiance-cascades build on seven models, driven the same way on the station: three finishers, the engine findings each attempt surfaced (all landed), and what is left for the sweep. Spec: `ai_docs/features/077_rc_model_comparison/01_report.md`. |
+| 077 | rc_model_comparison | done | Eight babysat attempts on seven models, then the three finishers given the whole build as one design document: hy4-preview and gemini-3.8-flash built it end to end, luna did not; the engine findings each attempt surfaced (all landed), and what is left for the sweep. Spec: `ai_docs/features/077_rc_model_comparison/01_report.md`. |
 | 076 | copilot_pass_tools | done | Three lazy tools over the session's pass verbs — `add_pass` (with runs/target/output in the same call), `set_pass` (only the fields given; rename), gated `delete_pass` — each echoing the document's pass table; built under 075's stuck rule when the first experiment's attempt 1 could not create a second pass. Spec: `ai_docs/features/076_copilot_pass_tools/01_spec.md`. |
 | 075 | dogfood_station | done | A durable browsable home for every dogfooding experiment: `dogfood/runs/<id>/events.jsonl` appended by the harness's own `dump()`, a static site regenerated from it (conversation, tool calls, renders and videos inline, per-request context panel with every block's size and text), and the `context_breakdown` trace event deferred since 026; the station records and never judges. Spec: `ai_docs/features/075_dogfood_station/01_spec.md`. |
 | 074 | nightly_sweep | done | An unattended structural pass over the repo's shape: a dead-symbol inventory across every symbol kind, ten write-only or orphaned symbols removed, the duplicated stale-file check in `seed.py` given one home, a subset test pinning the copilot's brake tool-sets to the registry, and `ui.py`'s layering documented as it actually is. Spec: `ai_docs/features/074_nightly_sweep/01_spec.md`. |
