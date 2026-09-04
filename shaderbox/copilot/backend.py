@@ -36,7 +36,6 @@ from shaderbox.copilot.address import (
 )
 from shaderbox.copilot.bridge import CopilotBridge
 from shaderbox.copilot.capabilities import (
-    PassOpResult,
     CompileErrorInfo,
     DeleteDocumentResult,
     DocumentImportResult,
@@ -49,6 +48,7 @@ from shaderbox.copilot.capabilities import (
     LibFileResult,
     LibFunctionBody,
     MediaBindResult,
+    PassOpResult,
     PassView,
     PublishResult,
     RenderResult,
@@ -99,9 +99,9 @@ from shaderbox.media import (
     media_class_for,
 )
 from shaderbox.pass_graph import (
+    TARGET_DTYPES,
     AutoSource,
     NoSource,
-    TARGET_DTYPES,
     PassEntry,
     TargetConfig,
     TargetDtype,
@@ -1186,7 +1186,10 @@ class CopilotBackend:
         short = self._copilot_short_ids().get(
             document_id, document_id[:DOCUMENT_SHORT_ID_LEN]
         )
-        return f"passes of document {short} (edit a pass as {short}#<name>):\n" + "\n".join(rows)
+        return (
+            f"passes of document {short} (edit a pass as {short}#<name>):\n"
+            + "\n".join(rows)
+        )
 
     def _resolve_pass_document(self, document: str) -> str | PassOpResult:
         # "" = the current document, as the edit tools read a bare target.
@@ -1222,9 +1225,7 @@ class CopilotBackend:
             try:
                 target = TargetConfig(
                     scale=current.scale if scale is None else scale,
-                    dtype=current.dtype
-                    if dtype is None
-                    else cast(TargetDtype, dtype),
+                    dtype=current.dtype if dtype is None else cast(TargetDtype, dtype),
                     filter_linear=current.filter_linear
                     if filter_linear is None
                     else filter_linear,

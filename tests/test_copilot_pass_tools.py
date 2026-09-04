@@ -28,7 +28,9 @@ def test_add_pass_creates_the_file_and_the_graph_entry(app: Any) -> None:
     assert res.ok, res.error
     document = app.ui_documents[document_id].document
     assert "glow" in document.passes
-    assert (app.paths.documents_dir / document_id / "passes" / "glow.frag.glsl").exists()
+    assert (
+        app.paths.documents_dir / document_id / "passes" / "glow.frag.glsl"
+    ).exists()
     entry = _graph(app, document_id)["passes"]["glow"]
     assert entry["iterations"] == 12
     assert entry["target"]["dtype"] == "f4" and entry["target"]["scale"] == 0.5
@@ -54,14 +56,21 @@ def test_set_pass_changes_only_what_is_given(app: Any) -> None:
     graph = _graph(app, document_id)
     assert "blur" not in graph["passes"] and graph["passes"]["smear"]["iterations"] == 5
     assert graph["output"] == "smear"
-    assert (app.paths.documents_dir / document_id / "passes" / "smear.frag.glsl").exists()
+    assert (
+        app.paths.documents_dir / document_id / "passes" / "smear.frag.glsl"
+    ).exists()
 
 
 def test_rejections_are_errors_not_silent_no_ops(app: Any) -> None:
     backend = app.copilot_backend
     assert not backend.add_pass("", "9bad", None, None, None, None, None, False).ok
-    assert "letter" in backend.add_pass("", "9bad", None, None, None, None, None, False).error
-    too_many = backend.add_pass("", "loop", MAX_ITERATIONS + 1, None, None, None, None, False)
+    assert (
+        "letter"
+        in backend.add_pass("", "9bad", None, None, None, None, None, False).error
+    )
+    too_many = backend.add_pass(
+        "", "loop", MAX_ITERATIONS + 1, None, None, None, None, False
+    )
     assert not too_many.ok and str(MAX_ITERATIONS) in too_many.error
     bad_dtype = backend.set_pass("", "loop", None, "f8", None, None, None, False, "")
     assert not bad_dtype.ok and "f8" in bad_dtype.error
