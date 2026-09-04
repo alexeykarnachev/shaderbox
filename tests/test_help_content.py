@@ -5,6 +5,7 @@ GL-free (no App, no imgui)."""
 import re
 
 from shaderbox.commands import CATEGORY_ORDER, COMMAND_SPECS, chord_to_str
+from shaderbox.core import ENGINE_UNIFORM_TYPES
 from shaderbox.help_content import (
     ENGINE_UNIFORM_DOCS,
     help_sections,
@@ -20,8 +21,8 @@ def test_engine_uniform_docs_cover_every_user_facing_builtin() -> None:
 
 def test_engine_uniform_section_lists_each_uniform() -> None:
     section = next(s for s in help_sections() if s.key == "engine_uniforms")
-    for name, (glsl_type, _doc) in ENGINE_UNIFORM_DOCS.items():
-        assert f"uniform {glsl_type} {name};" in section.snippet
+    for name in ENGINE_UNIFORM_DOCS:
+        assert f"uniform {ENGINE_UNIFORM_TYPES[name]} {name};" in section.snippet
 
 
 def test_sections_are_well_formed() -> None:

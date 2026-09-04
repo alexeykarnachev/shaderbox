@@ -17,7 +17,7 @@ from shaderbox.commands import (
     COMMAND_SPECS,
     chord_to_str,
 )
-from shaderbox.core import ENGINE_DRIVEN_UNIFORMS
+from shaderbox.core import ENGINE_DRIVEN_UNIFORMS, ENGINE_UNIFORM_TYPES
 from shaderbox.glyph_tables import TABLE_UNIFORMS
 
 
@@ -32,15 +32,16 @@ class HelpSection:
     insertable: bool = True
 
 
-# The user-facing engine uniforms: GLSL type + what the engine writes into it each frame. Keys must
-# cover ENGINE_DRIVEN_UNIFORMS minus the glyph tables (engine machinery, never hand-declared) —
+# The user-facing engine uniforms: what the engine writes into each per frame (the type comes
+# from core.ENGINE_UNIFORM_TYPES, which compile() enforces). Keys must cover
+# ENGINE_DRIVEN_UNIFORMS minus the glyph tables (engine machinery, never hand-declared) —
 # tests/test_help_content.py fails if a new builtin lands without a doc entry here.
-ENGINE_UNIFORM_DOCS: dict[str, tuple[str, str]] = {
-    "u_time": ("float", "seconds since launch — the animation clock"),
-    "u_aspect": ("float", "canvas width / height"),
-    "u_resolution": ("vec2", "canvas size in pixels"),
-    "u_pass_iteration": ("float", "which run this is, 0-based (see Runs)"),
-    "u_pass_iterations": ("float", "how many runs this pass makes per frame"),
+ENGINE_UNIFORM_DOCS: dict[str, str] = {
+    "u_time": "seconds since launch — the animation clock",
+    "u_aspect": "canvas width / height",
+    "u_resolution": "canvas size in pixels",
+    "u_pass_iteration": "which run this is, 0-based (see Runs)",
+    "u_pass_iterations": "how many runs this pass makes per frame",
 }
 
 
@@ -51,8 +52,8 @@ def user_facing_engine_uniforms() -> set[str]:
 def _engine_uniform_section() -> HelpSection:
     names = sorted(user_facing_engine_uniforms())
     rows = "\n".join(
-        f"uniform {ENGINE_UNIFORM_DOCS[n][0]} {n};".ljust(30)
-        + f"// {ENGINE_UNIFORM_DOCS[n][1]}"
+        f"uniform {ENGINE_UNIFORM_TYPES[n]} {n};".ljust(30)
+        + f"// {ENGINE_UNIFORM_DOCS[n]}"
         for n in names
         if n in ENGINE_UNIFORM_DOCS
     )

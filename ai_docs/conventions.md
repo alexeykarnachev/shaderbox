@@ -1047,7 +1047,7 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   own type errors. New markers outside this list are a design smell; fix the design, don't add to
   the list. Re-audit when bumping `moderngl` / `pydantic`.
   - `moderngl.Uniform.gl_type` — not in moderngl's stub (`uniform_coerce.py`, `ui_models.py`,
-    `util.py`). NOT `copilot/backend.py`: it reads the type through the `gl_type_label` wrapper
+    `util.py`, `core.py`'s engine-uniform type check). NOT `copilot/backend.py`: it reads the type through the `gl_type_label` wrapper
     and needs no suppression of its own. NOTE: the script-engine `exec()` seam (feature 041, redesigning 040) needs
     NO suppression — ruff's `S102` (flake8-bandit) isn't in this repo's `select`, and pyright's basic
     mode flags no `Any`-flow on the namespaced `exec`. The exec globals are the REAL builtins

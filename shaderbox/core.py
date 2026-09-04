@@ -2,12 +2,27 @@ import contextlib
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 from typing import Any
 
 import moderngl
 import numpy as np
 from loguru import logger
-from OpenGL.GL import GL_SAMPLER_2D, glUseProgram
+from OpenGL.GL import (
+    GL_BOOL,
+    GL_DOUBLE,
+    GL_FLOAT,
+    GL_FLOAT_VEC2,
+    GL_FLOAT_VEC3,
+    GL_FLOAT_VEC4,
+    GL_INT,
+    GL_INT_VEC2,
+    GL_INT_VEC3,
+    GL_INT_VEC4,
+    GL_SAMPLER_2D,
+    GL_UNSIGNED_INT,
+    glUseProgram,
+)
 
 from shaderbox.constants import (
     DEFAULT_CANVAS_SIZE,
@@ -18,7 +33,12 @@ from shaderbox.constants import (
 from shaderbox.glyph_tables import TABLE_UNIFORMS
 from shaderbox.media import MediaWithTexture, Video
 from shaderbox.pass_graph import AutoSource, TargetConfig
-from shaderbox.shader_errors import ShaderError, SourceMap, parse_shader_errors
+from shaderbox.shader_errors import (
+    ShaderError,
+    SourceMap,
+    find_uniform_declaration_line,
+    parse_shader_errors,
+)
 from shaderbox.shader_lib import active as active_lib_index
 from shaderbox.shader_lib import resolve_usage
 from shaderbox.shader_source import ShaderSource
@@ -39,10 +59,63 @@ def process_time() -> float:
 # UIDocument.save excludes them. Two kinds: per-frame values Pass.render() recomputes
 # from time/canvas, and the program-resident glyph tables Pass.compile() writes once
 # (TABLE_UNIFORMS — render() skips those entirely).
+# The GLSL type each per-frame engine uniform must be declared with. The engine writes these
+# values itself, and moderngl refuses a value of the wrong shape, so a declaration of another
+# type would leave the uniform at zero every frame; compile() rejects it instead.
+ENGINE_UNIFORM_TYPES: dict[str, str] = {
+    "u_time": "float",
+    "u_aspect": "float",
+    "u_resolution": "vec2",
+    "u_pass_iteration": "float",
+    "u_pass_iterations": "float",
+}
 ENGINE_DRIVEN_UNIFORMS: frozenset[str] = frozenset(
-    {"u_time", "u_aspect", "u_resolution", "u_pass_iteration", "u_pass_iterations"}
-    | TABLE_UNIFORMS.keys()
+    ENGINE_UNIFORM_TYPES.keys() | TABLE_UNIFORMS.keys()
 )
+# The GL type enum behind each GLSL type this engine names, and back (for the message).
+_GL_TYPE_OF_GLSL: dict[str, int] = {
+    "float": GL_FLOAT,
+    "vec2": GL_FLOAT_VEC2,
+    "vec3": GL_FLOAT_VEC3,
+    "vec4": GL_FLOAT_VEC4,
+    "int": GL_INT,
+    "ivec2": GL_INT_VEC2,
+    "ivec3": GL_INT_VEC3,
+    "ivec4": GL_INT_VEC4,
+    "uint": GL_UNSIGNED_INT,
+    "bool": GL_BOOL,
+    "double": GL_DOUBLE,
+}
+_GLSL_OF_GL_TYPE: dict[int, str] = {v: k for k, v in _GL_TYPE_OF_GLSL.items()}
+
+
+def engine_uniform_type_errors(
+    program: moderngl.Program, source_text: str, root_path: Path
+) -> list[ShaderError]:
+    # One error per engine-driven uniform whose declared type is not the one the engine
+    # writes, anchored on its declaration line so the error strip can jump to it.
+    errors: list[ShaderError] = []
+    for name, glsl_type in ENGINE_UNIFORM_TYPES.items():
+        try:
+            member = program[name]
+        except KeyError:
+            continue
+        if not isinstance(member, moderngl.Uniform):
+            continue
+        gl_type: int = member.gl_type  # type: ignore[attr-defined]
+        if gl_type == _GL_TYPE_OF_GLSL[glsl_type]:
+            continue
+        declared = _GLSL_OF_GL_TYPE.get(gl_type, f"GL type {gl_type:#x}")
+        line = find_uniform_declaration_line(source_text, name)
+        errors.append(
+            ShaderError(
+                root_path,
+                line if line is not None else -1,
+                f"'{name}' is written by the engine and must be declared `{glsl_type}`, "
+                f"not `{declared}`",
+            )
+        )
+    return errors
 
 
 @dataclass
@@ -306,6 +379,20 @@ class Pass:
                 logger.error(f"Failed to compile shader: {e}")
             unit.error_raw = err
             unit.errors = parse_shader_errors(err, unit.source_map)
+            self.compile_unit = unit
+            return
+
+        type_errors = engine_uniform_type_errors(
+            program, self.source.text, unit.source_map.root_path
+        )
+        if type_errors:
+            # The same outcome as a driver failure: the previous program keeps rendering, the
+            # errors surface on the strip and in the copilot's compile feedback.
+            program.release()
+            unit.errors = type_errors
+            unit.error_raw = "\n".join(e.message for e in type_errors)
+            if unit.error_raw != self.compile_unit.error_raw:
+                logger.error(f"Failed to compile shader: {unit.error_raw}")
             self.compile_unit = unit
             return
 

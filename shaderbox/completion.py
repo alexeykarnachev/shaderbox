@@ -12,6 +12,7 @@ import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
+from shaderbox.core import ENGINE_UNIFORM_TYPES
 from shaderbox.glsl_docs import BUILTINS, KEYWORDS, TYPES
 from shaderbox.help_content import ENGINE_UNIFORM_DOCS
 from shaderbox.shader_lib.index import ShaderLibFunction
@@ -45,10 +46,7 @@ class CompletionProvider:
 
 
 def builtin_uniform_declarations() -> list[str]:
-    return [
-        f"{glsl_type} {name};"
-        for name, (glsl_type, _doc) in ENGINE_UNIFORM_DOCS.items()
-    ]
+    return [f"{ENGINE_UNIFORM_TYPES[name]} {name};" for name in ENGINE_UNIFORM_DOCS]
 
 
 # Everything a shader author can type that this editor knows: the library's own functions and
@@ -173,10 +171,9 @@ def symbol_doc(
     function = lib_functions.get(word)
     if function is not None:
         return function.signature, function.doc
-    builtin = ENGINE_UNIFORM_DOCS.get(word)
-    if builtin is not None:
-        glsl_type, doc = builtin
-        return f"uniform {glsl_type} {word};", doc
+    doc = ENGINE_UNIFORM_DOCS.get(word)
+    if doc is not None:
+        return f"uniform {ENGINE_UNIFORM_TYPES[word]} {word};", doc
     found = BUILTINS.get(word)
     if found is not None:
         signatures, purpose = found

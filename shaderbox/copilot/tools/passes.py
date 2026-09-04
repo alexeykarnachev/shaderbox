@@ -15,7 +15,8 @@ _NODE_DESC = "document id (from the project map); empty = the current document"
 _NAME_DESC = "pass name: starts with a letter, letters/digits/underscores"
 _RUNS_DESC = (
     f"how many times the pass draws per frame (1-{MAX_ITERATIONS}); the shader reads "
-    "`u_pass_iteration` / `u_pass_iterations`, and `u_prev` reads the previous run"
+    "`uniform float u_pass_iteration;` / `uniform float u_pass_iterations;` (float, never int), "
+    "and `u_prev` reads the previous run"
 )
 _DTYPE_DESC = "target texel format: f1 (8-bit), f2 (half float), f4 (float)"
 _SCALE_DESC = "target size as a fraction of the canvas (0 < scale <= 1)"

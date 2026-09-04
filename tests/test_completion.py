@@ -115,7 +115,7 @@ def test_symbol_doc_reads_the_lib_index_then_the_builtin_table() -> None:
     assert symbol_doc("SB_hash", lib) == ("float SB_hash(vec2 p)", "a hash")
     assert symbol_doc("u_time", lib) == (
         "uniform float u_time;",
-        ENGINE_UNIFORM_DOCS["u_time"][1],
+        ENGINE_UNIFORM_DOCS["u_time"],
     )
     assert symbol_doc("mix", lib) is not None, "GLSL builtins are documented too"
     assert symbol_doc("nosuchname", lib) is None
