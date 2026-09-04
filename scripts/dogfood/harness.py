@@ -133,6 +133,14 @@ from shaderbox.scripting import EngineContext  # noqa: E402
 from shaderbox.shader_lib.file_ops import ShaderLibFileManager  # noqa: E402
 
 
+def _fit(canvas: tuple[int, int], size: int) -> tuple[int, int]:
+    # The document's aspect kept, its longer side at `size`: a square probe would relayout an
+    # aspect-corrected scene (u_aspect) and misreport it.
+    w, h = canvas
+    scale = size / max(w, h, 1)
+    return (max(8, round(w * scale)), max(8, round(h * scale)))
+
+
 def _strip_cell(texture: moderngl.Texture, t: float, size: int) -> PILImage.Image:
     backdrop = PILImage.new("RGBA", (size, size), (25, 25, 40, 255))
     cell = PILImage.alpha_composite(backdrop, texture_to_pil(texture)).convert("RGB")
@@ -442,7 +450,8 @@ class DogfoodHarness:
     # ---- rendering ----
 
     def render(self, document_id: str = "", *, size: int = 400) -> str:
-        """Render a document's static (t=0) frame to a `size`x`size` PNG (the driver's eyeball helper);
+        """Render a document's static (t=0) frame to a PNG with its longer side `size` px, aspect kept
+        (the driver's eyeball helper);
         return + print the exact path. `document_id` empty = the current document.
 
         Uses the DIRECT context-thread render (`render_at` at t=0) — GL on the owning thread, no
@@ -555,7 +564,7 @@ class DogfoodHarness:
             return ""
         document = ui_document.document
         saved_size = document.canvas_size
-        document.set_canvas_size((size, size))
+        document.set_canvas_size(_fit(saved_size, size))
         try:
             self.session.tick([target], t, 1.0 / 60.0, 0)
             document.render(u_time=t)
@@ -581,7 +590,7 @@ class DogfoodHarness:
             return ""
         document = ui_document.document
         saved_size = document.canvas_size
-        document.set_canvas_size((size, size))
+        document.set_canvas_size(_fit(saved_size, size))
         try:
             with document.export_isolation():
                 if document.on_pre_render is not None:

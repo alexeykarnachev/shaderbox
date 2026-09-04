@@ -93,14 +93,20 @@ _RENDER_AUTHORING_TOOLS = frozenset(
 )
 
 
-def _noop_streak_fact(n: int) -> str:
-    # Rides every no-op mutation past the soft threshold. Two readings, both of which end in
-    # "stop editing": a formatting pass is finished after one, and a change that keeps not
-    # landing has a cause to find before the next edit.
+def _noop_streak_fact(n: int, repeated: bool) -> str:
+    # Rides every no-op call past the soft threshold. For an unchanged frame, two readings that
+    # both end in "stop editing": a formatting pass is finished after one, and a change that
+    # keeps not landing has a cause to find. For a repeated call: it already did what it does.
+    if repeated:
+        return (
+            f"\n\n[hint] you already made this exact call earlier this turn ({n} calls in a "
+            "row that brought nothing new). It already did what it does: move on, or reply."
+        )
     return (
-        f"\n\n[hint] your last {n} edits changed NOTHING on screen. If they were formatting "
-        "or renames, that work is done: stop editing and reply. If they were meant to change "
-        "the picture, they are not landing: find the cause before another edit."
+        f"\n\n[hint] your last {n} calls brought nothing new: the edits changed NOTHING on "
+        "screen. If they were formatting or renames, that work is done: stop editing and reply. "
+        "If they were meant to change the picture, they are not landing: find the cause before "
+        "another edit."
     )
 
 
@@ -489,7 +495,8 @@ def run_turn(
     clean_edits_by_file: dict[
         tuple[str, str], int
     ] = {}  # per-(kind, file) clean-edit streak (spree brake)
-    consecutive_noops = 0  # successful edits in a row whose probe frames did not change
+    consecutive_noops = 0  # calls in a row that brought nothing new (see the no-op brake)
+    seen_calls: set[tuple[str, str]] = set()  # (name, raw args) made earlier this turn
     first_input_tokens: int | None = None  # iter-0 context size for the usage bar
     logger.info(f"copilot turn start | user={_trunc(user_text, 80)!r}")
     logger.debug(
@@ -741,7 +748,10 @@ def run_turn(
             # legitimate terminations (length is a token-budget cutoff, handled below).
             fr = done.finish_reason if done is not None else ""
             silent_after_tool = not text_buf and total_tool_calls > 0
-            if silent_after_tool and done is None:
+            # A provider that ends the stream with finish_reason "error" tore it on its side
+            # (a timeout behind a long reasoning burn, an upstream 5xx); the model is not the
+            # problem and the Settings advice below would send the user chasing the wrong fix.
+            if silent_after_tool and (done is None or fr == "error"):
                 # A stream that produced no terminal event at all is a torn connection, not an
                 # incompatible model — the Settings advice would send the user chasing the wrong fix.
                 logger.warning("copilot: stream torn before any terminal event")
@@ -1057,30 +1067,36 @@ def run_turn(
                     ):
                         clean_streak_giveup = True
 
-            # The no-op brake: successful edits whose probe frames matched the frames before
-            # them, counted across files and kinds and NOT reset by a whole-file write -- the
-            # per-file clean-edit brake above is reset by exactly that, so a run of no-op
-            # rewrites never trips it.
-            if registry.is_edit_tool(tc.name) and ok:
-                if NOOP_FACTS_PREFIX in msg:
-                    consecutive_noops += 1
-                    if (
-                        config.noop_edit_soft_streak > 0
-                        and consecutive_noops >= config.noop_edit_soft_streak
-                    ):
-                        msg += _noop_streak_fact(consecutive_noops)
-                        tr.event(
-                            "noop_streak_nudge",
-                            iteration=iteration,
-                            streak=consecutive_noops,
-                        )
-                    if (
-                        config.noop_edit_hard_streak > 0
-                        and consecutive_noops >= config.noop_edit_hard_streak
-                    ):
-                        noop_streak_giveup = True
-                else:
-                    consecutive_noops = 0
+            # The no-op brake: a call that brought nothing new -- a successful edit whose probe
+            # frames matched the frames before it, or a call already made with the same
+            # arguments earlier this turn (an A,B,A,B cycle repeats without two identical
+            # calls in a row) -- counted across files, kinds and tools, and NOT reset by a
+            # whole-file write (the per-file clean-edit brake above is reset by exactly that,
+            # so a run of no-op rewrites never trips it).
+            signature = (tc.name, tc.arguments)
+            repeated = signature in seen_calls
+            seen_calls.add(signature)
+            unchanged_frame = registry.is_edit_tool(tc.name) and ok and NOOP_FACTS_PREFIX in msg
+            if repeated or unchanged_frame:
+                consecutive_noops += 1
+                if (
+                    config.noop_edit_soft_streak > 0
+                    and consecutive_noops >= config.noop_edit_soft_streak
+                ):
+                    msg += _noop_streak_fact(consecutive_noops, repeated)
+                    tr.event(
+                        "noop_streak_nudge",
+                        iteration=iteration,
+                        streak=consecutive_noops,
+                        repeated=repeated,
+                    )
+                if (
+                    config.noop_edit_hard_streak > 0
+                    and consecutive_noops >= config.noop_edit_hard_streak
+                ):
+                    noop_streak_giveup = True
+            else:
+                consecutive_noops = 0
 
             messages.append(_tool_message(tc.id, msg))
 
@@ -1104,10 +1120,10 @@ def run_turn(
                     usage=usage,
                 )
                 note = (
-                    f"[engine] I hit my own limit of {config.noop_edit_hard_streak} edits in "
-                    "a row that changed nothing on screen (NOT a pause you asked for), so I "
-                    "stopped to keep from churning. If more is needed, tell me what should "
-                    "look different and I'll continue."
+                    f"[engine] I hit my own limit of {config.noop_edit_hard_streak} calls in "
+                    "a row that brought nothing new (NOT a pause you asked for), so I stopped "
+                    "to keep from churning. If more is needed, tell me what should look "
+                    "different and I'll continue."
                 )
             elif clean_streak_giveup:
                 logger.warning(

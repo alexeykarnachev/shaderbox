@@ -269,9 +269,7 @@ def test_noop_edits_nudge_then_force_end_across_files_and_writes() -> None:
     )
     assert trace.kinds.count("noop_streak_nudge") == 3  # the 2nd, 3rd and 4th no-ops
     assert "noop_streak_giveup" in trace.kinds
-    assert (
-        isinstance(events[-1], AgentError) and "changed nothing" in events[-1].message
-    )
+    assert isinstance(events[-1], AgentError) and "nothing new" in events[-1].message
 
 
 def test_an_edit_that_changes_the_frame_resets_the_noop_streak() -> None:
@@ -291,10 +289,69 @@ def test_an_edit_that_changes_the_frame_resets_the_noop_streak() -> None:
             _noop_edit_result(),
         ]
     )
+    # Five DISTINCT edits (a repeated identical call would count as a no-op on its own).
+    edits = [
+        _tool_call(
+            f"c{i}",
+            "edit_shader",
+            f'{{"old_str": "a{i}", "new_str": "b", "target": "7f3a"}}',
+        )
+        for i in range(5)
+    ]
     events, trace = _run(
-        [_EDIT_SHADER] * 5 + [_DONE],
+        [*edits, _DONE],
         config,
         apply_shader_edit=lambda _o, _n, _r, _t: next(results),
     )
     assert "noop_streak_giveup" not in trace.kinds
     assert isinstance(events[-1], AgentTurnDone)
+
+
+def test_the_same_call_with_the_same_arguments_counts_as_a_noop() -> None:
+    # kimi-k2.7 on the station: fourteen identical set_pass calls to max_iterations. A repeated
+    # call is no new information; it counts like an unchanged frame.
+    config = replace(
+        COPILOT_CONFIG,
+        clean_edit_soft_streak=0,
+        clean_edit_hard_streak=0,
+        noop_edit_soft_streak=2,
+        noop_edit_hard_streak=3,
+    )
+    same = _tool_call("cg", "grep", '{"pattern": "u_time"}')
+    events, trace = _run([same, same, same, same, _DONE], config)
+    assert trace.kinds.count("noop_streak_nudge") == 2
+    assert "noop_streak_giveup" in trace.kinds
+    assert isinstance(events[-1], AgentError)
+
+
+def test_a_different_call_between_repeats_resets_the_streak() -> None:
+    config = replace(
+        COPILOT_CONFIG,
+        clean_edit_soft_streak=0,
+        clean_edit_hard_streak=0,
+        noop_edit_soft_streak=2,
+        noop_edit_hard_streak=3,
+    )
+    calls = [_tool_call(f"c{i}", "grep", f'{{"pattern": "u_{i}"}}') for i in range(4)]
+    a, b, c, d = calls
+    # a repeats once, b and c are new (reset), a repeats once more, d is new: never three.
+    events, trace = _run([a, a, b, c, a, d, _DONE], config)
+    assert "noop_streak_giveup" not in trace.kinds
+    assert isinstance(events[-1], AgentTurnDone)
+
+
+def test_an_alternating_pair_of_repeated_calls_is_churn_too() -> None:
+    # kimi-k2.7 again: set_pass jfa, set_pass seed, jfa, seed ... -- never two identical calls
+    # in a row, every one already made this turn.
+    config = replace(
+        COPILOT_CONFIG,
+        clean_edit_soft_streak=0,
+        clean_edit_hard_streak=0,
+        noop_edit_soft_streak=2,
+        noop_edit_hard_streak=4,
+    )
+    a = _tool_call("ca", "grep", '{"pattern": "u_time"}')
+    b = _tool_call("cb", "grep", '{"pattern": "u_aspect"}')
+    events, trace = _run([a, b, a, b, a, b, a, b, _DONE], config)
+    assert "noop_streak_giveup" in trace.kinds
+    assert isinstance(events[-1], AgentError)

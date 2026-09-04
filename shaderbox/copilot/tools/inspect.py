@@ -28,7 +28,8 @@ _PROBE_RENDER_DESC = (
     "shader past t=0, to re-measure after a set_uniform, and before you state what the frame "
     "contains. Unlike render_image (a heavy, gated, file-writing deliverable) it never confirms or "
     "writes a file, and it is free. It measures — it does not SEE: the numbers are all you get, "
-    "and how the result LOOKS stays the user's judgment."
+    "and how the result LOOKS stays the user's judgment. `document` takes a pass address "
+    "(`<id>#<pass>`) to measure one pass of a multi-pass document instead of its output."
 )
 
 

@@ -109,3 +109,16 @@ def test_registry_exposes_the_three_lazily_with_delete_gated() -> None:
     # The handler is wired: an execute through the registry validates and reaches the capability.
     ok, msg, _ = registry.execute("add_pass", {"name": "glow"}, "")
     assert ok and "added pass 'glow'" in msg
+
+
+def test_probe_render_measures_one_pass_by_address(app: Any) -> None:
+    # gemini-3.8-flash on the station probed `<id>#jfa` and was told no such document; every
+    # other tool takes the pass address.
+    backend = app.copilot_backend
+    assert backend.add_pass("", "red", None, None, None, None, None, False).ok
+    short = backend._copilot_short_ids()[app.current_document_id]
+    red = "#version 460 core\nin vec2 vs_uv;\nout vec4 fs_color;\nvoid main() { fs_color = vec4(1.0, 0.0, 0.0, 1.0); }\n"
+    assert backend.apply_full_rewrite(red, f"{short}#red").errors == []
+    facts = backend.probe_render(f"{short}#red", 0.0)
+    assert "rgba(255,0,0,255)" in facts, facts
+    assert backend.probe_render(f"{short}#nope", 0.0).startswith("error: no pass")

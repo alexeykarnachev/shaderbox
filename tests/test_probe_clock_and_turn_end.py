@@ -32,7 +32,7 @@ def _facts_for(t: float | None) -> str:
         render_pass=types.SimpleNamespace(
             canvas=types.SimpleNamespace(texture=texture)
         ),
-        render=lambda u_time: rendered_at.append(u_time),
+        render=lambda u_time, target=None: rendered_at.append(u_time),
     )
     stub = types.SimpleNamespace(_last_probe={})
     fn = CopilotBackend._render_facts_for.__get__(stub)

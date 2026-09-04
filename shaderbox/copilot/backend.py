@@ -135,14 +135,18 @@ from shaderbox.util import try_to_release
 _MOTION_EPS = 1.5
 
 
-def _probe_frame(document: Document, t: float, width: int, height: int) -> bytes:
+def _probe_frame(
+    document: Document, t: float, width: int, height: int, target: str | None = None
+) -> bytes:
     # The document rendered at ITS OWN size, then box-filtered down to the probe size. Drawing
     # the output pass straight into a probe-sized canvas would give it a `u_resolution` its
     # inputs do not share -- an iterated output pass (a cascade) reads its own previous run at
     # native size and would sample it off-grid on the last run. GL orientation is kept: the
-    # facts read the buffer bottom-up, as a texture read is.
-    document.render(u_time=t)
-    frame = texture_to_rgba8(document.render_pass.canvas.texture)
+    # facts read the buffer bottom-up, as a texture read is. `target` probes one pass of the
+    # graph (its ancestors drawn, that pass read) instead of the output.
+    document.render(u_time=t, target=target)
+    probed = document.passes[target] if target else document.render_pass
+    frame = texture_to_rgba8(probed.canvas.texture)
     small = PILImage.fromarray(frame, "RGBA").resize(
         (width, height), PILImage.Resampling.BOX
     )
@@ -278,6 +282,9 @@ def _format_uniforms(
     # can neither set nor learn from. A `driven` uniform shows a marker, not a phantom value: the
     # copilot path never ticks the script, so its uniform_values entry is the stale manual default —
     # showing it as a number contradicts the write that said the script drives it (feature 043).
+    # An engine-driven uniform (u_aspect, u_resolution, the pass counters) shows a marker for the
+    # same reason: its cache entry is whatever the last render wrote, 0.0 before any -- a model
+    # read `u_aspect float = 0.0` and rebuilt its layout around it.
     rows: list[str] = []
     for u in render_pass.get_active_uniforms():
         if u.name in TABLE_UNIFORMS:
@@ -285,6 +292,8 @@ def _format_uniforms(
         label = gl_type_label(u)
         if isinstance(u, moderngl.UniformBlock):
             rows.append(f"{u.name} {label}")
+        elif u.name in ENGINE_DRIVEN_UNIFORMS:
+            rows.append(f"{u.name} {label} = <set by the engine each frame>")
         elif u.name in driven:
             rows.append(f"{u.name} {label} = <driven by script.py>")
         elif label == "sampler2D":
@@ -1644,10 +1653,18 @@ class CopilotBackend:
         # render-blind agent glances here as often as it likes, vs render_image (gated, writes a
         # deliverable file).
         def _on_main() -> str:
-            ui_document = self._copilot_render_target(document)
+            document_address, pass_name = split_pass_address(document)
+            ui_document = self._copilot_render_target(document_address)
             if ui_document is None:
                 return f"error: no such document '{document}'"
-            facts = self._render_facts_for(ui_document.document, t=t)
+            if pass_name and pass_name not in ui_document.document.passes:
+                return (
+                    f"error: no pass '{pass_name}' -- the passes are "
+                    f"{sorted(ui_document.document.passes)}"
+                )
+            facts = self._render_facts_for(
+                ui_document.document, t=t, target=pass_name or None
+            )
             return facts or "probe rendered, but produced no readable facts (advisory)."
 
         return self._bridge.run_on_main(
@@ -2038,6 +2055,7 @@ class CopilotBackend:
         t: float = 0.0,
         motion: bool = False,
         cache_key: str = "",
+        target: str | None = None,
     ) -> str:
         # Best-effort probe render -> one facts line (feature 033). Runs on the main
         # thread (bridge-marshalled callers) with the GL context current. Never raises
@@ -2057,14 +2075,14 @@ class CopilotBackend:
             # aspect-corrected shaders (u_aspect) differently from the preview.
             cw, ch = document.render_pass.canvas.texture.size
             h = min(4 * size, max(8, round(size * ch / cw))) if cw else size
-            raw0 = _probe_frame(document, t, size, h)
+            raw0 = _probe_frame(document, t, size, h, target)
             # Stamp the sample time: an animated shader's facts change with phase,
             # which otherwise reads as an edit effect.
             line0 = _stamp_facts(render_facts(raw0, size, h), t)
             if not motion or not line0:
                 return line0
             t2 = COPILOT_ENGINE.render_facts_motion_t
-            raw1 = _probe_frame(document, t2, size, h)
+            raw1 = _probe_frame(document, t2, size, h, target)
             a0 = np.frombuffer(raw0, dtype=np.uint8).astype(np.int16)
             a1 = np.frombuffer(raw1, dtype=np.uint8).astype(np.int16)
             if float(np.mean(np.abs(a0 - a1))) < _MOTION_EPS:

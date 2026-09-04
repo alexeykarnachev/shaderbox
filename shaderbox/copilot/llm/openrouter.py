@@ -60,6 +60,24 @@ class LLMUpstreamError(Exception):
         self.status_code: int = status_code
 
 
+def _refuses_reasoning_setting(exc: Exception) -> bool:
+    # A 400 whose message names reasoning ("Reasoning is mandatory for this endpoint and
+    # cannot be disabled" is OpenRouter's wording). The body is read here and nowhere else
+    # logged: it echoes the prompt.
+    if getattr(exc, "status_code", None) != 400:
+        return False
+    body = getattr(exc, "body", None)
+    message = ""
+    if isinstance(body, dict):
+        error = body.get("error")
+        message = (
+            str(error.get("message", "")) if isinstance(error, dict) else str(body)
+        )
+    else:
+        message = str(getattr(exc, "message", "") or "")
+    return "reasoning" in message.lower()
+
+
 def _log_upstream_error(exc: Exception) -> None:
     # NEVER log the response body (§J4) — OpenRouter error bodies echo the prompt, which
     # carries the user's shader source + the key context. Status/class only.
@@ -83,6 +101,9 @@ class OpenRouterLLMClient(LLMClient):
     ) -> None:
         self._get_api_key = get_api_key
         self._get_model = get_model
+        # Models whose endpoint refused the reasoning-effort setting ("reasoning is mandatory
+        # and cannot be disabled"): their requests go out without it from then on.
+        self._reasoning_refused: set[str] = set()
 
     @property
     def model(self) -> str:
@@ -106,9 +127,22 @@ class OpenRouterLLMClient(LLMClient):
         # lazy-SDK seams are listed in conventions.md ## Design decisions.
         from openai import APIStatusError
 
+        model = self._get_model()
+        with_reasoning = model not in self._reasoning_refused
         try:
-            yield from self._stream_impl(messages, tools, max_tokens)
+            yield from self._stream_impl(messages, tools, max_tokens, with_reasoning)
         except APIStatusError as exc:
+            if with_reasoning and _refuses_reasoning_setting(exc):
+                # A provider quirk normalized at the transport boundary: the request is
+                # re-sent once without the setting, and the model is remembered. Safe to
+                # re-send because a 400 arrives before any chunk is streamed.
+                logger.info(
+                    f"copilot LLM: {model} refuses the reasoning-effort setting; "
+                    "re-sending without it"
+                )
+                self._reasoning_refused.add(model)
+                yield from self.stream(messages, tools=tools, max_tokens=max_tokens)
+                return
             _log_upstream_error(exc)
             # `from None`: the implicit context chain would re-expose the body-bearing
             # original in any logged traceback.
@@ -122,6 +156,7 @@ class OpenRouterLLMClient(LLMClient):
         messages: list[LLMMessage],
         tools: list[LLMToolSpec] | None,
         max_tokens: int,
+        with_reasoning: bool,
     ) -> Iterator[LLMStreamEvent]:
         from openai import OpenAI
         from openai.types.chat import ChatCompletionChunk
@@ -133,10 +168,11 @@ class OpenRouterLLMClient(LLMClient):
             "stream": True,
             "stream_options": {"include_usage": True},
             "max_completion_tokens": max_tokens,
-            "extra_body": {
-                "reasoning": {"effort": COPILOT_ENGINE.llm_reasoning_effort}
-            },
         }
+        if with_reasoning:
+            kwargs["extra_body"] = {
+                "reasoning": {"effort": COPILOT_ENGINE.llm_reasoning_effort}
+            }
         if tools:
             kwargs["tools"] = [_tool_to_wire(t) for t in tools]
         logger.debug(

@@ -108,7 +108,13 @@ def test_zero_disables_clean_streak_nudge() -> None:
         def event(self, kind: str, **fields: object) -> None:
             nudge_events.append(kind)
 
-    config = replace(COPILOT_CONFIG, clean_edit_soft_streak=0, clean_edit_hard_streak=0)
+    config = replace(
+        COPILOT_CONFIG,
+        clean_edit_soft_streak=0,
+        clean_edit_hard_streak=0,
+        noop_edit_soft_streak=0,
+        noop_edit_hard_streak=0,
+    )
     events = list(
         run_turn(
             _FakeClient(scripts),

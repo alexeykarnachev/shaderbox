@@ -46,6 +46,12 @@ from shaderbox.copilot.tools.registry import build_registry
 from shaderbox.copilot.trace import TraceLog
 from tests._caps import minimal_caps
 
+# A turn that repeats ONE identical call as a proxy for a long turn would now trip the no-op
+# brake (a repeated identical call is churn); these tests are about other limits, so it is off.
+_NO_NOOP_BRAKE = replace(
+    COPILOT_CONFIG, noop_edit_soft_streak=0, noop_edit_hard_streak=0
+)
+
 
 def _tool_call(call_id: str, name: str, args: str) -> list[LLMStreamEvent]:
     return [
@@ -418,7 +424,7 @@ def test_applies_but_broken_thrash_nudges_not_giveup() -> None:
         run_turn(
             _FakeClient(scripts),
             registry,
-            COPILOT_CONFIG,
+            _NO_NOOP_BRAKE,
             _fake_context(),
             history=[],
             user_text="keep breaking it",
@@ -450,7 +456,7 @@ def test_max_iterations_cutoff_surfaces_as_error() -> None:
         run_turn(
             _FakeClient(scripts),
             registry,
-            COPILOT_CONFIG,
+            _NO_NOOP_BRAKE,
             _fake_context(),
             history=[],
             user_text="read forever",
@@ -476,7 +482,7 @@ def test_max_iterations_streams_a_final_no_tools_reply() -> None:
         run_turn(
             _FakeClient(scripts),
             registry,
-            COPILOT_CONFIG,
+            _NO_NOOP_BRAKE,
             _fake_context(),
             history=[],
             user_text="read forever",
@@ -522,7 +528,7 @@ def test_torn_final_stream_keeps_stats_and_summary() -> None:
         run_turn(
             _TornFinalClient(scripts),
             registry,
-            COPILOT_CONFIG,
+            _NO_NOOP_BRAKE,
             _fake_context(),
             history=[],
             user_text="read forever",
@@ -955,7 +961,7 @@ def test_clean_edit_streak_fact_escalates_past_soft_threshold() -> None:
     soft = COPILOT_CONFIG.clean_edit_soft_streak
     n_clean = soft + 3  # past soft, under the hard stop
     config = replace(
-        COPILOT_CONFIG, clean_edit_hard_streak=0
+        _NO_NOOP_BRAKE, clean_edit_hard_streak=0
     )  # hard stop off for this test
     scripts: list[list[LLMStreamEvent]] = [edit] * n_clean + [
         [LLMTextDelta("Tweaked it."), LLMDone("stop")]
@@ -1173,7 +1179,7 @@ def test_turn_time_budget_zero_is_off(monkeypatch) -> None:
         run_turn(
             _FakeClient(scripts),
             registry,
-            replace(COPILOT_CONFIG, turn_time_budget_s=0),
+            replace(_NO_NOOP_BRAKE, turn_time_budget_s=0),
             _fake_context(),
             history=[],
             user_text="read forever",
