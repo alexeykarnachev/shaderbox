@@ -15,7 +15,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 
 from shaderbox.intel.index import GlslIndex
-from shaderbox.intel.symbols import Symbol
+from shaderbox.intel.symbols import Symbol, SymbolKind
 
 MAX_CANDIDATES = 50
 
@@ -48,7 +48,11 @@ class CompletionProvider:
     candidates: Callable[[CompletionContext], Sequence[Symbol]]
 
 
-_SITE = re.compile(r"\buniform\s+(?:(\w+)\s+)?(\w*)$")
+# `uniform`, `uniform u_`, `uniform vec4 u_`, `uniform sampler2D u_`: a declaration site up to
+# and including a partial name; not `vec3 color = u_`, and not past the name. Group 1 is the
+# typed type when there is one.
+DECLARATION_SITE = re.compile(r"\buniform\s+(?:(\w+)\s+)?\w*$")
+_SITE = DECLARATION_SITE
 
 
 def _declaration_parts(symbol: Symbol) -> tuple[str, str]:
@@ -76,20 +80,22 @@ def _declarations(context: CompletionContext) -> Sequence[Symbol]:
 
 def _glsl_words(context: CompletionContext) -> Sequence[Symbol]:
     # After `uniform <type> ` the line wants a NEW name: the buffer's declared names and the
-    # language's words are not candidates there, only the declarations provider's.
+    # language's words are not candidates there, only the declarations provider's. After a
+    # bare `uniform ` a bare name would land a typeless `uniform u_time`.
     site = _SITE.search(context.line_before_caret)
     if context.index is None or (site is not None and site.group(1)):
         return ()
-    return context.index.words
+    if site is None:
+        return context.index.words
+    # After a bare `uniform ` the word being typed is a TYPE: only the language's types come
+    # from this provider, the names come whole from the declarations provider.
+    return [s for s in context.index.words if s.kind == SymbolKind.GLSL_TYPE]
 
 
 def _python_words(context: CompletionContext) -> Sequence[Symbol]:
     return context.python_candidates
 
 
-# `uniform`, `uniform u_`, `uniform vec4 u_`, `uniform sampler2D u_`: a declaration site up to
-# and including a partial name; not `vec3 color = u_`, and not past the name.
-DECLARATION_SITE = re.compile(r"\buniform\s+(?:\w+\s+)?\w*$")
 # Where a Python completion makes sense: after a dot (member access, prefix may be empty) or
 # inside an identifier.
 PYTHON_SITE = re.compile(r"(?:\.\w*|\w+)$")

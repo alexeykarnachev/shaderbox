@@ -206,6 +206,7 @@ class ProjectSession:
         # The CPU-script engine (feature 041): per-document uniform-compute behaviors, ticked once
         # per frame before render. Populated per project by _resolve_scripts in load().
         self.script_engine = ScriptEngine(ENGINE_DRIVEN_UNIFORMS)
+        self.shader_lib_index_revision: int = 0
 
         # Built LAST: _build_copilot_capabilities reads the project-state fields above. The
         # client reads the key/model LIVE through getters — _load reassigns integrations_store,
@@ -380,6 +381,8 @@ class ProjectSession:
         # accessor that Pass.compile() reads.
         self.shader_lib_index = ShaderLibIndex.build(shader_lib_root())
         set_active_lib_index(self.shader_lib_index)
+        # A value the editor's index fingerprints on (an object id is an address, reusable).
+        self.shader_lib_index_revision += 1
         logger.debug(f"Lib index: {len(self.shader_lib_index.functions)} functions")
 
     def _order_examples(self, examples: dict[str, UIDocument]) -> dict[str, UIDocument]:

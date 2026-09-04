@@ -79,15 +79,13 @@ def python_completions(text: str, line: int, column: int) -> list[Symbol]:
         typed = completion.name[: len(completion.name) - len(completion.complete or "")]
         if completion.name.startswith("_") and not typed.startswith("_"):
             continue
-        signature, doc = _signature_and_doc(completion)
-        found.append(
-            Symbol(
-                completion.name,
-                _kind(completion, after_dot=after_dot),
-                signature=signature,
-                doc=doc,
-            )
+        kind = _kind(completion, after_dot=after_dot)
+        signature, doc = (
+            api_symbol_doc(completion.name)
+            if kind == SymbolKind.PY_API
+            else _signature_and_doc(completion)
         )
+        found.append(Symbol(completion.name, kind, signature=signature, doc=doc))
     if not after_dot:
         # The engine injects the API into every script's globals, which jedi cannot see
         # unless the stub's import line names them; offer them from the engine's own list.
@@ -113,10 +111,13 @@ def python_lookup(text: str, line: int, column: int) -> Symbol | None:
     if not names:
         return None
     name = names[0]
-    signature, doc = _signature_and_doc(name)
     if name.name in API_NAMES:
-        kind = SymbolKind.PY_API
-    elif name.type == "keyword":
+        # `Ctx` is a bare alias of the context class, so jedi has no docstring for it and
+        # its raw answer is "statement Ctx": the engine's own gloss is the answer.
+        signature, doc = api_symbol_doc(name.name)
+        return Symbol(name.name, SymbolKind.PY_API, signature=signature, doc=doc)
+    signature, doc = _signature_and_doc(name)
+    if name.type == "keyword":
         kind = SymbolKind.PY_KEYWORD
     elif _after_dot(lines[line][:column]):
         kind = SymbolKind.PY_MEMBER

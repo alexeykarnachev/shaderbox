@@ -12,11 +12,12 @@ from shaderbox.app import App
 from shaderbox.constants import MEDIA_EXTENSIONS
 from shaderbox.core import UniformValue
 from shaderbox.editor_types import HoverMark, JumpRequest
+from shaderbox.intel.symbols import SymbolKind
 from shaderbox.media import MediaWithTexture, Video, media_class_for
 from shaderbox.pass_graph import AutoSource, NoSource, PassSource, wired_pass
 from shaderbox.paths import pass_name_of
 from shaderbox.shader_errors import find_uniform_declaration_line
-from shaderbox.theme import COLOR, SIZE, SPACE
+from shaderbox.theme import COLOR, SIZE, SPACE, kind_color
 from shaderbox.ui_models import UIUniform
 from shaderbox.ui_primitives import (
     ComboRow,
@@ -294,7 +295,9 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
             (f"auto ({auto or 'none'})", COLOR.FG_SECONDARY),
             ("none", COLOR.FG_DIM),
         ]
-        pass_rows: list[ComboRow] = [(p, COLOR.SYN_PASS_SAMPLER) for p in passes]
+        pass_rows: list[ComboRow] = [
+            (p, kind_color(SymbolKind.PASS_SAMPLER)) for p in passes
+        ]
         file_row: ComboRow = ("file...", COLOR.FG_SECONDARY)
         choices: list[ComboRow] = [*rules, *pass_rows, file_row]
         file_item = len(choices) - 1

@@ -6,7 +6,9 @@ from typing import Any
 
 from shaderbox.editor.ffi import ensure_loaded
 from shaderbox.editor_types import EditorTab
+from shaderbox.intel.symbols import SymbolKind
 from shaderbox.intel.worker import PythonRequestKind
+from shaderbox.paths import pass_name_of
 from shaderbox.tabs.code import (
     _consume_lookup_request,
     _drive_completion,
@@ -95,3 +97,45 @@ def test_k_on_the_script_tab_answers_through_the_worker(app: Any) -> None:
     assert app.editor_lookup is not None
     assert app.editor_lookup.word == "sin"
     assert "sin" in app.editor_lookup.signature
+
+
+def test_a_samplers_class_in_the_text_follows_its_value(app: Any) -> None:
+    from shaderbox.pass_graph import NoSource
+
+    document_id = app.current_document_id
+    document = app.ui_documents[document_id].document
+    app.session.add_pass(document_id, "paint")
+    session, tab = _shader_session(app)
+    editor = session.editor
+    edited = document.passes[pass_name_of(tab.path)]
+    lines = editor.get_text().split("\n")
+    editor.set_selection((0, 0), (len(lines) - 1, len(lines[-1])))
+    editor.replace_selection(
+        "uniform sampler2D u_paint;\nvoid main() { gl_FragColor = texture(u_paint, vec2(0.5)); }\n"
+    )
+    lib = ensure_loaded()
+    _glsl_index_for(app, editor, tab)
+    editor.layout((800.0, 600.0), 16.0)
+    assert lib.ed_class_at(editor._h, 0, 18) == 8, "a fresh sampler2D wires by name"
+    edited.uniform_values["u_paint"] = NoSource()
+    _glsl_index_for(app, editor, tab)
+    editor.layout((800.0, 600.0), 16.0)
+    assert lib.ed_class_at(editor._h, 0, 18) == 0, "re-sourced to none: a plain uniform"
+    edited.uniform_values["u_paint"] = object()
+    _glsl_index_for(app, editor, tab)
+    editor.layout((800.0, 600.0), 16.0)
+    assert lib.ed_class_at(editor._h, 0, 18) == 0, (
+        "an unknown value never reads as a pass"
+    )
+
+
+def test_the_shader_index_reads_the_live_script_buffer(app: Any) -> None:
+    script_session, _ = _script_session(app)
+    script_session.editor.feed("Go")
+    script_session.editor.feed('        return {"u_live_gain": 0.5}')
+    script_session.editor.feed("<Esc>")
+    session, tab = _shader_session(app)
+    index = _glsl_index_for(app, session.editor, tab)
+    offered = {s.name: s for s in index.declarations}
+    assert offered["u_live_gain"].inserted == "uniform float u_live_gain;"
+    assert offered["u_live_gain"].kind == SymbolKind.SCRIPT_UNIFORM

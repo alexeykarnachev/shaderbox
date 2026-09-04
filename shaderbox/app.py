@@ -1358,6 +1358,8 @@ class App:
             logger.error(f"open_script_for failed for {document_id}: {e}")
             return
         self.get_session(ShaderSource.load(path))
+        # The jedi warm-up starts now, so the first completion on this tab does not wait.
+        self.ensure_python_worker()
         self._focus_or_add_tab(
             EditorTab(path=path, kind="script", document_id=document_id),
             focus_editor=focus_editor,

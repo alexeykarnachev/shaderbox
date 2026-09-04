@@ -245,8 +245,16 @@ the two tables; slots 7 and 8 are host classes (engine uniform, pass sampler), s
 uniforms and library functions share the builtin green. `engine_uniforms.py` is the GL-free
 home of the engine tables. Tests: the sources, the index, the completion policy (the
 maintainer's two lines pinned), the panel through the real driver (colors in the text, `ctx.`
-members and `K` through the worker), the GL-free gate in a fresh interpreter. Display checks
-owed: items 1-4 of `## Manual verification`.)*
+members and `K` through the worker), the GL-free gate in a fresh interpreter. After the
+post-implementation round (below): every kind has a popup slot (keywords and types red, the
+builtin green shared by builtins, library and script uniforms, engine blue, samplers aqua)
+while the TEXT feed stays the four host classes; the API gloss wins for an injected name in
+completion and under `K` whether the stub imports it or not, and an empty answer opens no
+note; the declaration site after a typed type filters by that type and after a bare
+`uniform` never offers a name it offers whole; the cache is per editor handle; the script's
+text is read on a rebuild only; the lib index stamps with a counter; a dropped worker answer
+releases its latch; the warm-up starts when the script tab opens. Display checks owed: items
+1-4 of `## Manual verification`.)*
 
 ### W-B — Formatter (#3, D9, D11)
 
@@ -365,6 +373,22 @@ code panel) and the formatter dependency note; roadmap row + banner; cold-contex
   before the language's; the full re-push per rebuild is ~0.1 ms by the editor's measurement;
   the glyph-table uniforms (`SBT_*`) are engine-driven and get no kind (they are never typed).
 
+- **W-A post-implementation, round 1, two opus reviewers in parallel (code correctness;
+  spec fidelity and architecture), anchored on `00_raw_findings.md` and the editor's own seam
+  document, every claim probed.** Both PARTIAL. Code: a dropped jedi answer silenced its
+  site (the latch never released); a recreated editor handle kept the cached index and got no
+  class feed; `uniform u_` offered bare names beside the whole declarations, and a bare one
+  landed a typeless `uniform u_time`; eleven kinds reached the popup as class 0; the lib
+  index was stamped by an object id; one assertion was `... or True`. Fidelity: `K` over
+  `Ctx` returned "statement Ctx" with no doc and the note opened anyway; the API gloss was
+  skipped for names the stub imports; the panel's sampler bridge was untested and dropped an
+  unknown value in the wrong direction; the script text was copied every frame for a stamp;
+  the declaration regex existed twice; manual-verification item 1 contradicted the typed-type
+  filter. All accepted and fixed in the wave; the accepted deviation from the design is that
+  `uniform vec4 u_` offers nothing unless a vec4 is missing (item 1 rewritten to say so).
+  The architecture note that `_glsl_index_for`'s App-to-context translation sits in a draw
+  module is recorded, not acted on.
+
 ## Order
 
 1. **W-E, W-H, W-I (indent half), W-D** — small, host-only, visible on the next launch.
@@ -388,8 +412,11 @@ code panel) and the formatter dependency note; roadmap row + banner; cold-contex
 
 ## Manual verification (the maintainer, in the app)
 
-1. Declare `uniform float u_aspect;` unused, type `u_` on a new line: `u_aspect` is offered,
-   colored as a plain uniform; type `uniform vec4 u_`: the builtin declarations are offered.
+1. Declare `uniform float u_gain;` unused, type `u_` on a new line: `u_gain` is offered
+   with the buffer's other names (`u_time`, `u_aspect`), never only `u_time`; `uniform `
+   offers whole declarations (`float u_aspect;`, `sampler2D u_prev;`); `uniform float u_`
+   offers `u_aspect;`; `uniform vec4 u_` offers nothing when no vec4 is missing (his own
+   words: "Why do I even see the uniform suggestion here at all?").
 2. In the script return `{"u_speed": 0.5}`; in the shader type `u_sp`: `uniform float
    u_speed;` is offered in the script-uniform color; accept it and the identifier in the
    text carries that color.

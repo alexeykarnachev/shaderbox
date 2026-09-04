@@ -1,6 +1,5 @@
 from pathlib import Path
 
-import moderngl
 from imgui_bundle import imgui
 
 from shaderbox.app import App
@@ -349,27 +348,37 @@ def _draw_error_strip(
     imgui.pop_style_color(1)
 
 
-def _script_source(app: App, document_id: str) -> tuple[str, tuple[str, object]] | None:
-    """The document script's text and a stamp that moves when it does: the live buffer when
-    its tab is open (revision), else the engine's cached copy (mtime), else None."""
-    path = app.session.script_path_for(document_id)
-    session = app.editor_sessions.get(path)
+def _script_stamp(app: App, document_id: str) -> tuple[str, object] | None:
+    """A stamp that moves when the document script's text does: the live buffer's revision
+    when its tab is open, else the engine's cached copy's mtime, else None (no script)."""
+    session = app.editor_sessions.get(app.session.script_path_for(document_id))
     if session is not None:
-        return session.editor.get_text(), ("live", session.editor.get_undo_index())
+        return ("live", session.editor.get_undo_index())
     cached = app.session.script_engine.cached_source(document_id)
-    if cached is None:
-        return None
-    return cached[0], ("disk", cached[1])
+    return None if cached is None else ("disk", cached[1])
+
+
+def _script_text(app: App, document_id: str) -> str:
+    """The text behind `_script_stamp`, read on a rebuild only (a 30 KB read is not free
+    per frame)."""
+    session = app.editor_sessions.get(app.session.script_path_for(document_id))
+    if session is not None:
+        return session.editor.get_text()
+    cached = app.session.script_engine.cached_source(document_id)
+    return "" if cached is None else cached[0]
 
 
 def _source_stamp(value: object) -> str:
+    # A source by kind; anything else (a texture, a media, a number) is "not a source", which
+    # is all the index asks of a declared sampler's value. Fails safe: an unknown value type
+    # reads as a bound texture (plain uniform), never as a wired pass.
     if isinstance(value, PassSource):
         return f"pass:{value.name}"
     if isinstance(value, NoSource):
         return "none"
     if isinstance(value, AutoSource):
         return "auto"
-    return "texture"
+    return "value"
 
 
 def _feed_classes(editor: Editor, index: GlslIndex) -> None:
@@ -390,24 +399,19 @@ def _glsl_index_for(app: App, editor: Editor, tab: EditorTab) -> GlslIndex:
     ui_document = app.ui_documents.get(tab.document_id)
     passes = tuple(sorted(ui_document.document.passes)) if ui_document else ()
     pass_name = pass_name_of(tab.path) if edited is not None else None
-    script = _script_source(app, tab.document_id) if edited is not None else None
+    script_stamp = _script_stamp(app, tab.document_id) if edited is not None else None
+    # Every value the pass holds: the index consults only the declared samplers' entries,
+    # and a value that is not a source stamps the same whatever it is, so a slider drag
+    # moves nothing here.
     sampler_values: dict[str, object] = (
-        {
-            name: value
-            for name, value in edited.uniform_values.items()
-            if isinstance(value, PassSource | NoSource | AutoSource)
-            or hasattr(value, "texture")
-            or isinstance(value, moderngl.Texture)
-        }
-        if edited is not None
-        else {}
+        dict(edited.uniform_values) if edited is not None else {}
     )
     fingerprint = (
         editor.get_undo_index(),
-        script[1] if script is not None else None,
+        script_stamp,
         passes,
         tuple(sorted((name, _source_stamp(v)) for name, v in sampler_values.items())),
-        id(app.shader_lib_index),
+        app.session.shader_lib_index_revision,
     )
 
     def build() -> GlslIndex:
@@ -420,14 +424,18 @@ def _glsl_index_for(app: App, editor: Editor, tab: EditorTab) -> GlslIndex:
                     name: (f.signature, f.doc)
                     for name, f in app.shader_lib_index.functions.items()
                 },
-                script_returns=returned_uniforms(script[0]) if script else (),
+                script_returns=(
+                    returned_uniforms(_script_text(app, tab.document_id))
+                    if script_stamp is not None
+                    else ()
+                ),
                 pass_name=pass_name,
                 passes=passes,
                 sampler_values=sampler_values,
             )
         )
 
-    index, changed = app.intel_cache.index_for(tab.path, fingerprint, build)
+    index, changed = app.intel_cache.index_for(tab.path, editor, fingerprint, build)
     if changed:
         _feed_classes(editor, index)
     return index
@@ -484,6 +492,10 @@ def _pump_python(app: App, editor: Editor, tab: EditorTab) -> None:
     for result in worker.poll():
         request = result.request
         if not request.matches(tab.path, revision, cursor.line, cursor.column):
+            # Dropped: release the latch, so the caret returning to that exact site asks
+            # again instead of waiting for an answer that was already thrown away.
+            if request == app.python_last_request:
+                app.python_last_request = None
             continue
         if request.kind == PythonRequestKind.COMPLETE:
             app.python_candidates = result
@@ -494,7 +506,7 @@ def _pump_python(app: App, editor: Editor, tab: EditorTab) -> None:
                 LookupPopup(
                     word=symbol.name, signature=symbol.signature, doc=symbol.doc
                 )
-                if symbol is not None
+                if symbol is not None and (symbol.signature or symbol.doc)
                 else None
             )
 

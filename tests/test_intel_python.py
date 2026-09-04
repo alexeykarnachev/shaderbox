@@ -42,5 +42,20 @@ def test_lookup_on_ctx_field_and_on_a_builtin_and_past_the_line_end() -> None:
     text, line = _stub_with("y = math.sin")
     found = python_lookup(text, line, 18)
     assert found is not None and found.name == "sin" and "sin" in found.signature
-    assert python_lookup(text, line, 999) is not None or True
+    past = python_lookup(text, line, 999)
+    assert past is not None and past.name == "sin", "clamped to the line end"
     assert python_lookup("", 5, 0) is None
+
+
+def test_the_api_gloss_wins_for_an_injected_name_imported_or_not() -> None:
+    # The stub imports `Ctx`, a bare alias jedi describes as "statement Ctx" with no doc; the
+    # engine's gloss is the answer in completion and under `K` alike.
+    text, line = _stub_with("Ct")
+    found = next(s for s in python_completions(text, line, 10) if s.name == "Ctx")
+    assert found.kind == SymbolKind.PY_API
+    assert found.doc.startswith("the per-frame context")
+    text, line = _stub_with("c: Ctx = ctx")
+    looked = python_lookup(text, line, 12)
+    assert looked is not None and looked.name == "Ctx"
+    assert looked.kind == SymbolKind.PY_API
+    assert looked.doc.startswith("the per-frame context")

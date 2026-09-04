@@ -576,16 +576,29 @@ _KIND_COLOR: dict[SymbolKind, tuple[float, float, float, float]] = {
 # script uniforms and library functions share the builtin green (6); 9 is spare. CLASS numbers
 # are contiguous; the SLOTS they draw in are addressed by name (`SYNTAX_8` is 25). 0 is no
 # class: the word stays the lexer's.
+# Every kind names its slot; 0 is the plain text color. The TEXT feed pushes only the four
+# host classes (`GlslIndex.classes`), so the language kinds here color popup rows alone.
 _KIND_SLOT: dict[SymbolKind, int] = {
-    SymbolKind.ENGINE_UNIFORM: 7,
-    SymbolKind.SCRIPT_UNIFORM: 6,
+    SymbolKind.GLSL_KEYWORD: 1,
+    SymbolKind.GLSL_TYPE: 1,
+    SymbolKind.GLSL_BUILTIN: 6,
     SymbolKind.LIB_FUNCTION: 6,
+    SymbolKind.ENGINE_UNIFORM: 7,
+    SymbolKind.PASS_UNIFORM: 0,
     SymbolKind.PASS_SAMPLER: 8,
+    SymbolKind.WIRABLE_SAMPLER: 8,
+    SymbolKind.SCRIPT_UNIFORM: 6,
+    SymbolKind.BUFFER_SYMBOL: 0,
+    SymbolKind.PY_KEYWORD: 1,
+    SymbolKind.PY_BUILTIN: 6,
+    SymbolKind.PY_API: 1,
+    SymbolKind.PY_MEMBER: 0,
+    SymbolKind.PY_LOCAL: 0,
 }
 
 
 def kind_slot(kind: SymbolKind) -> int:
-    return _KIND_SLOT.get(kind, 0)
+    return _KIND_SLOT[kind]
 
 
 def editor_palette() -> dict["editor_ffi.Slot", tuple[float, float, float, float]]:

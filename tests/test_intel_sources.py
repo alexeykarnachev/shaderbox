@@ -4,7 +4,7 @@ statically. Neither touches GL or the App."""
 from shaderbox.intel.glsl import buffer_declarations, buffer_words, uniform_declarations
 from shaderbox.intel.script import returned_uniforms
 from shaderbox.intel.symbols import SymbolKind
-from shaderbox.theme import kind_color
+from shaderbox.theme import kind_color, kind_slot
 
 _SHADER = """#version 330
 // uniform float u_commented;
@@ -127,3 +127,4 @@ def test_every_kind_has_a_color() -> None:
     # at the first frame that draws it.
     for kind in SymbolKind:
         assert len(kind_color(kind)) == 4
+        assert 0 <= kind_slot(kind) <= 9

@@ -107,6 +107,18 @@ def test_after_a_typed_type_only_names_of_that_type_come_and_only_the_name_lands
     assert found == ["u_paint;", "u_prev;"]
 
 
+def test_a_bare_uniform_site_never_offers_a_name_it_offers_whole() -> None:
+    # `uniform u_`: the declarations come whole; a bare `u_time` there would land a typeless
+    # `uniform u_time`. The type words still come after a bare `uniform`.
+    found = _texts(offer(_context(line_before_caret="uniform u_", prefix="u_")))
+    assert found and all(" " in text for text in found), found
+    assert "float u_aspect;" in found
+    found = _texts(
+        offer(_context(line_before_caret="uniform sam", prefix="sam", explicit=True))
+    )
+    assert "sampler2D" in found
+
+
 def test_an_identifier_site_offers_the_buffers_own_names_first() -> None:
     # Finding 6: `u_gain` is declared and read, `u_time` declared; both are offered, and
     # never only `u_time`. A declared name inserts as itself, an undeclared one as a name.
