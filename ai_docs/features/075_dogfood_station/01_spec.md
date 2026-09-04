@@ -211,8 +211,13 @@ check.
   W-1 is the consumer that makes it load-bearing. Do not "simplify" it away.
 - **Storing block text duplicates the trace.** Deliberate: the trace is a debugging artifact that gets
   purged with the run dir; the station's log is durable and must stand alone.
-- **The station does not judge.** No pass/fail assertions about shader quality live here. The report's
-  six axes stay the human's, per the dogfood skill.
+- **The station does not judge, and this is the bullet most likely to be "improved" away.** No
+  pass/fail assertion about shader quality lives here, and no fixed checker is wired in. A future
+  session WILL notice that the axes could be scored automatically and that `068`'s oracle or
+  `judge.py` could do it — that is the trap, not the improvement. The maintainer is the final
+  oracle; a scripted one overfits the noise and then becomes the thing the work is optimised
+  against. Ad-hoc measurement answering one question in the moment is fine and encouraged; a
+  standing one is the failure. The station's job is to make LOOKING easy, not to look for you.
 
 ## Cold start
 
@@ -224,15 +229,26 @@ Settled as CONSTRAINTS rather than open questions:
 - The JSONL log is the source of truth; HTML is a regenerable view (D2).
 - No scenario-file format is invented (D4). Intent + mode + optional criteria, nothing more.
 - The first experiment runs only after this lands. **Its target, as the maintainer stated it: a
-  fully working radiance-cascades project — script, drawing, multipass.** Not a toy. Worth knowing
-  before it starts: feature 068 already built an RC document in this repo AND has a numerical
-  oracle (`068_radiance_cascades/oracle.py`) that decides cascade correctness against brute force,
-  mutation-verified. That oracle exists because 063's first RC implementation "rendered convincing
-  shadows while 1364/1364 merge directions read the wrong slot" — a picture that looked right and
-  was 30.3% wrong. So this experiment has something almost no dogfood run has had: a way to check
-  the copilot's RC output against a NUMBER rather than a screenshot. Use it; do not re-derive it.
-  (The maintainer will be walking the original web tutorial in parallel, so the human half of the
-  RC understanding is covered independently.)
+  fully working radiance-cascades project — script, drawing, multipass.** Not a toy. (The
+  maintainer will be walking the original web tutorial in parallel, so the human half of the RC
+  understanding is covered independently.)
+- 🔴 **No standing oracle decides an experiment. The maintainer is the final oracle.** This is a
+  direct instruction and it overrides the instinct to automate judgement: *"Don't rely on the
+  scripted oracles. This never works, you are overfitting the noise. I AM THE FINAL ORACLE."* So:
+  - **Do NOT wire `068_radiance_cascades/oracle.py`, or any other fixed checker, into the station
+    or into a run's pass/fail.** An earlier draft of this spec proposed exactly that and it was
+    struck for this reason. That oracle validates a PORT of the cascade merge on an analytic scene;
+    it says nothing about whether the copilot's document is good, and treating its number as the
+    verdict would be fitting the experiment to the instrument.
+  - **Judge by looking**, at the rendered images and videos, from time to time and as the situation
+    calls for it — not on a schedule and not through a fixed harness.
+  - **Ad-hoc measurement is welcome; a permanent one is not.** When a specific question wants a
+    number (is this blob where I think it is, did that uniform change anything), write a throwaway
+    in the scratchpad, or reach for `judge.py`'s primitives, answer THAT question, and let it go.
+    The distinction: a scratch script answers one question and is deleted; an oracle claims to
+    answer the question forever and quietly becomes what the work is optimised against.
+  - The station's job is to make looking EASY — artifacts inline, side by side, at every step. It
+    stays out of the judging entirely (see § What looks wrong and is correct).
 - **Model:** experiments start on a cheap model. `openai/gpt-5.1-codex-mini` is the in-tree default
   (400k ctx). `openai/gpt-5.6-luna` was verified available on 2026-09-04 — tool-capable, 1.05M ctx,
   and at $0.20/$1.20 per Mtok it is CHEAPER than codex-mini's $0.25/$2.00. Comparing models is an
