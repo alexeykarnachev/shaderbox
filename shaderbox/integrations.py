@@ -58,7 +58,7 @@ class YouTubeIntegration(BaseModel):
 
 class CopilotIntegration(BaseModel):
     openrouter_key: str = ""
-    model: str = "openai/gpt-5.6-luna"  # OpenRouter "provider/model-id"
+    model: str = "tencent/hy4-preview"  # OpenRouter "provider/model-id"
     # User-tunable agent limits (034 F12) — defaults sourced from CopilotConfig (the
     # single source of truth); applied onto the live config via apply_user_limits.
     max_iterations: int = _COPILOT_DEFAULTS.max_iterations

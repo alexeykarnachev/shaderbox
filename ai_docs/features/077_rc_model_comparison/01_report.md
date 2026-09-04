@@ -123,5 +123,5 @@ frames by nature, so unchanged-frame edits count per file (the repeated-call cou
 **On the default.** hy4-preview finished both rounds, fastest and cheapest of the finishers per
 turn, with no hidden reasoning; its faults (a zero-call narration after an engine stop) are the
 shared class, not its own. gemini is the smoothest picture and never fabricated, at twice the cost
-and with reasoning it cannot switch off. luna, the current default, failed the end-to-end. The data
-says hy4; the choice is the maintainer's, and it is one line (`CopilotIntegration.model`).
+and with reasoning it cannot switch off. luna, the current default, failed the end-to-end. The maintainer
+chose hy4 on this data; it is the default since the commit that lands this paragraph.

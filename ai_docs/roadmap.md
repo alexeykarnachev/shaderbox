@@ -26,17 +26,16 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-04 (077 both rounds done; the maintainer reads the reports and picks the default next, then the sweep). -->
+<!-- As of 2026-09-04 (077 both rounds done, hy4-preview is the default; the maintainer reads the reports, then the sweep). -->
 **Next: the maintainer reads `ai_docs/features/077_rc_model_comparison/01_report.md` (both rounds)
-and the attempt pages (`dogfood/index.html` → `rc_full_build` 1–8, `rc_end_to_end` 1–3), decides the
-default model (the data says hy4-preview; luna failed the end-to-end), then the large sweep over
+and the attempt pages (`dogfood/index.html` → `rc_full_build` 1–8, `rc_end_to_end` 1–3), then the large sweep over
 engine, prompting, caching and tooling that the report's "left for the sweep" list seeds.** Seven models
 drove the same babysat radiance-cascades build for $2.53: hy4-preview, gemini-3.8-flash and luna
 built it; deepseek stalled at the merge; kimi, glm and codex-mini were unusable. The round landed
 a client that drops the reasoning-effort setting for a provider that refuses it, a torn-stream
 reading of `finish_reason: error`, engine-uniform markers in the working set, a no-op brake that
 also counts a call already made this turn, `probe_render` on a pass address, and
-`scripts/dogfood/drive.py` (one command per turn). The default model is `gpt-5.6-luna`, named in
+`scripts/dogfood/drive.py` (one command per turn). The default model is `tencent/hy4-preview` since the end-to-end round, named in
 `CopilotIntegration.model` only.
 
 **Still due at the display:** 073's per-wave `## Manual verification` lists, 072's five checks,
