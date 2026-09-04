@@ -67,3 +67,21 @@ verdict; judgement is his, by looking at renders and videos ad hoc. Ad-hoc measu
 ONE question and then deleted is still welcome — the distinction is what a measurement CLAIMS,
 not how it is computed. **Do not re-introduce this**; the "station does not judge" bullet now
 warns that it is the line most likely to be mistaken for an improvement later.
+
+## W-0 event log + writer — DONE
+done-condition: the writer appends valid JSONL under concurrent-ish use (one writer object per
+appender, open+append+close each time), a reader reconstructs a full run from the log alone, and
+a test pins that an interrupted write does not corrupt the file.
+did: `dogfood/report/log.py` — `EventLog.append` (one `write()` per line on a freshly opened
+append handle, fsync'd; a torn predecessor is repaired by prefixing a newline so the fragment
+stays its own line), `read_events` (one warning per unreadable line, never a raise), and the
+typed `Experiment` / `Attempt` / `TurnRecord` / `ContextRecord` tree `reconstruct` folds records
+into. Context records that arrive before their turn record are joined by turn number; ones whose
+turn never landed are kept as `orphan_contexts`, so a killed process still leaves what the
+copilot was sent. `load_store` lists experiments newest-activity first. Seven tests in
+`tests/test_dogfood_log.py`, one of them enumerating `KINDS` so a kind added without a
+reconstruct branch fails.
+verification: make gates GREEN (exit 0, read unpiped), smoke ran on this box.
+ruled out: a shared lock file or a single long-lived handle — the harness's turn is its own
+process, so nothing can be shared; O_APPEND single-write lines are the whole concurrency story.
+surprise: none.
