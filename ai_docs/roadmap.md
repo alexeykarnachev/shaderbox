@@ -30,7 +30,7 @@ feature; brief points at the superseder).
 **Next: the maintainer looks at `rc_full_build`** — `dogfood/index.html` → attempt 3, and the
 project itself in the app (`scripts/dogfood/runs/proj-m3pqx_c0`, document `RC`): draw into it, judge
 the light. The copilot built a working radiance-cascades document — seven passes (jfa x12, cascade
-x6), an emitter script, a drawing canvas on `u_prev` — over three attempts and $0.93; every line of
+x6), an emitter script, a drawing canvas on `u_prev` — over three attempts and $1.02; every line of
 GLSL and Python is its own, every scene decision the driver's. What the run found, all landed:
 **076** (the copilot had no way to add a pass — attempt 1 died on it), a wrong-typed engine builtin
 is now a compile error, the harness resizes a multi-pass document through the document's funnel,
