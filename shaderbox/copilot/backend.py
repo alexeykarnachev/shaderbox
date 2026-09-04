@@ -1217,6 +1217,8 @@ class CopilotBackend:
         output: bool,
     ) -> str:
         # Apply every given knob; the first error wins (the verbs validate and save one at a time).
+        # An empty dtype is "leave it" -- a model sends "" for a field it is not setting.
+        dtype = dtype or None
         document = self._get_ui_documents()[document_id].document
         if any(v is not None for v in (dtype, scale, filter_linear, wrap)):
             current = document.graph.passes.get(name, PassEntry()).target
