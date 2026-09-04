@@ -317,3 +317,28 @@ ruled out by the reviewer and not to be re-checked: the trace log (no card
 serialization), `_publish_result`'s body, `read_lib`'s handler, the archive
 conversation JSONs (their `"kind"` is `ResultWidget.kind`, a live field on an
 untouched type), and `7b2352d` (test-only, cannot change behaviour).
+
+## Follow-up — `default.jpeg` removed (maintainer asked)
+
+The inventory reported the asset as unreferenced but scoped its deletion out; the
+maintainer then asked for it. Removed, and `shaderbox/resources/textures/` went
+with it as its only file.
+
+What stands in its place, since the question came up: feature 072's `AutoSource`
+marker plus a 1x1 black texture. An unbound sampler holds `AutoSource()` ("nobody
+decided about this; its NAME fills it at bind time, or it reads black") instead of
+a `MediaWithTexture` pointing at the photo, and `Pass._black_texture` (`core.py`)
+binds one lazily-made 1x1 opaque black, released with the pass, for any value that
+is not a texture. The photo was never actually DRAWN even before 072 — the document
+binder already seeded black for every unbound sampler — so it only ever existed as
+an in-memory sentinel that `is_default_image` compared paths against. 072 replaced
+that path comparison with a real marker type, which is what left the file orphaned.
+
+checked before removing: no reader by any route (`.py`, `.toml`, `.sh`, Makefile,
+`build.sh`); packaging picks resources up by the wildcard
+`include = ["shaderbox/resources/**/*"]` and names no file; and no LIVING doc
+describes a default-image mechanism in the present tense — the only mentions are
+in features 052 and 069's specs, which are historical records and stay as written.
+verification: `make gates` exit 0 unpiped, GREEN, all three stages. The smoke
+opened a real window and ran the frame loop with the asset gone, which is the
+check that matters for a missing resource.
