@@ -27,6 +27,8 @@ from shaderbox.editor.ffi import (
     Mode,
     Prim,
     Slot,
+    Style,
+    ViewFlag,
 )
 from shaderbox.editor.input import KeyEvent, translate_char, translate_key
 from shaderbox.editor.render import (
@@ -1031,28 +1033,83 @@ def test_the_binding_mirrors_the_upstream_signature_table() -> None:
     assert ours == upstream
 
 
-def test_the_mode_enum_covers_every_value_upstream_can_return() -> None:
-    # The Mode IntEnum is constructed from a raw int by `get_mode`, and an IntEnum RAISES
-    # on a value it lacks -- so a mode appended upstream is a CRASH here the first time a
-    # user reaches it, not a stale reading. Anchored to the vendored probe's own MODES
-    # table rather than to a number written here, so the next re-vendor fails this test
-    # instead of shipping a binding that throws.
+_PROBE_TABLE_TO_ENUM = {
+    "KINDS": Kind,
+    "MODES": Mode,
+    "LANGS": Language,
+    "SLOTS": Slot,
+    "VIEW": ViewFlag,
+    "FLAGS": ChromeFlag,
+    "STYLES": Style,
+}
+
+
+def _probe_tables() -> dict[str, object]:
+    """Upstream's own enum tables, read out of the vendored probe.
+
+    Executes only the prefix above the `CDLL` line — the tables are all declared there, and
+    stopping short of it avoids loading the library or hitting the probe's `sys.exit` guard,
+    whose ROOT is upstream's layout rather than ours. Comprehensions (SLOTS, VIEW) are why
+    this execs instead of `ast.literal_eval`-ing each assignment.
+    """
     probe = EDITOR_RESOURCES_DIR / "abi_probe.py"
     if not probe.exists():
         pytest.skip("vendored abi_probe.py unavailable")
-    for line in probe.read_text(encoding="utf-8").splitlines():
-        if line.startswith("MODES = "):
-            upstream_modes = ast.literal_eval(line.split("=", 1)[1].strip())
-            break
-    else:
-        pytest.fail("the vendored abi_probe.py no longer declares a MODES table")
-    assert len(Mode) >= len(upstream_modes), (
-        f"upstream enumerates {len(upstream_modes)} modes {upstream_modes}, the binding "
-        f"declares {len(Mode)}: {[m.name for m in Mode]}. Add the missing member -- "
-        "get_mode() raises ValueError on a value the enum lacks."
+    body = probe.read_text(encoding="utf-8").split("\nlib = ctypes.CDLL(", 1)[0]
+    kept = [
+        line
+        for line in body.splitlines()
+        if not line.startswith(("ROOT =", "LIB =", "if not LIB", "    sys.exit"))
+    ]
+    namespace: dict[str, object] = {}
+    exec(compile("\n".join(kept), str(probe), "exec"), namespace)
+    return namespace
+
+
+def test_every_mirrored_enum_covers_the_vendored_probe_table() -> None:
+    # These IntEnums are constructed from raw ints the library returns (`Mode(ed_mode(h))`,
+    # `Kind` off the primitive stream), and an IntEnum RAISES on a value it lacks — so a
+    # member appended upstream is a CRASH here the first time a user reaches it, not a stale
+    # reading. That is not hypothetical: Mode gained REPLACE (`R`) between 5e0e8a2 and
+    # f738744, and this binding was one re-vendor away from throwing on the first `R`.
+    #
+    # Anchored to the vendored probe's own tables rather than to counts written here, so the
+    # NEXT appended member fails at re-vendor time instead of shipping. Upstream gates these
+    # tables against its Odin enums, which is the other half of the same property: theirs
+    # keeps the tables honest at the source, this catches a table outgrowing our binding.
+    namespace = _probe_tables()
+    for table_name, enum in _PROBE_TABLE_TO_ENUM.items():
+        upstream = namespace.get(table_name)
+        assert upstream is not None, (
+            f"the vendored abi_probe.py no longer declares {table_name} — if upstream renamed "
+            "it, this map needs updating, not deleting"
+        )
+        assert len(enum) >= len(upstream), (
+            f"{table_name}: upstream enumerates {len(upstream)} values, the binding's "
+            f"{enum.__name__} declares {len(enum)}: {[m.name for m in enum]}. Add the missing "
+            f"member(s) — constructing {enum.__name__} from an unlisted value raises."
+        )
+
+
+def test_the_mirrored_enum_map_covers_every_binding_enum_the_probe_declares() -> None:
+    # The map above is hand-written, so it can silently stop covering the domain — the exact
+    # defect this file keeps finding elsewhere. A binding enum whose table upstream ships but
+    # which nobody added here would be ungated and look fine.
+    namespace = _probe_tables()
+    unmapped = {
+        name
+        for name, value in namespace.items()
+        if name.isupper()
+        and isinstance(value, (list, dict))
+        and name not in _PROBE_TABLE_TO_ENUM
+    }
+    # CLASSES (token classes) and DRAW_ORDER are library-internal: the host never constructs
+    # an enum from them, so they are correctly absent from the map.
+    assert unmapped == {"CLASSES", "DRAW_ORDER"}, (
+        f"the vendored probe declares tables this map does not classify: {sorted(unmapped)}. "
+        "Either mirror the table with a binding enum and add it above, or extend this "
+        "assertion to record why the host does not need it."
     )
-    for value in range(len(upstream_modes)):
-        Mode(value)  # constructs, or ValueError names the gap
 
 
 def test_a_marker_follows_a_line_inserted_above_it() -> None:
