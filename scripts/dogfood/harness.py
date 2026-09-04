@@ -513,7 +513,9 @@ class DogfoodHarness:
         if ui_document is None:
             print(f"    [render_video_mp4 FAILED: no document '{target}']")
             return ""
-        ui_document.document.render_pass.canvas.set_size((size, size))
+        document = ui_document.document
+        saved_size = document.canvas_size
+        document.set_canvas_size((size, size))
         # FIXED_DIMS + RENDER_AT_TARGET so (size, size) drives the output (a FREE preset leaves
         # resolution_details at 0 -> ffmpeg gets a stray `-s 0x0` and the pipe breaks).
         preset = RenderPreset(
@@ -527,7 +529,10 @@ class DogfoodHarness:
         )
         out = self.session.paths.renders_dir / f"{target}.mp4"
         out.parent.mkdir(parents=True, exist_ok=True)
-        art = render_to(ui_document.document, preset, seconds, out)
+        try:
+            art = render_to(document, preset, seconds, out)
+        finally:
+            document.set_canvas_size(saved_size)
         if art is None:
             print("    [render_video_mp4 FAILED: render error]")
             return ""
@@ -549,12 +554,16 @@ class DogfoodHarness:
             print(f"    [render_at FAILED: no document '{target}']")
             return ""
         document = ui_document.document
-        document.render_pass.canvas.set_size((size, size))
-        self.session.tick([target], t, 1.0 / 60.0, 0)
-        document.render(u_time=t)
-        out_path = self.session.paths.renders_dir / f"{target}_t{t:.3f}.png"
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        texture_to_pil(document.render_pass.canvas.texture).save(out_path)
+        saved_size = document.canvas_size
+        document.set_canvas_size((size, size))
+        try:
+            self.session.tick([target], t, 1.0 / 60.0, 0)
+            document.render(u_time=t)
+            out_path = self.session.paths.renders_dir / f"{target}_t{t:.3f}.png"
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            texture_to_pil(document.render_pass.canvas.texture).save(out_path)
+        finally:
+            document.set_canvas_size(saved_size)
         print(f"    [rendered {target} @t={t:.3f} -> {out_path}]")
         self._last_render_path = str(out_path)
         return str(out_path)
@@ -571,14 +580,18 @@ class DogfoodHarness:
             print(f"    [export_at FAILED: no document '{target}']")
             return ""
         document = ui_document.document
-        document.render_pass.canvas.set_size((size, size))
-        with document.export_isolation():
-            if document.on_pre_render is not None:
-                document.on_pre_render(t, 1.0 / 60.0, 0)
-            document.render(u_time=t)
-        out_path = self.session.paths.renders_dir / f"{target}_export_t{t:.3f}.png"
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        texture_to_pil(document.render_pass.canvas.texture).save(out_path)
+        saved_size = document.canvas_size
+        document.set_canvas_size((size, size))
+        try:
+            with document.export_isolation():
+                if document.on_pre_render is not None:
+                    document.on_pre_render(t, 1.0 / 60.0, 0)
+                document.render(u_time=t)
+            out_path = self.session.paths.renders_dir / f"{target}_export_t{t:.3f}.png"
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            texture_to_pil(document.render_pass.canvas.texture).save(out_path)
+        finally:
+            document.set_canvas_size(saved_size)
         print(f"    [exported {target} @t={t:.3f} -> {out_path}]")
         self._last_render_path = str(out_path)
         return str(out_path)
@@ -601,7 +614,7 @@ class DogfoodHarness:
         Frames alpha-composite onto (25,25,40) — deliberately NOT the eye's (40,40,40), so a
         strip is never mistaken for what the copilot saw — with a 4px gutter and a `t=` label per
         cell. The sheet lands in the project's renders dir so `dump()`'s `last_render_path` finds
-        it. Both pieces of state the sampling touches are saved and restored: the canvas size and
+        it. Both pieces of state the sampling touches are saved and restored: the document's canvas size (through `set_canvas_size`, the funnel every pass scales from -- resizing the output canvas alone leaves a multi-pass document sampling mismatched targets) and
         `document.uniform_values` (`tick_export` writes the driven uniforms into the LIVE document) — a
         later `dump()` would otherwise persist the last sample's frame into document.json.
         """
@@ -615,11 +628,11 @@ class DogfoodHarness:
             return ""
         document = ui_document.document
         engine = self.session.script_engine
-        saved_size = document.render_pass.canvas.texture.size
+        saved_size = document.canvas_size
         saved_values = dict(document.render_pass.uniform_values)
         dt = 1.0 / fps
         cells: list[PILImage.Image] = []
-        document.render_pass.canvas.set_size((size, size))
+        document.set_canvas_size((size, size))
         try:
             for t in times:
                 behavior = engine.fresh_behavior_for(target)
@@ -634,7 +647,7 @@ class DogfoodHarness:
                 document.render(u_time=t)
                 cells.append(_strip_cell(document.render_pass.canvas.texture, t, size))
         finally:
-            document.render_pass.canvas.set_size(saved_size)
+            document.set_canvas_size(saved_size)
             document.render_pass.uniform_values.clear()
             document.render_pass.uniform_values.update(saved_values)
 
