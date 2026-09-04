@@ -34,12 +34,18 @@ three:
 
 ## Decisions
 
-- **D1. Static files, not a server.** Everything asked for — a live-updating index, drilling into
-  context blocks, navigating every experiment — works as static HTML reading a JSONL log. Static
-  survives a crash, needs no process or port, opens from any machine, and still reads in a year.
-  A server would buy live PUSH and cross-run queries; that is not worth a daemon. The live half is
-  covered by a meta-refresh while a run is active. **This is reversible**: a server can be added
-  later over the SAME log without redoing the site.
+- **D1. Static files, not a server.** The maintainer left this open ("or, if you think this is not
+  enough, implement it with a server approach"). Everything asked for — a live-updating index,
+  drilling into context blocks, navigating every experiment — works as static HTML reading a JSONL
+  log. Static survives a crash, needs no process or port, opens from any machine, and still reads in
+  a year. A server would buy live PUSH and cross-run queries; that is not worth a daemon. The live
+  half is covered by a meta-refresh while a run is active. **This is reversible**: a server can be
+  added later over the SAME log without redoing the site.
+  **This repeats a decision already made once.** Feature 027 was drafted as a dogfood SERVER and a
+  devil's-advocate pass killed it on the same ground — the only expensive non-rebuildable state is
+  the conversation, and that is already serialized for free. Its filename still says `server` with a
+  note explaining there is none. So this is the second independent arrival at the same answer; a
+  third session proposing a server should read `027_interactive_dogfood_server.md` first.
 - **D2. The log is the source of truth; HTML is a view.** Every turn appends one JSON object to
   `events.jsonl` as it happens. The HTML is REGENERATED from the log, never edited. So a crash, a
   `/clear`, or a killed process loses nothing, and the site can be rebuilt from scratch at any
@@ -58,6 +64,42 @@ three:
   them). Comparing attempt 2 to attempt 5 is the point.
 - **D6. Fixes between attempts land as their own commits, and the log records the sha.** So an
   attempt's page can say "these three commits happened before this attempt" and link the reasoning.
+- **D7. The seven prior dogfood reports are not orphaned.** `ai_docs/features/` already holds
+  `035`, `037`, `039` (x2), `043`, `050` and the `057` axes spec — real findings from real runs,
+  predating this station. The index links them as a PRIOR RUNS section pointing at the markdown,
+  rather than back-filling them into the log (they have no per-turn events to reconstruct, and
+  inventing them would be fabrication). New experiments live in the log; history stays readable.
+- **D8. The report's six axes and the analyzer survive.** The `dogfood` skill's axes
+  (`fidelity`/`motion`/`logic`/`honesty`/`process`/`code`), `REPORT_TEMPLATE.md` and `analyze.py`
+  are the accumulated judgement of seven runs. The station REPLACES the hand-assembly of a report,
+  not the axes it reports on: the attempt page carries the same sections, auto-filled where
+  `analyze.py` already computes them. If a wave finds itself deleting an axis, that is the signal to
+  stop — the axes are the product, the station is the plumbing.
+
+## How a run is driven, and what authority the driver has
+
+Both settled by the maintainer, and neither is in the waves — they govern the EXPERIMENTS this
+station records, so they belong with it rather than in a session's memory.
+
+**The driver plays a real user.** Not a scripted persona and not a reply-sequence: the driver reads
+each copilot reply and composes the next message from what actually happened. Sometimes that means
+asking for a whole thing end to end; sometimes it means babysitting move by move. **The path is
+chosen BEFORE the experiment and recorded as its mode** — that is what D4's `mode` field is for.
+The maintainer's framing: "this is an open question, there is no right approach, we will tune and
+adjust depending on the scenario." So the mode is data to compare across experiments, not a rule.
+(This supersedes nothing in the `dogfood` skill: its standing ban on a baked multi-turn driver still
+holds, because a pre-scripted sequence is not any of these modes.)
+
+**When the copilot gets stuck, the driver fixes it — with a size rule.** The maintainer's exact
+split:
+- something that can wait → **file it in the report**, keep running;
+- something that BLOCKS the run right now → **file a sub-feature, spec it, implement it, fix it**,
+  then re-run;
+- something really big → **stop and ask.**
+
+The judgement call is only ever "which of these three is it", and the bias is to keep the run
+moving. Every fix is its own commit (D6), so an attempt page can show exactly what changed beneath
+it.
 
 ## Waves
 
@@ -80,19 +122,41 @@ The heart of the debugging station. `build_prompt` composes named `PromptBlock`s
 what each contributed. Emit a trace event per LLM request carrying, per block: its name, its
 volatility, its char count, its approximate token count, and its TEXT.
 
-Notes for the implementer:
+The maintainer asked for both halves: "the overall picture with blocks sizes, but also I want to
+be able to fall into these blocks and check the concrete texts." Sizes are the map; the text is the
+debugging.
+
+Notes for the implementer, each checked against `prompt.py` while writing this spec:
 - `PromptBlock.name` already exists and is the key. (It was nearly deleted in 074 as write-only —
   see `074_nightly_sweep/00_inventory.md`; it survived precisely because the convention names a
   prompt tier "a named block". This wave is why that mattered.)
-- The `tools=` block is not a `PromptBlock` but IS context — account for it separately.
+- **The five blocks are `static`, `project_context`, `dialogue`, `pending_user`, `working_set`** —
+  read them from the list, never hardcode them.
+- 🔴 **`working_set` renders `[]` at build time and is spliced in LIVE per-iteration by `run_turn`.**
+  `build_messages`'s own comment says why: a build-time real-source block would go write-only. So a
+  breakdown emitted at `build_messages` reports the working set as EMPTY — silently hiding the block
+  the maintainer most wants to see, since it holds the actual shader source. **Emit the event where
+  the request is actually assembled, per iteration, not at build time.** This single fact decides
+  where the wave's code goes.
+- 🔴 **`dialogue` is TRIMMED** (`_trim_history` against `max_input_tokens`, keeping at least
+  `history_min_kept_turns`). What is sent is not the full conversation, and the difference is a
+  first-class thing to show: a turn where trimming dropped history is exactly when the copilot
+  "forgets". Record both the trimmed size and whether trimming occurred.
+- The `tools=` block is not a `PromptBlock` but IS context — account for it separately. It is
+  assembled by `registry.assemble_specs(loaded)` and GROWS as lazy tools load, so it is not constant
+  across a turn.
 - Cached-token data already flows end to end (`LLMUsage.cached_tokens`, `openrouter.py`), so the
   cache half is free; join it to the breakdown per request.
-- Storing full block TEXT is the point (the maintainer asked to "fall into these blocks"), but it
-  is large — the log stores it, the HTML lazy-renders it behind a disclosure.
+- Storing full block TEXT is the point, but it is large — the log stores it, the HTML lazy-renders it
+  behind a disclosure.
 
 Done-condition: for a turn, the sum of block token estimates is within a stated tolerance of the
-request's billed input tokens, and a test asserts every block `build_prompt` composed appears in the
-event — enumerated from the block list, not a hardcoded set of names.
+request's billed input tokens; a test asserts every block appears in the event, **enumerated from
+the block list rather than a hardcoded set of names** (a checker that hardcodes the five names stops
+covering the domain the moment a sixth block lands — this repo has been bitten by that shape
+repeatedly, most recently across the 074 sweep); and a test asserts `working_set` is reported
+NON-empty on a turn where the copilot read a shader, which is the falsifier for the build-time-vs-
+live-splice trap above.
 
 ### W-2 — the static site
 
@@ -102,7 +166,11 @@ event — enumerated from the block list, not a hardcoded set of names.
 - one page per experiment — its attempts side by side, what changed between them.
 - one page per attempt — the full conversation in order, each turn showing the user message, the
   assistant reply, the tool calls with args and results, the renders INLINE, the usage, and the
-  context panel.
+  context panel. **Inline means every artifact kind the harness produces, not just PNGs**: the
+  maintainer asked for "images (or videos/gifs) at each step". `render_strip` sheets are PNGs and
+  inline as-is; `render_video` (webm) and `render_video_mp4` embed in a `<video>` tag. A motion
+  artifact is often the only honest evidence for the motion axis, so a page that silently drops
+  them is missing the point.
 - the context panel: a proportional bar of block sizes, each block expandable to its full text,
   the cache hit rate, and growth across turns.
 
@@ -155,7 +223,16 @@ Settled as CONSTRAINTS rather than open questions:
 - Static files, not a server (D1) — revisit only if cross-run queries become the bottleneck.
 - The JSONL log is the source of truth; HTML is a regenerable view (D2).
 - No scenario-file format is invented (D4). Intent + mode + optional criteria, nothing more.
-- The first experiment runs only after this lands.
+- The first experiment runs only after this lands. **Its target, as the maintainer stated it: a
+  fully working radiance-cascades project — script, drawing, multipass.** Not a toy. Worth knowing
+  before it starts: feature 068 already built an RC document in this repo AND has a numerical
+  oracle (`068_radiance_cascades/oracle.py`) that decides cascade correctness against brute force,
+  mutation-verified. That oracle exists because 063's first RC implementation "rendered convincing
+  shadows while 1364/1364 merge directions read the wrong slot" — a picture that looked right and
+  was 30.3% wrong. So this experiment has something almost no dogfood run has had: a way to check
+  the copilot's RC output against a NUMBER rather than a screenshot. Use it; do not re-derive it.
+  (The maintainer will be walking the original web tutorial in parallel, so the human half of the
+  RC understanding is covered independently.)
 - **Model:** experiments start on a cheap model. `openai/gpt-5.1-codex-mini` is the in-tree default
   (400k ctx). `openai/gpt-5.6-luna` was verified available on 2026-09-04 — tool-capable, 1.05M ctx,
   and at $0.20/$1.20 per Mtok it is CHEAPER than codex-mini's $0.25/$2.00. Comparing models is an
