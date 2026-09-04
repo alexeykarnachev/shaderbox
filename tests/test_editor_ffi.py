@@ -952,6 +952,30 @@ def test_the_binding_mirrors_the_upstream_signature_table() -> None:
     assert ours == upstream
 
 
+def test_the_mode_enum_covers_every_value_upstream_can_return() -> None:
+    # The Mode IntEnum is constructed from a raw int by `get_mode`, and an IntEnum RAISES
+    # on a value it lacks -- so a mode appended upstream is a CRASH here the first time a
+    # user reaches it, not a stale reading. Anchored to the vendored probe's own MODES
+    # table rather than to a number written here, so the next re-vendor fails this test
+    # instead of shipping a binding that throws.
+    probe = EDITOR_RESOURCES_DIR / "abi_probe.py"
+    if not probe.exists():
+        pytest.skip("vendored abi_probe.py unavailable")
+    for line in probe.read_text(encoding="utf-8").splitlines():
+        if line.startswith("MODES = "):
+            upstream_modes = ast.literal_eval(line.split("=", 1)[1].strip())
+            break
+    else:
+        pytest.fail("the vendored abi_probe.py no longer declares a MODES table")
+    assert len(Mode) >= len(upstream_modes), (
+        f"upstream enumerates {len(upstream_modes)} modes {upstream_modes}, the binding "
+        f"declares {len(Mode)}: {[m.name for m in Mode]}. Add the missing member -- "
+        "get_mode() raises ValueError on a value the enum lacks."
+    )
+    for value in range(len(upstream_modes)):
+        Mode(value)  # constructs, or ValueError names the gap
+
+
 def test_a_marker_follows_a_line_inserted_above_it() -> None:
     # Markers anchor like nvim extmarks, so an error band tracks its code
     # between compiles instead of pointing at the line the code used to be on.

@@ -70,6 +70,11 @@ class Mode(IntEnum):
     INSERT = 1
     VISUAL = 2
     VISUAL_LINE = 3
+    # `R`: typing overwrites rather than inserts. Appended upstream, so 0-3 keep their
+    # numbers -- but `get_mode` constructs this enum from the raw int, and an IntEnum
+    # RAISES on an unknown value, so a missing member is a crash on the first `R`, not a
+    # stale reading.
+    REPLACE = 4
 
 
 class Language(IntEnum):

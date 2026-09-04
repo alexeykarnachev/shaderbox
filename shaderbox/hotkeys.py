@@ -192,7 +192,9 @@ def _handle_reserved_chord(app: App, editor: Editor, event: KeyEvent) -> bool:
     if ch not in _RESERVED_CHORDS[keymap]:
         return False
     mode = editor.get_mode()
-    insert = mode == Mode.INSERT
+    # Replace types too, so it takes insert's chord handling: the else-branch below is
+    # NORMAL/VISUAL and would send Ctrl+N as a cursor-down in the middle of an `R`.
+    insert = mode in (Mode.INSERT, Mode.REPLACE)
     # One exception keeps an app command reachable: NORMAL-mode Ctrl+W falls
     # through to CLOSE_CODE_TAB — vim's own normal Ctrl+W is only a window
     # prefix and we have no windows. Insert/visual Ctrl+W stays vim's.
