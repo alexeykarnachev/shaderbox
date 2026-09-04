@@ -111,7 +111,7 @@ def python_lookup(text: str, line: int, column: int) -> Symbol | None:
     if not names:
         return None
     name = names[0]
-    if name.name in API_NAMES:
+    if name.name in API_NAMES and not _after_dot(lines[line][:column]):
         # `Ctx` is a bare alias of the context class, so jedi has no docstring for it and
         # its raw answer is "statement Ctx": the engine's own gloss is the answer.
         signature, doc = api_symbol_doc(name.name)

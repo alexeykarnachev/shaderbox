@@ -59,3 +59,10 @@ def test_the_api_gloss_wins_for_an_injected_name_imported_or_not() -> None:
     assert looked is not None and looked.name == "Ctx"
     assert looked.kind == SymbolKind.PY_API
     assert looked.doc.startswith("the per-frame context")
+
+
+def test_a_member_spelled_like_an_api_name_is_a_member_under_k() -> None:
+    text = "class P:\n    Text = 1\n\nz = P.Text\n"
+    looked = python_lookup(text, 3, 7)
+    assert looked is not None and looked.name == "Text"
+    assert looked.kind == SymbolKind.PY_MEMBER, "reached through a dot, not the API"

@@ -443,6 +443,37 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   binary + rebuild procedure live in `## Known quirks`. Revisit if a tab needs durable per-tab state
   beyond its open files (e.g. persisting the open-tab set across restart) or a 4th editable `kind`
   lands.
+- **What the editor knows about a buffer lives in `shaderbox/intel/` and is read three ways**
+  (feature 078 W-A): `symbols.py` is the one vocabulary (`SymbolKind`, `Symbol`); `glsl.py`
+  reads a shader buffer as TEXT (a declared uniform the body never reads is still declared —
+  the compiled program's active-uniform set is never a source of what the editor knows);
+  `script.py` reads `update`'s returns with `ast`; `index.py` builds one `GlslIndex` from a
+  `GlslContext` of explicit inputs; `document.py` caches it per editor HANDLE on a cheap
+  fingerprint (buffer revision, script revision or cached mtime, pass set, sampler source
+  kinds, lib-index counter); `python.py` turns (text, cursor) into symbols with jedi; `worker.py`
+  is the ONE thread that calls jedi (in-process `InterpreterEnvironment`; requests stamped
+  with path, revision and cursor; a stale answer is dropped and releases its latch). The three
+  readers are `completion.py` (providers over the index), `K` (`index.lookup`, or the worker
+  on a script tab) and the color feed (`GlslIndex.classes` → `ed_set_word_class` on every
+  rebuild). Color is `theme.kind_color` and slot `theme.kind_slot`, both keyed on the enum and
+  walked by a test; the TEXT feed pushes only the four host classes (engine uniform, pass
+  sampler, script uniform, library function), the popup takes every kind's slot. A sampler's
+  class follows its VALUE joined to the graph through `wired_pass`, never `sampler_source` /
+  `effective_wiring` (they read the compiled program). The GLSL half and `completion.py` are
+  GL-free and gated in a fresh interpreter; the Python half reaches `shaderbox.scripting` for
+  the API glosses, whose package `__init__` re-exports the engine. Revisit if a fourth reader
+  appears or a kind needs a text color of its own (the library's palette widens on measurement).
+- **The host's line markers are re-pushed on every buffer revision.** The library moves a
+  marker with the text it marks; the host's markers (cursor band, error fills, hover mark) are
+  line numbers of the text as it is NOW, so `_apply_markers`'s fingerprint carries
+  `ed_revision` — a whole-buffer replace that keeps the cursor line, or `dd` then `u`, would
+  otherwise leave the band where the library dragged it. Costs nothing: the revision already
+  invalidates the panel's render state.
+- **Formatting is a shipped dependency, one backend per tab kind** (078 W-B): `ruff format
+  --line-length 88` for the script and `clang-format` with the maintainer's nvim fallback
+  style for shaders and lib files, both binary wheels called by subprocess; a missing formatter
+  raises. The apply is one host edit (select all + `replace_selection`), because `ed_set_text`
+  is not undoable.
 - **`InlineInput` dataclass for mutually-exclusive inline editors.** A picker / panel hosting
   multiple inline text-input affordances (rename / new-file / new-dir) uses one `InlineInput`
   instance per kind — `target: Path | None`, `buf: str`, `needs_focus: bool` with

@@ -1,10 +1,11 @@
 """The intel module's pure sources (078 W-A): the buffer read as text, the script read
 statically. Neither touches GL or the App."""
 
+from shaderbox.editor.ffi import Slot
 from shaderbox.intel.glsl import buffer_declarations, buffer_words, uniform_declarations
 from shaderbox.intel.script import returned_uniforms
 from shaderbox.intel.symbols import SymbolKind
-from shaderbox.theme import kind_color, kind_slot
+from shaderbox.theme import editor_palette, kind_color, kind_slot
 
 _SHADER = """#version 330
 // uniform float u_commented;
@@ -125,6 +126,23 @@ def test_every_kind_is_a_distinct_string() -> None:
 def test_every_kind_has_a_color() -> None:
     # The checker-narrowing guard: a kind added to the enum without a color fails here, not
     # at the first frame that draws it.
+    palette = editor_palette()
+    slots = {
+        1: Slot.SYNTAX_1,
+        2: Slot.SYNTAX_2,
+        3: Slot.SYNTAX_3,
+        4: Slot.SYNTAX_4,
+        5: Slot.SYNTAX_5,
+        6: Slot.SYNTAX_6,
+        7: Slot.SYNTAX_7,
+        8: Slot.SYNTAX_8,
+        9: Slot.SYNTAX_9,
+    }
     for kind in SymbolKind:
         assert len(kind_color(kind)) == 4
-        assert 0 <= kind_slot(kind) <= 9
+        slot = kind_slot(kind)
+        assert 0 <= slot <= 9
+        if slot:
+            # One color per kind: what the popup and the text draw is what a host surface
+            # shows, by the palette rather than by coincidence.
+            assert kind_color(kind) == palette[slots[slot]], kind

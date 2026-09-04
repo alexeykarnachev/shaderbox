@@ -52,7 +52,6 @@ class CompletionProvider:
 # and including a partial name; not `vec3 color = u_`, and not past the name. Group 1 is the
 # typed type when there is one.
 DECLARATION_SITE = re.compile(r"\buniform\s+(?:(\w+)\s+)?\w*$")
-_SITE = DECLARATION_SITE
 
 
 def _declaration_parts(symbol: Symbol) -> tuple[str, str]:
@@ -66,7 +65,7 @@ def _declarations(context: CompletionContext) -> Sequence[Symbol]:
     typed type only the names of that type (a name-only script uniform fits any type)."""
     if context.index is None:
         return ()
-    site = _SITE.search(context.line_before_caret)
+    site = DECLARATION_SITE.search(context.line_before_caret)
     typed_type = site.group(1) if site is not None else None
     shaped: list[Symbol] = []
     for symbol in context.index.declarations:
@@ -82,10 +81,11 @@ def _glsl_words(context: CompletionContext) -> Sequence[Symbol]:
     # After `uniform <type> ` the line wants a NEW name: the buffer's declared names and the
     # language's words are not candidates there, only the declarations provider's. After a
     # bare `uniform ` a bare name would land a typeless `uniform u_time`.
-    site = _SITE.search(context.line_before_caret)
+    site = DECLARATION_SITE.search(context.line_before_caret)
     if context.index is None or (site is not None and site.group(1)):
         return ()
-    if site is None:
+    if site is None or context.tab_kind != "shader":
+        # A lib file has no declarations provider, so its own declared names stay offered.
         return context.index.words
     # After a bare `uniform ` the word being typed is a TYPE: only the language's types come
     # from this provider, the names come whole from the declarations provider.

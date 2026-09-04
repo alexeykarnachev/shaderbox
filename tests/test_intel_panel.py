@@ -8,6 +8,7 @@ from shaderbox.editor.ffi import ensure_loaded
 from shaderbox.editor_types import EditorTab
 from shaderbox.intel.symbols import SymbolKind
 from shaderbox.intel.worker import PythonRequestKind
+from shaderbox.pass_graph import NoSource
 from shaderbox.paths import pass_name_of
 from shaderbox.tabs.code import (
     _consume_lookup_request,
@@ -100,8 +101,6 @@ def test_k_on_the_script_tab_answers_through_the_worker(app: Any) -> None:
 
 
 def test_a_samplers_class_in_the_text_follows_its_value(app: Any) -> None:
-    from shaderbox.pass_graph import NoSource
-
     document_id = app.current_document_id
     document = app.ui_documents[document_id].document
     app.session.add_pass(document_id, "paint")

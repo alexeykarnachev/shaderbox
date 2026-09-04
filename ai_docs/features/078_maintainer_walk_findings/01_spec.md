@@ -389,6 +389,21 @@ code panel) and the formatter dependency note; roadmap row + banner; cold-contex
   The architecture note that `_glsl_index_for`'s App-to-context translation sits in a draw
   module is recorded, not acted on.
 
+- **W-A post-implementation, round 2, the same two reviewers against `24fe7f0`, closure
+  tables first.** Fidelity: PASS — all eight closed, three by mutation; three leftovers fixed
+  in the wave: item 1's own worked example contradicted itself (rewritten: the buffer declares
+  `u_gain` only), `kind_color` disagreed with the slot's palette entry on six kinds (types and
+  the API read as keywords now, and the enum test pins a slotted kind's color to its slot's
+  palette entry), the enum's docstring claimed a provider gate that never existed. Code:
+  PARTIAL — all six closed, five with falsifiers; four new, all fixed: the type-only narrowing
+  after a bare `uniform` had silenced a lib tab's own declared names (now shader tabs only,
+  pinned), `K` lacked the after-dot guard completion has so `p.Text` took the engine's gloss
+  (guarded, pinned), the cache's handle check had no falsifier (`tests/test_intel_cache.py`),
+  a test carried an inline import. Its unverified concerns and this session's answer: the
+  cache retains one small entry per path ever opened after a project switch (bounded; a stale
+  entry can never hit); `PY_API` shares the keyword red by design; the precision-qualifier
+  site (`uniform lowp float`) offers nothing, as before this feature.
+
 ## Order
 
 1. **W-E, W-H, W-I (indent half), W-D** — small, host-only, visible on the next launch.
@@ -412,11 +427,12 @@ code panel) and the formatter dependency note; roadmap row + banner; cold-contex
 
 ## Manual verification (the maintainer, in the app)
 
-1. Declare `uniform float u_gain;` unused, type `u_` on a new line: `u_gain` is offered
-   with the buffer's other names (`u_time`, `u_aspect`), never only `u_time`; `uniform `
-   offers whole declarations (`float u_aspect;`, `sampler2D u_prev;`); `uniform float u_`
-   offers `u_aspect;`; `uniform vec4 u_` offers nothing when no vec4 is missing (his own
-   words: "Why do I even see the uniform suggestion here at all?").
+1. In a shader that declares only `uniform float u_gain;` (unused), type `u_` on a new
+   line: `u_gain` is offered together with the engine's `u_time`, `u_aspect`, ..., never only
+   `u_time`; `uniform ` offers whole declarations the buffer lacks (`float u_aspect;`,
+   `sampler2D u_prev;`); `uniform float u_` offers `u_aspect;`; `uniform vec4 u_` offers
+   nothing when no vec4 is missing (his own words: "Why do I even see the uniform suggestion
+   here at all?").
 2. In the script return `{"u_speed": 0.5}`; in the shader type `u_sp`: `uniform float
    u_speed;` is offered in the script-uniform color; accept it and the identifier in the
    text carries that color.

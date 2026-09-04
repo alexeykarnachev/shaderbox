@@ -32,21 +32,21 @@ _TEXT = (
 
 
 def _index(text: str = _TEXT, **overrides: Any) -> GlslIndex:
-    context = GlslContext(
-        text=text,
-        engine_types=ENGINE_UNIFORM_TYPES,
-        engine_docs=ENGINE_UNIFORM_DOCS,
-        lib_functions={
+    fields: dict[str, Any] = {
+        "text": text,
+        "engine_types": ENGINE_UNIFORM_TYPES,
+        "engine_docs": ENGINE_UNIFORM_DOCS,
+        "lib_functions": {
             "SB_hash": ("float SB_hash(vec2 p)", "a hash"),
             "SB_hash2": ("vec2 SB_hash2(vec2 p)", "a hash pair"),
             "SB_noise": ("float SB_noise(vec2 p)", "value noise"),
         },
-        script_returns=(ScriptReturn("u_speed", None, "float", 9),),
-        pass_name="main",
-        passes=("main", "paint"),
-        **overrides,
-    )
-    return build_glsl_index(context)
+        "script_returns": (ScriptReturn("u_speed", None, "float", 9),),
+        "pass_name": "main",
+        "passes": ("main", "paint"),
+    }
+    fields.update(overrides)
+    return build_glsl_index(GlslContext(**fields))
 
 
 def _context(**overrides: Any) -> CompletionContext:
@@ -117,6 +117,28 @@ def test_a_bare_uniform_site_never_offers_a_name_it_offers_whole() -> None:
         offer(_context(line_before_caret="uniform sam", prefix="sam", explicit=True))
     )
     assert "sampler2D" in found
+
+
+def test_a_lib_tab_keeps_its_own_declared_names_after_uniform() -> None:
+    # No declarations provider on a lib tab, so its declared names are what `uniform SBT_`
+    # can offer there.
+    lib_index = _index(
+        "uniform ivec4 SBT_SPANS[87];\nuniform vec4 SBT_STROKES[542];\n",
+        pass_name=None,
+        passes=(),
+        script_returns=(),
+    )
+    found = _texts(
+        offer(
+            _context(
+                tab_kind="lib",
+                index=lib_index,
+                line_before_caret="uniform SBT_",
+                prefix="SBT_",
+            )
+        )
+    )
+    assert found == ["SBT_SPANS", "SBT_STROKES"]
 
 
 def test_an_identifier_site_offers_the_buffers_own_names_first() -> None:

@@ -545,15 +545,17 @@ def _set_colors(
 
 
 def kind_color(kind: SymbolKind) -> tuple[float, float, float, float]:
-    """The one color a kind of name has everywhere it shows: a completion row, the text, a
-    source list (078 D2). Language words and types read as the lexer colors them; the
-    engine's uniforms are blue-ish, the script's green-ish, a pass sampler aqua."""
+    """The color a kind of name has on a host surface (a source list, a note), the same one
+    its syntax slot draws in the popup and the text (078 D2): the enum test pins that a
+    slotted kind's color IS its slot's palette entry. Language words and types read as the
+    lexer colors them; the engine's uniforms are blue-ish, the script's green-ish, a pass
+    sampler aqua; a kind with no slot is a plain identifier."""
     return _KIND_COLOR[kind]
 
 
 _KIND_COLOR: dict[SymbolKind, tuple[float, float, float, float]] = {
     SymbolKind.GLSL_KEYWORD: COLOR.SYN_KEYWORD,
-    SymbolKind.GLSL_TYPE: COLOR.SYN_TYPE,
+    SymbolKind.GLSL_TYPE: COLOR.SYN_KEYWORD,
     SymbolKind.GLSL_BUILTIN: COLOR.SYN_BUILTIN,
     SymbolKind.LIB_FUNCTION: COLOR.SYN_BUILTIN,
     SymbolKind.ENGINE_UNIFORM: COLOR.SYN_UNIFORM,
@@ -564,7 +566,7 @@ _KIND_COLOR: dict[SymbolKind, tuple[float, float, float, float]] = {
     SymbolKind.BUFFER_SYMBOL: COLOR.SYN_IDENT,
     SymbolKind.PY_KEYWORD: COLOR.SYN_KEYWORD,
     SymbolKind.PY_BUILTIN: COLOR.SYN_BUILTIN,
-    SymbolKind.PY_API: COLOR.SYN_TYPE,
+    SymbolKind.PY_API: COLOR.SYN_KEYWORD,
     SymbolKind.PY_MEMBER: COLOR.SYN_IDENT,
     SymbolKind.PY_LOCAL: COLOR.SYN_IDENT,
 }
