@@ -5,6 +5,7 @@ import ast
 import ctypes
 import shutil
 import subprocess
+from enum import IntEnum
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -15,6 +16,7 @@ import pytest
 from imgui_bundle import imgui
 
 from shaderbox.commands import SPEC_BY_ID, CommandId
+from shaderbox.editor import ffi
 from shaderbox.editor.ffi import (
     _SIG,
     EDITOR_RESOURCES_DIR,
@@ -1091,24 +1093,48 @@ def test_every_mirrored_enum_covers_the_vendored_probe_table() -> None:
         )
 
 
-def test_the_mirrored_enum_map_covers_every_binding_enum_the_probe_declares() -> None:
-    # The map above is hand-written, so it can silently stop covering the domain — the exact
-    # defect this file keeps finding elsewhere. A binding enum whose table upstream ships but
-    # which nobody added here would be ungated and look fine.
+def test_the_scalar_key_constants_match_the_binding() -> None:
+    # KeyCode and KeyMod are mirrored as LOOSE SCALARS upstream (K_CHAR, M_CTRL, ...) rather
+    # than as a table, so the table gate above cannot see them — they were ungated until the
+    # domain check below started enumerating from the binding side. Values are what cross the
+    # ABI; the names are abbreviated upstream (K_ESC vs ESCAPE, K_BS vs BACKSPACE), so this
+    # compares the value SETS rather than pairing by name.
     namespace = _probe_tables()
-    unmapped = {
+    for prefix, enum in (("K_", KeyCode), ("M_", KeyMod)):
+        upstream = {
+            name[len(prefix) :]: value
+            for name, value in namespace.items()
+            if name.startswith(prefix) and isinstance(value, int)
+        }
+        assert upstream, f"the vendored probe no longer declares {prefix}* constants"
+        assert set(upstream.values()) <= {int(m) for m in enum}, (
+            f"{prefix}*: upstream declares values {sorted(set(upstream.values()))}, the "
+            f"binding's {enum.__name__} covers {sorted(int(m) for m in enum)}. A value the "
+            f"binding lacks raises when {enum.__name__} is constructed from it."
+        )
+
+
+def test_every_binding_enum_is_gated_against_the_probe() -> None:
+    # The domain check, and the one that has now caught the same defect twice. Enumerating
+    # from the BINDING side is what makes it hold: an earlier version enumerated the probe's
+    # tables and filtered on `isinstance(value, (list, dict))`, which silently skipped KeyCode
+    # and KeyMod because upstream mirrors those as loose scalars — the checker narrowed its own
+    # domain by type. Ask instead: of every IntEnum this binding declares, which one is gated?
+    gated = {enum.__name__ for enum in _PROBE_TABLE_TO_ENUM.values()}
+    gated |= {KeyCode.__name__, KeyMod.__name__}  # the scalar test above
+    declared = {
         name
-        for name, value in namespace.items()
-        if name.isupper()
-        and isinstance(value, (list, dict))
-        and name not in _PROBE_TABLE_TO_ENUM
+        for name, obj in vars(ffi).items()
+        if isinstance(obj, type) and issubclass(obj, IntEnum) and obj is not IntEnum
     }
-    # CLASSES (token classes) and DRAW_ORDER are library-internal: the host never constructs
-    # an enum from them, so they are correctly absent from the map.
-    assert unmapped == {"CLASSES", "DRAW_ORDER"}, (
-        f"the vendored probe declares tables this map does not classify: {sorted(unmapped)}. "
-        "Either mirror the table with a binding enum and add it above, or extend this "
-        "assertion to record why the host does not need it."
+    # HostCommandKind is host-facing only: the library returns it, but the binding never
+    # constructs it from an unvalidated int -- `take_host_command` returns None on anything
+    # unrecognised rather than calling HostCommandKind(value). Nothing upstream mirrors it.
+    assert declared - gated == {"HostCommandKind"}, (
+        f"these binding enums are gated against nothing: {sorted(declared - gated - {'HostCommandKind'})}. "
+        "Each is constructed from a raw library int and raises on a value it lacks, so add it "
+        "to _PROBE_TABLE_TO_ENUM (if upstream ships a table) or to the scalar test (if upstream "
+        "mirrors it as constants), or record here why the host never constructs it."
     )
 
 
