@@ -60,6 +60,7 @@ focus; and Reset sits with the other document-level verbs.
   it was.** A switch is what a tile click is (output pass + shader tab), in the strip's drawn
   order, wrapping. Both are registered commands.
 - **D5. Reset moves to the `New document` / `Render all` row.** `F6` and the tooltip stay.
+  *(Superseded by 078 D4: Reset sits on the Document tab's first row.)*
 - **Standing (from 069/071, unchanged):** the editor lib is the vendored vim; a vim behavior
   the maintainer expects is filed on the library, never approximated in the host. Fixes land at
   the class, not the instance; no compat code; `make gates` green before "done".

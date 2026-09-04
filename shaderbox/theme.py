@@ -328,6 +328,9 @@ EDITOR_UNFOCUSED_ALPHA: float = 0.6
 # The cursor line's band under the caret's line, off BORDER; syntax colors are left alone.
 EDITOR_CURSOR_LINE_ALPHA: float = 0.45
 
+# How long a settings field stays outlined after a jump sent the user to it (`open_settings(focus=…)`).
+SETTINGS_MARK_S: float = 1.6
+
 # Fill alpha for chrome floating over the render image (the FPS overlay).
 OVERLAY_ALPHA: float = 0.7
 

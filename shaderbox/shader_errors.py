@@ -60,6 +60,12 @@ def parse_shader_errors(raw: str, source_map: SourceMap) -> list[ShaderError]:
     return errors
 
 
+def error_at_line(errors: list[ShaderError], line: int) -> ShaderError | None:
+    """The first error on `line`, or None: what the caret's line lights in the strip and what
+    `F8` pops after its jump."""
+    return next((err for err in errors if err.line == line), None)
+
+
 def next_error_line(errors: list[ShaderError], after_line: int) -> int | None:
     # First markable line (line >= 0) strictly after `after_line`, wrapping to the first.
     lines = sorted({e.line for e in errors if e.line >= 0})

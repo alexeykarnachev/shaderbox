@@ -168,11 +168,17 @@ def splice_script(src: str, spans: list[tuple[int, int, int]], new_str: str) -> 
 
 def splice(src: str, spans: list[tuple[int, int]], new_str: str) -> str:
     # Replace each non-overlapping (start, end) span with new_str. Offset-stable: spans don't overlap.
+    # A token span starts at the first TOKEN, after the line's indent (`glsl_lex.token_match`;
+    # `comment_only_spans` likewise), so the column is already in `src[:start]`: when nothing but
+    # whitespace precedes the span on its line, the replacement's own first-line indent is dropped
+    # rather than laid on top of it -- the rule `splice_script` applies to the structural match.
     out: list[str] = []
     cursor: int = 0
     for start, end in spans:
         out.append(src[cursor:start])
-        out.append(new_str)
+        line_start = src.rfind("\n", 0, start) + 1
+        at_line_indent = not src[line_start:start].strip(" \t")
+        out.append(new_str.lstrip(" \t") if at_line_indent else new_str)
         cursor = end
     out.append(src[cursor:])
     return "".join(out)

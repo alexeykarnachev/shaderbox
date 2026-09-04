@@ -35,6 +35,8 @@ from shaderbox.render_preset import FitPolicy, RenderPreset, ResolutionPolicy
 from shaderbox.theme import COLOR, SIZE, SPACE, fade
 from shaderbox.ui_models import UIDocument
 from shaderbox.ui_primitives import (
+    NO_FOCUS,
+    FieldFocus,
     button,
     caption_text,
     connection_status,
@@ -344,7 +346,7 @@ class TelegramExporter(Exporter):
         # exporters below the popups layer; the enum there is the registry, this is the contract).
         return "telegram.bot_token"
 
-    def draw_config_ui(self, focus: bool = False) -> None:
+    def draw_config_ui(self, focus: FieldFocus = NO_FOCUS) -> None:
         full_width: float = imgui.get_content_region_avail().x
 
         have_token: bool = bool(self._tg.bot_token)

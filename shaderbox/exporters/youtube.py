@@ -40,6 +40,8 @@ from shaderbox.render_shape import (
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_models import UIDocument
 from shaderbox.ui_primitives import (
+    NO_FOCUS,
+    FieldFocus,
     button,
     caption_text,
     connection_status,
@@ -266,7 +268,7 @@ class YouTubeExporter(Exporter):
         # telegram exporter's note on the layering).
         return "youtube.client"
 
-    def draw_config_ui(self, focus: bool = False) -> None:
+    def draw_config_ui(self, focus: FieldFocus = NO_FOCUS) -> None:
         full_width: float = imgui.get_content_region_avail().x
 
         # Setup steps show only until a client key is loaded; reappear when cleared.
@@ -306,10 +308,10 @@ class YouTubeExporter(Exporter):
         #   connected          -> just status + Disconnect (below)
         if not connected_now and not have_key:
             # The credential is loaded via a file pick, not typed — so a focus request lands
-            # on the primary Load button, not the hidden paste box. focus_field (one-shot) is
-            # owned by the caller via the `focus` flag.
-            focus_field(focus)
-            if primary_button("Load client_secret.json..."):
+            # on the primary Load button, not the hidden paste box.
+            with focus_field(focus):
+                load_clicked = primary_button("Load client_secret.json...")
+            if load_clicked:
                 self._pick_client_secret()
             imgui.same_line()
             paste_label: str = (

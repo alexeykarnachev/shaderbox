@@ -20,7 +20,7 @@ from shaderbox.editor.render import (
 )
 from shaderbox.editor_types import EditorTab, HoverMark, JumpRequest, LookupPopup
 from shaderbox.paths import pass_name_of
-from shaderbox.shader_errors import ShaderError
+from shaderbox.shader_errors import ShaderError, error_at_line
 from shaderbox.theme import (
     COLOR,
     EDITOR_CURSOR_LINE_ALPHA,
@@ -290,8 +290,15 @@ def _visible_error_rows(app: App, n: int) -> int:
 
 
 def _draw_error_strip(
-    app: App, tab: EditorTab, errors: list[ShaderError], height: float
+    app: App,
+    tab: EditorTab,
+    errors: list[ShaderError],
+    height: float,
+    caret_line: int,
 ) -> None:
+    # The caret's own error row draws selected, so the line under the cursor and its message
+    # in the strip read as one thing (078 D3); the popup is `F8`'s alone.
+    at_caret = error_at_line(errors, caret_line)
     imgui.push_style_color(imgui.Col_.child_bg, COLOR.BG_SURFACE)
     if imgui.begin_child("##shader_errors", size=(0.0, height)):
         n = len(errors)
@@ -305,7 +312,7 @@ def _draw_error_strip(
                 else f"Line {err.line + 1}  ·  {err.message}"
             )
             imgui.push_style_color(imgui.Col_.text, COLOR.STATE_ERROR)
-            clicked = imgui.selectable(f"{label}##err{i}", False)[0]
+            clicked = imgui.selectable(f"{label}##err{i}", err is at_caret)[0]
             imgui.pop_style_color(1)
             if clicked and err.line >= 0:
                 # A shader tab's strip can carry a SCRIPT error, whose row points at the script
@@ -652,6 +659,7 @@ def draw(app: App) -> None:
         editor.get_current_cursor_position().line,
     )
     app.editor_hover_line = None
+    app.editor_errors = errors
     strip_height = 0.0
     if errors:
         n = len(errors)
@@ -669,6 +677,22 @@ def draw(app: App) -> None:
 
     # Jump/focus requests latch for the upcoming layout; must run before it.
     jumped = _consume_jump(app, editor, current_path)
+    if app.editor_error_note_pending:
+        # `F8` landed: pop the message at the caret through the `K` note, which any key or
+        # click dismisses. A jump discarded as stale (another file) pops nothing.
+        app.editor_error_note_pending = False
+        landed = (
+            error_at_line(errors, editor.get_current_cursor_position().line)
+            if jumped
+            else None
+        )
+        app.editor_lookup = (
+            LookupPopup(
+                word="", signature=f"Line {landed.line + 1}", doc=landed.message
+            )
+            if landed is not None
+            else None
+        )
     if app.editor_focus_requested and not app.any_popup_open():
         # ui.py consumed the imgui half (set_next_window_focus before the child), so the
         # latch has done its job and is cleared here.
@@ -806,5 +830,7 @@ def draw(app: App) -> None:
 
     if errors:
         imgui.push_font(app.font_12, app.font_12.legacy_size)
-        _draw_error_strip(app, tab, errors, strip_height)
+        _draw_error_strip(
+            app, tab, errors, strip_height, editor.get_current_cursor_position().line
+        )
         imgui.pop_font()

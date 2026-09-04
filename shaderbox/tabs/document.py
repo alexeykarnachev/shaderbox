@@ -1,6 +1,7 @@
 from imgui_bundle import imgui, imgui_ctx
 
 from shaderbox.app import App
+from shaderbox.commands import CommandId, chord_to_str
 from shaderbox.glyph_tables import TABLE_UNIFORMS
 from shaderbox.media import MediaWithTexture
 from shaderbox.pass_graph import clamp_canvas_size
@@ -198,6 +199,17 @@ def draw(app: App) -> None:
     imgui.pop_id()
 
     imgui.end_disabled()
+
+    # Reset is about THIS document (its histories, clock, script, videos), so it sits on the
+    # row that names the document, and stays live during a copilot turn as it always has.
+    imgui.same_line(spacing=float(SPACE.MD))
+    if ghost_button("Reset"):
+        app.reset_current_document()
+    if imgui.is_item_hovered():
+        imgui.set_tooltip(
+            "Reset document  "
+            f"{chord_to_str(app.effective_bindings[CommandId.RESET_DOCUMENT])}"
+        )
 
     imgui.dummy((0, SPACE.MD))
     _draw_entry_points(app)

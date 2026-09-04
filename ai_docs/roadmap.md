@@ -26,19 +26,19 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-04, spec session (078 ledger + tasks written, awaiting plan-lock; editor bugs sent to editor-c8). -->
-**Next: 078 plan-lock, then the fixes in wave order.**
-`ai_docs/features/078_maintainer_walk_findings/01_spec.md` is the verified ledger (19 findings),
-nine locked decisions, the editor-intelligence design (`shaderbox/intel/`, one `SymbolKind` enum
-read by completion, `K` and the color feed), eleven workstreams W-A..W-K with their order, and
-five open questions the maintainer answers before anything is built: Q1 Python completion depth
-(recommend `jedi` in-process + own `ast` walk), Q2 formatter backends (recommend `ruff` +
-`clang-format` wheel), Q3 the two library seams (recommend a host-fed word-class table), Q4 the
-modal's create mode (recommend a pending draft), Q5 dropping the stub docstrings. The editor
-library items (`dd` column, insert-mode `<Right>` wrap, cursor after `u`, the differential-fuzz
-harness ask) were sent to the editor session `editor-c8` with headless reproductions; W-C
-re-vendors when it pings. First fixes after lock: W-E Reset, W-H settings mark, W-I indent, W-D
-error row — small and host-only.
+<!-- As of 2026-09-04, plan-locked; W-D W-E W-H W-I(indent) landed; editor session holds the bugs batch and the two seams. -->
+**Next: 078 W-F (add pass through the modal, D13) and W-G (grouped sampler-source list), then
+W-A.** `ai_docs/features/078_maintainer_walk_findings/01_spec.md` is the verified ledger (19
+findings), fourteen locked decisions (D10-D14 are the plan-lock answers: `jedi` for Python,
+`ruff` + `clang-format` wheel with the nvim arguments for formatting, the library seams left
+to the editor session, a pending-draft create mode, dense stub docstrings kept), the
+editor-intelligence design (`shaderbox/intel/`, one `SymbolKind` enum read by completion, `K`
+and the color feed), and eleven workstreams in order. Landed: the caret's error row + the `F8`
+note, Reset on the Document tab, the settings field outline after a jump, the copilot edit's
+first-line indent. The editor session `editor-c8` holds two messages: the bugs batch (`dd`
+column, insert-mode `<Right>` wrap, cursor after `u`, the differential-fuzz harness) and the two
+seams (completion item kinds, host-classified identifiers); W-C re-vendors when it pings, W-A
+step 5 binds the seams. Display checks owed for every landed wave (`## Manual verification`).
 
 **After that: the sweep over the 077 material** — `ai_docs/features/077_rc_model_comparison/`
 (both rounds, the "left for the sweep" list) and the station pages (`dogfood/index.html`,

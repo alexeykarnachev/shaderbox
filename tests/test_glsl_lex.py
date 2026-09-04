@@ -306,3 +306,24 @@ def test_block_comment_not_grown_known_limit() -> None:
     out = splice(src, token_match(src, old), new)
     # Not grown -> the block survives above AND new_str re-inserts it -> duplicated (the known limit).
     assert out.count("note line1") == 2
+
+
+def test_splice_drops_the_replacement_indent_where_the_line_already_has_it() -> None:
+    # A token span starts at the first token, after the line's indent. A model that copies the
+    # block types its own indent on line one; laid on top of the column already there it doubled
+    # the indent on the FIRST line only (078 #18). The line's indent is kept, the replacement's
+    # first-line indent is dropped, the later lines keep theirs.
+    src = "void main() {\n    vec3 color = vec3(1.0);\n}\n"
+    spans = token_match(src, "vec3 color = vec3(1.0);")
+    assert spans == [(18, 41)]
+    new_str = "    vec3 color = vec3(0.5);\n    float d = 1.0;"
+    assert splice(src, spans, new_str) == (
+        "void main() {\n    vec3 color = vec3(0.5);\n    float d = 1.0;\n}\n"
+    )
+
+
+def test_splice_keeps_the_replacement_spacing_mid_line() -> None:
+    # Nothing precedes the span on its line but code: the replacement lands verbatim.
+    src = "float x = a + b;\n"
+    spans = token_match(src, "a + b")
+    assert splice(src, spans, " c ") == "float x =  c ;\n"

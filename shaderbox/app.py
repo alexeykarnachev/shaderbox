@@ -1,3 +1,4 @@
+import time
 from collections.abc import Callable
 from dataclasses import replace
 from enum import Enum
@@ -62,7 +63,7 @@ from shaderbox.paths import ProjectPaths, app_data_dir, pass_name_of, shader_lib
 from shaderbox.project_session import ProjectSession
 from shaderbox.render_defer import RenderDefer
 from shaderbox.scripting import EXPORT_MOUSE, MouseState
-from shaderbox.shader_errors import next_error_line
+from shaderbox.shader_errors import ShaderError, next_error_line
 from shaderbox.shader_lib import ShaderLibIndex
 from shaderbox.shader_lib.favorites import ShaderLibFavoritesStore
 from shaderbox.shader_lib.file_ops import ShaderLibFileManager
@@ -70,7 +71,7 @@ from shaderbox.shader_lib.seed import sync_shipped_lib
 from shaderbox.shader_lib.tags import ShaderLibTagsStore
 from shaderbox.shader_source import ShaderSource
 from shaderbox.tabs import share_state
-from shaderbox.theme import COLOR, apply_theme, editor_palette
+from shaderbox.theme import COLOR, SETTINGS_MARK_S, apply_theme, editor_palette
 from shaderbox.ui_models import (
     EditorSettings,
     UIAppState,
@@ -283,6 +284,10 @@ class App:
         # `K` (073 W-B): the drain raises the request, the panel resolves it into a popup
         # that the next key or click dismisses.
         self.editor_lookup_requested: bool = False
+        # The strip's error list as the code panel last drew it (compile errors of the edited
+        # pass plus the script's), so `F8` walks what the user sees; and the F8 note latch.
+        self.editor_errors: list[ShaderError] = []
+        self.editor_error_note_pending: bool = False
         self.editor_lookup: LookupPopup | None = None
         # Rows the editor panel showed last frame — follow-the-cursor scrolling
         # steps in view units.
@@ -389,6 +394,8 @@ class App:
         # A settings-field key (see popups.settings.SettingsField) to expand + focus when the
         # Settings modal next opens; "" = none. Consumed one-shot by the field's focus_field call.
         self.settings_focus: str = ""
+        # (field, monotonic deadline): the field a jump pointed at stays outlined until then.
+        self.settings_mark: tuple[str, float] = ("", 0.0)
         self.active_document_tab: DocumentTab = DocumentTab.DOCUMENT
         # One-shot: a tab-jump requested this frame. The panel's draw fn drives the tab
         # (set_selected), then clears the flag.
@@ -712,15 +719,14 @@ class App:
         session = self.get_current_session_if_exists()
         if session is None or self.current_document_id not in self.ui_documents:
             return
-        errors = self.ui_documents[
-            self.current_document_id
-        ].document.render_pass.compile_unit.errors
+        errors = [err for err in self.editor_errors if err.path == session.source.path]
         if not errors:
             return
         caret = session.editor.get_current_cursor_position().line
         line = next_error_line(errors, caret)
         if line is not None:
             self.editor_jump_request = JumpRequest(session.source.path, line, 0)
+            self.editor_error_note_pending = True
 
     def toggle_cheatsheet(self) -> None:
         self.app_state.show_cheatsheet = not self.app_state.show_cheatsheet
@@ -887,6 +893,7 @@ class App:
         # unconnected gate's "Open Settings" — drop the user straight on the missing key field).
         self.lib_reset_armed = False
         self.settings_focus = focus
+        self.settings_mark = (focus, time.monotonic() + SETTINGS_MARK_S)
         self._open_popup(PopupState.SETTINGS)
 
     def open_pass_settings(self, name: str) -> None:

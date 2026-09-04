@@ -10,6 +10,7 @@ from pathlib import Path
 from shaderbox.shader_errors import (
     ShaderError,
     SourceMap,
+    error_at_line,
     find_uniform_declaration_line,
     next_error_line,
     parse_shader_errors,
@@ -185,3 +186,15 @@ def test_next_error_line_skips_unparseable_and_dedups() -> None:
     assert next_error_line(errors, 0) == 5
     assert next_error_line([ShaderError(_ROOT, -1, "raw")], 0) is None
     assert next_error_line([], 0) is None
+
+
+def test_error_at_line_is_the_first_on_that_line_or_none() -> None:
+    path = Path("a.glsl")
+    errors = [
+        ShaderError(path, 4, "first on 4"),
+        ShaderError(path, 4, "second on 4"),
+        ShaderError(path, -1, "unparsable"),
+    ]
+    assert error_at_line(errors, 4) is errors[0]
+    assert error_at_line(errors, 3) is None
+    assert error_at_line([], 0) is None

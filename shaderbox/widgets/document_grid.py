@@ -1,13 +1,11 @@
 from imgui_bundle import imgui, imgui_ctx
 
 from shaderbox.app import App
-from shaderbox.commands import CommandId, chord_to_str
 from shaderbox.constants import STARTER_EXAMPLE_ID
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_models import UIDocument
 from shaderbox.ui_primitives import (
     PreviewCellResult,
-    ghost_button,
     preview_cell,
 )
 
@@ -57,17 +55,6 @@ def draw_document_preview_grid(app: App, width: float, height: float) -> None:
             with imgui_ctx.begin_tooltip():
                 imgui.text(
                     "If checked, renders all documents, otherwise, renders only the selected one."
-                )
-
-        # Reset is a document-level verb, so it sits with the other two.
-        if app.current_document_id in app.ui_documents:
-            imgui.same_line()
-            if ghost_button("Reset"):
-                app.reset_current_document()
-            if imgui.is_item_hovered():
-                imgui.set_tooltip(
-                    "Reset document  "
-                    f"{chord_to_str(app.effective_bindings[CommandId.RESET_DOCUMENT])}"
                 )
 
         preview_size = SIZE.THUMB_LG

@@ -1,3 +1,4 @@
+import time
 from enum import StrEnum
 from typing import get_args
 
@@ -18,9 +19,11 @@ from shaderbox.commands import (
 from shaderbox.constants import SHADER_LIB_SEED_DIR
 from shaderbox.paths import shader_lib_root
 from shaderbox.shader_lib.seed import reset_to_shipped
-from shaderbox.theme import COLOR, SIZE, SPACE
+from shaderbox.theme import COLOR, SETTINGS_MARK_S, SIZE, SPACE
 from shaderbox.ui_models import EditorKeymap
 from shaderbox.ui_primitives import (
+    NO_FOCUS,
+    FieldFocus,
     caption_text,
     chord_row,
     danger_button,
@@ -35,13 +38,13 @@ from shaderbox.ui_primitives import (
 
 class SettingsField(StrEnum):
     """A focusable settings field. Pass to `app.open_settings(focus=...)` to expand its
-    owning section + keyboard-focus the field on open (e.g. a gate's 'Open Settings' jumps
-    straight to the missing key). To add one: a member here, then either branch on it in the
-    owning section's draw (the Copilot key) or — for an exporter field — have that exporter
-    return this value from `Exporter.config_field` and pass `focus` to its field's
-    `focus_field` (the Integrations loop matches `config_field` and force-opens the document).
-    The string VALUES are the cross-layer contract (exporters echo them without importing this
-    enum)."""
+    owning section, keyboard-focus the field on open and outline it for `SETTINGS_MARK_S`
+    (e.g. a gate's 'Open Settings' jumps straight to the missing key). To add one: a member
+    here, then either branch on it in the owning section's draw (the Copilot key) or — for an
+    exporter field — have that exporter return this value from `Exporter.config_field` and
+    wrap its field in `focus_field(focus)` (the Integrations loop matches `config_field` and
+    force-opens the document). The string VALUES are the cross-layer contract (exporters echo
+    them without importing this enum)."""
 
     COPILOT_KEY = "copilot.openrouter_key"
     TELEGRAM_TOKEN = "telegram.bot_token"
@@ -135,24 +138,23 @@ def _draw_body(app: App) -> bool:
     imgui.separator_text("Integrations")
 
     # A pending focus target (app.settings_focus) force-opens its owning section so the field
-    # is visible before focus_field scrolls to it; consumed one-shot below.
-    focus = app.settings_focus
-
+    # is visible before focus_field scrolls to it; consumed one-shot below. The outline
+    # (app.settings_mark) outlives the one-shot and fades on its own clock.
     for exporter in app.exporter_registry.all():
         if exporter.is_available:
-            wants = focus != "" and focus == exporter.config_field
-            if wants:
+            focus = _field_focus(app, exporter.config_field)
+            if focus.keyboard:
                 imgui.set_next_item_open(True, imgui.Cond_.always)
             if imgui.tree_node(exporter.display_name):
-                exporter.draw_config_ui(focus=wants)
+                exporter.draw_config_ui(focus=focus)
                 imgui.tree_pop()
         else:
             imgui.text_colored(
                 COLOR.FG_DIM, f"{exporter.display_name} — {exporter.unavailable_reason}"
             )
 
-    copilot_focus = focus == SettingsField.COPILOT_KEY
-    if copilot_focus:
+    copilot_focus = _field_focus(app, SettingsField.COPILOT_KEY)
+    if copilot_focus.keyboard:
         imgui.set_next_item_open(True, imgui.Cond_.always)
     if imgui.tree_node("Copilot"):
         _draw_copilot_config(app, focus=copilot_focus)
@@ -284,7 +286,18 @@ _COPILOT_LIMITS: list[tuple[str, str, str, int, int]] = [
 ]
 
 
-def _draw_copilot_config(app: App, focus: bool = False) -> None:
+def _field_focus(app: App, field: str) -> FieldFocus:
+    """How the jump points at `field` this frame: keyboard focus on the one-shot frame, the
+    outline fading from full to nothing over `SETTINGS_MARK_S` after the jump."""
+    if not field:
+        return NO_FOCUS
+    marked, until = app.settings_mark
+    left = until - time.monotonic()
+    mark = min(1.0, left / SETTINGS_MARK_S) if marked == field and left > 0.0 else 0.0
+    return FieldFocus(keyboard=app.settings_focus == field, mark=mark)
+
+
+def _draw_copilot_config(app: App, focus: FieldFocus = NO_FOCUS) -> None:
     field_w = float(SIZE.SETTINGS_CTRL_W) * 2.0
     cfg = app.integrations_store.copilot
     new_key = labeled_text_input(

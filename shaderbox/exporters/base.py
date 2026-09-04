@@ -8,6 +8,7 @@ from typing import Any
 from shaderbox.integrations import IntegrationsStore
 from shaderbox.render_preset import RenderPreset
 from shaderbox.ui_models import UIDocument
+from shaderbox.ui_primitives import NO_FOCUS, FieldFocus
 
 
 @dataclass
@@ -178,7 +179,7 @@ class Exporter(ABC):
     def is_connected(self) -> bool: ...
 
     @abstractmethod
-    def draw_config_ui(self, focus: bool = False) -> None: ...
+    def draw_config_ui(self, focus: FieldFocus = NO_FOCUS) -> None: ...
 
     @abstractmethod
     def current_settings(self) -> dict[str, Any]: ...

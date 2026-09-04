@@ -460,17 +460,62 @@ def help_marker(text: str) -> None:
             imgui.pop_text_wrap_pos()
 
 
+@dataclass(frozen=True)
+class FieldFocus:
+    """How a jump points at a settings field (`open_settings(focus=…)`): `keyboard` gives it
+    keyboard focus and scrolls it into view, on ONE frame; `mark` outlines it with the accent
+    at that alpha, for as long as the caller keeps it above zero, so the eye finds the field
+    that a caret alone does not show."""
+
+    keyboard: bool = False
+    mark: float = 0.0
+
+
+NO_FOCUS = FieldFocus()
+
+
+@contextmanager
+def focus_field(focus: FieldFocus) -> Iterator[None]:
+    """Wrap the ONE widget a jump points at. The caller owns the timing: `keyboard` True only
+    on the frame the request fires (a re-grab every frame reads as a modal dismiss), `mark`
+    decaying to zero over `SETTINGS_MARK_S`."""
+    if focus.keyboard:
+        imgui.set_keyboard_focus_here()
+        imgui.set_scroll_here_y()
+    yield
+    if focus.mark > 0.0:
+        lo = imgui.get_item_rect_min()
+        hi = imgui.get_item_rect_max()
+        pad = float(SPACE.XS)
+        imgui.get_window_draw_list().add_rect(
+            imgui.ImVec2(lo.x - pad, lo.y - pad),
+            imgui.ImVec2(hi.x + pad, hi.y + pad),
+            imgui.get_color_u32(fade(COLOR.ACCENT_PRIMARY, focus.mark)),
+            imgui.get_style().frame_rounding,
+            thickness=2.0,
+        )
+
+
 def labeled_text_input(
-    label: str, value: str, width: float, password: bool = False, focus: bool = False
+    label: str,
+    value: str,
+    width: float,
+    password: bool = False,
+    focus: FieldFocus = NO_FOCUS,
 ) -> str:
-    """Caption above a single-line text input. Returns the new value. `focus` keyboard-
-    focuses + scrolls to the input this frame (see `focus_field`) — the caller owns the
-    one-shot."""
+    """Caption above a single-line text input. Returns the new value. `focus` is how a jump
+    points at the input (see `focus_field`) — the caller owns its timing."""
     caption_text(label)
     imgui.set_next_item_width(width)
-    focus_field(focus)
-    flags = imgui.InputTextFlags_.password if password else imgui.InputTextFlags_.none
-    return imgui.input_text(f"##{label}", value, flags=flags)[1]
+    with focus_field(focus):
+        value = imgui.input_text(
+            f"##{label}",
+            value,
+            flags=imgui.InputTextFlags_.password
+            if password
+            else imgui.InputTextFlags_.none,
+        )[1]
+    return value
 
 
 def labeled_multiline_input(label: str, value: str, width: float, height: float) -> str:
@@ -503,15 +548,6 @@ def labeled_combo(
     caption_text(label)
     imgui.set_next_item_width(width)
     return imgui.combo(f"##{label}", current_idx, items)
-
-
-def focus_field(should_focus: bool) -> None:
-    """Direct keyboard focus + scroll-into-view to the NEXT-submitted item when
-    `should_focus`. Call immediately before the widget. The caller owns the one-shot: pass
-    True only on the frame the request should fire."""
-    if should_focus:
-        imgui.set_keyboard_focus_here()
-        imgui.set_scroll_here_y()
 
 
 def unconnected_gate(
