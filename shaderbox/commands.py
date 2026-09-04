@@ -27,6 +27,7 @@ class CommandId(StrEnum):
     OPEN_PALETTE = auto()
     QUIT = auto()
     JUMP_NEXT_ERROR = auto()
+    FORMAT_BUFFER = auto()
     TOGGLE_CHEATSHEET = auto()
     FOCUS_TAB_DOCUMENT = auto()
     FOCUS_TAB_RENDER = auto()
@@ -166,6 +167,13 @@ COMMAND_SPECS: list[CommandSpec] = [
     ),
     CommandSpec(
         CommandId.JUMP_NEXT_ERROR, "Jump to next error", _chord(K.f8), C.EDITOR
+    ),
+    CommandSpec(
+        CommandId.FORMAT_BUFFER,
+        "Format",
+        _chord(K.i, K.mod_ctrl, K.mod_shift),
+        C.EDITOR,
+        scope=CommandScope.EDITOR,
     ),
     CommandSpec(
         CommandId.FOCUS_TAB_DOCUMENT, "Document tab", _chord(K._1, K.mod_ctrl), C.VIEW

@@ -25,6 +25,9 @@ dependencies = [
     "google-api-python-client>=2.197.0",
     "google-auth-oauthlib>=1.4.0",
     "openai>=2.41.1",
+    "jedi>=0.20.0",
+    "clang-format>=23.1.0",
+    "ruff==0.15.17",
 ]
 
 [build-system]

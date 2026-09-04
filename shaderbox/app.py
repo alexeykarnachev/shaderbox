@@ -54,6 +54,7 @@ from shaderbox.editor_types import (
 from shaderbox.exporters.registry import ExporterRegistry
 from shaderbox.exporters.telegram import TelegramExporter
 from shaderbox.exporters.youtube import YouTubeExporter
+from shaderbox.formatting import formatter_for
 from shaderbox.help_content import help_sections
 from shaderbox.integrations import IntegrationsStore
 from shaderbox.notifications import Notifications
@@ -539,6 +540,7 @@ class App:
             CommandId.OPEN_PALETTE: self.open_palette,
             CommandId.QUIT: self.request_quit,
             CommandId.JUMP_NEXT_ERROR: self.jump_to_next_error,
+            CommandId.FORMAT_BUFFER: self.format_current_editor,
             CommandId.TOGGLE_CHEATSHEET: self.toggle_cheatsheet,
             CommandId.FOCUS_TAB_DOCUMENT: lambda: self.focus_document_tab(
                 DocumentTab.DOCUMENT
@@ -1423,6 +1425,32 @@ class App:
         if path is None:
             return None
         return self.editor_sessions.get(path)
+
+    def format_current_editor(self) -> None:
+        """Format the active buffer with its language's formatter (078 D9): one undo step,
+        the caret kept on its line. A formatter's refusal (a syntax error) toasts and
+        changes nothing."""
+        session = self.get_current_session_if_exists()
+        tab = self.active_tab
+        if session is None or tab is None or self._copilot_busy_blocked("Formatting"):
+            return
+        formatter = formatter_for(tab.kind)
+        if formatter is None:
+            return
+        editor = session.editor
+        text = editor.get_text()
+        result = formatter(text)
+        if not result.ok:
+            self.notifications.push(result.error, COLOR.STATE_ERROR[:3])
+            return
+        if result.text == text:
+            return
+        cursor = editor.get_current_cursor_position()
+        lines = text.split("\n")
+        # One host edit over the whole buffer is one undo step; set_text is not undoable.
+        editor.set_selection((0, 0), (len(lines) - 1, len(lines[-1])))
+        editor.replace_selection(result.text)
+        editor.set_cursor(min(cursor.line, editor.get_line_count() - 1), cursor.column)
 
     def flush_current_editor(self) -> None:
         session = self.get_current_session_if_exists()

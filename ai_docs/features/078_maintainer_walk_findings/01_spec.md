@@ -197,6 +197,15 @@ decisions. The options considered stay in git history (`6ddfdaa`).
 text (a syntax error formats nothing). Tests: a known-ugly GLSL and Python sample round-trip to
 a pinned result; a broken sample leaves the buffer untouched.
 
+*(Landed: `shaderbox/formatting.py`, a formatter per tab kind over subprocess — the venv's
+`ruff format --line-length 88` for scripts, the `clang-format` wheel with the nvim fallback
+style for shaders and lib files; `CommandId.FORMAT_BUFFER` on `Ctrl+Shift+I`, editor scope,
+free in both vim modes (measured: the library consumes neither); `App.format_current_editor`
+applies the result as ONE host edit (select all + `replace_selection`; `set_text` is not
+undoable) with the caret kept on its line, and toasts the formatter's first complaint line on a
+syntax error. `jedi`, `clang-format` and `ruff` are runtime dependencies now. Pinned by
+`tests/test_formatting.py`, including the undo step.)*
+
 ### W-C — Editor library re-vendor (#7 #8 #9 #10, D8)
 
 When `editor-c8` pings: rebuild from the sha, copy the vendored set, `abi_probe.py`,
