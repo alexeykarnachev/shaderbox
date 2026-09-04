@@ -44,3 +44,18 @@ insert-mode `<Right>` three times on `ab\ncd` stops at (0,2) (was (1,0)). `make 
 - The cursor-line strip after `u` (#8's host half): the library's cursor is right, so if the
   strip still lags, it is in the panel's frame order.
 - `l` held at the end of a line, if it recurs: name the mode.
+
+
+## Fourth re-vendor: `6d526c6`
+
+ABI unchanged (97 exports). The editor session's adversarial review of its own fuzzer raised
+the walk count from 60 to 400 (the shipped build failed at 100) and enumerated the alphabet
+from the keymap (fourteen keys were never pressed). Nine fixes, of which three touch ShaderBox
+directly: `ed_set_text` no longer leaves a stale highlight cache (the buffer version restarted
+at 1 and the cache was keyed to it, so old spans painted over new text until the next edit —
+finding #18's color half, in all likelihood); `word_classes_apply` is linear (4000 lines:
++123 ms → +14.5 ms per layout); `>>` / `<<` replace a tab indent at a computed width. And a
+correction: the cursor after `u` matches nvim for `dd`-shaped cases only; two
+undo-after-visual / vertical cases diverge and are named in the fuzzer's known set. Verified on
+the vendored binary: `dd` column, insert `<Right>`, a fed class survives a layout, `set_text`
+re-lexes fresh. `make gates` green.

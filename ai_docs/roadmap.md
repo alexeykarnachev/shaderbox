@@ -31,8 +31,9 @@ feature; brief points at the superseder).
 then W-J (the checkerboard during a copilot turn, display-only), then the 077 sweep.** Everything
 else of 078 landed today and is reviewed: the error row + `F8` note, Reset on the Document tab,
 the settings outline, the copilot edit's indent, the pass draft modal, the grouped source list,
-`Ctrl+Shift+I` formatting, three editor re-vendors (now `4f35ba2`: `dd` column, insert
-`<Right>`, seven fuzzer finds, the two seams, the ten-slot palette), and W-A editor
+`Ctrl+Shift+I` formatting, four editor re-vendors (now `6d526c6`: `dd` column, insert
+`<Right>`, the two seams, the ten-slot palette, and a stale highlight cache after `set_text`
+that is the likely cause of #18's color breakage), and W-A editor
 intelligence (`shaderbox/intel/`: the buffer read as text, the script's returns, jedi on one
 thread; completion re-based, `K` on both tabs, host classes coloring the text) through two
 review rounds of two opus reviewers each, every finding fixed and pinned. The maintainer's first
