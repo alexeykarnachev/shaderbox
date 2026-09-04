@@ -23,7 +23,11 @@ def _fixture(root: Path) -> Path:
     log.append(
         "experiment_start",
         0,
-        {"intent": "a working radiance cascades build", "mode": "babysat", "criteria": ["it merges"]},
+        {
+            "intent": "a working radiance cascades build",
+            "mode": "babysat",
+            "criteria": ["it merges"],
+        },
     )
     log.append("attempt_start", 1, {"model": "openai/test", "sha": "abcdef1234567"})
     log.append(
@@ -33,14 +37,37 @@ def _fixture(root: Path) -> Path:
             "turn": 1,
             "iteration": 0,
             "blocks": [
-                {"name": "static", "volatility": "STATIC", "messages": 1, "chars": 400, "est_tokens": 100, "text": "SYSTEM PROMPT TEXT"},
-                {"name": "dialogue", "volatility": "DIALOGUE", "messages": 2, "chars": 40, "est_tokens": 10, "text": "hi", "trimmed": True, "dropped_messages": 4},
-                {"name": "working_set", "volatility": "PER_TURN", "messages": 1, "chars": 800, "est_tokens": 200, "text": "WORKING SET -- void main() {}"},
+                {
+                    "name": "static",
+                    "volatility": "STATIC",
+                    "messages": 1,
+                    "chars": 400,
+                    "est_tokens": 100,
+                    "text": "SYSTEM PROMPT TEXT",
+                },
+                {
+                    "name": "dialogue",
+                    "volatility": "DIALOGUE",
+                    "messages": 2,
+                    "chars": 40,
+                    "est_tokens": 10,
+                    "text": "hi",
+                    "trimmed": True,
+                    "dropped_messages": 4,
+                },
+                {
+                    "name": "working_set",
+                    "volatility": "PER_TURN",
+                    "messages": 1,
+                    "chars": 800,
+                    "est_tokens": 200,
+                    "text": "WORKING SET -- void main() {}",
+                },
             ],
             "tools": ["edit_shader"],
             "tools_chars": 400,
             "tools_est_tokens": 100,
-            "tools_text": "[{\"name\": \"edit_shader\"}]",
+            "tools_text": '[{"name": "edit_shader"}]',
             "est_total_tokens": 410,
             "billed": {"input_tokens": 450, "cached_tokens": 300},
         },
@@ -52,10 +79,34 @@ def _fixture(root: Path) -> Path:
             "n": 1,
             "user_text": "make the <first> pass red",
             "assistant_text": "Made it red & probed it.",
-            "iterations": [{"iteration": 0, "input_tokens": 450, "output_tokens": 30, "cached_tokens": 300, "cost_usd": 0.01}],
-            "tool_calls": [{"n": 1, "name": "edit_shader", "args": {"old_str": "a"}, "ok": True, "result": "applied"}],
-            "usage": {"input_tokens": 450, "output_tokens": 30, "cached_tokens": 300, "cost_usd": 0.01},
-            "renders": [{"path": "media/1/frame.png", "label": "t=0"}, {"path": "media/1/clip.mp4", "label": "3s clip"}],
+            "iterations": [
+                {
+                    "iteration": 0,
+                    "input_tokens": 450,
+                    "output_tokens": 30,
+                    "cached_tokens": 300,
+                    "cost_usd": 0.01,
+                }
+            ],
+            "tool_calls": [
+                {
+                    "n": 1,
+                    "name": "edit_shader",
+                    "args": {"old_str": "a"},
+                    "ok": True,
+                    "result": "applied",
+                }
+            ],
+            "usage": {
+                "input_tokens": 450,
+                "output_tokens": 30,
+                "cached_tokens": 300,
+                "cost_usd": 0.01,
+            },
+            "renders": [
+                {"path": "media/1/frame.png", "label": "t=0"},
+                {"path": "media/1/clip.mp4", "label": "3s clip"},
+            ],
             "gates": [],
             "terminal": "turn_done",
             "cutoff": "",
@@ -68,7 +119,14 @@ def _fixture(root: Path) -> Path:
             "n": 2,
             "user_text": "now animate it",
             "assistant_text": "",
-            "iterations": [{"iteration": 0, "input_tokens": 500, "output_tokens": 0, "cost_usd": 0.02}],
+            "iterations": [
+                {
+                    "iteration": 0,
+                    "input_tokens": 500,
+                    "output_tokens": 0,
+                    "cost_usd": 0.02,
+                }
+            ],
             "tool_calls": [],
             "usage": {"input_tokens": 500, "output_tokens": 0, "cost_usd": 0.02},
             "renders": [],
@@ -77,7 +135,9 @@ def _fixture(root: Path) -> Path:
         },
     )
     log.append("note", 1, {"text": "the red is there", "axis": "fidelity", "turn": 1})
-    log.append("context", 1, {"turn": 3, "iteration": 0, "blocks": [], "est_total_tokens": 5})
+    log.append(
+        "context", 1, {"turn": 3, "iteration": 0, "blocks": [], "est_total_tokens": 5}
+    )
     # A second, finished experiment.
     other = EventLog(store / "older" / LOG_NAME, "older")
     other.append("experiment_start", 0, {"intent": "o", "mode": "free_run"})

@@ -47,6 +47,12 @@ JSON turn-result, so a fresh process per turn keeps full state via disk:
 
     h = DogfoodHarness.create(project_dir=Path("scripts/dogfood/runs/proj-XXXX"))
     h.send("..."); h.drive_until_idle(); h.dump(Path("scripts/dogfood/runs/turn.json"))
+
+The dogfooding station (feature 075) records a run from the trace-listener seam: after
+`h.start_experiment(id, intent=, mode=)` (turn 1 only — a pointer file in the project dir carries it
+to every resumed process), each `dump()` appends the turn, its renders and one context breakdown per
+LLM request to `dogfood/runs/<id>/events.jsonl` and rebuilds the site. `note` / `end_attempt` /
+`start_attempt` are the driver's other three calls.
 """
 
 import json
@@ -101,6 +107,8 @@ from PIL import ImageDraw  # noqa: E402
 # explicit t anyway.
 glfw.set_error_callback(lambda code, desc: None)
 
+from dogfood.report.build import build_site  # noqa: E402
+from dogfood.report.station import StationRecorder  # noqa: E402
 from shaderbox.constants import (  # noqa: E402
     DOCUMENT_EXAMPLES_DIR,
     EXAMPLE_ORDER,
@@ -151,6 +159,10 @@ class DogfoodHarness:
             0  # incremental JSON slice (dump) — separate from printing
         )
         self._last_render_path = ""  # echoed in the dump payload if a turn rendered
+        # The dogfooding station (075): None until start_experiment/start_attempt, or a resume
+        # of a project whose pointer file names one. Once set, dump() records the turn.
+        self.station: StationRecorder | None = None
+        self._media_seen: dict[str, int] = self._media_snapshot()
 
     @classmethod
     def create(
@@ -220,6 +232,9 @@ class DogfoodHarness:
         harness = cls(ctx, session, project_dir)
         if resuming:
             harness._restore_conversation()
+            station = StationRecorder.resume(project_dir)
+            if station is not None:
+                harness._attach_station(station)
         harness._install_kill_persist()
         return harness
 
@@ -234,6 +249,8 @@ class DogfoodHarness:
                 self._copilot.save_conversation(
                     self.session.paths.copilot_conversation_path
                 )
+                if self.station is not None:
+                    self.station.flush()
                 print(f"    [kill-persist: conversation saved on signal {signum}]")
             finally:
                 signal.signal(signum, signal.SIG_DFL)
@@ -245,6 +262,86 @@ class DogfoodHarness:
     @property
     def _copilot(self) -> CopilotSession:
         return self.session.copilot
+
+    # ---- the dogfooding station (feature 075) ----
+
+    def start_experiment(
+        self,
+        experiment_id: str,
+        *,
+        intent: str,
+        mode: str,
+        criteria: Sequence[str] = (),
+    ) -> StationRecorder:
+        """Open a new experiment (and its attempt 1) in the station and record every turn of
+        this project into it from now on. `mode` is how the driver will play: `end_to_end`,
+        `babysat` or `free_run`. The pointer file in the project dir carries the choice to every
+        later per-turn process, so only turn 1's command names it."""
+        station = StationRecorder.start_experiment(
+            self.project_dir,
+            experiment_id,
+            intent=intent,
+            mode=mode,
+            model=self._copilot.client.model,
+            criteria=list(criteria),
+        )
+        self._attach_station(station)
+        return station
+
+    def start_attempt(self, experiment_id: str) -> StationRecorder:
+        """Open the next attempt of an existing experiment on THIS (usually fresh) project; the
+        commits landed since the previous attempt started are recorded as its fixes."""
+        station = StationRecorder.start_attempt(
+            self.project_dir, experiment_id, model=self._copilot.client.model
+        )
+        self._attach_station(station)
+        return station
+
+    def note(self, text: str, *, axis: str = "", turn: int | None = None) -> None:
+        """A driver observation into the log: `axis` names one of the report axes (fidelity /
+        motion / logic / honesty / process / code, or `verdict`), `turn` pins it to a turn."""
+        self._require_station().note(text, axis=axis, turn=turn)
+
+    def end_attempt(self, outcome: str, summary: str = "") -> None:
+        self._require_station().end_attempt(outcome, summary)
+        build_site()
+
+    def _require_station(self) -> StationRecorder:
+        if self.station is None:
+            raise RuntimeError(
+                "no station attached: start_experiment(...) or start_attempt(...) first"
+            )
+        return self.station
+
+    def _attach_station(self, station: StationRecorder) -> None:
+        self.station = station
+        self._copilot.trace_listeners.append(station.on_trace)
+        print(
+            f"    [station: {station.experiment_id} attempt {station.attempt} "
+            f"-> {station.attempt_page}]"
+        )
+
+    def _media_snapshot(self) -> dict[str, int]:
+        renders = self.session.paths.renders_dir
+        try:
+            return {
+                p.name: p.stat().st_mtime_ns for p in renders.iterdir() if p.is_file()
+            }
+        except OSError:
+            return {}
+
+    def _new_media(self) -> list[Path]:
+        # Every file in renders/ that is new or rewritten since the last dump — the harness
+        # helpers and the copilot's own render tools all land there.
+        now = self._media_snapshot()
+        renders = self.session.paths.renders_dir
+        fresh = [
+            renders / name
+            for name, mtime in now.items()
+            if self._media_seen.get(name) != mtime
+        ]
+        self._media_seen = now
+        return sorted(fresh, key=lambda p: p.stat().st_mtime_ns)
 
     # ---- driving a turn ----
 
@@ -689,6 +786,19 @@ class DogfoodHarness:
             "project_dir": str(self.project_dir),
             "data_dir": str(_DATA_DIR),
         }
+        if self.station is not None:
+            recorded = self.station.record_turn(
+                assistant_text=str(payload["assistant_text"]),
+                renders=self._new_media(),
+                renders_root=self.session.paths.renders_dir,
+            )
+            build_site()
+            payload["station"] = {
+                "experiment_id": self.station.experiment_id,
+                "attempt": self.station.attempt,
+                "turn": recorded["n"] if recorded else None,
+                "page": str(self.station.attempt_page),
+            }
         path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         print(f"    [dumped turn-result -> {path}]")
         return payload

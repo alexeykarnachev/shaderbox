@@ -14,12 +14,23 @@ there are NO code assertions. The point is to test the whole PIPELINE and find w
 where context wastes tokens, and what's broken — not to make the copilot write good shaders (use a CHEAP
 model and SIMPLE tasks; it will make mistakes, that's fine).
 
-Features 026 (the harness) + 027 (interactive resume/dump). Everything dogfood lives under ONE dir:
-`scripts/dogfood/` — the harness is `scripts/dogfood/harness.py`, scenarios are
-`scripts/dogfood/scenarios/`, and ALL run artifacts (per-run project dirs, the data dir, JSON dumps,
-traces, PNGs) land in `scripts/dogfood/runs/` (gitignored). The public import is unchanged:
-`from scripts.dogfood import DogfoodHarness`. This skill is the operating manual — the process + every
-gotcha already hit, so you don't re-discover them.
+Features 026 (the harness) + 027 (interactive resume/dump) + 075 (the station). The harness DRIVES a
+run and lives under `scripts/dogfood/` — `harness.py`, `scenarios/`, and ALL run artifacts (per-run
+project dirs, the data dir, JSON dumps, traces, PNGs) in `scripts/dogfood/runs/` (gitignored). The
+**station** RECORDS it: every turn appends to `dogfood/runs/<experiment>/events.jsonl` (committed —
+the durable record, with the renders copied beside it) and `dogfood/index.html` is the one bookmark,
+regenerated on every `dump()`. The public import is unchanged: `from scripts.dogfood import
+DogfoodHarness`. This skill is the operating manual — the process + every gotcha already hit, so you
+don't re-discover them.
+
+**The driver plays a real user, in a MODE chosen before the run** (`end_to_end` — ask for the whole
+thing; `babysat` — move by move; `free_run` — no stated criteria). The mode is data to compare across
+experiments, not a rule. **When the copilot gets stuck:** something that can wait → `h.note()` it and
+keep running; something that BLOCKS the run → file a sub-feature, fix it, commit, re-run as the next
+attempt (the station records the commits between attempts); something really big → stop and ask.
+**No scripted oracle decides an experiment — the maintainer is the final oracle,** looking at the
+renders and videos on the attempt page. Ad-hoc measurement answering one question is welcome; a
+standing checker is the failure.
 
 ## 0. Prerequisites (the run fails without these)
 
@@ -82,23 +93,35 @@ data-driven glyphs of 032 cut that to ~1s). Warm renders are fast (text 300x300 
 a render burns 99% CPU for minutes it's first-draw codegen of an oversized shader, not a deadlock;
 for time-sampled stills load the document directly on a standalone EGL context (no bridge timeout).
 
-**Turn 1 (fresh project):**
+**Turn 1 (fresh project) — opens the experiment in the station:**
 ```
 env OPENROUTER_API_KEY=… uv run python -c '
 from pathlib import Path
 from scripts.dogfood import DogfoodHarness
 h = DogfoodHarness.create()                          # seeded project (UV Mango / Media / Text)
 # h = DogfoodHarness.create(seed_examples=False)     # empty -> create_document from scratch
+h.start_experiment("rc_full_build",                  # ONCE per experiment; the id names dogfood/runs/<id>/
+    intent="a fully working radiance-cascades project: script, drawing, multipass",
+    mode="babysat",                                  # end_to_end | babysat | free_run — chosen UP FRONT
+    criteria=["cascade merge visibly lights the scene", "drawing adds emitters live"])   # optional
 h.send("Make the current shader output solid red. Keep it simple.")
 h.drive_until_idle()                                 # pump worker+bridge; STOPS on a gate
 h.render(size=400)                                   # 400x400 PNG (path echoed in the dump)
-h.dump(Path("scripts/dogfood/runs/turn.json"))       # persist convo + write the JSON turn-result
+h.dump(Path("scripts/dogfood/runs/turn.json"))       # persist convo + turn JSON + the station record + rebuild the site
 h.release()'
 cat scripts/dogfood/runs/turn.json                   # READ the result; note project_dir + data_dir
 ```
 The JSON has `new_messages`, `assistant_text`, `open_gate`, `last_turn` (tokens/cost), `session_cost_usd`,
-`last_render_path`, `trace_path`, and the two stable paths `project_dir` + `data_dir` to reuse next turn.
-**Read the dumped `last_render_path` PNG** — the visual check is the whole point.
+`last_render_path`, `trace_path`, the two stable paths `project_dir` + `data_dir` to reuse next turn, and
+`station` (`experiment_id`, `attempt`, `turn`, and `page` — the attempt's HTML). **Read the dumped
+`last_render_path` PNG** — the visual check is the whole point — and open `page` when you want the whole
+run: every turn, the tool calls, the renders inline, and per request what the copilot's context CONTAINED.
+
+`dump()` records the turn on its own: user text, reply, every tool call with args and result, per-request
+usage, gates, the terminal, every file that appeared in `renders/` since the last dump (harness helpers
+AND the copilot's own `render_image`/`render_video` — PNGs inline, webm/mp4 as `<video>`), plus one
+`context` record per LLM request joined to its billed usage. **No logging call in the turn command.**
+Only turn 1 names the experiment — a pointer file in the project dir carries it to every resumed turn.
 
 **Turn 2+ (resume — REUSE the same project_dir AND SHADERBOX_DATA_DIR from turn 1's dump):**
 ```
@@ -115,6 +138,16 @@ cat scripts/dogfood/runs/turn.json
 import (the env block runs when `scripts.dogfood` is imported, before any `create()` arg). Setting it
 in-script after import loses to the already-run `setdefault`. Same for the resume project_dir: it's a
 `create()` arg, but the data dir is env-only.
+
+**Mid-run and closing calls (any turn's command, after `create()`):**
+```python
+h.note("the cascade merge reads as flat grey", axis="fidelity", turn=4)   # axis: fidelity|motion|logic|honesty|process|code|verdict, or ""
+h.end_attempt("abandoned", "stuck on the merge; fixing the sampler wiring first")   # outcome: success|abandoned|…
+```
+`end_attempt` closes the attempt (the page stops refreshing). **Attempt N+1** — after the fixes are
+committed — starts on a FRESH project and records every commit landed since attempt N's sha as its
+fixes: `h = DogfoodHarness.create(); h.start_attempt("rc_full_build"); h.send(...)`. Rebuild the site
+by hand with `uv run python -m dogfood.report.build` (or `--watch` to keep an open tab current).
 
 **Gates are answered WITHIN one process — a gate CANNOT span two turns.** A gate pauses the worker
 mid-turn; the worker dies on process exit and a gated turn is never persisted, so there is no "dump the
@@ -335,12 +368,15 @@ eager_tools), each `llm_request` (the FULL messages array — system prompt + pr
 the native `tools=` block — + max_tokens), each `llm_response` (finish_reason + text + tool_calls +
 `usage: in/out/cost`), each `tool_call` (name + args + ok + result), `turn_done` (summed usage).
 
-**Run `uv run python scripts/dogfood/analyze.py <data_dir> --scenario <name>` to auto-extract** tool
-coverage, the per-turn iteration/token/cost table, recoveries, the token-growth shape, AND the honesty
-axis's AUTO half — paste its markdown block into the report §6/§7 instead of hand-summing. (The
-per-section context_breakdown — system prompt vs project map vs working set vs `tools=` block — remains a
-separate deferred trace event, not yet automated; for that, split one `llm_request` block by hand,
-~chars/4.)
+**The attempt page already shows all of this** (075): the per-turn table, tool coverage, the limit-forced
+turns, token/cost mechanics — and, per LLM request, the **context panel**: a proportional bar of every
+block (`static` / `project_context` / `dialogue` / `pending_user` / `turn_exchange` / `working_set` /
+`tools`), each expandable to the exact text sent, the trim flag when history was dropped, the estimate
+against the billed input and the cache share, plus a growth table across turns. Measured 2026-09-04 on
+codex-mini: the chars/4 estimate runs ~7-8% ABOVE the billed input (ratio 1.07-1.08), so read the bar
+as proportions and the billed column as the number. For a data dir with no station record,
+`uv run python scripts/dogfood/analyze.py <data_dir> --scenario <name>` still extracts the same AUTO
+half as a markdown block.
 
 **A facts-bearing tool result carries a 500-char legend — that is expected, not prompt bloat.** Since
 059 wave C, the FIRST result of each turn whose text holds a `render@t=` facts line gets
@@ -368,11 +404,18 @@ iteration's input — e.g. 68k on the 4-document read turn); the real per-turn C
 per-iteration `in=` (analyze.py's `peak_iter_in_tokens`, ~10k on that turn). Don't report the cumulative
 figure as "context size" — it's the cost driver, the peak is the context-size driver.
 
-## 4. The report (template + analyzer flow)
+## 4. The report — the attempt page, plus the markdown flow for a scenario run
 
-The report is half AUTO (filled by the analyzer from logs — you never hand-sum), half HUMAN (your
-judgment), structured as the **six axes**: `fidelity` · `motion` · `logic` · `honesty` · `process` ·
-`code`. **ONE report per SCENARIO** (a run's data dir holds one scenario). Flow:
+**Since 075 the attempt page IS the report** for an experiment: its six axes (`fidelity` · `motion` ·
+`logic` · `honesty` · `process` · `code`) are sections, the AUTO halves (process, the honesty
+limit-forced list) filled from the log, the HUMAN halves filled by your `h.note(..., axis=...)` calls as
+you go — an axis with no note says so on the page. Close with `h.end_attempt(outcome, summary)`; the
+verdict is that summary. The axes below describe what each note should carry.
+
+The markdown flow that follows is the pre-station shape (a `REPORT_TEMPLATE.md` copy under
+`ai_docs/features/`), still the right tool for a SCENARIO run judged against `scripts/dogfood/scenarios/`
+rather than an open experiment. Half AUTO (filled by the analyzer from logs — you never hand-sum), half
+HUMAN (your judgment). **ONE report per SCENARIO** (a run's data dir holds one scenario). Flow:
 
 1. Copy `scripts/dogfood/REPORT_TEMPLATE.md` → `ai_docs/features/NNN_dogfood_report_<run>.md` (durable,
    roadmap-linked finding — stays in `ai_docs/features/`, NOT under `scripts/dogfood/`).
@@ -416,11 +459,14 @@ No throwaway driver to delete (the one-blocking-call-per-turn shape has none). A
 `scripts/dogfood/runs/` (gitignored). To free disk between runs:
 `rm -rf scripts/dogfood/runs/{data-*,proj-*,*.json}` (regenerable — the harness recreates `runs/` on the
 next run; the dumps are the stray `*.json`). NOTE: these data dirs hold the LIVE OpenRouter key in their
-`integrations.json`, so purging them is also key hygiene. Keep the report (durable, in `ai_docs/features/`);
-if a reviewer needs your trace, copy the specific `trace_path` somewhere durable before the purge. The
-harness + analyzer + template + scenarios + this skill stay. Prioritized findings live in the REPORT (§9,
-split copilot/framework) and their durable half goes to the feature ledger / spec or
-`conventions.md` — `todo.md` is frozen drain-only and takes no new entries.
+`integrations.json`, so purging them is also key hygiene. **The station record survives the purge**:
+`dogfood/runs/<experiment>/` holds the log, every render the run produced, and the full text of every
+context block, so nothing in a run dir needs copying out first — `git add dogfood/runs` and commit it
+with the attempt. The generated HTML is gitignored (one command rebuilds it). Keep a markdown report
+(when a scenario run wrote one) in `ai_docs/features/`. The harness + analyzer + template + scenarios +
+this skill stay. Prioritized findings live on the attempt page as notes (or in the REPORT §9 for a
+scenario run) and their durable half goes to the feature ledger / spec or `conventions.md` — `todo.md`
+is frozen drain-only and takes no new entries.
 
 ## 6. Improve this skill
 

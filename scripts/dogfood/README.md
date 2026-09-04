@@ -27,6 +27,13 @@ standalone EGL context (no App/glfw) against a real LLM, interactively, one bloc
 - **`runs/`** — gitignored run artifacts (per-run project dirs, data dir, JSON dumps, traces, PNGs).
   Purge between runs: `rm -rf scripts/dogfood/runs/{data-*,proj-*,*.json}` (regenerable; also clears the
   live OpenRouter key the data dirs hold).
+- **The station (`dogfood/`, feature 075)** — the durable record the harness writes INTO:
+  `h.start_experiment(id, intent=, mode=)` once, then every `dump()` appends the turn (tool calls,
+  usage, renders copied beside the log, one context breakdown per LLM request) to
+  `dogfood/runs/<id>/events.jsonl` and rebuilds the site; `dogfood/index.html` is the bookmark.
+  `h.note(text, axis=)` and `h.end_attempt(outcome, summary)` fill the axes; `h.start_attempt(id)` opens
+  attempt N+1 and records the commits since attempt N. `uv run python -m dogfood.report.build [--watch]`
+  rebuilds by hand.
 
 **Operating manual = the `/dogfood` skill** (`.claude/skills/dogfood/SKILL.md`) — the run commands, the
 `~/.bashrc` key footgun, the gate rule, the tool-coverage discipline. Don't duplicate them here.

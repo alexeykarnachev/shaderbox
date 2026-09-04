@@ -133,3 +133,33 @@ static build is a one-liner); committing the generated HTML (it would drift from
 moment a run appends without a rebuild).
 surprise: the growth legend keyed off the LAST row and showed only `tools ~0` when that row was
 an in-progress turn with no blocks; it now merges names across rows.
+
+## W-3 harness + skill integration — DONE   8abf894
+done-condition: driving a turn writes its record with no explicit logging call in the command,
+and the skill's §1 commands produce a browsable page.
+did: `dogfood/report/station.py::StationRecorder` — a trace listener that folds one turn's
+events (user text from `turn_start`, per-request usage from `llm_response`, `tool_call`s, gates,
+the terminal and its `cutoff`, each `context_breakdown`) into an accumulator; `dump()` hands it
+the user-visible reply and every file that appeared in `renders/` since the last dump, and it
+writes the `turn` record with the renders copied into `dogfood/runs/<id>/media/<attempt>/`. A
+context record is written when its request's billed usage arrives (joined), or unbilled at
+turn end if the stream never finished; `flush()` on the kill-persist signal path records an
+interrupted turn. A pointer file in the project dir carries experiment + attempt across the
+one-process-per-turn shape; a resumed recorder numbers past a turn that died before dump so
+its orphan context is never inherited. `start_attempt` records every commit since the previous
+attempt's sha as `fix` records (D6). Harness: `start_experiment` / `start_attempt` / `note` /
+`end_attempt`, `dump()` records + rebuilds the site and echoes `station.page`. Skill §1/§3/§4/§5
+rewritten to this flow, with the driving discipline and the no-oracle rule at the top.
+verification: make gates GREEN (exit 0, read unpiped). Live: two real turns on codex-mini
+(`station_smoke`, kept in the store as the station's own check), turn 2 as a resumed process
+with `render_strip` + `render_video_mp4` + a note; the page shows both renders inline, the mp4
+as `<video>`, and per-request context panels. **Estimate vs billed (the W-1 tolerance): the
+chars/4 estimate ran 7-8% ABOVE the billed input on every request (10418 vs 9656, 10665 vs
+9985, 10570 vs 9834) — read the bar as proportions, the billed column as the number.**
+ruled out: writing context records at breakdown time (append-only means no later join with the
+billed usage; the kill path is covered by `flush()` instead); parsing renders out of tool
+payloads (a snapshot diff of `renders/` catches the harness helpers and the copilot's tools
+alike).
+surprise: `pre-commit --all-files` checks TRACKED files only, so W-2's gate ran green over an
+untracked `build.py` that carried five RUF001 hits; they surfaced once the file was staged. Stage
+new files before `make gates`.

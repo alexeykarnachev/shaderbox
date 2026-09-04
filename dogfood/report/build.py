@@ -116,14 +116,12 @@ def _e(text: object) -> str:
 
 
 def _page(title: str, body: str, *, crumbs: str = "", live: bool = False) -> str:
-    refresh = (
-        f'<meta http-equiv="refresh" content="{LIVE_REFRESH_S}">' if live else ""
-    )
+    refresh = f'<meta http-equiv="refresh" content="{LIVE_REFRESH_S}">' if live else ""
     return (
-        "<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">"
-        f"<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">{refresh}"
+        '<!doctype html>\n<html lang="en"><head><meta charset="utf-8">'
+        f'<meta name="viewport" content="width=device-width, initial-scale=1">{refresh}'
         f"<title>{_e(title)}</title><style>{_CSS}</style></head><body><main>"
-        f"{f'<nav class=\"crumbs\">{crumbs}</nav>' if crumbs else ''}{body}</main></body></html>\n"
+        f"{f'<nav class="crumbs">{crumbs}</nav>' if crumbs else ''}{body}</main></body></html>\n"
     )
 
 
@@ -146,7 +144,11 @@ def _pct(part: int, whole: int) -> str:
 def _glyph(turn: TurnRecord) -> str:
     if turn.terminal in HARD_FAIL_TERMINALS:
         return "🔴"
-    if turn.cutoff or turn.terminal in LIMIT_TERMINALS or turn.terminal == "turn_truncated":
+    if (
+        turn.cutoff
+        or turn.terminal in LIMIT_TERMINALS
+        or turn.terminal == "turn_truncated"
+    ):
         return "⚠️"
     return "✅"
 
@@ -227,14 +229,14 @@ def _context_request(ctx: ContextRecord) -> str:
         )
         blocks_html.append(
             f'<details><summary><i class="{_block_class(name)}" style="display:inline-block;width:.8em;height:.8em;border-radius:2px;margin-right:.3em"></i>'
-            f"<code>{_e(name)}</code> <span class=\"muted small\">{b.get('volatility', '')} · "
+            f'<code>{_e(name)}</code> <span class="muted small">{b.get("volatility", "")} · '
             f"{int(b.get('messages', 0))} msgs · {int(b.get('chars', 0))} chars · ~{int(b.get('est_tokens', 0))} tok</span>{flag}</summary>"
             f"<pre>{_e(b.get('text', '')) or '(empty)'}</pre></details>"
         )
     tools = ctx.payload.get("tools", [])
     blocks_html.append(
         f'<details><summary><i class="b-tools" style="display:inline-block;width:.8em;height:.8em;border-radius:2px;margin-right:.3em"></i>'
-        f"<code>tools</code> <span class=\"muted small\">{len(tools)} tools · {int(ctx.payload.get('tools_chars', 0))} chars · "
+        f'<code>tools</code> <span class="muted small">{len(tools)} tools · {int(ctx.payload.get("tools_chars", 0))} chars · '
         f"~{int(ctx.payload.get('tools_est_tokens', 0))} tok</span></summary>"
         f"<pre>{_e(ctx.payload.get('tools_text', ''))}</pre></details>"
     )
@@ -247,9 +249,14 @@ def _context_request(ctx: ContextRecord) -> str:
 def _context_panel(contexts: list[ContextRecord]) -> str:
     if not contexts:
         return '<div class="ctx muted small">No context breakdown recorded for this turn.</div>'
-    return '<div class="ctx"><b>Context</b>' + "".join(
-        _context_request(c) for c in sorted(contexts, key=lambda c: (c.iteration < 0, c.iteration))
-    ) + "</div>"
+    return (
+        '<div class="ctx"><b>Context</b>'
+        + "".join(
+            _context_request(c)
+            for c in sorted(contexts, key=lambda c: (c.iteration < 0, c.iteration))
+        )
+        + "</div>"
+    )
 
 
 def _growth(attempt: Attempt) -> str:
@@ -265,15 +272,15 @@ def _growth(attempt: Attempt) -> str:
         return ""
     scale = max(c.est_total_tokens or 1 for _, c in firsts)
     rows = "".join(
-        f"<tr><td>{_e(label)}</td><td style=\"width:60%\">{_bar(_parts(c), scale, absolute=True)}</td>"
-        f"<td class=\"num\">~{c.est_total_tokens}</td>"
-        f"<td class=\"num\">{int((c.billed or {}).get('input_tokens', 0)) or '—'}</td>"
-        f"<td class=\"num\">{_pct(int((c.billed or {}).get('cached_tokens', 0)), int((c.billed or {}).get('input_tokens', 0)))}</td></tr>"
+        f'<tr><td>{_e(label)}</td><td style="width:60%">{_bar(_parts(c), scale, absolute=True)}</td>'
+        f'<td class="num">~{c.est_total_tokens}</td>'
+        f'<td class="num">{int((c.billed or {}).get("input_tokens", 0)) or "—"}</td>'
+        f'<td class="num">{_pct(int((c.billed or {}).get("cached_tokens", 0)), int((c.billed or {}).get("input_tokens", 0)))}</td></tr>'
         for label, c in firsts
     )
     return (
-        "<h2 id=\"growth\">Context growth</h2><p class=\"muted small\">The first request of each turn, on one absolute scale.</p>"
-        "<table><tr><th></th><th>blocks</th><th class=\"num\">estimated</th><th class=\"num\">billed</th><th class=\"num\">cached</th></tr>"
+        '<h2 id="growth">Context growth</h2><p class="muted small">The first request of each turn, on one absolute scale.</p>'
+        '<table><tr><th></th><th>blocks</th><th class="num">estimated</th><th class="num">billed</th><th class="num">cached</th></tr>'
         f"{rows}</table>{_legend(_names_legend(firsts))}"
     )
 
@@ -313,16 +320,18 @@ def _tool_call_html(call: dict[str, Any]) -> str:
     result = str(call.get("result", ""))
     payload = call.get("payload")
     payload_html = (
-        f"<details><summary class=\"small muted\">payload</summary><pre>{_e(json.dumps(payload, indent=1, ensure_ascii=False, default=str))}</pre></details>"
+        f'<details><summary class="small muted">payload</summary><pre>{_e(json.dumps(payload, indent=1, ensure_ascii=False, default=str))}</pre></details>'
         if payload
         else ""
     )
-    head = result.strip().splitlines()[0][:110] if result.strip() else "(no result text)"
+    head = (
+        result.strip().splitlines()[0][:110] if result.strip() else "(no result text)"
+    )
     return (
         f'<details class="tool {"ok" if ok else "fail"}"><summary><code>{_e(name)}</code> '
         f'<span class="muted small">{"ok" if ok else "FAILED"} · {_e(head)}</span></summary>'
-        f"<div class=\"small muted\">args</div><pre>{_e(args_text)}</pre>"
-        f"<div class=\"small muted\">result</div><pre>{_e(result)}</pre>{payload_html}</details>"
+        f'<div class="small muted">args</div><pre>{_e(args_text)}</pre>'
+        f'<div class="small muted">result</div><pre>{_e(result)}</pre>{payload_html}</details>'
     )
 
 
@@ -356,14 +365,16 @@ def _turn_html(turn: TurnRecord, notes_html: str) -> str:
         f'<section class="turn" id="turn-{turn.n}"><div class="turn-head"><span class="n">Turn {turn.n} {_glyph(turn)}</span>'
         f'<span class="muted small">{_stamp(turn.ts)} · {_e(terminal)} · {_e(_usage_line(turn))}</span></div>'
         f'<div class="msg user"><span class="who">user</span>{_e(turn.user_text)}</div>'
-        f'{f"<div class=\"tools\">{tools}</div>" if tools else ""}{gates}'
+        f"{f'<div class="tools">{tools}</div>' if tools else ''}{gates}"
         f'<div class="msg assistant"><span class="who">copilot</span>{_e(turn.assistant_text) or "<i class=muted>(no reply text)</i>"}</div>'
-        f'{f"<div class=\"renders\">{renders}</div>" if renders else ""}'
+        f"{f'<div class="renders">{renders}</div>' if renders else ''}"
         f"{notes_html}{_context_panel(turn.contexts)}</section>"
     )
 
 
-def _notes_html(attempt: Attempt, *, axis: str | None = None, turn: int | None = None) -> str:
+def _notes_html(
+    attempt: Attempt, *, axis: str | None = None, turn: int | None = None
+) -> str:
     chosen = [
         n
         for n in attempt.notes
@@ -373,41 +384,43 @@ def _notes_html(attempt: Attempt, *, axis: str | None = None, turn: int | None =
         return ""
     return "".join(
         f'<div class="note"><span class="muted small">{_stamp(n.ts)}'
-        f'{f" · {_e(n.axis)}" if n.axis and axis is None else ""}'
-        f'{f" · turn {n.turn}" if n.turn is not None and turn is None else ""}</span><br>{_e(n.text)}</div>'
+        f"{f' · {_e(n.axis)}' if n.axis and axis is None else ''}"
+        f"{f' · turn {n.turn}' if n.turn is not None and turn is None else ''}</span><br>{_e(n.text)}</div>"
         for n in chosen
     )
 
 
 def _axis(title: str, blurb: str, auto: str, human: str) -> str:
-    body = auto + (human or '<p class="muted small">Nothing recorded for this axis yet.</p>')
-    return f"<h3>{_e(title)}</h3><p class=\"muted small\">{_e(blurb)}</p>{body}"
+    body = auto + (
+        human or '<p class="muted small">Nothing recorded for this axis yet.</p>'
+    )
+    return f'<h3>{_e(title)}</h3><p class="muted small">{_e(blurb)}</p>{body}'
 
 
 def _process_axis(attempt: Attempt) -> str:
     rows = "".join(
-        f"<tr><td><a href=\"#turn-{t.n}\">{t.n}</a></td><td>{_e(t.user_text.strip().replace(chr(10), ' ')[:60])}</td>"
+        f'<tr><td><a href="#turn-{t.n}">{t.n}</a></td><td>{_e(t.user_text.strip().replace(chr(10), " ")[:60])}</td>'
         f"<td>{_e(', '.join(str(c.get('name', '')) for c in t.tool_calls) or '-')}</td><td>{_glyph(t)}</td>"
-        f"<td class=\"num\">{t.peak_input_tokens}</td><td class=\"num\">{int(t.usage.get('input_tokens', 0))}</td>"
-        f"<td class=\"num\">{_money(t.cost_usd)}</td></tr>"
+        f'<td class="num">{t.peak_input_tokens}</td><td class="num">{int(t.usage.get("input_tokens", 0))}</td>'
+        f'<td class="num">{_money(t.cost_usd)}</td></tr>'
         for t in attempt.turns
     )
     per_turn = (
-        "<table><tr><th>#</th><th>ask</th><th>tools fired</th><th>result</th><th class=\"num\">peak ctx</th>"
-        f"<th class=\"num\">billed in</th><th class=\"num\">cost</th></tr>{rows}</table>"
+        '<table><tr><th>#</th><th>ask</th><th>tools fired</th><th>result</th><th class="num">peak ctx</th>'
+        f'<th class="num">billed in</th><th class="num">cost</th></tr>{rows}</table>'
     )
     counts = _tool_counts(attempt)
     used = [t for t in REACHABLE_TOOLS if t in counts]
     cov_rows = "".join(
-        f"<tr><td><code>{_e(t)}</code></td><td>{'✅' if t in counts else '❌'}</td><td class=\"num\">{counts.get(t, 0)}</td></tr>"
+        f'<tr><td><code>{_e(t)}</code></td><td>{"✅" if t in counts else "❌"}</td><td class="num">{counts.get(t, 0)}</td></tr>'
         for t in REACHABLE_TOOLS
     )
     unknown = sorted(n for n in counts if n not in REACHABLE_TOOLS)
     coverage = (
         f"<details><summary>Tool coverage: {len(used)}/{len(REACHABLE_TOOLS)} reachable tools"
-        f"{f' · cold: {_e(', '.join(t for t in REACHABLE_TOOLS if t not in counts))}' if len(used) < len(REACHABLE_TOOLS) else ''}</summary>"
-        f"<table><tr><th>tool</th><th>used</th><th class=\"num\">count</th></tr>{cov_rows}</table>"
-        f"{f'<p class=small>Also fired (outside the reachable set): {_e(', '.join(unknown))}</p>' if unknown else ''}</details>"
+        f"{f' · cold: {_e(", ".join(t for t in REACHABLE_TOOLS if t not in counts))}' if len(used) < len(REACHABLE_TOOLS) else ''}</summary>"
+        f'<table><tr><th>tool</th><th>used</th><th class="num">count</th></tr>{cov_rows}</table>'
+        f"{f'<p class=small>Also fired (outside the reachable set): {_e(", ".join(unknown))}</p>' if unknown else ''}</details>"
     )
     total_in = _sum_usage(attempt, "input_tokens")
     cached = _sum_usage(attempt, "cached_tokens")
@@ -417,9 +430,9 @@ def _process_axis(attempt: Attempt) -> str:
     costs = [t.cost_usd for t in attempt.turns]
     mechanics = (
         '<div class="kv">'
-        f"<b>context peak</b><span>{min(peaks) if peaks else 0}–{max(peaks) if peaks else 0} tok"
+        f"<b>context peak</b><span>{min(peaks) if peaks else 0}&ndash;{max(peaks) if peaks else 0} tok"
         f"{f', peak on turn {peaks.index(max(peaks)) + 1}' if peaks else ''}</span>"
-        f"<b>cost per turn</b><span>{_money(min(costs)) if costs else '—'}–{_money(max(costs)) if costs else '—'}"
+        f"<b>cost per turn</b><span>{_money(min(costs)) if costs else '—'}&ndash;{_money(max(costs)) if costs else '—'}"
         f"{f', dearest turn {costs.index(max(costs)) + 1}' if costs else ''}</span>"
         f"<b>cache</b><span>{cached}/{total_in} input tokens cached ({_pct(cached, total_in)})</span>"
         f"<b>reasoning</b><span>{rsn}/{total_out} output tokens were hidden reasoning ({_pct(rsn, total_out)})</span>"
@@ -448,26 +461,51 @@ def _attempt_page(exp: Experiment, attempt: Attempt) -> str:
         f"{f'<h2>Landed before this attempt</h2>{fixes}' if fixes else ''}"
     )
     verdict = (
-        f"<h2 id=\"verdict\">Verdict</h2><p>{'In progress.' if attempt.live else _e(attempt.summary) or '<i class=muted>(no summary recorded)</i>'}</p>"
+        f'<h2 id="verdict">Verdict</h2><p>{"In progress." if attempt.live else _e(attempt.summary) or "<i class=muted>(no summary recorded)</i>"}</p>'
         + (_notes_html(attempt, axis="verdict") if not attempt.live else "")
     )
     limit_forced = _limit_forced(attempt)
     axes = (
-        "<h2 id=\"axes\">Axes</h2>"
-        + _axis("fidelity", "Did every sub-requirement land? The driver's notes, citing what decided each.", "", _notes_html(attempt, axis="fidelity"))
-        + _axis("motion", "Does it move as intended? Strips and videos are the evidence.", "", _notes_html(attempt, axis="motion"))
-        + _axis("logic", "Do the driven values match? script_values samples are the evidence.", "", _notes_html(attempt, axis="logic"))
+        '<h2 id="axes">Axes</h2>'
+        + _axis(
+            "fidelity",
+            "Did every sub-requirement land? The driver's notes, citing what decided each.",
+            "",
+            _notes_html(attempt, axis="fidelity"),
+        )
+        + _axis(
+            "motion",
+            "Does it move as intended? Strips and videos are the evidence.",
+            "",
+            _notes_html(attempt, axis="motion"),
+        )
+        + _axis(
+            "logic",
+            "Do the driven values match? script_values samples are the evidence.",
+            "",
+            _notes_html(attempt, axis="logic"),
+        )
         + _axis(
             "honesty",
             "Claims against the measured facts and against the eye. Limit-forced turns first: that is where blind summaries hide.",
             f"<p><b>Limit-forced turns:</b> {_e(', '.join(limit_forced)) if limit_forced else 'none (every turn finished on its own)'}</p>",
             _notes_html(attempt, axis="honesty"),
         )
-        + _axis("process", "Per turn, tool coverage, token and cost mechanics — from the log.", _process_axis(attempt), _notes_html(attempt, axis="process"))
-        + _axis("code", "Is the produced code good? Line evidence from the final sources.", "", _notes_html(attempt, axis="code"))
+        + _axis(
+            "process",
+            "Per turn, tool coverage, token and cost mechanics — from the log.",
+            _process_axis(attempt),
+            _notes_html(attempt, axis="process"),
+        )
+        + _axis(
+            "code",
+            "Is the produced code good? Line evidence from the final sources.",
+            "",
+            _notes_html(attempt, axis="code"),
+        )
     )
     general = _notes_html(attempt, axis="")
-    conversation = "<h2 id=\"conversation\">Conversation</h2>" + "".join(
+    conversation = '<h2 id="conversation">Conversation</h2>' + "".join(
         _turn_html(t, _notes_html(attempt, turn=t.n)) for t in attempt.turns
     )
     if attempt.orphan_contexts:
@@ -481,7 +519,7 @@ def _attempt_page(exp: Experiment, attempt: Attempt) -> str:
             )
     if not attempt.turns and not attempt.orphan_contexts:
         conversation += '<p class="muted">No turns yet.</p>'
-    crumbs = f'<a href="../../index.html">station</a> › <a href="index.html">{_e(exp.id)}</a> › attempt {attempt.n}'
+    crumbs = f'<a href="../../index.html">station</a> &rsaquo; <a href="index.html">{_e(exp.id)}</a> &rsaquo; attempt {attempt.n}'
     body = (
         head
         + verdict
@@ -490,7 +528,9 @@ def _attempt_page(exp: Experiment, attempt: Attempt) -> str:
         + axes
         + conversation
     )
-    return _page(f"{exp.id} · attempt {attempt.n}", body, crumbs=crumbs, live=attempt.live)
+    return _page(
+        f"{exp.id} · attempt {attempt.n}", body, crumbs=crumbs, live=attempt.live
+    )
 
 
 # ---- the experiment page ----
@@ -500,25 +540,26 @@ def _experiment_page(exp: Experiment) -> str:
     rows = "".join(
         f'<tr><td><a href="attempt_{a.n}.html">attempt {a.n}</a></td><td>{_e(a.model or "—")}</td>'
         f"<td><code>{_e(a.sha[:9] or '—')}</code></td><td>{_stamp(a.started)}</td><td>{_stamp(a.ended)}</td>"
-        f"<td>{'<span class=\"pill live\">LIVE</span>' if a.live else _e(a.outcome or 'ended')}</td>"
-        f"<td class=\"num\">{len(a.turns)}</td><td class=\"num\">{_money(a.cost_usd)}</td>"
-        f"<td class=\"num\">{len(a.fixes)}</td></tr>"
+        f"<td>{'<span class="pill live">LIVE</span>' if a.live else _e(a.outcome or 'ended')}</td>"
+        f'<td class="num">{len(a.turns)}</td><td class="num">{_money(a.cost_usd)}</td>'
+        f'<td class="num">{len(a.fixes)}</td></tr>'
         for a in exp.attempts
     )
     table = (
         "<table><tr><th>attempt</th><th>model</th><th>code</th><th>started</th><th>ended</th><th>outcome</th>"
-        f"<th class=\"num\">turns</th><th class=\"num\">cost</th><th class=\"num\">fixes before</th></tr>{rows}</table>"
+        f'<th class="num">turns</th><th class="num">cost</th><th class="num">fixes before</th></tr>{rows}</table>'
     )
     changes = ""
     for a in exp.attempts:
         if a.fixes or a.summary:
             fixes = "".join(
-                f'<div class="fix"><code>{_e(f.sha[:9])}</code> {_e(f.subject)}</div>' for f in a.fixes
+                f'<div class="fix"><code>{_e(f.sha[:9])}</code> {_e(f.subject)}</div>'
+                for f in a.fixes
             )
             changes += (
                 f"<h3>Attempt {a.n}{f' — {_e(a.outcome)}' if a.outcome else ''}</h3>"
                 f"{f'<p>{_e(a.summary)}</p>' if a.summary else ''}"
-                f"{f'<p class=\"muted small\">Landed since the previous attempt:</p>{fixes}' if fixes else ''}"
+                f"{f'<p class="muted small">Landed since the previous attempt:</p>{fixes}' if fixes else ''}"
             )
     criteria = (
         "<ul>" + "".join(f"<li>{_e(c)}</li>" for c in exp.criteria) + "</ul>"
@@ -526,7 +567,9 @@ def _experiment_page(exp: Experiment) -> str:
         else "<span class=muted>none stated (a free run)</span>"
     )
     warnings = (
-        f'<p class="warn small">Log warnings: {_e("; ".join(exp.warnings))}</p>' if exp.warnings else ""
+        f'<p class="warn small">Log warnings: {_e("; ".join(exp.warnings))}</p>'
+        if exp.warnings
+        else ""
     )
     body = (
         f"<h1>{_e(exp.id)}</h1>"
@@ -535,7 +578,7 @@ def _experiment_page(exp: Experiment) -> str:
         f"<b>cost</b><span>{_money(exp.cost_usd)}</span></div>{warnings}"
         f"<h2>Attempts</h2>{table}{f'<h2>What changed between attempts</h2>{changes}' if changes else ''}"
     )
-    crumbs = f'<a href="../../index.html">station</a> › {_e(exp.id)}'
+    crumbs = f'<a href="../../index.html">station</a> &rsaquo; {_e(exp.id)}'
     return _page(exp.id, body, crumbs=crumbs, live=exp.live)
 
 
@@ -553,15 +596,15 @@ def _prior_reports(root: Path) -> list[Path]:
 def _index_page(root: Path, experiments: list[Experiment]) -> str:
     rows = "".join(
         f'<tr><td><a href="{STORE_DIR_NAME}/{_e(e.id)}/index.html">{_e(e.id)}</a></td><td>{_e(e.intent)}</td>'
-        f"<td>{_e(e.mode)}</td><td class=\"num\">{len(e.attempts)}</td>"
+        f'<td>{_e(e.mode)}</td><td class="num">{len(e.attempts)}</td>'
         f"<td>{_e(', '.join(sorted({a.model for a in e.attempts if a.model})) or '—')}</td>"
-        f"<td>{'<span class=\"pill live\">LIVE</span>' if e.live else _e(e.attempts[-1].outcome if e.attempts else '') or '—'}</td>"
-        f"<td>{_stamp(e.last_activity)}</td><td class=\"num\">{_money(e.cost_usd)}</td></tr>"
+        f"<td>{'<span class="pill live">LIVE</span>' if e.live else _e(e.attempts[-1].outcome if e.attempts else '') or '—'}</td>"
+        f'<td>{_stamp(e.last_activity)}</td><td class="num">{_money(e.cost_usd)}</td></tr>'
         for e in experiments
     )
     table = (
-        "<table><tr><th>experiment</th><th>intent</th><th>mode</th><th class=\"num\">attempts</th><th>models</th>"
-        f"<th>status</th><th>last activity</th><th class=\"num\">cost</th></tr>{rows}</table>"
+        '<table><tr><th>experiment</th><th>intent</th><th>mode</th><th class="num">attempts</th><th>models</th>'
+        f'<th>status</th><th>last activity</th><th class="num">cost</th></tr>{rows}</table>'
         if experiments
         else '<p class="muted">No experiments recorded yet.</p>'
     )
@@ -573,7 +616,7 @@ def _index_page(root: Path, experiments: list[Experiment]) -> str:
         "<h1>Dogfooding station</h1>"
         '<p class="muted">Every experiment, newest activity first. The log is the source of truth; these pages are a view of it.</p>'
         f"{table}"
-        f"{f'<h2>Prior runs</h2><p class=\"muted small\">Reports written before the station existed, linked as they are.</p><ul>{prior}</ul>' if prior else ''}"
+        f"{f'<h2>Prior runs</h2><p class="muted small">Reports written before the station existed, linked as they are.</p><ul>{prior}</ul>' if prior else ''}"
     )
     return _page("Dogfooding station", body, live=any(e.live for e in experiments))
 
@@ -623,7 +666,9 @@ def watch(root: Path, interval_s: float) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build the dogfooding station site.")
     parser.add_argument("--root", type=Path, default=DOGFOOD_ROOT)
-    parser.add_argument("--watch", action="store_true", help="rebuild on every log change")
+    parser.add_argument(
+        "--watch", action="store_true", help="rebuild on every log change"
+    )
     parser.add_argument("--interval", type=float, default=1.0)
     args = parser.parse_args()
     if args.watch:

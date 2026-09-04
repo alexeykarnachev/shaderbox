@@ -65,7 +65,7 @@ class EventLog:
         if kind not in KINDS:
             raise ValueError(f"unknown event kind {kind!r}; one of {KINDS}")
         event = Event(self.experiment_id, attempt, utc_now(), kind, dict(payload))
-        line = json.dumps(asdict(event), ensure_ascii=False)
+        line = json.dumps(asdict(event), ensure_ascii=False, default=str)
         data = line.encode("utf-8") + b"\n"
         with self._lock:
             self.path.parent.mkdir(parents=True, exist_ok=True)
