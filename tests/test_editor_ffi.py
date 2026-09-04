@@ -114,19 +114,25 @@ def test_read_only_blocks_user_not_host() -> None:
 
 
 def test_read_only_refuses_every_editing_key_not_just_insert() -> None:
-    # The library decided what read-only refuses from a hand-written list of editing keys,
-    # so a key added to the keymap later reached the buffer through a locked editor. `>` and
-    # `<` had drifted out of it and DID edit under read-only at the sha this repo shipped
-    # before f738744 (measured: `>>` indented a locked line). tabs/code.py locks the editor
-    # for the whole copilot turn, so that was a live path to a buffer the host believed
-    # frozen. One key per shape rather than one key: the point is the CLASS.
-    text = "  alpha beta\n"
+    # The library decided what read-only refuses from a hand-written list of editing keys, so
+    # a key added to the keymap later reached the buffer through a locked editor. `>` and `<`
+    # had drifted out of that list and DID edit under read-only at the sha this repo shipped
+    # before f738744 — measured here, `>>` indented a locked line. Those two are the pair that
+    # was genuinely exposed: upstream measured that sixteen keys depend on the guard ALONE,
+    # while paste and repeat check read-only by their own routes. The rest of this list is
+    # therefore belt-and-braces, not a reproduction. tabs/code.py locks the editor for the
+    # whole copilot turn, so the exposure was live.
+    #
+    # Fixture shape is load-bearing, and getting it wrong is the failure this test is most
+    # prone to: a key that CANNOT act on the buffer asserts nothing while passing. Hence an
+    # indented line (or `>>`/`<<`/`~` no-op on leading whitespace), a second line below (or
+    # `dd` empties the buffer and `J` has nothing to join), and the cursor mid-line on a
+    # lowercase letter. Every key below is verified to edit this exact buffer while writable.
+    text = "  alpha beta\n  gamma\n"
     for keys in ("~", ">>", "<<", "RXY", "x", "dd", "J", "S"):
         e = _editor(text)
         e.set_read_only_enabled(True)
-        e.set_cursor(
-            0, 2
-        )  # off the leading whitespace, or ~ is a no-op and proves nothing
+        e.set_cursor(0, 2)
         e.feed(keys)
         assert e.get_text() == text, (
             f"{keys!r} edited a read-only buffer: {e.get_text()!r}"
@@ -196,6 +202,25 @@ def _drain_app(editor: Editor, focused: bool = True, popup: bool = False) -> Any
         active_tab_index=0,
         close_tab=lambda _i: None,
     )
+
+
+def test_the_read_only_fixture_is_not_vacuous() -> None:
+    # The failure the read-only tests are most prone to: a key that cannot act on the fixture
+    # asserts nothing while passing. Upstream hit exactly this — six keys its guard lists as
+    # editing could not touch its fixture at all, so each read-only assertion held for the
+    # wrong reason. Pin the property instead of trusting the fixture: every key the read-only
+    # test drives must CHANGE this buffer while writable, or that test proves nothing about it.
+    text = "  alpha beta\n  gamma\n"
+    for keys in ("~", ">>", "<<", "RXY", "x", "dd", "J", "S"):
+        e = _editor(text)
+        e.set_read_only_enabled(False)
+        e.set_cursor(0, 2)
+        e.feed(keys)
+        assert e.get_text() != text, (
+            f"{keys!r} cannot edit the fixture even while writable, so asserting that "
+            "read-only refuses it proves nothing — fix the fixture, not this test"
+        )
+        e.close()
 
 
 def test_a_copilot_turn_locks_the_editor_against_the_whole_editing_class() -> None:
