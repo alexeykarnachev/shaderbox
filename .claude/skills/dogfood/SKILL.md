@@ -94,7 +94,15 @@ data-driven glyphs of 032 cut that to ~1s). Warm renders are fast (text 300x300 
 a render burns 99% CPU for minutes it's first-draw codegen of an oversized shader, not a deadlock;
 for time-sampled stills load the document directly on a standalone EGL context (no bridge timeout).
 
-**Turn 1 (fresh project) — opens the experiment in the station:**
+**The one-command turn:** `scripts/dogfood/drive.py` wraps the create/resume + send + drive +
+render + dump sequence below and prints the summary the driver reads (terminal, cost, requests,
+hidden-reasoning share, every tool call with its result head, the reply): `uv run python
+scripts/dogfood/drive.py --project new --start <experiment> --intent "..." --mode babysat "first
+ask"`, then `--project <dir> "next ask"` per turn, `--note "..." --axis <axis> --turn N` to file an
+observation with it, `--strip 0,1,2,3 --mp4 4` for the motion artifacts, `--end <outcome>
+"<summary>"` to close. The message is still ONE turn composed after reading the last summary.
+
+**Turn 1 (fresh project) — opens the experiment in the station, spelled out:**
 ```
 env OPENROUTER_API_KEY=… uv run python -c '
 from pathlib import Path
@@ -317,6 +325,11 @@ the sweep removes IS the edit-sediment measurement — record its diff.**
   (4) the in-app default `max_tokens_per_turn` is now **30k** (was 12k — raised after these starvation
   measurements), so a fresh harness run already carries the headroom; the override above only matters
   when a run pins a lower cap.
+- **🔴 A reply that describes tool work with ZERO tool calls is a fabrication, and it happens
+  on resume.** Five turns across three models in the 077 comparison: the first request of a
+  resumed turn whose history tail is a long engine ledger (a forced-end note, twenty edits) came
+  back as prose claiming the next step was done. `drive.py`'s summary shows the tool calls -- an
+  empty list under a "done" reply is the tell; say plainly that nothing happened and ask again.
 - **🔴 ALWAYS wrap a turn process in `timeout` (`... timeout 300 uv run python -c …`).** A stalled LLM
   stream could leave the non-daemon copilot worker blocked, and interpreter `_shutdown` then hangs
   joining it — a process that never exits, never dumps. The per-delta stream cancel + the 120s client

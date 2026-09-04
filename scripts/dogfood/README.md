@@ -27,6 +27,8 @@ standalone EGL context (no App/glfw) against a real LLM, interactively, one bloc
 - **`runs/`** — gitignored run artifacts (per-run project dirs, data dir, JSON dumps, traces, PNGs).
   Purge between runs: `rm -rf scripts/dogfood/runs/{data-*,proj-*,*.json}` (regenerable; also clears the
   live OpenRouter key the data dirs hold).
+- **`drive.py`** — one turn from the command line (create/resume, open an experiment or attempt, send,
+  drive, render, dump, print the summary); the `/dogfood` skill §1 shows the calls.
 - **The station (`dogfood/`, feature 075)** — the durable record the harness writes INTO:
   `h.start_experiment(id, intent=, mode=)` once, then every `dump()` appends the turn (tool calls,
   usage, renders copied beside the log, one context breakdown per LLM request) to
