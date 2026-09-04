@@ -193,31 +193,22 @@ def _stub_kind(uniform: moderngl.Uniform) -> tuple[str, str]:
 # lives on `update`; the class docstring carries the high-level "what this drives"; __init__ states it
 # runs once. A script is plain Python — import what you need at the top.
 _UPDATE_DOC = (
-    '        """Compute this frame\'s uniform values.\n'
+    '        """Return this frame\'s uniform values; called once per drawn frame.\n'
     "\n"
-    "        A bare key drives that uniform on EVERY pass declaring it; a key whose value is a\n"
-    "        dict is a PASS BLOCK driving that one pass, and it wins over a bare key.\n"
-    "        A uniform you return is DRIVEN by the script (it PLAYS); a uniform you omit (or map\n"
-    "        to None) stays MANUAL -- you edit it by hand in the panel. Stop a playing uniform\n"
-    "        (its row's stop button, or just drag it) to edit it by hand without deleting it from\n"
-    "        the dict.\n"
+    "        Keys are uniform names. A bare key drives that uniform on every pass declaring\n"
+    "        it; a key mapped to a dict is a pass block driving that one pass, and wins over\n"
+    "        the bare key. A uniform you return plays (the script owns it); one you omit or\n"
+    "        map to None stays manual. Values: float or int, Vec2 / Vec3 / Vec4, Array([...])\n"
+    '        for an array uniform, Text("...") for a text one. Keep state on self; a value\n'
+    "        that is only a function of ctx.t belongs in the shader.\n"
     "\n"
-    "        A value that is a pure function of `ctx.t` usually belongs in the shader instead;\n"
-    "        this class is for state you keep on `self`.\n"
-    "\n"
-    "        Args:\n"
-    "            ctx.t: Elapsed seconds since start.\n"
-    "            ctx.dt: Delta seconds since the previous frame.\n"
-    "            ctx.frame: Frame index.\n"
-    "            ctx.mouse: Cursor over the canvas (x, y and prev_x, prev_y in 0..1, y-up;\n"
-    "                down = LMB held over the canvas; frozen at "
-    f"{EXPORT_MOUSE.x:g},{EXPORT_MOUSE.y:g} with down=False on export).\n"
+    "        ctx.t seconds since start; ctx.dt seconds since the previous frame; ctx.frame\n"
+    "        the frame index; ctx.mouse x, y, prev_x, prev_y in 0..1 y-up and down while the\n"
+    "        left button is held over the canvas (frozen at "
+    f"{EXPORT_MOUSE.x:g},{EXPORT_MOUSE.y:g}, down False, on export).\n"
     '        """\n'
 )
-_INIT_DOC = (
-    '        """Set up state (runs ONCE -- at app start, before the first render, and on'
-    ' reload)."""\n'
-)
+_INIT_DOC = '        """Runs once: at app start, before the first render, and on every reload."""\n'
 
 
 def _script_import_line(annotations: Iterable[str]) -> str:

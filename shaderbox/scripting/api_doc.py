@@ -80,6 +80,40 @@ _IMPORT_NAMES: str = ", ".join(
     ["ScriptBehavior", "Ctx", *(c.__name__ for c in (Vec2, Vec3, Vec4, Array, Text))]
 )
 
+# The names the engine injects into every script (`behavior.py::_build_globals`), as the
+# editor's intelligence classes them: the script API, not a local and not a builtin.
+API_NAMES: frozenset[str] = frozenset(
+    {
+        "ScriptBehavior",
+        "Ctx",
+        MouseState.__name__,
+        *(c.__name__ for c in (Vec2, Vec3, Vec4, Array, Text)),
+    }
+)
+
+
+def api_symbol_doc(name: str) -> tuple[str, str]:
+    """(signature, doc) for one injected API name, for the editor's completion and `K`: the
+    call form of a value type, the class name of the others."""
+    by_name: dict[str, type] = {c.__name__: c for c in (Vec2, Vec3, Vec4, Array, Text)}
+    cls = by_name.get(name)
+    if cls is not None:
+        ctor = cls.__new__ if name.startswith("Vec") else cls.__init__
+        return _call_form(cls, ctor), _VALUE_SHAPE_GLOSS[name]
+    if name == "Ctx":
+        return "Ctx", "the per-frame context `update` receives: " + ", ".join(
+            _CTX_GLOSS
+        )
+    if name == MouseState.__name__:
+        return MouseState.__name__, _CTX_GLOSS["mouse"]
+    return name, "the base class a document script's Behavior extends"
+
+
+def ctx_field_gloss(field: str) -> str:
+    """What a `ctx` field means, for the editor's `K` and completion detail; "" when the
+    field has no gloss."""
+    return _CTX_GLOSS.get(field, "")
+
 
 def _type_name(annotation: object) -> str:
     return annotation.__name__ if isinstance(annotation, type) else str(annotation)

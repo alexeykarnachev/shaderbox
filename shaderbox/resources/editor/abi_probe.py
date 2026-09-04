@@ -91,6 +91,9 @@ _SIG = {
     "ed_complete_prefix": (ctypes.c_int32, [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ubyte), ctypes.c_int32]),
     "ed_complete_begin": (None, [ctypes.c_void_p]),
     "ed_complete_push": (None, [ctypes.c_void_p, ctypes.c_char_p]),
+    "ed_complete_push_class": (None, [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int32]),
+    "ed_set_word_class": (None, [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int32]),
+    "ed_clear_word_classes": (None, [ctypes.c_void_p]),
     "ed_set_color": (ctypes.c_bool, [ctypes.c_void_p, ctypes.c_int32] + [ctypes.c_float] * 4),
     "ed_primitives": (ctypes.c_int32, [ctypes.c_void_p, ctypes.POINTER(Prim), ctypes.c_int32]),
     "ed_set_host_completion": (None, [ctypes.c_void_p, ctypes.c_bool]),
@@ -1817,6 +1820,84 @@ def main() -> int:
         lib.ed_primitive(h, i, ctypes.byref(pr))
         kinds2[pr.kind] = kinds2.get(pr.kind, 0) + 1
     check("and nothing once closed", kinds2.get(5, 0) + kinds2.get(6, 0), 0)
+    lib.ed_key(h, K_ESC, 0, 0)
+
+    print("host symbol classes")
+    # Syntax_7 is Theme_Slot 20 (Syntax_1 is 14), and 7 is the one slot NO
+    # built-in Token_Class uses -- Operator is 5 and Builtin 6, so a probe
+    # colouring those would count the lexer's own spans as the table's work.
+    # Magenta, so a recoloured glyph is unmistakable against every default.
+    HOST_SLOT = 7
+    MAGENTA = (1.0, 0.0, 1.0)
+    lib.ed_set_color(h, 20, *MAGENTA, 1.0)
+    # One occurrence per syntactic role, so the pass is measured where it must
+    # act AND where it must not.
+    lib.ed_set_text(h, b"uTime;\n// uTime\n/* uTime */\nfloat uTime\n#define uTime 1\n")
+    check("language set", lib.ed_set_language(h, LANGS["GLSL"]), True)
+
+    def magenta_lines():
+        """Which 0-based lines hold a magenta glyph."""
+        cw, chh = ctypes.c_float(), ctypes.c_float()
+        count = lib.ed_layout(h, 0.0, 0.0, 900.0, 900.0, 13.0, False)
+        lib.ed_cell_size(h, ctypes.byref(cw), ctypes.byref(chh))
+        out, q = set(), Prim()
+        for i in range(count):
+            lib.ed_primitive(h, i, ctypes.byref(q))
+            if KINDS[q.kind] == "Glyph" and (q.r, q.g, q.b) == MAGENTA:
+                out.add(int(q.y1 // chh.value))
+        return out
+
+    check("nothing coloured before the table is fed", magenta_lines(), set())
+    lib.ed_set_word_class(h, b"uTime", HOST_SLOT)
+    # THE POINT OF THE PASS: plain code only. The comment, the block comment
+    # and the directive are each already covered by their own span, and a host
+    # index is about symbols rather than about text.
+    check("plain code is recoloured", magenta_lines(), {0, 3})
+    # An identifier the lexer DID classify keeps its own class: `float` is a
+    # GLSL type, so registering it changes nothing.
+    lib.ed_set_word_class(h, b"float", HOST_SLOT)
+    check("a keyword is not overridden", magenta_lines(), {0, 3})
+    # Class 0 REMOVES rather than storing "no class", so a host clearing one
+    # symbol leaves no entry behind.
+    lib.ed_set_word_class(h, b"uTime", 0)
+    check("class 0 removes the word", magenta_lines(), set())
+    lib.ed_set_word_class(h, b"uTime", HOST_SLOT)
+    check("and it can be fed again", magenta_lines(), {0, 3})
+    # Case-sensitive: GLSL and Python both are, so folding here would colour a
+    # name the host never registered.
+    lib.ed_clear_word_classes(h)
+    lib.ed_set_word_class(h, b"utime", HOST_SLOT)
+    check("matching is case-sensitive", magenta_lines(), set())
+    lib.ed_clear_word_classes(h)
+    check("clear drops everything", magenta_lines(), set())
+    lib.ed_set_language(h, LANGS["None"])
+
+    print("a completion row carries its class")
+    lib.ed_load_atlas(h, b"assets/atlas.json")
+    lib.ed_set_color(h, 16, 0.0, 1.0, 0.0, 1.0)  # Syntax_3 green
+    lib.ed_set_text(h, b"x")
+    lib.ed_feed(h, b"A")
+    lib.ed_complete_begin(h)
+    lib.ed_complete_push(h, b"plain")
+    lib.ed_complete_push_class(h, b"magenta", HOST_SLOT)
+    lib.ed_complete_push_class(h, b"green", 3)
+    lib.ed_complete_select(h, 0)
+    cw, chh = ctypes.c_float(), ctypes.c_float()
+    n3 = lib.ed_layout(h, 0.0, 0.0, 400.0, 300.0, 13.0, True)
+    lib.ed_cell_size(h, ctypes.byref(cw), ctypes.byref(chh))
+    rows, q = {}, Prim()
+    for i in range(n3):
+        lib.ed_primitive(h, i, ctypes.byref(q))
+        if KINDS[q.kind] == "Popup_Glyph":
+            rows.setdefault(int(q.y1 // chh.value), set()).add((q.r, q.g, q.b))
+    ordered = [rows[k] for k in sorted(rows)]
+    check("three rows drawn", len(ordered), 3)
+    # SELECTION WINS: row 0 is selected, so it keeps popup_selected rather than
+    # its class colour -- a host palette cannot hide the highlighted row.
+    check("the selected row keeps its own colour", MAGENTA not in ordered[0], True)
+    check("a classed row draws in its slot", ordered[1], {MAGENTA})
+    check("and another in a different slot", ordered[2], {(0.0, 1.0, 0.0)})
+    lib.ed_complete_cancel(h)
     lib.ed_key(h, K_ESC, 0, 0)
 
     lib.ed_free(h)

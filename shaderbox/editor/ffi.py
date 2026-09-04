@@ -199,6 +199,12 @@ _SIG: dict[str, tuple[object, Sequence[object]]] = {
     ),
     "ed_complete_begin": (None, [ctypes.c_void_p]),
     "ed_complete_push": (None, [ctypes.c_void_p, ctypes.c_char_p]),
+    "ed_complete_push_class": (
+        None,
+        [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int32],
+    ),
+    "ed_set_word_class": (None, [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int32]),
+    "ed_clear_word_classes": (None, [ctypes.c_void_p]),
     "ed_complete_open": (ctypes.c_bool, [ctypes.c_void_p]),
     "ed_complete_count": (ctypes.c_int32, [ctypes.c_void_p]),
     "ed_complete_selected": (ctypes.c_int32, [ctypes.c_void_p]),
@@ -540,6 +546,19 @@ class Editor:
     def clear_markers(self) -> None:
         self._lib.ed_clear_markers(self._h)
 
+    # --- host symbol classes ----------------------------------------------
+    # A post-pass over the lexer's spans: an identifier the lexer left plain takes the
+    # syntax slot the host gave its exact spelling; keywords, strings, comments, numbers and
+    # defines already carry a span and are never recolored. Takes effect next layout with
+    # no edit, so a class that changed for a reason outside the text still recolors.
+
+    def set_word_class(self, word: str, syntax_class: int) -> None:
+        """Slot 0 removes the word from the table."""
+        self._lib.ed_set_word_class(self._h, _encode(word), syntax_class)
+
+    def clear_word_classes(self) -> None:
+        self._lib.ed_clear_word_classes(self._h)
+
     def add_marker(
         self,
         line: int,
@@ -636,6 +655,12 @@ class Editor:
     def complete_push(self, text: str) -> None:
         """Pushing IS opening: feed candidates only on a deliberate offer."""
         self._lib.ed_complete_push(self._h, _encode(text))
+
+    def complete_push_class(self, text: str, syntax_class: int) -> None:
+        """`complete_push` with the row drawn in syntax slot `syntax_class` (1-based; 0 is
+        the plain popup text). The selected row keeps the selection color whatever its
+        class."""
+        self._lib.ed_complete_push_class(self._h, _encode(text), syntax_class)
 
     def complete_open(self) -> bool:
         """Whether the popup is showing — i.e. what Enter will do."""

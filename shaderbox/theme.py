@@ -31,6 +31,7 @@ from typing import Literal
 from imgui_bundle import imgui
 
 from shaderbox.editor import ffi as editor_ffi
+from shaderbox.intel.symbols import SymbolKind
 
 # ----------------------------------------------------------------------------
 # Public types
@@ -541,6 +542,32 @@ def _set_colors(
 
     # modal veil
     style.set_color_(col.modal_window_dim_bg, (0.0, 0.0, 0.0, 0.55))
+
+
+def kind_color(kind: SymbolKind) -> tuple[float, float, float, float]:
+    """The one color a kind of name has everywhere it shows: a completion row, the text, a
+    source list (078 D2). Language words and types read as the lexer colors them; the
+    engine's uniforms are blue-ish, the script's green-ish, a pass sampler aqua."""
+    return _KIND_COLOR[kind]
+
+
+_KIND_COLOR: dict[SymbolKind, tuple[float, float, float, float]] = {
+    SymbolKind.GLSL_KEYWORD: COLOR.SYN_KEYWORD,
+    SymbolKind.GLSL_TYPE: COLOR.SYN_TYPE,
+    SymbolKind.GLSL_BUILTIN: COLOR.SYN_BUILTIN,
+    SymbolKind.LIB_FUNCTION: COLOR.SYN_BUILTIN,
+    SymbolKind.ENGINE_UNIFORM: COLOR.SYN_UNIFORM,
+    SymbolKind.PASS_UNIFORM: COLOR.SYN_IDENT,
+    SymbolKind.PASS_SAMPLER: COLOR.SYN_PASS_SAMPLER,
+    SymbolKind.WIRABLE_SAMPLER: COLOR.SYN_PASS_SAMPLER,
+    SymbolKind.SCRIPT_UNIFORM: COLOR.SYN_SCRIPT_UNIFORM,
+    SymbolKind.BUFFER_SYMBOL: COLOR.SYN_IDENT,
+    SymbolKind.PY_KEYWORD: COLOR.SYN_KEYWORD,
+    SymbolKind.PY_BUILTIN: COLOR.SYN_BUILTIN,
+    SymbolKind.PY_API: COLOR.SYN_TYPE,
+    SymbolKind.PY_MEMBER: COLOR.SYN_IDENT,
+    SymbolKind.PY_LOCAL: COLOR.SYN_IDENT,
+}
 
 
 def editor_palette() -> dict["editor_ffi.Slot", tuple[float, float, float, float]]:
