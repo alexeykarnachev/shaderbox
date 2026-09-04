@@ -198,6 +198,39 @@ def _drain_app(editor: Editor, focused: bool = True, popup: bool = False) -> Any
     )
 
 
+def test_a_copilot_turn_locks_the_editor_against_the_whole_editing_class() -> None:
+    # The two halves of the lock, joined: tabs/code.py sets read-only from
+    # `app.copilot_turn_active` every frame, and the library must then refuse every editing key
+    # rather than the hand-written few. Before f738744 `>` and `<` were outside that class, so a
+    # user pressing `>>` mid-turn indented a buffer the copilot was editing underneath them.
+    # Drives the keys through the real input path, not set_read_only_enabled directly, so the
+    # flag-to-library wiring is what is under test.
+    text = "  alpha beta\n"
+    for keys in ("~", ">>", "<<", "x", "dd"):
+        e = _editor(text)
+        app = _drain_app(e)
+        app.copilot_turn_active = True
+        e.set_read_only_enabled(app.copilot_turn_active)
+        e.set_cursor(0, 2)
+        app.editor_key_events = [translate_char(ord(c)) for c in keys]
+        _drain_editor_input(app)
+        assert e.get_text() == text, (
+            f"{keys!r} edited during a copilot turn: {e.get_text()!r}"
+        )
+        e.close()
+
+    # ...and the lock lifts with the flag, or the editor would be dead after the first turn.
+    e = _editor(text)
+    app = _drain_app(e)
+    app.copilot_turn_active = False
+    e.set_read_only_enabled(app.copilot_turn_active)
+    e.set_cursor(0, 2)
+    app.editor_key_events = [translate_char(ord(c)) for c in "~"]
+    _drain_editor_input(app)
+    assert e.get_text() != text, "the editor must edit again once the turn ends"
+    e.close()
+
+
 def test_unfocused_editor_receives_nothing() -> None:
     # The bare-`d`-is-an-edit hazard: an unfocused editor must be deaf.
     e = _editor()
