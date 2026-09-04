@@ -26,19 +26,18 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-04 (075 landed; the first real experiment is next). -->
-**Next: the first experiment on the dogfooding station — a fully working radiance-cascades project:
-script, drawing and multipass.** Drive it per the `/dogfood` skill: `h.start_experiment(...)` with a
-mode chosen up front, one process per turn, `h.note(axis=...)` as findings land, `h.end_attempt(...)`
-to close; a blocking defect becomes its own commit and the next attempt records it. **The driver plays
-a real user; no scripted oracle decides anything — the maintainer is the final oracle,** looking at
-the renders and videos on the attempt page (`dogfood/index.html`, rebuilt on every `dump()`).
-
-Landed: **075, the dogfooding station** — an append-only log per experiment, a static site over it,
-the per-request `context_breakdown` deferred since 026 (every block's size AND text, the trim flag,
-billed vs estimated with the cache share), and the harness recording on its own from `dump()`. The
-store holds `station_smoke`, the station's own two-turn check. Before that: 074's structural sweep and
-the editor re-vendor to `f738744`.
+<!-- As of 2026-09-04 (075 landed, 076 landed, the first experiment built; the maintainer's eye is next). -->
+**Next: the maintainer looks at `rc_full_build`** — `dogfood/index.html` → attempt 3, and the
+project itself in the app (`scripts/dogfood/runs/proj-m3pqx_c0`, document `RC`): draw into it, judge
+the light. The copilot built a working radiance-cascades document — seven passes (jfa x12, cascade
+x6), an emitter script, a drawing canvas on `u_prev` — over three attempts and $0.93; every line of
+GLSL and Python is its own, every scene decision the driver's. What the run found, all landed:
+**076** (the copilot had no way to add a pass — attempt 1 died on it), a wrong-typed engine builtin
+is now a compile error, the harness resizes a multi-pass document through the document's funnel,
+`set_pass` reads an empty dtype as unchanged. Open findings on the page, not fixed: the churn brake
+has a hole for repeated no-op whole-file rewrites (gpt-5.6-luna hit `max_iterations` on it four
+turns running); codex-mini stalls on a compound shader step with a hidden-reasoning burn; the probe
+draws an iterated OUTPUT pass's last run at probe size while its input stays native.
 
 **Still due at the display:** 073's per-wave `## Manual verification` lists, 072's five checks,
 070's, 071's, `todo.md`'s live-only checks and 065's 13-16.
@@ -50,6 +49,7 @@ still needs a Windows host before the next cut.
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 076 | copilot_pass_tools | done | Three lazy tools over the session's pass verbs — `add_pass` (with runs/target/output in the same call), `set_pass` (only the fields given; rename), gated `delete_pass` — each echoing the document's pass table; built under 075's stuck rule when the first experiment's attempt 1 could not create a second pass. Spec: `ai_docs/features/076_copilot_pass_tools/01_spec.md`. |
 | 075 | dogfood_station | done | A durable browsable home for every dogfooding experiment: `dogfood/runs/<id>/events.jsonl` appended by the harness's own `dump()`, a static site regenerated from it (conversation, tool calls, renders and videos inline, per-request context panel with every block's size and text), and the `context_breakdown` trace event deferred since 026; the station records and never judges. Spec: `ai_docs/features/075_dogfood_station/01_spec.md`. |
 | 074 | nightly_sweep | done | An unattended structural pass over the repo's shape: a dead-symbol inventory across every symbol kind, ten write-only or orphaned symbols removed, the duplicated stale-file check in `seed.py` given one home, a subset test pinning the copilot's brake tool-sets to the registry, and `ui.py`'s layering documented as it actually is. Spec: `ai_docs/features/074_nightly_sweep/01_spec.md`. |
 | 073 | third_walk_findings | done | The maintainer's third walk (the 070 + 072 tree): 8 findings, five decisions -- a matching-opener bracket snap and a reverse-video caret in the editor library, context-aware auto-completion and a `K` lookup popup, a three-state alpha view on the viewer, a live-tile fill instead of the dormant tint, `Alt+Left`/`Alt+Right` pass switching, Reset moved to the document row. Spec: `ai_docs/features/073_third_walk_findings/01_spec.md`. |

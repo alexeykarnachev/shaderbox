@@ -59,7 +59,10 @@ line), `project_session.py` (wires the verbs), `pass_graph.py` (`TargetDtype` / 
   file; rejections are errors; the last pass cannot be deleted; the registry exposes all three
   lazily with delete gated, and an `execute` reaches the capability.
 - Live: `rc_full_build` attempt 2 on the station — the copilot creates `paint` and `seed` as two
-  passes on the first ask.
+  passes on the first ask. **Done**: attempt 2 turn 1 loaded the tools, added `paint`, renamed
+  `main` to `seed` and set the output in one turn; by attempt 3 the document held seven passes
+  with `jfa` at 12 runs and `cascade` at 6, all copilot-made. One fix found live: an empty `dtype`
+  now reads as unchanged (`7fe63e9`).
 
 ## Open questions for the user
 
