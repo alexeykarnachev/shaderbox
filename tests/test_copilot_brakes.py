@@ -369,7 +369,11 @@ def test_a_sweep_touching_many_files_once_is_not_churn() -> None:
         noop_edit_hard_streak=3,
     )
     edits = [
-        _tool_call(f"c{i}", "edit_shader", f'{{"old_str": "a", "new_str": "b", "target": "f{i}"}}')
+        _tool_call(
+            f"c{i}",
+            "edit_shader",
+            f'{{"old_str": "a", "new_str": "b", "target": "f{i}"}}',
+        )
         for i in range(7)
     ]
     events, trace = _run(
