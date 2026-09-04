@@ -15,6 +15,7 @@ from shaderbox.editor.ffi import Editor, KeyCode, KeyMod, Language, Mode
 from shaderbox.editor.input import KeyEvent
 from shaderbox.editor_types import EditorTab
 from shaderbox.engine_uniforms import ENGINE_UNIFORM_TYPES
+from shaderbox.glsl_docs import BUILTINS
 from shaderbox.help_content import ENGINE_UNIFORM_DOCS
 from shaderbox.hotkeys import _is_lookup_key
 from shaderbox.intel.index import GlslContext, GlslIndex, build_glsl_index
@@ -433,8 +434,6 @@ def test_every_offered_word_can_be_explained() -> None:
 
 
 def test_the_generated_table_covers_the_builtins_a_shader_uses() -> None:
-    from shaderbox.glsl_docs import BUILTINS
-
     for name in ("mix", "smoothstep", "texture", "dot", "clamp", "dFdx", "textureLod"):
         signatures, purpose = BUILTINS[name]
         assert signatures and all(f"{name}(" in s for s in signatures), name

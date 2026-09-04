@@ -404,6 +404,11 @@ code panel) and the formatter dependency note; roadmap row + banner; cold-contex
   entry can never hit); `PY_API` shares the keyword red by design; the precision-qualifier
   site (`uniform lowp float`) offers nothing, as before this feature.
 
+- **W-A post-implementation, round 3, closure only (code), against `d40a611`.** PASS: the
+  four round-2 items closed with the round-2 probes re-run, three by mutation; no regression
+  from the round-2 fixes; item 1's four sub-claims hold on the real providers. One pre-existing
+  inline import in a test moved to the top. The loop is closed.
+
 ## Order
 
 1. **W-E, W-H, W-I (indent half), W-D** — small, host-only, visible on the next launch.
