@@ -495,7 +495,9 @@ def run_turn(
     clean_edits_by_file: dict[
         tuple[str, str], int
     ] = {}  # per-(kind, file) clean-edit streak (spree brake)
-    consecutive_noops = 0  # calls in a row that brought nothing new (see the no-op brake)
+    consecutive_noops = (
+        0  # calls in a row that brought nothing new (see the no-op brake)
+    )
     seen_calls: set[tuple[str, str]] = set()  # (name, raw args) made earlier this turn
     first_input_tokens: int | None = None  # iter-0 context size for the usage bar
     logger.info(f"copilot turn start | user={_trunc(user_text, 80)!r}")
@@ -1076,7 +1078,9 @@ def run_turn(
             signature = (tc.name, tc.arguments)
             repeated = signature in seen_calls
             seen_calls.add(signature)
-            unchanged_frame = registry.is_edit_tool(tc.name) and ok and NOOP_FACTS_PREFIX in msg
+            unchanged_frame = (
+                registry.is_edit_tool(tc.name) and ok and NOOP_FACTS_PREFIX in msg
+            )
             if repeated or unchanged_frame:
                 consecutive_noops += 1
                 if (
