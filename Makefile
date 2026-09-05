@@ -31,9 +31,16 @@ check:
 # SEGFAULTS Mesa (the "GL segfault modules" class; same overrides the dogfood
 # harness sets). GLCONTEXT_LINUX_LIBGL avoids the libGL.so dev-symlink dlopen
 # failure on boxes without libgl-dev.
+# `-n 8`: the suite is fixture-bound, not assertion-bound -- 136 tests take the `app`
+# fixture and each pays ~90ms building a real App (a window, a GL context, the shipped
+# example documents). Serial that is ~53s; 8 workers is ~15s. Measured 4/8/12/24 workers:
+# the curve flattens after 8, so more workers buy ~0.5s and cost more memory. Each worker
+# is its OWN PROCESS with its own glfw window and GL context -- xdist does not fork after
+# fixture setup, which is what makes this safe where `pytest-forked` is not (a forked child
+# inheriting the parent's X11 socket kills the connection; see test_revert_executor.py).
 test:
 	env MESA_GL_VERSION_OVERRIDE=4.6 MESA_GLSL_VERSION_OVERRIDE=460 \
-		GLCONTEXT_LINUX_LIBGL=libGL.so.1 uv run pytest tests/
+		GLCONTEXT_LINUX_LIBGL=libGL.so.1 uv run pytest tests/ -n 8
 
 # Headless smoke test — runs ~200 frames of update_and_draw against a THROWAWAY tmp project
 # in an invisible glfw window. Catches import errors, callback dispatch failures,

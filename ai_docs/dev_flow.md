@@ -614,13 +614,31 @@ Reading the output instead of the code is how 064 reported green for a stretch w
 pyright's reassuring "0 errors" line sits below ruff and says nothing about it.
 
 ### `make test`
-The unit suite — `pytest tests/`, ~14s. The three env vars the target sets are **load-bearing, not
+The unit suite — `pytest tests/ -n 8`. The three env vars the target sets are **load-bearing, not
 noise**: `MESA_GL_VERSION_OVERRIDE=4.6` + `MESA_GLSL_VERSION_OVERRIDE=460` because compiling this
 repo's `#version 460` shaders on a bare llvmpipe 4.5 context SEGFAULTS Mesa, and
 `GLCONTEXT_LINUX_LIBGL=libGL.so.1` to avoid a dlopen failure on boxes without libgl-dev. Run it
 through `make test` rather than a bare `pytest` so you inherit them. Modules using the `app` fixture
 skip without a display. Not wired into `make check` (needs a GL context). On a monitor-less box,
 `xvfb-run -a` gives those modules a display -- see `### make gates`.
+
+**Why `-n 8`.** The suite is FIXTURE-bound, not assertion-bound: measured across every test, call
+time is ~22s against ~19s of pure fixture setup, because the `app` fixture builds a real App — a
+window, a GL context, the shipped example documents — and 136 tests take it, at roughly 90ms each.
+Serial that is ~53s; eight workers make it ~15s. Worker counts 4/8/12/24 were measured and the
+curve flattens after 8, so more workers buy under a second and cost memory.
+
+Each xdist worker is its own PROCESS with its own glfw window and GL context, which is what makes
+this safe where `pytest-forked` is NOT: a forked child inherits the parent's open X11 socket and
+two processes on one Xlib connection kill it (`tests/test_revert_executor.py` records that). The
+parallel gate was verified to still go RED, not merely to pass — a failing test planted in
+`test_channel_view.py` produced `FAILED at test (exit 2)` naming that test.
+
+**What is NOT the fix here, so it is not re-tried.** Caching the loaded example documents across
+App instances: they hold live moderngl handles, so a shallow share lets one App's `release()` free
+another's textures (it broke `test_grep_surfaces_example_origins`), and a deepcopy raises
+`cannot pickle 'mgl.Context'`. Caching only the decoded PNG behind them works and is safe, but
+recovers ~17ms of a ~90ms fixture because the defensive `.copy()` costs back most of the decode.
 
 ### `make smoke`
 Headless smoke test (`scripts/smoke.py`) — runs ~200 frames of `update_and_draw` against a THROWAWAY

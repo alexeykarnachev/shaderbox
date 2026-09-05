@@ -45,6 +45,7 @@ dev = [
     "ruff==0.15.17",
     "pytest>=9.1.0",
     "pytest-forked>=1.6.0",
+    "pytest-xdist>=3.8.0",
 ]
 
 [tool.ruff]
