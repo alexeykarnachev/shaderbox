@@ -369,7 +369,7 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   active flag, no activate step (`is_script_active`/`is_brain_active` retired in 048). **The body is `exec`'d
   VERBATIM** (no AST surgery; the file IS a class def). A script is plain Python — `import math`, numpy and
   the stdlib all work — but of THIS package it sees `shaderbox.scripting` and, in it, `ScriptBehavior`,
-  `Ctx` and `MouseState` alone: `_build_globals` hands the exec a narrowed `__import__` (079), so the
+  `ScriptContext` and `MouseState` alone: `_build_globals` hands the exec a narrowed `__import__` (079), so the
   app's own modules are not a script's to reach. The 048 stub EMITS that explicit import so the surface
   is visible, and `behavior.py::_build_globals` ALSO injects the same names as a FALLBACK so a
   deleted import line degrades gracefully instead of an opaque eager-annotation-eval freeze. An error's
@@ -480,12 +480,24 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   GL-free and gated in a fresh interpreter; the Python half reaches `shaderbox.scripting` for
   the API glosses, whose package `__init__` re-exports the engine. Revisit if a fourth reader
   appears or a kind needs a text color of its own (the library's palette widens on measurement).
-- **The host's line markers are re-pushed on every buffer revision.** The library moves a
-  marker with the text it marks; the host's markers (cursor band, error fills, hover mark) are
-  line numbers of the text as it is NOW, so `_apply_markers`'s fingerprint carries
-  `ed_revision` — a whole-buffer replace that keeps the cursor line, or `dd` then `u`, would
-  otherwise leave the band where the library dragged it. Costs nothing: the revision already
-  invalidates the panel's render state.
+- **The host's line markers are re-pushed on every buffer revision, and error markers are
+  dropped while the buffer is dirty.** The library moves a marker with the text it marks; the
+  host's markers (cursor band, error fills, hover mark) are line numbers of the text as it is
+  NOW, so `_apply_markers`'s fingerprint carries `ed_revision` — a whole-buffer replace that
+  keeps the cursor line, or `dd` then `u`, would otherwise leave the band where the library
+  dragged it. Costs nothing: the revision already invalidates the panel's render state.
+
+  That re-push is right for the cursor band, which is a fact about the buffer as it is, and
+  WRONG for an error, whose line is where the code was at the last COMPILE — re-pushing a stale
+  number every revision is the host undoing the following the library does. There is no general
+  repair (the compiler has not seen the new text), so `_errors_worth_marking` returns none while
+  the buffer is dirty and they come back on the next save. The cursor band is unaffected.
+- **A `ScriptError`'s line is 0-based, like `ShaderError`'s.** Every reader is an editor line:
+  the code panel hands it to `add_marker`, and the strip and the copilot each add the `+ 1` for
+  a human-facing "Line N". Python counts from 1 in both `SyntaxError.lineno` and traceback
+  frames, so the two producers in `behavior.py` convert on the way out. The script path shipped
+  without that conversion and put every band one row below its code; the GLSL path has done
+  `source_line - 1` since it was written, which is why an end-to-end compile test found nothing.
 - **Formatting is a shipped dependency, one backend per tab kind** (078 W-B): `ruff format
   --line-length 88` for the script and `clang-format` with the maintainer's nvim fallback
   style for shaders and lib files, both binary wheels called by subprocess; a missing formatter
@@ -1146,7 +1158,7 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
     NO suppression — ruff's `S102` (flake8-bandit) isn't in this repo's `select`, and pyright's basic
     mode flags no `Any`-flow on the namespaced `exec`. The exec globals are the REAL builtins
     (feature 045 — a script is plain Python, `import math` works) plus the injected top-level names
-    the eager method annotations resolve against (`ScriptBehavior`/`Ctx`/`MouseState`). The builtins are
+    the eager method annotations resolve against (`ScriptBehavior`/`ScriptContext`/`MouseState`). The builtins are
     the real ones with ONE substitution — `__import__`, narrowed to this package's script surface (079)
     — so `__build_class__` and the stdlib are untouched and the class statement is satisfied.
   - `moderngl.create_standalone_context(backend="egl")` — the stub types `**kwargs` as a single
