@@ -28,7 +28,9 @@ import gen_glyphs  # noqa: E402
     ],
     ids=("glyphs.glsl", "glyph_tables.py"),
 )
-def test_a_generated_artifact_matches_its_generator(artifact: str, render: object) -> None:
+def test_a_generated_artifact_matches_its_generator(
+    artifact: str, render: object
+) -> None:
     # Falsifier: edit either committed file by hand, or change the generator without re-running
     # it, and this names the file and the command that fixes it.
     assert callable(render)
