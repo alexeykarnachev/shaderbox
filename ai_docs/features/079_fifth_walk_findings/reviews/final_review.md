@@ -67,3 +67,32 @@ One reviewer wrote `tests/_zz_probe_d9_test.py` despite the prompt saying not to
 gate. Removed. Its subject was D9 (the error strip's placement), the one decision with no gate
 because only one App per process may drive `update_and_draw` — so its claim is worth reading in the
 behaviour agent's report rather than dismissing with the file.
+
+### Decision coverage (sonnet) — PASS, all 13 covered
+
+Every locked decision demonstrated by execution rather than by reading. Two worth naming:
+
+- **D9** (the error strip below the image) is the one decision with no permanent gate, because only
+  one App per process may drive `update_and_draw`. The agent probed it in a real frame anyway and
+  measured the strip landing at the image's true bottom, one `cell_h` below where the interaction
+  button ends. That is the geometry the fix intended.
+- **D8** (the viewer at full alpha) has no direct render test either; the mechanism is a
+  `push_style_var` wrapping the viewer inside the outer disabled scope, unambiguous in source.
+
+Its one FAIL — `test_editor_ffi.py` — was the in-flight re-vendor, not a 079 regression. It read
+the concurrent working-tree churn as "two other Claude sessions"; it was this session, mid-vendor.
+
+## Editor re-vendor: `6d526c6` -> `38cadbc`
+
+W-C's remaining half is closed. The editor session reframed the ask: `gl_FragColor`, `texture2D`
+and `textureCube` are not builtins in the wrong colour, they are names 460 core REMOVED, so
+dropping them from the lexer's builtin list is a correctness fix rather than a new precedence
+rule. Measured after vendoring: 30 orange glyphs for `gl_FragColor` plus a user's `fragColor` twice,
+`gl_FragCoord` still a builtin.
+
+Two corrections to this session's own earlier work:
+- **`gl_FragData` was never a builtin.** Re-measured on the OLD library, it recoloured fine. The
+  claim that both names were affected came from reading `_BUILTIN_OUTPUTS` rather than measuring
+  each name.
+- **`abi_probe.py` is a sixth vendored artifact** the handover list omitted; the signature-table
+  gate fails without it. Reported back.
