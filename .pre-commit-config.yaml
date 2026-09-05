@@ -23,5 +23,8 @@ repos:
         language: system
         types: [python]
         pass_filenames: false
-        entry: uv run pyright shaderbox
+        # NO path argument: a path on the command line OVERRIDES `[tool.pyright] include`, so
+        # `pyright shaderbox` silently un-widens the checked set and the scripts go unchecked
+        # while the gate stays green. Let the config decide what is checked.
+        entry: uv run pyright
         verbose: true

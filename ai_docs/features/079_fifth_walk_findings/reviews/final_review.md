@@ -211,3 +211,45 @@ fixed is simply not written again. No question about touched-ness or rewritten-n
 is what made the first two attempts subtly wrong. The behavior-level sentinel is not a per-key row
 and is left alone. Both halves are now gated — a row that persists across four ticks of an
 unchanged script, and a row that clears across a bare/block rewrite — and the mutation fails both.
+
+### Unreached-code hunt (opus) — PARTIAL, and it found the worst one
+
+**The round-2 pyright widening never took effect.** `.pre-commit-config.yaml`'s hook read
+`uv run pyright shaderbox` — a path argument, which OVERRIDES `[tool.pyright] include`. So the
+config named `scripts/` and `.claude/skills/`, the gate stayed green, and nothing checked them.
+Proven both ways: an injected type error in `scripts/token_probe.py` is invisible to
+`pyright shaderbox` and caught by `pyright` with no argument. The hook now passes no path, and
+`make check` catches the injected error.
+
+That is the worst failure shape in this whole review — a rule that reads as enforced, passes its
+gate, and enforces nothing. It is also the second time this feature shipped an inert mechanism
+(the smoke canary's `PassEntry(inputs=…)` was the first), which is why both now have a gate that
+was mutation-tested rather than a comment claiming they work.
+
+**A generated artifact had drifted from its generator.** `shader_lib/text/glyphs.glsl` still said
+`Node.compile()`, the name 065 renamed — in shipped library text the copilot reads. Nobody re-ran
+`scripts/gen_glyphs.py` after the rename and nothing compared them. Regenerated, and
+`tests/test_generated_artifacts.py` now asserts both of that generator's outputs match what it
+renders, naming the fix command on failure. Mutation-tested.
+
+**The shader-lab skill stated a confident falsehood.** It said `SB_fbm` "was REMOVED" and told the
+reader to hand-write one; `SB_fbm` ships in `noise/fbm.glsl`, and the skill's inventory also
+omitted `SB_domain_warp`, `SB_hash22`, `SB_hash31`, `SB_tri_wave`. A recited inventory goes stale
+in silence, so the skill now names the grep that is always right instead of a list.
+
+**`063/rc_proof.py` does not import** — it reads `shaderbox.core.Node`. Left that way on purpose:
+063's own `17_direction.md` calls it "evidence, not a foundation", and rewriting its imports to
+today's names would make it a claim about an engine it never measured. It now says so in its
+docstring, so a reader does not mistake a frozen record for a runnable script.
+
+Its false-trail section is the most useful part of the report: `render_document.py` runs in both
+modes now, `068/oracle.py` still passes at 3.65% relMAE, `build_tutorial.py` reproduces the
+committed HTML byte for byte, every `scripts/**` module resolves every attribute it accesses,
+and the three shell scripts are `bash -n` clean with every staged path present.
+
+## Convergence
+
+Three rounds, each finding real defects, and two of them finding defects in the previous round's
+fix. That is the loop working as intended rather than a sign of thrash: the stale-clear took three
+attempts because the first two asked the wrong question, and the pyright widening took two because
+the first was inert.

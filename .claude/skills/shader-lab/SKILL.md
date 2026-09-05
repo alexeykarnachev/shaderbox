@@ -127,14 +127,13 @@ than one pass, and `scripts/script.py` for CPU-driven
 uniforms). `SB_*` helpers resolve from the live shader lib automatically. The smallest valid
 `document.json`:
 
-> **VERIFY the `SB_*` inventory before using a helper — the shipped set is SMALLER than old labs
-> assume.** The canonical library ships in `shaderbox/resources/shader_lib/`; the current set is only:
-> `SB_value_noise`, `SB_hash21`, `SB_sd_box/circle/segment`, `SB_op_*` (union/subtract/intersect/
-> smooth_union/round/onion), `SB_fill`, `SB_fill_aa`, `SB_glow`, `SB_center_uv`, `SB_rotate`,
-> `SB_sd_char/text` + `SB_text_*`. **`SB_fbm` was REMOVED** — the `fire`/`us_flag` labs reference it and
-> WON'T compile as-is; write a local fbm from `SB_value_noise` (`fbm(p)=Σ aᵢ·SB_value_noise(2ⁱp)`), and
-> a local star SDF (iq `sdStar5`) — neither ships. Confirm with
-> `grep -rhoE '\bSB_[a-z0-9_]+\s*\(' shaderbox/resources/shader_lib/ | sort -u`. If a `SB_*` won't
+> **READ the `SB_*` inventory before using a helper — never recite one from memory.** The library
+> grows, and a list written into this file goes stale silently: it said `SB_fbm` "was REMOVED" and
+> told readers to hand-write one long after `SB_fbm` shipped, which is worse than saying nothing.
+> The canonical library is `shaderbox/resources/shader_lib/`, and the one command that is always
+> right is:
+> `grep -rhoE '\bSB_[a-z0-9_]+\s*\(' shaderbox/resources/shader_lib/ | sort -u`.
+> Run it, use what it prints, and write a local helper only for what it does not. If a `SB_*` won't
 > resolve at all (empty live lib), seed it once:
 > `python -c "from pathlib import Path; import shaderbox; from shaderbox.shader_lib.seed import sync_shipped_lib; from shaderbox.paths import shader_lib_root; sync_shipped_lib(Path(shaderbox.__file__).parent/'resources'/'shader_lib', shader_lib_root())"`.
 

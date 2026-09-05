@@ -3,6 +3,12 @@ with the node's own shader.frag.glsl doing the final gather. Zero engine changes
 
 Also measures: does the engine's per-frame overhead (script tick + Node.render)
 leave room at 60fps, and does the node's unconditional clear() break anything?
+
+FROZEN EVIDENCE, NOT A RUNNABLE SCRIPT (063's own `17_direction.md` says so). It reads
+`shaderbox.core.Node`, the name 065 renamed to `Pass`, so it no longer imports. That is
+deliberate: this file records what the experiment ran against, and rewriting its imports to
+today's names would make it a claim about an engine it never measured. `068/oracle.py`, which
+measures a numeric result rather than an engine shape, does still run.
 """
 
 import os
