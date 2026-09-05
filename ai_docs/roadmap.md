@@ -26,20 +26,21 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-04, 078 built and reviewed to convergence; the maintainer's display checks and W-J are what is left. -->
-**Next: the maintainer's display checks of 078 (`01_spec.md ## Manual verification`, 13 items),
-then W-J (the checkerboard during a copilot turn, display-only), then the 077 sweep.** Everything
-else of 078 landed today and is reviewed: the error row + `F8` note, Reset on the Document tab,
-the settings outline, the copilot edit's indent, the pass draft modal, the grouped source list,
-`Ctrl+Shift+I` formatting, four editor re-vendors (now `6d526c6`: `dd` column, insert
-`<Right>`, the two seams, the ten-slot palette, and a stale highlight cache after `set_text`
-that is the likely cause of #18's color breakage), and W-A editor
-intelligence (`shaderbox/intel/`: the buffer read as text, the script's returns, jedi on one
-thread; completion re-based, `K` on both tabs, host classes coloring the text) through two
-review rounds of two opus reviewers each, every finding fixed and pinned. The maintainer's first
-display check found the cursor band jumping after a format: markers move with edits, the host
-fingerprint lacked the revision; fixed, and it was finding #8's cause. A failed display check
-gets fixed in the wave that runs it; nothing of 078 is queued in `todo.md`.
+<!-- As of 2026-09-05, 079 spec drafted from the maintainer's display checks of 078; plan-lock is the next step. -->
+**Next: 079 plan-lock, then its waves in the spec's order.**
+`ai_docs/features/079_fifth_walk_findings/01_spec.md` is the verified ledger of the fourteen
+findings the maintainer filed after running 078's display checks (`00_raw_findings.md`
+verbatim), eleven locked decisions and three open questions: Q1 the kind order for sorting
+candidates, Q2 the low-emphasis button style — he picks from
+`ai_docs/features/079_fifth_walk_findings/button_styles.html` (open it in a browser; six tiers,
+three Reset variants, three chips) — and Q3 the `K` note's picture size. Causes found in the
+filing session: the copilot dim is `begin_disabled` over the viewer, so the render composites
+at the disabled alpha and the checker shows through; the note blinks because an auto-resize
+imgui window is sized from the previous frame; the error strip sits on the status band because
+the interaction button is one row short; the stub lacks ruff's second blank line; `1.` is a
+member site to the regex; the orphan-key error is a normal authoring state. `gl_FragColor`
+lexes as a builtin, so the orange output variable needs the editor session (W-C). First waves
+after lock: W-I viewer alpha, W-F strip, W-H stub, W-E orphan key — one-line causes.
 
 **After that: the sweep over the 077 material** — `ai_docs/features/077_rc_model_comparison/`
 (both rounds, the "left for the sweep" list) and the station pages (`dogfood/index.html`,
@@ -61,7 +62,8 @@ still needs a Windows host before the next cut.
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 078 | maintainer_walk_findings | partial | The maintainer's fourth walk: 19 findings verified against the code, fourteen locked decisions, ten workstreams landed and reviewed to convergence (the editor-intelligence module `shaderbox/intel/`, formatting, the pass draft modal, the error row, three editor re-vendors); the 13 display checks and W-J (the checkerboard during a copilot turn) are outstanding. Spec: `ai_docs/features/078_maintainer_walk_findings/01_spec.md`. |
+| 079 | fifth_walk_findings | spec | The maintainer's display checks of 078: 14 findings verified against the code, eleven decisions, three questions for plan-lock (sorting order, the low-emphasis button style from a candidates page, the note's picture size); the checkerboard's cause is the copilot dim's disabled alpha over the viewer. Spec: `ai_docs/features/079_fifth_walk_findings/01_spec.md`. |
+| 078 | maintainer_walk_findings | done | The maintainer's fourth walk: 19 findings verified against the code, fourteen locked decisions, ten workstreams landed and reviewed to convergence (the editor-intelligence module `shaderbox/intel/`, formatting, the pass draft modal, the error row, four editor re-vendors); its display checks filed as 079, where the checkerboard (W-J) has its cause. Spec: `ai_docs/features/078_maintainer_walk_findings/01_spec.md`. |
 | 077 | rc_model_comparison | done | Eight babysat attempts on seven models, then the three finishers given the whole build as one design document: hy4-preview and gemini-3.8-flash built it end to end, luna did not; the engine findings each attempt surfaced (all landed), and what is left for the sweep. Spec: `ai_docs/features/077_rc_model_comparison/01_report.md`. |
 | 076 | copilot_pass_tools | done | Three lazy tools over the session's pass verbs — `add_pass` (with runs/target/output in the same call), `set_pass` (only the fields given; rename), gated `delete_pass` — each echoing the document's pass table; built under 075's stuck rule when the first experiment's attempt 1 could not create a second pass. Spec: `ai_docs/features/076_copilot_pass_tools/01_spec.md`. |
 | 075 | dogfood_station | done | A durable browsable home for every dogfooding experiment: `dogfood/runs/<id>/events.jsonl` appended by the harness's own `dump()`, a static site regenerated from it (conversation, tool calls, renders and videos inline, per-request context panel with every block's size and text), and the `context_breakdown` trace event deferred since 026; the station records and never judges. Spec: `ai_docs/features/075_dogfood_station/01_spec.md`. |
