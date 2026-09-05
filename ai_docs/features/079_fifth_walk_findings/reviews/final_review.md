@@ -253,3 +253,55 @@ Three rounds, each finding real defects, and two of them finding defects in the 
 fix. That is the loop working as intended rather than a sign of thrash: the stale-clear took three
 attempts because the first two asked the wrong question, and the pyright widening took two because
 the first was inert.
+
+## Round 4
+
+### Fix verification (sonnet) — PASS
+
+All four round-3 fixes bite. Each broken in a disposable worktree, each gate goes red naming the
+offending file: a type error under `scripts/` and one under `.claude/skills/` both fail
+`make check`; hand-editing either generated artifact fails its parametrized case with the fix
+command; a bogus import fails exactly one of the standalone-script cases; and a soft error
+persists across all ten consecutive ticks, clearing the tick after the fix, with two bad keys
+resolving independently.
+
+Its own false trail is the useful part: its first tick probe looked like an engine defect until it
+found the probe had skipped `eng.reload()` — `tick()` does not recompile a changed file. It
+caught its own bug instead of filing it.
+
+### Inert-mechanism hunt (opus) — PARTIAL, and it caught the gate itself
+
+**`make gates` reported GREEN for every auto-fixable ruff violation.** The target retried `check`
+on ANY first-run failure, reasoning that hooks rewrite files — but `ruff --fix` and `ruff-format`
+ARE the file-rewriting hooks, so an auto-fixable violation was silently repaired and run 2 passed.
+Reproduced: appending an unformatted function to `shaderbox/paths.py` leaves `make gates` at exit
+0, GREEN, with the file rewritten in the tree.
+
+This is why an unformatted file shipped earlier today, and why the commit that fixed that instance
+said "`make check` does catch it" — true of `make check`, false of `make gates`, which is the gate
+the rules mandate. The instance was closed and the mechanism was not.
+
+The retry now fires only when the tree is UNCHANGED — pyright's env bootstrap, the case that
+earned it — and a rewrite fails the gate telling the reader to review and stage. Three cases
+verified: a clean tree stays green, an auto-fixable violation fails naming the rewrite, a
+non-auto-fixable error still fails. Getting the detection right took three attempts (porcelain
+alone, then a diff stat that happened to be identical, then hashing the diff content), which is
+the same lesson as the stale-clear: compare what actually changed, not a summary of it.
+
+**A second `PassEntry(inputs=…)`.** `TargetConfig(persist=True)` in `test_pass_verbs.py` names a
+field 7188717 removed; pydantic dropped it. `extra="forbid"` is not available on these twelve
+models — they are the persisted shapes, and forbidding extras would make an older `document.json`
+fail to load, which the persistence posture rules out — so `tests/test_model_kwargs.py` guards the
+CALL SITES instead, walking every `Model(field=…)` in `shaderbox/`, `tests/`, `scripts/` and
+`dogfood/`. Mutation-tested: it names file, line, model and keyword.
+
+Its false trail is worth keeping: seven guard tests mutated at their source all went red, every
+dataclass raises on an unknown kwarg (only pydantic is silent), no model uses an alias, 91
+settings fields all trace to a consumer, and all 16 env vars are accounted for.
+
+## Convergence
+
+Four rounds. Each found real defects, and three found defects in the previous round's fix — the
+stale-clear took three attempts, the pyright widening two, the gates retry three. The pattern
+worth keeping is not "review until clean" but "a fix is a claim, and a claim needs the same
+demonstration as the bug it closes."

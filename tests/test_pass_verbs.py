@@ -239,7 +239,7 @@ def test_set_output_persists_and_refuses_a_stranger(app: Any) -> None:
 def test_a_target_change_reallocates_the_canvas_and_persists(app: Any) -> None:
     document_id = _document_id(app)
     app.session.add_pass(document_id, "tuned")
-    target = TargetConfig(dtype="f4", filter_linear=False, wrap=True, persist=True)
+    target = TargetConfig(dtype="f4", filter_linear=False, wrap=True)
     assert app.session.set_pass_target(document_id, "tuned", target) == ""
     render_pass = app.ui_documents[document_id].document.passes["tuned"]
     assert render_pass.canvas.texture.dtype == "f4"

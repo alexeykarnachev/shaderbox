@@ -72,12 +72,29 @@ gates:
 	smoke_outcome=passed
 	echo "== gates: check =="
 	rc=0
+	before=$$(git diff HEAD 2>/dev/null | md5sum; git status --porcelain 2>/dev/null | sort)
 	$(MAKE) --no-print-directory check >"$$log" 2>&1 || rc=$$?
 	if [ $$rc -ne 0 ]; then
-		echo "== gates: check exited $$rc on the first run; re-running (hooks rewrite files) =="
-		rc=0
-		$(MAKE) --no-print-directory check >"$$log" 2>&1 || rc=$$?
+		# A first-run failure is only benign when the hooks changed NOTHING -- pyright's env
+		# bootstrap is the case that earns the retry. `ruff --fix` and `ruff-format` are
+		# file-rewriting hooks, so retrying unconditionally turned every auto-fixable
+		# violation into a GREEN gate with an uncommitted repair in the tree, and this repo
+		# shipped exactly that.
+		after=$$(git diff HEAD 2>/dev/null | md5sum; git status --porcelain 2>/dev/null | sort)
+		if [ "$$after" != "$$before" ]; then
+			cat "$$log"
+			echo "== gates: FAILED at check (exit $$rc); the hooks REWROTE files -- review"
+			echo "==        and stage them, then re-run. test and smoke not run =="
+			status=$$rc
+			rc=0
+			skip_rest=1
+		else
+			echo "== gates: check exited $$rc leaving the tree unchanged; re-running =="
+			rc=0
+			$(MAKE) --no-print-directory check >"$$log" 2>&1 || rc=$$?
+		fi
 	fi
+	if [ "$${skip_rest:-0}" = "1" ]; then rc=$$status; fi
 	if [ $$rc -ne 0 ]; then
 		cat "$$log"
 		echo "== gates: FAILED at check (exit $$rc); test and smoke not run =="
