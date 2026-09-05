@@ -363,10 +363,11 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   only that key (`(document_id, pass, name)`); a raw throw / non-dict return is behavior-level — freezes every
   pair it drove last frame, records under the sentinel `(document_id, "", "script.py")` (`""` is the
   absent-pass marker a document-level error uses). A key naming an engine-owned (`u_time`…) uniform is dropped
-  SILENTLY; an orphan/typo/sampler key inside a pass block records a soft `(document_id, pass, name)` error +
-  skip, and a bare key NO pass declares records under `(document_id, "", name)`. The strip shows a
-  pass-attributed error on the script tab AND on that pass's shader tab; a bare-key or sentinel error is the
-  script tab's alone. NaN/Inf is frozen-as-data like a shape error.
+  SILENTLY, and so is a key NO pass declares — writing the script before the shader declares the uniform
+  is a normal authoring step, and the shader side already offers the declaration (079 D5). A key naming a
+  sampler/block, or an unknown pass name, records a soft error + skip. The strip shows a pass-attributed
+  error on the script tab AND on that pass's shader tab; a bare-key or sentinel error is the script tab's
+  alone. NaN/Inf is frozen-as-data like a shape error.
   **PLAY/STOP is document-scoped + `(pass, name)`-keyed model state, NOT a per-`UIUniform` flag (feature 048,
   pass-qualified by 069).** A uniform the dict returns PLAYS (the engine writes it each tick); the user STOPS it
   to edit by hand. STOP state is `UIDocumentState.stopped_uniforms: list[StoppedKey]` + a document-wide
@@ -693,6 +694,20 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   share-draw loop. Exporter-only methods (e.g. Telegram's `set_default_pack`) stay concrete on the
   exporter and are reached via `isinstance` at the one `app.py` call site, not hoisted to the ABC.
   Revisit if a capability is genuinely shared by ≥2 concrete exporters (then promote it to the ABC).
+- **Four button tiers, and two gates that keep it at four (079 D12).** `standard_button` (an
+  ordinary verb — transparent fill, a 1 px `BORDER` frame, secondary text), `primary_button` (a
+  section's one call-to-action), `danger_button` (the standard frame in the error color),
+  `toggle_button` (the standard frame off, filled accent on). The three framed tiers share one
+  private helper, so they read as one family by construction rather than by three call sites
+  agreeing. A low-emphasis tier MUST carry a frame: the text-only shape reads as prose, not as a
+  control. Chips and pills are outside the count — a chip names a STATE the surface is in, a
+  button names an ACTION about to be taken, and a "Reset" that clears the filters is a verb even
+  in a row of pills. `tests/test_button_tiers.py` fails on a raw `imgui.button` outside
+  `ui_primitives.py` (with an allowlist for calls that are not labelled verbs — a hit rect, a
+  glyph cell, an icon — each entry checked to still exist) and on a fifth labelled primitive that
+  styles its own button. Revisit if a site's role genuinely fits none of the four; that is a
+  design question, not a new primitive.
+
 - **Exporter share-panels are built from shared `ui_primitives`, not ad-hoc imgui.** The panel chrome
   every exporter repeats — the fixed preview box (`preview_box`, one shared `SIZE.SHARE_PREVIEW_*`
   size so all outlets match + can't jitter), the labelled fields (`labeled_text_input` /

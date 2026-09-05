@@ -79,7 +79,9 @@ def test_no_site_hand_rolls_a_button_outside_the_primitives() -> None:
     }
     assert not unlisted, (
         "raw imgui button calls outside ui_primitives.py: "
-        + "; ".join(f"{m}::{c} at {lines}" for (m, c), lines in sorted(unlisted.items()))
+        + "; ".join(
+            f"{m}::{c} at {lines}" for (m, c), lines in sorted(unlisted.items())
+        )
         + " — use a button tier (079 D12), or list it in _NOT_A_VERB with why"
     )
 
@@ -114,7 +116,7 @@ def test_the_tier_set_stays_at_four() -> None:
         f"{sorted(extra)} style their own buttons outside the four tiers "
         f"{sorted(_TIERS)} — pick a tier, or make the case for changing the tier set"
     )
-    assert _TIERS <= set(labelled), (
+    assert set(labelled) >= _TIERS, (
         f"a tier went missing: {sorted(_TIERS - set(labelled))}"
     )
 

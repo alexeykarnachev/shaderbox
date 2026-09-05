@@ -189,7 +189,9 @@ W-J's inventory question.
 
 ### W-J — The button system, swept (#11 #12, D7 D12) — landed
 
-The inventory came to 48 primitive call sites plus 9 raw imgui button calls across 21 files.
+The inventory came to 59 primitive call sites plus 9 raw imgui button calls across 21 files
+(measured at `0e17e64`, the commit before the sweep; the W-J commit message says 48, which
+was an undercount from a grep that missed the `pill_button` and `chip_button` sites).
 What each raw call turned out to be: two labelled verbs (`Open dir`, `New document`), which took
 the standard tier, and seven that are not verbs at all — three `invisible_button` hit rects (the
 editor surface, the splitter, the chat's resize handle), an emoji cell whose label IS the glyph,

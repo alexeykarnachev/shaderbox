@@ -52,10 +52,6 @@ def faint_hline(
 #   toggle_button   — a stateful on/off control: the standard frame when off, filled
 #                     accent when on. SAME label both states; the style carries it.
 #
-# The earlier low-emphasis tier was text-only with no frame, which the maintainer read
-# as prose rather than as a control: "it looks like a text, the boundaries are not
-# clear, often this blures with other neighboring text". A frame is what says clickable.
-#
 # Chips and pills (`chip_button`, `pill_button`) are NOT in the count: they are a
 # different thing — a tag, a filter, a mode selector — and are their own primitive.
 # ---------------------------------------------------------------------------
