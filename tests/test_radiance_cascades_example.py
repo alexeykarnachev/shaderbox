@@ -34,18 +34,18 @@ def gl_ctx() -> Iterator[moderngl.Context]:
     os.environ.setdefault("MESA_GL_VERSION_OVERRIDE", "4.6")
     os.environ.setdefault("MESA_GLSL_VERSION_OVERRIDE", "460")
     try:
-        ctx = moderngl.create_standalone_context()
+        context = moderngl.create_standalone_context()
     except Exception as e:
         pytest.skip(f"no standalone GL context available: {e}")
-    yield ctx
-    ctx.release()
+    yield context
+    context.release()
 
 
 def test_the_example_is_registered() -> None:
     assert _RC_ID in EXAMPLE_ORDER
 
 
-def _render(ctx: moderngl.Context, frames: int = 24):
+def _render(context: moderngl.Context, frames: int = 24):
     """Render the shipped document through the real load path, driving nothing.
 
     Nothing is injected on purpose. An earlier version of this helper wrote `u_brush*` onto the
@@ -54,7 +54,7 @@ def _render(ctx: moderngl.Context, frames: int = 24):
     OUTPUT pass), so the example rendered BLACK in the app while these tests passed. The scene is
     analytic now, so the honest test is to load it and render it exactly as the app does.
     """
-    doc, _ = Document.load_from_dir(_DOC, ctx)
+    doc, _ = Document.load_from_dir(_DOC, context)
     for frame in range(frames):
         doc.begin_frame(frame)
         doc.render(u_time=frame / 30.0)

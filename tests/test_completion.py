@@ -217,7 +217,7 @@ def test_the_script_tab_offers_what_the_worker_answered() -> None:
             _context(
                 tab_kind="script",
                 index=None,
-                line_before_caret="x = ctx.",
+                line_before_caret="x = context.",
                 prefix="",
                 python_candidates=members,
             )
@@ -479,5 +479,5 @@ def test_a_float_literals_dot_is_not_a_member_site() -> None:
     # the `\.\w*` alternative and the first four go True.
     for line in ("x = 1.", "x = 0x1f.", "1_000.", "2j."):
         assert not PYTHON_SITE.search(line), line
-    for line in ("x.", "f().", "a[0].", "ctx.t", "obj.attr.", "self.pha"):
+    for line in ("x.", "f().", "a[0].", "context.t", "obj.attr.", "self.pha"):
         assert PYTHON_SITE.search(line), line

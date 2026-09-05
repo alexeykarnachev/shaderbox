@@ -1163,7 +1163,7 @@ class App:
         self.frame_idx = 0
         # Wall-clock of the previous script-engine tick (feature 040), for the per-frame dt.
         self.last_tick_time = 0.0
-        # The live cursor over the current document's preview, fed into the script tick as ctx.mouse
+        # The live cursor over the current document's preview, fed into the script tick as context.mouse
         # (feature 042). Updated from the preview hit-test in ui.py; defaults to center (the
         # export value) until the preview is hovered. One frame stale by construction (tick runs
         # before the preview draws) — harmless, like dt.

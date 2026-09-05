@@ -53,12 +53,12 @@ def gl_ctx() -> Iterator[moderngl.Context]:
     os.environ.setdefault("MESA_GL_VERSION_OVERRIDE", "4.6")
     os.environ.setdefault("MESA_GLSL_VERSION_OVERRIDE", "460")
     try:
-        ctx = moderngl.create_standalone_context()
+        context = moderngl.create_standalone_context()
     except Exception as e:
         pytest.skip(f"no standalone GL context available: {e}")
     set_active(ShaderLibIndex.build(shader_lib_root()))
-    yield ctx
-    ctx.release()
+    yield context
+    context.release()
 
 
 def _document(

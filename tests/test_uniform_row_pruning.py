@@ -36,9 +36,9 @@ _TEXT_EXAMPLE = _EXAMPLES / "f90f5ff9-29c6-4bcf-aee7-090f20542353"
 
 @pytest.fixture(scope="module")
 def gl() -> moderngl.Context:
-    ctx = moderngl.create_standalone_context(require=460)
+    context = moderngl.create_standalone_context(require=460)
     set_active(ShaderLibIndex.build(shader_lib_root()))
-    return ctx
+    return context
 
 
 def _rows(document_dir: Path) -> dict:

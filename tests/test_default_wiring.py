@@ -58,9 +58,9 @@ void main() { fs_color = vec4(texture(u_df, vs_uv).rgb, 1.0); }
 
 @pytest.fixture(scope="module")
 def gl() -> moderngl.Context:
-    ctx = moderngl.create_standalone_context(require=460)
+    context = moderngl.create_standalone_context(require=460)
     set_active(ShaderLibIndex.build(shader_lib_root()))
-    return ctx
+    return context
 
 
 # ---------------------------------------------------------------- the pure resolution

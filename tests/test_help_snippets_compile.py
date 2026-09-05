@@ -24,9 +24,9 @@ _WHOLE_SHADERS = [
 
 @pytest.fixture(scope="module")
 def gl() -> moderngl.Context:
-    ctx = moderngl.create_standalone_context(require=460)
+    context = moderngl.create_standalone_context(require=460)
     set_active(ShaderLibIndex.build(shader_lib_root()))
-    return ctx
+    return context
 
 
 def test_there_is_at_least_one_compilable_snippet() -> None:

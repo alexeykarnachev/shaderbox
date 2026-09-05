@@ -138,7 +138,7 @@ SCRIPTING (document scripts -- CPU state the shader cannot hold)
   step the CPU state each frame and push the result as an ARRAY uniform (`Array([..flat..])` ->
   `uniform vecN arr[M];`), never faked per-pixel. Per-pixel work (noise, ramps, lighting, SDF) stays
   GLSL. Check the sim's ranges/stability before rendering (a blow-up shows only as a black frame).
-- INSIDE a script, drive motion from ctx.t, never ctx.mouse: mouse is frozen at center on export and
+- INSIDE a script, drive motion from context.t, never context.mouse: mouse is frozen at center on export and
   in the headless probe, so a mouse-driven uniform reads STATIC even when it is correct.
 - A script-DRIVEN uniform is NOT set_uniform-able (a set is overwritten next tick and rejected). To
   change a driven value, edit update -- not the shader default (once driven, the default only seeds

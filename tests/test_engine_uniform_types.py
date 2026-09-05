@@ -21,9 +21,9 @@ _WRONG: dict[str, str] = {"float": "int", "vec2": "ivec2"}
 
 @pytest.fixture(scope="module")
 def gl() -> moderngl.Context:
-    ctx = moderngl.create_standalone_context(require=460)
+    context = moderngl.create_standalone_context(require=460)
     set_active(ShaderLibIndex.build(Path()))
-    return ctx
+    return context
 
 
 def _compile(gl: moderngl.Context, tmp_path: Path, declaration: str, use: str) -> Pass:

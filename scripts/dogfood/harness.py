@@ -130,7 +130,7 @@ from shaderbox.render_preset import (  # noqa: E402
     ResolutionPolicy,
 )
 from shaderbox.render_shape import RenderShape  # noqa: E402
-from shaderbox.scripting import EngineContext  # noqa: E402
+from shaderbox.scripting import ScriptContext  # noqa: E402
 from shaderbox.shader_lib.file_ops import ShaderLibFileManager  # noqa: E402
 
 
@@ -158,9 +158,9 @@ class DogfoodHarness:
     """
 
     def __init__(
-        self, ctx: moderngl.Context, session: ProjectSession, project_dir: Path
+        self, context: moderngl.Context, session: ProjectSession, project_dir: Path
     ) -> None:
-        self._ctx = ctx
+        self._ctx = context
         self.session = session
         self.project_dir = project_dir
         self._seen_msg_count = 0  # incremental event printing (drive_until_idle)
@@ -189,7 +189,7 @@ class DogfoodHarness:
         # make_current call is needed — create_standalone_context leaves it current, and
         # Document/Canvas pick it up via moderngl.get_context(). (moderngl's stub types **kwargs
         # as a dict, so `backend=` trips pyright — an upstream stub gap.)
-        ctx = moderngl.create_standalone_context(backend="egl")  # type: ignore[arg-type]
+        context = moderngl.create_standalone_context(backend="egl")  # type: ignore[arg-type]
 
         resuming = project_dir is not None
         if project_dir is None:
@@ -238,7 +238,7 @@ class DogfoodHarness:
         if session.ui_documents and not session.current_document_id:
             session.set_current_document_id(next(iter(session.ui_documents)))
 
-        harness = cls(ctx, session, project_dir)
+        harness = cls(context, session, project_dir)
         if resuming:
             harness._restore_conversation()
             station = StationRecorder.resume(project_dir)
@@ -619,7 +619,7 @@ class DogfoodHarness:
 
         Each sample is a REPLAY, never a live tick: a scripted document gets a FRESH behavior per
         sample, stepped through frames `0..round(t*fps)` on the export-isolation seam, so a
-        stateful integrator (one that reads `ctx.dt`) samples its real trajectory and two calls
+        stateful integrator (one that reads `context.dt`) samples its real trajectory and two calls
         with the same times give the same sheet. A script-less document renders directly at each `t`.
 
         Frames alpha-composite onto (25,25,40) — deliberately NOT the eye's (40,40,40), so a
@@ -652,7 +652,7 @@ class DogfoodHarness:
                         engine.tick_export(
                             target,
                             document,
-                            EngineContext(t=frame * dt, dt=dt, frame=frame),
+                            ScriptContext(t=frame * dt, dt=dt, frame=frame),
                             behavior,
                         )
                 document.render(u_time=t)

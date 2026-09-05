@@ -83,7 +83,7 @@ def _note_geometry(
 
 
 def test_a_note_is_tall_enough_for_every_api_docstring(app: Any) -> None:
-    # `K` on `Ctx` clipped its last lines. imgui advances the cursor by an item's height PLUS
+    # `K` on `ScriptContext` clipped its last lines. imgui advances the cursor by an item's height PLUS
     # `item_spacing.y` after EVERY item, the last one included, so N items cost N gaps — the
     # measurement counted N-1 and came up exactly one gap short. Falsifier: drop the trailing
     # gap from any one branch and the note that uses it clips.

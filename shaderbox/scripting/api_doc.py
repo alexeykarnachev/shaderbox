@@ -2,7 +2,7 @@
 Python side of a document script, rendered FROM the live types so the block cannot drift from them.
 
 Names, signatures and field types come from the code; the semantics beside them are authored, and
-`tests/test_script_api_doc.py` pins the join: `_CTX_GLOSS`'s keys must equal the ctx dataclass
+`tests/test_script_api_doc.py` pins the join: `_CONTEXT_GLOSS`'s keys must equal the context dataclass
 fields, every type name `engine.py::_stub_kind` can return must be a key in `_VALUE_SHAPE_GLOSS`,
 and every public `Vec` member plus every operator dunder must reach the rendered text.
 
@@ -15,7 +15,7 @@ from collections.abc import Iterable
 from inspect import cleandoc
 from textwrap import fill
 
-from shaderbox.scripting.context import EXPORT_MOUSE, EngineContext, MouseState
+from shaderbox.scripting.context import EXPORT_MOUSE, MouseState, ScriptContext
 
 _WRAP_WIDTH: int = 100
 
@@ -39,15 +39,15 @@ _VALUE_SHAPE_GLOSS: dict[str, str] = {
 _MOUSE_FIELDS: str = ", ".join(f"`{n}`" for n in MouseState.__dataclass_fields__)
 _EXPORT_MOUSE_AT: str = f"{EXPORT_MOUSE.x:g},{EXPORT_MOUSE.y:g}"
 
-# Authored gloss per `EngineContext` field, keyed by field name (the type comes from the annotation).
+# Authored gloss per `ScriptContext` field, keyed by field name (the type comes from the annotation).
 # `mouse` MUST keep the freeze caveat: a script driven off the cursor reads STATIC in every probe and
 # every export even when it is correct.
 #
-# TWO renderings of one table, because the readers differ (079 D3). `_CTX_GLOSS` is the PROMPT's:
-# terse, one clause, and it costs tokens on every request carrying the RARE tier. `_CTX_HELP` is
+# TWO renderings of one table, because the readers differ (079 D3). `_CONTEXT_GLOSS` is the PROMPT's:
+# terse, one clause, and it costs tokens on every request carrying the RARE tier. `_CONTEXT_HELP` is
 # what a person reads in the editor's `K` note — full sentences, one fact per line, no `;`-joined
 # lists. Every field is in both; the completeness test walks the dataclass against each.
-_CTX_GLOSS: dict[str, str] = {
+_CONTEXT_GLOSS: dict[str, str] = {
     "t": "seconds since playback started",
     "dt": "seconds since the previous frame",
     "frame": "frame index from 0",
@@ -59,7 +59,7 @@ _CTX_GLOSS: dict[str, str] = {
     ),
 }
 
-_CTX_HELP: dict[str, str] = {
+_CONTEXT_HELP: dict[str, str] = {
     "t": (
         "Seconds since the document started playing.\n"
         "\n"
@@ -93,46 +93,48 @@ _CTX_HELP: dict[str, str] = {
     ),
 }
 
-_IMPORT_NAMES: str = "ScriptBehavior, Ctx"
+_IMPORT_NAMES: str = "ScriptBehavior, ScriptContext"
 
 # The names the engine injects into every script (`behavior.py::_build_globals`), as the
 # editor's intelligence classes them: the script API, not a local and not a builtin.
-API_NAMES: frozenset[str] = frozenset({"ScriptBehavior", "Ctx", MouseState.__name__})
+API_NAMES: frozenset[str] = frozenset(
+    {"ScriptBehavior", "ScriptContext", MouseState.__name__}
+)
 
 
 # What `K` shows for each injected API name: a summary line, a blank line, then the detail
-# (PEP 257 with the Google layout, 079 D3). `Ctx` and `MouseState` read their class docstrings,
+# (PEP 257 with the Google layout, 079 D3). `ScriptContext` and `MouseState` read their class docstrings,
 # so the concept has one authored home.
 _API_HELP: dict[str, str] = {
     "ScriptBehavior": (
         "The base class a document script's Behavior extends.\n"
         "\n"
         "Define __init__(self) for state that survives across frames, and\n"
-        "update(self, ctx) -> dict for the values each frame drives. Press K on Ctx for\n"
-        "what update receives."
+        "update(self, context) -> dict for the values each frame drives. ScriptContext\n"
+        "documents what update receives."
     ),
 }
 
 
 def _class_help(cls: type) -> str:
-    # The class's own docstring — one authored home per concept (079 D3), so `K` on `Ctx` reads
+    # The class's own docstring — one authored home per concept (079 D3), so `K` on `ScriptContext` reads
     # what `context.py` says rather than a second summary that can drift from it.
     return cleandoc(cls.__doc__ or "")
 
 
 def api_symbol_doc(name: str) -> tuple[str, str]:
     """(signature, doc) for one injected API name, for the editor's completion and `K`."""
-    if name == "Ctx":
-        return "Ctx", _class_help(EngineContext)
+    if name == "ScriptContext":
+        return "ScriptContext", _class_help(ScriptContext)
     if name == MouseState.__name__:
         return MouseState.__name__, _class_help(MouseState)
     return name, _API_HELP["ScriptBehavior"]
 
 
-def ctx_field_gloss(field: str) -> str:
-    """What a `ctx` field means, for the editor's `K` and completion detail; "" when the
+def context_field_gloss(field: str) -> str:
+    """What a `context` field means, for the editor's `K` and completion detail; "" when the
     field has no gloss."""
-    return _CTX_HELP.get(field, "")
+    return _CONTEXT_HELP.get(field, "")
 
 
 def _type_name(annotation: object) -> str:
@@ -149,11 +151,11 @@ def _dedup_join(glosses: Iterable[str], sep: str) -> str:
     return sep.join(out)
 
 
-def _ctx_fields() -> str:
+def _context_fields() -> str:
     parts: list[str] = []
-    for name, field in EngineContext.__dataclass_fields__.items():
+    for name, field in ScriptContext.__dataclass_fields__.items():
         # An undocumented new field degrades to bare `name type` rather than breaking prompt build.
-        gloss = _CTX_GLOSS.get(name, "")
+        gloss = _CONTEXT_GLOSS.get(name, "")
         joiner = "" if gloss.startswith("(") else " "
         parts.append(f"`{name}` {_type_name(field.type)}{joiner}{gloss}".rstrip())
     return ", ".join(parts)
@@ -170,16 +172,16 @@ def _bullet(text: str) -> str:
 
 
 def script_api_summary() -> str:
-    """The RARE-tier SCRIPT API block: the script contract, the ctx surface and the legal value
+    """The RARE-tier SCRIPT API block: the script contract, the context surface and the legal value
     shapes, rendered from `context.py`."""
     bullets = [
-        "- `class Behavior(ScriptBehavior)`: `__init__(self)` runs once; `update(self, ctx) -> dict` "
+        "- `class Behavior(ScriptBehavior)`: `__init__(self)` runs once; `update(self, context) -> dict` "
         "runs every frame. A bare key drives that uniform on EVERY pass declaring it: "
         "{uniform_name: value}. A key whose value is a dict is a PASS BLOCK driving that one pass, "
         "{pass: {uniform: value}}, and a pass block WINS over a bare key for the same uniform on "
         "that pass. State on `self.*` persists across frames; a key you omit (or map to None) "
         "stays MANUAL.",
-        f"- ctx: {_ctx_fields()}.",
+        f"- context: {_context_fields()}.",
         f"- Legal value shapes, all PLAIN PYTHON (there are no wrapper types): "
         f"{_dedup_join(_VALUE_SHAPE_GLOSS.values(), '; ')}. An array's length must match the "
         "uniform's exactly.",

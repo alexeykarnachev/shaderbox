@@ -33,9 +33,9 @@ _BLOOM = Path(__file__).parent / "fixtures" / "bloom_chain"
 
 @pytest.fixture(scope="module")
 def gl() -> moderngl.Context:
-    ctx = moderngl.create_standalone_context(require=460)
+    context = moderngl.create_standalone_context(require=460)
     set_active(ShaderLibIndex.build(shader_lib_root()))
-    return ctx
+    return context
 
 
 def test_load_compiles_no_pass(gl: moderngl.Context, tmp_path: Path) -> None:

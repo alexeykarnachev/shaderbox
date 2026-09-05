@@ -36,11 +36,11 @@ EXPORT_MOUSE = MouseState(0.5, 0.5, False, 0.5, 0.5)
 
 
 @dataclass(frozen=True)
-class EngineContext:
-    """The clock and the cursor, handed to `update` once per drawn frame.
+class ScriptContext:
+    """The engine state for one frame, handed to `update` once per drawn frame.
 
     A script's own state lives on the behavior instance (`self.*`), never here: this object is
-    rebuilt every frame and is frozen. `Ctx` is the name it goes by inside a script.
+    rebuilt every frame and is frozen.
 
     Attributes:
         t: Seconds since the document started playing.
@@ -53,6 +53,3 @@ class EngineContext:
     dt: float
     frame: int
     mouse: MouseState = field(default_factory=lambda: EXPORT_MOUSE)
-
-
-Ctx = EngineContext

@@ -9,9 +9,9 @@ import jedi
 from jedi.api.classes import BaseName, Completion
 
 from shaderbox.intel.symbols import Symbol, SymbolKind
-from shaderbox.scripting.api_doc import API_NAMES, api_symbol_doc, ctx_field_gloss
+from shaderbox.scripting.api_doc import API_NAMES, api_symbol_doc, context_field_gloss
 
-_CONTEXT_CLASS = "shaderbox.scripting.context.EngineContext"
+_CONTEXT_CLASS = "shaderbox.scripting.context.ScriptContext"
 
 # In-process inference: no child interpreter to reap, and the one shape measured safe when
 # the calls are serialized on one thread (`worker.py`). Built on first use, by that thread.
@@ -45,13 +45,13 @@ _WORD_AT_END = re.compile(r"\w*$")
 
 
 def _after_dot(before_caret: str) -> bool:
-    # The word at the caret is reached through a dot: `ctx.`, `ctx.t`, `math.si`.
+    # The word at the caret is reached through a dot: `context.`, `context.t`, `math.si`.
     return _MEMBER_AT_END.search(before_caret) is not None
 
 
 def _gloss_for(full_name: str | None) -> str:
     if full_name and full_name.startswith(_CONTEXT_CLASS + "."):
-        return ctx_field_gloss(full_name.rsplit(".", 1)[1])
+        return context_field_gloss(full_name.rsplit(".", 1)[1])
     return ""
 
 
@@ -112,8 +112,8 @@ def python_lookup(text: str, line: int, column: int) -> Symbol | None:
         return None
     name = names[0]
     if name.name in API_NAMES and not _after_dot(lines[line][:column]):
-        # `Ctx` is a bare alias of the context class, so jedi has no docstring for it and
-        # its raw answer is "statement Ctx": the engine's own gloss is the answer.
+        # `ScriptContext` is a bare alias of the context class, so jedi has no docstring for it and
+        # its raw answer is "statement ScriptContext": the engine's own gloss is the answer.
         signature, doc = api_symbol_doc(name.name)
         return Symbol(name.name, SymbolKind.PY_API, signature=signature, doc=doc)
     signature, doc = _signature_and_doc(name)

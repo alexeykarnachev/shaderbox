@@ -19,12 +19,10 @@ _NEAT_GLSL = (
     "    gl_FragColor = vec4(c, 1.0);\n"
     "}\n"
 )
-_UGLY_PY = (
-    'import math\nclass B:\n  def update(self,ctx):\n      return {"u_x":ctx.t*2,}\n'
-)
+_UGLY_PY = 'import math\nclass B:\n  def update(self,context):\n      return {"u_x":context.t*2,}\n'
 _NEAT_PY = (
-    "import math\n\n\nclass B:\n    def update(self, ctx):\n        return {\n"
-    '            "u_x": ctx.t * 2,\n        }\n'
+    "import math\n\n\nclass B:\n    def update(self, context):\n        return {\n"
+    '            "u_x": context.t * 2,\n        }\n'
 )
 
 

@@ -13,17 +13,17 @@ from shaderbox.copilot.prompt import _context_block
 from shaderbox.copilot.prompt_context import build_context
 from shaderbox.scripting import api_doc
 from shaderbox.scripting.api_doc import (
-    _CTX_GLOSS,
-    _CTX_HELP,
+    _CONTEXT_GLOSS,
+    _CONTEXT_HELP,
     _IMPORT_NAMES,
     _VALUE_SHAPE_GLOSS,
     API_NAMES,
     api_symbol_doc,
-    ctx_field_gloss,
+    context_field_gloss,
     script_api_summary,
 )
 from shaderbox.scripting.behavior import _INJECTED_NAMES
-from shaderbox.scripting.context import EXPORT_MOUSE, EngineContext, MouseState
+from shaderbox.scripting.context import EXPORT_MOUSE, MouseState, ScriptContext
 from shaderbox.scripting.engine import _stub_kind, script_stub_for
 from tests._caps import minimal_caps
 
@@ -35,10 +35,10 @@ def _flat(text: str) -> str:
 
 
 def test_ctx_gloss_keys_are_exactly_the_dataclass_fields() -> None:
-    # A new `ctx` field is undocumented until someone writes its gloss — in BOTH renderings, the
+    # A new `context` field is undocumented until someone writes its gloss — in BOTH renderings, the
     # prompt's terse one and the `K` note's prose (079 D3).
-    assert set(_CTX_GLOSS) == set(EngineContext.__dataclass_fields__)
-    assert set(_CTX_HELP) == set(EngineContext.__dataclass_fields__)
+    assert set(_CONTEXT_GLOSS) == set(ScriptContext.__dataclass_fields__)
+    assert set(_CONTEXT_HELP) == set(ScriptContext.__dataclass_fields__)
 
 
 def test_every_help_text_follows_pep_257() -> None:
@@ -46,10 +46,10 @@ def test_every_help_text_follows_pep_257() -> None:
 
     From the source (peps.python.org/pep-0257): a summary line that fits on one line and
     ends in a period, then a BLANK line, then the elaboration. The maintainer's findings were
-    both violations of it — `ctx.dt` and `ctx.frame` opened empty, and `ctx.mouse` ran six
+    both violations of it — `context.dt` and `context.frame` opened empty, and `context.mouse` ran six
     facts together on one line with semicolons. Falsifier: restore either and this goes red.
     """
-    human = {f"ctx.{k}": v for k, v in _CTX_HELP.items()}
+    human = {f"context.{k}": v for k, v in _CONTEXT_HELP.items()}
     human |= {name: api_symbol_doc(name)[1] for name in sorted(API_NAMES)}
     for where, text in human.items():
         assert text.strip(), f"{where} opens an empty note"
@@ -75,10 +75,12 @@ def test_every_google_section_is_spelled_and_indented_as_google_writes_it() -> N
     tool that reads these, which is the failure worth catching.
     """
     known = ("Args:", "Returns:", "Yields:", "Raises:", "Attributes:", "Example:")
-    sources: dict[str, str] = {f"ctx.{name}": text for name, text in _CTX_HELP.items()}
+    sources: dict[str, str] = {
+        f"context.{name}": text for name, text in _CONTEXT_HELP.items()
+    }
     sources |= {name: api_symbol_doc(name)[1] for name in sorted(API_NAMES)}
     sources |= {
-        cls.__name__: cleandoc(cls.__doc__ or "") for cls in (EngineContext, MouseState)
+        cls.__name__: cleandoc(cls.__doc__ or "") for cls in (ScriptContext, MouseState)
     }
     sources["script stub"] = script_stub_for({"main": []})
     misspelled = ("Arguments:", "Return:", "Parameters:", "Raise:", "Attribute:")
@@ -95,24 +97,24 @@ def test_every_google_section_is_spelled_and_indented_as_google_writes_it() -> N
 
 def test_every_ctx_field_answers_under_k() -> None:
     # The `K` path itself, not just the table: an undocumented field would return "".
-    for name in EngineContext.__dataclass_fields__:
-        assert ctx_field_gloss(name), name
+    for name in ScriptContext.__dataclass_fields__:
+        assert context_field_gloss(name), name
 
 
 def test_summary_lists_every_ctx_field_and_the_mouse_subfields() -> None:
     summary = script_api_summary()
-    for name in EngineContext.__dataclass_fields__:
+    for name in ScriptContext.__dataclass_fields__:
         assert f"`{name}`" in summary, name
     for name in MouseState.__dataclass_fields__:
         assert f"`{name}`" in summary, name
 
 
 def test_the_mouse_gloss_carries_the_frozen_at_center_caveat() -> None:
-    # 17ab552 inlined this fact next to the ctx intro because a live leak showed the agent trusting
-    # mouse motion in a probe. The ctx intro moved to the generated block; the caveat moves with it.
+    # 17ab552 inlined this fact next to the context intro because a live leak showed the agent trusting
+    # mouse motion in a probe. The context intro moved to the generated block; the caveat moves with it.
     at = f"{EXPORT_MOUSE.x:g},{EXPORT_MOUSE.y:g}"
     caveat = f"FROZEN at {at} on export and in the headless probe"
-    assert caveat in _CTX_GLOSS["mouse"]
+    assert caveat in _CONTEXT_GLOSS["mouse"]
     assert caveat in _flat(script_api_summary())
 
 

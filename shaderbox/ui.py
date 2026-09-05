@@ -663,7 +663,7 @@ def _draw_document_image(
                 imgui.color_convert_float4_to_u32(COLOR.VIEWER_BORDER),
                 thickness=1.0,
             )
-        # Feed the cursor over the preview into the script tick as ctx.mouse (feature 042; the
+        # Feed the cursor over the preview into the script tick as context.mouse (feature 042; the
         # button and the previous position are 069's). image_with_bg submits no interactive item,
         # so hit-test the captured rect explicitly.
         hit = item_normalized_mouse(

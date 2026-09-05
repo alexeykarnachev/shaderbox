@@ -58,7 +58,7 @@ def test_script_tool_descriptions_carry_the_same_watershed() -> None:
     assert "belongs in the shader (u_time)" in _WRITE_SCRIPT_DESC
     assert "ANIMATION" not in _WRITE_SCRIPT_DESC
     # 059 D1a: the stub claim is the one the generator actually emits (an empty `update`).
-    assert "ctx.t example" not in _READ_SCRIPT_DESC
+    assert "context.t example" not in _READ_SCRIPT_DESC
 
 
 def test_script_surface_hides_the_on_disk_path() -> None:

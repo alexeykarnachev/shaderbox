@@ -45,7 +45,7 @@ def test_a_dropped_answer_releases_the_latch_so_the_site_asks_again(app: Any) ->
     editor = session.editor
     editor.set_host_completion(True)
     editor.feed("Go")
-    editor.feed("        x = ctx.")
+    editor.feed("        x = context.")
     _drive_completion(app, editor, tab)
     asked = app.python_last_request
     assert asked is not None and asked.kind == PythonRequestKind.COMPLETE

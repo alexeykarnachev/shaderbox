@@ -399,7 +399,7 @@ class Document:
         self.time_origin = process_time()
 
     def live_time(self, now: float | None = None) -> float:
-        """Seconds on this document's clock: the live loop's u_time and the script's ctx.t.
+        """Seconds on this document's clock: the live loop's u_time and the script's context.t.
 
         `now` is a process-clock instant for a caller that sampled one for several documents
         (the live tick); omitted, the clock is read here.

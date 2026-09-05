@@ -126,11 +126,11 @@ def test_create_file_in_stub_yields_no_functions(tmp_path: Path, monkeypatch) ->
 @pytest.fixture(scope="module")
 def gl_ctx() -> Iterator[moderngl.Context]:
     try:
-        ctx = moderngl.create_standalone_context()
+        context = moderngl.create_standalone_context()
     except Exception as e:
         pytest.skip(f"no standalone GL context available: {e}")
-    yield ctx
-    ctx.release()
+    yield context
+    context.release()
 
 
 def test_create_document_from_source_does_not_touch_starter_example(

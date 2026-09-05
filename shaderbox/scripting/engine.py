@@ -2,7 +2,7 @@
 by the headless ProjectSession.
 
 Per document it resolves a single `documents/<id>/scripts/script.py` (the document script) whose
-`update(self, ctx) -> dict` drives MANY uniforms across MANY passes from ONE stateful instance. The
+`update(self, context) -> dict` drives MANY uniforms across MANY passes from ONE stateful instance. The
 engine compiles it once (cached by `(path, mtime)`, holding its own state instance), and on each `tick`
 calls `update`, routes the returned dict per 069 D3, coerces each value against the live uniform of the
 target pass, and writes it into that pass's `uniform_values` BEFORE `Pass.render()` reads them. A broken
@@ -39,7 +39,7 @@ from shaderbox.scripting.behavior import (
     _user_error_line,
     coerce_one,
 )
-from shaderbox.scripting.context import EngineContext
+from shaderbox.scripting.context import ScriptContext
 from shaderbox.scripting.errors import ScriptError
 from shaderbox.scripting.keys import StoppedKey
 from shaderbox.uniform_coerce import is_text_array
@@ -193,17 +193,17 @@ def _stub_kind(uniform: moderngl.Uniform) -> tuple[str, str]:
 
 
 # Scoped docstrings (045 E1; 048 documents the dict contract + play/stop; 079 D3 sets the style:
-# PEP 257 with the Google layout, one fact per line, no `;`-joined lists). The per-frame ctx
-# reference is NOT repeated here — `K` on `ctx` or on a field is the one authored home
+# PEP 257 with the Google layout, one fact per line, no `;`-joined lists). The per-frame context
+# reference is NOT repeated here — `K` on `context` or on a field is the one authored home
 # (`api_doc.py`), and a copy in the stub is a copy that drifts.
 _UPDATE_DOC = (
     '        """Return the uniform values to drive this frame.\n'
     "\n"
     "        Called once per drawn frame. Keep state that must survive between frames on\n"
-    "        self; a value that is only a function of ctx.t belongs in the shader.\n"
+    "        self; a value that is only a function of context.t belongs in the shader.\n"
     "\n"
     "        Args:\n"
-    "            ctx: The clock and the cursor for this frame. Press K on it for details.\n"
+    "            context: The engine state for this frame.\n"
     "\n"
     "        Returns:\n"
     "            A dict mapping uniform names to values. A bare key drives that uniform on\n"
@@ -229,7 +229,7 @@ _INIT_DOC = (
 def _script_import_line() -> str:
     # The explicit import line atop the stub (048 decision 8). Two names, and they are the whole
     # importable surface: a script returns plain Python, so there are no value types to import.
-    return "from shaderbox.scripting import ScriptBehavior, Ctx\n"
+    return "from shaderbox.scripting import ScriptBehavior, ScriptContext\n"
 
 
 def script_stub_for(uniforms_by_pass: dict[str, list[moderngl.Uniform]]) -> str:
@@ -281,7 +281,7 @@ def script_stub_for(uniforms_by_pass: dict[str, list[moderngl.Uniform]]) -> str:
         f"    def __init__(self) -> None:\n"
         f"{_INIT_DOC}"
         f"        pass\n\n"
-        f"    def update(self, ctx: Ctx) -> dict:\n"
+        f"    def update(self, context: ScriptContext) -> dict:\n"
         f"{_UPDATE_DOC}"
         f"{body}"
     )
@@ -446,7 +446,7 @@ class ScriptEngine:
         self,
         document_id: str,
         document: ScriptTarget,
-        ctx: EngineContext,
+        context: ScriptContext,
         stopped: frozenset[StoppedKey] = frozenset(),
     ) -> None:
         # Tick the LIVE script: it routes the returned dict across the document's passes and writes
@@ -460,7 +460,7 @@ class ScriptEngine:
         self._tick_script(
             document_id,
             document,
-            ctx,
+            context,
             scripts.behavior,
             scripts.last_good,
             self.errors,
@@ -473,7 +473,7 @@ class ScriptEngine:
         self,
         document_id: str,
         document: ScriptTarget,
-        ctx: EngineContext,
+        context: ScriptContext,
         behavior: PythonBehavior,
     ) -> None:
         # Tick an EXTERNAL script (the export's fresh instance) against the document. EVERY sink is a
@@ -482,7 +482,7 @@ class ScriptEngine:
         self._tick_script(
             document_id,
             document,
-            ctx,
+            context,
             behavior,
             {},
             {},
@@ -538,11 +538,11 @@ class ScriptEngine:
         seen_skipped: set[tuple[str, str]] = set()
         worst: dict[tuple[str, str, str], ScriptError] = {}
         for frame in range(max_frame + 1):
-            ctx = EngineContext(t=frame * dt, dt=dt, frame=frame)
+            context = ScriptContext(t=frame * dt, dt=dt, frame=frame)
             self._tick_script(
                 document_id,
                 document,
-                ctx,
+                context,
                 behavior,
                 {},
                 errors,
@@ -670,7 +670,7 @@ class ScriptEngine:
         self,
         document_id: str,
         document: ScriptTarget,
-        ctx: EngineContext,
+        context: ScriptContext,
         behavior: PythonBehavior,
         last_good: dict[tuple[str, str], Any],
         errors: dict[tuple[str, str, str], ScriptError],
@@ -704,7 +704,7 @@ class ScriptEngine:
             _freeze(drove_last, document, last_good, values_sink)
             return
         try:
-            raw = behavior.run(ctx)
+            raw = behavior.run(context)
         except _RuntimeScriptError as e:  # no instance — authored message
             errors[behavior_key] = e.error
             _freeze(drove_last, document, last_good, values_sink)

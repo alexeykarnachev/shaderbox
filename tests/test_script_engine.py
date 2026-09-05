@@ -20,7 +20,7 @@ from loguru import logger
 
 from shaderbox.core import Pass
 from shaderbox.scripting import (
-    EngineContext,
+    ScriptContext,
     ScriptEngine,
     StoppedKey,
     coerce_one,
@@ -87,8 +87,8 @@ def _write_script(tmp: Path, body: str) -> Path:
     return path
 
 
-def _ctx(t: float, dt: float = 1 / 60, frame: int = 0) -> EngineContext:
-    return EngineContext(t=t, dt=dt, frame=frame)
+def _ctx(t: float, dt: float = 1 / 60, frame: int = 0) -> ScriptContext:
+    return ScriptContext(t=t, dt=dt, frame=frame)
 
 
 def _engine(
@@ -104,7 +104,7 @@ def _script(*, update_body: str, init_body: str = "") -> str:
     # `init_body` (indented-by-8) is an optional __init__ body.
     head = "class Behavior(ScriptBehavior):\n"
     init = f"    def __init__(self) -> None:\n{init_body}" if init_body else ""
-    return f"{head}{init}    def update(self, ctx: Ctx) -> dict:\n{update_body}"
+    return f"{head}{init}    def update(self, context: ScriptContext) -> dict:\n{update_body}"
 
 
 # A script returning a single bare float — exercises bare-scalar coercion.
@@ -112,13 +112,13 @@ _SCALAR = _script(update_body="        return {'u_x': 0.5}\n")
 # A stateful integrator on ONE uniform — only possible with per-instance self.* state.
 _INTEGRATOR = _script(
     init_body="        self.v = 0.0\n",
-    update_body="        self.v += ctx.dt\n        return {'u_x': self.v}\n",
+    update_body="        self.v += context.dt\n        return {'u_x': self.v}\n",
 )
 # A two-uniform integrator: one accumulator drives both u_x and u_y (the headline 048 goal).
 _TWO_INTEGRATOR = _script(
     init_body="        self.v = 0.0\n",
     update_body=(
-        "        self.v += ctx.dt\n"
+        "        self.v += context.dt\n"
         "        return {'u_x': self.v, 'u_y': self.v * 2.0}\n"
     ),
 )
@@ -380,7 +380,7 @@ def test_compile_error_keys_on_sentinel(tmp_path: Path) -> None:
     _write_script(
         tmp_path,
         "class Behavior(ScriptBehavior):\n"
-        "    def update(self, ctx: Ctx) -> dict:\n"
+        "    def update(self, context: ScriptContext) -> dict:\n"
         "        return {\n",  # unterminated dict
     )
     document = _FakeDocument([_u("u_x")])
@@ -405,7 +405,7 @@ def test_a_wrong_import_names_the_right_module(tmp_path: Path) -> None:
         tmp_path,
         "from shaderbox import ScriptBehavior\n"
         "class Behavior(ScriptBehavior):\n"
-        "    def update(self, ctx):\n        return {}\n",
+        "    def update(self, context):\n        return {}\n",
     )
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
@@ -422,8 +422,8 @@ def test_a_missing_import_of_a_scripting_type_names_the_import_line(
     # bare NameError with no route to the import line.
     from shaderbox.scripting.behavior import _import_hint
 
-    assert "from shaderbox.scripting import Ctx" in _import_hint(
-        NameError("name 'Ctx' is not defined", name="Ctx")
+    assert "from shaderbox.scripting import ScriptContext" in _import_hint(
+        NameError("name 'ScriptContext' is not defined", name="ScriptContext")
     )
     assert _import_hint(ImportError("No module named 'numpy'")) == ""
 
@@ -434,7 +434,7 @@ def test_unrelated_import_error_does_not_get_the_steer(tmp_path: Path) -> None:
         tmp_path,
         "from os import notathing\n"
         "class Behavior(ScriptBehavior):\n"
-        "    def update(self, ctx):\n        return {}\n",
+        "    def update(self, context):\n        return {}\n",
     )
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
@@ -452,7 +452,7 @@ def test_update_missing_self_is_compile_error(tmp_path: Path) -> None:
     _write_script(
         tmp_path,
         "class Behavior(ScriptBehavior):\n"
-        "    def update(ctx) -> dict:\n"  # forgot self
+        "    def update(context) -> dict:\n"  # forgot self
         "        return {}\n",
     )
     document = _FakeDocument([_u("u_x")])
@@ -485,7 +485,7 @@ def test_reset_recovers_a_once_failing_init(tmp_path: Path) -> None:
         "        if not Behavior._seen:\n"
         "            Behavior._seen = True\n"
         "            raise ValueError('boom')\n"
-        "    def update(self, ctx: Ctx) -> dict:\n"
+        "    def update(self, context: ScriptContext) -> dict:\n"
         "        return {'u_x': 0.7}\n"
     )
     _write_script(tmp_path, body)
@@ -520,7 +520,7 @@ def test_raw_runtime_throw_freezes_all_at_last_good(tmp_path: Path) -> None:
     time.sleep(0.01)
     path.write_text(
         "class Behavior(ScriptBehavior):\n"
-        "    def update(self, ctx: Ctx) -> dict:\n"
+        "    def update(self, context: ScriptContext) -> dict:\n"
         "        x = 1\n"
         "        raise ValueError('boom')\n",  # line 4
         encoding="utf-8",
@@ -541,7 +541,7 @@ def test_runtime_error_records_deepest_user_line(tmp_path: Path) -> None:
         "class Behavior(ScriptBehavior):\n"
         "    def _bad(self):\n"
         "        return 1.0 / 0.0\n"  # line 3 — the deepest user frame
-        "    def update(self, ctx: Ctx) -> dict:\n"
+        "    def update(self, context: ScriptContext) -> dict:\n"
         "        return {'u_x': self._bad()}\n",
     )
     document = _FakeDocument([_u("u_x")])
@@ -557,7 +557,7 @@ def test_user_raised_builtin_exception_keeps_its_real_error(tmp_path: Path) -> N
     _write_script(
         tmp_path,
         "class Behavior(ScriptBehavior):\n"
-        "    def update(self, ctx: Ctx) -> dict:\n"
+        "    def update(self, context: ScriptContext) -> dict:\n"
         "        raise ValueError('nope')\n",
     )
     document = _FakeDocument([_u("u_x")])
@@ -929,14 +929,14 @@ def test_no_script_file_is_no_op_tick(tmp_path: Path) -> None:
 
 
 def test_t_pure_script_is_deterministic(tmp_path: Path) -> None:
-    # A ctx.t-pure update is identical across dt (the scoped-determinism guarantee). Falsifier: a
+    # A context.t-pure update is identical across dt (the scoped-determinism guarantee). Falsifier: a
     # different dt at the same t yields a different value.
     _write_script(
         tmp_path,
         "import math\n"
         "class Behavior(ScriptBehavior):\n"
-        "    def update(self, ctx: Ctx) -> dict:\n"
-        "        return {'u_x': math.sin(ctx.t)}\n",
+        "    def update(self, context: ScriptContext) -> dict:\n"
+        "        return {'u_x': math.sin(context.t)}\n",
     )
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
@@ -949,13 +949,13 @@ def test_t_pure_script_is_deterministic(tmp_path: Path) -> None:
 def test_integrator_diverges_by_design(tmp_path: Path) -> None:
     # A self-reading nonlinear integrator is path-dependent: the SAME elapsed time reached via
     # different dt yields different values (live variable-dt vs export fixed-dt). Documented as
-    # expected (determinism is scoped to ctx.t-pure scripts), not a violation.
+    # expected (determinism is scoped to context.t-pure scripts), not a violation.
     body = (
         "class Behavior(ScriptBehavior):\n"
         "    def __init__(self) -> None:\n"
         "        self.prev = 1.0\n"
-        "    def update(self, ctx: Ctx) -> dict:\n"
-        "        self.prev = self.prev + self.prev * ctx.dt\n"
+        "    def update(self, context: ScriptContext) -> dict:\n"
+        "        self.prev = self.prev + self.prev * context.dt\n"
         "        return {'u_x': self.prev}\n"
     )
     _write_script(tmp_path, body)
@@ -966,9 +966,9 @@ def test_integrator_diverges_by_design(tmp_path: Path) -> None:
     eng.reload("b", tmp_path / "scripts", document_b)
 
     for _i in range(2):  # two steps of dt=0.5 (variable-dt live path) over 1.0s
-        eng.tick("a", document_a, EngineContext(t=0.0, dt=0.5, frame=0))
+        eng.tick("a", document_a, ScriptContext(t=0.0, dt=0.5, frame=0))
     eng.tick(
-        "b", document_b, EngineContext(t=0.0, dt=1.0, frame=0)
+        "b", document_b, ScriptContext(t=0.0, dt=1.0, frame=0)
     )  # one step of dt=1.0
 
     # 1*(1.5)^2 = 2.25 vs 1*(1+1) = 2.0 — divergent by design.
@@ -1066,7 +1066,7 @@ def test_import_math_works(tmp_path: Path) -> None:
         tmp_path,
         "import math\n"
         "class Behavior(ScriptBehavior):\n"
-        "    def update(self, ctx: Ctx) -> dict:\n"
+        "    def update(self, context: ScriptContext) -> dict:\n"
         "        return {'u_x': math.cos(0.0)}\n",  # 1.0
     )
     document = _FakeDocument([_u("u_x")])
@@ -1081,9 +1081,9 @@ def test_explicit_import_line_resolves(tmp_path: Path) -> None:
     # inside the exec'd script. Falsifier: the import raises an opaque compile-freeze.
     _write_script(
         tmp_path,
-        "from shaderbox.scripting import ScriptBehavior, Ctx\n"
+        "from shaderbox.scripting import ScriptBehavior, ScriptContext\n"
         "class Behavior(ScriptBehavior):\n"
-        "    def update(self, ctx: Ctx) -> dict:\n"
+        "    def update(self, context: ScriptContext) -> dict:\n"
         "        return {'u_off': [0.1, 0.2]}\n",
     )
     document = _FakeDocument([_u("u_off", dim=2)])
@@ -1100,8 +1100,8 @@ def test_super_and_containers_resolve(tmp_path: Path) -> None:
         "    def __init__(self) -> None:\n"
         "        super().__init__()\n"
         "        self.buf = []\n"
-        "    def update(self, ctx: Ctx) -> dict:\n"
-        "        self.buf.append(ctx.t)\n"
+        "    def update(self, context: ScriptContext) -> dict:\n"
+        "        self.buf.append(context.t)\n"
         "        return {'u_x': sum(self.buf) / len(self.buf)}\n",
     )
     document = _FakeDocument([_u("u_x")])
@@ -1115,7 +1115,7 @@ def test_chr_ord_available_for_codepoint_text(tmp_path: Path) -> None:
     _write_script(
         tmp_path,
         "class Behavior(ScriptBehavior):\n"
-        "    def update(self, ctx: Ctx) -> dict:\n"
+        "    def update(self, context: ScriptContext) -> dict:\n"
         "        return {'u_t': chr(65) + chr(66)}\n",  # 'AB'
     )
     document = _FakeDocument([_u("u_t", dim=1, n=8, gl_type=_GL_UNSIGNED_INT)])
@@ -1168,10 +1168,12 @@ def test_the_stub_imports_the_whole_scripting_surface(tmp_path: Path) -> None:
     import_line = next(
         line for line in body.splitlines() if "from shaderbox.scripting import" in line
     )
-    assert import_line == "from shaderbox.scripting import ScriptBehavior, Ctx"
+    assert (
+        import_line == "from shaderbox.scripting import ScriptBehavior, ScriptContext"
+    )
 
 
-# ---- ctx is frozen ----
+# ---- context is frozen ----
 
 
 def test_stopped_uniform_write_skipped_but_still_driven_and_sibling_advances(
@@ -1593,11 +1595,11 @@ def test_a_script_imports_the_stdlib_and_the_scripting_types(tmp_path: Path) -> 
         tmp_path,
         "import math\n"
         "import json\n"
-        "from shaderbox.scripting import ScriptBehavior, Ctx, MouseState\n"
+        "from shaderbox.scripting import ScriptBehavior, ScriptContext, MouseState\n"
         "\n"
         "class Behavior(ScriptBehavior):\n"
-        "    def update(self, ctx: Ctx) -> dict:\n"
-        "        return {'u_a': math.sin(ctx.t)}\n",
+        "    def update(self, context: ScriptContext) -> dict:\n"
+        "        return {'u_a': math.sin(context.t)}\n",
     )
     assert error is None, error
 
@@ -1616,10 +1618,10 @@ def test_a_script_cannot_import_the_app_or_its_modules(tmp_path: Path) -> None:
         error = _run_script(
             tmp_path,
             f"import {module}\n"
-            "from shaderbox.scripting import ScriptBehavior, Ctx\n"
+            "from shaderbox.scripting import ScriptBehavior, ScriptContext\n"
             "\n"
             "class Behavior(ScriptBehavior):\n"
-            "    def update(self, ctx: Ctx) -> dict:\n"
+            "    def update(self, context: ScriptContext) -> dict:\n"
             "        return {}\n",
         )
         assert error is not None, f"a script imported {module}"
@@ -1634,10 +1636,10 @@ def test_the_scripting_package_offers_a_script_only_its_user_types(
     for name in ("ScriptEngine", "ScriptProbe", "PythonBehavior", "script_stub_for"):
         error = _run_script(
             tmp_path,
-            f"from shaderbox.scripting import ScriptBehavior, Ctx, {name}\n"
+            f"from shaderbox.scripting import ScriptBehavior, ScriptContext, {name}\n"
             "\n"
             "class Behavior(ScriptBehavior):\n"
-            "    def update(self, ctx: Ctx) -> dict:\n"
+            "    def update(self, context: ScriptContext) -> dict:\n"
             "        return {}\n",
         )
         assert error is not None, f"a script imported {name}"
@@ -1650,10 +1652,10 @@ def test_importing_the_module_itself_says_to_import_the_names(tmp_path: Path) ->
     error = _run_script(
         tmp_path,
         "import shaderbox.scripting\n"
-        "from shaderbox.scripting import ScriptBehavior, Ctx\n"
+        "from shaderbox.scripting import ScriptBehavior, ScriptContext\n"
         "\n"
         "class Behavior(ScriptBehavior):\n"
-        "    def update(self, ctx: Ctx) -> dict:\n"
+        "    def update(self, context: ScriptContext) -> dict:\n"
         "        return {}\n",
     )
     assert error is not None

@@ -410,7 +410,7 @@ def _motion_verdict(probe: ScriptProbe, render_line: str, eps: float) -> str:
     else:
         verdict = (
             "values UNCHANGED across t (STATIC) -- the script drives these uniforms with values "
-            "that do not vary over ctx.t. If you meant motion, vary a value by ctx.t."
+            "that do not vary over context.t. If you meant motion, vary a value by context.t."
         )
     lines.append(f"-> {verdict}")
     return "\n".join(lines)

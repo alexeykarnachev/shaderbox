@@ -69,7 +69,7 @@ def test_buffer_words_are_the_identifiers_in_the_text() -> None:
 
 
 _SCRIPT = """import math
-from shaderbox.scripting import ScriptBehavior, Ctx
+from shaderbox.scripting import ScriptBehavior, ScriptContext
 
 class Behavior(ScriptBehavior):
     def __init__(self) -> None:
@@ -78,10 +78,10 @@ class Behavior(ScriptBehavior):
     def helper(self) -> dict:
         return {"u_not_ours": 1.0}
 
-    def update(self, ctx: Ctx) -> dict:
+    def update(self, context: ScriptContext) -> dict:
         def inner() -> dict:
             return {"u_nested": 1.0}
-        if ctx.frame == 0:
+        if context.frame == 0:
             return {"u_first": 0}
         return {
             "u_speed": 0.5,

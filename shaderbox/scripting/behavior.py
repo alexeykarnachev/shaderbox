@@ -1,12 +1,12 @@
 """The script-language seam (feature 041). A script file is a user-finalized CLASS subclassing
-`ScriptBehavior`, with `update(self, ctx) -> dict`; per-instance state (`self.*`)
+`ScriptBehavior`, with `update(self, context) -> dict`; per-instance state (`self.*`)
 persists across frames — the reason CPU scripting exists (stateless work belongs in the shader).
 The engine iterates `Behavior` objects and never knows the language; a future C backend implements
 the same protocol over a `.so`.
 
 `PythonBehavior` compiles the file VERBATIM (no rewrite — an error's lineno points at the user's
 real source, the 039 ghost stays dead), resolves the `ScriptBehavior` subclass, instantiates it
-ONCE, and calls `.update(ctx)` each tick. The exec namespace is `ScriptBehavior`, the `Ctx` alias
+ONCE, and calls `.update(context)` each tick. The exec namespace is `ScriptBehavior`, the `ScriptContext` alias
 and `MouseState`, over builtins whose `__import__` is narrowed: a script is plain Python and the
 stdlib works, but of THIS package it sees `shaderbox.scripting` and, in it, those three names
 alone. The app's own modules are not a script's to reach.
@@ -23,7 +23,7 @@ from typing import Any, Protocol, TypeGuard
 
 import moderngl
 
-from shaderbox.scripting.context import EngineContext, MouseState
+from shaderbox.scripting.context import MouseState, ScriptContext
 from shaderbox.scripting.errors import ScriptError
 from shaderbox.uniform_coerce import (
     coerce_uniform_value,
@@ -51,22 +51,22 @@ class ScriptBehavior:
     """The base class a document script's Behavior extends.
 
     Define `__init__(self)` for state that survives across frames, and
-    `update(self, ctx) -> dict` for the values each frame drives. State goes on `self` and
+    `update(self, context) -> dict` for the values each frame drives. State goes on `self` and
     persists; the values are plain Python, shaped against the live uniform.
     """
 
-    def update(self, ctx: EngineContext) -> Any:
+    def update(self, context: ScriptContext) -> Any:
         raise NotImplementedError
 
 
 # THE user-facing scripting surface: the only names a script may import, and the same set the
 # engine injects into its globals. Everything else in `shaderbox.scripting` — the engine, the
 # probe, the stub generator — is the app's own machinery that happens to share the package.
-_INJECTED_NAMES = frozenset({"ScriptBehavior", "Ctx", "MouseState"})
+_INJECTED_NAMES = frozenset({"ScriptBehavior", "ScriptContext", "MouseState"})
 
 
 def _import_hint(exc: Exception) -> str:
-    # A script that NAMES a scripting type it never imported (`NameError: Ctx`) gets told the
+    # A script that NAMES a scripting type it never imported (`NameError: ScriptContext`) gets told the
     # import line for THAT name. Only a NameError: the import gate's own messages already say
     # what is allowed, and appending to one produced advice that recreated the error.
     #
@@ -137,24 +137,24 @@ def _build_globals(uniform_name: str) -> dict[str, Any]:
     # Python — the stdlib is in scope — but of THIS package it sees `shaderbox.scripting` alone
     # (`_script_import`). The 048 stub emits the explicit import so the available types are
     # VISIBLE; these injected names are the FALLBACK so a user who deletes the import line still
-    # resolves `Vec2`/`Ctx`/… instead of an opaque eager-annotation-eval compile-freeze.
+    # resolves `Vec2`/`ScriptContext`/… instead of an opaque eager-annotation-eval compile-freeze.
     return {
         "__builtins__": _script_builtins(),
         "__name__": f"<u:{uniform_name}>",
         "ScriptBehavior": ScriptBehavior,
-        "Ctx": EngineContext,
+        "ScriptContext": ScriptContext,
         "MouseState": MouseState,
     }
 
 
 def _check_update_arity(cls: type[ScriptBehavior]) -> str | None:
-    # `update` must accept (self, ctx). A `def update(ctx)` (forgot self) compiles fine but throws a
+    # `update` must accept (self, context). A `def update(context)` (forgot self) compiles fine but throws a
     # cryptic per-tick TypeError; catch it at compile by binding two placeholder args. Validates ARITY
     # only (renamed params / *args / extra-defaulted params are legitimate), not parameter names.
     try:
         inspect.signature(cls.update).bind(object(), object())
     except TypeError:
-        return "update must be `def update(self, ctx)` — it takes the instance + the context"
+        return "update must be `def update(self, context)` — it takes the instance + the context"
     return None
 
 
@@ -179,7 +179,7 @@ def _resolve_behavior_class(ns: dict[str, Any]) -> type[ScriptBehavior] | None:
 
 
 class Behavior(Protocol):
-    def run(self, ctx: EngineContext) -> Any:
+    def run(self, context: ScriptContext) -> Any:
         # The raw `dict[str, value]` this behavior produces this frame (the document script's `update`
         # return), NOT yet coerced. Coercion against each live uniform is the ENGINE's job
         # (`coerce_one`), so a future C backend produces raw values without re-implementing the shape
@@ -193,7 +193,7 @@ class Behavior(Protocol):
 class PythonBehavior:
     """A script file compiled + exec'd VERBATIM once: the engine resolves the user's
     `ScriptBehavior` subclass, instantiates it (holding the live state instance), and calls
-    `.update(ctx)` each tick. Compile-time failures (SyntaxError / no subclass / no `update`
+    `.update(context)` each tick. Compile-time failures (SyntaxError / no subclass / no `update`
     override / a raising `__init__`) cache a `ScriptError` and freeze permanently until the
     file changes; runtime + shape failures are caught per-tick by the engine."""
 
@@ -237,7 +237,7 @@ class PythonBehavior:
             self._error = ScriptError(
                 label,
                 "compile",
-                f"class {cls.__name__} does not implement update(self, ctx)",
+                f"class {cls.__name__} does not implement update(self, context)",
             )
             return
         arity_error = _check_update_arity(cls)
@@ -279,7 +279,7 @@ class PythonBehavior:
         # _instantiate no-ops when there's no resolved class (an unrecoverable compile failure).
         self._instantiate()
 
-    def run(self, ctx: EngineContext) -> Any:
+    def run(self, context: ScriptContext) -> Any:
         # The raw dict the user's update produced this frame (name -> value), NOT yet coerced — the
         # engine fans it into (name, value) pairs and coerces each against the live uniform via
         # coerce_one. A future non-Python backend implements this same protocol over a .so.
@@ -287,7 +287,7 @@ class PythonBehavior:
             raise _RuntimeScriptError(
                 ScriptError(self.label, "runtime", "no behavior instance")
             )
-        return self._instance.update(ctx)
+        return self._instance.update(context)
 
 
 def _all_finite(coerced: object) -> bool:

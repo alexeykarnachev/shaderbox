@@ -125,11 +125,11 @@ def test_file_and_confirm_slots_are_independent() -> None:
 @pytest.fixture(scope="module")
 def gl_ctx() -> Iterator[moderngl.Context]:
     try:
-        ctx = moderngl.create_standalone_context()
+        context = moderngl.create_standalone_context()
     except Exception as e:
         pytest.skip(f"no standalone GL context available: {e}")
-    yield ctx
-    ctx.release()
+    yield context
+    context.release()
 
 
 def _sampler_stub(

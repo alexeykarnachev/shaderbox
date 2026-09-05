@@ -29,7 +29,7 @@ _SCRIPT = (
     "class Behavior(ScriptBehavior):\n"
     "    def __init__(self):\n"
     "        self.n = 0\n"
-    "    def update(self, ctx):\n"
+    "    def update(self, context):\n"
     "        self.n += 1\n"
     "        return {'u_level': min(1.0, self.n / 500.0)}\n"
 )
@@ -85,7 +85,7 @@ void main() { fs_color = vec4(texture(u_seed, vs_uv).r, 0.0, 0.0, 1.0); }
 # exported pixel is non-black ONLY if the export routed to `seed`.
 _PASS_BLOCK_SCRIPT = (
     "class Behavior(ScriptBehavior):\n"
-    "    def update(self, ctx):\n"
+    "    def update(self, context):\n"
     "        return {'seed': {'u_level': 1.0}}\n"
 )
 
@@ -155,8 +155,8 @@ def test_export_mouse_is_down_false_and_prev_equals_current(
     scripts_dir.mkdir(parents=True, exist_ok=True)
     (scripts_dir / DOCUMENT_SCRIPT_BASENAME).write_text(
         "class Behavior(ScriptBehavior):\n"
-        "    def update(self, ctx):\n"
-        "        return {'u_level': 1.0} if ctx.mouse.down else {}\n"
+        "    def update(self, context):\n"
+        "        return {'u_level': 1.0} if context.mouse.down else {}\n"
     )
     app.session.reload_scripts()
 

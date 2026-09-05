@@ -30,9 +30,9 @@ class SymbolKind(StrEnum):
     BUFFER_SYMBOL = auto()
     PY_KEYWORD = auto()
     PY_BUILTIN = auto()
-    # The script API the engine injects: `Ctx`, `ScriptBehavior`, `Vec3`, ...
+    # The script API the engine injects: `ScriptContext`, `ScriptBehavior`, `Vec3`, ...
     PY_API = auto()
-    # A member reached through a dot: `ctx.t`, `math.sin`, `self.phase`.
+    # A member reached through a dot: `context.t`, `math.sin`, `self.phase`.
     PY_MEMBER = auto()
     # A name the script defines: a class, a function, a variable in scope.
     PY_LOCAL = auto()

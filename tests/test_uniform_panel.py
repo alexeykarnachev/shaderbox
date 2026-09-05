@@ -21,9 +21,9 @@ _RC = DOCUMENT_EXAMPLES_DIR / "77a84d27-2e5b-406d-8011-ee1cb1a9587c"
 
 @pytest.fixture(scope="module")
 def gl() -> moderngl.Context:
-    ctx = moderngl.create_standalone_context(require=460)
+    context = moderngl.create_standalone_context(require=460)
     set_active(ShaderLibIndex.build(shader_lib_root()))
-    return ctx
+    return context
 
 
 def _online(document: Any) -> None:

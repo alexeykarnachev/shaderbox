@@ -22,11 +22,11 @@ from shaderbox.render_preset import FitPolicy, RenderPreset, ResolutionPolicy
 @pytest.fixture(scope="module")
 def gl_ctx() -> Iterator[moderngl.Context]:
     try:
-        ctx = moderngl.create_standalone_context()
+        context = moderngl.create_standalone_context()
     except Exception as e:
         pytest.skip(f"no standalone GL context available: {e}")
-    yield ctx
-    ctx.release()
+    yield context
+    context.release()
 
 
 @pytest.fixture

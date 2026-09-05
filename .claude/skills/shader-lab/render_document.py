@@ -26,7 +26,7 @@ import moderngl
 from shaderbox.document import Document
 from shaderbox.media import FileDetails, MediaDetails, ResolutionDetails, texture_to_pil
 from shaderbox.paths import shader_lib_root
-from shaderbox.scripting import EngineContext, ScriptBehavior
+from shaderbox.scripting import ScriptBehavior, ScriptContext
 from shaderbox.shader_lib import ShaderLibIndex, set_active
 from shaderbox.uniform_coerce import coerce_uniform_value
 
@@ -79,7 +79,7 @@ def _apply_script_at(document: Document, document_dir: str, t: float) -> None:
     dt = 1.0 / 60.0
     driven: dict[str, object] = {}
     for i in range(max(1, int(t / dt))):
-        driven = beh.update(EngineContext(t=i * dt, dt=dt, frame=i))
+        driven = beh.update(ScriptContext(t=i * dt, dt=dt, frame=i))
     _apply_driven(document, driven)
 
 
@@ -108,7 +108,7 @@ def render_video(
     if beh is not None:
 
         def _pre_render(t: float, dt: float, frame: int) -> None:
-            _apply_driven(document, beh.update(EngineContext(t=t, dt=dt, frame=frame)))
+            _apply_driven(document, beh.update(ScriptContext(t=t, dt=dt, frame=frame)))
 
         document.on_pre_render = _pre_render
 

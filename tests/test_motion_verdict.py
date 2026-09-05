@@ -81,7 +81,7 @@ def test_verdict_static_when_no_value_varies() -> None:
     ]
     verdict = _motion_verdict(_probe({("main", "u_x")}, samples), "", _EPS)
     assert "STATIC" in verdict
-    assert "ctx.t" in verdict  # steers the agent to vary by ctx.t
+    assert "context.t" in verdict  # steers the agent to vary by context.t
 
 
 def test_verdict_carries_the_render_line() -> None:
@@ -165,7 +165,7 @@ def test_structural_splice_always_produces_parseable_python() -> None:
     # the substring assertion above did.
     src = (
         "class Behavior(ScriptBehavior):\n"
-        "    def update(self, ctx):\n"
+        "    def update(self, context):\n"
         "        x = 1\n"
         "        return {'u_a': x}\n"
     )

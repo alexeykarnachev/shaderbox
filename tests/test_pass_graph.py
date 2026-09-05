@@ -235,7 +235,7 @@ def test_target_scale_is_bounded_on_the_model() -> None:
 
 
 def test_target_dtype_is_closed() -> None:
-    # An unknown dtype either raises inside ctx.texture or loads fine and then crashes the combo.
+    # An unknown dtype either raises inside context.texture or loads fine and then crashes the combo.
     for bad in ("f8", "rgba", 3, None):
         with pytest.raises(ValidationError):
             TargetConfig(dtype=bad)

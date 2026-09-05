@@ -887,6 +887,14 @@ def draw(app: App) -> None:
         if (edited := _pass_for_tab(app, tab)) is not None
         else ui_document.document.render_pass.compile_unit.errors
     )
+    # An error's line is where the code was at the last COMPILE. The library anchors a marker
+    # to its text and moves it, but the host re-pushes line numbers from that stale compile on
+    # every edit, so a band stops following the code it blames the moment the buffer changes.
+    # There is no general repair -- the compiler has not seen the new text, so the line an old
+    # error belongs on is unknown. The errors are therefore dropped while the buffer is dirty
+    # and come back on the next save, when they are about the text on screen again.
+    if app.is_tab_dirty(tab):
+        errors = []
     marker_fingerprint = _apply_markers(
         app,
         editor,

@@ -86,17 +86,17 @@ _SCRIPT_NODE_JSON = {
 
 # The seeded script: TWO stateful integrators (u_a, u_b both accumulate) + a typo'd homeless key
 # (u_typo) so the script's drive/skip/soft-error paths all run under smoke. Both keys integrate (NOT
-# ctx.mouse, which is frozen at 0.5 headless) so the stopped-skip canary is falsifiable: a stopped u_a
+# context.mouse, which is frozen at 0.5 headless) so the stopped-skip canary is falsifiable: a stopped u_a
 # must STAY frozen while the un-stopped u_b keeps ADVANCING.
 _SCRIPT_SOURCE = (
-    "from shaderbox.scripting import ScriptBehavior, Ctx\n\n"
+    "from shaderbox.scripting import ScriptBehavior, ScriptContext\n\n"
     "class Behavior(ScriptBehavior):\n"
     "    def __init__(self) -> None:\n"
     "        self.a = 0.0\n"
     "        self.b = 0.0\n"
-    "    def update(self, ctx: Ctx) -> dict:\n"
-    "        self.a += ctx.dt\n"
-    "        self.b += ctx.dt * 2.0\n"
+    "    def update(self, context: ScriptContext) -> dict:\n"
+    "        self.a += context.dt\n"
+    "        self.b += context.dt * 2.0\n"
     "        return {'u_a': self.a, 'u_b': self.b, 'u_typo': 1.0}\n"
 )
 

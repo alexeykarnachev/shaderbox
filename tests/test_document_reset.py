@@ -1,7 +1,7 @@
 """Reset restarts a document whole: its clock, its script instance, its histories (071 W-C).
 
 Every check here reads the CONSUMER: the pixel a live render produces from `u_time`, the value
-the script wrote from `ctx.t` and from its own `self` state, the command table's callback. The
+the script wrote from `context.t` and from its own `self` state, the command table's callback. The
 funnel is `ProjectSession.reset_document`; nothing else knows what a reset consists of.
 """
 
@@ -30,14 +30,14 @@ uniform float u_t;
 void main() { fs_color = vec4(u_n, u_t, 0.0, 1.0); }
 """
 
-# `self.n` counts ticks since __init__; `u_t` is ctx.t as the script saw it.
+# `self.n` counts ticks since __init__; `u_t` is context.t as the script saw it.
 _SCRIPT = (
     "class Behavior(ScriptBehavior):\n"
     "    def __init__(self):\n"
     "        self.n = 0\n"
-    "    def update(self, ctx):\n"
+    "    def update(self, context):\n"
     "        self.n += 1\n"
-    "        return {'u_n': float(self.n), 'u_t': float(ctx.t)}\n"
+    "        return {'u_n': float(self.n), 'u_t': float(context.t)}\n"
 )
 
 
@@ -94,7 +94,9 @@ def test_reset_restarts_the_script_and_its_clock(app: Any) -> None:
     app.session.tick([document_id], process_time(), 1 / 60, 5)
     values = document.render_pass.uniform_values
     assert values["u_n"] == 1.0, "the script instance was not re-created"
-    assert values["u_t"] < 0.5, "ctx.t was not re-based on the document's time origin"
+    assert values["u_t"] < 0.5, (
+        "context.t was not re-based on the document's time origin"
+    )
 
 
 def test_reset_drops_the_feedback_histories(app: Any) -> None:

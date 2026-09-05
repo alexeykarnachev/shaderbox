@@ -23,7 +23,7 @@ class _ReadScriptArgs(ToolArgs):
 class _WriteScriptArgs(ToolArgs):
     new_text: str = Field(
         description="the script's COMPLETE new source — this replaces the whole script.py "
-        "(a `class Behavior(ScriptBehavior)` with `update(self, ctx) -> dict`). Anything "
+        "(a `class Behavior(ScriptBehavior)` with `update(self, context) -> dict`). Anything "
         "omitted is gone."
     )
     document: str = Field(default="", description=_NODE_DESC)
@@ -43,7 +43,7 @@ class _EditScriptArgs(ToolArgs):
 
 
 _READ_SCRIPT_DESC = (
-    "Read a document's Python script — the `update(self, ctx)` that drives uniforms from CPU state. "
+    "Read a document's Python script — the `update(self, context)` that drives uniforms from CPU state. "
     "Returns the source line-numbered. A document with NO script yet returns a STUB (its drivable "
     "uniforms + their value shapes + an empty `update` to fill in) — read it, then write_script a "
     "real body. Read this before editing a script you did not just write."
@@ -51,7 +51,7 @@ _READ_SCRIPT_DESC = (
 
 _WRITE_SCRIPT_DESC = (
     "Create or replace a document's Python script: a `class Behavior(ScriptBehavior)` whose "
-    "`update(self, ctx) -> dict` returns {uniform_name: value} to drive those uniforms every "
+    "`update(self, context) -> dict` returns {uniform_name: value} to drive those uniforms every "
     "frame. For STATE the shader cannot hold — a value that depends on the PREVIOUS frame "
     "(`self.*` persists): an integrator, an accumulator, a phase machine, a score. A pure function "
     "of time belongs in the shader (u_time), not here. BEST FOR a fresh script or a full rewrite; "

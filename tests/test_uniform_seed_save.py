@@ -43,11 +43,11 @@ void main() { fs_color = texture(u_image, vs_uv); }
 @pytest.fixture(scope="module")
 def gl_ctx() -> Iterator[moderngl.Context]:
     try:
-        ctx = moderngl.create_standalone_context()
+        context = moderngl.create_standalone_context()
     except Exception as e:
         pytest.skip(f"no standalone GL context available: {e}")
-    yield ctx
-    ctx.release()
+    yield context
+    context.release()
 
 
 def _document_from_source(gl: moderngl.Context, source: str) -> Document:

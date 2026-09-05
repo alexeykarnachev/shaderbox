@@ -64,7 +64,7 @@ def test_the_script_tab_completes_ctx_members_through_the_worker(app: Any) -> No
     editor = session.editor
     editor.set_host_completion(True)
     editor.feed("Go")
-    editor.feed("        x = ctx.")
+    editor.feed("        x = context.")
     _drive_completion(app, editor, tab)
     assert not editor.complete_open(), "the answer is on its way, nothing is guessed"
     assert app.python_last_request is not None

@@ -67,7 +67,7 @@ def _write_script(tmp: Path, body: str) -> None:
 def _script(*, update_body: str, init_body: str = "") -> str:
     head = "class Behavior(ScriptBehavior):\n"
     init = f"    def __init__(self) -> None:\n{init_body}" if init_body else ""
-    return f"{head}{init}    def update(self, ctx: Ctx) -> dict:\n{update_body}"
+    return f"{head}{init}    def update(self, context: ScriptContext) -> dict:\n{update_body}"
 
 
 def _engine(tmp: Path, document: _FakeDocument) -> ScriptEngine:
@@ -81,7 +81,7 @@ def test_dry_run_does_not_corrupt_live_state(tmp_path: Path) -> None:
     # must be byte-identical afterward. Falsifier: any of them changes -> the sink leaked.
     _write_script(
         tmp_path,
-        _script(update_body="        return {'u_x': 0.5 + 0.3 * ctx.t}\n"),
+        _script(update_body="        return {'u_x': 0.5 + 0.3 * context.t}\n"),
     )
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
@@ -106,7 +106,7 @@ def test_dry_run_integrator_advances_across_samples(tmp_path: Path) -> None:
         tmp_path,
         _script(
             init_body="        self.v = 0.0\n",
-            update_body="        self.v += ctx.dt\n        return {'u_x': self.v}\n",
+            update_body="        self.v += context.dt\n        return {'u_x': self.v}\n",
         ),
     )
     document = _FakeDocument([_u("u_x")])
@@ -127,7 +127,7 @@ def test_dry_run_integrator_advances_across_samples(tmp_path: Path) -> None:
 def test_dry_run_closed_form_motion_captured(tmp_path: Path) -> None:
     _write_script(
         tmp_path,
-        _script(update_body="        return {'u_x': ctx.t, 'u_c': 0.7}\n"),
+        _script(update_body="        return {'u_x': context.t, 'u_c': 0.7}\n"),
     )
     document = _FakeDocument([_u("u_x"), _u("u_c")])
     eng = _engine(tmp_path, document)
@@ -265,7 +265,7 @@ def test_dry_run_transient_per_key_error_surfaces(tmp_path: Path) -> None:
 def test_dry_run_colliding_sample_times_keeps_earliest(tmp_path: Path) -> None:
     # Two sample times rounding to the SAME frame must not drop a sample; setdefault keeps the
     # earliest. Falsifier: the first sample's t is 0.04 (a dict-comp would keep the last).
-    _write_script(tmp_path, _script(update_body="        return {'u_x': ctx.t}\n"))
+    _write_script(tmp_path, _script(update_body="        return {'u_x': context.t}\n"))
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
 
@@ -313,7 +313,7 @@ def test_a_cold_dry_run_compiles_and_reports_the_real_driven_set(
     # and STATIC from empty samples. `dry_run` is a synchronous agent call, not the frame loop, so it
     # compiles first (066 D1 constrains the frame loop only). Falsifier: drop that compile — driven
     # goes empty, orphan_keys grows the row, and every sample dict is empty.
-    _write_script(tmp_path, _script(update_body="        return {'u_x': ctx.t}\n"))
+    _write_script(tmp_path, _script(update_body="        return {'u_x': context.t}\n"))
     document = _FakeDocument({"seed": [_u("u_x")], "out": [_u("u_x")]})
     for render_pass in document.passes.values():
         render_pass.script_ready = False  # never rendered

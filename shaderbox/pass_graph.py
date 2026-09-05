@@ -74,7 +74,7 @@ class TargetConfig(BaseModel):
 
     CONSTRAINED, because these knobs live in `graph.json` where nothing type-checks them: an
     unbounded `scale` allocates a framebuffer that fails to complete and takes the render loop
-    down, and a `dtype` outside this set either raises in `ctx.texture` or loads fine and then
+    down, and a `dtype` outside this set either raises in `context.texture` or loads fine and then
     crashes the panel's combo.
     """
 

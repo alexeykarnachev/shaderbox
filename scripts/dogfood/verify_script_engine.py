@@ -2,7 +2,7 @@
 
 Drives the headless ProjectSession (the harness EGL path) on a project with a hand-placed class-form
 scripted uniform, renders the document at two distinct `t` values, and asserts the rendered pixels DIFFER
-(the scripted behavior animated through the tick->render seam). Then it (a) confirms ctx.t-pure
+(the scripted behavior animated through the tick->render seam). Then it (a) confirms context.t-pure
 determinism, (b) proves EXPORT-STATE ISOLATION — a live-warmed integrator's export frame matches a
 cold-start render via the `exporting` seam, NOT the warmed live value — and (c) breaks the script and
 confirms the frame still renders (frozen, non-crashing). NOT an LLM scenario — scripts are hand-placed
@@ -59,29 +59,29 @@ def _mean_luma(path: str) -> float:
     return sum(px) / len(px)
 
 
-# A ctx.t-pure script: animates with t, identical at the same t (the determinism guarantee).
+# A context.t-pure script: animates with t, identical at the same t (the determinism guarantee).
 _PURE = (
     "import math\n"
-    "from shaderbox.scripting import ScriptBehavior, Ctx\n\n"
+    "from shaderbox.scripting import ScriptBehavior, ScriptContext\n\n"
     "class Behavior(ScriptBehavior):\n"
-    "    def update(self, ctx: Ctx) -> dict:\n"
-    "        return {'u_wave': 0.5 + 0.45 * math.sin(ctx.t)}\n"
+    "    def update(self, context: ScriptContext) -> dict:\n"
+    "        return {'u_wave': 0.5 + 0.45 * math.sin(context.t)}\n"
 )
 # A STATEFUL integrator: only possible with per-instance state — used for export isolation.
 _INTEGRATOR = (
-    "from shaderbox.scripting import ScriptBehavior, Ctx\n\n"
+    "from shaderbox.scripting import ScriptBehavior, ScriptContext\n\n"
     "class Behavior(ScriptBehavior):\n"
     "    def __init__(self) -> None:\n"
     "        self.v = 0.0\n"
-    "    def update(self, ctx: Ctx) -> dict:\n"
-    "        self.v += ctx.dt\n"
+    "    def update(self, context: ScriptContext) -> dict:\n"
+    "        self.v += context.dt\n"
     "        return {'u_wave': self.v % 1.0}\n"
 )
 # A broken body: a runtime error every tick -> freeze last-good, never crash.
 _BROKEN = (
-    "from shaderbox.scripting import ScriptBehavior, Ctx\n\n"
+    "from shaderbox.scripting import ScriptBehavior, ScriptContext\n\n"
     "class Behavior(ScriptBehavior):\n"
-    "    def update(self, ctx: Ctx) -> dict:\n"
+    "    def update(self, context: ScriptContext) -> dict:\n"
     "        return {'u_wave': 1.0 / 0.0}\n"
 )
 
@@ -117,10 +117,10 @@ def main() -> int:
         "scripted uniform did NOT animate between two t values"
     )
 
-    # Same t -> same value (ctx.t-pure determinism).
+    # Same t -> same value (context.t-pure determinism).
     p_a2 = h.render_at(0.0, "scripted")
     assert abs(_mean_luma(p_a) - _mean_luma(p_a2)) < 0.5, (
-        "ctx.t-pure render not deterministic"
+        "context.t-pure render not deterministic"
     )
 
     # Export-state isolation: warm a stateful integrator on the LIVE instance, then export — the

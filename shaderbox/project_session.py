@@ -53,8 +53,8 @@ from shaderbox.paths import (
 )
 from shaderbox.scripting import (
     EXPORT_MOUSE,
-    EngineContext,
     MouseState,
+    ScriptContext,
     ScriptEngine,
     ScriptProbe,
     ScriptStatus,
@@ -79,12 +79,12 @@ from shaderbox.util import select_next_value, try_to_release
 
 # Prepended to the engine stub when the COPILOT reads a script-less document (feature 043). The actor
 # copies verbatim, so a no-op commented stub teaches the binding but not MOTION — this gives one
-# concrete ctx.t-driven pattern to adapt (a reference, not a body to save back unchanged).
+# concrete context.t-driven pattern to adapt (a reference, not a body to save back unchanged).
 _AGENT_STUB_EXAMPLE = (
-    "# EXAMPLE -- a uniform animated over ctx.t (adapt the names + math, don't save this verbatim):\n"
-    "#     pulse = 0.2 + 0.1 * math.sin(ctx.t * 2.0)        # a float oscillates\n"
-    "#     cx = 0.5 + 0.3 * math.sin(ctx.t)                 # a Vec2 drifts\n"
-    "#     cy = 0.5 + 0.3 * math.sin(ctx.t * 2.0)\n"
+    "# EXAMPLE -- a uniform animated over context.t (adapt the names + math, don't save this verbatim):\n"
+    "#     pulse = 0.2 + 0.1 * math.sin(context.t * 2.0)        # a float oscillates\n"
+    "#     cx = 0.5 + 0.3 * math.sin(context.t)                 # a Vec2 drifts\n"
+    "#     cy = 0.5 + 0.3 * math.sin(context.t * 2.0)\n"
     "#     return {'u_radius': pulse, 'u_center': Vec2(cx, cy)}\n\n"
 )
 
@@ -548,12 +548,12 @@ class ProjectSession:
                 return
 
             def _export_pre_render(t: float, dt: float, frame: int) -> None:
-                # EXPORT_MOUSE (the EngineContext default) freezes the cursor at center so an
+                # EXPORT_MOUSE (the ScriptContext default) freezes the cursor at center so an
                 # exported render is deterministic. No stopped set — an export always plays the script.
                 self.script_engine.tick_export(
                     document_id,
                     document,
-                    EngineContext(t=t, dt=dt, frame=frame),
+                    ScriptContext(t=t, dt=dt, frame=frame),
                     behavior,
                 )
 
@@ -602,7 +602,7 @@ class ProjectSession:
             self.script_engine.tick(
                 document_id,
                 document,
-                EngineContext(t=document.live_time(t), dt=dt, frame=frame, mouse=mouse),
+                ScriptContext(t=document.live_time(t), dt=dt, frame=frame, mouse=mouse),
                 self._stopped_for(document_id),
             )
 
@@ -676,7 +676,7 @@ class ProjectSession:
 
     def read_script_source(self, document_id: str) -> tuple[str, bool]:
         # The copilot read_script source (feature 043): the live scripts/script.py text, or — when the
-        # document has no script — the AGENT stub (the engine stub + one un-commented math.sin(ctx.t)
+        # document has no script — the AGENT stub (the engine stub + one un-commented math.sin(context.t)
         # example, so the actor has a concrete animating pattern to copy). The stub is NOT persisted;
         # returns (text, is_stub).
         path = self.script_path_for(document_id)

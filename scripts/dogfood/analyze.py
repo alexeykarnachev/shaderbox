@@ -674,7 +674,7 @@ def _result_glyph(turn: Turn) -> str:
 
 def _per_turn_table(turns: list[Turn]) -> str:
     rows = [
-        "| # | Ask (head) | tools fired | result | peak ctx | billed in | cost |",
+        "| # | Ask (head) | tools fired | result | peak context | billed in | cost |",
         "|---|---|---|---|---|---|---|",
     ]
     for i, t in enumerate(turns, 1):

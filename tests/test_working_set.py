@@ -126,7 +126,7 @@ def test_render_working_set_carries_script_section() -> None:
         is_lib=False,
         uniforms=["u_center vec2 = <driven by script.py>", "u_glow float = 0.7"],
         errors=[],
-        script_listing="1  class Behavior(ScriptBehavior):\n2    def update(self, ctx):",
+        script_listing="1  class Behavior(ScriptBehavior):\n2    def update(self, context):",
         script_errors=[CompileErrorInfo(path="script.py", line=2, message="bad")],
     )
     body = (render_working_set([scripted], [])[0].content) or ""
