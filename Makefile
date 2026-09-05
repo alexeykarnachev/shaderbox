@@ -83,20 +83,14 @@ gates:
 		after=$$(git diff HEAD 2>/dev/null | md5sum; git status --porcelain 2>/dev/null | sort)
 		if [ "$$after" != "$$before" ]; then
 			cat "$$log"
-			echo "== gates: FAILED at check (exit $$rc); the hooks REWROTE files -- review"
-			echo "==        and stage them, then re-run. test and smoke not run =="
-			status=$$rc
-			rc=0
-			skip_rest=1
+			echo "== gates: the hooks REWROTE files -- review and stage them, then re-run =="
 		else
 			echo "== gates: check exited $$rc leaving the tree unchanged; re-running =="
 			rc=0
 			$(MAKE) --no-print-directory check >"$$log" 2>&1 || rc=$$?
 		fi
 	fi
-	if [ "$${skip_rest:-0}" = "1" ]; then rc=$$status; fi
 	if [ $$rc -ne 0 ]; then
-		cat "$$log"
 		echo "== gates: FAILED at check (exit $$rc); test and smoke not run =="
 		status=$$rc
 	else
