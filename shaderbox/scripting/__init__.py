@@ -21,11 +21,9 @@ from shaderbox.scripting.engine import (
 )
 from shaderbox.scripting.errors import ScriptError
 from shaderbox.scripting.keys import StoppedKey
-from shaderbox.scripting.outputs import Array, Text, Vec2, Vec3, Vec4
 
 __all__ = [
     "EXPORT_MOUSE",
-    "Array",
     "Behavior",
     "Ctx",
     "EngineContext",
@@ -39,10 +37,6 @@ __all__ = [
     "ScriptStatus",
     "ScriptTarget",
     "StoppedKey",
-    "Text",
-    "Vec2",
-    "Vec3",
-    "Vec4",
     "coerce_one",
     "is_scriptable",
     "normalize_script_tabs",

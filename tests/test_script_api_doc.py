@@ -6,7 +6,7 @@ script surface changes without the block following it.
 dunders — so it would not see `__mul__` at all."""
 
 import ast
-from inspect import cleandoc, signature
+from inspect import cleandoc
 from pathlib import Path
 
 from shaderbox.copilot.prompt import _context_block
@@ -15,86 +15,23 @@ from shaderbox.scripting import api_doc
 from shaderbox.scripting.api_doc import (
     _CTX_GLOSS,
     _CTX_HELP,
+    _IMPORT_NAMES,
     _VALUE_SHAPE_GLOSS,
-    _VEC_OPERATOR_GLOSS,
     API_NAMES,
     api_symbol_doc,
     ctx_field_gloss,
     script_api_summary,
 )
+from shaderbox.scripting.behavior import _INJECTED_NAMES
 from shaderbox.scripting.context import EXPORT_MOUSE, EngineContext, MouseState
 from shaderbox.scripting.engine import _stub_kind, script_stub_for
-from shaderbox.scripting.outputs import Array, Text, Vec2, Vec3, Vec4, _Vec
 from tests._caps import minimal_caps
-
-_VEC_CLASSES: tuple[type, ...] = (_Vec, Vec2, Vec3, Vec4)
-
-# Dunders `vars()` reports that describe the class rather than its operator surface — everything else
-# a Vec class defines must be an allowlisted operator, or the coverage check has gone stale.
-_STRUCTURAL_DUNDERS: frozenset[str] = frozenset(
-    {
-        "__new__",
-        "__init__",
-        "__slots__",
-        "__module__",
-        "__qualname__",
-        "__doc__",
-        "__dict__",
-        "__weakref__",
-        "__annotations__",
-        "__type_params__",
-        "__orig_bases__",
-        "__firstlineno__",
-        "__static_attributes__",
-    }
-)
 
 
 def _flat(text: str) -> str:
     # The block is wrapped for the prompt, so a multi-word gloss can straddle a line break; assert
     # against the unwrapped text or the pin fails on layout rather than on content.
     return " ".join(text.split())
-
-
-def _public_vec_members(classes: tuple[type, ...]) -> set[str]:
-    return {n for cls in classes for n in vars(cls) if not n.startswith("_")}
-
-
-def _operator_dunders(classes: tuple[type, ...]) -> set[str]:
-    return {
-        n
-        for cls in classes
-        for n in vars(cls)
-        if n.startswith("__") and n not in _STRUCTURAL_DUNDERS
-    }
-
-
-def _uncovered_members(summary: str, classes: tuple[type, ...]) -> set[str]:
-    return {n for n in _public_vec_members(classes) if f".{n}" not in summary}
-
-
-def test_summary_covers_every_public_vec_member() -> None:
-    # A new `Vec3.reflect()` that nobody documents goes red here.
-    assert _uncovered_members(script_api_summary(), _VEC_CLASSES) == set()
-
-
-def test_the_vec_member_check_actually_fails_on_an_undocumented_member() -> None:
-    # The falsifier for the test above: a check that cannot go red pins nothing.
-    class _FakeVec3(Vec3):
-        def reflect(self) -> "Vec3":
-            return self
-
-    assert _uncovered_members(script_api_summary(), (_FakeVec3,)) == {"reflect"}
-
-
-def test_operator_dunders_match_the_allowlist_and_all_reach_the_summary() -> None:
-    # Both directions: dropping `__truediv__` from outputs.py goes red, and adding `__mod__` without
-    # documenting it goes red too.
-    assert _operator_dunders(_VEC_CLASSES) == set(_VEC_OPERATOR_GLOSS)
-    # The map IS the rendered operator list, so this half fails if the bullet is dropped or reworded.
-    summary = _flat(script_api_summary())
-    for dunder, gloss in _VEC_OPERATOR_GLOSS.items():
-        assert gloss in summary, dunder
 
 
 def test_ctx_gloss_keys_are_exactly_the_dataclass_fields() -> None:
@@ -197,16 +134,6 @@ def test_every_stub_kind_type_name_has_a_value_shape_gloss() -> None:
     assert returned <= set(_VALUE_SHAPE_GLOSS), returned - set(_VALUE_SHAPE_GLOSS)
 
 
-def test_array_and_text_are_described_by_their_real_constructor_params() -> None:
-    # Their surface IS the constructor, so `vars()` says nothing useful — pin the signature instead.
-    summary = script_api_summary()
-    for cls, ctor in ((Array, Array.__init__), (Text, Text.__init__)):
-        assert cls.__name__ in summary
-        for param in signature(ctor).parameters:
-            if param != "self":
-                assert f"{cls.__name__}({param})" in summary, (cls.__name__, param)
-
-
 def test_the_block_reaches_the_rare_prompt_tier() -> None:
     # The WIRE, not the definition: a generated block nobody renders is worth nothing.
     block = _context_block(build_context(minimal_caps()))
@@ -231,7 +158,6 @@ def test_api_doc_reaches_only_for_the_gl_free_half_of_the_package() -> None:
             reached.update(alias.name for alias in node.names)
     assert {m for m in reached if m.startswith("shaderbox")} == {
         "shaderbox.scripting.context",
-        "shaderbox.scripting.outputs",
     }
     assert not [m for m in reached if "moderngl" in m or "OpenGL" in m]
 
@@ -252,3 +178,19 @@ def test_the_mouse_gloss_states_the_button_and_the_previous_position() -> None:
     summary = script_api_summary()
     assert "LMB" in summary
     assert "PREVIOUS cursor position" in summary
+
+
+def test_the_advertised_import_is_one_the_gate_accepts() -> None:
+    # Three lists must agree or the app tells the user (and the copilot) to write an import that
+    # raises: the names the prompt advertises, the names the engine injects, and the names the
+    # script import gate lets through. Falsifier: advertise a name the gate refuses — a script
+    # written from the prompt block then fails to compile.
+    advertised = set(_IMPORT_NAMES.split(", "))
+    assert advertised <= _INJECTED_NAMES, (
+        f"the prompt advertises {sorted(advertised - _INJECTED_NAMES)}, which a script cannot "
+        "import"
+    )
+    assert API_NAMES == _INJECTED_NAMES, (
+        "the editor's API names and the engine's injected names have drifted apart: "
+        f"{sorted(API_NAMES ^ _INJECTED_NAMES)}"
+    )

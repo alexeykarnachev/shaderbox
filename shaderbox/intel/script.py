@@ -17,10 +17,26 @@ class ScriptReturn:
     line: int
 
 
-_VEC_TYPES: dict[str, str] = {"Vec2": "vec2", "Vec3": "vec3", "Vec4": "vec4"}
+def _literal_length(value: ast.expr) -> int | None:
+    # How many numbers a literal sequence holds: a list/tuple of them, or `[0.0] * N`. None when
+    # the expression is anything else, so nothing is guessed from a computed value.
+    if isinstance(value, ast.List | ast.Tuple):
+        return len(value.elts)
+    if (
+        isinstance(value, ast.BinOp)
+        and isinstance(value.op, ast.Mult)
+        and isinstance(value.left, ast.List)
+        and isinstance(value.right, ast.Constant)
+        and isinstance(value.right.value, int)
+    ):
+        return len(value.left.elts) * value.right.value
+    return None
 
 
 def _literal_type(value: ast.expr) -> str | None:
+    # The GLSL type a returned literal implies, so the shader side can offer the declaration.
+    # A script returns plain Python, so the shape IS the literal: 2-4 numbers read as a vector,
+    # any other length as an array, a str as a text array.
     if isinstance(value, ast.UnaryOp) and isinstance(value.op, ast.USub | ast.UAdd):
         return _literal_type(value.operand)
     if isinstance(value, ast.Constant):
@@ -31,22 +47,14 @@ def _literal_type(value: ast.expr) -> str | None:
         if isinstance(value.value, float):
             return "float"
         return None
-    if isinstance(value, ast.Call) and isinstance(value.func, ast.Name):
-        if value.func.id in _VEC_TYPES:
-            return _VEC_TYPES[value.func.id]
-        if value.func.id == "Array" and value.args:
-            first = value.args[0]
-            if isinstance(first, ast.List | ast.Tuple):
-                return f"float[{len(first.elts)}]"
-            if (
-                isinstance(first, ast.BinOp)
-                and isinstance(first.op, ast.Mult)
-                and isinstance(first.left, ast.List)
-                and isinstance(first.right, ast.Constant)
-                and isinstance(first.right.value, int)
-            ):
-                return f"float[{len(first.left.elts) * first.right.value}]"
-    return None
+    length = _literal_length(value)
+    if length is None:
+        return None
+    # A vector and a 2-4 element array are the same literal; the vector is what a script writing
+    # `[x, y]` almost always means, and the array form spells its length out.
+    if 2 <= length <= 4 and isinstance(value, ast.List | ast.Tuple):
+        return f"vec{length}"
+    return f"float[{length}]"
 
 
 def _update_function(tree: ast.Module) -> ast.FunctionDef | None:

@@ -1,15 +1,20 @@
 """The script-language seam (feature 041). A script file is a user-finalized CLASS subclassing
-`ScriptBehavior`, with `update(self, ctx) -> <typed output>`; per-instance state (`self.*`)
+`ScriptBehavior`, with `update(self, ctx) -> dict`; per-instance state (`self.*`)
 persists across frames — the reason CPU scripting exists (stateless work belongs in the shader).
 The engine iterates `Behavior` objects and never knows the language; a future C backend implements
 the same protocol over a `.so`.
 
 `PythonBehavior` compiles the file VERBATIM (no rewrite — an error's lineno points at the user's
 real source, the 039 ghost stays dead), resolves the `ScriptBehavior` subclass, instantiates it
-ONCE, and calls `.update(ctx)` each tick. The exec namespace is the real builtins (a script is plain
-Python — `import math` and the stdlib work) plus the base, the `Ctx` alias, and ALL output types
-(method annotations evaluate eagerly — every type name a stub can annotate must be resolvable at
-class-def time)."""
+ONCE, and calls `.update(ctx)` each tick. The exec namespace is `ScriptBehavior`, the `Ctx` alias
+and `MouseState`, over builtins whose `__import__` is narrowed: a script is plain Python and the
+stdlib works, but of THIS package it sees `shaderbox.scripting` and, in it, those three names
+alone. The app's own modules are not a script's to reach.
+
+A script returns PLAIN PYTHON — a number, a list or tuple for a vector, a list (flat or rows) for
+an array, a str for a text uniform. The engine shapes it against the live `moderngl.Uniform`.
+There are no wrapper types to learn; a script wanting vector math imports numpy like any other
+Python program."""
 
 import inspect
 import math
@@ -20,12 +25,13 @@ import moderngl
 
 from shaderbox.scripting.context import EngineContext, MouseState
 from shaderbox.scripting.errors import ScriptError
-from shaderbox.scripting.outputs import Array, Text, Vec2, Vec3, Vec4, normalize_output
 from shaderbox.uniform_coerce import (
     coerce_uniform_value,
     gl_type_label,
     uniform_shape_hint,
 )
+
+_REAL_IMPORT = __import__
 
 
 def _user_error_line(marker_name: str, exc: BaseException) -> int:
@@ -50,49 +56,89 @@ class ScriptBehavior:
         raise NotImplementedError
 
 
-# The scripting types the engine INJECTS into every script's globals (the fallback for a missing
-# import). Used to steer a wrong-import compile error toward the canonical line.
-_INJECTED_NAMES = frozenset(
-    {"ScriptBehavior", "Ctx", "MouseState", "Vec2", "Vec3", "Vec4", "Array", "Text"}
-)
+# THE user-facing scripting surface: the only names a script may import, and the same set the
+# engine injects into its globals. Everything else in `shaderbox.scripting` — the engine, the
+# probe, the stub generator — is the app's own machinery that happens to share the package.
+_INJECTED_NAMES = frozenset({"ScriptBehavior", "Ctx", "MouseState"})
 
 
 def _import_hint(exc: Exception) -> str:
-    # When a script's import/name error names a type the engine ALREADY injects, append the canonical
-    # import (so a wrong `from shaderbox import ScriptBehavior` self-corrects instead of sending the
-    # agent grepping — the error message names the wrong module + never the right one). "" otherwise.
+    # A script that NAMES a scripting type it never imported (`NameError: Vec3`) gets told the
+    # import line. The gate's own message covers a wrong import; this covers a missing one. ""
+    # for anything else, so an unrelated failure is not decorated with irrelevant advice.
     if not isinstance(exc, ImportError | NameError):
         return ""
     # `ImportError.name` for `from shaderbox import ScriptBehavior` is the MODULE ("shaderbox"), not the
     # symbol — so match against the message text too, where the bad symbol always appears.
     bad = getattr(exc, "name", None)
     if bad in _INJECTED_NAMES or any(n in str(exc) for n in _INJECTED_NAMES):
-        return (
-            " -- scripting types come from `shaderbox.scripting` "
-            "(`from shaderbox.scripting import ScriptBehavior, Ctx, Vec3, ...`), "
-            "or omit the import: the engine injects them."
-        )
+        return f" -- import it: `from {_SCRIPT_PACKAGE} import {bad or 'Vec3'}`"
     return ""
 
 
+# The ONE package path a script may import from. `shaderbox.scripting` is the user-facing surface;
+# every other module is the app's own machinery and a script importing it is reaching past the
+# interface into the implementation — `shaderbox.app`, `shaderbox.core`, `ProjectSession` were all
+# reachable before this gate.
+_SCRIPT_PACKAGE = "shaderbox.scripting"
+
+
+def _script_import(
+    name: str,
+    globals_: "dict[str, Any] | None" = None,
+    locals_: "dict[str, Any] | None" = None,
+    fromlist: "tuple[str, ...] | None" = (),
+    level: int = 0,
+) -> Any:
+    # The script's `__import__`. The stdlib and third-party packages import normally; of THIS
+    # package a script sees `shaderbox.scripting` and, in it, the user-facing types alone —
+    # the engine and the probe live there too and are none of a script's business. Both messages
+    # name what IS allowed, so the fix is one edit rather than a search.
+    root = name.split(".")[0]
+    if root != "shaderbox":
+        return _REAL_IMPORT(name, globals_, locals_, fromlist, level)
+    if name != _SCRIPT_PACKAGE:
+        raise ImportError(
+            f"a script may import from `{_SCRIPT_PACKAGE}` only, not `{name}`"
+        )
+    allowed = ", ".join(sorted(_INJECTED_NAMES))
+    # `import shaderbox.scripting` (no fromlist) would bind the whole module, engine included,
+    # so only the `from … import <names>` form resolves.
+    if not fromlist:
+        raise ImportError(
+            f"import the names, not the module: `from {_SCRIPT_PACKAGE} import {allowed}`"
+        )
+    hidden = sorted(set(fromlist) - _INJECTED_NAMES)
+    if hidden:
+        raise ImportError(
+            f"`{_SCRIPT_PACKAGE}` offers a script {allowed} — not {', '.join(hidden)}"
+        )
+    return _REAL_IMPORT(name, globals_, locals_, fromlist, level)
+
+
+def _script_builtins() -> dict[str, Any]:
+    # The real builtins with `__import__` replaced, so the whole stdlib still works and only the
+    # package path is narrowed. Built fresh per script: a shared dict one script mutated would
+    # follow every other script in the process.
+    builtins = dict(
+        __builtins__ if isinstance(__builtins__, dict) else vars(__builtins__)
+    )
+    builtins["__import__"] = _script_import
+    return builtins
+
+
 def _build_globals(uniform_name: str) -> dict[str, Any]:
-    # The names a script body + its eager method annotations resolve against. A script is a plain
-    # Python file: the real builtins are in scope (so `import math`, the whole stdlib, AND a real
-    # `from shaderbox.scripting import Vec2, …` all work — __builtins__ carries __import__). The 048
-    # stub emits that explicit import so the available types are VISIBLE; these injected names are the
-    # FALLBACK so a user who deletes the import line still resolves `Vec2`/`Ctx`/… instead of an
-    # opaque eager-annotation-eval compile-freeze. No sandbox (a personal IDE; locked posture).
+    # The names a script body + its eager method annotations resolve against. A script is plain
+    # Python — the stdlib is in scope — but of THIS package it sees `shaderbox.scripting` alone
+    # (`_script_import`). The 048 stub emits the explicit import so the available types are
+    # VISIBLE; these injected names are the FALLBACK so a user who deletes the import line still
+    # resolves `Vec2`/`Ctx`/… instead of an opaque eager-annotation-eval compile-freeze.
     return {
-        "__builtins__": __builtins__,
+        "__builtins__": _script_builtins(),
         "__name__": f"<u:{uniform_name}>",
         "ScriptBehavior": ScriptBehavior,
         "Ctx": EngineContext,
         "MouseState": MouseState,
-        "Vec2": Vec2,
-        "Vec3": Vec3,
-        "Vec4": Vec4,
-        "Array": Array,
-        "Text": Text,
     }
 
 
@@ -255,7 +301,7 @@ def coerce_one(value: object, uniform: moderngl.Uniform, error_name: str) -> obj
     # hint is derived internally). Raises _RuntimeScriptError on a mismatch; the engine freezes.
     # A dict is never a uniform value — that invariant is what makes the engine's value-type
     # dispatch between a pass block and a broadcast key unambiguous (069 D3), so it is checked
-    # here rather than left to inspection of normalize_output.
+    # here rather than left to the coercion.
     if isinstance(value, dict):
         raise _RuntimeScriptError(
             ScriptError(
@@ -266,14 +312,13 @@ def coerce_one(value: object, uniform: moderngl.Uniform, error_name: str) -> obj
                 "declaring it",
             )
         )
-    normalized = normalize_output(value)
-    coerced = coerce_uniform_value(normalized, uniform)
+    coerced = coerce_uniform_value(value, uniform)
     if coerced is None:
         raise _RuntimeScriptError(
             ScriptError(
                 error_name,
                 "runtime",
-                uniform_shape_hint(uniform, gl_type_label(uniform), normalized),
+                uniform_shape_hint(uniform, gl_type_label(uniform), value),
             )
         )
     # NaN/Inf are valid floats to coerce_uniform_value but corrupt the render silently (a black

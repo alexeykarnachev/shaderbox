@@ -77,7 +77,7 @@ _WAVE_SCRIPT = (
     "    def update(self, ctx: Ctx) -> dict:\n"
     "        return {\n"
     "            'u_wave': 0.5 + 0.5 * math.sin(ctx.t),\n"
-    "            'u_offset': Vec2(0.25, 0.75),\n"
+    "            'u_offset': [0.25, 0.75],\n"
     "        }\n"
 )
 # A stateful ramp driving BOTH u_wave (the integrator) and u_offset from ONE instance.
@@ -87,7 +87,7 @@ _RAMP_SCRIPT = (
     "        self.v = 0.0\n"
     "    def update(self, ctx: Ctx) -> dict:\n"
     "        self.v += ctx.dt\n"
-    "        return {'u_wave': self.v % 1.0, 'u_offset': Vec2(0.25, 0.75)}\n"
+    "        return {'u_wave': self.v % 1.0, 'u_offset': [0.25, 0.75]}\n"
 )
 
 
@@ -156,7 +156,7 @@ def test_script_shape_mismatch_freezes_and_records(
         scripts_dir,
         "class Behavior(ScriptBehavior):\n"
         "    def update(self, ctx: Ctx) -> dict:\n"
-        "        return {'u_wave': Vec3(0.1, 0.2, 0.3)}\n",  # vec3 into a float uniform
+        "        return {'u_wave': [0.1, 0.2, 0.3]}\n",  # vec3 into a float uniform
     )
     document = _document(gl_ctx)
     document.render_pass.seed_uniform_values()
@@ -253,7 +253,7 @@ def test_script_int_uniforms_reach_gpu_not_popped(
         scripts_dir,
         "class Behavior(ScriptBehavior):\n"
         "    def update(self, ctx: Ctx) -> dict:\n"
-        "        return {'u_i': 2.7, 'u_count': 4.2, 'u_iv': Vec2(1.6, 2.4)}\n",
+        "        return {'u_i': 2.7, 'u_count': 4.2, 'u_iv': [1.6, 2.4]}\n",
     )
     document = Document(gl=gl_ctx)
     document.render_pass.release_program(_INT_SRC)

@@ -67,7 +67,7 @@ def test_buffer_words_are_the_identifiers_in_the_text() -> None:
 
 
 _SCRIPT = """import math
-from shaderbox.scripting import ScriptBehavior, Ctx, Vec3, Array
+from shaderbox.scripting import ScriptBehavior, Ctx
 
 class Behavior(ScriptBehavior):
     def __init__(self) -> None:
@@ -85,12 +85,12 @@ class Behavior(ScriptBehavior):
             "u_speed": 0.5,
             "u_count": -3,
             "u_on": True,
-            "u_tint": Vec3(1.0, 0.0, 0.0),
-            "u_taps": Array([0.0] * 6),
-            "u_pts": Array([1.0, 2.0, 3.0]),
+            "u_tint": [1.0, 0.0, 0.0],
+            "u_taps": [0.0] * 6,
+            "u_pts": [1.0, 2.0, 3.0, 4.0, 5.0],
             "u_phase": self.phase,
             "u_off": None,
-            "paint": {"u_scale": 2.0, "u_dir": Vec2(0.0, 1.0)},
+            "paint": {"u_scale": 2.0, "u_dir": [0.0, 1.0]},
         }
 """
 
@@ -105,7 +105,9 @@ def test_returned_uniforms_read_every_return_of_update_only() -> None:
         (None, "u_on"): "bool",
         (None, "u_tint"): "vec3",
         (None, "u_taps"): "float[6]",
-        (None, "u_pts"): "float[3]",
+        # 5 numbers is no vector, so it reads as an array; 2-4 read as a vector,
+        # which is what a script writing `[x, y]` almost always means.
+        (None, "u_pts"): "float[5]",
         (None, "u_phase"): None,
         (None, "u_off"): None,
         ("paint", "u_scale"): "float",

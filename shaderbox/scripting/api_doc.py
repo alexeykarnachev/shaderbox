@@ -11,51 +11,29 @@ This module reaches only for the GL-free halves of the package (`context` + `out
 importing ANY submodule executes the package `__init__`, which re-exports the GL half, so the
 invariant is over this module's OWN imports."""
 
-from collections.abc import Callable, Iterable
-from inspect import cleandoc, signature
+from collections.abc import Iterable
+from inspect import cleandoc
 from textwrap import fill
 
 from shaderbox.scripting.context import EXPORT_MOUSE, EngineContext, MouseState
-from shaderbox.scripting.outputs import Array, Text, Vec2, Vec3, Vec4
 
 _WRAP_WIDTH: int = 100
 
-
-def _call_form(cls: type, ctor: Callable[..., object]) -> str:
-    # `Vec3(x,y,z)` / `Array(values)` from the real constructor, so a renamed parameter cannot leave
-    # the block advertising the old name.
-    params = [p for p in signature(ctor).parameters if p not in ("self", "cls")]
-    return f"{cls.__name__}({','.join(params)})"
-
-
-_VEC_FORMS: str = " / ".join(_call_form(c, c.__new__) for c in (Vec2, Vec3, Vec4))
-
-# Type name (as `engine.py::_stub_kind` names it) -> its one-line value-shape prose. Names that share
-# a shape share the gloss verbatim; the render de-dupes in insertion order, so the printed list groups
-# exactly as this map does.
+# The GLSL shape a uniform has (as `engine.py::_stub_kind` labels it) -> what a script returns for
+# it. Every value is PLAIN PYTHON: the engine shapes it against the live `moderngl.Uniform`, so
+# there is no wrapper type to learn. Shapes sharing a form share the gloss verbatim; the render
+# de-dupes in insertion order, so the printed list groups exactly as this map does.
 _VALUE_SHAPE_GLOSS: dict[str, str] = {
-    "float": "float|int -> scalar",
-    "int": "float|int -> scalar",
-    "Vec2": f"{_VEC_FORMS} -> vec2/3/4",
-    "Vec3": f"{_VEC_FORMS} -> vec2/3/4",
-    "Vec4": f"{_VEC_FORMS} -> vec2/3/4",
-    "Array": (
-        f"{_call_form(Array, Array.__init__)} -> a numeric array uniform (flat numbers, or ROWS of "
-        "Vec/list, auto-flattened)"
+    "float": "a number -> a scalar (rounded for an int uniform)",
+    "int": "a number -> a scalar (rounded for an int uniform)",
+    "vec2": "a list or tuple of N numbers -> vecN",
+    "vec3": "a list or tuple of N numbers -> vecN",
+    "vec4": "a list or tuple of N numbers -> vecN",
+    "list": (
+        "a list of numbers, flat or as rows -> an array uniform "
+        "([[x,y],[x,y]] and [x,y,x,y] both drive a vec2[2])"
     ),
-    "Text": f"{_call_form(Text, Text.__init__)} or a plain str -> a uint[] glyph array",
-}
-
-# The `_Vec` operator dunders, each mapped to the prose the block prints for it — this map IS the
-# rendered operator list, so a dunder on the Vec classes that is missing here (or here and not on
-# them) fails the coverage test. Dunders sharing an arity/semantics share their prose verbatim.
-_VEC_OPERATOR_GLOSS: dict[str, str] = {
-    "__add__": "`+ -` (same length)",
-    "__sub__": "`+ -` (same length)",
-    "__mul__": "`* /` (scalar or component-wise)",
-    "__rmul__": "`* /` (scalar or component-wise)",
-    "__truediv__": "`* /` (scalar or component-wise)",
-    "__neg__": "unary `-`",
+    "str": "a str -> a uint[] glyph array",
 }
 
 _MOUSE_FIELDS: str = ", ".join(f"`{n}`" for n in MouseState.__dataclass_fields__)
@@ -115,25 +93,16 @@ _CTX_HELP: dict[str, str] = {
     ),
 }
 
-_IMPORT_NAMES: str = ", ".join(
-    ["ScriptBehavior", "Ctx", *(c.__name__ for c in (Vec2, Vec3, Vec4, Array, Text))]
-)
+_IMPORT_NAMES: str = "ScriptBehavior, Ctx"
 
 # The names the engine injects into every script (`behavior.py::_build_globals`), as the
 # editor's intelligence classes them: the script API, not a local and not a builtin.
-API_NAMES: frozenset[str] = frozenset(
-    {
-        "ScriptBehavior",
-        "Ctx",
-        MouseState.__name__,
-        *(c.__name__ for c in (Vec2, Vec3, Vec4, Array, Text)),
-    }
-)
+API_NAMES: frozenset[str] = frozenset({"ScriptBehavior", "Ctx", MouseState.__name__})
 
 
 # What `K` shows for each injected API name: a summary line, a blank line, then the detail
-# (PEP 257 with the Google layout, 079 D3). A value type's entry is the shape it coerces to;
-# `Ctx` and `MouseState` read their class docstrings, which say the same thing once.
+# (PEP 257 with the Google layout, 079 D3). `Ctx` and `MouseState` read their class docstrings,
+# so the concept has one authored home.
 _API_HELP: dict[str, str] = {
     "ScriptBehavior": (
         "The base class a document script's Behavior extends.\n"
@@ -141,35 +110,6 @@ _API_HELP: dict[str, str] = {
         "Define __init__(self) for state that survives across frames, and\n"
         "update(self, ctx) -> dict for the values each frame drives. Press K on Ctx for\n"
         "what update receives."
-    ),
-    "Vec2": (
-        "A 2-component vector, driving a vec2 uniform.\n"
-        "\n"
-        "Reads as .x .y, and supports + - * / and unary -, .dot(o) and .length()."
-    ),
-    "Vec3": (
-        "A 3-component vector, driving a vec3 uniform.\n"
-        "\n"
-        "Reads as .x .y .z, and supports the Vec2 operations plus .cross(o)."
-    ),
-    "Vec4": (
-        "A 4-component vector, driving a vec4 uniform.\n"
-        "\n"
-        "Reads as .x .y .z .w, and supports the same operations as Vec2."
-    ),
-    "Array": (
-        "The values of a numeric array uniform.\n"
-        "\n"
-        "Takes flat numbers, or rows of Vec or list which are flattened for you. The\n"
-        "length must match the array the shader declares. For example:\n"
-        "\n"
-        "    Array([0.0, 1.0, 2.0, 3.0])\n"
-        "    Array([Vec2(0.0, 1.0), Vec2(2.0, 3.0)])"
-    ),
-    "Text": (
-        "A string, driving a uint[] glyph array.\n"
-        "\n"
-        "A plain str coerces the same way. Text longer than the array holds is cut."
     ),
 }
 
@@ -181,13 +121,7 @@ def _class_help(cls: type) -> str:
 
 
 def api_symbol_doc(name: str) -> tuple[str, str]:
-    """(signature, doc) for one injected API name, for the editor's completion and `K`: the
-    call form of a value type, the class name of the others."""
-    by_name: dict[str, type] = {c.__name__: c for c in (Vec2, Vec3, Vec4, Array, Text)}
-    cls = by_name.get(name)
-    if cls is not None:
-        ctor = cls.__new__ if name.startswith("Vec") else cls.__init__
-        return _call_form(cls, ctor), _API_HELP[name]
+    """(signature, doc) for one injected API name, for the editor's completion and `K`."""
     if name == "Ctx":
         return "Ctx", _class_help(EngineContext)
     if name == MouseState.__name__:
@@ -236,8 +170,8 @@ def _bullet(text: str) -> str:
 
 
 def script_api_summary() -> str:
-    """The RARE-tier SCRIPT API block: the script contract, the ctx surface, the legal value shapes
-    and the vector API, rendered from `context.py` + `outputs.py`."""
+    """The RARE-tier SCRIPT API block: the script contract, the ctx surface and the legal value
+    shapes, rendered from `context.py`."""
     bullets = [
         "- `class Behavior(ScriptBehavior)`: `__init__(self)` runs once; `update(self, ctx) -> dict` "
         "runs every frame. A bare key drives that uniform on EVERY pass declaring it: "
@@ -246,14 +180,12 @@ def script_api_summary() -> str:
         "that pass. State on `self.*` persists across frames; a key you omit (or map to None) "
         "stays MANUAL.",
         f"- ctx: {_ctx_fields()}.",
-        f"- Legal value shapes: {_dedup_join(_VALUE_SHAPE_GLOSS.values(), '; ')}. A bare FLAT list "
-        "also coerces (a vec, or an exact-length numeric array); a NESTED bare list does not -- that "
-        "is what Array is for.",
-        f"- Vec2/Vec3/Vec4 are real vectors: `.x .y .z .w`, "
-        f"{_dedup_join(_VEC_OPERATOR_GLOSS.values(), ', ')}, `.dot(o)`, `.length()`, "
-        "`.normalized()`; Vec3 also `.cross(o)`.",
-        f"- `from shaderbox.scripting import {_IMPORT_NAMES}` (the engine injects these too); a "
-        "script is plain Python -- `import math` and the stdlib work.",
+        f"- Legal value shapes, all PLAIN PYTHON (there are no wrapper types): "
+        f"{_dedup_join(_VALUE_SHAPE_GLOSS.values(), '; ')}. An array's length must match the "
+        "uniform's exactly.",
+        f"- `from shaderbox.scripting import {_IMPORT_NAMES}` -- that module and those names are "
+        "the ONLY part of shaderbox a script may import; any other shaderbox module raises at "
+        "compile. A script is otherwise plain Python -- `import math`, numpy and the stdlib work.",
     ]
     header = "SCRIPT API (generated from shaderbox/scripting -- the Python side of a document script):"
     return "\n".join([header, *(_bullet(b) for b in bullets)])

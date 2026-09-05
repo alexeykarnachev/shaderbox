@@ -28,6 +28,7 @@ from shaderbox.scripting import (
     script_stub_for,
 )
 from shaderbox.scripting.behavior import _RuntimeScriptError
+from shaderbox.scripting.errors import ScriptError
 
 _GL_FLOAT = 0x1406
 _GL_UNSIGNED_INT = 0x1405
@@ -138,7 +139,7 @@ def test_scalar_output_coerces(tmp_path: Path) -> None:
 def test_vec2_output_coerces(tmp_path: Path) -> None:
     _write_script(
         tmp_path,
-        _script(update_body="        return {'u_off': Vec2(0.3, 0.7)}\n"),
+        _script(update_body="        return {'u_off': [0.3, 0.7]}\n"),
     )
     document = _FakeDocument([_u("u_off", dim=2)])
     eng = _engine(tmp_path, document)
@@ -150,7 +151,7 @@ def test_vec2_output_coerces(tmp_path: Path) -> None:
 def test_vec3_output_coerces(tmp_path: Path) -> None:
     _write_script(
         tmp_path,
-        _script(update_body="        return {'u_color': Vec3(0.1, 0.2, 0.3)}\n"),
+        _script(update_body="        return {'u_color': [0.1, 0.2, 0.3]}\n"),
     )
     document = _FakeDocument([_u("u_color", dim=3)])
     eng = _engine(tmp_path, document)
@@ -162,7 +163,7 @@ def test_vec3_output_coerces(tmp_path: Path) -> None:
 def test_vec4_output_coerces(tmp_path: Path) -> None:
     _write_script(
         tmp_path,
-        _script(update_body="        return {'u_q': Vec4(0.1, 0.2, 0.3, 0.4)}\n"),
+        _script(update_body="        return {'u_q': [0.1, 0.2, 0.3, 0.4]}\n"),
     )
     document = _FakeDocument([_u("u_q", dim=4)])
     eng = _engine(tmp_path, document)
@@ -174,7 +175,7 @@ def test_vec4_output_coerces(tmp_path: Path) -> None:
 def test_array_output_coerces(tmp_path: Path) -> None:
     _write_script(
         tmp_path,
-        _script(update_body="        return {'u_vals': Array([1.0, 2.0, 3.0, 4.0])}\n"),
+        _script(update_body="        return {'u_vals': [1.0, 2.0, 3.0, 4.0]}\n"),
     )
     document = _FakeDocument([_u("u_vals", dim=1, n=4)])
     eng = _engine(tmp_path, document)
@@ -186,7 +187,7 @@ def test_array_output_coerces(tmp_path: Path) -> None:
 def test_text_output_coerces(tmp_path: Path) -> None:
     _write_script(
         tmp_path,
-        _script(update_body="        return {'u_text': Text(\"Hi\")}\n"),
+        _script(update_body="        return {'u_text': \"Hi\"}\n"),
     )
     document = _FakeDocument([_u("u_text", dim=1, n=8, gl_type=_GL_UNSIGNED_INT)])
     eng = _engine(tmp_path, document)
@@ -201,7 +202,7 @@ def test_vec2_array_chunks_into_rows(tmp_path: Path) -> None:
     _write_script(
         tmp_path,
         _script(
-            update_body="        return {'u_pts': Array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0])}\n"
+            update_body="        return {'u_pts': [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]}\n"
         ),  # vec2[3]
     )
     document = _FakeDocument([_u("u_pts", dim=2, n=3)])
@@ -238,7 +239,7 @@ def test_uint_scalar_rounds(tmp_path: Path) -> None:
 def test_ivec2_rounds_components(tmp_path: Path) -> None:
     _write_script(
         tmp_path,
-        _script(update_body="        return {'u_iv': Vec2(1.4, 2.6)}\n"),
+        _script(update_body="        return {'u_iv': [1.4, 2.6]}\n"),
     )
     document = _FakeDocument([_u("u_iv", dim=2, gl_type=_GL_INT_VEC2)])
     eng = _engine(tmp_path, document)
@@ -251,7 +252,7 @@ def test_ivec2_rounds_components(tmp_path: Path) -> None:
 def test_int_array_rounds_each(tmp_path: Path) -> None:
     _write_script(
         tmp_path,
-        _script(update_body="        return {'u_arr': Array([1.4, 2.6, 3.5])}\n"),
+        _script(update_body="        return {'u_arr': [1.4, 2.6, 3.5]}\n"),
     )
     document = _FakeDocument([_u("u_arr", dim=1, n=3, gl_type=_GL_INT)])
     eng = _engine(tmp_path, document)
@@ -355,7 +356,7 @@ def test_export_tick_does_not_touch_live_errors(tmp_path: Path) -> None:
     _write_script(
         tmp_path,
         _script(
-            update_body="        return {'u_x': Vec3(1.0, 2.0, 3.0)}\n"
+            update_body="        return {'u_x': [1.0, 2.0, 3.0]}\n"
         ),  # vec3->scalar
     )
     document = _FakeDocument([_u("u_x")])
@@ -396,12 +397,10 @@ def test_no_subclass_is_compile_error(tmp_path: Path) -> None:
     assert eng.errors[("n0", "", "script.py")].kind == "compile"
 
 
-def test_wrong_import_of_injected_type_steers_to_scripting_module(
-    tmp_path: Path,
-) -> None:
-    # A wrong `from shaderbox import ScriptBehavior` (the module names the symbol but the raw
-    # ImportError points at the wrong module + never names shaderbox.scripting) must append the
-    # canonical-import steer, so the agent self-corrects instead of grepping fruitlessly (043 dogfood).
+def test_a_wrong_import_names_the_right_module(tmp_path: Path) -> None:
+    # A wrong `from shaderbox import ScriptBehavior` must name `shaderbox.scripting`, so the
+    # reader self-corrects instead of grepping fruitlessly (043 dogfood). The import gate's own
+    # message does this now; before the gate it was the appended steer.
     _write_script(
         tmp_path,
         "from shaderbox import ScriptBehavior\n"
@@ -412,7 +411,21 @@ def test_wrong_import_of_injected_type_steers_to_scripting_module(
     eng = _engine(tmp_path, document)
     msg = eng.errors[("n0", "", "script.py")].message
     assert "shaderbox.scripting" in msg
-    assert "engine injects them" in msg
+
+
+def test_a_missing_import_of_a_scripting_type_names_the_import_line(
+    tmp_path: Path,
+) -> None:
+    # The other half: a script that USES `Vec3` without importing it. The engine injects the
+    # names as a fallback, so this only surfaces where the injection cannot help — an eager
+    # annotation on a name the user misspelled. Falsifier: drop the hint and the message is a
+    # bare NameError with no route to the import line.
+    from shaderbox.scripting.behavior import _import_hint
+
+    assert "from shaderbox.scripting import Ctx" in _import_hint(
+        NameError("name 'Ctx' is not defined", name="Ctx")
+    )
+    assert _import_hint(ImportError("No module named 'numpy'")) == ""
 
 
 def test_unrelated_import_error_does_not_get_the_steer(tmp_path: Path) -> None:
@@ -590,7 +603,7 @@ def test_per_key_shape_mismatch_freezes_only_that_key(tmp_path: Path) -> None:
     _write_script(
         tmp_path,
         _script(
-            update_body="        return {'u_a': 0.4, 'u_b': Vec3(1.0, 2.0, 3.0)}\n"
+            update_body="        return {'u_a': 0.4, 'u_b': [1.0, 2.0, 3.0]}\n"
         ),  # vec3 into a scalar
     )
     document = _FakeDocument([_u("u_a"), _u("u_b")])
@@ -607,7 +620,7 @@ def test_array_wrong_length_freezes(tmp_path: Path) -> None:
     _write_script(
         tmp_path,
         _script(
-            update_body="        return {'u_vals': Array([1.0, 2.0])}\n"
+            update_body="        return {'u_vals': [1.0, 2.0]}\n"
         ),  # 2 for float[4]
     )
     document = _FakeDocument([_u("u_vals", dim=1, n=4)])
@@ -646,7 +659,7 @@ def test_array_accepts_nested_vec_rows(tmp_path: Path) -> None:
     _write_script(
         tmp_path,
         _script(
-            update_body="        return {'u_pts': Array([(0.0, 1.0), (2.0, 3.0)])}\n"
+            update_body="        return {'u_pts': [(0.0, 1.0), (2.0, 3.0)]}\n"
         ),  # nested rows -> auto-flattened
     )
     document = _FakeDocument([_u("u_pts", dim=2, n=2)])
@@ -983,10 +996,10 @@ def test_explicit_import_line_resolves(tmp_path: Path) -> None:
     # inside the exec'd script. Falsifier: the import raises an opaque compile-freeze.
     _write_script(
         tmp_path,
-        "from shaderbox.scripting import ScriptBehavior, Ctx, Vec2\n"
+        "from shaderbox.scripting import ScriptBehavior, Ctx\n"
         "class Behavior(ScriptBehavior):\n"
         "    def update(self, ctx: Ctx) -> dict:\n"
-        "        return {'u_off': Vec2(0.1, 0.2)}\n",
+        "        return {'u_off': [0.1, 0.2]}\n",
     )
     document = _FakeDocument([_u("u_off", dim=2)])
     eng = _engine(tmp_path, document)
@@ -1018,7 +1031,7 @@ def test_chr_ord_available_for_codepoint_text(tmp_path: Path) -> None:
         tmp_path,
         "class Behavior(ScriptBehavior):\n"
         "    def update(self, ctx: Ctx) -> dict:\n"
-        "        return {'u_t': Text(chr(65) + chr(66))}\n",  # 'AB'
+        "        return {'u_t': chr(65) + chr(66)}\n",  # 'AB'
     )
     document = _FakeDocument([_u("u_t", dim=1, n=8, gl_type=_GL_UNSIGNED_INT)])
     eng = _engine(tmp_path, document)
@@ -1062,17 +1075,15 @@ def test_script_stub_compiles_runs_and_drives_nothing_by_default(
     assert document.uniform_values == {}
 
 
-def test_script_stub_emits_explicit_import_for_referenced_types(tmp_path: Path) -> None:
-    # The stub's import line names ScriptBehavior + Ctx always, plus only the output types the
-    # document's uniforms reference. Falsifier: a referenced type missing, or an unreferenced one emitted.
-    body = script_stub_for({"main": [_u("u_v3", dim=3)]})
-    # Scope the assertion to the IMPORT line (the docstring prose mentions Vec2/Vec3/Vec4 generically).
+def test_the_stub_imports_the_whole_scripting_surface(tmp_path: Path) -> None:
+    # The importable surface is two names, whatever the document declares: a script returns plain
+    # Python, so there are no value types to import. Falsifier: emit a value type in the import
+    # line and it names something a script cannot import.
+    body = script_stub_for({"main": [_u("u_v3", dim=3), _u("u_a", n=4)]})
     import_line = next(
         line for line in body.splitlines() if "from shaderbox.scripting import" in line
     )
-    assert "ScriptBehavior" in import_line and "Ctx" in import_line
-    assert "Vec3" in import_line
-    assert "Vec2" not in import_line and "Text" not in import_line  # not referenced
+    assert import_line == "from shaderbox.scripting import ScriptBehavior, Ctx"
 
 
 # ---- ctx is frozen ----
@@ -1478,3 +1489,87 @@ def test_script_ready_never_compiles() -> None:
 
     assert Pass.script_ready.fget(_Probe()) is False
     assert calls == []
+
+
+# ---- the script's import surface: `shaderbox.scripting`'s user types, and nothing else ----
+
+
+def _run_script(tmp_path: Path, body: str) -> ScriptError | None:
+    _write_script(tmp_path, body)
+    document = _FakeDocument([_u("u_a")])
+    eng = _engine(tmp_path, document)
+    return eng.errors.get(("n0", "", "script.py"))
+
+
+def test_a_script_imports_the_stdlib_and_the_scripting_types(tmp_path: Path) -> None:
+    # The gate narrows ONE package path; everything else a script could import before still
+    # imports. Falsifier: gate the root builtins instead and `import math` goes red.
+    error = _run_script(
+        tmp_path,
+        "import math\n"
+        "import json\n"
+        "from shaderbox.scripting import ScriptBehavior, Ctx, MouseState\n"
+        "\n"
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx: Ctx) -> dict:\n"
+        "        return {'u_a': math.sin(ctx.t)}\n",
+    )
+    assert error is None, error
+
+
+def test_a_script_cannot_import_the_app_or_its_modules(tmp_path: Path) -> None:
+    # `shaderbox.app`, `shaderbox.core` and `ProjectSession` were all reachable from a script.
+    # They are the app's machinery, not the scripting interface. Falsifier: drop the import gate
+    # and every one of these compiles clean.
+    for module in (
+        "shaderbox",
+        "shaderbox.app",
+        "shaderbox.core",
+        "shaderbox.project_session",
+        "shaderbox.scripting.engine",
+    ):
+        error = _run_script(
+            tmp_path,
+            f"import {module}\n"
+            "from shaderbox.scripting import ScriptBehavior, Ctx\n"
+            "\n"
+            "class Behavior(ScriptBehavior):\n"
+            "    def update(self, ctx: Ctx) -> dict:\n"
+            "        return {}\n",
+        )
+        assert error is not None, f"a script imported {module}"
+        assert "shaderbox.scripting" in error.message, error.message
+
+
+def test_the_scripting_package_offers_a_script_only_its_user_types(
+    tmp_path: Path,
+) -> None:
+    # The package holds the engine, the probe and the stub generator beside the user's types.
+    # A script gets the types. Falsifier: gate the module path alone and `ScriptEngine` imports.
+    for name in ("ScriptEngine", "ScriptProbe", "PythonBehavior", "script_stub_for"):
+        error = _run_script(
+            tmp_path,
+            f"from shaderbox.scripting import ScriptBehavior, Ctx, {name}\n"
+            "\n"
+            "class Behavior(ScriptBehavior):\n"
+            "    def update(self, ctx: Ctx) -> dict:\n"
+            "        return {}\n",
+        )
+        assert error is not None, f"a script imported {name}"
+        assert name in error.message, error.message
+
+
+def test_importing_the_module_itself_says_to_import_the_names(tmp_path: Path) -> None:
+    # `import shaderbox.scripting` would bind the whole module, engine included. Falsifier: allow
+    # a bare import and the module object is a script's back door to everything in it.
+    error = _run_script(
+        tmp_path,
+        "import shaderbox.scripting\n"
+        "from shaderbox.scripting import ScriptBehavior, Ctx\n"
+        "\n"
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, ctx: Ctx) -> dict:\n"
+        "        return {}\n",
+    )
+    assert error is not None
+    assert "import the names" in error.message, error.message

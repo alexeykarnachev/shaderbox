@@ -24,7 +24,7 @@ protocol (a document's `passes` by name, each a `ScriptPass`), so it stays in th
 A real `Document` satisfies it structurally.
 """
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, TypeGuard
@@ -170,22 +170,23 @@ class DocumentScripts:
 
 
 def _stub_kind(uniform: moderngl.Uniform) -> tuple[str, str]:
-    # The (output-type name, coercion-valid default expression) for one uniform's shape. Drives the
-    # script stub's commented example lines + the explicit-import set.
+    # The (GLSL-shape label, coercion-valid default expression) for one uniform's shape. Drives
+    # the script stub's commented example lines. Every default is plain Python — a script returns
+    # builtins and the engine shapes them against the live uniform.
     dim = uniform.dimension
     n = uniform.array_length
     gl_type = getattr(uniform, "gl_type", None)
 
     if is_text_array(uniform):
-        return "Text", 'Text("")'
+        return "str", '""'
     if n > 1:
-        return "Array", f"Array([0.0] * {n * dim})"
+        return "list", f"[0.0] * {n * dim}"
     if dim == 2:
-        return "Vec2", "Vec2(0.0, 0.0)"
+        return "vec2", "[0.0, 0.0]"
     if dim == 3:
-        return "Vec3", "Vec3(0.0, 0.0, 0.0)"
+        return "vec3", "[0.0, 0.0, 0.0]"
     if dim == 4:
-        return "Vec4", "Vec4(0.0, 0.0, 0.0, 0.0)"
+        return "vec4", "[0.0, 0.0, 0.0, 0.0]"
     if gl_type in (GL_INT, GL_UNSIGNED_INT):
         return "int", "0"  # a scalar int/uint stub returns an int, not 0.0
     return "float", "0.0"
@@ -213,8 +214,8 @@ _UPDATE_DOC = (
     '             "blur": {"u_radius": 4.0}}\n'
     "\n"
     "            A uniform you return plays, meaning the script owns it. One you omit, or\n"
-    "            map to None, stays manual. Values are float or int, Vec2 / Vec3 / Vec4,\n"
-    '            Array([...]) for an array uniform, or Text("...") for a text one.\n'
+    "            map to None, stays manual. Values are plain Python: a number for a\n"
+    "            scalar, a list for a vector or an array, a str for a text uniform.\n"
     '        """\n'
 )
 _INIT_DOC = (
@@ -225,15 +226,10 @@ _INIT_DOC = (
 )
 
 
-def _script_import_line(annotations: Iterable[str]) -> str:
-    # The explicit import line atop the stub (048 decision 8): `ScriptBehavior` + `Ctx` always, plus
-    # only the output types the document's uniforms reference. Visible so the user sees what's available;
-    # the engine also injects these names as a fallback (behavior.py::_build_globals).
-    names = ["ScriptBehavior", "Ctx"]
-    for ann in annotations:
-        if ann in ("Vec2", "Vec3", "Vec4", "Array", "Text") and ann not in names:
-            names.append(ann)
-    return f"from shaderbox.scripting import {', '.join(names)}\n"
+def _script_import_line() -> str:
+    # The explicit import line atop the stub (048 decision 8). Two names, and they are the whole
+    # importable surface: a script returns plain Python, so there are no value types to import.
+    return "from shaderbox.scripting import ScriptBehavior, Ctx\n"
 
 
 def script_stub_for(uniforms_by_pass: dict[str, list[moderngl.Uniform]]) -> str:
@@ -247,9 +243,7 @@ def script_stub_for(uniforms_by_pass: dict[str, list[moderngl.Uniform]]) -> str:
         pass_name: [(u.name, *_stub_kind(u)) for u in uniforms if is_scriptable(u)]
         for pass_name, uniforms in uniforms_by_pass.items()
     }
-    import_line = _script_import_line(
-        ann for kinds in kinds_by_pass.values() for _, ann, _ in kinds
-    )
+    import_line = _script_import_line()
     if any(kinds_by_pass.values()):
         blocks = ""
         for pass_name, kinds in kinds_by_pass.items():

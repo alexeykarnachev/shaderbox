@@ -24,10 +24,10 @@ def test_ctx_members_complete_with_the_engine_gloss() -> None:
 def test_math_members_and_the_api_complete_by_kind() -> None:
     text, line = _stub_with("y = math.si")
     assert [s.name for s in python_completions(text, line, 19)][:2] == ["sin", "sinh"]
-    text, line = _stub_with("Ve")
+    text, line = _stub_with("Ct")
     api = python_completions(text, line, 10)
-    assert {s.name for s in api} >= {"Vec2", "Vec3", "Vec4"}
-    assert all(s.kind == SymbolKind.PY_API for s in api if s.name.startswith("Vec"))
+    assert {s.name for s in api} >= {"Ctx"}
+    assert all(s.kind == SymbolKind.PY_API for s in api if s.name == "Ctx")
     text, line = _stub_with("se")
     assert any(
         s.name == "self" and s.kind == SymbolKind.PY_LOCAL

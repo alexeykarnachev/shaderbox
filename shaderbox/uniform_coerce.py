@@ -110,14 +110,29 @@ def coerce_array(
             ints = [int(v) for v in value][:n]
             return ints + [0] * (n - len(ints))
         return None
-    if not isinstance(value, list | tuple) or not all(is_number(v) for v in value):
+    if not isinstance(value, list | tuple):
         return None
-    if len(value) != (n if dim == 1 else n * dim):
+    # A `vecN[M]` reads naturally as M rows -- `[[x, y], [x, y]]`, which is what a script building
+    # a list of positions produces. Flatten one level of rows so both that and the flat form work;
+    # a mixed list (a row beside a bare number) stays a mismatch.
+    items: list[object] = list(value)
+    if items and all(isinstance(v, list | tuple) for v in items):
+        rows: list[object] = []
+        for row in items:
+            assert isinstance(row, list | tuple)
+            rows.extend(row)
+        items = rows
+    numbers: list[float] = []
+    for item in items:
+        if not is_number(item):
+            return None
+        numbers.append(item)
+    if len(numbers) != (n if dim == 1 else n * dim):
         return None
     conv = round if _is_int_uniform(uniform) else float
     if dim == 1:  # float[N] / int[N] -> flat tuple of exactly N
-        return tuple(conv(v) for v in value)
-    flat = [conv(v) for v in value]  # vecN[M] -> M rows of `dim`
+        return tuple(conv(v) for v in numbers)
+    flat = [conv(v) for v in numbers]  # vecN[M] -> M rows of `dim`
     return [tuple(flat[i : i + dim]) for i in range(0, n * dim, dim)]
 
 
