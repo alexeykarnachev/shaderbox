@@ -30,10 +30,11 @@ feature; brief points at the superseder).
 **Next: 079 plan-lock, then its waves in the spec's order.**
 `ai_docs/features/079_fifth_walk_findings/01_spec.md` is the verified ledger of the fourteen
 findings the maintainer filed after running 078's display checks (`00_raw_findings.md`
-verbatim), eleven locked decisions and three open questions: Q1 the kind order for sorting
-candidates, Q2 the low-emphasis button style — he picks from
-`ai_docs/features/079_fifth_walk_findings/button_styles.html` (open it in a browser; six tiers,
-three Reset variants, three chips) — and Q3 the `K` note's picture size. Causes found in the
+verbatim), twelve locked decisions and two open questions: Q1 the kind order for sorting
+candidates and Q3 the `K` note's picture size. Q2 is answered: option B of
+`button_styles.html` (outline) becomes the standard tier, and W-J is an app-wide button sweep —
+at most four tiers, every site on one of them, a test against raw `imgui.button` outside the
+primitives. Causes found in the
 filing session: the copilot dim is `begin_disabled` over the viewer, so the render composites
 at the disabled alpha and the checker shows through; the note blinks because an auto-resize
 imgui window is sized from the previous frame; the error strip sits on the status band because

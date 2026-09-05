@@ -65,13 +65,21 @@ owns. Quotes are the maintainer's words from `00_raw_findings.md`.
   `none` dim, passes in the pass-sampler color, `file...` plain; the closed combo shows the
   resolved pass. Supersedes 072's row shape.
 - **D7. The Document tab's first row is `Document name` and `Canvas [presets chip]` with
-  Reset right-aligned in the danger tier; the second row is the inputs.** Shape finalized with
-  Q2's pick.
+  Reset right-aligned in the danger tier; the second row is the inputs.** In D12's tiers.
 - **D8. The viewer draws at full alpha during a copilot turn**; the controls stay frozen.
 - **D9. The error strip sits below the editor image**, never over the status band.
 - **D10. The stub is a fixed point of the formatter**, gated.
 - **D11. The output variable is orange**: a kind with its own slot and a palette token; the
   library lets a host class win for `gl_FragColor` (editor-session ask).
+- **D12. The button system is at most four tiers, applied everywhere.** The low-emphasis tier
+  is option B of `button_styles.html`: transparent fill, a 1 px `BORDER` frame, secondary text
+  (the shape the Copilot bar button has today), hover and active one palette step darker. The
+  tier set is fixed at plan-lock of W-J and stays within four — the candidates: primary
+  (filled accent, the one call-to-action of a section), standard (B), danger (B with the error
+  color, for a destructive verb), toggle (B, filled accent when on). Every button in the app is
+  one of them; a site that needs a fifth is a design question, not a new primitive. Chips and
+  pills that are not buttons (tags, the presets chip) are their own primitive and stay outside
+  the count.
 - **Standing:** fixes at the class; no compat code; `make gates` green before "done"; UI work
   through `ui_primitives.py` / `theme.py`.
 
@@ -83,11 +91,10 @@ pass and wirable samplers (aqua), library functions (green), language keywords a
 alphabetical inside a group. Alternative: strictly by color (red, blue, green, aqua, plain),
 which puts `if` and `vec3` above the document's own names.
 
-**Q2. The low-emphasis button style** — pick from `button_styles.html` (open it in a browser):
-A the current ghost text, B outline, C outline on a dim fill, D filled subtle, E chip, F
-underlined text; and the Reset variant (red text outline / red outline / filled red). The pick
-becomes the `ghost_button` tier (and `danger_button`) for every site: `add pass`, `open`,
-`Reset`, `Close`, `Cancel`, `x`, `Load ...`, the tab strip's buttons.
+**Q2 — answered (2026-09-05): option B, then a sweep.** Maintainer: "Let's do something like
+"B" option. But let's refine our buttons logic across the whole application, we need to make
+the stuff consistent. We need to keep the number of button type tight (3-4max) and apply the
+styling consistently across the whole app." Recorded as D12; the task is W-J.
 
 **Q3. The `K` note's picture size** (finding 3): the panel row's thumbnail size
 (`SIZE.THUMB_SM`) or the note's width. Recommendation: the note's width, so the picture reads.
@@ -163,11 +170,25 @@ gets a superseded note. Tests: the row list; the closed label for auto/none/pass
 `_draw_document_image`, or push alpha 1.0 around image and backdrop). Test: a frame with
 `copilot_turn_active` draws the image with alpha 1 (read the draw command's color).
 
-### W-J — The button tier and the Document tab row (#11 #12, D7; Q2)
+### W-J — The button system, swept (#11 #12, D7 D12)
 
-After the pick: `ghost_button` / `danger_button` take the chosen shape (one place); `chip_button`
-serves the presets chip; `tabs/document.py` first row reshaped; every ghost site inherits.
-Display check with the maintainer.
+1. **Inventory.** Every button site in `shaderbox/` (`ghost_button`, `primary_button`,
+   `button`, `toggle_button`, `danger_button`, `pill_button`, `chip_button`, raw
+   `imgui.button` / `small_button` / `selectable`-as-button), each with its role: the section's
+   one call-to-action, an ordinary verb, a destructive verb, an on/off state, a tag. A table in
+   the wave file, one row per site.
+2. **The tiers.** `ui_primitives.py` keeps at most four button primitives, B as the standard
+   look; `primary_button`, `danger_button` and `toggle_button` restyled to the same frame so the
+   family reads as one; `button` (imgui's filled grey) and any primitive the inventory leaves
+   without a role are deleted. Hover / active states from the theme, one step darker.
+3. **The sweep.** Every site takes its tier from the table; raw imgui buttons go through a
+   primitive; labels re-read against `imgui-ui §2`'s word budget while there.
+4. **The Document tab's row** (D7): `Canvas` caption + the presets chip on the caption line,
+   Reset right-aligned there in the danger tier, the inputs on the second row.
+5. `imgui-ui §1`'s tier table rewritten to the four that exist; a test walks `shaderbox/` for
+   a raw `imgui.button(` outside `ui_primitives.py` and fails on one.
+6. Display check with the maintainer: the Documents panel, the Document tab, the pass strip,
+   the settings and pass modals, the share tab, the lib picker, the copilot bar.
 
 ### W-K — Sanitize
 
@@ -180,7 +201,7 @@ scope excludes the viewer), roadmap.
 2. **W-G, W-B** — small host-only.
 3. **W-A, W-D** — the notes and the docs.
 4. **W-C** — after the editor session answers the ask.
-5. **W-J** — after the pick.
+5. **W-J** — the inventory first, then the tiers, then the sweep.
 6. **W-K.**
 
 ## Files touched
@@ -209,5 +230,6 @@ scope excludes the viewer), roadmap.
    it wires to.
 9. `Ctrl+Shift+I` on a fresh script changes nothing.
 10. Send a copilot message over an opaque render: the render stays opaque under the dim.
-11. The picked button style on `add pass`, `open`, `Reset`, `Close`, `Cancel`; the Document
+11. Option B on `add pass`, `open`, `Reset`, `Close`, `Cancel` and every other verb, one look
+    across the panels, modals, the share tab, the lib picker and the copilot bar; the Document
     tab's first row is `Document name`, `Canvas [presets]`, Reset at the right border.
