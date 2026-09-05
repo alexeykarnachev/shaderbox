@@ -2,10 +2,15 @@
 statically. Neither touches GL or the App."""
 
 from shaderbox.editor.ffi import Slot
-from shaderbox.intel.glsl import buffer_declarations, buffer_words, uniform_declarations
+from shaderbox.intel.glsl import (
+    buffer_declarations,
+    buffer_words,
+    output_declarations,
+    uniform_declarations,
+)
 from shaderbox.intel.script import returned_uniforms
 from shaderbox.intel.symbols import SymbolKind, kind_rank
-from shaderbox.theme import editor_palette, kind_color, kind_slot
+from shaderbox.theme import COLOR, editor_palette, kind_color, kind_slot
 
 _SHADER = """#version 330
 // uniform float u_commented;
@@ -147,3 +152,31 @@ def test_every_kind_has_a_color() -> None:
             # One color per kind: what the popup and the text draw is what a host surface
             # shows, by the palette rather than by coincidence.
             assert kind_color(kind) == palette[slots[slot]], kind
+
+
+def test_the_fragment_output_is_scanned_and_the_near_misses_are_not() -> None:
+    # 079 D11: the one name a shader WRITES gets its own color, so it has to be found without
+    # catching what merely looks like it. Falsifier: match `out` anywhere and `inout` plus the
+    # local named `out_thing` come back as fragment outputs.
+    text = (
+        "layout(location = 0) out vec4 fragColor;\n"
+        "out vec3 second;\n"
+        "inout vec4 not_an_output;\n"
+        "// out vec4 commented;\n"
+        "void main() { int out_thing = 1; fragColor = vec4(0.0); }\n"
+    )
+    found = output_declarations(text)
+    assert [(d.name, d.glsl_type, d.line) for d in found] == [
+        ("fragColor", "vec4", 0),
+        ("second", "vec3", 1),
+    ]
+
+
+def test_the_output_variable_reads_orange_and_sorts_with_the_buffers_own_names() -> (
+    None
+):
+    # The token, not a hex (079 D11's "generalizable across themes"), and slot 9 so the library
+    # draws it in the same color the popup does.
+    assert kind_color(SymbolKind.OUTPUT_VARIABLE) == COLOR.SYN_OUTPUT
+    assert kind_slot(SymbolKind.OUTPUT_VARIABLE) == 9
+    assert kind_rank(SymbolKind.OUTPUT_VARIABLE) == kind_rank(SymbolKind.BUFFER_SYMBOL)

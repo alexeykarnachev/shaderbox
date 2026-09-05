@@ -10,6 +10,11 @@ _UNIFORM = re.compile(r"\buniform\s+(\w+)\s+(\w+)\s*(\[[^\]]*\])?\s*;")
 _FUNCTION = re.compile(r"^[ \t]*(\w+)\s+(\w+)\s*\(([^)]*)\)\s*\{", re.MULTILINE)
 _CONST = re.compile(r"\bconst\s+(\w+)\s+(\w+)\s*(\[[^\]]*\])?\s*=")
 _DEFINE = re.compile(r"^[ \t]*#\s*define\s+(\w+)(\([^)]*\))?", re.MULTILINE)
+# `out vec4 fragColor;` at the top level. `layout(...)` may precede it, and the qualifier
+# is `out` alone — `inout` and a struct member named `out_thing` must not match.
+_OUT_VARIABLE = re.compile(
+    r"^[ \t]*(?:layout\s*\([^)]*\)\s*)?out\s+(\w+)\s+(\w+)\s*;", re.MULTILINE
+)
 _WORD = re.compile(r"\b[A-Za-z_]\w*\b")
 
 
@@ -85,6 +90,20 @@ def buffer_declarations(text: str) -> tuple[BufferDeclaration, ...]:
         )
     found.sort(key=lambda d: d.line)
     return tuple(found)
+
+
+def output_declarations(text: str) -> tuple[UniformDeclaration, ...]:
+    """Every `out <type> <name>;` the buffer declares, in source order.
+
+    The fragment output is the one name a shader writes rather than reads, which is why it gets
+    its own color (079 D11). `gl_FragColor` is the builtin spelling and is not declared, so the
+    caller adds it.
+    """
+    code = _strip_comments(text)
+    return tuple(
+        UniformDeclaration(m.group(2), m.group(1), _line_of(code, m.start()))
+        for m in _OUT_VARIABLE.finditer(code)
+    )
 
 
 def buffer_words(text: str) -> frozenset[str]:

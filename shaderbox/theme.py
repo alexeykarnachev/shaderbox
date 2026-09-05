@@ -194,6 +194,7 @@ class _ColorBag:
     # to another pass. Read by the sampler-source list now and by the intel color table.
     SYN_SCRIPT_UNIFORM: tuple[float, float, float, float] = _P["green_b"]
     SYN_PASS_SAMPLER: tuple[float, float, float, float] = _P["aqua_b"]
+    SYN_OUTPUT: tuple[float, float, float, float] = _P["orange_b"]
     SYN_IDENT: tuple[float, float, float, float] = _P["fg_1"]
     SYN_OP: tuple[float, float, float, float] = _P["fg_3"]
 
@@ -563,6 +564,7 @@ _KIND_COLOR: dict[SymbolKind, tuple[float, float, float, float]] = {
     SymbolKind.WIRABLE_SAMPLER: COLOR.SYN_PASS_SAMPLER,
     SymbolKind.SCRIPT_UNIFORM: COLOR.SYN_SCRIPT_UNIFORM,
     SymbolKind.BUFFER_SYMBOL: COLOR.SYN_IDENT,
+    SymbolKind.OUTPUT_VARIABLE: COLOR.SYN_OUTPUT,
     SymbolKind.PY_KEYWORD: COLOR.SYN_KEYWORD,
     SymbolKind.PY_BUILTIN: COLOR.SYN_BUILTIN,
     SymbolKind.PY_API: COLOR.SYN_KEYWORD,
@@ -574,11 +576,11 @@ _KIND_COLOR: dict[SymbolKind, tuple[float, float, float, float]] = {
 # The library's syntax slot a host-classified identifier draws in (078 D2, D12): the GLSL lexer
 # emits 1 (keywords and types), 4 (numbers), 6 (builtins and functions); a host class fills
 # only the identifiers the lexer left plain. Engine uniforms take slot 7, pass samplers 8;
-# script uniforms and library functions share the builtin green (6); 9 is spare. CLASS numbers
-# are contiguous; the SLOTS they draw in are addressed by name (`SYNTAX_8` is 25). 0 is no
-# class: the word stays the lexer's.
-# Every kind names its slot; 0 is the plain text color. The TEXT feed pushes only the four
-# host classes (`GlslIndex.classes`), so the language kinds here color popup rows alone.
+# script uniforms and library functions share the builtin green (6); the fragment output takes
+# 9, orange (079 D11). CLASS numbers are contiguous; the SLOTS they draw in are addressed by
+# name (`SYNTAX_8` is 25). 0 is no class: the word stays the lexer's.
+# Every kind names its slot; 0 is the plain text color. The TEXT feed pushes only the host
+# classes (`GlslIndex.classes`), so the language kinds here color popup rows alone.
 _KIND_SLOT: dict[SymbolKind, int] = {
     SymbolKind.GLSL_KEYWORD: 1,
     SymbolKind.GLSL_TYPE: 1,
@@ -590,6 +592,7 @@ _KIND_SLOT: dict[SymbolKind, int] = {
     SymbolKind.WIRABLE_SAMPLER: 8,
     SymbolKind.SCRIPT_UNIFORM: 6,
     SymbolKind.BUFFER_SYMBOL: 0,
+    SymbolKind.OUTPUT_VARIABLE: 9,
     SymbolKind.PY_KEYWORD: 1,
     SymbolKind.PY_BUILTIN: 6,
     SymbolKind.PY_API: 1,
@@ -637,7 +640,7 @@ def editor_palette() -> dict["editor_ffi.Slot", tuple[float, float, float, float
         slot.SYNTAX_6: COLOR.SYN_BUILTIN,
         slot.SYNTAX_7: COLOR.SYN_UNIFORM,
         slot.SYNTAX_8: COLOR.SYN_PASS_SAMPLER,
-        slot.SYNTAX_9: COLOR.SYN_IDENT,
+        slot.SYNTAX_9: COLOR.SYN_OUTPUT,
         slot.WHITESPACE: fade(COLOR.FG_DIM, 0.5),
         slot.BRACKET_MATCH: fade(COLOR.ACCENT_PRIMARY, 0.25),
         # Drawn over the glyphs, so translucent; a different hue from the bracket box.

@@ -136,10 +136,16 @@ of the dot. Tests: the order over a mixed set; `1.`, `x.`, `f().`, `a[0].` sites
 
 ### W-C — The output variable (#4, D11; editor lib)
 
-Editor-session ask: a host class wins for a builtin-classed identifier (or `gl_*` variables leave
-the builtin list); re-vendor. Host: `intel/glsl.py::output_declarations`, `SymbolKind.OUTPUT_VARIABLE`,
-slot 9, `COLOR.SYN_OUTPUT` from the orange palette entry, `classes()` includes it, `gl_FragColor`
-and `gl_FragData` always. Tests: the scan; the class in the text once the library allows it.
+**Host half: landed.** `intel/glsl.py::output_declarations`, `SymbolKind.OUTPUT_VARIABLE`, slot 9,
+`COLOR.SYN_OUTPUT` from the orange palette entry, `classes()` includes it, `gl_FragColor` and
+`gl_FragData` always. Measured against the vendored library: a user's `out vec4 fragColor;` name
+draws orange in the TEXT at both its occurrences; `gl_FragColor` does not, because it lexes as
+BUILTIN and a host class only fills identifiers the lexer left plain — the popup and the notes
+read it as an output today, the text does not.
+
+**Still open — the editor-session ask:** a host class wins for a builtin-classed identifier (or
+`gl_*` variables leave the builtin list); then re-vendor and `gl_FragColor` follows with no host
+change.
 
 ### W-D — Docstrings and glosses (#5, D3)
 

@@ -118,6 +118,10 @@ def test_lookup_and_classes_and_the_lib_file_shape() -> None:
         "u_tint": SymbolKind.SCRIPT_UNIFORM,
         "u_phase": SymbolKind.SCRIPT_UNIFORM,
         "SB_hash": SymbolKind.LIB_FUNCTION,
+        # The fragment outputs (079 D11). Inert in the TEXT until the library lets a host class
+        # win for a builtin-classed identifier; the popup and the notes read them today.
+        "gl_FragColor": SymbolKind.OUTPUT_VARIABLE,
+        "gl_FragData": SymbolKind.OUTPUT_VARIABLE,
     }
     lib = build_glsl_index(_context(pass_name=None, passes=(), script_returns=()))
     assert not [s for s in lib.declarations if s.kind == SymbolKind.WIRABLE_SAMPLER]

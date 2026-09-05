@@ -23,6 +23,9 @@ class SymbolKind(StrEnum):
     WIRABLE_SAMPLER = auto()
     # A uniform the document script returns, declared in this pass or not.
     SCRIPT_UNIFORM = auto()
+    # The fragment output the buffer declares (`out vec4 fragColor;`) or `gl_FragColor`: the
+    # one name a shader WRITES rather than reads.
+    OUTPUT_VARIABLE = auto()
     # A function, constant or define the buffer itself declares, or a plain word in it.
     BUFFER_SYMBOL = auto()
     PY_KEYWORD = auto()
@@ -59,6 +62,7 @@ class Symbol:
 _KIND_RANK: dict[SymbolKind, int] = {
     SymbolKind.PASS_UNIFORM: 0,
     SymbolKind.BUFFER_SYMBOL: 0,
+    SymbolKind.OUTPUT_VARIABLE: 0,
     SymbolKind.ENGINE_UNIFORM: 1,
     SymbolKind.SCRIPT_UNIFORM: 2,
     SymbolKind.PASS_SAMPLER: 3,

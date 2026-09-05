@@ -13,6 +13,7 @@ from shaderbox.glsl_docs import BUILTINS, KEYWORDS, TYPES
 from shaderbox.intel.glsl import (
     buffer_declarations,
     buffer_words,
+    output_declarations,
     uniform_declarations,
 )
 from shaderbox.intel.script import ScriptReturn
@@ -66,8 +67,15 @@ class GlslIndex:
                 SymbolKind.SCRIPT_UNIFORM,
                 SymbolKind.PASS_SAMPLER,
                 SymbolKind.LIB_FUNCTION,
+                SymbolKind.OUTPUT_VARIABLE,
             )
         }
+
+
+# The builtin fragment outputs, which no buffer declares. They lex as BUILTIN in the editor
+# library, so the host class only reaches the popup and the notes until the library lets a
+# host class win for a builtin-classed identifier (079 W-C, the editor-session ask).
+_BUILTIN_OUTPUTS: tuple[str, ...] = ("gl_FragColor", "gl_FragData")
 
 
 def _language_symbols() -> list[Symbol]:
@@ -186,6 +194,28 @@ def build_glsl_index(context: GlslContext) -> GlslIndex:
             )
             document.append(replace(symbol, insert_text=""))
             declarations.append(symbol)
+
+    # The fragment output before the plain buffer symbols, so the `out` name is classed as the
+    # output rather than picked up as an ordinary word (079 D11). `gl_FragColor` and
+    # `gl_FragData` are the builtin spellings, declared by nobody.
+    for out in output_declarations(context.text):
+        document.append(
+            Symbol(
+                out.name,
+                SymbolKind.OUTPUT_VARIABLE,
+                signature=f"out {out.glsl_type} {out.name};",
+                doc="the fragment output this shader writes",
+            )
+        )
+    for name in _BUILTIN_OUTPUTS:
+        document.append(
+            Symbol(
+                name,
+                SymbolKind.OUTPUT_VARIABLE,
+                signature=name,
+                doc="the fragment output this shader writes",
+            )
+        )
 
     for decl in buffer_declarations(context.text):
         document.append(
