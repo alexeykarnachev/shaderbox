@@ -26,29 +26,21 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-05, 080 is closed and a walk's findings landed after it; editor vendored at 38cadbc. -->
-**Next: the maintainer decides.** Since 080 closed, a round of maintainer-walk findings landed
-loose — no feature dir, the commits are the record.
+<!-- As of 2026-09-05, 081's spec is sealed and unimplemented; the 077 corpus is mined. -->
+**Next: 081, the copilot engine sweep** — `ai_docs/features/081_copilot_engine_sweep/01_spec.md`,
+spec sealed, nothing implemented. Fifteen numbered decisions over the 077 station corpus (68 turns,
+467 requests, 503 tool calls, 478 context records, 11 surviving project dirs), each with the break
+that proves its gate. Three open questions for the maintainer at the foot of the spec: the ship
+order, D4's greeting case, and whether to spend ~$0.30 on a verification re-run.
 
-**What outlives them.** `ScriptContext` is the script's context type and `context` its argument;
-`Ctx` was an alias of `EngineContext`, so the type had two names and neither matched
-`ScriptBehavior`. `ScriptError.line` is 0-based like `ShaderError.line` — the script path stored
-Python's 1-based `lineno` unconverted, putting every band a row below its code. Error markers drop
-while the buffer is dirty: their lines are from the last compile, and re-pushing them undid the
-library's own anchor-following. `make test` runs on 8 workers; the suite is fixture-bound.
-
-**One question is open**, filed as a TODO at `tests/test_intel_index.py`'s `u_phase` assertion: a
-script uniform whose value is a variable has no inferable type, so it never reaches a `uniform `
-completion site. Offering it where the site already carries a type is compile-safe; whether to is
-a decision, not an oversight.
-
-**From 080:** a commit message is not evidence a symbol is gone, and an inventory counts the test
-tree but not the docs.
-
-**Queued: the sweep over the 077 material** — `ai_docs/features/077_rc_model_comparison/` (both
-rounds, the "left for the sweep" list) and the station pages (`dogfood/index.html`, local):
-engine, prompting, caching, tooling, the dogfood skill itself. The sharpest item is the zero-call
-narration after an engine stop (five turns, three models).
+**What the corpus overturned.** `read_shader` reads the OUTPUT pass only, so the shipped Radiance
+Cascades example returned 28 of its 287 lines and the 110-line `cascade.frag.glsl` — the algorithm
+both clean-compile failures got wrong — was unreachable by every tool. `load_tools`, built to save
+tokens, collapses the cache from 62.7% to 2.9% on the requests it touches. The zero-call
+fabrications copy history's rendering of tool results, proven by an em-dash `sanitize.py:24`
+rewrites only on the commit path. The cache dies at the turn boundary, not at any block edit; the
+skill's chars/4 ratio has the wrong sign; and the station's fix ledger loses commits that land
+between rounds, not after attempt 3 as first counted.
 
 **Shipped:** v0.28.0 is a GitHub release only; itch stays at v0.27.0. The Windows `libeditor.dll`
 still needs a Windows host before the next cut.
@@ -57,6 +49,7 @@ still needs a Windows host before the next cut.
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 081 | copilot_engine_sweep | spec | The 077 station corpus mined for what it says about the engine: `read_shader` could not read a multi-pass example (28 of 287 lines of the reference), `load_tools` collapses the prefix cache it exists to protect, and a zero-call reply claiming work reaches the user past every brake. Fifteen decisions, each with the break that proves its gate; four documented claims disproven. Spec: `ai_docs/features/081_copilot_engine_sweep/01_spec.md`. |
 | 080 | nightly_sweep | done | A structural sweep over the repo's shape: an inventory of every symbol kind found four dead symbols, and `apply_theme` lost the two parameters that chose between branches nothing chose, keeping the accent presets that are an import-time invariant's domain. Three further waves were closed by review as re-opened settled decisions. Spec: `ai_docs/features/080_nightly_sweep/01_spec.md`. |
 | 079 | fifth_walk_findings | done | The maintainer's fifth walk: 14 findings, thirteen locked decisions, eleven workstreams — the notes measured and given a value and a picture, candidates sorted by kind, an undeclared script key made a normal state, the source list flattened, docstrings redone from PEP 257 and Google's guide behind a shape gate, the viewer kept opaque under the copilot dim, four button tiers swept across the app behind two gates, and the script's import surface narrowed to `shaderbox.scripting`'s user types with the value wrappers deleted for plain Python. Spec: `ai_docs/features/079_fifth_walk_findings/01_spec.md`. |
 | 078 | maintainer_walk_findings | done | The maintainer's fourth walk: 19 findings verified against the code, fourteen locked decisions, ten workstreams landed and reviewed to convergence (the editor-intelligence module `shaderbox/intel/`, formatting, the pass draft modal, the error row, four editor re-vendors); its display checks filed as 079, where the checkerboard (W-J) has its cause. Spec: `ai_docs/features/078_maintainer_walk_findings/01_spec.md`. |
