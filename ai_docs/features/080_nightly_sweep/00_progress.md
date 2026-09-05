@@ -161,3 +161,21 @@ and absent from the diff.
 verification: `make gates` exit 0, captured unpiped, smoke PASSED rather than skipped. One file
 changed, 53 lines removed and 14 added. No test file touched — and no test covers this surface at
 all, which is exactly why the re-break rather than the gate is what carries the verdict here.
+
+## Docs — DONE
+
+The roadmap row and the Active-context banner. `ai_docs/design/` was checked and deliberately
+left alone apart from one line: it is an archived point-in-time snapshot whose own README already
+says it has diverged from `theme.py`, so its quick-start snippet and `SPEC.md` keep the
+density/rounding call they recorded. Rewriting evidence to match today's code would misrepresent
+what that design pass produced. Only the README item that describes the LIVE module was corrected.
+
+`ai_docs/features/006_inline_editor.md` still names `SYN_PREPROC` and was left as-is for the same
+reason — a historical feature spec is a record of what that feature did.
+
+## Behaviour questions for the maintainer
+
+Nothing was found that needs one. The sweep changed no rendered value, and the one wave that
+could have (`apply_theme`) was verified not to: both the old and new function were run against a
+real `ImGuiStyle` and all thirty style fields, the five spacing tokens, the row height and the
+three accent colors compared identical.
