@@ -50,10 +50,17 @@ def _literal_type(value: ast.expr) -> str | None:
     length = _literal_length(value)
     if length is None:
         return None
+    # An empty literal names no shape, and `uniform float[0] u_x;` does not compile — offering it
+    # as a one-click declaration hands the user a broken line.
+    if length == 0:
+        return None
     # A vector and a 2-4 element array are the same literal; the vector is what a script writing
     # `[x, y]` almost always means, and the array form spells its length out.
     if 2 <= length <= 4 and isinstance(value, ast.List | ast.Tuple):
         return f"vec{length}"
+    # TODO: rows read as a vector by their OUTER length -- `[[1,2],[3,4]]` offers `vec2` where
+    # `coerce_array` drives it as `vec2[2]`. This inference is meant to mirror that coercion;
+    # aligning them wants the rule rethought against it, not a special case here.
     return f"float[{length}]"
 
 

@@ -69,6 +69,10 @@ def _import_hint(exc: Exception) -> str:
     # A script that NAMES a scripting type it never imported (`NameError: Ctx`) gets told the
     # import line for THAT name. Only a NameError: the import gate's own messages already say
     # what is allowed, and appending to one produced advice that recreated the error.
+    #
+    # TODO: this is close to dead. `_build_globals` injects all three names, so the case it
+    # describes compiles clean and the hint fires only if a script `del`s one; a misspelling is
+    # by definition not in `_INJECTED_NAMES`. Delete it, or find the trigger it is actually for.
     if not isinstance(exc, NameError):
         return ""
     bad = getattr(exc, "name", None)

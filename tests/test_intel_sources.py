@@ -1,6 +1,8 @@
 """The intel module's pure sources (078 W-A): the buffer read as text, the script read
 statically. Neither touches GL or the App."""
 
+import ast
+
 from shaderbox.editor.ffi import Slot
 from shaderbox.intel.glsl import (
     buffer_declarations,
@@ -8,7 +10,7 @@ from shaderbox.intel.glsl import (
     output_declarations,
     uniform_declarations,
 )
-from shaderbox.intel.script import returned_uniforms
+from shaderbox.intel.script import _literal_type, returned_uniforms
 from shaderbox.intel.symbols import SymbolKind, kind_rank
 from shaderbox.theme import COLOR, editor_palette, kind_color, kind_slot
 
@@ -182,3 +184,11 @@ def test_the_output_variable_reads_orange_and_sorts_with_the_buffers_own_names()
     assert kind_color(SymbolKind.OUTPUT_VARIABLE) == COLOR.SYN_OUTPUT
     assert kind_slot(SymbolKind.OUTPUT_VARIABLE) == 9
     assert kind_rank(SymbolKind.OUTPUT_VARIABLE) == kind_rank(SymbolKind.BUFFER_SYMBOL)
+
+
+def test_an_empty_literal_offers_no_declaration() -> None:
+    # `uniform float[0] u_x;` does not compile, and the shader side offers a returned key's
+    # declaration as a one-click insertion — so an empty literal must name no shape at all.
+    # Falsifier: return `float[0]` again and this hands the user a line GLSL rejects.
+    assert _literal_type(ast.parse("[]", mode="eval").body) is None
+    assert _literal_type(ast.parse("[1.0]", mode="eval").body) == "float[1]"

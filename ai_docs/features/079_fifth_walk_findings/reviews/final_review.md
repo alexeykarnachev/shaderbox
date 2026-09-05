@@ -305,3 +305,63 @@ Four rounds. Each found real defects, and three found defects in the previous ro
 stale-clear took three attempts, the pyright widening two, the gates retry three. The pattern
 worth keeping is not "review until clean" but "a fix is a claim, and a claim needs the same
 demonstration as the bug it closes."
+
+## Round 5
+
+### Fix verification (sonnet) — PASS
+
+Both round-4 fixes hold under every break: `make gates` fails on a format violation and on a
+`ruff --fix`-repairable unused import, both naming the rewrite; a non-fixable error retries and
+then reports; the kwarg gate names file, line, model and keyword for three separate breaks. Its
+self-check numbers are real — the walk finds 314 keyword arguments across 56 models against a
+threshold of 20.
+
+### Whole-diff audit (opus) — PARTIAL, three gate defects fixed
+
+Its verdict on the shape of the work is worth quoting: the engine is the strongest part — every
+behavioural probe matched its commit message, four mutations of it were caught, and the
+three-attempt stale-clear landed correctly. **Every remaining defect was in a gate.**
+
+Fixed:
+
+- **The None rule was half-gated.** Deleting the block-path drop passed all 1829 tests. The
+  commit said "both paths get it", which was true of the code and untrue of what held it there.
+- **The out-of-suite gate checked modules, not symbols** — written because `render_document.py`
+  broke on a deleted SYMBOL whose module survived, and it imported the module path only, so that
+  very case stayed green. It checks names now.
+- **`dogfood/` was checked by nothing**, because three root lists disagreed. In pyright's set now.
+  `tests/` stays out: it reports 272 errors from deliberate `object`/`SimpleNamespace` stand-ins,
+  which is its own decision, not this review's.
+- **The gate's domain was machine-dependent** — it rglobbed the gitignored `runs/`, seeing 34
+  scripts here and 17 in a clean worktree, and could go red on recorded model output.
+
+Also fixed, from the same round: `cat "$log"` had ended up in the rewrite branch alone when I
+deduplicated the verdict message, so a real error surviving the retry reported RED with no
+diagnostic. It prints from the shared failure block now.
+
+### Deferred, with reasons
+
+- **`_literal_type` returns `float[0]` for an empty literal**, and `uniform float[0] u_x;` is
+  invalid GLSL that the editor offers as a one-click insertion. The same function reads
+  `[[1,2],[3,4]]` as `vec2` by counting the outer list where the engine coerces it to `vec2[2]`.
+  Both want the inference rule rethought against the coercion it is supposed to mirror, which is
+  a design question rather than a patch.
+- **`_import_hint` fires only if a script `del`s an injected name**, since `Ctx`, `MouseState` and
+  `ScriptBehavior` are in the exec globals — a misspelling is by definition not in the injected
+  set, so the trigger its own test names is not one. Near-dead rather than wrong; it should
+  probably go, but deleting a diagnostic wants more thought than a review round.
+- **The import gate is bypassable through `importlib.import_module`.** The code's own comment
+  calls this "raw exec of the user file — no sandbox (locked posture)", so the gate is a
+  guardrail against reaching past the interface by accident, not a security boundary. The commit
+  message framed it more strongly than the gate delivers.
+- **`5b9ca53` says "35 such scripts" where the count is 17.** A wrong number in a commit message,
+  from a walk that was counting the gitignored run artifacts the gate now excludes.
+
+## Convergence
+
+Five rounds. Each found real defects; four found defects in a previous round's fix. The engine
+converged early and stayed converged — every probe across five rounds matched its commit message.
+The gates took all five rounds, and the reason is legible in hindsight: a gate is the one kind of
+code whose correctness cannot be observed by running it the normal way. It passes either way. The
+only evidence that a gate works is breaking what it guards and watching it fail, and that is the
+step this session repeatedly skipped and then had to be shown.
