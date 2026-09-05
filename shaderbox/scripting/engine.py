@@ -196,27 +196,29 @@ def _stub_kind(uniform: moderngl.Uniform) -> tuple[str, str]:
 # reference is NOT repeated here — `K` on `ctx` or on a field is the one authored home
 # (`api_doc.py`), and a copy in the stub is a copy that drifts.
 _UPDATE_DOC = (
-    '        """Return this frame\'s uniform values.\n'
+    '        """Return the uniform values to drive this frame.\n'
     "\n"
-    "        Called once per drawn frame. Keep state on self between frames; a value that is\n"
-    "        only a function of ctx.t belongs in the shader instead.\n"
+    "        Called once per drawn frame. Keep state that must survive between frames on\n"
+    "        self; a value that is only a function of ctx.t belongs in the shader.\n"
     "\n"
     "        Args:\n"
-    "            ctx: The clock and the cursor. Press K on `ctx` or on one of its fields for\n"
-    "                what each one means.\n"
+    "            ctx: The clock and the cursor for this frame. Press K on it for details.\n"
     "\n"
     "        Returns:\n"
-    "            A dict of uniform names to values. A bare key drives that uniform on every\n"
-    "            pass declaring it. A key mapped to a dict is a pass block, driving that one\n"
-    "            pass and winning over the bare key. A uniform you return plays, meaning the\n"
-    "            script owns it; one you omit or map to None stays manual.\n"
+    "            A dict mapping uniform names to values. A bare key drives that uniform on\n"
+    "            every pass declaring it; a key mapped to a dict drives one pass only, and\n"
+    "            wins over the bare key. For example:\n"
     "\n"
-    "            Values are float or int, Vec2 / Vec3 / Vec4, Array([...]) for an array\n"
-    '            uniform, or Text("...") for a text one.\n'
+    '            {"u_speed": 0.5,\n'
+    '             "blur": {"u_radius": 4.0}}\n'
+    "\n"
+    "            A uniform you return plays, meaning the script owns it. One you omit, or\n"
+    "            map to None, stays manual. Values are float or int, Vec2 / Vec3 / Vec4,\n"
+    '            Array([...]) for an array uniform, or Text("...") for a text one.\n'
     '        """\n'
 )
 _INIT_DOC = (
-    '        """Set up state that survives across frames.\n'
+    '        """Set up the state this behavior keeps between frames.\n'
     "\n"
     "        Runs once: at app start, before the first render, and on every reload.\n"
     '        """\n'

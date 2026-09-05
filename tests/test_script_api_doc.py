@@ -6,7 +6,7 @@ script surface changes without the block following it.
 dunders — so it would not see `__mul__` at all."""
 
 import ast
-from inspect import signature
+from inspect import cleandoc, signature
 from pathlib import Path
 
 from shaderbox.copilot.prompt import _context_block
@@ -23,7 +23,7 @@ from shaderbox.scripting.api_doc import (
     script_api_summary,
 )
 from shaderbox.scripting.context import EXPORT_MOUSE, EngineContext, MouseState
-from shaderbox.scripting.engine import _stub_kind
+from shaderbox.scripting.engine import _stub_kind, script_stub_for
 from shaderbox.scripting.outputs import Array, Text, Vec2, Vec3, Vec4, _Vec
 from tests._caps import minimal_caps
 
@@ -104,20 +104,56 @@ def test_ctx_gloss_keys_are_exactly_the_dataclass_fields() -> None:
     assert set(_CTX_HELP) == set(EngineContext.__dataclass_fields__)
 
 
-def test_no_help_text_is_empty_or_a_semicolon_joined_list() -> None:
-    # 079 D3, from the maintainer's reading of the notes: `ctx.dt` and `ctx.frame` opened EMPTY,
-    # and `ctx.mouse` was six facts joined by `;` on one line. Every human-facing string now
-    # opens with a summary sentence and puts one fact per line. Falsifier: restore either gap and
-    # the emptiness or the `;` check goes red.
+def test_every_help_text_follows_pep_257() -> None:
+    """PEP 257's multi-line shape, which is what 079 D3 settles on.
+
+    From the source (peps.python.org/pep-0257): a summary line that fits on one line and
+    ends in a period, then a BLANK line, then the elaboration. The maintainer's findings were
+    both violations of it — `ctx.dt` and `ctx.frame` opened empty, and `ctx.mouse` ran six
+    facts together on one line with semicolons. Falsifier: restore either and this goes red.
+    """
     human = {f"ctx.{k}": v for k, v in _CTX_HELP.items()}
     human |= {name: api_symbol_doc(name)[1] for name in sorted(API_NAMES)}
     for where, text in human.items():
         assert text.strip(), f"{where} opens an empty note"
-        summary = text.splitlines()[0]
+        lines = text.splitlines()
+        summary = lines[0]
         assert summary.endswith("."), f"{where} has no summary sentence: {summary!r}"
         assert summary[0].isupper(), f"{where}'s summary is not a sentence: {summary!r}"
-        for line in text.splitlines():
+        assert len(summary) <= 79, f"{where}'s summary runs to {len(summary)} chars"
+        if len(lines) > 1:
+            assert not lines[1].strip(), (
+                f"{where} runs into its description with no blank line after the summary: "
+                f"{lines[1]!r}"
+            )
+        for line in lines:
             assert line.count(";") <= 1, f"{where} joins a list with `;`: {line!r}"
+
+
+def test_every_google_section_is_spelled_and_indented_as_google_writes_it() -> None:
+    """The Google style guide's section shape (google.github.io/styleguide/pyguide.html 3.8).
+
+    A section is a known heading on its own line, and each entry under it is `name: text`
+    indented beneath. A misspelled heading (`Arguments:`, `Return:`) renders as prose in every
+    tool that reads these, which is the failure worth catching.
+    """
+    known = ("Args:", "Returns:", "Yields:", "Raises:", "Attributes:", "Example:")
+    sources: dict[str, str] = {f"ctx.{name}": text for name, text in _CTX_HELP.items()}
+    sources |= {name: api_symbol_doc(name)[1] for name in sorted(API_NAMES)}
+    sources |= {
+        cls.__name__: cleandoc(cls.__doc__ or "") for cls in (EngineContext, MouseState)
+    }
+    sources["script stub"] = script_stub_for({"main": []})
+    misspelled = ("Arguments:", "Return:", "Parameters:", "Raise:", "Attribute:")
+    for where, text in sources.items():
+        for line in text.splitlines():
+            stripped = line.strip()
+            assert stripped not in misspelled, (
+                f"{where} spells a section heading {stripped!r}; Google's headings are "
+                f"{known}"
+            )
+            if stripped in known:
+                assert line.rstrip() == line, f"{where}'s {stripped} has trailing space"
 
 
 def test_every_ctx_field_answers_under_k() -> None:

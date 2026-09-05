@@ -320,6 +320,12 @@ def modal_window(
         yield popup.visible
 
 
+# The caret row a note's anchor already stepped past, so a note flipped ABOVE the caret clears
+# it going the other way; and the floor a capped note keeps so it never collapses to a sliver.
+_NOTE_ANCHOR_ROW: float = 20.0
+_NOTE_MIN_H: float = 60.0
+
+
 def anchored_note(
     id_: str,
     anchor: tuple[float, float],
@@ -338,30 +344,48 @@ def anchored_note(
     (079 D1).
     """
     padding = imgui.get_style().window_padding
+    # The WIDTH text wraps at, which is the note's content width. `push_text_wrap_pos` below
+    # takes a POSITION in window space, so it gets this plus the left padding the content
+    # starts at — measuring one and wrapping at the other makes the text wrap earlier than it
+    # was measured for, and the note comes up short by however many lines that adds.
     wrap = float(SIZE.NOTE_W) - 2.0 * padding.x
     line_gap = imgui.get_style().item_spacing.y
+    # imgui advances the cursor by an item's height PLUS `item_spacing.y` after EVERY item, the
+    # last one included — so N items cost N gaps, not N-1. Counting N-1 leaves the note one
+    # gap short and clips its bottom line.
     title_size = imgui.calc_text_size(title, wrap_width=wrap)
-    width, height = title_size.x, title_size.y
+    width, height = title_size.x, title_size.y + line_gap
     if value:
         value = _ellipsize(value, wrap)
         value_size = imgui.calc_text_size(value)
         width = max(width, value_size.x)
-        height += line_gap + value_size.y
+        height += value_size.y + line_gap
     if body:
         body_size = imgui.calc_text_size(body, wrap_width=wrap)
         width = max(width, body_size.x)
-        height += line_gap + body_size.y
+        height += body_size.y + line_gap
     picture = _note_picture_size(texture, wrap) if texture is not None else None
     if picture is not None:
         width = max(width, picture[0])
-        height += line_gap + picture[1]
-    imgui.set_next_window_pos(imgui.ImVec2(*anchor), imgui.Cond_.always)
-    imgui.set_next_window_size(
-        imgui.ImVec2(
-            min(width, wrap) + 2.0 * padding.x,
-            height + 2.0 * padding.y,
-        )
-    )
+        height += picture[1] + line_gap
+    note_w = min(width, wrap) + 2.0 * padding.x
+    note_h = height + 2.0 * padding.y
+    # A note is anchored a row below the caret and grows to fit its content, so a long docstring
+    # near the bottom of the screen would run off it. Put it ABOVE the caret when there is more
+    # room there, and cap it to that room either way — the body then scrolls rather than being
+    # cut. `SPACE.MD` keeps it off the screen edge; `_NOTE_ANCHOR_ROW` is the row the anchor
+    # already skipped, which the flipped note has to clear going the other way.
+    x, y = anchor
+    margin = float(SPACE.MD)
+    below = imgui.get_io().display_size.y - y - margin
+    above = y - _NOTE_ANCHOR_ROW - margin
+    if note_h > below and above > below:
+        note_h = min(note_h, above)
+        y = max(margin, y - _NOTE_ANCHOR_ROW - note_h)
+    else:
+        note_h = min(note_h, max(below, _NOTE_MIN_H))
+    imgui.set_next_window_pos(imgui.ImVec2(x, y), imgui.Cond_.always)
+    imgui.set_next_window_size(imgui.ImVec2(note_w, note_h))
     # Opaque: the note sits over code and a translucent one made both unreadable.
     imgui.set_next_window_bg_alpha(1.0)
     imgui.push_style_color(imgui.Col_.window_bg, COLOR.BG_POPUP)
@@ -374,7 +398,7 @@ def anchored_note(
     )
     with imgui_ctx.begin(id_, flags=flags) as window:
         if window:
-            imgui.push_text_wrap_pos(wrap)
+            imgui.push_text_wrap_pos(padding.x + wrap)
             imgui.text_colored(COLOR.ACCENT_PRIMARY, title)
             if value:
                 imgui.text_colored(COLOR.FG_PRIMARY, value)

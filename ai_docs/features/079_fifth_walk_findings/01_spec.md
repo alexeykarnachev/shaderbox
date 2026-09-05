@@ -55,12 +55,23 @@ owns. Quotes are the maintainer's words from `00_raw_findings.md`.
   there pulls imgui into the intel layer (`test_intel_is_gl_free`). The order, top to bottom: the
   buffer's own names, engine uniforms, script uniforms, pass and wirable samplers, library
   functions, language keywords and types; alphabetical inside each tier.
-- **D3. Docstrings and glosses follow one style: PEP 257 with the Google layout.** A summary
-  line in the imperative or as a noun phrase ending in a period; a blank line; a description of
-  full sentences; `Args:` / `Returns:` sections where a callable has them; one fact per line,
-  never `;`-joined lists. Every `ctx` field, every injected API name and every value shape has
-  a complete gloss; `K` never opens empty on an API symbol. The stub's docstrings describe the
-  method and point at `K` for the fields.
+- **D3. Docstrings and glosses follow PEP 257 with the Google layout**, read from the sources
+  rather than from memory: [PEP 257](https://peps.python.org/pep-0257/) and the
+  [Google Python Style Guide §3.8](https://google.github.io/styleguide/pyguide.html). What they
+  actually prescribe, and what a first pass got wrong:
+  - A summary line that **prescribes the effect as a command** and ends in a period ("Return the
+    pathname of the KOS root directory."), fitting on one line.
+  - A **blank line** after the summary, then the elaboration. Not optional — the gate checks it.
+  - `Args:` entries are **short noun phrases**, hanging-indented, one per parameter — not
+    paragraphs of semantics. `Returns:` names the value's **shape**, and Google's own example
+    then SHOWS a literal value. That example block is what a paragraph of description cannot do,
+    and its absence was the first pass's real failure.
+  - Section headings are spelled exactly `Args:` / `Returns:` / `Raises:` / `Attributes:` — a
+    misspelling renders as prose in every tool that reads them.
+  Every `ctx` field, every injected API name and every value shape has a complete gloss; `K`
+  never opens empty. The stub's docstrings describe the method and point at `K` for the fields.
+  Gated: `tests/test_script_api_doc.py` checks the summary/blank-line shape and the section
+  spelling across the glosses, the two context classes and the generated stub.
 - **D4. `1.` offers nothing.** A Python member site is a dot after a name or a closing bracket.
 - **D5. A script key with no declared uniform is not an error.** No row, no red; the shader
   side already offers the declaration. Sampler/block keys and a pass that does not compile stay

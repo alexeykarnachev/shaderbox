@@ -694,6 +694,18 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   share-draw loop. Exporter-only methods (e.g. Telegram's `set_default_pack`) stay concrete on the
   exporter and are reached via `isinstance` at the one `app.py` call site, not hoisted to the ABC.
   Revisit if a capability is genuinely shared by ≥2 concrete exporters (then promote it to the ABC).
+- **Docstrings follow PEP 257 with the Google layout, and the sources are the authority
+  (079 D3).** [PEP 257](https://peps.python.org/pep-0257/) and the
+  [Google Python Style Guide §3.8](https://google.github.io/styleguide/pyguide.html) — read
+  them rather than writing from memory of them. A summary line prescribing the effect as a
+  command and ending in a period; a BLANK line; then the elaboration. `Args:` entries are short
+  noun phrases, one per parameter, never paragraphs; `Returns:` names the value's shape and then
+  SHOWS a literal example, which is the part a description cannot replace. Headings are spelled
+  exactly `Args:` / `Returns:` / `Raises:` / `Attributes:`. Anything a person reads under `K`
+  obeys this too. `tests/test_script_api_doc.py` gates the shape and the spelling. Revisit if a
+  second docstring consumer needs a different rendering — the prompt block already gets one
+  (`_CTX_GLOSS` terse for tokens, `_CTX_HELP` prose for the reader).
+
 - **Four button tiers, and two gates that keep it at four (079 D12).** `standard_button` (an
   ordinary verb — transparent fill, a 1 px `BORDER` frame, secondary text), `primary_button` (a
   section's one call-to-action), `danger_button` (the standard frame in the error color),

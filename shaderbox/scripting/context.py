@@ -7,24 +7,18 @@ from dataclasses import dataclass, field
 class MouseState:
     """The cursor over the document's canvas, as a script reads it.
 
-    Coordinates are normalized to 0..1 with y pointing UP, the GLSL convention: the origin is
-    the bottom-left corner. The preview draws uv-flipped, so the hit test flips y back.
-
-    Outside the canvas the position holds at the last in-bounds sample and `down` clears. The
-    next in-bounds sample restarts `prev_x`/`prev_y` at the current position, so a stroke that
-    left the canvas does not resume as one long line.
-
-    An exported render sees `EXPORT_MOUSE` instead, whatever the live cursor was doing.
+    Coordinates are normalized to 0..1 with y pointing up, the GLSL convention: the origin is
+    the bottom-left corner. Outside the canvas the position holds at the last in-bounds sample
+    and `down` clears; the next in-bounds sample restarts prev at the current position, so a
+    stroke that left the canvas does not resume as one long line. An exported render sees
+    `EXPORT_MOUSE` instead, whatever the live cursor was doing.
 
     Attributes:
-        x: Horizontal position across the canvas, 0 at the left edge and 1 at the right.
+        x: Horizontal position, 0 at the left edge and 1 at the right.
         y: Vertical position, 0 at the bottom edge and 1 at the top.
-        down: True while the left button is held with the cursor over the canvas. False on
-            export and in the headless probe.
-        prev_x: Last frame's `x`. Equal to `x` on the first frame and after re-entering the
-            canvas, so a shader can stamp the capsule from previous to current rather than one
-            disc per frame.
-        prev_y: Last frame's `y`, under the same rule.
+        down: Whether the left button is held with the cursor over the canvas.
+        prev_x: Last frame's x, equal to x on the first frame and on re-entry.
+        prev_y: Last frame's y, under the same rule.
     """
 
     x: float = 0.5
@@ -52,7 +46,7 @@ class EngineContext:
         t: Seconds since the document started playing.
         dt: Seconds since the previous frame.
         frame: The frame index, counting from 0 at the start of playback.
-        mouse: The cursor over the canvas. See `MouseState`.
+        mouse: The cursor over the canvas, as a `MouseState`.
     """
 
     t: float

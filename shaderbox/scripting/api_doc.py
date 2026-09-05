@@ -82,21 +82,36 @@ _CTX_GLOSS: dict[str, str] = {
 }
 
 _CTX_HELP: dict[str, str] = {
-    "t": "Seconds since the document started playing.",
+    "t": (
+        "Seconds since the document started playing.\n"
+        "\n"
+        "Reset along with the rest of the document's clock."
+    ),
     "dt": (
         "Seconds since the previous frame.\n"
+        "\n"
         "Multiply a rate by it to advance state at the same speed whatever the frame rate."
     ),
-    "frame": "The frame index, counting from 0 at the start of playback.",
+    "frame": (
+        "The frame index, counting from 0.\n"
+        "\n"
+        "Rises by one per drawn frame, so it counts frames rather than time."
+    ),
     "mouse": (
-        "The cursor over the canvas, normalized to 0..1 with y pointing up.\n"
-        "x, y: the current position; 0,0 is the bottom-left corner.\n"
-        "prev_x, prev_y: last frame's position, so a shader can stamp the capsule between "
-        "the two rather than one disc per frame.\n"
-        "down: True while the left button is held over the canvas.\n"
-        f"On export and in the headless probe the cursor freezes at {_EXPORT_MOUSE_AT} with "
-        "down False and prev equal to the position. A script driven off the cursor therefore "
-        "reads as static in every probe, even when it is correct."
+        "The cursor over the canvas, as a MouseState.\n"
+        "\n"
+        "Normalized to 0..1 with y pointing up, so 0,0 is the bottom-left corner.\n"
+        "\n"
+        "Attributes:\n"
+        "    x: Horizontal position, 0 at the left edge and 1 at the right.\n"
+        "    y: Vertical position, 0 at the bottom edge and 1 at the top.\n"
+        "    down: Whether the left button is held over the canvas.\n"
+        "    prev_x: Last frame's x, equal to x on the first frame and on re-entry.\n"
+        "    prev_y: Last frame's y, under the same rule.\n"
+        "\n"
+        f"On export and in the headless probe the cursor freezes at {_EXPORT_MOUSE_AT} with\n"
+        "down False and prev equal to the position, so a script driven off the cursor reads\n"
+        "as static in every probe even when it is correct."
     ),
 }
 
@@ -123,23 +138,38 @@ _API_HELP: dict[str, str] = {
     "ScriptBehavior": (
         "The base class a document script's Behavior extends.\n"
         "\n"
-        "Define `__init__(self)` for state that survives across frames and\n"
-        "`update(self, ctx) -> dict` for the values this frame drives. Press K on `Ctx` for\n"
-        "what `update` receives."
+        "Define __init__(self) for state that survives across frames, and\n"
+        "update(self, ctx) -> dict for the values each frame drives. Press K on Ctx for\n"
+        "what update receives."
     ),
-    "Vec2": "A 2-component vector, driving a vec2 uniform.",
-    "Vec3": "A 3-component vector, driving a vec3 uniform.",
-    "Vec4": "A 4-component vector, driving a vec4 uniform.",
-    "Array": (
-        "A numeric array uniform's values.\n"
+    "Vec2": (
+        "A 2-component vector, driving a vec2 uniform.\n"
         "\n"
-        "Takes flat numbers, or rows of Vec/list which are flattened for you. The length must\n"
-        "match the array the shader declares."
+        "Reads as .x .y, and supports + - * / and unary -, .dot(o) and .length()."
+    ),
+    "Vec3": (
+        "A 3-component vector, driving a vec3 uniform.\n"
+        "\n"
+        "Reads as .x .y .z, and supports the Vec2 operations plus .cross(o)."
+    ),
+    "Vec4": (
+        "A 4-component vector, driving a vec4 uniform.\n"
+        "\n"
+        "Reads as .x .y .z .w, and supports the same operations as Vec2."
+    ),
+    "Array": (
+        "The values of a numeric array uniform.\n"
+        "\n"
+        "Takes flat numbers, or rows of Vec or list which are flattened for you. The\n"
+        "length must match the array the shader declares. For example:\n"
+        "\n"
+        "    Array([0.0, 1.0, 2.0, 3.0])\n"
+        "    Array([Vec2(0.0, 1.0), Vec2(2.0, 3.0)])"
     ),
     "Text": (
         "A string, driving a uint[] glyph array.\n"
         "\n"
-        "A plain str coerces the same way. Longer text than the array holds is cut."
+        "A plain str coerces the same way. Text longer than the array holds is cut."
     ),
 }
 
