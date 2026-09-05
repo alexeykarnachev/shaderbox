@@ -110,3 +110,26 @@ candidate list. Docs no longer count as code references. A symbol mentioned only
 dead code with a paper trail, which is what the inventory exists to find.
 
 verification: no code changed; `make gates` not re-run for this wave.
+
+## W-1 deletion — DONE
+
+done-condition, written before the wave: `grep -rnw` over the landed tree returns nothing for
+each symbol; the string-reach check run separately, including JSON keys under `projects/`;
+`make gates` green; no test assertion changed.
+
+did: removed the four SAFE symbols the inventory found — `TelegramExporter.bot_token_present`,
+`TOOLS_BLOCK`, `COLOR.SYN_PREPROC`, `experiment_dir`. All four were tier SAFE; nothing reached
+CAREFUL or RISKY, because the inventory found nothing there.
+
+`TOOLS_BLOCK`'s removal left a comment saying "the two request parts" above one constant, so the
+comment was rewritten to describe what is actually there and where the `tools=` block is measured
+instead. That is the comment tracking the code, not a comment wave.
+
+string-reach: each of the four names grepped in quotes across all four trees and `projects/` —
+nothing. No JSON key carries any of them, so nothing round-trips to disk.
+
+verification: `make gates` exit 0, captured unpiped, smoke PASSED rather than skipped. No test
+file changed at all — the diff is four source files, ten lines removed and two added.
+
+ruled out: nothing needed the cascade rule. Removing these four orphaned no producer, unlike the
+earlier sweep where deleting a field made a parameter dead.

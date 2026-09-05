@@ -259,9 +259,6 @@ class TelegramExporter(Exporter):
         self._tg.bot_token = token
         self._store.save()
 
-    def bot_token_present(self) -> bool:
-        return bool(self._tg.bot_token)
-
     def bot_username_value(self) -> str:
         return self._tg.bot_username
 

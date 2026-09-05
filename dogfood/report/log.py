@@ -345,10 +345,6 @@ def reconstruct(events: list[Event], experiment_id: str = "") -> Experiment:
     return exp
 
 
-def experiment_dir(store: Path, experiment_id: str) -> Path:
-    return store / experiment_id
-
-
 def load_experiment(exp_dir: Path) -> Experiment:
     events, warnings = read_events(exp_dir / LOG_NAME)
     exp = reconstruct(events, experiment_id=exp_dir.name)

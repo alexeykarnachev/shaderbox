@@ -20,9 +20,9 @@ from shaderbox.copilot.prompt import (
     estimate_tokens,
 )
 
-# The two request parts that are not PromptBlocks but are context all the same.
+# The within-turn tool exchange: context, but not a PromptBlock. The `tools=` block is
+# measured on ContextBreakdown's own tools_* fields rather than through a named block.
 EXCHANGE_BLOCK = "turn_exchange"
-TOOLS_BLOCK = "tools"
 
 
 @dataclass(frozen=True)
