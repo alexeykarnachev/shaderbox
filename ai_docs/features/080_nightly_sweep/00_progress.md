@@ -133,3 +133,31 @@ file changed at all — the diff is four source files, ten lines removed and two
 
 ruled out: nothing needed the cascade rule. Removing these four orphaned no producer, unlike the
 earlier sweep where deleting a field made a parameter dead.
+
+## W-2 speculative generality — DONE
+
+done-condition, written before the wave: `density` and `rounding` gone from `shaderbox/` by grep
+over the landed tree; `_accent_primaries` still built from a NON-EMPTY `_ACCENTS`, asserted by
+length against the landed tree; the theme invariant re-broken and observed to fire; `make gates`
+green.
+
+did: removed `apply_theme`'s `density` and `rounding` parameters, their two `Literal` aliases, the
+two-branch density switch and the three-row rounding table. Every VALUE the taken branches set is
+still set, written literally — the choice was dead, not the values. The module docstring's usage
+example named both parameters and would now raise `TypeError`, so it was corrected in the same
+commit.
+
+**`accent` and `_ACCENTS` were kept**, which is the whole point of the wave being written out in
+advance. The presets are the domain of the import-time theme-portability invariant, not just
+`apply_theme`'s parameter values, and an assertion over an empty set passes — the naive removal
+would have left a green gate over a check that no longer checks anything.
+
+invariant re-broken, twice: before the change, `SELECT` set to the yellow accent's primary made
+the import raise, proving the assertion was live to begin with; after the change, the same break
+raised the same way, proving it is still live over a non-empty domain. `_ACCENTS` still has four
+entries and `_accent_primaries` four members, asserted against the landed tree. `SELECT` restored
+and absent from the diff.
+
+verification: `make gates` exit 0, captured unpiped, smoke PASSED rather than skipped. One file
+changed, 53 lines removed and 14 added. No test file touched — and no test covers this surface at
+all, which is exactly why the re-break rather than the gate is what carries the verdict here.

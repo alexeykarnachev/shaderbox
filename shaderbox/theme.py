@@ -8,11 +8,10 @@ After creating the imgui context and BEFORE the first frame::
 
     from shaderbox.theme import apply_theme, COLOR, SIZE, SPACE
 
-    apply_theme(imgui.get_style(), accent="yellow", density="tight",
-                rounding="subtle")
+    apply_theme(imgui.get_style(), accent="yellow")
 
-Re-callable at runtime with new args to re-skin; idempotent. The live source of
-truth for the theme.
+Re-callable at runtime with a different accent to re-skin; idempotent. The live
+source of truth for the theme.
 
 Color framework (portable to a future non-gruvbox theme):
   - ``_P`` — the raw palette (named hues). The ONLY place literal colors live.
@@ -38,8 +37,6 @@ from shaderbox.intel.symbols import SymbolKind
 # ----------------------------------------------------------------------------
 
 AccentName = Literal["yellow", "aqua", "orange", "blue"]
-DensityName = Literal["tight", "comfortable"]
-RoundingName = Literal["sharp", "subtle", "rounded"]
 
 
 # ============================================================================
@@ -350,12 +347,10 @@ def apply_theme(
     style: imgui.Style | None = None,
     *,
     accent: AccentName = "yellow",
-    density: DensityName = "tight",
-    rounding: RoundingName = "subtle",
 ) -> None:
     """Write the gruvbox theme into the given ImGuiStyle.
 
-    Re-callable to swap accent/density/rounding at runtime.
+    Re-callable to swap the accent at runtime.
     """
     if style is None:
         style = imgui.get_style()
@@ -365,14 +360,9 @@ def apply_theme(
     COLOR.ACCENT_ACTIVE = active
     COLOR.ACCENT_ALPHA = alpha
 
-    if density == "comfortable":
-        SPACE.XS, SPACE.SM, SPACE.MD, SPACE.LG, SPACE.XL = 3, 6, 10, 18, 28
-        frame_pad = imgui.ImVec2(8.0, 4.0)
-        SIZE.ROW_HEIGHT = 26
-    else:
-        SPACE.XS, SPACE.SM, SPACE.MD, SPACE.LG, SPACE.XL = 2, 4, 8, 16, 24
-        frame_pad = imgui.ImVec2(6.0, 3.0)
-        SIZE.ROW_HEIGHT = 22
+    SPACE.XS, SPACE.SM, SPACE.MD, SPACE.LG, SPACE.XL = 2, 4, 8, 16, 24
+    frame_pad = imgui.ImVec2(6.0, 3.0)
+    SIZE.ROW_HEIGHT = 22
 
     style.window_padding = imgui.ImVec2(SPACE.MD, SPACE.MD)
     style.frame_padding = frame_pad
@@ -384,42 +374,13 @@ def apply_theme(
     style.grab_min_size = float(SIZE.GRAB_MIN)
     style.columns_min_spacing = 6.0
 
-    rd = {
-        "sharp": {
-            "frame": 0,
-            "child": 0,
-            "window": 0,
-            "popup": 0,
-            "grab": 0,
-            "tab": 0,
-            "scroll": 4,
-        },
-        "subtle": {
-            "frame": 2,
-            "child": 4,
-            "window": 4,
-            "popup": 4,
-            "grab": 2,
-            "tab": 2,
-            "scroll": 6,
-        },
-        "rounded": {
-            "frame": 4,
-            "child": 6,
-            "window": 6,
-            "popup": 6,
-            "grab": 4,
-            "tab": 4,
-            "scroll": 8,
-        },
-    }[rounding]
-    style.window_rounding = float(rd["window"])
-    style.child_rounding = float(rd["child"])
-    style.frame_rounding = float(rd["frame"])
-    style.popup_rounding = float(rd["popup"])
-    style.scrollbar_rounding = float(rd["scroll"])
-    style.grab_rounding = float(rd["grab"])
-    style.tab_rounding = float(rd["tab"])
+    style.window_rounding = 4.0
+    style.child_rounding = 4.0
+    style.frame_rounding = 2.0
+    style.popup_rounding = 4.0
+    style.scrollbar_rounding = 6.0
+    style.grab_rounding = 2.0
+    style.tab_rounding = 2.0
 
     style.window_border_size = 1.0
     style.child_border_size = 1.0
