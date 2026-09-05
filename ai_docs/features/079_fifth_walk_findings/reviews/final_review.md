@@ -127,3 +127,23 @@ are correct for their own binary. The stale roadmap banner it noticed was real a
 **Also noted, not a defect:** the W-L geometry figure (`open` at x=50) is font-metric dependent —
 56 on the agent's read, decomposing exactly as the label's width plus one `SPACE.MD`. The spec now
 states the decomposition rather than the machine-specific number.
+
+## Round 2
+
+### Fix verification (sonnet) — PASS, all four hold
+
+The bare sampler key errors on both paths and an undeclared key stays silent; the import hint
+returns a string only for a NameError on one of the three importable names, and "" for every
+gate message and every deleted name; the editor's 100 exports match the binding and the vendored
+signature table in both directions, with zero argtype mismatches.
+
+Two residual observations, both checked:
+
+- **`abi_probe.py` cannot run from its vendored location** — its `ROOT` is the upstream repo's
+  layout, one directory higher than ours. Not a defect: it is vendored as the reference table the
+  signature gate PARSES, and that gate already says so in as many words, stopping its exec above
+  the `CDLL` line for exactly this reason. Left alone.
+- **`dev_flow.md`'s Maintainer habits still said to "confirm the behavior in the actual app (run
+  it)"** — an instruction to the agent to go and look, which is both the gating that went and
+  something this box cannot do. Rewritten to demand a probe that would fail if the claim were
+  false.

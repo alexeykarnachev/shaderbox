@@ -776,8 +776,10 @@ Why the docs are shaped this way. Short list, kept honest:
   Design decisions`, a commit message). The cold-context check (`/sanitize`'s cold-context step) is the gate.
 - **Docs are living.** User drops a fact that makes a doc stale → update the right file in the same
   wave, don't keep it in chat. Small → do it now and mention it; substantial → confirm first.
-- **Don't trust, verify.** Before "done": run `make gates`, check `git status`, read the diff,
-  confirm the behavior in the actual app (run it).
+- **Don't trust, verify.** Before "done": run `make gates` and judge it by the exit code captured
+  unpiped, check `git status`, read the diff. Where a claim is about behavior, demonstrate it by
+  running something that would fail if the claim were false — a green compile is evidence the
+  change ran, not that it works.
 - **Only change what's asked; show options for trade-offs.** A bug fix doesn't need surrounding
   cleanup. When the user has a decision, show 2-4 options with short snippets — prose is too abstract
   for trade-offs. When the user says "fix everything", show the list first.
