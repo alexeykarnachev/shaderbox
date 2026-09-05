@@ -66,17 +66,15 @@ _INJECTED_NAMES = frozenset({"ScriptBehavior", "Ctx", "MouseState"})
 
 
 def _import_hint(exc: Exception) -> str:
-    # A script that NAMES a scripting type it never imported (`NameError: Vec3`) gets told the
-    # import line. The gate's own message covers a wrong import; this covers a missing one. ""
-    # for anything else, so an unrelated failure is not decorated with irrelevant advice.
-    if not isinstance(exc, ImportError | NameError):
+    # A script that NAMES a scripting type it never imported (`NameError: Ctx`) gets told the
+    # import line for THAT name. Only a NameError: the import gate's own messages already say
+    # what is allowed, and appending to one produced advice that recreated the error.
+    if not isinstance(exc, NameError):
         return ""
-    # `ImportError.name` for `from shaderbox import ScriptBehavior` is the MODULE ("shaderbox"), not the
-    # symbol — so match against the message text too, where the bad symbol always appears.
     bad = getattr(exc, "name", None)
-    if bad in _INJECTED_NAMES or any(n in str(exc) for n in _INJECTED_NAMES):
-        return f" -- import it: `from {_SCRIPT_PACKAGE} import {bad or 'Vec3'}`"
-    return ""
+    if bad not in _INJECTED_NAMES:
+        return ""
+    return f" -- import it: `from {_SCRIPT_PACKAGE} import {bad}`"
 
 
 # The ONE package path a script may import from. `shaderbox.scripting` is the user-facing surface;

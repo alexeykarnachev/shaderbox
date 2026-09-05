@@ -251,7 +251,9 @@ Filed at the display, after W-J. Two things the maintainer read as wrong on the 
   buttons lined up. 049's Shader row is gone, so the column aligned one row with nothing and the
   gutter indented it for no reason. The tick now draws in the panel's own margin to the LEFT of
   the text (it is a draw-list line, so it costs no layout), the column is deleted, and the gap
-  before `open` is one `SPACE.MD`. Measured after: `Script` at x=0, `open` at x=50.
+  before `open` is one `SPACE.MD`. Measured after: `Script` starts at x=0 where it started at 8,
+  and `open` at the label's width plus that one gap. (The absolute figure is font-metric
+  dependent — 50 on one machine, 56 on another; the decomposition is the invariant.)
 
 ### W-K — Sanitize
 

@@ -125,15 +125,12 @@ The non-mid sizes are judged per situation: the agent proposes "this looks tiny 
    reviewer must anchor to an artifact you did NOT author (a sibling file, the running app, the
    user's verbatim message) — an all-self-authored swarm ratifies its own contradictions.
 
-7. **Manual check** (when user-visible — most ShaderBox features). Run the app
-   (`uv run python ./shaderbox/ui.py`), exercise the change, screenshot if useful. A real UX gap
-   found here is a FAIL, not pass-with-caveat. (See `## Recipes` for what the app needs to run and
-   what *can't* be exercised without secrets — e.g. the Telegram share tab.)
-
-   **Verification design — make each check falsifiable, and verify the CONSUMER not the producer:**
-   - **Each manual-check / test step fails for EXACTLY ONE reason.** Prefer a measured assert, a named
-     canary, or a disk-readback over "feels responsive" / "looks right" — a step that can pass for two
-     different reasons verifies neither.
+7. **Verification design — make each check falsifiable, and verify the CONSUMER not the producer.**
+   The maintainer runs the app continuously and reports what is wrong, so a step that asks him to
+   go and look is not a gate; what lands here is a check the repo can run.
+   - **Each test step fails for EXACTLY ONE reason.** Prefer a measured assert, a named canary, or a
+     disk-readback over "feels responsive" / "looks right" — a step that can pass for two different
+     reasons verifies neither.
    - **Name the FALSIFIER per invariant.** For every guarantee, state the input that SHOULD break it
      and confirm the test goes red under the bug — a test that passes whether or not the bug exists is
      theater. (For a divergence bug: accumulate the divergence on the LIVE object, then assert.)
@@ -143,9 +140,8 @@ The non-mid sizes are judged per situation: the agent proposes "this looks tiny 
      no-op — named, commented, even given config, but never CONNECTED, and it passes paper review every
      time (001 file-lifecycle promises; 020·12 `max_edit_retries` read nowhere; 020·15 editor-lock flag
      read by nothing; 022 the headline per-turn save never wired). "Defined" ≠ "wired". It's
-     mechanically greppable: grep the symbol for a READER, not just its definition. Make this an
-     explicit line in the spec's Manual-verification section — for each safety guarantee, the call site
-     that reads it + the test that exercises that consumer.
+     mechanically greppable: grep the symbol for a READER, not just its definition. For each safety
+     guarantee, name the call site that reads it and the test that exercises that consumer.
    - **A behavioural gate may only cite a baseline produced under the SAME actor configuration**
      (model id, engine flags — reasoning effort, token/time budgets). Changing one of those flags
      INVALIDATES every prior baseline: the comparison then measures the flag, not the change. Run a

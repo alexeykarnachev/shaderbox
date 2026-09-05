@@ -740,11 +740,28 @@ class ScriptEngine:
                 if self._binds(pass_name, name, active)
             ]
             if not targets:
-                # No pass declares this key. A normal authoring step (079 D5): the script names a
-                # uniform the shader has yet to declare, and the shader side already offers the
-                # declaration. Skipped silently, no row — including while a pass is mid-compile or
-                # broken, where the pass's own compile error is the thing to read.
-                skipped.add(("", name))
+                # No pass took the key, for one of two reasons. NOWHERE DECLARED is a normal
+                # authoring step (079 D5): the script names a uniform the shader has yet to
+                # declare, and the shader side already offers the declaration — silent, no row,
+                # including while a pass is mid-compile or broken, where the pass's own compile
+                # error is the thing to read. DECLARED AND REFUSED is the other half of D5: the
+                # name IS a uniform of some pass and is a sampler or a block, which no value can
+                # drive, so it stays an error on that pass. Without this split a bare sampler key
+                # went silent while the same key inside a pass block errored.
+                refused = [
+                    (pass_name, reason)
+                    for pass_name, active in sorted(active_by_pass.items())
+                    if name in active
+                    and (reason := self._binding_reject(pass_name, name, active))
+                    is not None
+                ]
+                for pass_name, reason in refused:
+                    errors[(document_id, pass_name, name)] = ScriptError(
+                        name, "runtime", reason, pass_name=pass_name
+                    )
+                    skipped.add((pass_name, name))
+                if not refused:
+                    skipped.add(("", name))
                 continue
             for pass_name, active in targets:
                 self._write_one(

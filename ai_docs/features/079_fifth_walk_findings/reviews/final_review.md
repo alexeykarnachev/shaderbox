@@ -85,14 +85,45 @@ the concurrent working-tree churn as "two other Claude sessions"; it was this se
 ## Editor re-vendor: `6d526c6` -> `38cadbc`
 
 W-C's remaining half is closed. The editor session reframed the ask: `gl_FragColor`, `texture2D`
-and `textureCube` are not builtins in the wrong colour, they are names 460 core REMOVED, so
+and `textureCube` are not builtins in the wrong color, they are names 460 core REMOVED, so
 dropping them from the lexer's builtin list is a correctness fix rather than a new precedence
 rule. Measured after vendoring: 30 orange glyphs for `gl_FragColor` plus a user's `fragColor` twice,
 `gl_FragCoord` still a builtin.
 
 Two corrections to this session's own earlier work:
-- **`gl_FragData` was never a builtin.** Re-measured on the OLD library, it recoloured fine. The
+- **`gl_FragData` was never a builtin.** Re-measured on the OLD library, it recolored fine. The
   claim that both names were affected came from reading `_BUILTIN_OUTPUTS` rather than measuring
   each name.
 - **`abi_probe.py` is a sixth vendored artifact** the handover list omitted; the signature-table
   gate fails without it. Reported back.
+
+### Behaviour verification (opus) — PARTIAL: three real, one false positive
+
+Probed every behavioural claim the eleven commit messages make. Three held up under my own
+re-verification and are fixed; one was a timing artifact.
+
+**REAL — the import hint advised a deleted type.** `_import_hint` fell back to `'Vec3'` when the
+exception carried no `name`, and it appended itself to the import GATE's own message — so a wrong
+import produced advice that recreates the error: "not Vec3 -- import it: `from shaderbox.scripting
+import Vec3`". The fallback outlived the type it named. The hint now fires on a `NameError` alone,
+for the name the error actually carries.
+
+**REAL — a bare sampler key went silent.** D5 keeps sampler/block keys errors, and W-E's `_binds`
+helper collapsed "not declared" and "declared but a sampler" into one falsy answer on the broadcast
+path. `{'u_tex': 1.0}` was silent while `{'main': {'u_tex': 1.0}}` errored. The broadcast branch now
+separates the two: nowhere declared is silent (D5's first half), declared-and-refused is an error on
+that pass (D5's second half). Gated.
+
+**REAL — `dev_flow.md`'s step 7 survived.** The commit claimed to remove the manual-check apparatus
+and removed four incidental mentions while leaving the actual step standing. Step 7 is now the
+verification-design guidance it mostly already was, with the go-and-look framing gone.
+
+**FALSE POSITIVE — `gl_FragColor`.** The agent measured 12 orange glyphs and called the commits and
+the banner wrong. It was reading a tree where the new `.so` had been copied in mid-run but the docs
+had not caught up. Settled from the primary source rather than either measurement: `gl_FragColor`
+IS in `src/lex_glsl.odin`'s builtin list at `6d526c6` and is NOT at `38cadbc`. Both measurements
+are correct for their own binary. The stale roadmap banner it noticed was real and is rewritten.
+
+**Also noted, not a defect:** the W-L geometry figure (`open` at x=50) is font-metric dependent —
+56 on the agent's read, decomposing exactly as the label's width plus one `SPACE.MD`. The spec now
+states the decomposition rather than the machine-specific number.

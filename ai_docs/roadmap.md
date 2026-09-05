@@ -26,13 +26,12 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-05, 079 landed; W-C's library half is with the editor session. -->
-**Next: the maintainer decides.** 079 is landed — every workstream, gated. The one piece it does
-not own: `gl_FragColor` reads builtin-green rather than orange, because the vendored lexer classes
-it as BUILTIN and a host class only fills identifiers the lexer left plain. That is the editor
-session's ask (a host class wins over a builtin-classed identifier, or `gl_*` variables leave the
-builtin list); a re-vendor is then the whole host change. A user's own `out vec4 fragColor;` name
-already reads orange.
+<!-- As of 2026-09-05, 079 is closed in full; the editor is vendored at 38cadbc. -->
+**Next: the maintainer decides.** 079 landed complete — every workstream gated, and a four-agent
+convergence review over the whole feature closed out. W-C's remaining half came back from the
+editor session: `gl_FragColor`, `texture2D` and `textureCube` are names 460 core REMOVED, not
+builtins in the wrong color, so the library dropped them from its GLSL builtins. Measured after
+vendoring: the fragment output reads orange, `gl_FragCoord` still reads as a builtin.
 
 **Queued: the sweep over the 077 material** — `ai_docs/features/077_rc_model_comparison/` (both
 rounds, the "left for the sweep" list) and the station pages (`dogfood/index.html`, local):

@@ -699,6 +699,21 @@ def test_a_key_no_pass_declares_is_skipped_silently(tmp_path: Path) -> None:
     )  # claims no ownership
 
 
+def test_a_bare_sampler_key_errors_like_a_pass_block_one(tmp_path: Path) -> None:
+    # 079 D5 keeps sampler/block keys errors, and the BROADCAST path lost that: `_binds` answers
+    # falsy for "not declared" and for "declared but a sampler" alike, so a bare sampler key went
+    # silent while the same key inside a pass block errored. Falsifier: collapse the two again and
+    # the bare form reports no error.
+    _write_script(tmp_path, _script(update_body="        return {'u_tex': 1.0}\n"))
+    document = _FakeDocument([_u("u_a"), _u("u_tex", gl_type=_GL_SAMPLER_2D)])
+    eng = _engine(tmp_path, document)
+    eng.tick("n0", document, _ctx(0.0))
+
+    error = eng.errors[("n0", "main", "u_tex")]
+    assert "sampler" in error.message and error.pass_name == "main"
+    assert ("main", "u_tex") not in eng.script_driven_uniforms("n0")
+
+
 def test_a_pass_block_key_that_pass_does_not_declare_is_skipped_silently(
     tmp_path: Path,
 ) -> None:
