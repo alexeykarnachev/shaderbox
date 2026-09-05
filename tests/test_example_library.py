@@ -48,10 +48,12 @@ def test_resolve_source_distinguishes_example_from_document(app: Any) -> None:
 def test_shipped_examples_read_clean_without_joining_working_set(app: Any) -> None:
     for t in app.copilot_backend.example_catalog():
         views = app.copilot_backend.read_shaders([t.example_id])
-        assert len(views) == 1, t.example_id
-        v = views[0]
-        assert v.document_id == t.example_id
-        assert len(v.errors) == 0, f"{t.name} must compile clean: {v.errors}"
+        # One view per pass (081 D1): a multi-pass example's OUTPUT pass is its presentation
+        # step, so returning it alone hid the technique the example exists to show.
+        assert views, t.example_id
+        for v in views:
+            assert v.document_id.split("#", 1)[0] == t.example_id
+            assert len(v.errors) == 0, f"{t.name} must compile clean: {v.errors}"
         # read-only: an example read never joins the (editable) working set
         full = app.copilot_backend._copilot_resolve_example_id(t.example_id)
         assert full not in app.session._copilot_working_set

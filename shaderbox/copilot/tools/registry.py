@@ -43,7 +43,11 @@ _LOAD_TOOLS_DESC = (
 
 def _validation_message(exc: ValidationError) -> str:
     first = exc.errors()[0] if exc.errors() else {}
-    return f"error: invalid arguments - {first.get('msg', 'invalid')}"
+    # The offending field name rides `loc`; without it "Extra inputs are not permitted" reads as a
+    # complaint about the VALUE and a model retries the same shape with different content.
+    where = ".".join(str(part) for part in first.get("loc", ()))
+    detail = first.get("msg", "invalid")
+    return f"error: invalid arguments - {f'{where}: ' if where else ''}{detail}"
 
 
 class ToolRegistry:

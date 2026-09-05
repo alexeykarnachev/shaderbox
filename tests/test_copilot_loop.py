@@ -1271,3 +1271,97 @@ def test_render_facts_legend_absent_from_a_turn_that_never_renders() -> None:
     assert all(
         _RENDER_FACTS_LEGEND not in (m.content or "") for m in client.requests[-1]
     )
+
+
+def test_zero_call_claim_gets_one_retry_with_tools() -> None:
+    # 081 D4: a reply with prose and NO tool call all turn is the one shape no brake sees — every
+    # other counter lives inside the tool loop — and it is where a model narrates work it never
+    # did. The engine states what it executed and gives one more step WITH tools.
+    scripts: list[list[LLMStreamEvent]] = [
+        [LLMTextDelta("Done. df is added, compiles clean."), LLMDone("stop")],
+        _tool_call("cr", "read_shader", "{}"),
+        [LLMTextDelta("Read it; nothing was added before."), LLMDone("stop")],
+    ]
+    caps = _fake_caps(edit_errors=[])
+    registry = build_registry(caps)
+    events = list(
+        run_turn(
+            _FakeClient(scripts),
+            registry,
+            _NO_NOOP_BRAKE,
+            _fake_context(),
+            history=[],
+            user_text="add a df pass",
+            gate=GateChannel(),
+            cancel=threading.Event(),
+        )
+    )
+    done = events[-1]
+    assert isinstance(done, AgentTurnDone)
+    # The fabricated first reply must NOT be what the turn commits.
+    assert "Done. df is added" not in done.summary.reply
+    assert "nothing was added before" in done.summary.reply
+
+
+def test_zero_call_retry_fires_at_most_once() -> None:
+    # The retry is a nudge, not a loop: a second wordy no-call answer is the model's real reply
+    # and stands, so the turn ends rather than re-prompting forever.
+    scripts: list[list[LLMStreamEvent]] = [
+        [LLMTextDelta("I already did that."), LLMDone("stop")],
+        [LLMTextDelta("I really did do that."), LLMDone("stop")],
+    ]
+    caps = _fake_caps(edit_errors=[])
+    registry = build_registry(caps)
+    events = list(
+        run_turn(
+            _FakeClient(scripts),
+            registry,
+            _NO_NOOP_BRAKE,
+            _fake_context(),
+            history=[],
+            user_text="do it",
+            gate=GateChannel(),
+            cancel=threading.Event(),
+        )
+    )
+    done = events[-1]
+    assert isinstance(done, AgentTurnDone)
+    assert "I really did do that." in done.summary.reply
+
+
+def test_a_turn_that_used_a_tool_is_not_retried() -> None:
+    # The inverse, so the gate cannot silently widen its domain to every turn: one real tool call
+    # plus the same prose ends in ONE stream, not two.
+    scripts: list[list[LLMStreamEvent]] = [
+        _tool_call("cr", "read_shader", "{}"),
+        [LLMTextDelta("Done. df is added, compiles clean."), LLMDone("stop")],
+    ]
+    caps = _fake_caps(edit_errors=[])
+    registry = build_registry(caps)
+    events = list(
+        run_turn(
+            _FakeClient(scripts),
+            registry,
+            _NO_NOOP_BRAKE,
+            _fake_context(),
+            history=[],
+            user_text="read it",
+            gate=GateChannel(),
+            cancel=threading.Event(),
+        )
+    )
+    done = events[-1]
+    assert isinstance(done, AgentTurnDone)
+    assert "Done. df is added" in done.summary.reply
+
+
+def test_the_token_estimate_lands_near_a_known_billed_figure() -> None:
+    # 081 D14: chars/4 under-counts real billed input by ~11% across 475 measured requests, and
+    # _trim_history budgets with it — under-counting is the unsafe direction for a budget check.
+    # The corpus's implied divisor is 3.39-3.85 by model; the constant must sit inside that band.
+    from shaderbox.copilot.prompt import CHARS_PER_TOKEN, estimate_tokens
+
+    assert 3.4 <= CHARS_PER_TOKEN <= 3.85
+    # 3600 characters of content bills near 1000 tokens at the measured ratio.
+    messages = [LLMMessage(role="user", content="x" * 3600)]
+    assert 940 <= estimate_tokens(messages) <= 1060

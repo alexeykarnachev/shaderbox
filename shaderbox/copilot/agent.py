@@ -44,6 +44,14 @@ _MODEL_INCOMPATIBLE_MSG = (
 _TORN_STREAM_MSG = "The connection dropped mid-reply — try again. Any actions shown above did complete."
 
 
+_NO_ACTION_NUDGE = (
+    "[engine] You made NO tool call this turn, so nothing you described was done: the project is "
+    "exactly as it was before your reply. This is the engine reporting what it executed, not the "
+    "user disagreeing. If the work is still wanted, do it now with tool calls. If you meant to "
+    "answer in words alone, say so plainly without claiming any action."
+)
+
+
 def _final_reply_nudge(cause: str, facts: str = "") -> str:
     # `cause` names the ENGINE limit that ended the turn, never a user pause, so the reply owns
     # the stop. `facts` measures the frame the turn leaves behind ("" when there is none). Plain
@@ -487,6 +495,7 @@ def run_turn(
     ran = _RunLog()
     total_tool_calls = 0
     consecutive_failed_edits = 0  # self-correction cap (reset on any other outcome)
+    no_action_retried = False  # the zero-call retry fires at most once a turn
     consecutive_compile_failures = 0  # applies-but-broken thrash counter
     compile_nudge_sent = (
         False  # latched once the nudge fires; re-armed by a non-thrash step
@@ -835,6 +844,21 @@ def run_turn(
                     stats=stats,
                 )
                 return
+            # A reply with prose and NO tool call all turn is the one shape no brake can see (every
+            # other counter lives inside the tool loop), and it is where a model narrates work it
+            # never did. The engine cannot judge the prose, so it states what it executed — nothing —
+            # and gives the model one more step WITH tools. Once per turn: a second empty answer is
+            # the model's real reply and stands.
+            if total_tool_calls == 0 and text_buf.strip() and not no_action_retried:
+                no_action_retried = True
+                logger.info(
+                    "copilot: zero-call reply claimed work — one retry with tools"
+                )
+                tr.event("no_action_retry", iteration=iteration)
+                messages.append(LLMMessage(role="assistant", content=text_buf))
+                messages.append(LLMMessage(role="user", content=_NO_ACTION_NUDGE))
+                text_buf = ""
+                continue
             logger.info(
                 f"copilot turn done | iterations={iteration + 1} "
                 f"tool_calls={total_tool_calls} reply={len(text_buf)}ch "

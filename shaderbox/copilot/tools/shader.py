@@ -11,6 +11,10 @@ from shaderbox.copilot.capabilities import (
 )
 from shaderbox.copilot.error_render import format_compile_errors
 from shaderbox.copilot.tools.base import GatePolicy, ToolArgs, ToolDefinition
+from shaderbox.engine_uniforms import ENGINE_UNIFORM_TYPES
+
+# Generated from the one table so the prose cannot name a subset of what the engine drives.
+_ENGINE_UNIFORM_LIST = ", ".join(ENGINE_UNIFORM_TYPES)
 
 # The shader tool surface. Handlers do GL-free text work on the worker thread and call a
 # capability closure for anything GL-touching (the closure owns the bridge round-trip).
@@ -19,7 +23,8 @@ from shaderbox.copilot.tools.base import GatePolicy, ToolArgs, ToolDefinition
 class _ReadShaderArgs(ToolArgs):
     documents: list[str] = Field(
         default_factory=list,
-        description="document ids (from the project map) and/or lib: addresses (from the "
+        description="document ids (from the project map), `<id>#<pass>` for ONE pass of a "
+        "document, `example:<handle>` for a shipped example, and/or lib: addresses (from the "
         "catalogue or grep) to read; empty = the shader you are currently working on. "
         "NEVER means 'all'.",
     )
@@ -127,6 +132,8 @@ _READ_SHADER_DESC = (
     "and compile errors then appear in the working-set block at the bottom of the conversation, "
     "rebuilt every step with CURRENT line numbers. Pass a list of document ids to add several at once "
     "(e.g. to compare two shaders); a `lib:` address reads that library file whole the same way; "
+    "`<id>#<pass>` reads ONE pass of a multi-pass document, and an `example:` handle with no pass "
+    "reads EVERY pass of that example, so a multi-pass reference arrives whole; "
     "leave documents empty for the document you are currently working on (it is already in your working "
     "set). Use this to add a DIFFERENT document before editing it. The document you are currently working "
     "on needs no read before you edit it — its source is already in the working set. You cannot "
@@ -161,7 +168,8 @@ _SET_UNIFORM_DESC = (
     "Change a uniform's runtime VALUE — for tweaking a number/vector the user controls live "
     "(brightness, speed, a color), WITHOUT editing code. Read the document first so you know the "
     "uniform's type and current value. Only scalar and vector uniforms can be set; samplers, "
-    "uniform blocks, and engine-driven uniforms (u_time, u_aspect, u_resolution) cannot. A "
+    f"uniform blocks, and engine-driven uniforms ({_ENGINE_UNIFORM_LIST}) cannot — to change what "
+    "a pass counter does, edit how the shader uses it or set the pass's `runs`. A "
     "SCRIPT-DRIVEN uniform also cannot be set — the document script (script.py) overwrites it every "
     "tick; change it in write_script instead. To change the shader's LOGIC, or to add/remove a "
     "uniform, edit the SOURCE instead. The value is in memory until the user saves the project; "

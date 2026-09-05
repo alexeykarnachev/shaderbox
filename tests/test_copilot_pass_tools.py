@@ -98,12 +98,18 @@ def test_delete_pass_removes_it_but_never_the_last(app: Any) -> None:
     assert "extra" not in res.table
 
 
-def test_registry_exposes_the_three_lazily_with_delete_gated() -> None:
+def test_the_pass_verbs_are_mutating_with_delete_lazy_and_gated() -> None:
+    # 081 D6: add_pass/set_pass are eager — a lazy load grows the tools array mid-turn, and that
+    # array precedes every message, so the whole cached prefix dies for one added schema.
+    # delete_pass stays lazy: it is destructive, gated, and rare.
     registry = build_registry(minimal_caps())
     for name in ("add_pass", "set_pass", "delete_pass"):
         definition = registry.definition_for(name)
-        assert definition is not None and not definition.eager, name
-        assert registry.is_lazy(name) and registry.is_mutating(name)
+        assert definition is not None and registry.is_mutating(name), name
+    assert registry.definition_for("add_pass").eager
+    assert registry.definition_for("set_pass").eager
+    assert not registry.definition_for("delete_pass").eager
+    assert registry.is_lazy("delete_pass")
     assert registry.definition_for("delete_pass").gate_policy is GatePolicy.ALWAYS
     assert registry.definition_for("add_pass").gate_policy is GatePolicy.NONE
     # The handler is wired: an execute through the registry validates and reaches the capability.
@@ -138,3 +144,46 @@ def test_an_edit_to_a_non_output_pass_is_probed_as_that_pass(app: Any) -> None:
     backend.batch_begin()
     facts = backend.apply_full_rewrite(red + "// again\n", f"{short}#glow").render_facts
     assert "changed NOTHING" in facts
+
+
+def test_an_invalid_argument_names_the_field_that_was_wrong(app: Any) -> None:
+    # 081 D11: pydantic hands the offending field in `loc` and the message threw it away, so
+    # "Extra inputs are not permitted" read as a complaint about the VALUE — one model rewrote
+    # the same payload's content three times before dropping the extra key.
+    registry = build_registry(app.copilot_backend)
+    ok, msg, _ = registry.execute(
+        "write_shader", {"document": "abcd", "target": "abcd", "new_text": "x"}, ""
+    )
+    assert not ok
+    assert "document" in msg, msg
+
+
+def test_the_engine_uniform_prose_is_generated_not_retyped(app: Any) -> None:
+    # 081 D12: the two prose surfaces named THREE of five engine uniforms, and the two they
+    # omitted (the pass counters) are exactly what a model tried to set — 600s of wall clock on
+    # three rejected calls. Asserting the rendered text against the table it is generated FROM is
+    # a tautology, so this pins the mechanism instead: each surface interpolates the shared list,
+    # and neither spells the set out. A hand-written list is what drifted.
+    _ = app
+    from shaderbox.copilot.prompt_context import _CONVENTIONS
+    from shaderbox.copilot.prompt_context import _ENGINE_UNIFORM_LIST as _CONV_LIST
+    from shaderbox.copilot.tools.shader import _ENGINE_UNIFORM_LIST, _SET_UNIFORM_DESC
+    from shaderbox.engine_uniforms import ENGINE_UNIFORM_TYPES
+
+    for rendered, generated in (
+        (_SET_UNIFORM_DESC, _ENGINE_UNIFORM_LIST),
+        (_CONVENTIONS, _CONV_LIST),
+    ):
+        # The generated fragment names the WHOLE table and is what the surface actually carries.
+        for name in ENGINE_UNIFORM_TYPES:
+            assert name in generated, name
+        assert generated in rendered
+
+
+def test_the_pass_tools_need_no_load_first(app: Any) -> None:
+    # 081 D6: the tools array precedes every message, so growing it mid-turn changes byte zero and
+    # voids the whole cached prefix — measured 2.9% cache share on requests where it grew against
+    # 62.7% where it did not. The two hot pass tools are worth more eager than lazy.
+    registry = build_registry(app.copilot_backend)
+    eager = {spec.name for spec in registry.assemble_specs(set())}
+    assert {"add_pass", "set_pass"} <= eager

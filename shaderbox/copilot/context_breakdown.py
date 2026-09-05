@@ -13,6 +13,7 @@ from dataclasses import dataclass
 
 from shaderbox.copilot.llm.api import LLMMessage, LLMToolSpec
 from shaderbox.copilot.prompt import (
+    CHARS_PER_TOKEN,
     DIALOGUE_BLOCK,
     WORKING_SET_BLOCK,
     RenderedBlock,
@@ -125,7 +126,7 @@ def breakdown_request(
         for s in specs
     ]
     tools_compact = json.dumps(tools_payload, separators=(",", ":"))
-    tools_est = len(tools_compact) // 4
+    tools_est = int(len(tools_compact) / CHARS_PER_TOKEN)
     return ContextBreakdown(
         iteration=iteration,
         blocks=tuple(blocks),

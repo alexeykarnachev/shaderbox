@@ -707,10 +707,10 @@ class CopilotBackend:
                         )
                     )
                     continue
-                kind, full_id = self._copilot_resolve_source(handle)
-                if full_id is None or full_id in seen:
+                document_handle, pass_name = split_pass_address(handle)
+                kind, full_id = self._copilot_resolve_source(document_handle)
+                if full_id is None:
                     continue
-                seen.add(full_id)
                 if kind == "example":
                     # Read-only: same view, not added to the working set, addressed by `example:` handle.
                     ui_document = self._get_ui_document_examples()[full_id]
@@ -719,37 +719,56 @@ class CopilotBackend:
                     ui_document = self._get_ui_documents()[full_id]
                     view_id = short[full_id]
                 document = ui_document.document
-                if document.render_pass.program is None:
-                    document.render_pass.compile()
-                text = document.render_pass.source.text
-                if kind == "document":
-                    self._working_set_add(full_id)
-                # A document-scoped set of (pass, name) pairs (069): this listing formats the
-                # OUTPUT pass, so filter to its own name — a uniform driven only on `paint` is not
-                # driven here.
-                driven = (
-                    _driven_on(
-                        self._get_script_driven_uniforms(full_id),
-                        pass_name_of(document.render_pass.source.path),
+                if pass_name and pass_name not in document.passes:
+                    raise CopilotToolError(
+                        f"no pass '{pass_name}' in '{document_handle}' -- the passes are "
+                        f"{sorted(document.passes)}"
                     )
-                    if kind == "document"
-                    else set()
+                # An unaddressed multi-pass EXAMPLE reads whole: it is a reference to learn from,
+                # and its output pass alone is the presentation step, not the technique.
+                targets = (
+                    [document.passes[pass_name]]
+                    if pass_name
+                    else list(document.passes.values())
+                    if kind == "example"
+                    else [document.render_pass]
                 )
-                views.append(
-                    ShaderView(
-                        document_id=view_id,
-                        name=ui_document.ui_state.ui_name,
-                        listing=_number_lines(text),
-                        uniforms=_format_uniforms(
-                            document.render_pass,
-                            driven,
-                            _wired_for(document, document.render_pass),
-                        ),
-                        errors=_to_error_infos(
-                            document.render_pass.compile_unit.errors
-                        ),
+                for render_pass in targets:
+                    name = pass_name_of(render_pass.source.path)
+                    dedup_key = f"{full_id}#{name}"
+                    if dedup_key in seen:
+                        continue
+                    seen.add(dedup_key)
+                    if render_pass.program is None:
+                        render_pass.compile()
+                    if kind == "document":
+                        # One working-set member is one DOCUMENT (D11) — a pass read touches its
+                        # document, never a per-pass member.
+                        self._working_set_add(full_id)
+                    # A document-scoped set of (pass, name) pairs (069): filter to this pass's own
+                    # name — a uniform driven only on `paint` is not driven here.
+                    driven = (
+                        _driven_on(self._get_script_driven_uniforms(full_id), name)
+                        if kind == "document"
+                        else set()
                     )
-                )
+                    views.append(
+                        ShaderView(
+                            document_id=(
+                                f"{view_id}#{name}"
+                                if len(document.passes) > 1
+                                else view_id
+                            ),
+                            name=ui_document.ui_state.ui_name,
+                            listing=_number_lines(render_pass.source.text),
+                            uniforms=_format_uniforms(
+                                render_pass,
+                                driven,
+                                _wired_for(document, render_pass),
+                            ),
+                            errors=_to_error_infos(render_pass.compile_unit.errors),
+                        )
+                    )
             return views
 
         return self._bridge.run_on_main(_on_main)

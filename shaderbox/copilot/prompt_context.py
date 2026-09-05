@@ -6,20 +6,24 @@ from shaderbox.copilot.capabilities import (
     ExampleEntry,
     LibCatalogEntry,
 )
+from shaderbox.engine_uniforms import ENGINE_UNIFORM_TYPES
 from shaderbox.scripting.api_doc import script_api_summary
+
+# Generated from the one table so the prose cannot name a subset of what the engine drives.
+_ENGINE_UNIFORM_LIST = "/".join(f"`{name}`" for name in ENGINE_UNIFORM_TYPES)
 
 # Per-turn app-state snapshot, GL-FREE so it builds off-main. Rendered to text here so
 # prompt.py stays a pure assembler. Current shader source is NOT here — it enters via the
 # read_shader tool result.
 
 # Conventions always in the prompt (never a tool). Keep terse — this is steering, not a manual.
-_CONVENTIONS = """\
+_CONVENTIONS = f"""\
 - Fragment shader: `#version 460 core`; read `in vec2 vs_uv` ([0,1], NO gl_FragCoord); write
   `out vec4 fs_color`; no `precision` qualifier (desktop GL).
 - Library: `SB_` prefix, call by name (auto-resolves, no #include). Layered on SIGNED distance:
   `SB_sd_*` sources (negative inside) -> `SB_op_*` SDF transforms -> renderers
   (`SB_fill`/`SB_fill_aa`/`SB_glow`) -> 0..1 mask. Compose: source -> ops -> render.
-- Uniforms: `u_` prefix. `u_time`/`u_aspect`/`u_resolution` are engine-driven (read, never set)
+- Uniforms: `u_` prefix. {_ENGINE_UNIFORM_LIST} are engine-driven (read, never set)
   but MUST still be declared — an undeclared one fails the compile (nothing is auto-injected).
 - The canvas is NOT square in general: `vs_uv` is [0,1] on BOTH axes, so anything that must keep
   true proportions (a circle staying round, a square staying square, even spacing) needs

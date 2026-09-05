@@ -13,7 +13,9 @@ from shaderbox.copilot.prompt_context import CopilotContext
 
 # Min turns the trim keeps even over budget. A turn = user msg + one assistant summary (NL-only history).
 # Threshold-only char->token ratio (no in-tree tokenizer; real counts arrive only post-send).
-_CHARS_PER_TOKEN: int = 4
+# Measured against 475 billed requests across seven models: the implied divisor is 3.39-3.85, so 4
+# under-counts real input by ~11% — the unsafe direction for a budget check.
+CHARS_PER_TOKEN: float = 3.6
 
 # Prompt = named blocks sorted least->most volatile for prefix-cache friendliness: STATIC < RARE
 # (project map + catalogues + conventions) < DIALOGUE (NL-only history) < PER_TURN. The current shader
@@ -398,7 +400,7 @@ def estimate_tokens(messages: list[LLMMessage]) -> int:
             chars += len(m.content)
         for tc in m.tool_calls or ():
             chars += len(tc.name) + len(tc.arguments)
-    return chars // _CHARS_PER_TOKEN
+    return int(chars / CHARS_PER_TOKEN)
 
 
 def _split_turns(history: list[LLMMessage]) -> list[list[LLMMessage]]:

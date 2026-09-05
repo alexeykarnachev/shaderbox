@@ -11,12 +11,16 @@ No new tools: every edit tool inherits the address kind through the single resol
 
 from typing import Any
 
+import pytest
+
 from shaderbox.copilot.address import (
+    example_address,
     is_pass_address,
     pass_address,
     split_pass_address,
 )
 from shaderbox.copilot.backend import _wired_for
+from shaderbox.copilot.errors import CopilotToolError
 from shaderbox.copilot.prompt import render_working_set
 from shaderbox.copilot.prompt_context import _render_document_tree
 from shaderbox.pass_graph import AutoSource, NoSource, PassSource
@@ -310,3 +314,59 @@ def test_a_document_with_a_broken_non_output_pass_reports_errors(app: Any) -> No
     )
     assert entry.has_errors
     assert "HAS ERRORS" in _render_document_tree([entry])
+
+
+# ---------------------------------------------------------------- reading a pass
+
+
+def test_read_shader_addressed_to_a_pass_returns_that_pass(app: Any) -> None:
+    # 081 D1: read_shaders compiled the OUTPUT pass only, so a `<id>#<pass>` read — the address
+    # every edit tool takes — came back as "no such document(s)" and a non-output pass was
+    # unreadable by any tool.
+    document_id = _two_pass(app)
+    short = app.copilot_backend._copilot_short_ids()[document_id]
+    views = app.copilot_backend.read_shaders([pass_address(short, "scene")])
+    assert len(views) == 1, views
+    # The listing is line-numbered, so compare the source's distinguishing constant.
+    assert "0.8" in views[0].listing
+    assert "0.5" not in views[0].listing
+    assert views[0].document_id.endswith("#scene")
+
+
+def test_read_shader_names_the_passes_that_exist(app: Any) -> None:
+    document_id = _two_pass(app)
+    short = app.copilot_backend._copilot_short_ids()[document_id]
+    with pytest.raises(CopilotToolError) as excinfo:
+        app.copilot_backend.read_shaders([pass_address(short, "ghost")])
+    assert "no pass 'ghost'" in str(excinfo.value)
+    # Actionable, not merely a refusal: it names what it could have meant.
+    assert "composite" in str(excinfo.value)
+
+
+def test_a_bare_read_still_returns_the_output_pass(app: Any) -> None:
+    document_id = _two_pass(app)
+    short = app.copilot_backend._copilot_short_ids()[document_id]
+    views = app.copilot_backend.read_shaders([short])
+    assert len(views) == 1, views
+    assert "0.5" in views[0].listing
+    assert "0.8" not in views[0].listing
+
+
+def test_a_multi_pass_example_reads_every_pass(app: Any) -> None:
+    # 081 D1: the shipped Radiance Cascades example is six passes and the output one is the
+    # presentation step, so an example read that returned only it handed the model 28 of 287
+    # lines — the technique it was pointed at was unreachable by every tool.
+    examples = app.copilot_backend._get_ui_document_examples()
+    multi = [
+        (full_id, ui_document)
+        for full_id, ui_document in examples.items()
+        if len(ui_document.document.passes) > 1
+    ]
+    if not multi:
+        pytest.skip("the test fixture seeds no multi-pass example")
+    full_id, ui_document = multi[0]
+    views = app.copilot_backend.read_shaders([example_address(full_id)])
+    assert len(views) == len(ui_document.document.passes)
+    assert {v.document_id.rsplit("#", 1)[1] for v in views} == set(
+        ui_document.document.passes
+    )
