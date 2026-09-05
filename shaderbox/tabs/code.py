@@ -234,6 +234,20 @@ def _script_errors_for_pass(
     ]
 
 
+def _errors_worth_marking(
+    errors: list[ShaderError], buffer_is_dirty: bool
+) -> list[ShaderError]:
+    """The errors that still describe the text on screen: none, once the buffer has changed.
+
+    An error's line is where the code was at the last COMPILE. The library anchors a marker to
+    its text and moves it, but the host re-pushes line numbers from that stale compile on every
+    edit, so a band would stop following the code it blames as soon as the buffer changed.
+    There is no general repair -- the compiler has not seen the new text, so the line an old
+    error belongs on is unknown. They come back on the next save, about the text on screen.
+    """
+    return [] if buffer_is_dirty else errors
+
+
 def _apply_markers(
     app: App,
     editor: Editor,
@@ -887,14 +901,7 @@ def draw(app: App) -> None:
         if (edited := _pass_for_tab(app, tab)) is not None
         else ui_document.document.render_pass.compile_unit.errors
     )
-    # An error's line is where the code was at the last COMPILE. The library anchors a marker
-    # to its text and moves it, but the host re-pushes line numbers from that stale compile on
-    # every edit, so a band stops following the code it blames the moment the buffer changes.
-    # There is no general repair -- the compiler has not seen the new text, so the line an old
-    # error belongs on is unknown. The errors are therefore dropped while the buffer is dirty
-    # and come back on the next save, when they are about the text on screen again.
-    if app.is_tab_dirty(tab):
-        errors = []
+    errors = _errors_worth_marking(errors, app.is_tab_dirty(tab))
     marker_fingerprint = _apply_markers(
         app,
         editor,

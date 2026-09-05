@@ -6,7 +6,8 @@ import ctypes
 from pathlib import Path
 
 from shaderbox.editor.ffi import Editor, Language, ensure_loaded
-from shaderbox.tabs.code import _apply_markers
+from shaderbox.shader_errors import ShaderError
+from shaderbox.tabs.code import _apply_markers, _errors_worth_marking
 
 
 class _Markers:
@@ -62,4 +63,27 @@ def test_the_cursor_band_follows_dd_then_u() -> None:
     line = editor.get_current_cursor_position().line
     _apply_markers(app, editor, [], None, path, line)
     assert _marked_lines(editor) == [line]
+    editor.close()
+
+
+def test_a_dirty_buffer_carries_no_error_markers() -> None:
+    # An error's line is the line at the last COMPILE, and the host re-pushes those numbers on
+    # every edit, so a band would sit on whatever code has since moved under it. Typing above
+    # an error is the case the maintainer reported twice. Dropping them while dirty is the
+    # whole fix: the compiler has not seen the new text, so no better line exists to move to.
+    errors = [ShaderError(Path("x.glsl"), 3, "undefined variable")]
+    assert _errors_worth_marking(errors, buffer_is_dirty=False) == errors
+    assert _errors_worth_marking(errors, buffer_is_dirty=True) == []
+
+
+def test_a_dirty_buffer_keeps_its_cursor_band() -> None:
+    # Only the ERROR markers go. The cursor line is a fact about the buffer as it is now, so it
+    # is still pushed while typing -- dropping it would take the current-line band with it.
+    editor = Editor("a\nb\nc\nd\n")
+    editor.set_language(Language.GLSL)
+    editor.set_cursor(2, 0)
+    app = _Markers()
+    path = Path("x.glsl")
+    _apply_markers(app, editor, _errors_worth_marking([], True), None, path, 2)
+    assert _marked_lines(editor) == [2]
     editor.close()
