@@ -682,11 +682,20 @@ class ScriptEngine:
         # `values_sink` (the dry-run path): every uniform-value WRITE lands there, keyed by the (pass,
         # name) pair, + the freeze-fallback READ consults it, so the LIVE document is never written.
         # None = the live tick (write each target pass).
-        # What this tick RE-RECORDS is the question the stale-clear at the end asks, and `errors`
-        # already holds last tick's rows — so remember which of this document's keys were there
-        # before the tick wrote anything.
-        stale_before = {key for key in errors if key[0] == document_id}
         behavior_key = (document_id, "", _SCRIPT_FILE)
+        # Every per-key row this document carries is REBUILT each tick: dropped here, so what the
+        # phases below write is what stands and a key the script fixed simply is not written
+        # again. Clearing by "was the pair TOUCHED this tick" instead was subtly wrong — the
+        # pass-free slot `(document_id, "", key)` holds two namespaces (a bare uniform name no
+        # pass declares, and a block naming a pass that does not exist), so rewriting
+        # `{"blur": {...}}` as `{"blur": 1.0}` touched the pair from the bare path, suppressing
+        # the clear, while never writing the slot to overwrite it. The behavior-level sentinel is
+        # not a per-key row and is left alone.
+        stale_rows = {
+            key for key in errors if key[0] == document_id and key != behavior_key
+        }
+        for key in stale_rows:
+            del errors[key]
         drove_last = set(last_driven)
 
         # cached compile error — freeze, recorded at reload
@@ -849,11 +858,6 @@ class ScriptEngine:
         # pass that does not exist — so rewriting `{"blur": {...}}` as `{"blur": 1.0}` touches the
         # pair from the bare path, which suppressed the clear, while never writing the slot to
         # overwrite it. The old error then stood forever, on the strip and in the copilot's probe.
-        rewritten = {key for key in errors if key[0] == document_id} - stale_before
-        for pass_name, name in last_driven | last_skipped:
-            key = (document_id, pass_name, name)
-            if key not in rewritten:
-                errors.pop(key, None)
         last_driven.clear()
         last_driven.update(driven)
         last_skipped.clear()

@@ -755,6 +755,23 @@ def test_sampler_key_records_soft_error_and_is_skipped(tmp_path: Path) -> None:
     assert ("main", "u_tex") not in eng.script_driven_uniforms("n0")
 
 
+def test_a_soft_error_persists_while_the_script_keeps_producing_it(
+    tmp_path: Path,
+) -> None:
+    # The other half of the stale-clear: a row must survive every tick the script keeps earning
+    # it. A first attempt at clearing the zombie row asked whether the key was REWRITTEN this
+    # tick, which a re-recorded error is not — so the row oscillated on and off frame by frame.
+    # Falsifier: clear on anything other than "the tick did not write it" and this alternates.
+    _write_script(
+        tmp_path, _script(update_body="        return {'blur': {'u_x': 1.0}}\n")
+    )
+    document = _FakeDocument([_u("u_x")])
+    eng = _engine(tmp_path, document)
+    for frame in range(4):
+        eng.tick("n0", document, _ctx(frame / 60.0))
+        assert ("n0", "", "blur") in eng.errors, f"the row vanished on tick {frame + 1}"
+
+
 def test_a_pass_name_error_clears_when_the_key_becomes_a_bare_one(
     tmp_path: Path,
 ) -> None:

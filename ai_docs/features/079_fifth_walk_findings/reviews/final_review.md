@@ -186,3 +186,28 @@ only findings are upstream-stub imprecision on working code.
 Also amended: D5's "a pass that does not compile stays an error" was the stale half of a
 disagreement with the code, which is silent there deliberately — the pass's own compile error is
 the thing to read.
+
+## Round 3
+
+### Fix verification (sonnet) — PARTIAL: my round-2 fix had a regression
+
+Claims 2, 3 and 4 held. Claim 1 half-held, and the half that failed was one I had introduced.
+
+The round-2 stale-clear asked whether a key was REWRITTEN this tick, computed as a set difference
+against the rows present before the tick. A re-recorded error is not "rewritten" by that
+definition — it was there before and it is there after — so a row the script keeps earning was
+popped right after being written. Probed directly, it did not merely vanish: it OSCILLATED, on
+for tick 1, off for tick 2, on for tick 3.
+
+The agent's coverage probe is worth recording: it verified pyright's widened set by injecting an
+undefined name into all nine non-excluded scripts inside a disposable `git worktree` and watching
+the error count go 0 -> 9, one per file, then confirmed the three excluded files report
+`filesAnalyzed: 0` when passed explicitly. That is the difference between "the config says so" and
+"the checker does so".
+
+**The fix, third attempt and the right shape:** the document's per-key rows are DELETED at the top
+of the tick and rebuilt by the phases below. What a tick writes is what stands; a key the script
+fixed is simply not written again. No question about touched-ness or rewritten-ness arises, which
+is what made the first two attempts subtly wrong. The behavior-level sentinel is not a per-key row
+and is left alone. Both halves are now gated — a row that persists across four ticks of an
+unchanged script, and a row that clears across a bare/block rewrite — and the mutation fails both.
