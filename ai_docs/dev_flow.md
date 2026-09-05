@@ -622,23 +622,19 @@ through `make test` rather than a bare `pytest` so you inherit them. Modules usi
 skip without a display. Not wired into `make check` (needs a GL context). On a monitor-less box,
 `xvfb-run -a` gives those modules a display -- see `### make gates`.
 
-**Why `-n 8`.** The suite is FIXTURE-bound, not assertion-bound: measured across every test, call
-time is ~22s against ~19s of pure fixture setup, because the `app` fixture builds a real App — a
-window, a GL context, the shipped example documents — and 136 tests take it, at roughly 90ms each.
-Serial that is ~53s; eight workers make it ~15s. Worker counts 4/8/12/24 were measured and the
-curve flattens after 8, so more workers buy under a second and cost memory.
+**Why `-n 8`.** The suite is FIXTURE-bound, not assertion-bound: the `app` fixture builds a real
+App — a window, a GL context, the shipped example documents — and most of the suite's time is that
+setup rather than the assertions. Parallel workers cut it hard; worker counts were measured and the
+curve flattens at 8, so more buy nothing.
 
 Each xdist worker is its own PROCESS with its own glfw window and GL context, which is what makes
 this safe where `pytest-forked` is NOT: a forked child inherits the parent's open X11 socket and
-two processes on one Xlib connection kill it (`tests/test_revert_executor.py` records that). The
-parallel gate was verified to still go RED, not merely to pass — a failing test planted in
-`test_channel_view.py` produced `FAILED at test (exit 2)` naming that test.
+two processes on one Xlib connection kill it (`tests/test_revert_executor.py` records that).
 
 **What is NOT the fix here, so it is not re-tried.** Caching the loaded example documents across
 App instances: they hold live moderngl handles, so a shallow share lets one App's `release()` free
 another's textures (it broke `test_grep_surfaces_example_origins`), and a deepcopy raises
-`cannot pickle 'mgl.Context'`. Caching only the decoded PNG behind them works and is safe, but
-recovers ~17ms of a ~90ms fixture because the defensive `.copy()` costs back most of the decode.
+`cannot pickle 'mgl.Context'`.
 
 ### `make smoke`
 Headless smoke test (`scripts/smoke.py`) — runs ~200 frames of `update_and_draw` against a THROWAWAY
