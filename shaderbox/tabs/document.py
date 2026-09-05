@@ -1,7 +1,6 @@
 from imgui_bundle import imgui, imgui_ctx
 
 from shaderbox.app import App
-from shaderbox.commands import CommandId, chord_to_str
 from shaderbox.glyph_tables import TABLE_UNIFORMS
 from shaderbox.media import MediaWithTexture
 from shaderbox.pass_graph import clamp_canvas_size
@@ -62,10 +61,7 @@ def _draw_document_reset(app: App) -> None:
     if danger_button(label, width=width):
         app.reset_current_document()
     if imgui.is_item_hovered():
-        imgui.set_tooltip(
-            "Reset document  "
-            f"{chord_to_str(app.effective_bindings[CommandId.RESET_DOCUMENT])}"
-        )
+        imgui.set_tooltip("Reset document")
     imgui.begin_disabled(app.copilot_turn_active)
 
 
