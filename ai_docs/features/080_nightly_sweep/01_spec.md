@@ -13,8 +13,15 @@ the plan.
 
 ## Goal
 
-One track only: **structural**. Leave the codebase with less dead weight and nothing filed
-where a reader would not look for it, with behaviour bit-identical.
+One track only: **structural**, and after review it is a SMALL night. Leave the codebase with
+less dead weight and behaviour bit-identical.
+
+The honest headline: this repo has very little structural debt. A previous sweep drained most of
+what existed, and an adversarial review of this spec's own first draft closed three of the five
+waves it proposed — each had opened a question that was already settled, with the reason recorded
+either in an earlier sweep or in the docstring of the file itself. What remains is a handful of
+dead symbols and one piece of unused machinery. **A sweep that reports a large haul here would be
+reporting a wrong measurement**, so the plan is deliberately short.
 
 There is deliberately NO behaviour track. The repo's behaviour oracle is the dogfood harness,
 which decides *copilot* behaviour against a human judge — it does not decide whether a
@@ -42,8 +49,9 @@ instead. Verified by `grep -rnw TOOLS_BLOCK shaderbox scripts dogfood tests`.
 
 A second shape confirmed by hand: `COLOR.SYN_PREPROC` (`shaderbox/theme.py:190`) is a syntax
 color from before feature 067 vendored the editor. `editor_palette()` maps nine syntax slots
-(`SYNTAX_1`..`SYNTAX_9`) and `SYN_PREPROC` is not among them, so the token is written by
-nothing and read by nothing.
+(`SYNTAX_1`..`SYNTAX_9`) and `SYN_PREPROC` is not among them; the intel color table does not
+name it either, and nothing in the repo reaches a `COLOR` attribute by `getattr`. It carries
+its dataclass default and no reader.
 
 **A previous sweep's inventory did not fully drain, and its commit message says otherwise.**
 `ai_docs/features/074_nightly_sweep/00_inventory.md` lists
@@ -52,33 +60,52 @@ states the method was removed. The method is at `shaderbox/exporters/telegram.py
 and `git show 1b159f1 -- shaderbox/exporters/telegram.py` shows that commit's diff for that
 path is the two lines of a DIFFERENT edit — the method was never touched. The other nine
 symbols in that inventory are genuinely gone (`DEFAULT_IMAGE_FILE_PATH`, `ProjectPaths.copilot_dir`,
-`ExporterStatus.in_flight`, the `AgentToolCard` fields all verified absent). So: one symbol
+`ExporterStatus.in_flight`, the `AgentToolCard` fields all verified absent). That table's ten
+rows are nine removals plus one pointer into its KEPT section, so eight of nine landed and one
 survived a removal its own commit claimed to have made.
 
 Two consequences for this sweep. The inventory wave must **re-verify that earlier sweep's
 "Removed" table entry by entry** rather than trusting it, and the deletion wave's done-condition
 must be a grep over the landed tree rather than a commit message.
 
-### Repetition — PRESENT, in the case-list shape only
+### Repetition — PRESENT as a shape, ABSENT as work
 
-The valuable shape here is a list of cases enumerated at several sites. Example: adding a
-fourth document tab requires editing `DocumentTab` (`shaderbox/ui_regions.py`), a `CommandId`
-member and a `CommandSpec` registration (`shaderbox/commands.py`), a dispatch lambda
-(`shaderbox/app.py`), and `_NODE_TABS` (`shaderbox/ui.py`) — and nothing fails if a site is
-missed; the tab is simply unreachable by keybinding.
+The case-list shape is real: adding a fourth document tab needs edits to `DocumentTab`
+(`shaderbox/ui_regions.py`), a `CommandId` member and a `CommandSpec` row
+(`shaderbox/commands.py`), a dispatch lambda (`shaderbox/app.py`) and `_NODE_TABS`
+(`shaderbox/ui.py`), and nothing fails if a site is missed.
+
+**But the split is deliberate and documented at the source.** `ui_regions.py`'s own docstring
+says `DocumentTab` is a leaf on purpose: it is a plain name with no imgui in it, `ui_models.py`
+persists the active tab, and keeping the enum beside the command table would drag imgui into the
+headless model layer — `commands.py` builds `K = imgui.Key` at module scope, so importing it
+loads the library. Hoisting the case list is precisely the coupling that docstring exists to
+prevent.
 
 Block-level duplication was probed and is essentially absent: the result-shaping paths are
 already hoisted behind `_render_result` / `_publish_result`.
 
-### Misfiling — PRESENT
+**No repetition wave.** The one candidate is a documented layering decision, not a defect.
 
-Example: `IntelCache` lives in `shaderbox/intel/document.py` but caches a GLSL syntax index
-keyed by editor buffer — nothing to do with `Document`. Its siblings `GlslIndex`,
-`GlslContext` and `build_glsl_index` all live in `shaderbox/intel/index.py`, which is where a
-reader would look, and the filename collides with the unrelated top-level `shaderbox/document.py`.
+### Misfiling — ABSENT; the two candidates were both misreadings
 
-A second shape: `shaderbox/watch.py` imports `App` and is consumed only by `shaderbox/ui.py`,
-so it is app-tier glue sitting in the top-level module namespace.
+Both examples the presence scan produced were refuted on inspection, and an earlier sweep had
+already scanned this dimension and found it absent.
+
+`IntelCache` (`shaderbox/intel/document.py`) looked misfiled because the filename collides with
+the top-level `shaderbox/document.py`. It does not: the module's own docstring says the cache is
+keyed on an editor HANDLE and exists so a handle recreated for the same path is fed again. The
+file is named for the document BUFFER whose intel it caches, and `conventions.md` names it in
+that role. Moving it would make a documented decision stale to fix a name collision that is not
+one.
+
+`shaderbox/watch.py` imports `App` and is consumed only by `shaderbox/ui.py`, which reads as
+app-tier glue in the top-level namespace. But `dev_flow.md`'s module map names it there with both
+its functions, so the placement is recorded rather than accidental.
+
+**No relocation wave.** An earlier sweep scanned this dimension and recorded it absent, noting
+that many modules carry an explicit "leaf module, imports only X" docstring a reviewer can check
+mechanically. Nothing here rebuts that finding.
 
 ### Dependency direction — the survey's own layering sketch was wrong
 
@@ -102,20 +129,26 @@ object, not a second concern; `ui_primitives.py`'s button/labelled-field blocks 
 signposting within one shared-primitives job. Splitting any of them would invent a seam rather
 than follow one.
 
-### Comments — the convention is holding; one narrow defect
+### Comments — the convention is holding; nothing in scope
 
-Restating-the-code comments are ABSENT: of the comment lines sampled, none restated the
-statement below them. What is present is verbatim duplication — an identical three-line
-GL-fixture rationale block repeated across five test modules
-(`tests/test_pass_hot_reload.py:42`, `test_graph_persistence.py:54`, `test_pass_render.py:53`,
-`test_document_graph.py:75`, `test_script_engine_gl.py:43`) — and one genuine
-attempt-chronology at `tests/test_editor_ffi.py:1141`, which narrates a superseded claim
-before giving the current reason.
+Restating-the-code comments are ABSENT: of the comment lines sampled, none restated the statement
+below them. An earlier sweep reached the same verdict and recorded that its one candidate was a
+false positive — `ui.py`'s `# Process hotkeys` is a section-banner label, part of the `# ----`
+pattern that delimits the phases of `update_and_draw` and is the file's only navigation aid.
+`conventions.md` sanctions those banners explicitly.
 
-**Comment work is narrow by construction.** Deleting duplicated text and compressing that one
-chronology is in scope. Compressing long explanatory blocks is NOT: a block naming the failure
-it prevents or quoting a measurement is the convention working, and is often the only
-surviving record of something a real defect cost to learn. When in doubt, leave it.
+The verbatim-duplication scan found one block: an identical three-line rationale repeated across
+five GL test fixtures, explaining that an explicit `backend="egl"` context released there poisons
+the process's EGL display and segfaults the next module's first compile. **That block stays.** It
+quotes a measured segfault and names the failure it prevents, which is the convention working;
+an earlier sweep considered it and kept it for exactly that reason. Re-raising it here was a
+re-litigation of a settled decision, and it is settled the same way.
+
+One attempt-chronology exists at `tests/test_editor_ffi.py:1141`, narrating a superseded claim
+before giving the current reason. It is one comment in a test, and compressing it buys nothing
+that justifies an unattended edit to a file whose subject is a silent-failure ABI contract.
+
+**No comment wave.**
 
 ### Speculative generality — PRESENT
 
@@ -202,9 +235,16 @@ a comment at each site saying so; re-exports in `__init__.py`; anything under
 Output: `00_inventory.md` beside this spec, with a per-symbol evidence row, a KEPT table, and a
 coverage claim per scan in the form `scanned: <kinds> across <dirs>; not scanned: <the rest>`.
 
-Done-condition: every kind above has been scanned with a written coverage claim, and every row
-of the earlier sweep's "Removed" table carries a present/absent verdict from a grep run against
-the current tree.
+Done-condition — a written coverage claim is not enough, because a claim is written the same way
+over a scan that worked and one that quietly narrowed:
+- every kind above scanned, each with a coverage claim naming what it did NOT cover;
+- every row of the earlier sweep's "Removed" table carrying a present/absent verdict from a grep
+  against the current tree;
+- **the scan falsified**: pick a symbol known to be live only through the test tree
+  (`pass_graph.DTYPES` is the one this sweep already found) and confirm the scan does NOT report
+  it dead. A scan that cannot be shown to spare a known-live symbol has not been shown to work.
+  An earlier sweep's module-graph pass used a grep recipe that under-detected
+  `from pkg import a, b, c` and would have written a confident claim over the miss.
 
 ### W-1 — deletion, by risk tier, one tier and one category at a time
 
@@ -221,47 +261,57 @@ model is a format change, not a deletion — those go to the maintainer.
 orphans its producer is unfinished until the producer goes too, or until the producer's survival
 is written down as deliberate.
 
-Done-condition: `grep -rnw <symbol>` over the landed tree returns only removals for every symbol
-the inventory tiered SAFE; `make gates` green; no test assertion changed.
+Done-condition:
+- `grep -rnw <symbol>` over the landed tree returns nothing for every symbol the inventory tiered
+  SAFE;
+- **the string-reach check run separately**, because a word-boundary grep structurally cannot see
+  a name reached as a string: for each removed symbol, grep the whole tree for its name in
+  quotes, and for a removed FIELD check it against the JSON keys under `projects/`. A field
+  removed from a model that round-trips to disk narrows the save file silently — the salvage path
+  drops unknown keys by design, so the gate stays green either way;
+- `make gates` green;
+- no test ASSERTION changed. A test may lose a constructor argument for a field that no longer
+  exists; what it asserts must be identical. Check by reading the diff, not by the suite passing.
 
-### W-2 — relocation: move what is filed where a reader would not look
+### W-2 — the speculative generality in `apply_theme`
 
-Pure moves, no edits to bodies. Import churn in the same commit, said so in the message. Every
-path-naming check above updated in the same commit **and then re-broken on purpose to confirm it
-still fails** — a check edited to accommodate a move is the classic way a gate goes quietly
-vacuous while still reporting green.
+`apply_theme` (`shaderbox/theme.py`) takes `accent` / `density` / `rounding`, each backed by a
+multi-value `Literal` and a preset table. Its one call site (`shaderbox/app.py:217`) passes none
+of them, and no test exercises the function or any accent.
 
-Done-condition: `make gates` green; each moved symbol resolves from its new home; each edited
-check demonstrated to still fail when the thing it guards is broken, with the break named in the
-commit message.
+**This wave is DANGEROUS in a specific way, and that is why it is written out at length.** The
+accent presets are not only `apply_theme`'s parameter values. `theme.py` runs an IMPORT-TIME
+assertion built from `_ACCENTS`: a fixed hue (`SELECT`, the state colors) may not equal any
+accent preset's primary, or two cues merge under some accent. `conventions.md` records that
+invariant as a design decision — a new theme supplies its own palette, presets and role mapping,
+and the assertion is what holds a new one honest.
 
-### W-3 — comments: the verbatim repeats
+Deleting the accent machinery empties that assertion's domain. **An assertion over an empty set
+passes.** So the naive removal leaves a green `make gates`, a green import, and a
+theme-portability invariant that no longer checks anything — the checker that quietly narrows its
+own domain, which this repo names as its most expensive bug family.
 
-Delete the verbatim repeats; compress the one attempt-chronology to its current reason. Every
-measurement and every named failure survives. Nothing else in the comment layer is touched.
+Therefore, in order:
 
-Done-condition: the repeated block appears once; `make gates` green; no comment that names a
-failure or quotes a measurement was shortened.
+1. Remove only what has no second job. `density` and `rounding` drive nothing but their own
+   branches inside `apply_theme`; they and their `Literal` aliases go.
+2. **`accent` and `_ACCENTS` stay** unless the invariant is preserved by construction. The
+   presets ARE the assertion's domain; the parameter is the smaller half.
+3. If a later judgement removes them anyway, the assertion must be rewritten first to enumerate
+   the fixed hues against each other rather than against a table that no longer exists — and
+   then broken on purpose to prove it still fires.
 
-### W-4 — the case lists, only where a case list is real
+Done-condition, stated so a vacuous outcome fails it:
+- `density` and `rounding` no longer appear in `shaderbox/`, verified by grep over the landed
+  tree.
+- `_accent_primaries` is still built from a NON-EMPTY `_ACCENTS`, verified by asserting its
+  length in a Python one-liner run against the landed tree.
+- **The invariant was re-broken and observed to fire**: set `COLOR.SELECT` to an accent
+  preset's primary, confirm the import raises, restore it. The commit message names that break.
+- `make gates` green.
 
-Hoist a list of cases enumerated at several sites behind one name, so adding a case is one edit.
-**Clarity beats brevity**: do not collapse distinct concerns, do not trade an explicit form for a
-compact one, and do not delete an abstraction that was organising something. Fewer lines is not
-the goal. **Similar shape is not shared meaning** — two blocks that answer different questions
-stay apart, because hoisting them couples two things that must change independently.
-
-If the case-list work turns out to need a design decision, it stops and goes to the maintainer.
-
-Done-condition: adding a hypothetical new case is demonstrably one edit; `make gates` green.
-
-### W-5 — speculative generality
-
-Remove machinery whose caller does not exist, `apply_theme`'s unused variation being the
-candidate. **Name the caller that wants a seam, or delete the seam.** A seam with no caller is
-itself a thing to find and delete, not to add.
-
-Done-condition: no parameter remains that every call site passes identically; `make gates` green.
+If step 2's judgement call turns out to need a design decision, the wave stops and the question
+goes to the maintainer rather than being resolved unattended.
 
 ## What looks wrong and is correct
 
@@ -281,6 +331,17 @@ works.
 - **`popups/settings.py`'s `SettingsField` members.** Matched by string literal from
   `exporters/telegram.py` and `exporters/youtube.py`, with a comment at each site recording the
   coupling on purpose.
+- **`GraphError.message` and `LookupPopup.word`.** Read from tests only, which is still reached.
+  A grep restricted to `shaderbox/` reports both dead; the inventory's rule that `tests/` counts
+  is what spares them.
+- **`_ACCENTS` and the accent presets.** They are the domain of an import-time theme-portability
+  assertion, not merely `apply_theme`'s parameter values. Emptying them leaves the assertion
+  passing over nothing.
+- **The `# ----` section banners** and their labels. `conventions.md` sanctions them, and an
+  earlier sweep recorded that deleting them would destroy the only navigation aid in the longest
+  draw function.
+- **The five-site EGL fixture comment in `tests/`.** It quotes a measured segfault and names the
+  failure it prevents. Kept by an earlier sweep for that reason; still kept.
 - **The two sanctioned lazy imports** inside function bodies. Deliberate SDK-deferral seams; the
   repo's import-at-top rule names them as its only exceptions.
 - **`shaderbox/theme.py` importing `shaderbox/editor/ffi.py`.** `editor_palette()` returns a dict
@@ -293,6 +354,22 @@ works.
     make gates > /tmp/g.log 2>&1; echo $?
 
 Nothing else counts. A green from a pipe is the pipe's status; a skipped smoke is not a pass.
+
+**What the gate cannot see, per wave.** A green is evidence the change ran, not that it worked,
+and each wave has a specific blind spot:
+
+- **W-0** changes no code, so no gate applies at all. Its failure mode is a wrong inventory, and
+  `make gates` is structurally silent about a document. Its falsifier is the defence.
+- **W-1**: a field removed from a model that round-trips to disk. Nothing asserts that
+  `projects/dev/`'s JSON survives, and the salvage path drops unknown keys by design, so the save
+  file narrows silently behind a green gate. Hence the separate string-reach and JSON-key check.
+- **W-1 and W-2 both**: modules using the app fixture SKIP without a display. Overnight on a
+  display-less box an unknown fraction of the suite does not run, and the gate stays green
+  through it. Confirm the smoke stage reported *passed* rather than *skipped* before believing a
+  wave.
+- **W-2**: the import-time theme assertion passes over an empty domain. No test references
+  `apply_theme`, `_ACCENTS` or any accent name, so the gate is green through the whole
+  regression. The re-break in its done-condition is the only thing that catches it.
 
 **A changed test expectation in a structural wave is a defect in the refactor, not a test to
 update.** The tests are the only evidence behaviour was preserved, so weakening one to get a
@@ -323,7 +400,12 @@ or implementation agent as fixed premises:
   wave. A proposal containing a migration path is the signal to delete the proposal.
 - **Commit on `dev`.** Never `master`, no per-feature branches. Never leave `projects/dev/`
   unstaged.
-- **Order: W-0 first, always** — it is measurement. Then W-1 through W-5. A wave that turns out
+- **No relocation, comment or repetition wave.** All three were opened by the presence scan and
+  closed on inspection: the misfiling candidates were misreadings of two documented placements,
+  the comment block is a kept measurement, and the case list is a deliberate layering split its
+  own docstring defends. An earlier sweep had already ruled out relocation and comments. Do not
+  re-open them; that re-opening is itself the defect this constraint records.
+- **Order: W-0 first, always** — it is measurement. Then W-1, then W-2. A wave that turns out
   bigger than this spec assumed gets SAID so in the progress log, not silently narrowed.
 
 Write each wave's done-condition into `00_progress.md` BEFORE starting it, and append the result
