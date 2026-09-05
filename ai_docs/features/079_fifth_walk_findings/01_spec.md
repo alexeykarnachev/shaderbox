@@ -68,8 +68,11 @@ owns. Quotes are the maintainer's words from `00_raw_findings.md`.
 - **D6. The source list is `none` / the passes / `file...`.** No auto row, no caption, no gaps;
   `none` dim, passes in the pass-sampler color, `file...` plain; the closed combo shows the
   resolved pass. Supersedes 072's row shape.
-- **D7. The Document tab's first row is `Document name` and `Canvas [presets chip]` with
-  Reset right-aligned in the danger tier; the second row is the inputs.** In D12's tiers.
+- **D7. The Document tab's first row is `Document name` and `Canvas`, with Reset right-aligned
+  in the danger tier; the presets chip sits on the second row after the height field.** In D12's
+  tiers. (Amended at the display, 2026-09-05: the chip was first put on the caption row beside
+  `Canvas`; the maintainer read the result as worse than the row it replaced and moved it back
+  next to the resolution it applies to. Reset stays on the caption row.)
 - **D8. The viewer draws at full alpha during a copilot turn**; the controls stay frozen.
 - **D9. The error strip sits below the editor image**, never over the status band.
 - **D10. The stub is a fixed point of the formatter**, gated.
@@ -219,8 +222,8 @@ Original plan:
    without a role are deleted. Hover / active states from the theme, one step darker.
 3. **The sweep.** Every site takes its tier from the table; raw imgui buttons go through a
    primitive; labels re-read against `imgui-ui §2`'s word budget while there.
-4. **The Document tab's row** (D7): `Canvas` caption + the presets chip on the caption line,
-   Reset right-aligned there in the danger tier, the inputs on the second row.
+4. **The Document tab's row** (D7): Reset right-aligned on the caption line in the danger tier;
+   the second row is the two inputs and the presets chip after the height field.
 5. `imgui-ui §1`'s tier table rewritten to the four that exist; a test walks `shaderbox/` for
    a raw `imgui.button(` outside `ui_primitives.py` and fails on one.
 6. Display check with the maintainer: the Documents panel, the Document tab, the pass strip,
@@ -268,4 +271,5 @@ scope excludes the viewer), roadmap.
 10. Send a copilot message over an opaque render: the render stays opaque under the dim.
 11. Option B on `add pass`, `open`, `Reset`, `Close`, `Cancel` and every other verb, one look
     across the panels, modals, the share tab, the lib picker and the copilot bar; the Document
-    tab's first row is `Document name`, `Canvas [presets]`, Reset at the right border.
+    tab's caption row is `Document name`, `Canvas` and Reset at the right border, with the
+    presets chip beside the height field below.

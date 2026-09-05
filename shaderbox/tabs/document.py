@@ -33,8 +33,8 @@ _SQUARE_PRESETS: tuple[int, ...] = (256, 512, 1024, 2048)
 
 
 def _draw_canvas_presets(app: App, ui_document: UIDocument) -> None:
-    # A chip, not a combo (079 D7): it names a shortcut rather than a value the row holds, so it
-    # must not read as a third canvas field. The popup is a combo's, opened off the chip.
+    # A chip, not a combo: it names a shortcut rather than a value the row holds, so it does not
+    # read as a third canvas field. The popup is a combo's, opened off the chip.
     label = "presets"
     width = imgui.calc_text_size(label).x + 2.0 * float(SPACE.MD)
     imgui.set_next_item_width(width)
@@ -162,14 +162,11 @@ def draw(app: App) -> None:
 
     imgui.begin_disabled(app.copilot_turn_active)
 
-    # The caption row carries what the second row cannot (079 D7): the presets chip beside the
-    # `Canvas` caption it belongs to, and Reset at the panel's right border, where a
-    # document-wide destructive verb reads as document-wide rather than as another canvas field.
+    # Reset goes on the caption row at the panel's right border (079 D7), where a document-wide
+    # destructive verb reads as document-wide rather than as another canvas field.
     small_caption(app.font_12, "Document name")
     imgui.same_line(combo_offset)
     small_caption(app.font_12, "Canvas")
-    imgui.same_line(spacing=float(SPACE.SM))
-    _draw_canvas_presets(app, ui_document)
     _draw_document_reset(app)
 
     imgui.set_next_item_width(SIZE.NAME_INPUT_W)
@@ -217,6 +214,9 @@ def draw(app: App) -> None:
     active_h = imgui.is_item_active()
     committed_h = entered_h or imgui.is_item_deactivated_after_edit()
     app.canvas_size_buf = (app.canvas_size_buf[0], buf_h)
+
+    imgui.same_line(spacing=float(SPACE.MD))
+    _draw_canvas_presets(app, ui_document)
 
     app.canvas_w_editing = active_w
     app.canvas_h_editing = active_h
