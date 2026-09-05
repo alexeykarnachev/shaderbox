@@ -603,6 +603,7 @@ def run_turn(
                     context_tokens=first_input_tokens or 0,
                     reply_tokens=usage.output_tokens,
                     cost_usd=usage.cost_usd,
+                    billed_input_tokens=usage.input_tokens,
                 ),
             )
             return
@@ -691,6 +692,7 @@ def run_turn(
                     context_tokens=first_input_tokens or 0,
                     reply_tokens=usage.output_tokens,
                     cost_usd=usage.cost_usd,
+                    billed_input_tokens=usage.input_tokens,
                 ),
             )
             return
@@ -708,6 +710,7 @@ def run_turn(
                     context_tokens=first_input_tokens or 0,
                     reply_tokens=usage.output_tokens,
                     cost_usd=usage.cost_usd,
+                    billed_input_tokens=usage.input_tokens,
                 ),
             )
             return
@@ -722,6 +725,7 @@ def run_turn(
                     context_tokens=first_input_tokens or 0,
                     reply_tokens=usage.output_tokens,
                     cost_usd=usage.cost_usd,
+                    billed_input_tokens=usage.input_tokens,
                 ),
             )
             return
@@ -774,6 +778,7 @@ def run_turn(
                         context_tokens=first_input_tokens or 0,
                         reply_tokens=usage.output_tokens,
                         cost_usd=usage.cost_usd,
+                        billed_input_tokens=usage.input_tokens,
                     ),
                 )
                 return
@@ -797,6 +802,7 @@ def run_turn(
                         context_tokens=first_input_tokens or 0,
                         reply_tokens=usage.output_tokens,
                         cost_usd=usage.cost_usd,
+                        billed_input_tokens=usage.input_tokens,
                     ),
                 )
                 return
@@ -814,6 +820,7 @@ def run_turn(
                             context_tokens=first_input_tokens or 0,
                             reply_tokens=usage.output_tokens,
                             cost_usd=usage.cost_usd,
+                            billed_input_tokens=usage.input_tokens,
                         ),
                     )
                     return
@@ -831,6 +838,7 @@ def run_turn(
                             context_tokens=first_input_tokens or 0,
                             reply_tokens=usage.output_tokens,
                             cost_usd=usage.cost_usd,
+                            billed_input_tokens=usage.input_tokens,
                         ),
                     )
                     return
@@ -838,6 +846,7 @@ def run_turn(
                     context_tokens=first_input_tokens or 0,
                     reply_tokens=usage.output_tokens,
                     cost_usd=usage.cost_usd,
+                    billed_input_tokens=usage.input_tokens,
                 )
                 yield AgentTurnDone(
                     summary=_build_turn_summary(reply, ran, registry),
@@ -876,6 +885,7 @@ def run_turn(
                 context_tokens=first_input_tokens or 0,
                 reply_tokens=turn_total.output_tokens,
                 cost_usd=turn_total.cost_usd,
+                billed_input_tokens=turn_total.input_tokens,
             )
             # text_buf is the agent's final reply, carrying its stated assumption.
             yield AgentTurnDone(
@@ -954,6 +964,7 @@ def run_turn(
                         context_tokens=first_input_tokens or 0,
                         reply_tokens=usage.output_tokens,
                         cost_usd=usage.cost_usd,
+                        billed_input_tokens=usage.input_tokens,
                     ),
                 )
                 return
@@ -992,6 +1003,7 @@ def run_turn(
                             context_tokens=first_input_tokens or 0,
                             reply_tokens=usage.output_tokens,
                             cost_usd=usage.cost_usd,
+                            billed_input_tokens=usage.input_tokens,
                         ),
                     )
                     return
@@ -1213,6 +1225,7 @@ def run_turn(
                     context_tokens=first_input_tokens or 0,
                     reply_tokens=usage.output_tokens,
                     cost_usd=usage.cost_usd,
+                    billed_input_tokens=usage.input_tokens,
                 ),
             )
             return
@@ -1247,6 +1260,7 @@ def run_turn(
                 context_tokens=first_input_tokens or 0,
                 reply_tokens=usage.output_tokens,
                 cost_usd=usage.cost_usd,
+                billed_input_tokens=usage.input_tokens,
             ),
         )
         return
@@ -1268,6 +1282,7 @@ def run_turn(
                 context_tokens=first_input_tokens or 0,
                 reply_tokens=usage.output_tokens,
                 cost_usd=usage.cost_usd,
+                billed_input_tokens=usage.input_tokens,
             ),
         )
         return
@@ -1275,5 +1290,6 @@ def run_turn(
         context_tokens=first_input_tokens or 0,
         reply_tokens=usage.output_tokens,
         cost_usd=usage.cost_usd,
+        billed_input_tokens=usage.input_tokens,
     )
     yield AgentTurnDone(summary=_build_turn_summary(reply, ran, registry), stats=stats)

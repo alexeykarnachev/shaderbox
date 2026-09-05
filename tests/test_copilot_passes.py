@@ -370,3 +370,19 @@ def test_a_multi_pass_example_reads_every_pass(app: Any) -> None:
     assert {v.document_id.rsplit("#", 1)[1] for v in views} == set(
         ui_document.document.passes
     )
+
+
+def test_an_unreachable_pass_says_so_in_the_working_set(app: Any) -> None:
+    # 081 D10: the pass strip already dims a pass the output does not reach (its `live` set), but
+    # PassView carried no such field, so the model was the only party that could not see it — and
+    # four dead stubs survived every end-of-mission sweep turn, one still wired as a live node.
+    document_id = _two_pass(app)
+    app.session.add_pass(document_id, "orphan")
+    members, evicted = app.copilot_backend.read_working_set()
+    member = next(m for m in members if m.passes)
+    by_name = {v.name: v for v in member.passes}
+    assert by_name["orphan"].is_live is False
+    assert by_name["scene"].is_live is True
+    assert by_name["composite"].is_live is True
+    rendered = "\n".join(m.content or "" for m in render_working_set(members, evicted))
+    assert "unreachable" in rendered

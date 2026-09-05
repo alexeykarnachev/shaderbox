@@ -218,6 +218,9 @@ class PassView:
     uniforms: list[str]
     errors: list[CompileErrorInfo]
     is_output: bool
+    # False when the output pass does not reach this one, so it never renders. The pass strip
+    # dims such a tile for the user; without this the model is the only party that cannot see it.
+    is_live: bool = True
 
 
 @dataclass(frozen=True)

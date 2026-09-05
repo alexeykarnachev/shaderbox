@@ -343,6 +343,9 @@ def _render_working_set_member(view: WorkingSetView) -> str:
         member = f"=== {view.name} (id: {view.address}){mark}{canvas} ==="
         for pass_view in view.passes:
             output_mark = " [output]" if pass_view.is_output else ""
+            if not pass_view.is_live:
+                # The output does not reach it, so it never renders — the user sees a dimmed tile.
+                output_mark += " [unreachable: the output does not read it]"
             pass_errors = (
                 format_compile_errors(pass_view.errors) if pass_view.errors else "none"
             )

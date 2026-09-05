@@ -109,6 +109,7 @@ from shaderbox.pass_graph import (
     TargetConfig,
     TargetDtype,
     clamp_canvas_size,
+    evaluation_order,
 )
 from shaderbox.paths import DOCUMENT_SCRIPT_BASENAME, pass_name_of, shader_lib_root
 from shaderbox.render_preset import RenderPreset
@@ -869,6 +870,15 @@ class CopilotBackend:
         # The EFFECTIVE wiring (069 D9, 072): a sampler the name rule fills has no stored row,
         # and telling the model it reads BLACK while the renderer fills it is a false fact.
         wiring = document.effective_wiring()
+        # The passes the output actually reaches (the strip's own `live` set): an unreachable pass
+        # never renders, and saying so is the difference between the model sweeping a dead stub and
+        # leaving it wired forever.
+        output = document.graph.output
+        live = (
+            set(evaluation_order(wiring, output)) or {output}
+            if output in document.passes
+            else set(document.passes)
+        )
         views: list[PassView] = []
         for name in sorted(document.passes):
             render_pass = document.passes[name]
@@ -885,6 +895,7 @@ class CopilotBackend:
                     ),
                     errors=_to_error_infos(render_pass.compile_unit.errors),
                     is_output=(name == document.graph.output),
+                    is_live=name in live,
                 )
             )
         return views
@@ -1626,6 +1637,9 @@ class CopilotBackend:
     def render_image(self, document: str, shape: RenderShape) -> RenderResult:
         # Render the current frame to a PNG (GL; marshalled with the longer render_op_timeout_s).
         def _on_main() -> RenderResult:
+            bad_address = self._copilot_render_address_error(document)
+            if bad_address:
+                return RenderResult(ok=False, error=bad_address)
             ui_document = self._copilot_render_target(document)
             if ui_document is None:
                 return RenderResult(ok=False, error=f"no such document '{document}'")
@@ -1653,6 +1667,9 @@ class CopilotBackend:
     ) -> RenderResult:
         # Render `seconds` of animation (from t=0) to a WebM.
         def _on_main() -> RenderResult:
+            bad_address = self._copilot_render_address_error(document)
+            if bad_address:
+                return RenderResult(ok=False, error=bad_address)
             ui_document = self._copilot_render_target(document)
             if ui_document is None:
                 return RenderResult(ok=False, error=f"no such document '{document}'")
@@ -1701,6 +1718,9 @@ class CopilotBackend:
         )
 
     def _copilot_render_target(self, document: str) -> UIDocument | None:
+        # A deliverable render is a whole DOCUMENT: "one pass" is not a file the user asked for.
+        # A pass address is refused by name in the caller rather than downgraded to its document,
+        # so the model sees its own mistake instead of a plausible wrong artifact.
         document_id = (
             self._copilot_resolve_document_id(document)
             if document
@@ -1709,6 +1729,16 @@ class CopilotBackend:
         if document_id is None or document_id not in self._get_ui_documents():
             return None
         return self._get_ui_documents()[document_id]
+
+    def _copilot_render_address_error(self, document: str) -> str:
+        # "" when the address is renderable; otherwise the message the model can act on.
+        _, pass_name = split_pass_address(document)
+        if pass_name:
+            return (
+                f"error: a render takes a whole document, not the pass address '{document}' — "
+                f"render the document, or measure one pass with probe_render"
+            )
+        return ""
 
     def _copilot_publish(
         self,

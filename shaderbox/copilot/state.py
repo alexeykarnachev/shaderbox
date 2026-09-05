@@ -98,9 +98,13 @@ class TurnStats:
     #   standing-context "how full / when to compact" signal, NOT the per-turn peak.
     # reply_tokens = output tokens summed across the turn's iterations (how much the model wrote).
     # cost_usd = this turn's total charged cost.
+    # billed_input_tokens = every iteration's input SUMMED. Context is re-sent whole each step, so
+    #   this is what the turn actually paid for and it runs many times context_tokens on a long
+    #   turn; the two answer different questions and the gauge must not merge them.
     context_tokens: int = 0
     reply_tokens: int = 0
     cost_usd: float = 0.0
+    billed_input_tokens: int = 0
 
 
 def context_gauge_readout(
@@ -117,6 +121,7 @@ def context_gauge_readout(
     return fill, (
         f"Context: {last_turn.context_tokens} / {budget} tok ({pct}%)\n"
         f"Last reply: {last_turn.reply_tokens} tok\n"
+        f"Billed input this turn: {last_turn.billed_input_tokens} tok\n"
         f"Last turn cost: ${last_turn.cost_usd:.4f}\n"
         f"Session cost: ${session_cost_usd:.4f}"
     )

@@ -54,10 +54,18 @@ _NO_NOOP_BRAKE = replace(
 
 
 def _tool_call(call_id: str, name: str, args: str) -> list[LLMStreamEvent]:
+    return _usage_call(call_id, name, args, LLMUsage())
+
+
+def _usage_call(
+    call_id: str, name: str, args: str, usage: LLMUsage
+) -> list[LLMStreamEvent]:
+    # A scripted tool call whose stream reports a known billed usage, so a test can assert what
+    # the turn accumulated across iterations rather than what one of them cost.
     return [
         LLMToolCallStarted(index=0, id=call_id, name=name),
         LLMToolCallCompleted(index=0, id=call_id, name=name, arguments=args),
-        LLMDone(finish_reason="tool_calls", usage=LLMUsage()),
+        LLMDone(finish_reason="tool_calls", usage=usage),
     ]
 
 
@@ -1365,3 +1373,41 @@ def test_the_token_estimate_lands_near_a_known_billed_figure() -> None:
     # 3600 characters of content bills near 1000 tokens at the measured ratio.
     messages = [LLMMessage(role="user", content="x" * 3600)]
     assert 940 <= estimate_tokens(messages) <= 1060
+
+
+def test_the_gauge_reports_what_the_turn_actually_billed() -> None:
+    # 081 D9: context_tokens is iteration 0's input, and the tooltip printed it beside cost_usd,
+    # which IS the turn total — two numbers on different bases in one tooltip. On the worst turn
+    # of the 077 corpus that read ~24k against 495,773 billed. Context is re-sent whole per
+    # iteration, so a multi-step turn bills many times its standing context.
+    from shaderbox.copilot.state import context_gauge_readout
+
+    scripts: list[list[LLMStreamEvent]] = [
+        _usage_call("a", "read_shader", "{}", LLMUsage(input_tokens=1000)),
+        _usage_call("b", "read_shader", "{}", LLMUsage(input_tokens=2000)),
+        [
+            LLMTextDelta("done"),
+            LLMDone("stop", LLMUsage(input_tokens=3000, output_tokens=10)),
+        ],
+    ]
+    events = list(
+        run_turn(
+            _FakeClient(scripts),
+            build_registry(_fake_caps(edit_errors=[])),
+            _NO_NOOP_BRAKE,
+            _fake_context(),
+            history=[],
+            user_text="read twice",
+            gate=GateChannel(),
+            cancel=threading.Event(),
+        )
+    )
+    done = events[-1]
+    assert isinstance(done, AgentTurnDone)
+    stats = done.stats
+    assert stats is not None
+    # Every iteration's input, summed — not iteration 0's alone.
+    assert stats.billed_input_tokens == 6000
+    assert stats.context_tokens == 1000
+    _, tooltip = context_gauge_readout(stats, 0.0)
+    assert "6000" in tooltip
