@@ -26,22 +26,24 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-05, 079 is closed in full; the editor is vendored at 38cadbc. -->
-**Next: the maintainer decides.** 079 landed complete — every workstream gated, then five rounds
-of convergence review over the whole feature
-(`ai_docs/features/079_fifth_walk_findings/reviews/final_review.md`, which records what each round
-found, what was deferred and why). W-C's remaining half came back from the editor session:
-`gl_FragColor`, `texture2D` and `textureCube` are names 460 core REMOVED, not builtins in the
-wrong color, so the library dropped them from its GLSL builtins. Measured after vendoring: the
-fragment output reads orange, `gl_FragCoord` still reads as a builtin.
+<!-- As of 2026-09-05, 080's structural sweep is closed; the editor is vendored at 38cadbc. -->
+**Next: the maintainer decides.** 080 swept the repo's structure and found very little: an
+inventory over every symbol kind Python has, across every directory and including the test tree,
+turned up four dead symbols, and `apply_theme` lost the two parameters that chose between branches
+nothing chose. Its review closed three of five proposed waves as re-opened settled decisions —
+each already answered in 074's record or in the docstring of the file itself.
 
-**What that review changed about the repo's gates**, since it outlives the feature: pyright now
-checks `scripts/`, `.claude/skills/` and `dogfood/` rather than `shaderbox/` alone — via the
-config, because a path argument on the command line silently overrides it; `make gates` FAILS when
-the pre-commit hooks rewrite a file, rather than retrying and reporting green; and four new gates
-cover the classes it kept finding (a standalone script importing a name that no longer exists, a
-generated artifact drifting from its generator, a pydantic keyword its model does not declare, a
-button bypassing the tier system).
+**Two things from it outlive the feature.** A commit message is not evidence that a symbol is
+gone: 074 recorded `bot_token_present` as removed at a commit whose diff never touched the file,
+so every deletion is now verified by a grep over the landed tree. And an inventory scan must count
+the test tree but not the docs — a symbol named only in prose is dead code with a paper trail, and
+indexing `ai_docs/` hid exactly that case.
+
+**Before 079's gate work**, which also outlives its feature: pyright now checks `scripts/`,
+`.claude/skills/` and `dogfood/` rather than `shaderbox/` alone — via the config, because a path
+argument on the command line silently overrides it; `make gates` FAILS when the pre-commit hooks
+rewrite a file, rather than retrying and reporting green; and four gates cover the classes that
+review kept finding.
 
 **Queued: the sweep over the 077 material** — `ai_docs/features/077_rc_model_comparison/` (both
 rounds, the "left for the sweep" list) and the station pages (`dogfood/index.html`, local):
@@ -55,6 +57,7 @@ still needs a Windows host before the next cut.
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 080 | nightly_sweep | done | A structural sweep over the repo's shape: an inventory of every symbol kind found four dead symbols, and `apply_theme` lost the two parameters that chose between branches nothing chose, keeping the accent presets that are an import-time invariant's domain. Three further waves were closed by review as re-opened settled decisions. Spec: `ai_docs/features/080_nightly_sweep/01_spec.md`. |
 | 079 | fifth_walk_findings | done | The maintainer's fifth walk: 14 findings, thirteen locked decisions, eleven workstreams — the notes measured and given a value and a picture, candidates sorted by kind, an undeclared script key made a normal state, the source list flattened, docstrings redone from PEP 257 and Google's guide behind a shape gate, the viewer kept opaque under the copilot dim, four button tiers swept across the app behind two gates, and the script's import surface narrowed to `shaderbox.scripting`'s user types with the value wrappers deleted for plain Python. Spec: `ai_docs/features/079_fifth_walk_findings/01_spec.md`. |
 | 078 | maintainer_walk_findings | done | The maintainer's fourth walk: 19 findings verified against the code, fourteen locked decisions, ten workstreams landed and reviewed to convergence (the editor-intelligence module `shaderbox/intel/`, formatting, the pass draft modal, the error row, four editor re-vendors); its display checks filed as 079, where the checkerboard (W-J) has its cause. Spec: `ai_docs/features/078_maintainer_walk_findings/01_spec.md`. |
 | 077 | rc_model_comparison | done | Eight babysat attempts on seven models, then the three finishers given the whole build as one design document: hy4-preview and gemini-3.8-flash built it end to end, luna did not; the engine findings each attempt surfaced (all landed), and what is left for the sweep. Spec: `ai_docs/features/077_rc_model_comparison/01_report.md`. |

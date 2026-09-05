@@ -14,7 +14,7 @@ Everything in this folder is what the design pass produced. Read in this order:
 
 3. **[`tokens.json`](./tokens.json)** — the design pass's token surface. **Archived snapshot, NOT synced** — `shaderbox/theme.py`'s palette ramp has diverged from it. Don't treat it as authoritative.
 
-4. **`shaderbox/theme.py`** (in the package, not this folder) — the live, drop-in theme: `apply_theme()`, `COLOR`, `SIZE`, `SPACE`. Re-callable at runtime to swap accent / density / rounding.
+4. **`shaderbox/theme.py`** (in the package, not this folder) — the live, drop-in theme: `apply_theme()`, `COLOR`, `SIZE`, `SPACE`. Re-callable at runtime to swap the accent. The density and rounding variants the prototype previews were never wired to a caller and are no longer in the module.
 
 ## Quick-start (literal Day-1 integration)
 
