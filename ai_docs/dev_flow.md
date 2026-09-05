@@ -33,7 +33,7 @@ switch the lab worktree's branch.
 | Trigger | Shape |
 |---|---|
 | **Small / mechanical change** — bug fix, log line, kwarg, trivial type fix, doc tweak, dep bump, dead-code deletion that touches no public surface, a `.gitignore` edit | Just do it. `make gates`. Optionally `/simplify` on the diff. No spec, no review ceremony; a roadmap-banner touch only if it changes "what's next". |
-| **Feature** — new module, a real behavior change, a refactor with blast radius (splitting `ui.py`, collapsing the sticker models, unblocking the render loop), acceptance criteria a quick manual check can't pin | The feature flow below. |
+| **Feature** — new module, a real behavior change, a refactor with blast radius (splitting `ui.py`, collapsing the sticker models, unblocking the render loop) | The feature flow below. |
 | **Research / brainstorm** — "let's think about X", "should we do Y", "investigate Z"; output is *knowledge*, not code | Research freely (read code, throwaway scripts). Deliver a chat report; if worth keeping, write `ai_docs/<topic>.md`. **Don't half-start an implementation.** If it seeds a feature, re-enter at the feature flow. |
 
 When unsure, default to the loosest shape that proves the change; escalate if it grows. The agent
@@ -47,10 +47,10 @@ proposes the shape inline ("this looks like a small fix — direct, no plan-lock
 the size inline and the user corrects.
 
 - **Mid (the default)** — a normal feature (multi-file, new module, real behavior change): **1-2
-  pre-impl review agents + 2-3 post-impl review agents in parallel**. Manual check if user-visible.
+  pre-impl review agents + 2-3 post-impl review agents in parallel**.
 - **Tiny / small** (≤3 files, 1 module, pure code, no new public API, no async/lifecycle): scale
   down — a short plan-message instead of a spec; **0-1 review agents** (skip review if the diff is
-  trivially-obviously correct); skip the manual check if not user-visible.
+  trivially-obviously correct).
 - **High-blast-radius** (the `ui.py` split, a refactor across many modules, anything touching
   conventions): scale up — the upper end of the mid range or beyond (extra reviewers — e.g. a
   spec-fidelity auditor), plus a sanitization sweep even if it wouldn't normally warrant one.
@@ -60,9 +60,8 @@ the size inline and the user corrects.
   ("module X holds the type; module Y holds the orchestration"), don't discover it at
   impl time. (Worked example: feature 002's spec.)
 
-The non-mid sizes are judged per situation: the agent proposes "this looks tiny — 1 reviewer, no
-manual check" or "this is high-blast-radius — 2 pre + 3 post + a spec-fidelity pass", and the user
-corrects.
+The non-mid sizes are judged per situation: the agent proposes "this looks tiny — 1 reviewer" or
+"this is high-blast-radius — 2 pre + 3 post + a spec-fidelity pass", and the user corrects.
 
 **Steps** (re-open this file between them):
 
@@ -74,8 +73,7 @@ corrects.
    trigger fires — if one contradicts the request, halt and reconcile (or get the user to confirm
    the change) *before* drafting. Minimum spec sections (keep the headers even when "N/A"): *Goal* /
    *Out of scope* (each deferral with a trigger) / *Design decisions* (numbered, lock-in only — open
-   questions separate) / *Files touched* / *Manual verification* (what's verified by hand in the app) /
-   *Open questions for the user*. Either self-write or spawn the built-in `Plan` agent (read-only —
+   questions separate) / *Files touched* / *Open questions for the user*. Either self-write or spawn the built-in `Plan` agent (read-only —
    feed it the research findings + paths + `conventions.md` + every file the spec will touch, or it
    re-derives blind).
 
@@ -557,8 +555,7 @@ The session's job is to catch what they say and turn it into a plan:
   the next finding and biases the ones after it.
 - **Then write `01_spec.md` from the ledger**: group the findings into workstreams, order them, and
   write the maintainer's calls as `## Locked decisions` -- constraints for every later wave and
-  review, never options to re-litigate. Each workstream lands as its own wave file with its own
-  `## Manual verification` list, which the maintainer walks in turn.
+  review, never options to re-litigate.
 
 ### `make gates`
 **The one command to run before declaring anything done.** Runs `check` -> `test` -> `smoke` in that

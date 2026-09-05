@@ -16,9 +16,6 @@ this file by `Trigger` before starting work in an area.**
 `[BUG]` = an observable defect (wrong output, crash, freeze, data loss, silent corruption).
 `[DEBT]` = a structural weakness we must harden — a latent bug the current code only narrowly avoids,
 or an invariant a future change can silently break.
-`[VERIFY]` = a shipped change whose check cannot run on this box (needs a display, real secrets, other
-hardware) — it stays until someone runs it on a machine that can.
-
 What makes a good Trigger: it fires at a moment that *demands attention* —
 - ❌ "before the next release" / "when we have time" / "eventually" — passes silently, never fires.
 - ✅ "next time you edit `seed.py`" / "first user report of `<observable symptom>`" / "before
@@ -37,19 +34,3 @@ no "Resolved YYYY-MM-DD" headers).
 -->
 
 ---
-
-## [VERIFY] Live-only UI checks, unverified on this box
-
-- **Trigger:** next `make run` on a machine with a display. Do it before the next itch cut.
-- NOT verifiable headless (imgui-ui §0), all small: a deflected publish (no credentials) renders a
-  neutral "handed off" line, not a red failure; the Settings → Copilot rows render after the 058
-  vision-block removal (no orphaned gap; the "Turn time budget (s)" row present and persisting);
-  the liveness counter — during a quiet stream stretch the live status line grows a ticking
-  "waiting Ns" suffix after ~3s of silence and it disappears when deltas resume.
-- Feature 065's checks 13-15, feature 078's thirteen items
-  (`ai_docs/features/078_maintainer_walk_findings/01_spec.md ## Manual verification`) and 079's
-  eleven (`ai_docs/features/079_fifth_walk_findings/01_spec.md ## Manual verification`) fire at
-  the same moment; 065's spec states its own: `ai_docs/features/065_pass_graph/01_spec.md
-  ## Verification`. The maintainer's hands-on review of
-  the pass panel is IN FLIGHT — what has come back so far, and what is still unseen, is in that
-  spec's `## Review notes` rather than here.

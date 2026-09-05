@@ -26,28 +26,18 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-05, 079 is landed but for W-C's library half; the display checks are due. -->
-**Next: the maintainer's display checks of 079** — its `## Manual verification`, eleven items,
-at the same `make run` as 078's thirteen and 065's 13-16 (`todo.md`'s live-only entry gathers
-them). Ten of 079's eleven workstreams landed and are gated; what a display can confirm and a
-headless box cannot: the notes no longer blink and now carry a value and a sampler's picture,
-the source list reads `none` / passes / `file...`, the error strip sits under the status band,
-the render stays opaque through a copilot turn, and every button in the app is one of four
-tiers with the Document tab's first row as `Document name` / `Canvas [presets]` / Reset.
+<!-- As of 2026-09-05, 079 landed; W-C's library half is with the editor session. -->
+**Next: the maintainer decides.** 079 is landed — every workstream, gated. The one piece it does
+not own: `gl_FragColor` reads builtin-green rather than orange, because the vendored lexer classes
+it as BUILTIN and a host class only fills identifiers the lexer left plain. That is the editor
+session's ask (a host class wins over a builtin-classed identifier, or `gl_*` variables leave the
+builtin list); a re-vendor is then the whole host change. A user's own `out vec4 fragColor;` name
+already reads orange.
 
-**The one piece still open in 079: W-C's library half.** A user's `out vec4 fragColor;` name
-reads orange today; `gl_FragColor` does not, because the vendored lexer classes it as BUILTIN
-and a host class only fills identifiers the lexer left plain. The editor session owns the ask —
-either a host class wins over a builtin-classed identifier, or `gl_*` variables leave the
-builtin list — and a re-vendor is then the whole host change.
-
-**After that: the sweep over the 077 material** — `ai_docs/features/077_rc_model_comparison/`
-(both rounds, the "left for the sweep" list) and the station pages (`dogfood/index.html`,
-local): engine, prompting, caching, tooling, the dogfood skill itself. The sharpest item is the
-zero-call narration after an engine stop (five turns, three models).
-
-**Still due at the display besides 079's:** 073's per-wave `## Manual verification` lists, 072's
-five checks, 070's, 071's, and `todo.md`'s live-only checks.
+**Queued: the sweep over the 077 material** — `ai_docs/features/077_rc_model_comparison/` (both
+rounds, the "left for the sweep" list) and the station pages (`dogfood/index.html`, local):
+engine, prompting, caching, tooling, the dogfood skill itself. The sharpest item is the zero-call
+narration after an engine stop (five turns, three models).
 
 **Shipped:** v0.28.0 is a GitHub release only; itch stays at v0.27.0. The Windows `libeditor.dll`
 still needs a Windows host before the next cut.
@@ -56,7 +46,7 @@ still needs a Windows host before the next cut.
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 079 | fifth_walk_findings | partial | The maintainer's display checks of 078: 14 findings, thirteen locked decisions, ten of eleven workstreams landed — the notes measured and given a value and a picture, candidates sorted by kind, an undeclared script key made a normal state, the source list flattened, the docstring style set and gated, the viewer kept opaque under the copilot dim, and four button tiers swept across the app behind two gates; W-C's `gl_FragColor` half waits on the editor session, and the display checks are due. Spec: `ai_docs/features/079_fifth_walk_findings/01_spec.md`. |
+| 079 | fifth_walk_findings | done | The maintainer's fifth walk: 14 findings, thirteen locked decisions, eleven workstreams — the notes measured and given a value and a picture, candidates sorted by kind, an undeclared script key made a normal state, the source list flattened, docstrings redone from PEP 257 and Google's guide behind a shape gate, the viewer kept opaque under the copilot dim, four button tiers swept across the app behind two gates, and the script's import surface narrowed to `shaderbox.scripting`'s user types with the value wrappers deleted for plain Python. Spec: `ai_docs/features/079_fifth_walk_findings/01_spec.md`. |
 | 078 | maintainer_walk_findings | done | The maintainer's fourth walk: 19 findings verified against the code, fourteen locked decisions, ten workstreams landed and reviewed to convergence (the editor-intelligence module `shaderbox/intel/`, formatting, the pass draft modal, the error row, four editor re-vendors); its display checks filed as 079, where the checkerboard (W-J) has its cause. Spec: `ai_docs/features/078_maintainer_walk_findings/01_spec.md`. |
 | 077 | rc_model_comparison | done | Eight babysat attempts on seven models, then the three finishers given the whole build as one design document: hy4-preview and gemini-3.8-flash built it end to end, luna did not; the engine findings each attempt surfaced (all landed), and what is left for the sweep. Spec: `ai_docs/features/077_rc_model_comparison/01_report.md`. |
 | 076 | copilot_pass_tools | done | Three lazy tools over the session's pass verbs — `add_pass` (with runs/target/output in the same call), `set_pass` (only the fields given; rename), gated `delete_pass` — each echoing the document's pass table; built under 075's stuck rule when the first experiment's attempt 1 could not create a second pass. Spec: `ai_docs/features/076_copilot_pass_tools/01_spec.md`. |

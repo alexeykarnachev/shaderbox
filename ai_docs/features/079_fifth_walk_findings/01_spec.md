@@ -275,25 +275,3 @@ scope excludes the viewer), roadmap.
 `shaderbox/intel/symbols.py`, `shaderbox/scripting/api_doc.py`, `shaderbox/scripting/context.py`,
 `shaderbox/scripting/engine.py`, `shaderbox/editor/ffi.py` + `shaderbox/resources/editor/*`
 (W-C), tests beside each.
-
-## Manual verification (the maintainer, in the app)
-
-1. `K` on one symbol, then on another: the second note appears without a frame of the first;
-   `F8` likewise. `K` over a float uniform shows its value; over a long array a cut line; over a
-   pass-sourced sampler its picture.
-2. Type `u_`: the buffer's names first, then blue, green, aqua, library, red; alphabetical
-   within each.
-3. `gl_FragColor` and a user `out` variable read orange.
-4. `K` over `ctx.dt`, `ctx.frame`, `ctx.mouse`, `Ctx`, `Vec3`, `Array`: each a summary line and
-   full sentences, no `;` lists; the stub's docstrings read the same way.
-5. Type `1.` in the script: nothing opens; `x.` on a float still lists members.
-6. Return `{"u_tmp": 1.0}` with no declaration: no error row; add a sampler key: still an error.
-7. The error strip sits under the status band.
-8. The source list is `none` / passes / `file...`; a fresh sampler's closed combo shows the pass
-   it wires to.
-9. `Ctrl+Shift+I` on a fresh script changes nothing.
-10. Send a copilot message over an opaque render: the render stays opaque under the dim.
-11. Option B on `add pass`, `open`, `Reset`, `Close`, `Cancel` and every other verb, one look
-    across the panels, modals, the share tab, the lib picker and the copilot bar; the Document
-    tab's caption row is `Document name`, `Canvas` and Reset at the right border, with the
-    presets chip beside the height field below.
