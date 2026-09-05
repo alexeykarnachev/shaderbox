@@ -172,9 +172,10 @@ def _arm_feedback_canary(app: App) -> Document:
         f"smoke: the feedback canary shader did not compile: "
         f"{document.passes[name].compile_unit.errors}"
     )
-    document.graph = PassGraph(
-        output=name, passes={name: PassEntry(inputs={"u_prev": name})}
-    )
+    # The shader declares `u_prev`, which under the default `AutoSource` resolves to the pass
+    # itself (072's name rule) — that IS the feedback wiring. An `inputs=` entry here was 065's
+    # shape; pydantic drops the unknown field silently, so it armed nothing.
+    document.graph = PassGraph(output=name, passes={name: PassEntry()})
     document.reset_feedback()
     app.set_current_document_id(document_id)
     return document

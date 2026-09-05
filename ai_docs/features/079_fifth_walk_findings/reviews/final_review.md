@@ -147,3 +147,42 @@ Two residual observations, both checked:
   it)"** — an instruction to the agent to go and look, which is both the gating that went and
   something this box cannot do. Rewritten to demand a probe that would fail if the claim were
   false.
+
+### Script-engine contract audit (opus) — PARTIAL: four real findings
+
+The full bare-vs-block matrix, every cell probed. The contract itself is consistent — the one
+asymmetry that survives is deliberate and statable: a bare key that finds a home on one pass while
+another declares the name as a sampler is silent, because a bare key is a claim about the DOCUMENT
+and it found its home; naming that pass explicitly is a claim about the pass and errors. Four
+things were wrong, all fixed:
+
+- **A stale error lived forever across a bare/block rewrite.** The pass-free slot
+  `(document_id, "", key)` holds two namespaces — a bare uniform name no pass declares, and a
+  block naming a pass that does not exist. Rewriting `{"blur": {...}}` as `{"blur": 1.0}` touched
+  the pair from the bare path, which suppressed the stale-clear, while never writing the slot to
+  overwrite it. The strip and the copilot's probe both kept reporting "no pass named 'blur'" for a
+  script that no longer names a pass. The clear now asks whether this tick RE-RECORDED the error,
+  not whether the key was touched. Gated, mutation-tested.
+- **`None` did not mean "stays manual".** The stub, the copilot's API block and 059's spec all say
+  it does; the value reached coercion, failed as "not a number" and counted as driven — a red row
+  for the one gesture meaning "leave this one to me". Dropped beside the engine-owned drop, so
+  both paths get it. One test had pinned the old behavior with a comment calling it deliberate;
+  three user-facing surfaces outweigh a test comment, and the value is unchanged either way.
+- **`scripts/dogfood/harness.py` crashed on any orphan key** — it unpacked `orphan_keys` as
+  3-tuples after D5 reshaped them to pairs. Two more errors in the same file predate this feature:
+  `render_video` called with a width and height after the API took a `RenderShape`, and a samples
+  annotation that never followed 069's pass-qualified keys.
+- **`smoke.py`'s feedback canary armed nothing.** It set `PassEntry(inputs=…)`, a field 072
+  removed — and pydantic drops an unknown field silently. The canary passed anyway because the
+  shader declares `u_prev`, which self-wires under the default `AutoSource`; mutation-testing
+  `begin_frame` confirms the canary is genuinely live. The inert line is gone.
+
+**The root cause under three of those: pyright did not check `scripts/` or `.claude/skills/`.**
+`include = ["shaderbox"]`, and those helpers are invoked by hand rather than imported by `tests/`,
+so breakage accumulated invisibly. The checked set now covers both. Excluded with reasons: the
+dogfood run artifacts (recorded model output, evidence rather than code) and three scripts whose
+only findings are upstream-stub imprecision on working code.
+
+Also amended: D5's "a pass that does not compile stays an error" was the stale half of a
+disagreement with the code, which is silent there deliberately — the pass's own compile error is
+the thing to read.

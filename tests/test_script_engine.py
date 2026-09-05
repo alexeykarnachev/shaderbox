@@ -579,8 +579,12 @@ def test_non_dict_return_is_clean_sentinel_error(tmp_path: Path) -> None:
     assert ("n0", "main", "u_x") not in eng.errors
 
 
-def test_none_value_freezes(tmp_path: Path) -> None:
-    # A key mapped to None -> coercion rejects -> freeze at last-good, not a silent hold.
+def test_a_none_value_hands_the_uniform_back_to_the_user(tmp_path: Path) -> None:
+    # The stub, the copilot's API block and 059's spec all tell the author that a key mapped to
+    # None "stays MANUAL". It did not: None reached coercion, failed as "not a number" and still
+    # counted as driven, so the panel showed a red row for the one gesture that means "leave this
+    # one to me". The value is unchanged either way; what changes is that the state is now clean.
+    # Falsifier: let None through to coercion again and the error row comes back.
     path = _write_script(tmp_path, _script(update_body="        return {'u_x': 0.4}\n"))
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
@@ -593,8 +597,9 @@ def test_none_value_freezes(tmp_path: Path) -> None:
     )
     eng.reload("n0", tmp_path / "scripts", document)
     eng.tick("n0", document, _ctx(0.1))
-    assert document.uniform_values["u_x"] == 0.4  # frozen at last-good
-    assert eng.errors[("n0", "main", "u_x")].kind == "runtime"
+    assert document.uniform_values["u_x"] == 0.4  # the last value stands
+    assert ("n0", "main", "u_x") not in eng.errors
+    assert ("main", "u_x") not in eng.script_driven_uniforms("n0")
 
 
 def test_per_key_shape_mismatch_freezes_only_that_key(tmp_path: Path) -> None:
@@ -748,6 +753,34 @@ def test_sampler_key_records_soft_error_and_is_skipped(tmp_path: Path) -> None:
     assert err.kind == "runtime" and "sampler" in err.message
     assert err.pass_name == "main"
     assert ("main", "u_tex") not in eng.script_driven_uniforms("n0")
+
+
+def test_a_pass_name_error_clears_when_the_key_becomes_a_bare_one(
+    tmp_path: Path,
+) -> None:
+    # The pass-free slot `(document_id, "", key)` holds two namespaces: a bare uniform name no
+    # pass declares, and a block naming a pass that does not exist. Rewriting `{"blur": {...}}`
+    # as `{"blur": 1.0}` touched the pair from the BARE path, which suppressed the stale-clear,
+    # while never writing the slot to overwrite it — so the "no pass named 'blur'" error stood
+    # forever, on the strip and in the copilot's probe. Falsifier: clear on "touched this tick"
+    # again rather than on "re-recorded this tick", and the error survives the rewrite.
+    path = _write_script(
+        tmp_path, _script(update_body="        return {'blur': {'u_x': 1.0}}\n")
+    )
+    document = _FakeDocument([_u("u_x")])
+    eng = _engine(tmp_path, document)
+    eng.tick("n0", document, _ctx(0.0))
+    assert ("n0", "", "blur") in eng.errors
+
+    time.sleep(0.01)
+    path.write_text(
+        _script(update_body="        return {'blur': 1.0}\n"), encoding="utf-8"
+    )
+    eng.reload("n0", tmp_path / "scripts", document)
+    eng.tick("n0", document, _ctx(0.1))
+    assert ("n0", "", "blur") not in eng.errors, (
+        "the pass-name error outlived the pass block"
+    )
 
 
 def test_a_bad_key_error_clears_when_the_key_is_fixed(tmp_path: Path) -> None:

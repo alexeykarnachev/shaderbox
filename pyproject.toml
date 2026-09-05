@@ -92,9 +92,24 @@ xfail_strict = true
 venvPath = "."
 venv = ".venv"
 pythonVersion = "3.12"
-include = ["shaderbox"]
+# `scripts/` and `.claude/skills/` hold standalone helpers invoked by hand, never imported by
+# `tests/` — so a package symbol they call could be renamed or deleted with every gate green.
+# Three had accumulated that way (079 final review). They are checked here now.
+include = ["shaderbox", "scripts", ".claude/skills"]
 # The vendored ABI probe is upstream's bytes, compared byte-for-byte by
 # tests/test_editor_ffi.py; house rules do not apply to it.
-exclude = ["shaderbox/resources/editor/abi_probe.py"]
+exclude = [
+    "shaderbox/resources/editor/abi_probe.py",
+    # Dogfood run artifacts: recorded copies of documents a model wrote during a run, kept as
+    # evidence. They are data, not this repo's code, and several predate API changes on purpose.
+    "scripts/dogfood/runs",
+    # Three standalone scripts whose only findings are upstream-stub imprecision on working code:
+    # `generate.py` imports through a runtime `sys.path` insert pyright cannot follow;
+    # `drive.py` reads `__doc__`, typed optional though a module docstring is right there;
+    # `verify_script_engine.py` lists `Image.getdata()`, whose stub understates the real sequence.
+    "scripts/agent_hub/generate.py",
+    "scripts/dogfood/drive.py",
+    "scripts/dogfood/verify_script_engine.py",
+]
 # basic mode (default) — pyright over mypy here on purpose: fewer false positives,
 # less friction. Tighten to "standard"/"strict" later if it earns it.

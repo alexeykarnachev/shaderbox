@@ -129,6 +129,7 @@ from shaderbox.render_preset import (  # noqa: E402
     RenderPreset,
     ResolutionPolicy,
 )
+from shaderbox.render_shape import RenderShape  # noqa: E402
 from shaderbox.scripting import EngineContext  # noqa: E402
 from shaderbox.shader_lib.file_ops import ShaderLibFileManager  # noqa: E402
 
@@ -468,20 +469,21 @@ class DogfoodHarness:
         *,
         seconds: float = 2.0,
         fps: int = 24,
-        size: int = 200,
+        shape: RenderShape = RenderShape.NATIVE,
     ) -> str:
-        """Render a SHORT low-res WebM (the deliverable a scripted animation produces) and return its
+        """Render a SHORT WebM (the deliverable a scripted animation produces) and return its
         path so the driver can send it to the maintainer. Uses the REAL `render_video` capability — it
         animates the CPU-script engine frame by frame from t=0 (the same path the agent's render_video
         rides), so a script-driven document moves across the clip. Off-thread + bridge drain like `render`.
-        Keep `seconds`/`size` small — a video freezes the loop and large frames are slow on V3D.
+        Keep `seconds` small — a video freezes the loop and large frames are slow on V3D, so a
+        document with a big canvas wants a small one.
         """
         target = document_id or self.session.current_document_id
         out: dict[str, RenderResult] = {}
 
         def _do() -> None:
             out["result"] = self.session.copilot_backend.render_video(
-                target, seconds, fps, size, size
+                target, seconds, fps, shape
             )
 
         worker = threading.Thread(target=_do, name="dogfood-video", daemon=True)
@@ -679,7 +681,7 @@ class DogfoodHarness:
 
     def script_values(
         self, times: Sequence[float], document_id: str = "", *, fps: int = 30
-    ) -> list[tuple[float, dict[str, Any]]]:
+    ) -> list[tuple[float, dict[tuple[str, str], Any]]]:
         """The logic-axis numeric probe: the script-driven uniform VALUES at each `t`.
 
         A passthrough to `ScriptEngine.dry_run` — one fresh script stepped continuously through
@@ -706,9 +708,9 @@ class DogfoodHarness:
             print(
                 f"    [script_values: '{pass_name}.{name}' shape error {err.message}]"
             )
-        for pass_name, name, err in probe.orphan_keys:
+        for pass_name, name in probe.orphan_keys:
             label = f"{pass_name}.{name}" if pass_name else name
-            print(f"    [script_values: orphan key '{label}' {err.message}]")
+            print(f"    [script_values: '{label}' names no active uniform]")
         if not probe.driven:
             print("    [script_values: the script drove NO uniform]")
         for t, values in probe.samples:

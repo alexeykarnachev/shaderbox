@@ -74,8 +74,11 @@ owns. Quotes are the maintainer's words from `00_raw_findings.md`.
   spelling across the glosses, the two context classes and the generated stub.
 - **D4. `1.` offers nothing.** A Python member site is a dot after a name or a closing bracket.
 - **D5. A script key with no declared uniform is not an error.** No row, no red; the shader
-  side already offers the declaration. Sampler/block keys and a pass that does not compile stay
-  errors.
+  side already offers the declaration. Sampler/block keys and an unknown pass NAME stay errors.
+  (Amended after the final review: a key on a pass that failed to COMPILE is silent too. The
+  pass's own compile error is the thing to read, and a second row saying the script's key found
+  no home there is noise on top of it — the code always did this; the sentence was the stale
+  half.)
 - **D6. The source list is `none` / the passes / `file...`.** No auto row, no caption, no gaps;
   `none` dim, passes in the pass-sampler color, `file...` plain; the closed combo shows the
   resolved pass. Supersedes 072's row shape.

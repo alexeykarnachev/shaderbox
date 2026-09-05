@@ -682,6 +682,10 @@ class ScriptEngine:
         # `values_sink` (the dry-run path): every uniform-value WRITE lands there, keyed by the (pass,
         # name) pair, + the freeze-fallback READ consults it, so the LIVE document is never written.
         # None = the live tick (write each target pass).
+        # What this tick RE-RECORDS is the question the stale-clear at the end asks, and `errors`
+        # already holds last tick's rows — so remember which of this document's keys were there
+        # before the tick wrote anything.
+        stale_before = {key for key in errors if key[0] == document_id}
         behavior_key = (document_id, "", _SCRIPT_FILE)
         drove_last = set(last_driven)
 
@@ -726,8 +730,18 @@ class ScriptEngine:
         # FIRST and blocks SECOND, in two phases rather than one loop, so "specific over general" holds
         # regardless of the author's insertion order (a dict preserves it, and it is not a precedence
         # the author meant to express).
-        broadcasts = {k: v for k, v in raw.items() if not isinstance(v, dict)}
-        blocks = {k: v for k, v in raw.items() if isinstance(v, dict)}
+        # A None value means "leave this one to me": the stub, the API block and 059's spec all
+        # tell the author that a key mapped to None stays MANUAL, and it did not — it reached
+        # coercion, failed as "not a number" and counted as driven. Dropped here, beside the
+        # engine-owned drop, so both the bare and the block path get it.
+        broadcasts = {
+            k: v for k, v in raw.items() if not isinstance(v, dict) and v is not None
+        }
+        blocks = {
+            k: {n: v for n, v in block.items() if v is not None}
+            for k, block in raw.items()
+            if isinstance(block, dict)
+        }
 
         for name, value in broadcasts.items():
             # An engine-owned key (u_time…) is SILENTLY dropped (decision 5): the renderer owns that
@@ -827,11 +841,19 @@ class ScriptEngine:
                 )
 
         # An omitted-after-failing key's stale error: clear any key TOUCHED last frame (driven OR a
-        # bad/skipped key) but NOT touched this frame (decision 8 — no zombie; an omitted real key
-        # keeps its last value).
-        touched = driven | skipped
-        for pass_name, name in (last_driven | last_skipped) - touched:
-            errors.pop((document_id, pass_name, name), None)
+        # bad/skipped key) whose error this tick did not re-record (decision 8 — no zombie; an
+        # omitted real key keeps its last value).
+        #
+        # "Touched" is not enough on its own. The pass-free slot `(document_id, "", key)` holds
+        # two different namespaces — a bare uniform name no pass declares, and a block naming a
+        # pass that does not exist — so rewriting `{"blur": {...}}` as `{"blur": 1.0}` touches the
+        # pair from the bare path, which suppressed the clear, while never writing the slot to
+        # overwrite it. The old error then stood forever, on the strip and in the copilot's probe.
+        rewritten = {key for key in errors if key[0] == document_id} - stale_before
+        for pass_name, name in last_driven | last_skipped:
+            key = (document_id, pass_name, name)
+            if key not in rewritten:
+                errors.pop(key, None)
         last_driven.clear()
         last_driven.update(driven)
         last_skipped.clear()
