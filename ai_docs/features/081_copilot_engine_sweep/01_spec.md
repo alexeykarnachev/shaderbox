@@ -234,6 +234,27 @@ the commit must name.
 | D15 | A synthetic array with a known count above threshold returns the exact fraction; flip one texel and it moves by exactly 1/N. |
 | D7 | **No gate.** A prompt change verified by re-measuring requests-per-call in a later run. A test asserting the prompt contains "BATCH" is the reader agreeing with itself and must not be written. |
 
+## Landed
+
+All fifteen decisions shipped across three waves (`0ae5b41`, `f137e98`, `5c765dd`), each break
+performed and named in its commit. Four corrections the implementation forced:
+
+- **D12's first gate was a tautology.** It asserted the rendered prose contains every name in
+  `ENGINE_UNIFORM_TYPES` — but the prose is generated from that table, so it passed under every
+  mutation. It now pins the mechanism (each surface interpolates the shared list) and goes red
+  when a subset is retyped.
+- **D13's no-gap test could not fail.** The parallel-burst case passed against a wrong
+  implementation because the fixture had no commit to misattribute; it now carries a mid-round
+  commit that a re-walking implementation reports.
+- **D13's window comparison read a string, not an instant.** The store stamps UTC and git prints
+  the committer's offset, so `c8960e1` sorted as later than the run that produced it — the same
+  timezone trap the investigation hit and retracted.
+- **D4's first implementation leaked a `tool_calls` list into NL-only history**, caught by the
+  existing `test_second_turn_receives_first_turn_summary`.
+
+Two existing tests encoded the old contracts and were updated with their reasons: an example read
+is no longer one view, and the pass verbs are no longer uniformly lazy.
+
 ## Open questions for the user
 
 1. **Order.** The cells' independent first choices are D1 (the unreadable reference), D4 (the
