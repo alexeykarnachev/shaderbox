@@ -1045,10 +1045,13 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
 - **The vendored editor binary (`shaderbox/resources/editor/`) rebuilds from a COMMITTED editor-repo
   sha, never a dirty tree.** SEVEN files ship together (feature 067): `libeditor.so`, `atlas.png`,
   `atlas.json`, `VERSION` (the sha), `vim_coverage.md`, `standard_keymap.md`, `abi_probe.py`
-  (upstream's `ffi/probe.py`, the ABI signature table the binding is gated against). Rebuild: in the
-  editor repo at that sha, `odin build ffi -build-mode:shared -no-entry-point -out:libeditor.so`,
-  copy the seven files, update `VERSION`. The binary is
-  linux-x86_64 only — `build.sh` strips it from the Windows stage and `verify_clean` aborts a
+  (upstream's `ffi/probe.py`, the ABI signature table the binding is gated against). Upstream is
+  `git@github.com:alexeykarnachev/editor.git` — named here because `VERSION` holds a sha and
+  nothing else said which repo it is a sha OF. Rebuild: in that repo at that sha,
+  `odin build ffi -build-mode:shared -no-entry-point -out:libeditor.so`, copy the seven files,
+  update `VERSION`. `VERSION` is the ONE place the current sha lives — a commit message names the
+  sha it vendored, so grepping the log finds every past one with no ordering; read the file. The
+  binary is linux-x86_64 only — `build.sh` strips it from the Windows stage and `verify_clean` aborts a
   Windows bundle carrying it; a Windows `.dll` is a ship-time prerequisite. MEASURED (editor repo
   feature 004, its commit b787987): the code is fully portable (`odin check` passes for
   windows_amd64; `-build-mode:obj` emits complete COFF objects with all exports; no
