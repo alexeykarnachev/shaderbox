@@ -49,8 +49,10 @@ owns. Quotes are the maintainer's words from `00_raw_findings.md`.
 
 - **D1. The notes never blink.** The note is sized from measured text, not auto-resized; the
   same fix serves `K`, `F8` and the candidate note.
-- **D2. Candidates sort by kind, then by name.** The kind order is a table in `theme.py` next
-  to the color and slot tables and walked by the enum test. The order, top to bottom: the
+- **D2. Candidates sort by kind, then by name.** The kind order is a table walked by the enum
+  test, living in `intel/symbols.py` beside the enum rather than beside `kind_color` /
+  `kind_slot` in `theme.py`: `completion.py` reads it and is GL-free, so importing `theme`
+  there pulls imgui into the intel layer (`test_intel_is_gl_free`). The order, top to bottom: the
   buffer's own names, engine uniforms, script uniforms, pass and wirable samplers, library
   functions, language keywords and types; alphabetical inside each tier.
 - **D3. Docstrings and glosses follow one style: PEP 257 with the Google layout.** A summary
@@ -128,9 +130,9 @@ value line is ellipsized for a long array.
 
 ### W-B — Completion: sort, and the `1.` site (#2 #6, D2 D4)
 
-`theme.kind_rank`; `offer` sorts its result by `(rank, name)`; `completion.python_site(before)`
-replaces the regex: the token before a dot must be a name or a closing bracket. Tests: the
-order over a mixed set; `1.`, `x.`, `f().`, `a[0].` sites.
+`symbols.kind_rank`; `offer` sorts its result by `(rank, name)` BEFORE the cap, so a truncated
+list is the highest-ranked candidates; `PYTHON_SITE` requires a name or a closing bracket left
+of the dot. Tests: the order over a mixed set; `1.`, `x.`, `f().`, `a[0].` sites.
 
 ### W-C — The output variable (#4, D11; editor lib)
 
@@ -165,6 +167,8 @@ the frame rig.
 `widgets/uniform.py`: rows `none` (dim) / passes (`kind_color(PASS_SAMPLER)`) / `file...`
 (plain), one flat group; the closed label resolves `AutoSource` through `wired_pass`. 072's spec
 gets a superseded note. Tests: the row list; the closed label for auto/none/pass/file values.
+`grouped_combo` now has one caller passing one group — whether it survives as a primitive is
+W-J's inventory question.
 
 ### W-H — The stub is formatted (#10, D10)
 

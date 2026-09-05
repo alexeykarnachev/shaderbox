@@ -4,7 +4,7 @@ statically. Neither touches GL or the App."""
 from shaderbox.editor.ffi import Slot
 from shaderbox.intel.glsl import buffer_declarations, buffer_words, uniform_declarations
 from shaderbox.intel.script import returned_uniforms
-from shaderbox.intel.symbols import SymbolKind
+from shaderbox.intel.symbols import SymbolKind, kind_rank
 from shaderbox.theme import editor_palette, kind_color, kind_slot
 
 _SHADER = """#version 330
@@ -140,6 +140,7 @@ def test_every_kind_has_a_color() -> None:
     }
     for kind in SymbolKind:
         assert len(kind_color(kind)) == 4
+        assert kind_rank(kind) >= 0  # 079 D2: every kind sorts somewhere
         slot = kind_slot(kind)
         assert 0 <= slot <= 9
         if slot:

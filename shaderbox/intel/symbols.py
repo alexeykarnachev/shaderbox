@@ -48,3 +48,33 @@ class Symbol:
     @property
     def inserted(self) -> str:
         return self.insert_text or self.name
+
+
+# The order candidates sort in (079 D2), the document's own vocabulary before the language's:
+# the buffer's own names, the engine's uniforms, the script's, the samplers, the library, the
+# language. Python's kinds parallel GLSL's — what the script itself defines first, the API next,
+# the language last. Names inside a tier sort alphabetically, so a tie here is deliberate. It
+# lives here rather than beside `kind_color` / `kind_slot` because a rank is not a color and
+# `completion.py` is GL-free — importing `theme` from it pulls imgui into the intel layer.
+_KIND_RANK: dict[SymbolKind, int] = {
+    SymbolKind.PASS_UNIFORM: 0,
+    SymbolKind.BUFFER_SYMBOL: 0,
+    SymbolKind.ENGINE_UNIFORM: 1,
+    SymbolKind.SCRIPT_UNIFORM: 2,
+    SymbolKind.PASS_SAMPLER: 3,
+    SymbolKind.WIRABLE_SAMPLER: 3,
+    SymbolKind.LIB_FUNCTION: 4,
+    SymbolKind.GLSL_BUILTIN: 5,
+    SymbolKind.GLSL_KEYWORD: 6,
+    SymbolKind.GLSL_TYPE: 6,
+    SymbolKind.PY_LOCAL: 0,
+    SymbolKind.PY_MEMBER: 0,
+    SymbolKind.PY_API: 2,
+    SymbolKind.PY_BUILTIN: 5,
+    SymbolKind.PY_KEYWORD: 6,
+}
+
+
+def kind_rank(kind: SymbolKind) -> int:
+    """Where a kind sorts among candidates (079 D2). Lower comes first; ties sort by name."""
+    return _KIND_RANK[kind]

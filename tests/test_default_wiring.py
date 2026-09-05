@@ -253,8 +253,8 @@ def test_an_uncompiled_pass_contributes_no_auto_edge_and_compiles_nothing(
 
 
 def _combo_capture(monkeypatch: pytest.MonkeyPatch) -> list[tuple[int, list[str]]]:
-    # The source combo is a grouped one (078 D6); the capture flattens its groups back to the
-    # (selected index, labels) reading the three states are asserted on.
+    # The capture flattens the combo's rows back to the (selected index, labels) reading the
+    # states below are asserted on.
     seen: list[tuple[int, list[str]]] = []
     real = uniform_widget.grouped_combo
 
@@ -279,8 +279,10 @@ def _frame(body: Any) -> None:
 def test_the_row_shows_three_distinct_states(
     app: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The sampler's row on the uniforms panel is where its source is chosen (072 D7); the
-    # combo's items and selection are the three readings the row must keep apart.
+    # The sampler's row on the uniforms panel is where its source is chosen (072 D7). 079 D6
+    # flattened the list to `none` / the passes / `file...`: `AutoSource` is still the VALUE a
+    # fresh sampler holds, but the control shows what it RESOLVES to, so the row reads as the
+    # pass it reads rather than as a rule the user has to decode.
     document_id = app.current_document_id
     document = app.ui_documents[document_id].document
     app.session.rename_pass(document_id, next(iter(document.passes)), "df")
@@ -300,25 +302,25 @@ def test_the_row_shows_three_distinct_states(
     def draw() -> None:
         uniform_widget.draw_ui_uniform(app, ui_uniform)
 
-    # Undecided: the name rule's answer, selected.
+    # Undecided: shown as the pass the name rule wires it to, with no rule row in the list.
     _frame(draw)
-    assert seen[-1] == (0, ["auto (df)", "none", "df", "edge", "file..."])
+    assert seen[-1] == (1, ["none", "df", "edge", "file..."])
 
-    # An explicit none is its OWN item, not the same index undecided falls to.
+    # An explicit none selects `none`.
     app.session.set_sampler_source(document_id, "edge", "u_df", NoSource())
     _frame(draw)
-    assert seen[-1][0] == 1
+    assert seen[-1][0] == 0
 
     # An explicit pass selects that pass.
     app.session.set_sampler_source(document_id, "edge", "u_df", PassSource("edge"))
     _frame(draw)
     assert seen[-1][0] == seen[-1][1].index("edge")
 
-    # `auto (none)` when the name names no pass: back to undecided, with `df` renamed away.
+    # Undecided and resolving to nothing reads as `none`, with `df` renamed away.
     app.session.set_sampler_source(document_id, "edge", "u_df", AutoSource())
     app.session.rename_pass(document_id, "df", "field")
     _frame(draw)
-    assert seen[-1] == (0, ["auto (none)", "none", "edge", "field", "file..."])
+    assert seen[-1] == (0, ["none", "edge", "field", "file..."])
 
 
 # ---------------------------------------------------------------- the shipped examples

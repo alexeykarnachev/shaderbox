@@ -5,6 +5,7 @@ from typing import Any
 
 from shaderbox.completion import (
     DECLARATION_SITE,
+    PYTHON_SITE,
     CompletionContext,
     eligible_providers,
     matches,
@@ -20,7 +21,7 @@ from shaderbox.help_content import ENGINE_UNIFORM_DOCS
 from shaderbox.hotkeys import _is_lookup_key
 from shaderbox.intel.index import GlslContext, GlslIndex, build_glsl_index
 from shaderbox.intel.script import ScriptReturn
-from shaderbox.intel.symbols import Symbol, SymbolKind
+from shaderbox.intel.symbols import Symbol, SymbolKind, kind_rank
 from shaderbox.tabs.code import (
     _consume_lookup_request,
     _drive_completion,
@@ -145,9 +146,14 @@ def test_a_lib_tab_keeps_its_own_declared_names_after_uniform() -> None:
 def test_an_identifier_site_offers_the_buffers_own_names_first() -> None:
     # Finding 6: `u_gain` is declared and read, `u_time` declared; both are offered, and
     # never only `u_time`. A declared name inserts as itself, an undeclared one as a name.
+    # 079 D2 makes the title literal: the buffer's own name leads, then the engine's in
+    # alphabetical order. Falsifier: rank the engine's uniforms first and `u_gain` slides down.
     found = _texts(offer(_context(line_before_caret="vec3 color = u_", prefix="u_")))
-    assert found[:2] == ["u_time", "u_gain"]
-    assert "u_aspect" in found and "u_speed" in found and "u_paint" in found
+    assert found[0] == "u_gain"
+    assert found.index("u_aspect") < found.index(
+        "u_time"
+    )  # alphabetical inside the tier
+    assert "u_speed" in found and "u_paint" in found
 
 
 def test_an_identifier_opens_by_itself_at_two_letters_and_on_ctrl_n_at_one() -> None:
@@ -216,7 +222,7 @@ def test_the_script_tab_offers_what_the_worker_answered() -> None:
                 python_candidates=members,
             )
         )
-    ) == ["t", "dt"]
+    ) == ["dt", "t"]  # same kind, so alphabetical (079 D2)
     assert (
         offer(
             _context(
@@ -287,7 +293,8 @@ def test_an_accept_does_not_reopen_the_popup(app: Any) -> None:
     editor.key(KeyCode.DOWN)
     editor.key(KeyCode.TAB)
     accepted = editor.get_text()
-    assert accepted.startswith("SB_") and not editor.complete_open()
+    assert accepted.startswith("SB") and accepted != "SB"  # a candidate was inserted
+    assert not editor.complete_open()
     _drive_completion(app, editor, tab)
     assert not editor.complete_open(), "the frame after an accept must not re-offer"
     editor.close()
@@ -307,7 +314,7 @@ def test_uniform_space_opens_the_builtin_list(app: Any) -> None:
     assert editor.complete_selected() == -1, "unasked: nothing highlighted"
     editor.key(KeyCode.DOWN)
     editor.key(KeyCode.ENTER)
-    assert editor.get_text().startswith("uniform float u_time;")
+    assert editor.get_text().startswith("uniform float u_aspect;")  # first by 079 D2
     editor.close()
 
 
@@ -335,7 +342,8 @@ def test_enter_on_an_unasked_popup_is_a_newline_until_the_user_navigates(
     editor.key(KeyCode.DOWN)
     assert editor.complete_selected() == 0
     editor.key(KeyCode.ENTER)
-    assert editor.get_text().startswith("SB\nSB_"), editor.get_text()
+    accepted = editor.get_text()
+    assert accepted.startswith("SB\nSB") and accepted != "SB\nSB", accepted
 
     # An explicit Ctrl+N batch keeps the library's row-0 highlight.
     app.editor_completion_requested = True
@@ -448,3 +456,28 @@ def test_the_index_answers_for_a_glsl_builtin() -> None:
     assert found.doc
     assert _index().lookup("vec3").doc == "GLSL type"
     assert _index().lookup("discard").doc == "GLSL keyword"
+
+
+def test_candidates_sort_by_kind_then_name() -> None:
+    # 079 D2: the document's own vocabulary first, the language's last, alphabetical inside
+    # each tier. Falsifier: drop the sort in `offer` and the list comes back in provider order,
+    # which puts the library's functions above the buffer's own names.
+    found = offer(_context(prefix="u_", explicit=True))
+    ranks = [kind_rank(symbol.kind) for symbol in found]
+    assert ranks == sorted(ranks), _texts(found)
+    by_rank: dict[int, list[str]] = {}
+    for symbol in found:
+        by_rank.setdefault(kind_rank(symbol.kind), []).append(symbol.name)
+    for names in by_rank.values():
+        assert names == sorted(names), names
+    assert len(by_rank) > 1, "the fixture must span more than one tier"
+
+
+def test_a_float_literals_dot_is_not_a_member_site() -> None:
+    # 079 D4 / finding 6: `1.` asked jedi, which answered with the keywords that may follow an
+    # expression. A member site is a dot after a NAME or a closing bracket. Falsifier: restore
+    # the `\.\w*` alternative and the first four go True.
+    for line in ("x = 1.", "x = 0x1f.", "1_000.", "2j."):
+        assert not PYTHON_SITE.search(line), line
+    for line in ("x.", "f().", "a[0].", "ctx.t", "obj.attr.", "self.pha"):
+        assert PYTHON_SITE.search(line), line

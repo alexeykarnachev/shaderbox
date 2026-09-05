@@ -15,7 +15,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 
 from shaderbox.intel.index import GlslIndex
-from shaderbox.intel.symbols import Symbol, SymbolKind
+from shaderbox.intel.symbols import Symbol, SymbolKind, kind_rank
 
 MAX_CANDIDATES = 50
 
@@ -97,8 +97,10 @@ def _python_words(context: CompletionContext) -> Sequence[Symbol]:
 
 
 # Where a Python completion makes sense: after a dot (member access, prefix may be empty) or
-# inside an identifier.
-PYTHON_SITE = re.compile(r"(?:\.\w*|\w+)$")
+# inside an identifier. A MEMBER site is a dot whose left neighbour is a name or a closing
+# bracket (079 D4) — `\w` alone treats a float literal's dot as one, and jedi answers `1.` with
+# the keywords that can follow an expression.
+PYTHON_SITE = re.compile(r"(?:(?<!\d)[A-Za-z_]\w*|[)\]}])\.\w*$|\w+$")
 
 PROVIDERS: tuple[CompletionProvider, ...] = (
     # A declaration site wants whole declarations the buffer lacks: the engine's uniforms,
@@ -176,8 +178,8 @@ def eligible_providers(context: CompletionContext) -> list[CompletionProvider]:
 
 
 def offer(context: CompletionContext) -> list[Symbol]:
-    """The candidates to push: every eligible provider's matches, in table order, without
-    repeats of the inserted text; empty means cancel."""
+    """The candidates to push: every eligible provider's matches, without repeats of the
+    inserted text, sorted by kind then name (079 D2); empty means cancel."""
     seen: set[str] = set()
     found: list[Symbol] = []
     for provider in eligible_providers(context):
@@ -187,6 +189,9 @@ def offer(context: CompletionContext) -> list[Symbol]:
                 continue
             seen.add(text)
             found.append(symbol)
+    # The cap applies AFTER the sort, so a truncated list is the highest-ranked candidates
+    # rather than whichever provider happened to run first.
+    found.sort(key=lambda symbol: (kind_rank(symbol.kind), symbol.name))
     return found[:MAX_CANDIDATES]
 
 

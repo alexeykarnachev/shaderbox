@@ -75,7 +75,10 @@ is written. The gear keeps what is not a per-sampler fact (name, runs, target).
   every `PassSource(name)` into `AutoSource()`, `Document.rename_pass_sources(old, new)` rewrites
   every `PassSource(old)`; `_graph_without` / `_graph_renamed` keep only the entry and the
   output. Both verbs stay transactional with the file, the output and the editor tab.
-- **D7. The panel row is the one place a source is chosen.** A sampler row shows a source combo,
+- **D7. The panel row is the one place a source is chosen.** *(The row SHAPE is superseded by
+  079 D6: the list is `none` / the passes / `file...`, with no `auto (…)` row — `AutoSource`
+  stays the value a fresh sampler holds, and the closed control shows the pass it resolves to.
+  Everything else below stands.)* A sampler row shows a source combo,
   `auto (paint)` / `none` / one item per pass / `file...`, then what it reads: the pass's live
   thumbnail and name, the media thumbnail with its resolution (video filters beside it, as
   today), or the black swatch. `file...` opens the picker the Load button opened; the button

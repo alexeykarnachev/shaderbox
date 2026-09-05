@@ -289,34 +289,32 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
         # the black swatch every unfilled sampler binds.
         document = app.ui_documents[document_id].document
         passes = sorted(document.passes)
-        auto = wired_pass(AutoSource(), name, panel_pass_name, passes)
-        # Three groups (078 D6): the two rules, the passes in the pass-sampler color, a file.
-        rules: list[ComboRow] = [
-            (f"auto ({auto or 'none'})", COLOR.FG_SECONDARY),
-            ("none", COLOR.FG_DIM),
-        ]
+        # One flat list (079 D6): `none`, the passes, `file...` — no auto row and no captions.
+        # `AutoSource` stays the VALUE a fresh sampler holds; the closed control shows what it
+        # resolves to, so the user reads the pass it reads and picking one writes it explicitly.
         pass_rows: list[ComboRow] = [
             (p, kind_color(SymbolKind.PASS_SAMPLER)) for p in passes
         ]
+        none_row: ComboRow = ("none", COLOR.FG_DIM)
         file_row: ComboRow = ("file...", COLOR.FG_SECONDARY)
-        choices: list[ComboRow] = [*rules, *pass_rows, file_row]
+        choices: list[ComboRow] = [none_row, *pass_rows, file_row]
         file_item = len(choices) - 1
         if isinstance(current_value, PassSource):
-            index = (
-                2 + passes.index(current_value.name)
-                if current_value.name in passes
-                else 1
-            )
-        elif isinstance(current_value, NoSource):
-            index = 1
+            resolved = current_value.name
         elif isinstance(current_value, AutoSource):
+            resolved = wired_pass(AutoSource(), name, panel_pass_name, passes)
+        else:
+            resolved = None
+        if isinstance(current_value, PassSource | AutoSource):
+            index = 1 + passes.index(resolved) if resolved in passes else 0
+        elif isinstance(current_value, NoSource):
             index = 0
         else:
             index = file_item
         picked = grouped_combo(
             f"##source_{name}",
             choices[index],
-            [("", rules), ("pass", pass_rows), ("", [file_row])],
+            [("", choices)],
             SIZE.UNIFORM_CTRL_W,
         )
         changed = picked is not None and picked != index
@@ -325,13 +323,7 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
             if file_path.suffix.lower() in MEDIA_EXTENSIONS:
                 new_value = media_class_for(file_path.suffix)(file_path)
         elif changed and picked is not None:
-            source = (
-                AutoSource()
-                if picked == 0
-                else NoSource()
-                if picked == 1
-                else PassSource(passes[picked - 2])
-            )
+            source = NoSource() if picked == 0 else PassSource(passes[picked - 1])
             error = app.session.set_sampler_source(
                 document_id, panel_pass_name, name, source
             )
