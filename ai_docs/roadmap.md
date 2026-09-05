@@ -26,24 +26,24 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-05, 080's structural sweep is closed; the editor is vendored at 38cadbc. -->
-**Next: the maintainer decides.** 080 swept the repo's structure and found very little: an
-inventory over every symbol kind Python has, across every directory and including the test tree,
-turned up four dead symbols, and `apply_theme` lost the two parameters that chose between branches
-nothing chose. Its review closed three of five proposed waves as re-opened settled decisions —
-each already answered in 074's record or in the docstring of the file itself.
+<!-- As of 2026-09-05, 080 is closed and a walk's findings landed after it; editor vendored at 38cadbc. -->
+**Next: the maintainer decides.** Since 080 closed, a round of maintainer-walk findings landed
+loose — no feature dir, the commits are the record.
 
-**Two things from it outlive the feature.** A commit message is not evidence that a symbol is
-gone: 074 recorded `bot_token_present` as removed at a commit whose diff never touched the file,
-so every deletion is now verified by a grep over the landed tree. And an inventory scan must count
-the test tree but not the docs — a symbol named only in prose is dead code with a paper trail, and
-indexing `ai_docs/` hid exactly that case.
+**What outlives them.** `ScriptContext` is the script's context type and `context` its argument;
+`Ctx` was an alias of `EngineContext`, so the type had two names and neither matched
+`ScriptBehavior`. `ScriptError.line` is 0-based like `ShaderError.line` — the script path stored
+Python's 1-based `lineno` unconverted, putting every band a row below its code. Error markers drop
+while the buffer is dirty: their lines are from the last compile, and re-pushing them undid the
+library's own anchor-following. `make test` runs on 8 workers; the suite is fixture-bound.
 
-**Before 079's gate work**, which also outlives its feature: pyright now checks `scripts/`,
-`.claude/skills/` and `dogfood/` rather than `shaderbox/` alone — via the config, because a path
-argument on the command line silently overrides it; `make gates` FAILS when the pre-commit hooks
-rewrite a file, rather than retrying and reporting green; and four gates cover the classes that
-review kept finding.
+**One question is open**, filed as a TODO at `tests/test_intel_index.py`'s `u_phase` assertion: a
+script uniform whose value is a variable has no inferable type, so it never reaches a `uniform `
+completion site. Offering it where the site already carries a type is compile-safe; whether to is
+a decision, not an oversight.
+
+**From 080:** a commit message is not evidence a symbol is gone, and an inventory counts the test
+tree but not the docs.
 
 **Queued: the sweep over the 077 material** — `ai_docs/features/077_rc_model_comparison/` (both
 rounds, the "left for the sweep" list) and the station pages (`dogfood/index.html`, local):

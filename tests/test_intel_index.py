@@ -85,6 +85,13 @@ def test_declarations_are_what_the_buffer_lacks() -> None:
     assert offered["u_prev"].doc == "this pass's previous frame"
     assert "u_paint" not in offered
     # A script uniform with no literal shape is a name, never a guessed declaration.
+    # TODO: the maintainer hit this from the other side -- a script returning a VARIABLE
+    # (`{"paint": {"u_brush_position": brush_position}}`) gives no inferable type, so the
+    # name never reaches a `uniform ` site and reads as "my uniform does not autocomplete".
+    # Offering it only where the site ALREADY carries a type (`uniform vec2 |`) inserts the
+    # bare name, is compile-safe, and is what `completion.py::_declarations` already says it
+    # does ("a name-only script uniform fits any type"). Decide whether that narrowing is
+    # wanted before changing this assertion -- it is a decision, not an oversight.
     assert "u_phase" not in offered
     assert index.symbols["u_phase"].inserted == "u_phase"
     assert index.symbols["u_phase"].kind == SymbolKind.SCRIPT_UNIFORM
