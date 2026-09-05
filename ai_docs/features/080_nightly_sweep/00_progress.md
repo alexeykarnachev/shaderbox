@@ -179,3 +179,22 @@ Nothing was found that needs one. The sweep changed no rendered value, and the o
 could have (`apply_theme`) was verified not to: both the old and new function were run against a
 real `ImGuiStyle` and all thirty style fields, the five spacing tokens, the row height and the
 three accent colors compared identical.
+
+## Review of the landed sweep — one defect, fixed
+
+An adversarial round over the three landed commits, anchored to the code and the library rather
+than to this feature's own documents. It confirmed the sweep changed no rendered value by running
+both versions of `apply_theme` against a real `ImGuiStyle` and diffing 127 style/spacing values
+plus 63 color slots — zero differences. It re-broke the theme invariant independently and saw it
+fire over a four-entry domain. It enumerated every `getattr` site in the tree and found none
+reaching a removed symbol, and found no removed name in `projects/`, the resources, or the dogfood
+run artifacts.
+
+**The one defect it found was in my own doc reasoning.** The archived design README's Quick-start
+block still passed `density` and `rounding`, so the snippet raised `TypeError`. My commit had
+argued that the archive keeps its snapshot deliberately and corrected only the line describing the
+live module — sound for `SPEC.md` and the feature checklist, which record what the 005 design pass
+produced, but wrong for a block headed "Quick-start (literal Day-1 integration)". That block is
+framed as instructions to run, not as a record, and the file was left saying the parameters are
+gone eight lines above a call that passes them. Fixed, and the corrected snippet was executed to
+confirm it runs.

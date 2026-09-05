@@ -22,7 +22,7 @@ Everything in this folder is what the design pass produced. Read in this order:
 # in shaderbox/app.py, right after imgui context creation
 from shaderbox.theme import apply_theme, load_fonts
 
-apply_theme(imgui.get_style(), accent="yellow", density="tight", rounding="subtle")
+apply_theme(imgui.get_style(), accent="yellow")
 
 # Font: pick one of the two below at integration time.
 #   (a) Keep using the existing Anonymous Pro file you already ship:
