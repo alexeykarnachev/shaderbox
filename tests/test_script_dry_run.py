@@ -13,14 +13,17 @@ from loguru import logger
 from shaderbox.scripting import ScriptEngine
 
 _GL_FLOAT = 0x1406
+_GL_SAMPLER_2D = 0x8B5E
 
 _SAMPLE_TIMES = (0.0, 0.5, 1.0)
 _FPS = 12
 
 
-def _u(name: str, dim: int = 1, n: int = 1) -> types.SimpleNamespace:
+def _u(
+    name: str, dim: int = 1, n: int = 1, gl_type: int = _GL_FLOAT
+) -> types.SimpleNamespace:
     return types.SimpleNamespace(
-        name=name, dimension=dim, array_length=n, gl_type=_GL_FLOAT, value=0.0
+        name=name, dimension=dim, array_length=n, gl_type=gl_type, value=0.0
     )
 
 
@@ -180,9 +183,7 @@ def test_dry_run_orphan_and_per_key_errors(tmp_path: Path) -> None:
     assert any(
         (p, name) == ("main", "u_v") for p, name, _ in probe.per_key_errors
     )  # bad shape
-    assert any(
-        (p, name) == ("", "u_typo") for p, name, _ in probe.orphan_keys
-    )  # no such uniform
+    assert ("", "u_typo") in probe.orphan_keys  # no such uniform, and no error (079 D5)
     assert not [r for r in records if "shaderbox.scripting.engine" in r]
 
 
@@ -300,7 +301,7 @@ def test_dry_run_reports_the_pass_in_orphan_keys(tmp_path: Path) -> None:
     probe = eng.dry_run("n0", document, _SAMPLE_TIMES, _FPS)
 
     assert probe.driven == {("paint", "u_x")}  # the block drove paint ALONE
-    assert [(p, name) for p, name, _ in probe.orphan_keys] == [("paint", "u_typo")]
+    assert probe.orphan_keys == [("paint", "u_typo")]
 
 
 def test_a_cold_dry_run_compiles_and_reports_the_real_driven_set(
@@ -325,3 +326,25 @@ def test_a_cold_dry_run_compiles_and_reports_the_real_driven_set(
     assert all(s[1] for s in probe.samples)  # non-empty, so the motion verdict is real
     moved = [s[1][("seed", "u_x")] for s in probe.samples]
     assert moved[0] != moved[-1]
+
+
+def test_a_refused_key_is_a_per_key_error_and_an_undeclared_one_is_not(
+    tmp_path: Path,
+) -> None:
+    # 079 D5 splits the two states the probe used to report as one list. A key naming a SAMPLER is
+    # refused and stays an error the agent must fix; a key naming nothing yet is a fact, no error.
+    # Falsifier: report the sampler under orphan_keys again — it would reach the agent as "declare
+    # it in the shader first", advice that cannot work for a sampler.
+    _write_script(
+        tmp_path,
+        _script(
+            update_body="        return {'u_x': 0.5, 'main': {'u_tex': 1.0, 'u_soon': 2.0}}\n"
+        ),
+    )
+    document = _FakeDocument([_u("u_x"), _u("u_tex", gl_type=_GL_SAMPLER_2D)])
+    eng = _engine(tmp_path, document)
+
+    probe = eng.dry_run("n0", document, _SAMPLE_TIMES, _FPS)
+
+    assert [(p, name) for p, name, _ in probe.per_key_errors] == [("main", "u_tex")]
+    assert probe.orphan_keys == [("main", "u_soon")]

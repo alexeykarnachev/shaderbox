@@ -2231,8 +2231,7 @@ class CopilotBackend:
             ],
             # A bare key no pass declares carries no pass, so it renders as the bare name.
             orphan_keys=[
-                f"{_dotted((p, name)) if p else name}: {err.message}"
-                for p, name, err in probe.orphan_keys
+                _dotted((p, name)) if p else name for p, name in probe.orphan_keys
             ],
             motion_facts=motion_facts,
         )

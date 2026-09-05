@@ -49,5 +49,3 @@ One general ui concern: we have this bytton style which looks like a plain text 
 Can you craft html with various candidates. Let's emulate the Documents panel with different buttons style. I will pick some and then we will generalize the picked style on our global theme and apply everything. So, don't change anything for now, just prepare html, I will check it first.
 
 about 12. Checkerboard, I still see checkerboard... Maybe it has something to do with this dimming that we add to the whole application when copilot is thinking.... ??? is this some bug in imgui or something like that?
-
-

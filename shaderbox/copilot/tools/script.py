@@ -89,8 +89,7 @@ def _format_write_result(result: ScriptWriteResult) -> tuple[bool, str, dict | N
     tail: list[str] = [result.motion_facts]
     for line in result.per_key_errors:
         tail.append(f"-> 1 key skipped: {line}")
-    for line in result.orphan_keys:
-        name = line.split(":", 1)[0]
+    for name in result.orphan_keys:
         tail.append(
             f"-> '{name}' is not an active uniform -- declare it in the SHADER first "
             "(edit_shader), or fix the name."

@@ -276,8 +276,9 @@ class ScriptWriteResult:
     # write_script result (feature 043). ok=False + error for an unresolvable target. On ok=True the
     # compile/motion facts are the synchronous feedback: compile_error (a Python SyntaxError/etc., the
     # tool fixes it like a shader compile), driven (the uniforms it now drives, each as
-    # `pass.uniform` — empty = the loud no-op fact), per_key_errors/orphan_keys (named + why, in the
-    # same dotted form; a bare key no pass declares stays a bare name), motion_facts (the value-diff
+    # `pass.uniform` — empty = the loud no-op fact), per_key_errors (named + why) and orphan_keys
+    # (just the names — a key the shader has yet to declare is not an error, 079 D5), both in the
+    # same dotted form with a bare key no pass declares staying a bare name, motion_facts (the value-diff
     # verdict + the one ink/FLAT render line — the headless "is it animating" signal). The dotted
     # form is for the agent to READ; a script addresses a pass by a nested dict, never by that string.
     ok: bool

@@ -867,6 +867,23 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
 
 ## Known quirks (library / SDK footguns + the workaround)
 
+- **`imgui.begin_disabled` scales the style alpha of every WIDGET inside it, and raw draw-list
+  calls ignore it.** So a widget and the draw-list primitive under it composite at different
+  alphas: the app panel's `begin_disabled(copilot_turn_active)` faded `image_with_bg`'s tint while
+  the alpha checkerboard beneath it — a `draw_list.add_image` — stayed opaque, and the checker
+  showed through an opaque render for the length of every copilot turn. A view inside a disabled
+  scope pushes `StyleVar_.alpha` 1.0 around itself; only controls are meant to fade.
+
+- **Only ONE test per process may drive `ui.update_and_draw`.** The second `App` that renders a
+  full frame in the same interpreter dies inside `imgui_renderer.render` with
+  `GLError(1281, glTexSubImage2D)` — a font-atlas glyph upload against a texture the first App
+  released. It is order-dependent, so whichever such test runs second fails and the other looks
+  innocent; a fresh test file does not help, because pytest shares the process. Today
+  `tests/test_code_panel.py::test_ctrl_tab_focuses_an_unfocused_editor_first_then_cycles` holds
+  that slot. A new frame-level geometry fact goes INTO that test, or the fact is verified at the
+  display instead. (`app`-fixture tests that never call `update_and_draw` are unaffected — most
+  of the suite.)
+
 - **Read a render target through `media.texture_to_rgba8`, never `texture.read()[0]`.** A raw read
   returns the texture's OWN bytes, so on an `f2` target the first "pixel" is half of one float16
   channel — a plausible small integer, never an exception. It bit three separate times while

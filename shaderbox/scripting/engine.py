@@ -76,13 +76,15 @@ class ScriptProbe:
     # live engine state are untouched): runtime_error = the script RAN but `update` raised / returned a
     # non-dict at some frame (the uniform freezes from there — distinct from a compile error and from a
     # per-key shape error); driven = the real (pass, uniform) pairs the script drove; per_key_errors =
-    # shape/coercion failures on real uniforms; orphan_keys = keys naming no active uniform (typo);
-    # samples = (t, {(pass, name): value}) at each sample time — the motion signal (values differ
-    # across t). Both error lists are (pass, key, error), with "" as the pass for a bare key.
+    # shape/coercion failures on real uniforms AND keys the engine refused (a sampler/block, an
+    # unknown pass); orphan_keys = (pass, key) for a key naming no active uniform, which since 079
+    # D5 is a normal authoring state and carries no error — the agent still needs the fact, because
+    # such a key drives nothing; samples = (t, {(pass, name): value}) at each sample time — the
+    # motion signal (values differ across t). Both lists carry "" as the pass for a bare key.
     compile_error: "ScriptError | None"
     driven: set[tuple[str, str]]
     per_key_errors: list[tuple[str, str, "ScriptError"]]
-    orphan_keys: list[tuple[str, str, "ScriptError"]]
+    orphan_keys: list[tuple[str, str]]
     samples: list[tuple[float, dict[tuple[str, str], Any]]]
     runtime_error: "ScriptError | None" = None
 
@@ -262,7 +264,7 @@ def script_stub_for(uniforms_by_pass: dict[str, list[moderngl.Uniform]]) -> str:
         body = "        return {}\n"
     return (
         f"import math\n\n"
-        f"{import_line}\n"
+        f"{import_line}\n\n"
         f"class Behavior(ScriptBehavior):\n"
         f'    """Drive many uniforms from one object each frame (document script). Keep state on self."""\n'
         f"\n"
@@ -385,16 +387,25 @@ class ScriptEngine:
         name: str,
         active: dict[str, moderngl.Uniform | moderngl.UniformBlock],
     ) -> str | None:
-        # Why a script key can't bind to `name` on `pass_name` (None = it can). An engine-owned key
-        # (u_time…) is dropped SILENTLY upstream (decision 5), so it never reaches this — this covers
-        # orphan/typo and sampler/block keys. The pass is named in the message: the same uniform name
-        # can be legal on one pass and absent on another.
+        # Why a script key can't bind to `name` on `pass_name` (None = it can, or it is simply
+        # absent — `_binds` separates those two). An engine-owned key (u_time…) is dropped SILENTLY
+        # upstream (decision 5), so it never reaches this. Writing the script before the shader
+        # declares the uniform is a normal authoring step (079 D5), so an absent name is no error;
+        # a name that IS declared but is a sampler/block is one. The pass is named in the message:
+        # the same uniform name can be legal on one pass and a sampler on another.
         uniform = active.get(name)
-        if uniform is None:
-            return f"pass '{pass_name}' has no active uniform '{name}' (orphan key)"
-        if not is_scriptable(uniform):
+        if uniform is not None and not is_scriptable(uniform):
             return f"pass '{pass_name}': '{name}' is a sampler/block — not a scriptable value"
         return None
+
+    def _binds(
+        self,
+        pass_name: str,
+        name: str,
+        active: dict[str, moderngl.Uniform | moderngl.UniformBlock],
+    ) -> bool:
+        # Whether a write to `name` on `pass_name` would land: declared AND scriptable.
+        return self._binding_reject(pass_name, name, active) is None and name in active
 
     def reset(self, document_id: str) -> None:
         # Re-instantiate the live script (re-run __init__) without recompiling — the manual "restart".
@@ -539,15 +550,18 @@ class ScriptEngine:
                     (want[frame], {key: sink[key] for key in driven if key in sink})
                 )
 
+        # A driven key's shape failure and a skipped key's refusal (a sampler/block, an unknown
+        # pass) are both "this key names something and it did not work" — one list. A skipped key
+        # with NO error is the 079 D5 state: the shader has yet to declare it.
         per_key = [
             (pass_name, name, err)
-            for pass_name, name in sorted(seen_driven)
+            for pass_name, name in sorted(seen_driven | seen_skipped)
             if (err := worst.get((document_id, pass_name, name))) is not None
         ]
         orphan = [
-            (pass_name, name, err)
+            (pass_name, name)
             for pass_name, name in sorted(seen_skipped)
-            if (err := worst.get((document_id, pass_name, name))) is not None
+            if worst.get((document_id, pass_name, name)) is None
         ]
         # A behavior-level error seen at ANY frame = `update` raised / returned a non-dict at some point
         # (the script compiled but CRASHES at runtime). Surface it so the verdict isn't a false ANIMATING
@@ -571,41 +585,17 @@ class ScriptEngine:
 
     def _active_by_pass(
         self, document: ScriptTarget
-    ) -> tuple[
-        dict[str, dict[str, moderngl.Uniform | moderngl.UniformBlock]], set[str]
-    ]:
-        # One active-uniform map per READY pass, plus the names of the passes that are NOT ready,
-        # built once per tick. A pass that has never attempted a compile is absent from the map:
-        # `get_active_uniforms` would compile it from inside the tick, which 066 D1 forbids, and its
-        # keys are HELD for this tick rather than errored — else every first frame of a multi-pass
-        # document would spray orphan errors that clear a frame later. BOTH phases need the not-ready
-        # set: without it a broadcast cannot tell "absent because it has not compiled yet" from
-        # "absent because no pass declares it", which is the same three-way answer the block phase
-        # gets from a named lookup. A pass whose compile FAILED is ready-but-empty, so its keys take
-        # the ordinary orphan path and the user reads why beside the compile error.
-        active: dict[str, dict[str, moderngl.Uniform | moderngl.UniformBlock]] = {}
-        not_ready: set[str] = set()
-        for pass_name, render_pass in document.passes.items():
-            if render_pass.script_ready:
-                active[pass_name] = {
-                    u.name: u for u in render_pass.get_active_uniforms()
-                }
-            else:
-                not_ready.add(pass_name)
-        return active, not_ready
-
-    def _broken_pass_for(self, document: ScriptTarget) -> str | None:
-        # The pass to blame when a broadcast finds no target and every pass is ready: a ready pass
-        # whose active-uniform map is EMPTY has attempted a compile and failed (a working program
-        # always reports at least the engine's own uniforms), so it is the one that would have
-        # declared the key and cannot say so. Named rather than left pass-free, so the row lands on
-        # the shader tab carrying the compile error that is the real cause. `None` when every ready
-        # pass compiled and genuinely does not declare the key. Derived from the ACTIVE map rather
-        # than a compile-error member, so `ScriptPass` stays the two-attribute slice it is.
-        for pass_name, render_pass in sorted(document.passes.items()):
-            if render_pass.script_ready and not render_pass.get_active_uniforms():
-                return pass_name
-        return None
+    ) -> dict[str, dict[str, moderngl.Uniform | moderngl.UniformBlock]]:
+        # One active-uniform map per READY pass, built once per tick. A pass that has never
+        # attempted a compile is absent from the map: `get_active_uniforms` would compile it from
+        # inside the tick, which 066 D1 forbids. Its keys are then simply not declared anywhere,
+        # which since 079 D5 is a silent skip whatever the reason — mid-compile, broken, or a
+        # uniform the author has yet to write.
+        return {
+            pass_name: {u.name: u for u in render_pass.get_active_uniforms()}
+            for pass_name, render_pass in document.passes.items()
+            if render_pass.script_ready
+        }
 
     def _write_one(
         self,
@@ -717,7 +707,7 @@ class ScriptEngine:
             behavior_key, None
         )  # the run succeeded; clear a stale behavior-level error
 
-        active_by_pass, not_ready = self._active_by_pass(document)
+        active_by_pass = self._active_by_pass(document)
         driven: set[tuple[str, str]] = set()
         skipped: set[tuple[str, str]] = set()
 
@@ -737,33 +727,13 @@ class ScriptEngine:
             targets = [
                 (pass_name, active)
                 for pass_name, active in active_by_pass.items()
-                if self._binding_reject(pass_name, name, active) is None
+                if self._binds(pass_name, name, active)
             ]
             if not targets:
-                if not_ready:
-                    # A pass has not attempted a compile yet, so it MIGHT declare this key: HELD for
-                    # the tick, no error and nothing written, exactly as a pass block naming it would
-                    # be. The next tick recomputes; the first-render sweep admits one such pass per
-                    # document per frame.
-                    continue
-                broken = self._broken_pass_for(document)
-                if broken is not None:
-                    # Every pass is ready and none declares it, but one that WOULD have is broken:
-                    # attribute the row to that pass so it reaches its shader tab, beside the compile
-                    # error that is the actual cause.
-                    errors[(document_id, broken, name)] = ScriptError(
-                        name,
-                        "runtime",
-                        f"no pass declares '{name}' (orphan key) — pass '{broken}' does not compile",
-                        pass_name=broken,
-                    )
-                    skipped.add((broken, name))
-                    continue
-                # Every pass is ready and none declares it. Homeless: one error under the pass-free
-                # key, because the whole point is that no pass claims it.
-                errors[(document_id, "", name)] = ScriptError(
-                    name, "runtime", f"no pass declares '{name}' (orphan key)"
-                )
+                # No pass declares this key. A normal authoring step (079 D5): the script names a
+                # uniform the shader has yet to declare, and the shader side already offers the
+                # declaration. Skipped silently, no row — including while a pass is mid-compile or
+                # broken, where the pass's own compile error is the thing to read.
                 skipped.add(("", name))
                 continue
             for pass_name, active in targets:
@@ -801,13 +771,18 @@ class ScriptEngine:
                     continue
                 reason = self._binding_reject(pass_name, name, active)
                 if reason is not None:
-                    # An orphan/typo/sampler key: record a soft error so the strip surfaces it on the
+                    # A sampler/block key: record a soft error so the strip surfaces it on the
                     # script tab AND on this pass's shader tab, then SKIP with no write. It goes in
                     # `skipped` NOT `driven` (it names no scriptable uniform, so
                     # script_driven_uniforms must not claim ownership).
                     errors[(document_id, pass_name, name)] = ScriptError(
                         name, "runtime", reason, pass_name=pass_name
                     )
+                    skipped.add((pass_name, name))
+                    continue
+                if name not in active:
+                    # The pass compiles and does not declare this name: the same normal step as
+                    # a broadcast orphan (079 D5), skipped silently.
                     skipped.add((pass_name, name))
                     continue
                 self._write_one(

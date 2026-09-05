@@ -1033,6 +1033,11 @@ def draw(app: App) -> None:
                 app.code_hovered_uniform = word
 
     if errors:
+        # The interaction button stops one row short of the editor image, so the cursor it
+        # leaves is inside the library's status band. The strip belongs under the image.
+        imgui.set_cursor_screen_pos(
+            imgui.ImVec2(editor_pos.x, editor_pos.y + float(size_px[1]))
+        )
         imgui.push_font(app.font_12, app.font_12.legacy_size)
         _draw_error_strip(
             app, tab, errors, strip_height, editor.get_current_cursor_position().line

@@ -644,20 +644,25 @@ def _draw_document_image(
             if view == ChannelView.COLOR_ALPHA
             else app.checker_texture
         )
-        _draw_canvas_backdrop(backdrop, img_min, image_width, image_height)
-        imgui.image_with_bg(
-            imgui.ImTextureRef(shown_texture.glo),
-            image_size=(image_width, image_height),
-            uv0=(0, 1),
-            uv1=(1, 0),
-            tint_col=(1.0, 1.0, 1.0, 1.0),
-        )
-        imgui.get_window_draw_list().add_rect(
-            (img_min.x, img_min.y),
-            (img_min.x + image_width, img_min.y + image_height),
-            imgui.color_convert_float4_to_u32(COLOR.VIEWER_BORDER),
-            thickness=1.0,
-        )
+        # The panel runs inside `begin_disabled` during a copilot turn, which scales the style
+        # alpha for every widget in it. `image_with_bg` is a widget and the checker under it is a
+        # raw draw-list image, so a scaled tint would composite the render over a full-alpha
+        # checker. The preview is a view, not a control: it draws at alpha 1 either way.
+        with imgui_ctx.push_style_var(imgui.StyleVar_.alpha, 1.0):
+            _draw_canvas_backdrop(backdrop, img_min, image_width, image_height)
+            imgui.image_with_bg(
+                imgui.ImTextureRef(shown_texture.glo),
+                image_size=(image_width, image_height),
+                uv0=(0, 1),
+                uv1=(1, 0),
+                tint_col=(1.0, 1.0, 1.0, 1.0),
+            )
+            imgui.get_window_draw_list().add_rect(
+                (img_min.x, img_min.y),
+                (img_min.x + image_width, img_min.y + image_height),
+                imgui.color_convert_float4_to_u32(COLOR.VIEWER_BORDER),
+                thickness=1.0,
+            )
         # Feed the cursor over the preview into the script tick as ctx.mouse (feature 042; the
         # button and the previous position are 069's). image_with_bg submits no interactive item,
         # so hit-test the captured rect explicitly.

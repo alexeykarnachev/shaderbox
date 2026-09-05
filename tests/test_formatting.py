@@ -1,9 +1,11 @@
 """Buffer formatting (078 D9, D11): the shipped formatters and the one-undo-step apply."""
 
+import types
 from typing import Any
 
 from shaderbox.commands import SPEC_BY_ID, CommandId
 from shaderbox.formatting import format_glsl, format_python, formatter_for
+from shaderbox.scripting import script_stub_for
 
 _UGLY_GLSL = (
     "void main(){vec3 c=vec3(1.0);\nif(c.x>0.5){c=c*2.0;}\ngl_FragColor=vec4(c,1.0);}\n"
@@ -70,3 +72,22 @@ def test_format_command_is_one_undo_step_and_keeps_the_caret_line(app: Any) -> N
     assert editor.get_current_cursor_position().line == 1
     editor.feed("u")
     assert editor.get_text() == _UGLY_GLSL
+
+
+def test_the_script_stub_is_a_fixed_point_of_the_formatter() -> None:
+    # 079 D10: `Ctrl+Shift+I` on a fresh script must change nothing. The stub emitted one blank
+    # line between the import block and the class where ruff wants two.
+    def _u(name: str, dim: int = 1, n: int = 1) -> Any:
+        return types.SimpleNamespace(
+            name=name, dimension=dim, array_length=n, gl_type=0x1406, value=0.0
+        )
+
+    for uniforms_by_pass in (
+        {},
+        {"main": []},
+        {"main": [_u("u_x"), _u("u_v", dim=3), _u("u_a", n=4)], "blur": [_u("u_r")]},
+    ):
+        stub = script_stub_for(uniforms_by_pass)
+        result = format_python(stub)
+        assert result.ok
+        assert result.text == stub

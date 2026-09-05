@@ -50,7 +50,9 @@ owns. Quotes are the maintainer's words from `00_raw_findings.md`.
 - **D1. The notes never blink.** The note is sized from measured text, not auto-resized; the
   same fix serves `K`, `F8` and the candidate note.
 - **D2. Candidates sort by kind, then by name.** The kind order is a table in `theme.py` next
-  to the color and slot tables and walked by the enum test. The order itself: Q1.
+  to the color and slot tables and walked by the enum test. The order, top to bottom: the
+  buffer's own names, engine uniforms, script uniforms, pass and wirable samplers, library
+  functions, language keywords and types; alphabetical inside each tier.
 - **D3. Docstrings and glosses follow one style: PEP 257 with the Google layout.** A summary
   line in the imperative or as a noun phrase ending in a period; a blank line; a description of
   full sentences; `Args:` / `Returns:` sections where a callable has them; one fact per line,
@@ -80,24 +82,28 @@ owns. Quotes are the maintainer's words from `00_raw_findings.md`.
   one of them; a site that needs a fifth is a design question, not a new primitive. Chips and
   pills that are not buttons (tags, the presets chip) are their own primitive and stay outside
   the count.
+- **D13. A sampler's picture in the `K` note is drawn at the note's content width**, aspect
+  preserved.
 - **Standing:** fixes at the class; no compat code; `make gates` green before "done"; UI work
   through `ui_primitives.py` / `theme.py`.
 
-## Open questions for the user
+## Questions — all answered; the feature is plan-locked (2026-09-05)
 
-**Q1. The kind order for sorting** (D2). Recommendation, top to bottom: the buffer's own names
-(declared uniforms and buffer symbols, plain), engine uniforms (blue), script uniforms (green),
-pass and wirable samplers (aqua), library functions (green), language keywords and types (red);
-alphabetical inside a group. Alternative: strictly by color (red, blue, green, aqua, plain),
-which puts `if` and `vec3` above the document's own names.
+**Q1 — answered: the relevance tiers, alphabetical inside each.** Top to bottom: the buffer's
+own names (declared uniforms and buffer symbols, plain), engine uniforms (blue), script
+uniforms (green), pass and wirable samplers (aqua), library functions (green), language
+keywords and types (red). The document's own vocabulary comes before the language's. The
+alternative — strictly by color — was rejected because it puts `if` and `vec3` above the
+document's own names. Recorded as D2.
 
-**Q2 — answered (2026-09-05): option B, then a sweep.** Maintainer: "Let's do something like
+**Q2 — answered: option B, then a sweep.** Maintainer: "Let's do something like
 "B" option. But let's refine our buttons logic across the whole application, we need to make
 the stuff consistent. We need to keep the number of button type tight (3-4max) and apply the
 styling consistently across the whole app." Recorded as D12; the task is W-J.
 
-**Q3. The `K` note's picture size** (finding 3): the panel row's thumbnail size
-(`SIZE.THUMB_SM`) or the note's width. Recommendation: the note's width, so the picture reads.
+**Q3 — answered: the note's width.** The sampler's picture in the `K` note is drawn at the
+note's content width (aspect preserved), not at `SIZE.THUMB_SM`, so the picture reads.
+Recorded as D13.
 
 ## Out of scope (each with a trigger)
 
@@ -110,16 +116,17 @@ styling consistently across the whole app." Recorded as D12; the task is W-J.
 
 ## Workstreams (tasks)
 
-### W-A — Notes: sized, valued, pictured (#1 #3, D1; Q3)
+### W-A — Notes: sized, valued, pictured (#1 #3, D1 D13)
 
 `anchored_note` measures its content (`calc_text_size` with the wrap width) and sets the window
 size; gains `value: str` (ellipsized) and `texture: moderngl.Texture | None` drawn at the
 chosen size. `tabs/code.py` passes the uniform's value (`format_auto_value`) and, for a
-pass-sourced or file-bound sampler, its texture, for both `K` and the candidate note. Tests: the
+pass-sourced or file-bound sampler, its texture, for both `K` and the candidate note. The
+picture is drawn at the note's content width with the aspect preserved (D13). Tests: the
 measured size is stable across two frames with different content (no auto-resize lag); the
 value line is ellipsized for a long array.
 
-### W-B — Completion: sort, and the `1.` site (#2 #6, D2 D4; Q1)
+### W-B — Completion: sort, and the `1.` site (#2 #6, D2 D4)
 
 `theme.kind_rank`; `offer` sorts its result by `(rank, name)`; `completion.python_site(before)`
 replaces the regex: the token before a dot must be a name or a closing bracket. Tests: the

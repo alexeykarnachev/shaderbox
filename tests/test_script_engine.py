@@ -666,11 +666,11 @@ def test_array_accepts_nested_vec_rows(tmp_path: Path) -> None:
 # ---- soft (document,pass,name) errors: orphan/typo + sampler/block keys skipped, not driven ----
 
 
-def test_orphan_key_skips_and_records_soft_error(tmp_path: Path) -> None:
-    # A BARE key naming no active scriptable uniform on ANY pass is SKIPPED (never a None write) AND
-    # records a SOFT ScriptError under the pass-free key (069: the whole point is that no pass claims
-    # it). It must NOT claim ownership in script_driven_uniforms. Falsifier: u_ghost written, or
-    # driven, or no soft error.
+def test_a_key_no_pass_declares_is_skipped_silently(tmp_path: Path) -> None:
+    # 079 D5: writing the script before the shader declares the uniform is a normal authoring step,
+    # so a BARE key naming no active uniform on ANY pass is SKIPPED with NO error row — and still
+    # claims no ownership in script_driven_uniforms. Falsifier: u_ghost written, or driven, or an
+    # error row appears for it.
     _write_script(
         tmp_path,
         _script(update_body="        return {'u_a': 0.5, 'u_ghost': 0.9}\n"),
@@ -680,13 +680,28 @@ def test_orphan_key_skips_and_records_soft_error(tmp_path: Path) -> None:
     eng.tick("n0", document, _ctx(0.0))
     assert document.uniform_values["u_a"] == 0.5
     assert "u_ghost" not in document.uniform_values  # NOT written as None
-    err = eng.errors[("n0", "", "u_ghost")]
-    assert err.kind == "runtime" and "orphan" in err.message
-    assert "no pass declares" in err.message
-    assert err.pass_name == ""
+    assert not [key for key in eng.errors if key[2] == "u_ghost"]
     assert ("", "u_ghost") not in eng.script_driven_uniforms(
         "n0"
     )  # claims no ownership
+
+
+def test_a_pass_block_key_that_pass_does_not_declare_is_skipped_silently(
+    tmp_path: Path,
+) -> None:
+    # 079 D5 through the block phase: the pass compiles and simply has no such uniform yet.
+    # Falsifier: an error row, or the key written.
+    _write_script(
+        tmp_path,
+        _script(update_body="        return {'main': {'u_a': 0.5, 'u_ghost': 0.9}}\n"),
+    )
+    document = _FakeDocument([_u("u_a")])
+    eng = _engine(tmp_path, document)
+    eng.tick("n0", document, _ctx(0.0))
+    assert document.uniform_values["u_a"] == 0.5
+    assert "u_ghost" not in document.uniform_values
+    assert not [key for key in eng.errors if key[2] == "u_ghost"]
+    assert ("main", "u_ghost") not in eng.script_driven_uniforms("n0")
 
 
 def test_sampler_key_records_soft_error_and_is_skipped(tmp_path: Path) -> None:
@@ -707,17 +722,17 @@ def test_sampler_key_records_soft_error_and_is_skipped(tmp_path: Path) -> None:
     assert ("main", "u_tex") not in eng.script_driven_uniforms("n0")
 
 
-def test_orphan_key_error_clears_when_key_fixed(tmp_path: Path) -> None:
-    # Once the bad key stops being returned (the user fixes the typo), its (document, name) soft error
-    # is cleared on the next tick. Falsifier: the zombie error persists.
+def test_a_bad_key_error_clears_when_the_key_is_fixed(tmp_path: Path) -> None:
+    # Once the bad key stops being returned (the user fixes the typo), its soft error is cleared on
+    # the next tick. Falsifier: the zombie error persists.
     path = _write_script(
         tmp_path,
-        _script(update_body="        return {'u_a': 0.5, 'u_ghost': 0.9}\n"),
+        _script(update_body="        return {'u_a': 0.5, 'main': {'u_tex': 0.1}}\n"),
     )
-    document = _FakeDocument([_u("u_a")])
+    document = _FakeDocument([_u("u_a"), _u("u_tex", gl_type=_GL_SAMPLER_2D)])
     eng = _engine(tmp_path, document)
     eng.tick("n0", document, _ctx(0.0))
-    assert ("n0", "", "u_ghost") in eng.errors
+    assert ("n0", "main", "u_tex") in eng.errors
 
     time.sleep(0.01)
     path.write_text(
@@ -725,7 +740,7 @@ def test_orphan_key_error_clears_when_key_fixed(tmp_path: Path) -> None:
     )
     eng.reload("n0", tmp_path / "scripts", document)
     eng.tick("n0", document, _ctx(0.1))
-    assert ("n0", "", "u_ghost") not in eng.errors  # zombie cleared
+    assert ("n0", "main", "u_tex") not in eng.errors  # zombie cleared
 
 
 # ---- engine-owned key dropped SILENTLY (no error, not driven) ----
@@ -879,20 +894,20 @@ def test_script_status_reflects_driven_count(tmp_path: Path) -> None:
 
 
 def test_script_status_reflects_sentinel_and_soft_errors(tmp_path: Path) -> None:
-    # A script with an orphan key: driven_count counts only the real driven uniform; the orphan
-    # surfaces in soft_errors. Falsifier: the orphan inflates driven_count or is missing from soft.
+    # A script with a sampler key: driven_count counts only the real driven uniform; the sampler
+    # surfaces in soft_errors. Falsifier: the bad key inflates driven_count or is missing from soft.
     _write_script(
         tmp_path,
-        _script(update_body="        return {'u_a': 0.5, 'u_ghost': 0.9}\n"),
+        _script(update_body="        return {'u_a': 0.5, 'main': {'u_tex': 0.1}}\n"),
     )
-    document = _FakeDocument([_u("u_a")])
+    document = _FakeDocument([_u("u_a"), _u("u_tex", gl_type=_GL_SAMPLER_2D)])
     eng = _engine(tmp_path, document)
     eng.tick("n0", document, _ctx(0.0))
     status = eng.script_status("n0")
     assert status is not None
     assert status.driven_count == 1  # only u_a
     assert status.sentinel_error is None
-    assert [(p, name) for p, name, _ in status.soft_errors] == [("", "u_ghost")]
+    assert [(p, name) for p, name, _ in status.soft_errors] == [("main", "u_tex")]
 
 
 def test_script_status_none_without_script(tmp_path: Path) -> None:
@@ -1163,13 +1178,9 @@ def _two_pass() -> _FakeDocument:
         ("{'u_a': 1.0}", {"paint": {"u_a": 1.0}, "composite": {"u_a": 1.0}}, None, ""),
         # bare key, ONE pass declares it -> that pass only; the sibling is untouched
         ("{'u_b': 1.0}", {"paint": {"u_b": 1.0}, "composite": {}}, None, ""),
-        # bare key, NO pass declares it -> nothing written, one pass-free soft error
-        (
-            "{'u_z': 1.0}",
-            {"paint": {}, "composite": {}},
-            ("n0", "", "u_z"),
-            "no pass declares 'u_z'",
-        ),
+        # bare key, NO pass declares it -> nothing written, NO error (079 D5: a normal
+        # authoring step, the shader has yet to declare it)
+        ("{'u_z': 1.0}", {"paint": {}, "composite": {}}, None, ""),
         # pass block, declared there -> that pass only
         (
             "{'paint': {'u_a': 1.0}}",
@@ -1177,13 +1188,8 @@ def _two_pass() -> _FakeDocument:
             None,
             "",
         ),
-        # pass block, NOT declared on that pass -> nothing written, an error naming the pass
-        (
-            "{'composite': {'u_b': 1.0}}",
-            {"paint": {}, "composite": {}},
-            ("n0", "composite", "u_b"),
-            "pass 'composite' has no active uniform 'u_b'",
-        ),
+        # pass block, NOT declared on that pass -> nothing written, NO error (079 D5)
+        ("{'composite': {'u_b': 1.0}}", {"paint": {}, "composite": {}}, None, ""),
         # pass block naming NO pass -> nothing written, an error listing the real passes
         (
             "{'nope': {'u_a': 1.0}}",
@@ -1200,9 +1206,10 @@ def test_the_routing_table(
     error_key: tuple[str, str, str] | None,
     error_fragment: str,
 ) -> None:
-    # The (bare, nested) x (declared in one pass, in two, in none) matrix (069 D3). Falsifier: route
-    # every key to one pass (the pre-069 output-only behaviour) — rows 1/2/4/5 go red on the write
-    # side and rows 3/6 on the error side, so no single wrong implementation passes the table.
+    # The (bare, nested) x (declared in one pass, in two, in none) matrix (069 D3; the undeclared
+    # rows carry 079 D5's silent skip). Falsifier: route every key to one pass (the pre-069
+    # output-only behaviour) — rows 1/2/4 go red on the write side, rows 3/5 on the no-error side
+    # and row 6 on the error side, so no single wrong implementation passes the table.
     _write_script(tmp_path, _script(update_body=f"        return {returned}\n"))
     document = _two_pass()
     eng = _engine(tmp_path, document)
@@ -1332,8 +1339,8 @@ def test_a_document_with_no_scriptable_uniforms_keeps_the_bare_return() -> None:
     assert "return {}" in body
 
 
-def test_the_orphan_warning_no_longer_reaches_the_console(tmp_path: Path) -> None:
-    # #29's own last sentence: the orphan becomes a VISIBLE strip error, not a console line. The sink
+def test_a_bad_key_reaches_the_strip_and_not_the_console(tmp_path: Path) -> None:
+    # #29's own last sentence: a bad key becomes a VISIBLE strip error, not a console line. The sink
     # must be a real loguru one — this repo logs through loguru, which does not propagate into the
     # stdlib tree pytest's caplog reads, so a caplog assertion would pass vacuously with the
     # logger.warning still in place. Falsifier: restore the logger.warning; the first half goes red.
@@ -1342,9 +1349,11 @@ def test_the_orphan_warning_no_longer_reaches_the_console(tmp_path: Path) -> Non
     try:
         _write_script(
             tmp_path,
-            _script(update_body="        return {'u_a': 0.5, 'u_ghost': 0.9}\n"),
+            _script(
+                update_body="        return {'u_a': 0.5, 'main': {'u_tex': 0.1}}\n"
+            ),
         )
-        document = _FakeDocument([_u("u_a")])
+        document = _FakeDocument([_u("u_a"), _u("u_tex", gl_type=_GL_SAMPLER_2D)])
         eng = _engine(tmp_path, document)
         eng.tick("n0", document, _ctx(0.0))
     finally:
@@ -1352,7 +1361,7 @@ def test_the_orphan_warning_no_longer_reaches_the_console(tmp_path: Path) -> Non
     assert not [r for r in records if "shaderbox.scripting.engine" in r]
     status = eng.script_status("n0")
     assert status is not None
-    assert [(p, name) for p, name, _ in status.soft_errors] == [("", "u_ghost")]
+    assert [(p, name) for p, name, _ in status.soft_errors] == [("main", "u_tex")]
 
 
 def test_a_stopped_pair_freezes_only_that_pass(tmp_path: Path) -> None:
@@ -1401,40 +1410,25 @@ def test_a_broadcast_is_held_for_a_not_yet_compiled_pass(tmp_path: Path) -> None
     assert not any(k[0] == "n0" for k in eng.errors)
 
 
-def test_a_broadcast_names_the_broken_pass_that_would_have_declared_it(
+def test_an_undeclared_key_stays_silent_whatever_the_passes_are_doing(
     tmp_path: Path,
 ) -> None:
-    # Every pass is READY and none declares the key, but one is ready-BECAUSE-its-compile-failed: the
-    # row names that pass and its compile failure, and is emitted under that pass's key so the shader
-    # tab carrying the actual cause shows it. Falsifier: keep the pass-free `no pass declares` row —
-    # the message and the key both go red, and the row would appear on no shader tab at all.
+    # 079 D5 across every reason a pass can fail to declare the key: a compile that failed (ready
+    # but declaring nothing), and a pass that compiles and simply does not have it. Neither is the
+    # script's defect — a broken pass surfaces its own compile error on its shader tab. Falsifier:
+    # restore either orphan row; both halves go red.
     _write_script(tmp_path, _script(update_body="        return {'u_wave': 1.0}\n"))
-    document = _FakeDocument(
-        {"main": []}
-    )  # ready, but declaring nothing = a failed compile
-    eng = _engine(tmp_path, document)
-    eng.tick("n0", document, _ctx(0.0))
+    broken = _FakeDocument({"main": []})  # ready, declaring nothing = a failed compile
+    eng = _engine(tmp_path, broken)
+    eng.tick("n0", broken, _ctx(0.0))
+    assert not any(k[0] == "n0" for k in eng.errors)
 
-    err = eng.errors[("n0", "main", "u_wave")]
-    assert "does not compile" in err.message and "'main'" in err.message
-    assert err.pass_name == "main"
-    status = eng.script_status("n0")
-    assert status is not None
-    assert [(p, name) for p, name, _ in status.soft_errors] == [("main", "u_wave")]
-
-
-def test_a_bare_key_no_ready_pass_declares_stays_pass_free(tmp_path: Path) -> None:
-    # The ordinary homeless case is unchanged: every pass compiled and simply does not declare the
-    # key, so the row belongs to no pass. Falsifier: attribute it to a pass anyway — a bare key is a
-    # claim about the whole document and would then land on an unrelated shader tab.
-    _write_script(tmp_path, _script(update_body="        return {'u_z': 1.0}\n"))
-    document = _FakeDocument({"paint": [_u("u_a")], "composite": [_u("u_a")]})
-    eng = _engine(tmp_path, document)
-    eng.tick("n0", document, _ctx(0.0))
-
-    err = eng.errors[("n0", "", "u_z")]
-    assert err.message == "no pass declares 'u_z' (orphan key)"
-    assert err.pass_name == ""
+    healthy = _FakeDocument({"paint": [_u("u_a")], "composite": [_u("u_a")]})
+    eng2 = _engine(tmp_path, healthy)
+    eng2.tick("n0", healthy, _ctx(0.0))
+    assert not any(k[0] == "n0" for k in eng2.errors)
+    status = eng2.script_status("n0")
+    assert status is not None and status.soft_errors == []
 
 
 # ---- Pass.script_ready's truth table, GL-free ----
