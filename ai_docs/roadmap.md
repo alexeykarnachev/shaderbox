@@ -27,11 +27,21 @@ feature; brief points at the superseder).
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
 <!-- As of 2026-09-05, 079 is closed in full; the editor is vendored at 38cadbc. -->
-**Next: the maintainer decides.** 079 landed complete — every workstream gated, and a four-agent
-convergence review over the whole feature closed out. W-C's remaining half came back from the
-editor session: `gl_FragColor`, `texture2D` and `textureCube` are names 460 core REMOVED, not
-builtins in the wrong color, so the library dropped them from its GLSL builtins. Measured after
-vendoring: the fragment output reads orange, `gl_FragCoord` still reads as a builtin.
+**Next: the maintainer decides.** 079 landed complete — every workstream gated, then five rounds
+of convergence review over the whole feature
+(`ai_docs/features/079_fifth_walk_findings/reviews/final_review.md`, which records what each round
+found, what was deferred and why). W-C's remaining half came back from the editor session:
+`gl_FragColor`, `texture2D` and `textureCube` are names 460 core REMOVED, not builtins in the
+wrong color, so the library dropped them from its GLSL builtins. Measured after vendoring: the
+fragment output reads orange, `gl_FragCoord` still reads as a builtin.
+
+**What that review changed about the repo's gates**, since it outlives the feature: pyright now
+checks `scripts/`, `.claude/skills/` and `dogfood/` rather than `shaderbox/` alone — via the
+config, because a path argument on the command line silently overrides it; `make gates` FAILS when
+the pre-commit hooks rewrite a file, rather than retrying and reporting green; and four new gates
+cover the classes it kept finding (a standalone script importing a name that no longer exists, a
+generated artifact drifting from its generator, a pydantic keyword its model does not declare, a
+button bypassing the tier system).
 
 **Queued: the sweep over the 077 material** — `ai_docs/features/077_rc_model_comparison/` (both
 rounds, the "left for the sweep" list) and the station pages (`dogfood/index.html`, local):

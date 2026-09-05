@@ -103,6 +103,19 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   echo $?` — and when a gate auto-fixes files (ruff does), run it twice, since the first pass can
   legitimately exit non-zero after rewriting.
 
+- **A GATE is the one kind of code whose correctness a normal run cannot show — it passes either
+  way.** Running the suite tells you nothing about whether a new check would catch what it names;
+  only breaking the guarded thing and watching that check fail does. 079's review spent five rounds
+  on this one class and found, every round, a gate that read as enforcing something and enforced
+  nothing: a pyright config widened while the invocation passed a path that overrode it; a smoke
+  canary arming a pydantic field the model had removed, which pydantic dropped in silence; a
+  `make gates` retry that turned every auto-fixable violation green; a rule pinned on one of the two
+  code paths it claimed; a script gate importing modules when the breakage it existed for was a
+  deleted SYMBOL. So a new gate is not done when it passes. It is done when the thing it guards has
+  been broken, the gate has named it, and the break has been restored — and the commit says which
+  break was tried. The same bar applies to a gate you EDIT: three of those five were introduced by
+  the fix for the previous one.
+
 - **A mutation test verifies its own restore before anything else runs.** The technique — break the
   code, confirm the suite catches it, restore — leaves a window where the wrong file is on disk. In
   064 a restore raced the test run that was supposed to confirm it, and a mutated file rode into a
