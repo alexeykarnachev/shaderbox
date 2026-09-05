@@ -48,7 +48,7 @@ def _run_frames(
             # A real cancel click both defocuses the input and presses the button; the focus
             # move is what makes the deactivate fire, one frame ahead of the click.
             imgui.set_keyboard_focus_here(1)
-        real_button = tree.ghost_button
+        real_button = tree.standard_button
 
         def stub(
             label: str,
@@ -60,11 +60,11 @@ def _run_frames(
             _real(label, *args, **kwargs)
             return _clicking and label.startswith("x##")
 
-        tree.ghost_button = stub
+        tree.standard_button = stub
         try:
             body(frame)
         finally:
-            tree.ghost_button = real_button
+            tree.standard_button = real_button
         imgui.input_text("##sink", "sink")
         imgui.end()
         imgui.end_frame()

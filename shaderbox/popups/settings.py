@@ -28,11 +28,11 @@ from shaderbox.ui_primitives import (
     chord_row,
     danger_button,
     faint_hline,
-    ghost_button,
     help_marker,
     label_row,
     labeled_text_input,
     modal_window,
+    standard_button,
 )
 
 
@@ -175,7 +175,7 @@ def _draw_body(app: App) -> bool:
     imgui.dummy((0.0, SPACE.MD))
 
     is_keep_opened: bool = True
-    if ghost_button("Close", width=float(SIZE.BTN_SM_W)):
+    if standard_button("Close", width=float(SIZE.BTN_SM_W)):
         is_keep_opened = False
 
     return is_keep_opened
@@ -203,7 +203,7 @@ def _draw_library_reset(app: App) -> None:
         )
         app.lib_reset_armed = False
     imgui.same_line()
-    if ghost_button("Cancel"):
+    if standard_button("Cancel"):
         app.lib_reset_armed = False
 
 
@@ -397,7 +397,7 @@ def _draw_keybindings(app: App) -> None:
             imgui.same_line(label_w + float(SIZE.UNIFORM_CTRL_W) * 0.5)
             if not spec.rebindable:
                 imgui.begin_disabled()
-            if ghost_button(f"Rebind##{spec.id.value}", width=float(SIZE.BTN_SM_W)):
+            if standard_button(f"Rebind##{spec.id.value}", width=float(SIZE.BTN_SM_W)):
                 app.rebinding_command = spec.id
             if not spec.rebindable:
                 imgui.end_disabled()

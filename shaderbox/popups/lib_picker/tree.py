@@ -21,7 +21,7 @@ from shaderbox.popups.lib_picker.filtering import (
 )
 from shaderbox.shader_lib import ShaderLibFunction
 from shaderbox.theme import COLOR, SPACE
-from shaderbox.ui_primitives import _ellipsize, context_menu_style, ghost_button
+from shaderbox.ui_primitives import _ellipsize, context_menu_style, standard_button
 
 
 @dataclass
@@ -230,7 +230,7 @@ def _draw_inline_new_input(
         cancel()
         wants_commit = False
     imgui.same_line()
-    if ghost_button(f"x##cancel_{id_prefix}_{dir_rel}"):
+    if standard_button(f"x##cancel_{id_prefix}_{dir_rel}"):
         # The cancel click IS what deactivated the input, so the commit it raised would create
         # the very thing the user just cancelled.
         cancel()
@@ -307,7 +307,7 @@ def _draw_file_rename_input(app: App, path: Path) -> None:
         app.shader_lib_files.cancel_file_rename()
         wants_commit = False
     imgui.same_line()
-    if ghost_button(f"x##cancel_ren_{path}"):
+    if standard_button(f"x##cancel_ren_{path}"):
         # The cancel click IS what deactivated the input, so the commit it raised would perform
         # the very rename the user just cancelled.
         app.shader_lib_files.cancel_file_rename()

@@ -37,18 +37,17 @@ from shaderbox.ui_models import UIDocument
 from shaderbox.ui_primitives import (
     NO_FOCUS,
     FieldFocus,
-    button,
     caption_text,
     connection_status,
     danger_button,
     draw_link,
-    ghost_button,
     labeled_drag_float,
     labeled_text_input,
     preview_box,
     preview_cell,
     primary_button,
     setup_steps,
+    standard_button,
     status_slot,
     unconnected_gate,
 )
@@ -452,7 +451,7 @@ class TelegramExporter(Exporter):
             imgui.text_colored(COLOR.FG_DIM, "no packs yet")
 
         # Management ghosts sit on their own row under the combo.
-        if ghost_button("New pack"):
+        if standard_button("New pack"):
             self._render_state.pack_create_armed = (
                 not self._render_state.pack_create_armed
             )
@@ -499,7 +498,7 @@ class TelegramExporter(Exporter):
                 self._render_state.pack_delete_armed = False
                 on_yes()
             imgui.same_line()
-            if ghost_button("Cancel"):
+            if standard_button("Cancel"):
                 self._render_state.pack_delete_armed = False
         imgui.pop_style_color(2)
 
@@ -601,7 +600,7 @@ class TelegramExporter(Exporter):
         # Render + Add on one row; Add's right edge aligns with the Duration drag.
         render_w: float = imgui.calc_text_size("Render").x + 2 * SPACE.MD
         add_w: float = row_w - render_w - imgui.get_style().item_spacing.x
-        if button("Render", width=render_w):
+        if standard_button("Render", width=render_w):
             rc.render()
         imgui.same_line()
         self._draw_add_button(rc, artifact, add_w)

@@ -52,19 +52,37 @@ shouting equally. Mature button guidance (Carbon, etc.): in a layout with >3 act
 primary is filled; the rest are low-emphasis. Encode this as a **named tier set in one utils module**
 and forbid hand-rolling `push_style_color(Col_.button, …)` at call sites.
 
+**A low-emphasis tier still needs a frame.** The tempting shape is text-only — transparent fill,
+secondary text, no border — and it reads as *prose*, not as a control. The maintainer's words for
+it: "it looks like a text, the boundaries are not clear, often this blures with other neighboring
+text". A 1 px border is what says clickable, and it costs nothing visually. Don't ship a borderless
+low-emphasis tier.
+
+**Cap the set and enforce the cap.** Four tiers is enough for any panel; the failure is not having
+five, it is having five *by accretion*, each added for one site nobody re-read afterwards. Two
+gates keep it honest, and both are cheap AST walks: one fails on a raw `imgui.button` outside the
+primitives module (with an allowlist for calls that are genuinely not labelled verbs — a hit rect,
+a glyph cell, an icon), and one fails when a fifth labelled primitive styles its own button. A tier
+system with no gate drifts back within a release.
+
 Tiers, chosen by the action's *role*:
 
 | Tier | Look | When |
 |---|---|---|
-| `primary_button` | filled accent, contrasting text | the ONE call-to-action of a section (e.g. "Add", "Create") |
-| `button` | filled neutral grey (imgui default) | an ordinary, repeatable action (e.g. "Render") |
-| `ghost_button` | transparent fill, secondary-color text | low-emphasis / secondary ("New", "Cancel", "Re-render") |
-| `toggle_button(label, active)` | filled accent when `active`, bordered ghost when off | a stateful on/off control — SAME label both states, the style carries the state (don't switch the label, e.g. not "Copilot"/"Hide Copilot") |
-| `danger_button` | transparent fill, error-color text | destructive ("Delete") — prominence comes from a confirm step, NOT a filled-red fill |
+| `standard_button` | transparent fill, 1 px border, secondary text | an ordinary verb — the default tier ("open", "add pass", "Close", "Cancel", "Render") |
+| `primary_button` | filled accent, contrasting text | the ONE call-to-action of a section ("Create", "Send", "Connect") |
+| `danger_button` | the standard frame in the error color | a destructive verb ("Delete", "Reset", "Clear") — prominence comes from a confirm step, NOT a filled-red fill |
+| `toggle_button(label, active)` | filled accent when `active`, the standard frame when off | a stateful on/off control — SAME label both states, the style carries the state (don't switch the label, e.g. not "Copilot"/"Hide Copilot") |
 
-Each is a 3-line wrapper: push 3-4 `Col_` slots, call `imgui.button(label, size=(width, 0.0))`, pop.
-`width=0.0` ⇒ content-width (the default; use it). Reserve full-width for the single dominant CTA in a
-genuinely narrow container — never a stack of full-width bars.
+The three framed tiers share ONE private helper (`_framed_button`) that pushes the fill, the frame
+and the text color — so they read as one family by construction rather than by three call sites
+agreeing. `width=0.0` ⇒ content-width (the default; use it). Reserve full-width for the single
+dominant CTA in a genuinely narrow container — never a stack of full-width bars.
+
+**Chips and pills are not in the count.** A tag, a filter toggle, a mode selector is a different
+thing from a verb and gets its own primitive. The test that separates them: a chip names a *state*
+the surface is in; a button names an *action* you are about to take. A "Reset" that clears the
+filters is a verb even when it sits in a row of filter pills.
 
 **Width policy:** content-width by default. To align several buttons' edges, compute widths from
 `calc_text_size(label).x + 2 * pad` and a target row width; don't eyeball.
@@ -266,7 +284,7 @@ The convention:
 - **Bottom action row.** The close button — and the primary action, when there
   is one — both sit in a row at the bottom of the modal. Never at the top,
   never floating mid-body.
-- **Tier: always `ghost_button` for close, always `primary_button` for the
+- **Tier: always `standard_button` for close, always `primary_button` for the
   one primary action.** Skip `imgui.button(...)` at modal call sites; that's a
   tier violation (§1).
 - **Label: "Close" for browsers / view-only dialogs (settings, pickers).

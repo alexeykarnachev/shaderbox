@@ -425,7 +425,7 @@ def test_the_gear_body_survives_a_rename_mid_frame(app: Any) -> None:
     assert "q" in document.passes and name not in document.passes
     assert app.pass_settings_name == "q"
     # Every frame returned True, including the rename frame: a True can only come from
-    # `return not ghost_button("Close")`, so the Close row was submitted on that frame too — a
+    # `return not standard_button("Close")`, so the Close row was submitted on that frame too — a
     # plain early return would have skipped it and swallowed a Close click.
     assert keep_open == [True] * 6
 

@@ -20,7 +20,7 @@ from shaderbox.app import App, PopupState
 from shaderbox.paths import shader_lib_root
 from shaderbox.popups.lib_picker import filtering, preview, search, tree
 from shaderbox.theme import COLOR, SIZE, SPACE
-from shaderbox.ui_primitives import ghost_button, modal_window, primary_button
+from shaderbox.ui_primitives import modal_window, primary_button, standard_button
 
 _LABEL = "Shader Library##picker"
 _POPUP_W = 1420.0
@@ -145,7 +145,7 @@ def _draw_body(app: App) -> bool:
         if filtering.insert_name(app, selected):
             keep_open = False
     imgui.same_line()
-    if ghost_button("Close"):
+    if standard_button("Close"):
         keep_open = False
 
     # Esc closes the picker — except when a rename/new-file/new-dir inline input owns it (those

@@ -5,7 +5,7 @@ from imgui_bundle import imgui, imgui_ctx
 from shaderbox.app import App
 from shaderbox.media import MediaError, Video
 from shaderbox.theme import COLOR, SIZE, SPACE
-from shaderbox.ui_primitives import ghost_button, row_label, small_caption
+from shaderbox.ui_primitives import row_label, small_caption, standard_button
 
 
 def draw_video_filters(app: App, input_video: Video) -> Video:
@@ -34,7 +34,7 @@ def draw_video_filters(app: App, input_video: Video) -> Video:
         )[1]
 
         imgui.dummy((0, SPACE.XS))
-        if ghost_button("Apply##video_to_video_smoothing", width=SIZE.BTN_SM_W):
+        if standard_button("Apply##video_to_video_smoothing", width=SIZE.BTN_SM_W):
             input_file_path = Path(input_video.details.file_details.path)
             w = document_ui_state.video_to_video_smoothing_window
             s = document_ui_state.video_to_video_smoothing_sigma

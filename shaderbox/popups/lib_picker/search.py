@@ -8,7 +8,7 @@ from imgui_bundle import imgui
 
 from shaderbox.app import App
 from shaderbox.theme import COLOR
-from shaderbox.ui_primitives import pill_button
+from shaderbox.ui_primitives import pill_button, standard_button
 
 
 def parse_query_tags(query: str) -> tuple[list[str], str]:
@@ -33,8 +33,9 @@ def resolve_tag_prefix_matches(app: App, prefixes: list[str]) -> list[str]:
 
 
 def draw_favs_and_reset_row(app: App) -> None:
-    # Yellow Favs pill (active=solid, inactive=faded). Pink Reset appears
-    # right after when any tag is disabled.
+    # Yellow Favs pill (active=solid, inactive=faded): a filter, so a pill. Reset is a VERB
+    # over those filters, so it takes a button tier (079 D12) and appears only when a tag is
+    # disabled.
     if pill_button(
         "Favs##favs_toggle",
         color=COLOR.FAVS,
@@ -45,7 +46,7 @@ def draw_favs_and_reset_row(app: App) -> None:
         )
     if app.shader_lib_files.picker_disabled_tags:
         imgui.same_line()
-        if pill_button("Reset##reset_pill", color=COLOR.RESET_PILL, active=True):
+        if standard_button("Reset##reset_pill"):
             app.shader_lib_files.picker_disabled_tags.clear()
 
 

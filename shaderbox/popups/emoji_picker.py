@@ -3,7 +3,7 @@ from imgui_bundle import imgui, imgui_ctx
 from shaderbox.app import App, PopupState
 from shaderbox.popups.emoji_data import EmojiEntry, EmojiGroup, load_emoji_groups
 from shaderbox.theme import COLOR, SIZE, SPACE
-from shaderbox.ui_primitives import ghost_button, modal_window
+from shaderbox.ui_primitives import modal_window, standard_button
 
 _LABEL = "Emoji##picker"
 _GRID_COLS = 12
@@ -72,7 +72,7 @@ def _draw_body(app: App) -> bool:
             imgui.text_colored(COLOR.FG_DIM, "(no matches)")
 
     imgui.dummy((0.0, float(SPACE.MD)))
-    if ghost_button("Close"):
+    if standard_button("Close"):
         keep_open = False
     return keep_open
 

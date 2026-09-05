@@ -39,7 +39,11 @@ from shaderbox.theme import (
     fade,
     kind_slot,
 )
-from shaderbox.ui_primitives import anchored_note, draw_copyable_text
+from shaderbox.ui_primitives import (
+    anchored_note,
+    draw_copyable_text,
+    standard_button,
+)
 from shaderbox.util import format_auto_value
 
 _MAX_ERROR_ROWS = 3
@@ -762,7 +766,7 @@ def draw_chrome(app: App) -> None:
             imgui.same_line()
             imgui.text_colored(COLOR.STATE_OK, "compiled")
         imgui.same_line(spacing=float(SPACE.LG))
-        if imgui.button("Open dir", size=(SIZE.BTN_SM_W, 0)):
+        if standard_button("Open dir", width=float(SIZE.BTN_SM_W)):
             app.open_current_document_dir()
     else:
         imgui.text_colored(COLOR.FG_DIM, tab_label(app, tab))

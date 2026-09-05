@@ -15,11 +15,11 @@ from shaderbox.app import App, PopupState
 from shaderbox.pass_graph import MAX_ITERATIONS, PassEntry
 from shaderbox.theme import SIZE, SPACE
 from shaderbox.ui_primitives import (
-    ghost_button,
     help_marker,
     label_row,
     modal_window,
     primary_button,
+    standard_button,
 )
 
 _LABEL = "Pass settings##popup"
@@ -96,7 +96,7 @@ def _draw_draft(app: App) -> bool:
     imgui.dummy((0.0, float(SPACE.MD)))
     created = (primary_button("Create") or entered) and app.create_pass_from_draft()
     imgui.same_line()
-    cancelled = ghost_button("Cancel")
+    cancelled = standard_button("Cancel")
     return not (created or cancelled)
 
 
@@ -124,7 +124,7 @@ def _draw_body(app: App) -> bool:
         _apply_entry(app, document_id, name, entry, new_entry)
 
     imgui.dummy((0.0, float(SPACE.MD)))
-    return not ghost_button("Close")
+    return not standard_button("Close")
 
 
 def _apply_entry(

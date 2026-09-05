@@ -7,6 +7,7 @@ from shaderbox.ui_models import UIDocument
 from shaderbox.ui_primitives import (
     PreviewCellResult,
     preview_cell,
+    standard_button,
 )
 
 
@@ -41,7 +42,7 @@ def draw_document_preview_grid(app: App, width: float, height: float) -> None:
         # Document create/switch/delete are frozen while a copilot turn runs (§15 A); disable the
         # affordances so the freeze is visible (the verbs also hard-refuse, for non-grid paths).
         imgui.begin_disabled(app.copilot_turn_active)
-        if imgui.button("New document"):
+        if standard_button("New document"):
             app.create_document_from_example(STARTER_EXAMPLE_ID)
         imgui.end_disabled()
 

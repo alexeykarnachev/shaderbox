@@ -179,7 +179,6 @@ class _ColorBag:
     # picker-specific roles
     TAG: tuple[float, float, float, float] = _P["blue_b"]
     FAVS: tuple[float, float, float, float] = _P["yellow_b"]
-    RESET_PILL: tuple[float, float, float, float] = _P["purple_n"]
 
     # Syntax tokens for the inline editor, applied via editor_palette() below
     # (the Color->SYNTAX_* slot mapping).

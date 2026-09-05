@@ -20,16 +20,53 @@ from shaderbox.ui_models import (
     sort_uniform_hashes,
 )
 from shaderbox.ui_primitives import (
-    button,
-    ghost_button,
+    danger_button,
     play_stop_toggle,
     small_caption,
+    standard_button,
 )
 from shaderbox.util import format_auto_value, get_resolution_str, get_uniform_hash
 from shaderbox.widgets import pass_list
 from shaderbox.widgets.uniform import draw_ui_uniform, uniform_name_label
 
 _SQUARE_PRESETS: tuple[int, ...] = (256, 512, 1024, 2048)
+
+
+def _draw_canvas_presets(app: App, ui_document: UIDocument) -> None:
+    # A chip, not a combo (079 D7): it names a shortcut rather than a value the row holds, so it
+    # must not read as a third canvas field. The popup is a combo's, opened off the chip.
+    label = "presets"
+    width = imgui.calc_text_size(label).x + 2.0 * float(SPACE.MD)
+    imgui.set_next_item_width(width)
+    if imgui.begin_combo("##canvas_presets", label, imgui.ComboFlags_.no_arrow_button):
+        for preset_label, size in _canvas_presets(ui_document):
+            if imgui.selectable(preset_label, False)[0]:
+                _apply_canvas_size(app, ui_document, size)
+                app.canvas_size_buf = ui_document.document.canvas_size
+        imgui.end_combo()
+
+
+def _draw_document_reset(app: App) -> None:
+    # Reset is about THIS document — its histories, clock, script and videos — so it sits on the
+    # row that names the document, at its right border, and stays live during a copilot turn as
+    # it always has. Destructive, so the danger tier (079 D7, D12).
+    label = "Reset"
+    width = imgui.calc_text_size(label).x + 2.0 * imgui.get_style().frame_padding.x
+    imgui.same_line()
+    # Right border of the panel: `get_content_region_avail` is measured from the cursor the
+    # `same_line` just left, so the remaining width minus the button's own is the offset.
+    imgui.set_cursor_pos_x(
+        imgui.get_cursor_pos_x() + imgui.get_content_region_avail().x - width
+    )
+    imgui.end_disabled()
+    if danger_button(label, width=width):
+        app.reset_current_document()
+    if imgui.is_item_hovered():
+        imgui.set_tooltip(
+            "Reset document  "
+            f"{chord_to_str(app.effective_bindings[CommandId.RESET_DOCUMENT])}"
+        )
+    imgui.begin_disabled(app.copilot_turn_active)
 
 
 def _apply_canvas_size(
@@ -125,9 +162,15 @@ def draw(app: App) -> None:
 
     imgui.begin_disabled(app.copilot_turn_active)
 
+    # The caption row carries what the second row cannot (079 D7): the presets chip beside the
+    # `Canvas` caption it belongs to, and Reset at the panel's right border, where a
+    # document-wide destructive verb reads as document-wide rather than as another canvas field.
     small_caption(app.font_12, "Document name")
     imgui.same_line(combo_offset)
     small_caption(app.font_12, "Canvas")
+    imgui.same_line(spacing=float(SPACE.SM))
+    _draw_canvas_presets(app, ui_document)
+    _draw_document_reset(app)
 
     imgui.set_next_item_width(SIZE.NAME_INPUT_W)
     ui_document.ui_state.ui_name = imgui.input_text_with_hint(
@@ -185,31 +228,9 @@ def draw(app: App) -> None:
         _apply_canvas_size(app, ui_document, app.canvas_size_buf)
         app.canvas_size_buf = ui_document.document.canvas_size
 
-    imgui.same_line(spacing=float(SPACE.MD))
-    imgui.set_next_item_width(float(SIZE.CANVAS_PRESETS_W))
-    if imgui.begin_combo(
-        "##canvas_presets", "presets", imgui.ComboFlags_.no_arrow_button
-    ):
-        for label, size in _canvas_presets(ui_document):
-            if imgui.selectable(label, False)[0]:
-                _apply_canvas_size(app, ui_document, size)
-                app.canvas_size_buf = ui_document.document.canvas_size
-        imgui.end_combo()
-
     imgui.pop_id()
 
     imgui.end_disabled()
-
-    # Reset is about THIS document (its histories, clock, script, videos), so it sits on the
-    # row that names the document, and stays live during a copilot turn as it always has.
-    imgui.same_line(spacing=float(SPACE.MD))
-    if ghost_button("Reset"):
-        app.reset_current_document()
-    if imgui.is_item_hovered():
-        imgui.set_tooltip(
-            "Reset document  "
-            f"{chord_to_str(app.effective_bindings[CommandId.RESET_DOCUMENT])}"
-        )
 
     imgui.dummy((0, SPACE.MD))
     _draw_entry_points(app)
@@ -247,7 +268,7 @@ def draw(app: App) -> None:
 
     imgui.same_line()
     arrow = "v" if document_ui_state.uniform_sort_desc else "^"
-    if button(f"{arrow}##uniform_sort_dir", width=SIZE.BTN_SM_H):
+    if standard_button(f"{arrow}##uniform_sort_dir", width=SIZE.BTN_SM_H):
         document_ui_state.uniform_sort_desc = not document_ui_state.uniform_sort_desc
 
     imgui.dummy((0, SPACE.MD))
@@ -327,7 +348,7 @@ def _draw_entry_points(app: App) -> None:
         "Open the document script" if present else "Create the document script"
     )
     open_color = COLOR.STATE_ERROR if error else COLOR.FG_SECONDARY
-    if ghost_button("open##entry_script", text_color=open_color):
+    if standard_button("open##entry_script", text_color=open_color):
         app.open_script_for(document_id, focus_editor=True)
     if imgui.is_item_hovered():
         imgui.set_tooltip(open_tooltip)

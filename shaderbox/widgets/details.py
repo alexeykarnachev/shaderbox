@@ -11,12 +11,11 @@ from shaderbox.constants import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
 from shaderbox.media import FileDetails, MediaDetails, ResolutionDetails
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_primitives import (
-    button,
     caption_text,
     draw_copyable_text,
-    ghost_button,
     label_row,
     row_label,
+    standard_button,
 )
 from shaderbox.util import adjust_size, pfd_block
 
@@ -28,7 +27,7 @@ def draw_file_details(
 ) -> FileDetails:
     details = details.model_copy()
 
-    if button("Choose file..."):
+    if standard_button("Choose file..."):
         file_path = pfd_block(pfd.save_file("File path", default_path="."))
         if file_path:
             extension = Path(file_path).suffix.lower()
@@ -86,10 +85,10 @@ def draw_resolution_details(
     )
 
     row_label(app.font_12, "Presets")
-    if ghost_button(f"{full_w}x{full_h}") or not details.width or not details.height:
+    if standard_button(f"{full_w}x{full_h}") or not details.width or not details.height:
         details.width, details.height = full_w, full_h
     imgui.same_line()
-    if ghost_button(f"{half_w}x{half_h}"):
+    if standard_button(f"{half_w}x{half_h}"):
         details.width, details.height = half_w, half_h
 
     return details

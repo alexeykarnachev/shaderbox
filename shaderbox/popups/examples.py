@@ -4,9 +4,9 @@ from shaderbox.app import App, PopupState
 from shaderbox.theme import COLOR, SIZE
 from shaderbox.ui_primitives import (
     caption_text,
-    ghost_button,
     modal_window,
     primary_button,
+    standard_button,
 )
 from shaderbox.widgets.document_grid import draw_document_preview_button
 
@@ -84,7 +84,7 @@ def _draw_body(app: App, grid_h: float) -> bool:
         app.create_document_from_example(selected)
         keep_open = False
     imgui.same_line()
-    if ghost_button("Close"):
+    if standard_button("Close"):
         keep_open = False
     return keep_open
 

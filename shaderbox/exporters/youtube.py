@@ -42,13 +42,11 @@ from shaderbox.ui_models import UIDocument
 from shaderbox.ui_primitives import (
     NO_FOCUS,
     FieldFocus,
-    button,
     caption_text,
     connection_status,
     danger_button,
     draw_link,
     focus_field,
-    ghost_button,
     labeled_combo,
     labeled_drag_float,
     labeled_multiline_input,
@@ -56,6 +54,7 @@ from shaderbox.ui_primitives import (
     preview_box,
     primary_button,
     setup_steps,
+    standard_button,
     status_slot,
     unconnected_gate,
 )
@@ -317,7 +316,7 @@ class YouTubeExporter(Exporter):
             paste_label: str = (
                 "Hide" if self._render_state.show_paste else "Paste instead"
             )
-            if ghost_button(paste_label):
+            if standard_button(paste_label):
                 self._render_state.show_paste = not self._render_state.show_paste
 
             if self._render_state.show_paste:
@@ -454,7 +453,7 @@ class YouTubeExporter(Exporter):
             imgui.text_colored(COLOR.STATE_WARN, "Select a document to render.")
             return
 
-        if button("Render"):
+        if standard_button("Render"):
             rc.render()
         imgui.same_line()
 

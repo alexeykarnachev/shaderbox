@@ -40,10 +40,12 @@ def _run_row_frames(app: Any, external_write: tuple[int, int] | None) -> None:
             )
         imgui.new_frame()
         imgui.begin("rig")
+        # Offsets count focusable items from the cursor: 079 D7 moved the presets combo and
+        # Reset onto the caption row ABOVE the inputs, so both shifted by two.
         if frame in (0, 1, 2):
-            imgui.set_keyboard_focus_here(1)
-        if frame == 5:
             imgui.set_keyboard_focus_here(3)
+        if frame == 5:
+            imgui.set_keyboard_focus_here(5)
         document_tab.draw(app)
         imgui.end()
         imgui.end_frame()

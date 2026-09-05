@@ -20,9 +20,9 @@ from shaderbox.pass_graph import Wiring, evaluation_order, strip_order
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_primitives import (
     context_menu_style,
-    ghost_button,
     preview_cell,
     small_caption,
+    standard_button,
     tune_icon_button,
 )
 
@@ -178,6 +178,6 @@ def draw(app: App, document_id: str) -> None:
         )
 
     imgui.dummy((0, float(SPACE.SM)))
-    if ghost_button("add pass"):
+    if standard_button("add pass"):
         app.open_add_pass()
     imgui.end_disabled()

@@ -54,9 +54,8 @@ _PARAMETER_BUDGETS: dict[str, int] = {
 _BUTTON_LABEL_BUDGET = 3
 _BUTTON_TIERS: frozenset[str] = frozenset(
     {
-        "button",
         "primary_button",
-        "ghost_button",
+        "standard_button",
         "danger_button",
         "toggle_button",
         "pill_button",
@@ -182,13 +181,7 @@ _UNMEASURABLE: dict[tuple[str, str], str] = {
         "shaderbox/popups/settings.py",
         "_draw_keybindings",
     ): "each command spec's own label, from the command table",
-    ("shaderbox/ui_primitives.py", "primary_button"): "forwards the caller's label",
-    ("shaderbox/ui_primitives.py", "button"): "forwards the caller's label",
-    ("shaderbox/ui_primitives.py", "ghost_button"): "forwards the caller's label",
     ("shaderbox/ui_primitives.py", "toggle_button"): "forwards the caller's label",
-    ("shaderbox/ui_primitives.py", "danger_button"): "forwards the caller's label",
-    ("shaderbox/ui_primitives.py", "chip_button"): "forwards the caller's label",
-    ("shaderbox/ui_primitives.py", "pill_button"): "forwards the caller's label",
     (
         "shaderbox/ui_primitives.py",
         "labeled_text_input",

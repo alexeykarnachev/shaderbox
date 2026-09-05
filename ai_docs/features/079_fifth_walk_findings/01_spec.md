@@ -187,7 +187,24 @@ W-J's inventory question.
 `_draw_document_image`, or push alpha 1.0 around image and backdrop). Test: a frame with
 `copilot_turn_active` draws the image with alpha 1 (read the draw command's color).
 
-### W-J — The button system, swept (#11 #12, D7 D12)
+### W-J — The button system, swept (#11 #12, D7 D12) — landed
+
+The inventory came to 48 primitive call sites plus 9 raw imgui button calls across 21 files.
+What each raw call turned out to be: two labelled verbs (`Open dir`, `New document`), which took
+the standard tier, and seven that are not verbs at all — three `invisible_button` hit rects (the
+editor surface, the splitter, the chat's resize handle), an emoji cell whose label IS the glyph,
+the per-row favorite star (`imgui-ui §7.4` keeps that inline), and telegram's glyph-hosting
+button and carousel arrows. Those seven are the gate's allowlist, each with its reason; the gate
+also fails when an allowlist entry outlives its site.
+
+The `button` tier (imgui's filled grey) is gone; its five sites were ordinary verbs and took the
+standard tier. `preview_cell`'s in-cell delete confirm draws over a red wash where red-on-red
+would not read, so its `Yes` is the primary tier and its `No` the standard one. The lib picker's
+`Reset##reset_pill` became a standard button — a verb over the filters, not a filter — which left
+`COLOR.RESET_PILL` dead, so it went too. `grouped_combo` now has one caller passing one group;
+D6 keeps it for a list that has groups, so it stays, but it is the next candidate if none appears.
+
+Original plan:
 
 1. **Inventory.** Every button site in `shaderbox/` (`ghost_button`, `primary_button`,
    `button`, `toggle_button`, `danger_button`, `pill_button`, `chip_button`, raw

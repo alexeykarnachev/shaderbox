@@ -9,10 +9,10 @@ from shaderbox.app import App, PopupState
 from shaderbox.help_content import HelpSection, help_sections
 from shaderbox.theme import COLOR, SPACE
 from shaderbox.ui_primitives import (
-    ghost_button,
     markdown_text,
     modal_window,
     primary_button,
+    standard_button,
 )
 
 _LABEL = "Help##help"
@@ -87,7 +87,7 @@ def _draw_body(app: App) -> bool:
         if inserted and app.insert_text_at_caret(section.snippet):
             keep_open = False
         imgui.same_line()
-    if ghost_button("Close"):
+    if standard_button("Close"):
         keep_open = False
     return keep_open
 

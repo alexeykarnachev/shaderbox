@@ -21,13 +21,13 @@ from shaderbox.theme import COLOR, SIZE, SPACE, kind_color
 from shaderbox.ui_models import UIUniform
 from shaderbox.ui_primitives import (
     ComboRow,
-    button,
     caption_text,
     chip_button,
     clickable_label,
     clipped_caption,
     grouped_combo,
     play_stop_toggle,
+    standard_button,
 )
 from shaderbox.util import (
     format_auto_value,
@@ -248,7 +248,7 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
     elif ui_uniform.input_type == "buffer":
         assert isinstance(current_value, moderngl.Buffer)
 
-        if button("Randomize" + hidden):
+        if standard_button("Randomize" + hidden):
             data = np.random.rand(current_value.size // 4).astype(np.float32)
             current_value.write(data)
 

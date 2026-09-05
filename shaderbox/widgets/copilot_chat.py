@@ -24,7 +24,6 @@ from shaderbox.ui_primitives import (
     copy_icon_button,
     danger_button,
     gauge_bar,
-    ghost_button,
     labeled_text_input,
     layout_icon_button,
     markdown_text,
@@ -34,6 +33,7 @@ from shaderbox.ui_primitives import (
     open_url_button,
     primary_button,
     revert_icon_button,
+    standard_button,
     step_squares,
     unconnected_gate,
     wrapped_caption,
@@ -188,7 +188,7 @@ def _draw_revert_modal(app: App) -> None:
             app.copilot_revert_target = None
             imgui.close_current_popup()
         imgui.same_line()
-        if ghost_button("Cancel"):
+        if standard_button("Cancel"):
             app.copilot_revert_target = None
             imgui.close_current_popup()
 
@@ -310,7 +310,7 @@ def _draw_transcript(app: App) -> None:
         imgui.get_cursor_pos_y() + max(0.0, input_h - imgui.get_frame_height())
     )
     if in_flight:
-        if ghost_button("Stop", width=btn_w):
+        if standard_button("Stop", width=btn_w):
             app.copilot.cancel_turn()
     elif (
         primary_button("Send", width=btn_w) or submitted
@@ -579,7 +579,7 @@ def _draw_pending_action(app: App, msg: Message, idx: int) -> None:
             if primary_button(f"Yes##gate_yes_{idx}"):
                 app.copilot.answer_gate(approved=True)
             imgui.same_line()
-            if ghost_button(f"No##gate_no_{idx}"):
+            if standard_button(f"No##gate_no_{idx}"):
                 app.copilot.answer_gate(approved=False)
         return
     recover = msg.recover
@@ -615,7 +615,7 @@ def _draw_config_panel(app: App, msg: Message, idx: int) -> None:
     # second drain steals events. Connected auto-resolves approved=True; Cancel resolves False.
     exporter = app.exporter_registry.get(msg.gate_integration)
     if exporter is None:
-        if ghost_button(f"Cancel##gate_cfg_cancel_{idx}"):
+        if standard_button(f"Cancel##gate_cfg_cancel_{idx}"):
             app.copilot.answer_gate(approved=False)
         return
     if exporter.is_connected():
@@ -623,7 +623,7 @@ def _draw_config_panel(app: App, msg: Message, idx: int) -> None:
         return
     exporter.draw_config_ui()
     imgui.dummy(imgui.ImVec2(0, float(SPACE.SM)))
-    if ghost_button(f"Cancel##gate_cfg_cancel_{idx}"):
+    if standard_button(f"Cancel##gate_cfg_cancel_{idx}"):
         app.copilot.answer_gate(approved=False)
 
 
@@ -639,7 +639,7 @@ def _draw_credential_input(app: App, msg: Message, idx: int) -> None:
     if primary_button(f"Save##gate_save_{idx}"):
         app.copilot.answer_gate_credential(msg.gate_input)
     imgui.same_line()
-    if ghost_button(f"Cancel##gate_cancel_{idx}"):
+    if standard_button(f"Cancel##gate_cancel_{idx}"):
         app.copilot.answer_gate(approved=False)
 
 
@@ -685,6 +685,6 @@ def _draw_top_bar(app: App) -> None:
         app.copilot_clear_chat()
     imgui.end_disabled()
     imgui.same_line()
-    if ghost_button("Close", width=close_w):
+    if standard_button("Close", width=close_w):
         app.is_copilot_open = False
     imgui.separator()

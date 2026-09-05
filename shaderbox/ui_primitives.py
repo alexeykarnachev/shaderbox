@@ -40,55 +40,40 @@ def faint_hline(
 
 
 # ---------------------------------------------------------------------------
-# Button system — pick by the action's role, never by how it looks:
-#   primary_button — the ONE call-to-action of a section (filled accent).
-#   button         — an ordinary action (filled neutral grey, the imgui default).
-#   ghost_button   — low-emphasis / secondary (text only, transparent).
-#   toggle_button  — a stateful on/off control: filled accent when active, bordered
-#                    ghost when off (same label both states).
-#   danger_button  — destructive (text only, red); confirm chrome carries the weight.
+# The button system (079 D12) — FOUR tiers, picked by the action's role, never by how
+# it looks. Every button in the app is one of them; a site that wants a fifth is a
+# design question, not a new primitive.
+#
+#   standard_button — an ordinary verb. Transparent fill, a 1 px BORDER frame,
+#                     secondary text. This is the family's look; the other three are
+#                     the same frame in a different color.
+#   primary_button  — the ONE call-to-action of a section (filled accent).
+#   danger_button   — a destructive verb (the standard frame in the error color).
+#   toggle_button   — a stateful on/off control: the standard frame when off, filled
+#                     accent when on. SAME label both states; the style carries it.
+#
+# The earlier low-emphasis tier was text-only with no frame, which the maintainer read
+# as prose rather than as a control: "it looks like a text, the boundaries are not
+# clear, often this blures with other neighboring text". A frame is what says clickable.
+#
+# Chips and pills (`chip_button`, `pill_button`) are NOT in the count: they are a
+# different thing — a tag, a filter, a mode selector — and are their own primitive.
 # ---------------------------------------------------------------------------
 
 
-def primary_button(label: str, width: float = 0.0) -> bool:
-    imgui.push_style_color(imgui.Col_.button, COLOR.ACCENT_PRIMARY)
-    imgui.push_style_color(imgui.Col_.button_hovered, COLOR.ACCENT_ACTIVE)
-    imgui.push_style_color(imgui.Col_.button_active, COLOR.ACCENT_ACTIVE)
-    imgui.push_style_color(imgui.Col_.text, COLOR.BG_APP)
-    clicked: bool = imgui.button(label, size=(width, 0.0))
-    imgui.pop_style_color(4)
-    return clicked
-
-
-def button(label: str, width: float = 0.0) -> bool:
-    return imgui.button(label, size=(width, 0.0))
-
-
-def ghost_button(
+def _framed_button(
     label: str,
-    width: float = 0.0,
-    *,
-    text_color: tuple[float, float, float, float] = COLOR.FG_SECONDARY,
+    width: float,
+    text_color: tuple[float, float, float, float],
+    border_color: tuple[float, float, float, float],
 ) -> bool:
+    # The one shape the standard, danger and off-toggle tiers all draw: transparent
+    # fill, a 1 px frame, colored text, and a fill appearing on hover.
     imgui.push_style_color(imgui.Col_.button, COLOR.TRANSPARENT)
     imgui.push_style_color(imgui.Col_.button_hovered, COLOR.BG_FRAME)
     imgui.push_style_color(imgui.Col_.button_active, COLOR.BORDER)
     imgui.push_style_color(imgui.Col_.text, text_color)
-    clicked: bool = imgui.button(label, size=(width, 0.0))
-    imgui.pop_style_color(4)
-    return clicked
-
-
-def toggle_button(label: str, active: bool, width: float = 0.0) -> bool:
-    """A stateful on/off button: filled accent when `active` (like `primary_button`),
-    a bordered ghost when off. Same label both states — the style carries the state."""
-    if active:
-        return primary_button(label, width)
-    imgui.push_style_color(imgui.Col_.button, COLOR.TRANSPARENT)
-    imgui.push_style_color(imgui.Col_.button_hovered, COLOR.BG_FRAME)
-    imgui.push_style_color(imgui.Col_.button_active, COLOR.BORDER)
-    imgui.push_style_color(imgui.Col_.text, COLOR.FG_SECONDARY)
-    imgui.push_style_color(imgui.Col_.border, COLOR.BORDER)
+    imgui.push_style_color(imgui.Col_.border, border_color)
     imgui.push_style_var(imgui.StyleVar_.frame_border_size, 1.0)
     clicked: bool = imgui.button(label, size=(width, 0.0))
     imgui.pop_style_var()
@@ -96,14 +81,46 @@ def toggle_button(label: str, active: bool, width: float = 0.0) -> bool:
     return clicked
 
 
-def danger_button(label: str, width: float = 0.0) -> bool:
-    imgui.push_style_color(imgui.Col_.button, COLOR.TRANSPARENT)
-    imgui.push_style_color(imgui.Col_.button_hovered, COLOR.BG_FRAME)
-    imgui.push_style_color(imgui.Col_.button_active, COLOR.BORDER)
-    imgui.push_style_color(imgui.Col_.text, COLOR.STATE_ERROR)
+def standard_button(
+    label: str,
+    width: float = 0.0,
+    *,
+    text_color: tuple[float, float, float, float] = COLOR.FG_SECONDARY,
+) -> bool:
+    """An ordinary verb: `open`, `add pass`, `Close`, `Cancel`, `Apply`.
+
+    `text_color` is for a site whose label carries a state of its own (the script row's
+    `open`, which reads in the script's own color); the frame stays the family's.
+    """
+    return _framed_button(label, width, text_color, COLOR.BORDER)
+
+
+def primary_button(label: str, width: float = 0.0) -> bool:
+    """The ONE call-to-action of a section: `Create`, `Send`, `Render`, `Connect`."""
+    imgui.push_style_color(imgui.Col_.button, COLOR.ACCENT_PRIMARY)
+    imgui.push_style_color(imgui.Col_.button_hovered, COLOR.ACCENT_ACTIVE)
+    imgui.push_style_color(imgui.Col_.button_active, COLOR.ACCENT_ACTIVE)
+    imgui.push_style_color(imgui.Col_.text, COLOR.BG_APP)
+    imgui.push_style_color(imgui.Col_.border, COLOR.ACCENT_PRIMARY)
+    imgui.push_style_var(imgui.StyleVar_.frame_border_size, 1.0)
     clicked: bool = imgui.button(label, size=(width, 0.0))
-    imgui.pop_style_color(4)
+    imgui.pop_style_var()
+    imgui.pop_style_color(5)
     return clicked
+
+
+def toggle_button(label: str, active: bool, width: float = 0.0) -> bool:
+    """A stateful on/off control: filled accent when `active`, the standard frame when
+    off. Same label both states — the style carries the state."""
+    if active:
+        return primary_button(label, width)
+    return _framed_button(label, width, COLOR.FG_SECONDARY, COLOR.BORDER)
+
+
+def danger_button(label: str, width: float = 0.0) -> bool:
+    """A destructive verb: `Delete`, `Reset`, `Clear`. The standard frame in the error
+    color — the confirm step carries the weight, not a filled-red fill."""
+    return _framed_button(label, width, COLOR.STATE_ERROR, COLOR.STATE_ERROR)
 
 
 def pill_button(
@@ -1043,14 +1060,15 @@ def cell_delete_confirm(origin: imgui.ImVec2, avail: imgui.ImVec2) -> bool | Non
     )
     imgui.text_colored(COLOR.FG_TITLE, prompt)
 
-    # Neutral filled buttons read clearly on the red wash (red text would not).
+    # The wash already carries the danger, and red-on-red would not read: the confirm is
+    # the primary action of this overlay, the dismissal the standard tier.
     btn_w: float = (avail.x - 3 * SPACE.SM) / 2
     row_y: float = origin.y + avail.y * 0.55
     imgui.set_cursor_screen_pos((origin.x + SPACE.SM, row_y))
-    if button("Yes", width=btn_w):
+    if primary_button("Yes", width=btn_w):
         return True
     imgui.set_cursor_screen_pos((origin.x + SPACE.SM + btn_w + SPACE.SM, row_y))
-    if button("No", width=btn_w):
+    if standard_button("No", width=btn_w):
         return False
     return None
 
@@ -1372,7 +1390,7 @@ def draw_link(
 def open_url_button(label: str, url: str, *, id_: str = "") -> None:
     # An OPEN-ONLY web-link button: opens the browser, does NOT copy (distinct from
     # draw_link). The url must carry its own scheme.
-    if ghost_button(f"{label}{id_}") and url:
+    if standard_button(f"{label}{id_}") and url:
         try:
             webbrowser.open(url)
         except Exception as e:
@@ -1384,7 +1402,7 @@ def open_path_button(
 ) -> None:
     # An OPEN-ONLY local-file button: reveals the file in the OS file manager via the
     # injected opener (the caller passes util.open_in_file_manager). NO clipboard.
-    if ghost_button(f"{label}{id_}") and path:
+    if standard_button(f"{label}{id_}") and path:
         on_open(path)
 
 
