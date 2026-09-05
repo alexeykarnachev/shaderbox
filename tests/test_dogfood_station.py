@@ -12,7 +12,7 @@ import threading
 from pathlib import Path
 
 from dogfood.report.log import LOG_NAME, load_experiment, read_events
-from dogfood.report.station import POINTER_NAME, StationRecorder
+from dogfood.report.station import POINTER_NAME, StationRecorder, ledger_gap
 from shaderbox.copilot.agent import run_turn
 from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.gate import GateChannel
@@ -279,3 +279,81 @@ def test_start_experiment_refuses_a_duplicate_and_a_bad_mode(tmp_path: Path) -> 
         except ValueError:
             continue
         raise AssertionError(f"accepted {kwargs}")
+
+
+def test_a_commit_the_sweep_can_never_reach_is_reported_as_a_gap(
+    tmp_path: Path,
+) -> None:
+    # 081 D13: the sweep runs at start_attempt and walks from the PREVIOUS attempt's sha, so a
+    # commit landing after the last attempt opened is unreachable by any later sweep — three of
+    # the 077 round's engine fixes were lost that way, and zero real commits rendered identically
+    # to three unswept ones.
+    repo = _git_repo(tmp_path / "repo")
+    store = tmp_path / "store"
+    rec = StationRecorder.start_experiment(
+        tmp_path / "p1",
+        "exp",
+        intent="i",
+        mode="end_to_end",
+        model="m1",
+        store=store,
+        repo_root=repo,
+    )
+    sha = _commit(repo, "the engine finding this round produced")
+    rec.end_attempt("built", "done")
+    exp = load_experiment(store / "exp")
+    gap = ledger_gap(exp, repo)
+    assert [c["sha"] for c in gap] == [sha]
+
+
+def test_a_parallel_burst_of_attempts_reports_no_gap(tmp_path: Path) -> None:
+    # The break that matters more than the one above: a model comparison opens every attempt on
+    # ONE HEAD before any runs (five in 3.7 seconds, in the 077 round), so those windows are
+    # EMPTY BY CONSTRUCTION. A check that flagged them would be worse than no check at all.
+    repo = _git_repo(tmp_path / "repo")
+    store = tmp_path / "store"
+    rec = StationRecorder.start_experiment(
+        tmp_path / "p1",
+        "exp",
+        intent="i",
+        mode="end_to_end",
+        model="m1",
+        store=store,
+        repo_root=repo,
+    )
+    StationRecorder.start_attempt(
+        tmp_path / "p2", "exp", model="m2", store=store, repo_root=repo
+    )
+    # A commit mid-round, swept into attempt 3's ledger the normal way. Nothing here is lost, so
+    # the gap must stay empty — an implementation that re-walks earlier windows, or that ignores
+    # what the ledger already recorded, reports it as missing.
+    _commit(repo, "swept into the next attempt's ledger")
+    StationRecorder.start_attempt(
+        tmp_path / "p3", "exp", model="m3", store=store, repo_root=repo
+    )
+    rec.end_attempt("built", "done")
+    exp = load_experiment(store / "exp")
+    assert len(exp.attempts) == 3
+    assert any(a.fixes for a in exp.attempts), (
+        "the mid-round commit must be swept normally"
+    )
+    assert ledger_gap(exp, repo) == []
+
+
+def test_a_dirty_tree_survives_the_read(tmp_path: Path) -> None:
+    # station.py has always recorded `dirty`, and Attempt dropped it on read — a write-only
+    # integrity signal is indistinguishable from one nobody wrote. All eight rc_full_build
+    # attempts ran dirty, meaning they did not execute the code their sha names.
+    repo = _git_repo(tmp_path / "repo")
+    store = tmp_path / "store"
+    (repo / "f").write_text("uncommitted")
+    StationRecorder.start_experiment(
+        tmp_path / "p1",
+        "exp",
+        intent="i",
+        mode="end_to_end",
+        model="m1",
+        store=store,
+        repo_root=repo,
+    )
+    assert load_experiment(store / "exp").attempts[0].dirty is True

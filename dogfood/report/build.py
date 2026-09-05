@@ -539,7 +539,9 @@ def _attempt_page(exp: Experiment, attempt: Attempt) -> str:
 def _experiment_page(exp: Experiment) -> str:
     rows = "".join(
         f'<tr><td><a href="attempt_{a.n}.html">attempt {a.n}</a></td><td>{_e(a.model or "—")}</td>'
-        f"<td><code>{_e(a.sha[:9] or '—')}</code></td><td>{_stamp(a.started)}</td><td>{_stamp(a.ended)}</td>"
+        f"<td><code>{_e(a.sha[:9] or '—')}</code>"
+        f"{' <span class="warn" title="the tree was modified: this sha names code the run did not execute">dirty</span>' if a.dirty else ''}"
+        f"</td><td>{_stamp(a.started)}</td><td>{_stamp(a.ended)}</td>"
         f"<td>{'<span class="pill live">LIVE</span>' if a.live else _e(a.outcome or 'ended')}</td>"
         f'<td class="num">{len(a.turns)}</td><td class="num">{_money(a.cost_usd)}</td>'
         f'<td class="num">{len(a.fixes)}</td></tr>'

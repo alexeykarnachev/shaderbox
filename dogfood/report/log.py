@@ -216,6 +216,10 @@ class Attempt:
     started: str
     model: str = ""
     sha: str = ""
+    # The tree was modified when the attempt opened, so `sha` names code the run did not execute.
+    # Recorded since the store's first version and dropped on read until 081 — a write-only
+    # integrity signal is indistinguishable from one nobody wrote.
+    dirty: bool = False
     ended: str = ""
     outcome: str = ""
     summary: str = ""
@@ -296,6 +300,7 @@ def reconstruct(events: list[Event], experiment_id: str = "") -> Experiment:
             a.started = ev.ts
             a.model = str(p.get("model", ""))
             a.sha = str(p.get("sha", ""))
+            a.dirty = bool(p.get("dirty", False))
         elif ev.kind == "fix":
             attempt_for(ev.attempt, ev.ts).fixes.append(
                 FixRecord(

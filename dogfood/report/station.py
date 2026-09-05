@@ -21,6 +21,8 @@ import subprocess
 import threading
 import time
 from dataclasses import asdict, is_dataclass
+from datetime import datetime
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +30,7 @@ from dogfood.report.log import (
     LOG_NAME,
     MODES,
     EventLog,
+    Experiment,
     load_experiment,
 )
 from scripts.dogfood.analyze import TERMINAL_KINDS
@@ -81,6 +84,52 @@ def commits_between(
         sha, subject, body = [*chunk.split("\x1f", 2), "", ""][:3]
         fixes.append({"sha": sha, "subject": subject, "body": body.strip()})
     return fixes
+
+
+def ledger_gap(exp: Experiment, repo: Path) -> list[dict[str, str]]:
+    """Commits an experiment produced that no `fix` record names, oldest first.
+
+    The sweep runs at `start_attempt` and walks from the PREVIOUS attempt's sha, so a round whose
+    attempts all open on one HEAD (a parallel model comparison) has empty windows by construction —
+    correct, and this must not flag it. What it does flag is a commit that lands INSIDE the
+    experiment's lifetime and after the last attempt opened: no later sweep reaches back across
+    that boundary. Commits after the experiment closed belong to later work, not to it, so the
+    walk stops at the last attempt_end.
+    """
+    attempts = [a for a in exp.attempts if a.sha]
+    if not attempts:
+        return []
+    recorded = {f.sha for a in exp.attempts for f in a.fixes}
+    ended = [a.ended for a in exp.attempts if a.ended]
+    if not ended:
+        return []  # still running: every later commit is future work, not a gap
+    shas = [a.sha for a in attempts]
+    gap: list[dict[str, str]] = []
+    seen: set[str] = set()
+    # An identical pair (a parallel burst opening every attempt on one HEAD) yields an empty
+    # window on its own — no special case needed.
+    for since, until in pairwise(shas):
+        for commit in commits_between(repo, since, until):
+            if commit["sha"] in recorded or commit["sha"] in seen:
+                continue
+            seen.add(commit["sha"])
+            gap.append(commit)
+    # The tail window: from the last attempt's sha up to the last commit made while the experiment
+    # was still open. `git log --until` is the only bound available — the shas after it are work
+    # the experiment cannot have produced.
+    tail = commits_between(repo, shas[-1], "HEAD")
+    last_ended = max(ended)
+    for commit in tail:
+        if commit["sha"] in recorded or commit["sha"] in seen:
+            continue
+        when = _git(repo, "show", "-s", "--format=%cI", commit["sha"])
+        # Compare INSTANTS: the store stamps UTC and git prints the committer's local offset, so
+        # the two strings sort differently from the moments they name.
+        if when and datetime.fromisoformat(when) > datetime.fromisoformat(last_ended):
+            break
+        seen.add(commit["sha"])
+        gap.append(commit)
+    return gap
 
 
 class _TurnAccumulator:

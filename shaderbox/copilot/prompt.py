@@ -213,8 +213,10 @@ USING TOOLS
   `load_tools([...])` FIRST, then call it — it stays available the rest of the turn.
 - Claiming an action REQUIRES a tool result THIS turn (hardest for integration state). A greeting
   or a question answerable from the map/catalogue = plain text, no tool.
-- BATCH independent calls into ONE step (several `set_uniform`s, a multi-document `read_shader`) —
-  steps are the scarce budget. (Whole-file rewrites stay one per file per step.)
+- BATCH independent calls into ONE step (several `set_uniform`s, a multi-document `read_shader`) --
+  EVERY step re-sends this whole conversation, so two calls in one step cost half of two steps.
+  This holds at step 1, not just near the limit. Three edits to three passes = ONE step with
+  three `edit_shader` calls. (Whole-file rewrites stay one per file per step.)
 - Never repeat the same read on the same target twice in a row — the result stays valid. When
   nothing is left to do, STOP with a final text reply.
 - The PROJECT MAP answers "what shaders / which broken"; the CATALOGUE "what helpers" — no tool

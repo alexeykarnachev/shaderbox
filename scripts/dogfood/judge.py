@@ -36,6 +36,19 @@ def region_diff(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.abs(a.astype(np.int32) - b.astype(np.int32)).mean())
 
 
+def lit_fraction(im: np.ndarray, thresh: int = 13) -> float:
+    """Share of texels whose brightest channel reaches `thresh` (0.0-1.0).
+
+    The number the cross-scene diagnostic is read off: render model A's shader on model B's
+    known-good scene and vice versa, and the pair says whether a dark result is the shader's
+    fault or the scene's. It decided three debugging rounds in the 077 comparison ("luna cascade
+    on this scene lights 95%, this cascade on luna scene 14% -- the shader, not the scene") and
+    lived only in the driver's notes until now. The default threshold is deliberately low: this
+    asks whether light ARRIVED, not whether it is bright.
+    """
+    return float((im.max(axis=2) >= thresh).mean())
+
+
 def bright_centroid(
     im: np.ndarray, thresh: int = _DEFAULT_THRESH
 ) -> tuple[float, float] | None:
