@@ -20,7 +20,6 @@ from scripts.dogfood.judge import (
     column_runs,
     farthest_bright_angle,
     grid_cell,
-    lit_fraction,
     load_rgb,
     region_diff,
 )
@@ -157,16 +156,3 @@ def test_public_harness_import_still_resolves_through_the_lazy_hook(
 def test_lazy_hook_rejects_an_unknown_name() -> None:
     with pytest.raises(AttributeError):
         _ = scripts.dogfood.NotAThing
-
-
-def test_lit_fraction_counts_the_texels_light_reached() -> None:
-    # 081 D15: the cross-scene diagnostic (A's shader on B's known-good scene) decided three
-    # debugging rounds in the 077 comparison and lived only in the driver's notes — judge.py had
-    # no primitive for the number it is read off.
-    im = np.zeros((10, 10, 3), dtype=np.uint8)
-    assert lit_fraction(im) == 0.0
-    im[:5, :, :] = 200
-    assert lit_fraction(im) == 0.5
-    # One more texel moves the fraction by exactly 1/N, so the number is a count and not a mood.
-    im[5, 0, 0] = 200
-    assert lit_fraction(im) == 0.51

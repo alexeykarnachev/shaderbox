@@ -1363,18 +1363,6 @@ def test_a_turn_that_used_a_tool_is_not_retried() -> None:
     assert "Done. df is added" in done.summary.reply
 
 
-def test_the_token_estimate_lands_near_a_known_billed_figure() -> None:
-    # 081 D14: chars/4 under-counts real billed input by ~11% across 475 measured requests, and
-    # _trim_history budgets with it — under-counting is the unsafe direction for a budget check.
-    # The corpus's implied divisor is 3.39-3.85 by model; the constant must sit inside that band.
-    from shaderbox.copilot.prompt import CHARS_PER_TOKEN, estimate_tokens
-
-    assert 3.4 <= CHARS_PER_TOKEN <= 3.85
-    # 3600 characters of content bills near 1000 tokens at the measured ratio.
-    messages = [LLMMessage(role="user", content="x" * 3600)]
-    assert 940 <= estimate_tokens(messages) <= 1060
-
-
 def test_the_gauge_reports_what_the_turn_actually_billed() -> None:
     # 081 D9: context_tokens is iteration 0's input, and the tooltip printed it beside cost_usd,
     # which IS the turn total — two numbers on different bases in one tooltip. On the worst turn

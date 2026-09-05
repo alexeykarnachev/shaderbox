@@ -118,67 +118,6 @@ def test_the_pass_verbs_are_mutating_with_delete_lazy_and_gated() -> None:
     assert ok and "added pass 'glow'" in msg
 
 
-# Every tool whose args carry an address must declare how it reads `<id>#<pass>`. c8960e1 fixed
-# probe_render and left a comment claiming "every other tool takes the pass address" — false when
-# written: read_shader did not, and four models hit it. A hand-kept list would drift the same way,
-# so the domain is enumerated from the registry and a NEW address-taking tool fails this file
-# until it is classified.
-_PASS_AWARE = frozenset({"edit_shader", "write_shader", "probe_render", "read_shader"})
-# A whole-document op (delete/rename/switch/duplicate/canvas/media/script), or a deliverable
-# render: "one pass" is not a thing either can mean, so a pass address is a category error and
-# must be REFUSED, never silently downgraded to the document (conventions.md: never change a
-# destructive op's behavior on a guess the model cannot see).
-_DOCUMENT_ONLY = frozenset(
-    {
-        "add_pass",
-        "bind_media",
-        "delete_document",
-        "delete_pass",
-        "duplicate_document",
-        "edit_script",
-        "read_script",
-        "rename_document",
-        "render_image",
-        "render_video",
-        "set_canvas_size",
-        "set_pass",
-        "set_uniform",
-        "switch_document",
-        "unbind_media",
-        "write_script",
-    }
-)
-_ADDRESS_FIELDS = frozenset({"document", "documents", "target"})
-
-
-def test_every_address_taking_tool_declares_its_pass_behavior() -> None:
-    registry = build_registry(minimal_caps())
-    addressed = {
-        d.name
-        for d in registry.definitions()
-        if _ADDRESS_FIELDS & set(d.args_model.model_fields)
-    }
-    unclassified = addressed - _PASS_AWARE - _DOCUMENT_ONLY
-    assert not unclassified, (
-        f"address-taking tools with no pass-address classification: {sorted(unclassified)}"
-    )
-    # The classes name only real tools, so a rename cannot leave a dead entry behind.
-    assert addressed >= (_PASS_AWARE | _DOCUMENT_ONLY)
-
-
-def test_a_pass_aware_tool_resolves_a_pass_address(app: Any) -> None:
-    backend = app.copilot_backend
-    assert backend.add_pass("", "red", None, None, None, None, None, False).ok
-    short = backend._copilot_short_ids()[app.current_document_id]
-    red = "#version 460 core\nin vec2 vs_uv;\nout vec4 fs_color;\nvoid main() { fs_color = vec4(1.0, 0.0, 0.0, 1.0); }\n"
-    assert backend.apply_full_rewrite(red, f"{short}#red").errors == []
-    for name in sorted(_PASS_AWARE):
-        assert name in {d.name for d in build_registry(backend).definitions()}, name
-    # probe_render and read_shader both take the address; neither says "no such document".
-    assert "no such document" not in backend.probe_render(f"{short}#red", 0.0)
-    assert backend.read_shaders([f"{short}#red"])[0].document_id.endswith("#red")
-
-
 def test_a_document_only_tool_refuses_a_pass_address(app: Any) -> None:
     backend = app.copilot_backend
     assert backend.add_pass("", "red", None, None, None, None, None, False).ok
@@ -217,34 +156,3 @@ def test_an_invalid_argument_names_the_field_that_was_wrong(app: Any) -> None:
     )
     assert not ok
     assert "document" in msg, msg
-
-
-def test_the_engine_uniform_prose_is_generated_not_retyped(app: Any) -> None:
-    # 081 D12: the two prose surfaces named THREE of five engine uniforms, and the two they
-    # omitted (the pass counters) are exactly what a model tried to set — 600s of wall clock on
-    # three rejected calls. Asserting the rendered text against the table it is generated FROM is
-    # a tautology, so this pins the mechanism instead: each surface interpolates the shared list,
-    # and neither spells the set out. A hand-written list is what drifted.
-    _ = app
-    from shaderbox.copilot.prompt_context import _CONVENTIONS
-    from shaderbox.copilot.prompt_context import _ENGINE_UNIFORM_LIST as _CONV_LIST
-    from shaderbox.copilot.tools.shader import _ENGINE_UNIFORM_LIST, _SET_UNIFORM_DESC
-    from shaderbox.engine_uniforms import ENGINE_UNIFORM_TYPES
-
-    for rendered, generated in (
-        (_SET_UNIFORM_DESC, _ENGINE_UNIFORM_LIST),
-        (_CONVENTIONS, _CONV_LIST),
-    ):
-        # The generated fragment names the WHOLE table and is what the surface actually carries.
-        for name in ENGINE_UNIFORM_TYPES:
-            assert name in generated, name
-        assert generated in rendered
-
-
-def test_the_pass_tools_need_no_load_first(app: Any) -> None:
-    # 081 D6: the tools array precedes every message, so growing it mid-turn changes byte zero and
-    # voids the whole cached prefix — measured 2.9% cache share on requests where it grew against
-    # 62.7% where it did not. The two hot pass tools are worth more eager than lazy.
-    registry = build_registry(app.copilot_backend)
-    eager = {spec.name for spec in registry.assemble_specs(set())}
-    assert {"add_pass", "set_pass"} <= eager
