@@ -47,10 +47,9 @@ after lock: W-I viewer alpha, W-F strip, W-H stub, W-E orphan key — one-line c
 local): engine, prompting, caching, tooling, the dogfood skill itself. The sharpest item is the
 zero-call narration after an engine stop (five turns, three models).
 
-**Landed this session:** 075 (the station), 076 (pass tools), 077 (seven models, two rounds,
-$3.51), the default model `tencent/hy4-preview` (one place: `CopilotIntegration.model`), and
-twelve engine fixes the runs surfaced (`git log 2678126..`). The station store is local and
-gitignored; `uv run python -m dogfood.report.build` regenerates the pages.
+**Landed before this banner:** 078 in full (see its row and `01_spec.md ## Review history`);
+the editor library is vendored at `6d526c6`; `jedi`, `ruff` and `clang-format` are runtime
+dependencies. The 077 sweep material is unchanged.
 
 **Still due at the display:** 073's per-wave `## Manual verification` lists, 072's five checks,
 070's, 071's, `todo.md`'s live-only checks and 065's 13-16.
