@@ -346,16 +346,19 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   this single path; per-uniform private HELPER METHODS inside `update` cover the per-value case). **Per-
   instance state (`self.*`) persists across frames — the reason CPU scripting exists** (a stateless
   `sin(t)` belongs in the shader). Each dict value is validated against the live uniform via the shared
-  `uniform_coerce` (a bare number for a scalar; `Vec2/3/4`/`Array`/`Text` for the shaped kinds). The engine
+  `uniform_coerce` — every value is PLAIN PYTHON (a number for a scalar, a list or tuple for a vector,
+  a list flat or as rows for an array, a str for a text uniform), shaped against the live uniform, with
+  no wrapper types to learn (079). The engine
   (`shaderbox/scripting/`) is repo code owned by `ProjectSession`, imports no imgui/glfw and no concrete
   `Document` type (it works against the `ScriptTarget` protocol — a document's `passes` by name, each a
   `ScriptPass` of `uniform_values` + `get_active_uniforms()` + `script_ready`), so it stays in the 025
   headless core. **Binding is by EXISTENCE**: `script.py` on disk IS the binding — no
   active flag, no activate step (`is_script_active`/`is_brain_active` retired in 048). **The body is `exec`'d
-  VERBATIM** (no AST surgery; the file IS a class def). A script is plain Python — `import math`, the stdlib,
-  AND a real `from shaderbox.scripting import Vec2, Vec3, …` all work (the exec `__builtins__` carries
-  `__import__`); the 048 stub EMITS that explicit import so the available types are visible, and
-  `behavior.py::_build_globals` ALSO injects the same names (base + `Ctx` + output types) as a FALLBACK so a
+  VERBATIM** (no AST surgery; the file IS a class def). A script is plain Python — `import math`, numpy and
+  the stdlib all work — but of THIS package it sees `shaderbox.scripting` and, in it, `ScriptBehavior`,
+  `Ctx` and `MouseState` alone: `_build_globals` hands the exec a narrowed `__import__` (079), so the
+  app's own modules are not a script's to reach. The 048 stub EMITS that explicit import so the surface
+  is visible, and `behavior.py::_build_globals` ALSO injects the same names as a FALLBACK so a
   deleted import line degrades gracefully instead of an opaque eager-annotation-eval freeze. An error's
   lineno points at the user source (the 039 ghost removed by construction). A broken script is
   **error-as-data**: the uniform freezes at last-good + records a `ScriptError`, never raising into the
@@ -1127,9 +1130,9 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
     NO suppression — ruff's `S102` (flake8-bandit) isn't in this repo's `select`, and pyright's basic
     mode flags no `Any`-flow on the namespaced `exec`. The exec globals are the REAL builtins
     (feature 045 — a script is plain Python, `import math` works) plus the injected top-level names
-    the eager method annotations resolve against (`Ctx`/`MouseState`/`Vec2..4`/`Array`/`Text`); the
-    `ScriptBehavior` base is injected too. `__build_class__` is in the real builtins (the class
-    statement is satisfied), so no curated `__builtins__` dict is needed.
+    the eager method annotations resolve against (`ScriptBehavior`/`Ctx`/`MouseState`). The builtins are
+    the real ones with ONE substitution — `__import__`, narrowed to this package's script surface (079)
+    — so `__build_class__` and the stdlib are untouched and the class statement is satisfied.
   - `moderngl.create_standalone_context(backend="egl")` — the stub types `**kwargs` as a single
     `dict`, so a keyword arg trips `arg-type` (`scripts/dogfood/harness.py`, the headless EGL context).
   - `openai`'s `chat.completions.create(messages=, tools=)` rejects plain dict literals (its params

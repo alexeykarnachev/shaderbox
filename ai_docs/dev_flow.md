@@ -246,8 +246,8 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   uniform; a key whose value is a dict is a PASS BLOCK driving that pass alone and winning over a
   broadcast.
   `context.py` (`EngineContext`/`Ctx`, `t/dt/frame` + `mouse: MouseState` — feature 042,
-  `EXPORT_MOUSE`-frozen on export), `errors.py` (`ScriptError`), `outputs.py`
-  (the typed returns: `Vec2/3/4` tuple-subclasses + `Array`/`Text` + `normalize_output` → coercion),
+  `EXPORT_MOUSE`-frozen on export), `errors.py` (`ScriptError`), `api_doc.py` (the authored glosses
+  behind `K` and the copilot's SCRIPT API block, gated by `tests/test_script_api_doc.py`),
   `behavior.py` (`ScriptBehavior` base + `Behavior` protocol + `PythonBehavior` — the curated-globals
   `exec` seam, subclass resolve, instance hold, `run`; + the free `coerce_one` coercion atom),
   `engine.py` (`ScriptEngine`: per-document registry, `(path,mtime)` cache + cached source, resolve +
@@ -398,6 +398,7 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   publish_telegram / publish_youtube; plus the `load_tools` meta-tool. LAZY (loaded on demand by
   `load_tools`, feature 052): `tools/document_ops.py` — rename_document / set_canvas_size / duplicate_document /
   import_document; `tools/media.py` — bind_media / unbind_media; `tools/shader.py` — delete_lib_file;
+  `tools/passes.py` — add_pass / set_pass / delete_pass (feature 076);
   `tools/telegram.py` — set_telegram_token / telegram_connect + pack CRUD; `tools/youtube.py` —
   set_youtube_credentials. The eager/lazy flag
   lives on each `ToolDefinition`; `registry.assemble_specs` builds the per-iteration `tools=`. The document-id/edit/uniform/delete + render/publish + telegram

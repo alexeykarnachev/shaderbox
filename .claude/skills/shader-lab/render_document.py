@@ -27,7 +27,6 @@ import moderngl
 from shaderbox.document import Document
 from shaderbox.media import FileDetails, MediaDetails, ResolutionDetails, texture_to_pil
 from shaderbox.paths import shader_lib_root
-from shaderbox.scripting.outputs import normalize_output
 from shaderbox.shader_lib import ShaderLibIndex, set_active
 from shaderbox.uniform_coerce import coerce_uniform_value
 
@@ -60,21 +59,19 @@ def _load_behavior(document_dir: str) -> object | None:
 
 def _apply_driven(document: Document, driven: dict[str, object]) -> None:
     # Coerce each script output into the program-ready shape exactly as the live engine does
-    # (normalize the typed output, then chunk a vecN[M]/array per the live Uniform) — core.render
-    # writes uniform_values straight to the program without coercing, so this must mirror it.
+    # (chunk a vecN[M]/array per the live Uniform) — core.render writes uniform_values straight to
+    # the program without coercing, so this must mirror it. A script returns plain Python, so
+    # there is nothing to unwrap first.
     if not document.render_pass.program:
         document.render_pass.compile()
     uniforms = {u.name: u for u in document.render_pass.get_active_uniforms()}
     for name, val in driven.items():
-        normalized = normalize_output(val)
         uniform = uniforms.get(name)
         if uniform is None:
-            document.render_pass.uniform_values[name] = normalized
+            document.render_pass.uniform_values[name] = val
             continue
-        coerced = coerce_uniform_value(normalized, uniform)
-        document.render_pass.uniform_values[name] = (
-            normalized if coerced is None else coerced
-        )
+        coerced = coerce_uniform_value(val, uniform)
+        document.render_pass.uniform_values[name] = val if coerced is None else coerced
 
 
 def _apply_script_at(document: Document, document_dir: str, t: float) -> None:

@@ -48,9 +48,12 @@ def _user_error_line(marker_name: str, exc: BaseException) -> int:
 
 
 class ScriptBehavior:
-    """The base every script subclasses. `update` returns the uniform's value this frame
-    (a bare number for a scalar; `Vec2/3/4`/`Array`/`Text` for the shaped kinds). State goes
-    on `self` (set in `__init__`, mutated in `update`) and persists across frames."""
+    """The base class a document script's Behavior extends.
+
+    Define `__init__(self)` for state that survives across frames, and
+    `update(self, ctx) -> dict` for the values each frame drives. State goes on `self` and
+    persists; the values are plain Python, shaped against the live uniform.
+    """
 
     def update(self, ctx: EngineContext) -> Any:
         raise NotImplementedError
