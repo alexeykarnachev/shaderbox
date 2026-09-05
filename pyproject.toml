@@ -95,7 +95,7 @@ pythonVersion = "3.12"
 # `scripts/` and `.claude/skills/` hold standalone helpers invoked by hand, never imported by
 # `tests/` — so a package symbol they call could be renamed or deleted with every gate green.
 # Three had accumulated that way (079 final review). They are checked here now.
-include = ["shaderbox", "scripts", ".claude/skills"]
+include = ["shaderbox", "scripts", ".claude/skills", "dogfood"]
 # The vendored ABI probe is upstream's bytes, compared byte-for-byte by
 # tests/test_editor_ffi.py; house rules do not apply to it.
 exclude = [

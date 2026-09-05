@@ -579,6 +579,26 @@ def test_non_dict_return_is_clean_sentinel_error(tmp_path: Path) -> None:
     assert ("n0", "main", "u_x") not in eng.errors
 
 
+def test_a_none_value_inside_a_pass_block_hands_the_uniform_back_too(
+    tmp_path: Path,
+) -> None:
+    # The block half of the same rule. It shipped ungated: deleting the block-path drop passed
+    # the whole suite, so the commit's "both paths get it" was true of the code and untrue of
+    # what held it there. Falsifier: drop the `if v is not None` from the block comprehension
+    # and a manual uniform goes red and reads as driven.
+    _write_script(
+        tmp_path, _script(update_body="        return {'main': {'u_x': None}}\n")
+    )
+    document = _FakeDocument([_u("u_x")])
+    document.passes["main"].uniform_values["u_x"] = 7.0
+    eng = _engine(tmp_path, document)
+    eng.tick("n0", document, _ctx(0.0))
+
+    assert document.uniform_values["u_x"] == 7.0  # the last value stands
+    assert not [key for key in eng.errors if key[2] == "u_x"]
+    assert ("main", "u_x") not in eng.script_driven_uniforms("n0")
+
+
 def test_a_none_value_hands_the_uniform_back_to_the_user(tmp_path: Path) -> None:
     # The stub, the copilot's API block and 059's spec all tell the author that a key mapped to
     # None "stays MANUAL". It did not: None reached coercion, failed as "not a number" and still
