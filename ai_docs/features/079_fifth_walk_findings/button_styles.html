@@ -57,7 +57,12 @@
   .reset-3 .b.reset { color: var(--bg-app); border-color: var(--error); background: var(--error); }
 
   /* The presets chip: small, on the caption row. */
-  .chip { display: inline-block; font-size: 10px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border-soft); color: var(--fg-muted); background: transparent; margin-left: 6px; vertical-align: middle; }
+  .chip { display: inline-block; font-size: 9px; line-height: 12px; padding: 0 6px; border-radius: 999px; border: 1px solid var(--border-soft); color: var(--fg-muted); background: transparent; margin-left: 6px; position: relative; top: -1px; }
+  /* The Document tab's top rows: a grid whose columns ARE the inputs' widths, so a caption sits
+     over its own field whatever the font measures. Row 1 captions (Reset right-aligned), row 2 fields. */
+  .head { display: grid; grid-template-columns: 180px max-content 1fr; column-gap: 14px; row-gap: 4px; align-items: center; margin: 6px 0; }
+  .head .right { justify-self: end; }
+  .head .fields { display: inline-flex; align-items: center; gap: 6px; }
   .chip.filled { background: var(--bg-frame); border-color: var(--bg-frame); }
   .chip.accent { color: var(--accent); border-color: var(--accent); }
 
@@ -83,8 +88,13 @@ Reset variant (1 red text, 2 red outline, 3 filled red) and a chip (outline / fi
     <div class="thumbs"><div class="thumb live"><span class="name">UV Mango</span></div><div class="thumb"><span class="name">Bloom Chain</span></div><div class="thumb"><span class="name">Cascades</span></div></div>
   </div>
   <div class="panel">
-    <div class="row between"><span><span class="caption">Document name</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="caption">Canvas</span><span class="chip">presets</span></span><span class="b reset">Reset</span></div>
-    <div class="row"><span class="input w180">UV Mango</span><span style="width:6px"></span><span class="input w56">1080</span><span class="x">x</span><span class="input w56">1080</span></div>
+    <div class="head">
+      <span class="caption">Document name</span>
+      <span class="caption">Canvas<span class="chip">presets</span></span>
+      <span class="b reset right">Reset</span>
+      <span class="input w180">UV Mango</span>
+      <span class="fields"><span class="input w56">1080</span><span class="x">x</span><span class="input w56">1080</span></span>
+    </div>
     <div class="row" style="margin-top:10px"><div class="thumb live" style="width:56px;height:56px"><span class="name">main</span></div><div class="thumb" style="width:56px;height:56px"><span class="name">paint</span></div><span class="b">add pass</span></div>
     <div class="row"><span class="caption">library</span><span class="b">open</span><span class="b">Close</span></div>
   </div>
@@ -99,8 +109,13 @@ Reset variant (1 red text, 2 red outline, 3 filled red) and a chip (outline / fi
     <div class="thumbs"><div class="thumb live"><span class="name">UV Mango</span></div><div class="thumb"><span class="name">Bloom Chain</span></div><div class="thumb"><span class="name">Cascades</span></div></div>
   </div>
   <div class="panel">
-    <div class="row between"><span><span class="caption">Document name</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="caption">Canvas</span><span class="chip">presets</span></span><span class="b reset">Reset</span></div>
-    <div class="row"><span class="input w180">UV Mango</span><span style="width:6px"></span><span class="input w56">1080</span><span class="x">x</span><span class="input w56">1080</span></div>
+    <div class="head">
+      <span class="caption">Document name</span>
+      <span class="caption">Canvas<span class="chip">presets</span></span>
+      <span class="b reset right">Reset</span>
+      <span class="input w180">UV Mango</span>
+      <span class="fields"><span class="input w56">1080</span><span class="x">x</span><span class="input w56">1080</span></span>
+    </div>
     <div class="row" style="margin-top:10px"><div class="thumb live" style="width:56px;height:56px"><span class="name">main</span></div><div class="thumb" style="width:56px;height:56px"><span class="name">paint</span></div><span class="b">add pass</span></div>
     <div class="row"><span class="caption">library</span><span class="b">open</span><span class="b">Close</span></div>
   </div>
@@ -115,8 +130,13 @@ Reset variant (1 red text, 2 red outline, 3 filled red) and a chip (outline / fi
     <div class="thumbs"><div class="thumb live"><span class="name">UV Mango</span></div><div class="thumb"><span class="name">Bloom Chain</span></div><div class="thumb"><span class="name">Cascades</span></div></div>
   </div>
   <div class="panel">
-    <div class="row between"><span><span class="caption">Document name</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="caption">Canvas</span><span class="chip filled">presets</span></span><span class="b reset">Reset</span></div>
-    <div class="row"><span class="input w180">UV Mango</span><span style="width:6px"></span><span class="input w56">1080</span><span class="x">x</span><span class="input w56">1080</span></div>
+    <div class="head">
+      <span class="caption">Document name</span>
+      <span class="caption">Canvas<span class="chip filled">presets</span></span>
+      <span class="b reset right">Reset</span>
+      <span class="input w180">UV Mango</span>
+      <span class="fields"><span class="input w56">1080</span><span class="x">x</span><span class="input w56">1080</span></span>
+    </div>
     <div class="row" style="margin-top:10px"><div class="thumb live" style="width:56px;height:56px"><span class="name">main</span></div><div class="thumb" style="width:56px;height:56px"><span class="name">paint</span></div><span class="b">add pass</span></div>
     <div class="row"><span class="caption">library</span><span class="b">open</span><span class="b">Close</span></div>
   </div>
@@ -131,8 +151,13 @@ Reset variant (1 red text, 2 red outline, 3 filled red) and a chip (outline / fi
     <div class="thumbs"><div class="thumb live"><span class="name">UV Mango</span></div><div class="thumb"><span class="name">Bloom Chain</span></div><div class="thumb"><span class="name">Cascades</span></div></div>
   </div>
   <div class="panel">
-    <div class="row between"><span><span class="caption">Document name</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="caption">Canvas</span><span class="chip filled">presets</span></span><span class="b reset">Reset</span></div>
-    <div class="row"><span class="input w180">UV Mango</span><span style="width:6px"></span><span class="input w56">1080</span><span class="x">x</span><span class="input w56">1080</span></div>
+    <div class="head">
+      <span class="caption">Document name</span>
+      <span class="caption">Canvas<span class="chip filled">presets</span></span>
+      <span class="b reset right">Reset</span>
+      <span class="input w180">UV Mango</span>
+      <span class="fields"><span class="input w56">1080</span><span class="x">x</span><span class="input w56">1080</span></span>
+    </div>
     <div class="row" style="margin-top:10px"><div class="thumb live" style="width:56px;height:56px"><span class="name">main</span></div><div class="thumb" style="width:56px;height:56px"><span class="name">paint</span></div><span class="b">add pass</span></div>
     <div class="row"><span class="caption">library</span><span class="b">open</span><span class="b">Close</span></div>
   </div>
@@ -147,8 +172,13 @@ Reset variant (1 red text, 2 red outline, 3 filled red) and a chip (outline / fi
     <div class="thumbs"><div class="thumb live"><span class="name">UV Mango</span></div><div class="thumb"><span class="name">Bloom Chain</span></div><div class="thumb"><span class="name">Cascades</span></div></div>
   </div>
   <div class="panel">
-    <div class="row between"><span><span class="caption">Document name</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="caption">Canvas</span><span class="chip accent">presets</span></span><span class="b reset">Reset</span></div>
-    <div class="row"><span class="input w180">UV Mango</span><span style="width:6px"></span><span class="input w56">1080</span><span class="x">x</span><span class="input w56">1080</span></div>
+    <div class="head">
+      <span class="caption">Document name</span>
+      <span class="caption">Canvas<span class="chip accent">presets</span></span>
+      <span class="b reset right">Reset</span>
+      <span class="input w180">UV Mango</span>
+      <span class="fields"><span class="input w56">1080</span><span class="x">x</span><span class="input w56">1080</span></span>
+    </div>
     <div class="row" style="margin-top:10px"><div class="thumb live" style="width:56px;height:56px"><span class="name">main</span></div><div class="thumb" style="width:56px;height:56px"><span class="name">paint</span></div><span class="b">add pass</span></div>
     <div class="row"><span class="caption">library</span><span class="b">open</span><span class="b">Close</span></div>
   </div>
@@ -163,8 +193,13 @@ Reset variant (1 red text, 2 red outline, 3 filled red) and a chip (outline / fi
     <div class="thumbs"><div class="thumb live"><span class="name">UV Mango</span></div><div class="thumb"><span class="name">Bloom Chain</span></div><div class="thumb"><span class="name">Cascades</span></div></div>
   </div>
   <div class="panel">
-    <div class="row between"><span><span class="caption">Document name</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="caption">Canvas</span><span class="chip">presets</span></span><span class="b reset">Reset</span></div>
-    <div class="row"><span class="input w180">UV Mango</span><span style="width:6px"></span><span class="input w56">1080</span><span class="x">x</span><span class="input w56">1080</span></div>
+    <div class="head">
+      <span class="caption">Document name</span>
+      <span class="caption">Canvas<span class="chip">presets</span></span>
+      <span class="b reset right">Reset</span>
+      <span class="input w180">UV Mango</span>
+      <span class="fields"><span class="input w56">1080</span><span class="x">x</span><span class="input w56">1080</span></span>
+    </div>
     <div class="row" style="margin-top:10px"><div class="thumb live" style="width:56px;height:56px"><span class="name">main</span></div><div class="thumb" style="width:56px;height:56px"><span class="name">paint</span></div><span class="b">add pass</span></div>
     <div class="row"><span class="caption">library</span><span class="b">open</span><span class="b">Close</span></div>
   </div>
