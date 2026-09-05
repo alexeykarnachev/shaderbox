@@ -82,7 +82,6 @@ gates:
 		# shipped exactly that.
 		after=$$(git diff HEAD 2>/dev/null | md5sum; git status --porcelain 2>/dev/null | sort)
 		if [ "$$after" != "$$before" ]; then
-			cat "$$log"
 			echo "== gates: the hooks REWROTE files -- review and stage them, then re-run =="
 		else
 			echo "== gates: check exited $$rc leaving the tree unchanged; re-running =="
@@ -91,6 +90,9 @@ gates:
 		fi
 	fi
 	if [ $$rc -ne 0 ]; then
+		# The log, on EVERY failing path -- a red gate with no diagnostic is worse than no
+		# gate, and deduplicating the verdict message once cost exactly that on the retry path.
+		cat "$$log"
 		echo "== gates: FAILED at check (exit $$rc); test and smoke not run =="
 		status=$$rc
 	else
