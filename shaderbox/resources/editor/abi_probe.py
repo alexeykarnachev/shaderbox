@@ -82,6 +82,7 @@ _SIG = {
     "ed_new": (ctypes.c_void_p, [ctypes.c_char_p]),
     "ed_free": (None, [ctypes.c_void_p]),
     "ed_feed": (None, [ctypes.c_void_p, ctypes.c_char_p]),
+    "ed_feed_aborted": (ctypes.c_bool, [ctypes.c_void_p]),
     "ed_text": (ctypes.c_int32, [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ubyte), ctypes.c_int32]),
     "ed_set_text": (None, [ctypes.c_void_p, ctypes.c_char_p]),
     "ed_cursor": (None, [ctypes.c_void_p, ctypes.POINTER(ctypes.c_int32), ctypes.POINTER(ctypes.c_int32)]),
@@ -171,6 +172,8 @@ _SIG = {
     "ed_set_language": (ctypes.c_bool, [ctypes.c_void_p, ctypes.c_int32]),
     "ed_language": (ctypes.c_int32, [ctypes.c_void_p]),
     "ed_language_for_path": (ctypes.c_int32, [ctypes.c_char_p]),
+    "ed_language_override_path": (None, [ctypes.c_char_p, ctypes.c_int32]),
+    "ed_clear_language_overrides_path": (None, []),
     "ed_class_at": (ctypes.c_int32, [ctypes.c_void_p, ctypes.c_int32, ctypes.c_int32]),
     "ed_pixel_over_glyph": (ctypes.c_bool, [ctypes.c_void_p, ctypes.c_float, ctypes.c_float]),
     "ed_word_at_pixel": (
@@ -288,6 +291,11 @@ def main() -> int:
     check("ciw", text(h), "void main() {\n    color c = vec3(1.0);\n}")
     check("cursor", cursor(h), (1, 8))
     check("mode", MODES[lib.ed_mode(h)], "NORMAL")
+    check("feed completed", lib.ed_feed_aborted(h), False)
+    # A failed find drops the rest of the string, as vim drops a mapping's.
+    lib.ed_feed(h, b"fqx")
+    check("feed aborted", lib.ed_feed_aborted(h), True)
+    check("keys after the failure dropped", text(h), "void main() {\n    color c = vec3(1.0);\n}")
 
     print("revision and read-only")
     # The revision must be MONOTONIC across a whole-buffer replace. It is not
@@ -680,6 +688,31 @@ def main() -> int:
     check("a .py file", lib.ed_language_for_path(b"/src/main.py"), LANGS["Python"])
     check("a .frag file", lib.ed_language_for_path(b"shader.frag"), LANGS["GLSL"])
     check("an unknown language refuses", lib.ed_set_language(h, 99), False)
+
+    # A host names its own suffixes; "" is the catch-all every unknown one
+    # falls back to. Registration is process-wide, so it is undone here rather
+    # than leaking into the checks below.
+    lib.ed_language_override_path(b".shader_part", LANGS["GLSL"])
+    check("a claimed extension", lib.ed_language_for_path(b"a.shader_part"),
+          LANGS["GLSL"])
+    check("an unclaimed one is unchanged", lib.ed_language_for_path(b"notes.txt"),
+          LANGS["None"])
+    lib.ed_language_override_path(b"", LANGS["GLSL"])
+    check("the catch-all takes an unknown suffix",
+          lib.ed_language_for_path(b"notes.txt"), LANGS["GLSL"])
+    check("and a path with no suffix", lib.ed_language_for_path(b"README"),
+          LANGS["GLSL"])
+    check("while a known suffix keeps its answer",
+          lib.ed_language_for_path(b"/src/main.py"), LANGS["Python"])
+    lib.ed_language_override_path(b".py", LANGS["GLSL"])
+    check("a built-in suffix can be retargeted",
+          lib.ed_language_for_path(b"/src/main.py"), LANGS["GLSL"])
+    lib.ed_clear_language_overrides_path()
+    check("cleared, every default is back",
+          (lib.ed_language_for_path(b"a.shader_part"),
+           lib.ed_language_for_path(b"notes.txt"),
+           lib.ed_language_for_path(b"/src/main.py")),
+          (LANGS["None"], LANGS["None"], LANGS["Python"]))
 
     # The same text, two grammars: `#version` is a comment in Python and a
     # keyword in GLSL. That disagreement is the whole point of the selection,
@@ -1828,6 +1861,30 @@ def main() -> int:
     check("and nothing once closed", kinds2.get(5, 0) + kinds2.get(6, 0), 0)
     lib.ed_key(h, K_ESC, 0, 0)
 
+    print("a scroll request survives having no layout yet")
+    # ed_scroll_to_line resolves against the LAST layout, which a host that has
+    # not drawn a frame does not have -- and the answer then reads as scroll 0,
+    # indistinguishable from a real one, so the request vanished. The documented
+    # contract is that it takes effect on the next ed_layout, so a pre-layout
+    # request is remembered and resolved there.
+    fresh = lib.ed_new(b"")
+    lib.ed_load_atlas(fresh, b"assets/atlas.json")
+    lib.ed_set_text(fresh, b"l\n" * 80)
+    lib.ed_scroll_to_line(fresh, 50, True)
+    lib.ed_layout(fresh, 0.0, 0.0, 800.0, 600.0, 16.0, False)
+    deferred = lib.ed_scroll(fresh)
+    lib.ed_free(fresh)
+    after = lib.ed_new(b"")
+    lib.ed_load_atlas(after, b"assets/atlas.json")
+    lib.ed_set_text(after, b"l\n" * 80)
+    lib.ed_layout(after, 0.0, 0.0, 800.0, 600.0, 16.0, False)
+    lib.ed_scroll_to_line(after, 50, True)
+    lib.ed_layout(after, 0.0, 0.0, 800.0, 600.0, 16.0, False)
+    check("a pre-layout request lands where a post-layout one does",
+          deferred, lib.ed_scroll(after))
+    check("and it is not zero", deferred > 0, True)
+    lib.ed_free(after)
+
     print("host symbol classes")
     # Syntax_7 is Theme_Slot 20 (Syntax_1 is 14), and 7 is the one slot NO
     # built-in Token_Class uses -- Operator is 5 and Builtin 6, so a probe
@@ -1876,6 +1933,20 @@ def main() -> int:
     check("matching is case-sensitive", magenta_lines(), set())
     lib.ed_clear_word_classes(h)
     check("clear drops everything", magenta_lines(), set())
+
+    # A HOST TABLE WITH NO LANGUAGE. ffi/README.md says language None "leaves
+    # spans a host pushed itself alone", and a host colouring by its own index
+    # picks exactly that -- but the table was once gated on a language and went
+    # silently inert there, in the one configuration the document promises it
+    # in. Neither this probe nor dogfood exercised classes under None, which is
+    # how it survived.
+    lib.ed_set_language(h, LANGS["None"])
+    lib.ed_clear_word_classes(h)
+    lib.ed_set_word_class(h, b"uTime", HOST_SLOT)
+    lib.ed_set_text(h, b"uTime plain\n")
+    check("a class applies with no language set", magenta_lines(), {0})
+    lib.ed_clear_word_classes(h)
+    check("and stops when the table is cleared", magenta_lines(), set())
 
     # THREE host-free classes, which is what the palette was widened for: an
     # embedder needed engine uniform, script uniform and pass sampler to differ

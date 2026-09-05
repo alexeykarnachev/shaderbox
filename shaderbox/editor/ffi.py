@@ -288,6 +288,9 @@ _SIG: dict[str, tuple[object, Sequence[object]]] = {
     ),
     "ed_set_language": (ctypes.c_bool, [ctypes.c_void_p, ctypes.c_int32]),
     "ed_language_for_path": (ctypes.c_int32, [ctypes.c_char_p]),
+    "ed_language_override_path": (None, [ctypes.c_char_p, ctypes.c_int32]),
+    "ed_clear_language_overrides_path": (None, []),
+    "ed_feed_aborted": (ctypes.c_bool, [ctypes.c_void_p]),
     "ed_set_chrome_flag": (
         ctypes.c_bool,
         [ctypes.c_void_p, ctypes.c_int32, ctypes.c_bool],

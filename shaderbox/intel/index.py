@@ -72,9 +72,9 @@ class GlslIndex:
         }
 
 
-# The builtin fragment outputs, which no buffer declares. They lex as BUILTIN in the editor
-# library, so the host class only reaches the popup and the notes until the library lets a
-# host class win for a builtin-classed identifier (079 W-C, the editor-session ask).
+# The fragment outputs a buffer never declares. `gl_FragColor` used to lex as BUILTIN in the
+# editor library, which hid it from the host class; the library dropped it at `38cadbc`, since
+# 460 core removed the name outright and a builtin it is not.
 _BUILTIN_OUTPUTS: tuple[str, ...] = ("gl_FragColor", "gl_FragData")
 
 
