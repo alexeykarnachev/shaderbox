@@ -27,7 +27,7 @@ from shaderbox.scripting import (
     is_scriptable,
     script_stub_for,
 )
-from shaderbox.scripting.behavior import _RuntimeScriptError
+from shaderbox.scripting.behavior import PythonBehavior, _RuntimeScriptError
 from shaderbox.scripting.errors import ScriptError
 
 _GL_FLOAT = 0x1406
@@ -522,7 +522,7 @@ def test_raw_runtime_throw_freezes_all_at_last_good(tmp_path: Path) -> None:
         "class Behavior(ScriptBehavior):\n"
         "    def update(self, context: ScriptContext) -> dict:\n"
         "        x = 1\n"
-        "        raise ValueError('boom')\n",  # line 4
+        "        raise ValueError('boom')\n",  # 1-based line 4, 0-based 3
         encoding="utf-8",
     )
     eng.reload("n0", tmp_path / "scripts", document)
@@ -532,7 +532,27 @@ def test_raw_runtime_throw_freezes_all_at_last_good(tmp_path: Path) -> None:
     )
     err = eng.errors[("n0", "", "script.py")]
     assert err.kind == "runtime" and "ValueError" in err.message
-    assert err.line == 4  # the real user line, NOT -1
+    assert err.line == 3, "the raise is 0-based line 3 (1-based 4), not -1"
+
+
+def test_an_error_line_is_the_editors_0_based_line(tmp_path: Path) -> None:
+    # `ScriptError.line` indexes the buffer the way the editor does, from 0: the code panel
+    # pushes it straight to `add_marker`, and the strip adds the +1 for the human-facing
+    # "Line N". Python hands out 1-based numbers from both `SyntaxError.lineno` and traceback
+    # frames, so an unconverted one puts the band on the line BELOW the broken code, which is
+    # what the maintainer saw with "'{' was never closed".
+    source = (
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, context) -> dict:\n"
+        "        return {\n"
+    )
+    behavior = PythonBehavior("script.py", source)
+    error = behavior.error
+    assert error is not None and "never closed" in error.message
+    lines = source.split("\n")
+    assert lines[error.line].strip() == "return {", (
+        f"line {error.line} is {lines[error.line]!r}; the unclosed brace is the line it names"
+    )
 
 
 def test_runtime_error_records_deepest_user_line(tmp_path: Path) -> None:
@@ -540,7 +560,7 @@ def test_runtime_error_records_deepest_user_line(tmp_path: Path) -> None:
         tmp_path,
         "class Behavior(ScriptBehavior):\n"
         "    def _bad(self):\n"
-        "        return 1.0 / 0.0\n"  # line 3 — the deepest user frame
+        "        return 1.0 / 0.0\n"  # 1-based line 3, 0-based 2 — deepest user frame
         "    def update(self, context: ScriptContext) -> dict:\n"
         "        return {'u_x': self._bad()}\n",
     )
@@ -548,8 +568,8 @@ def test_runtime_error_records_deepest_user_line(tmp_path: Path) -> None:
     document.uniform_values["u_x"] = 0.0
     eng = _engine(tmp_path, document)
     eng.tick("n0", document, _ctx(0.0))
-    # Falsifier: the recorded line isn't the deepest user frame (3), e.g. -1.
-    assert eng.errors[("n0", "", "script.py")].line == 3
+    # Falsifier: the recorded line isn't the deepest user frame, e.g. -1 or the caller's.
+    assert eng.errors[("n0", "", "script.py")].line == 2
 
 
 def test_user_raised_builtin_exception_keeps_its_real_error(tmp_path: Path) -> None:

@@ -11,6 +11,7 @@ class ScriptError:
     uniform_name: str
     kind: Literal["compile", "runtime"]
     message: str
+    # 0-based line in the user's script, matching the editor; -1 when unmappable.
     line: int = -1
     # The pass whose uniform this error is about; "" for a document-level error (the sentinel)
     # and for a bare key no pass declares.

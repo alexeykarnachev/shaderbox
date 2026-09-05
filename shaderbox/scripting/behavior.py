@@ -39,11 +39,16 @@ def _user_error_line(marker_name: str, exc: BaseException) -> int:
     # filename "<u:script.py>", so a frame from that file is a user line (vs an engine frame). -1 when
     # the error didn't reach the user's code (unmappable). `marker_name` is UNWRAPPED — this builds the
     # `<u:...>` itself.
+    #
+    # 0-BASED on the way out. Python numbers traceback lines from 1 and every consumer of
+    # `ScriptError.line` is an editor line, which counts from 0 — the error strip and the
+    # marker the code panel pushes. Converting here rather than at each reader keeps one
+    # convention on the dataclass.
     marker = f"<u:{marker_name}>"
     line = -1
     for frame in traceback.extract_tb(exc.__traceback__):
         if frame.filename == marker and frame.lineno is not None:
-            line = frame.lineno
+            line = frame.lineno - 1
     return line
 
 
@@ -207,8 +212,12 @@ class PythonBehavior:
         try:
             code = compile(body, f"<u:{label}>", "exec")
         except SyntaxError as e:
+            # `SyntaxError.lineno` is 1-based; `ScriptError.line` is the editor's 0-based line.
             self._error = ScriptError(
-                label, "compile", e.msg or "syntax error", e.lineno or -1
+                label,
+                "compile",
+                e.msg or "syntax error",
+                e.lineno - 1 if e.lineno else -1,
             )
             return
 
