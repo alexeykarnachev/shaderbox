@@ -229,6 +229,19 @@ Original plan:
 6. Display check with the maintainer: the Documents panel, the Document tab, the pass strip,
    the settings and pass modals, the share tab, the lib picker, the copilot bar.
 
+### W-L — The Script row: above the passes, and its own spacing
+
+Filed at the display, after W-J. Two things the maintainer read as wrong on the Document tab:
+
+- **The row sat BELOW the pass previews.** `Script [open] stop` is an entry point into the
+  document, so it belongs above the passes it opens into, not after them.
+- **`Script` was indented with no gap before `[open]`.** Both came from 049's two-row layout:
+  an 8 px gutter reserved for the accent tick, and a 64 px label column so the two rows' `open`
+  buttons lined up. 049's Shader row is gone, so the column aligned one row with nothing and the
+  gutter indented it for no reason. The tick now draws in the panel's own margin to the LEFT of
+  the text (it is a draw-list line, so it costs no layout), the column is deleted, and the gap
+  before `open` is one `SPACE.MD`. Measured after: `Script` at x=0, `open` at x=50.
+
 ### W-K — Sanitize
 
 `/sanitize`: the 072 supersession, conventions (the note primitive's sizing rule, the disabled

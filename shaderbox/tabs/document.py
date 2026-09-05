@@ -296,27 +296,28 @@ def draw(app: App) -> None:
 
 
 # The Shader/Script label column: a tick gutter + the widest label, so both `open` buttons align.
-_ENTRY_TICK_W = float(SPACE.MD)
-_ENTRY_LABEL_W = 64.0
+# The accent tick sits this far LEFT of the label, in the panel's own margin.
+_ENTRY_TICK_W = float(SPACE.SM)
 
 
 def _entry_row_label(active: bool, label: str) -> None:
-    # One entry-point row label: an inset accent tick (049) marking the editor's active tab, then the
-    # label in a fixed-width column so the `open` buttons line up across rows. align_text_to_frame_
-    # padding centres the text on the button's row height (the font mix used to float it high). The tick
-    # is a draw-list line (presence/color only, never size — /imgui-ui §3) drawn over the gutter.
+    # The Script row's label. `align_text_to_frame_padding` centres the text on the button's row
+    # height (the font mix floats it high otherwise). The accent tick marking the editor's active
+    # tab is a draw-list line — presence and color only, never size (/imgui-ui §3) — drawn in the
+    # margin to the LEFT of the text, so it costs the row no indent.
     imgui.align_text_to_frame_padding()
     pos = imgui.get_cursor_screen_pos()
     if active:
         h = imgui.get_frame_height()
         col = imgui.color_convert_float4_to_u32(COLOR.ACCENT_PRIMARY)
         imgui.get_window_draw_list().add_line(
-            (pos.x, pos.y + 2.0), (pos.x, pos.y + h - 2.0), col, 2.0
+            (pos.x - _ENTRY_TICK_W, pos.y + 2.0),
+            (pos.x - _ENTRY_TICK_W, pos.y + h - 2.0),
+            col,
+            2.0,
         )
-    imgui.dummy((_ENTRY_TICK_W, 0))
-    imgui.same_line()
     imgui.text_colored(COLOR.FG_DIM, label)
-    imgui.same_line(_ENTRY_TICK_W + _ENTRY_LABEL_W)
+    imgui.same_line(spacing=float(SPACE.MD))
 
 
 def _draw_entry_points(app: App) -> None:
@@ -336,9 +337,6 @@ def _draw_entry_points(app: App) -> None:
         and active.document_id == document_id
     )
 
-    pass_list.draw(app, document_id)
-
-    imgui.dummy((0, float(SPACE.MD)))
     imgui.begin_disabled(app.copilot_turn_active)
 
     # ONE row, no section caption: a document has exactly one script (048), so a heading over a
@@ -362,3 +360,6 @@ def _draw_entry_points(app: App) -> None:
         ):
             app.set_document_all_stopped(document_id, playing)
     imgui.end_disabled()
+
+    imgui.dummy((0, float(SPACE.MD)))
+    pass_list.draw(app, document_id)
