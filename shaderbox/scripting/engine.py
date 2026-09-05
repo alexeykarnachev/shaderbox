@@ -39,7 +39,7 @@ from shaderbox.scripting.behavior import (
     _user_error_line,
     coerce_one,
 )
-from shaderbox.scripting.context import EXPORT_MOUSE, EngineContext
+from shaderbox.scripting.context import EngineContext
 from shaderbox.scripting.errors import ScriptError
 from shaderbox.scripting.keys import StoppedKey
 from shaderbox.uniform_coerce import is_text_array
@@ -191,26 +191,36 @@ def _stub_kind(uniform: moderngl.Uniform) -> tuple[str, str]:
     return "float", "0.0"
 
 
-# Scoped docstrings (045 E1; 048 documents the dict contract + play/stop). The per-frame ctx reference
-# lives on `update`; the class docstring carries the high-level "what this drives"; __init__ states it
-# runs once. A script is plain Python — import what you need at the top.
+# Scoped docstrings (045 E1; 048 documents the dict contract + play/stop; 079 D3 sets the style:
+# PEP 257 with the Google layout, one fact per line, no `;`-joined lists). The per-frame ctx
+# reference is NOT repeated here — `K` on `ctx` or on a field is the one authored home
+# (`api_doc.py`), and a copy in the stub is a copy that drifts.
 _UPDATE_DOC = (
-    '        """Return this frame\'s uniform values; called once per drawn frame.\n'
+    '        """Return this frame\'s uniform values.\n'
     "\n"
-    "        Keys are uniform names. A bare key drives that uniform on every pass declaring\n"
-    "        it; a key mapped to a dict is a pass block driving that one pass, and wins over\n"
-    "        the bare key. A uniform you return plays (the script owns it); one you omit or\n"
-    "        map to None stays manual. Values: float or int, Vec2 / Vec3 / Vec4, Array([...])\n"
-    '        for an array uniform, Text("...") for a text one. Keep state on self; a value\n'
-    "        that is only a function of ctx.t belongs in the shader.\n"
+    "        Called once per drawn frame. Keep state on self between frames; a value that is\n"
+    "        only a function of ctx.t belongs in the shader instead.\n"
     "\n"
-    "        ctx.t seconds since start; ctx.dt seconds since the previous frame; ctx.frame\n"
-    "        the frame index; ctx.mouse x, y, prev_x, prev_y in 0..1 y-up and down while the\n"
-    "        left button is held over the canvas (frozen at "
-    f"{EXPORT_MOUSE.x:g},{EXPORT_MOUSE.y:g}, down False, on export).\n"
+    "        Args:\n"
+    "            ctx: The clock and the cursor. Press K on `ctx` or on one of its fields for\n"
+    "                what each one means.\n"
+    "\n"
+    "        Returns:\n"
+    "            A dict of uniform names to values. A bare key drives that uniform on every\n"
+    "            pass declaring it. A key mapped to a dict is a pass block, driving that one\n"
+    "            pass and winning over the bare key. A uniform you return plays, meaning the\n"
+    "            script owns it; one you omit or map to None stays manual.\n"
+    "\n"
+    "            Values are float or int, Vec2 / Vec3 / Vec4, Array([...]) for an array\n"
+    '            uniform, or Text("...") for a text one.\n'
     '        """\n'
 )
-_INIT_DOC = '        """Runs once: at app start, before the first render, and on every reload."""\n'
+_INIT_DOC = (
+    '        """Set up state that survives across frames.\n'
+    "\n"
+    "        Runs once: at app start, before the first render, and on every reload.\n"
+    '        """\n'
+)
 
 
 def _script_import_line(annotations: Iterable[str]) -> str:
@@ -266,7 +276,11 @@ def script_stub_for(uniforms_by_pass: dict[str, list[moderngl.Uniform]]) -> str:
         f"import math\n\n"
         f"{import_line}\n\n"
         f"class Behavior(ScriptBehavior):\n"
-        f'    """Drive many uniforms from one object each frame (document script). Keep state on self."""\n'
+        f'    """Drive this document\'s uniforms, one object for the whole document.\n'
+        f"\n"
+        f"    `update` runs once per drawn frame and returns what to drive. State that has to\n"
+        f"    survive between frames lives on self.\n"
+        f'    """\n'
         f"\n"
         f"    def __init__(self) -> None:\n"
         f"{_INIT_DOC}"

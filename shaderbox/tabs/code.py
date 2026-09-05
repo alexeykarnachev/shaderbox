@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import moderngl
 from imgui_bundle import imgui
 
 from shaderbox.app import App
@@ -25,6 +26,7 @@ from shaderbox.intel.index import GlslContext, GlslIndex, build_glsl_index
 from shaderbox.intel.script import returned_uniforms
 from shaderbox.intel.symbols import Symbol
 from shaderbox.intel.worker import PythonRequest, PythonRequestKind
+from shaderbox.media import MediaWithTexture
 from shaderbox.pass_graph import AutoSource, NoSource, PassSource
 from shaderbox.paths import pass_name_of
 from shaderbox.shader_errors import ShaderError, error_at_line
@@ -631,22 +633,50 @@ def _note_anchor(app: App, editor: Editor, column_offset: int) -> tuple[float, f
     )
 
 
-def _draw_lookup_popup(app: App, editor: Editor) -> None:
+def _note_uniform(
+    app: App, tab: EditorTab, word: str
+) -> tuple[str, moderngl.Texture | None]:
+    """What a note shows for `word` beside its doc: its live value, and its picture's texture.
+
+    Read at draw time rather than latched when the note opened, so a driven uniform's value
+    ticks in the note. A name that is not a uniform of this tab's pass answers ("", None).
+    """
+    edited = _pass_for_tab(app, tab)
+    ui_document = app.ui_documents.get(tab.document_id)
+    if edited is None or ui_document is None or word not in edited.uniform_values:
+        return "", None
+    document = ui_document.document
+    pass_name = pass_name_of(tab.path)
+    source = document.sampler_source(pass_name, word)
+    if source is not None:
+        return "", document.input_texture(pass_name, source)
+    value = edited.uniform_values[word]
+    if isinstance(value, MediaWithTexture):
+        return "", value.texture
+    if isinstance(value, moderngl.Texture):
+        return "", value
+    return format_auto_value(value), None
+
+
+def _draw_lookup_popup(app: App, editor: Editor, tab: EditorTab) -> None:
     lookup = app.editor_lookup
     if lookup is None:
         return
     if imgui.is_mouse_clicked(0) or imgui.is_mouse_clicked(1):
         app.editor_lookup = None
         return
+    value, texture = _note_uniform(app, tab, lookup.word)
     anchored_note(
         "##lookup",
         _note_anchor(app, editor, _NOTE_COLUMN_GAP),
         lookup.signature,
         lookup.doc,
+        value,
+        texture,
     )
 
 
-def _draw_candidate_doc(app: App, editor: Editor) -> None:
+def _draw_candidate_doc(app: App, editor: Editor, tab: EditorTab) -> None:
     """The doc for the completion popup's highlighted row, beside the popup.
 
     The library draws the list and owns the selection; the detail is the host's, read from
@@ -671,7 +701,8 @@ def _draw_candidate_doc(app: App, editor: Editor) -> None:
         default=0,
     )
     anchor = _note_anchor(app, editor, widest + _NOTE_COLUMN_GAP)
-    anchored_note("##candidate_doc", anchor, found[0], found[1])
+    value, texture = _note_uniform(app, tab, symbol.name)
+    anchored_note("##candidate_doc", anchor, found[0], found[1], value, texture)
 
 
 def _offer_completion(app: App, editor: Editor, tab: EditorTab, explicit: bool) -> None:
@@ -1001,8 +1032,8 @@ def draw(app: App) -> None:
             imgui.get_color_u32((1.0, 1.0, 1.0, alpha)),
         )
 
-    _draw_lookup_popup(app, editor)
-    _draw_candidate_doc(app, editor)
+    _draw_lookup_popup(app, editor, tab)
+    _draw_candidate_doc(app, editor, tab)
     app.editor_focused = focused
     if app.editor_focused:
         # Sticky: stays True across popups/menus until an explicit defocus.

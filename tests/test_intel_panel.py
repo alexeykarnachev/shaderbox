@@ -77,7 +77,7 @@ def test_the_script_tab_completes_ctx_members_through_the_worker(app: Any) -> No
     _wait_for(answered)
     items = [editor.complete_item(i) for i in range(editor.complete_count())]
     assert items[:4] == ["dt", "frame", "mouse", "t"]
-    assert app.editor_completion_offered["t"].doc == "seconds"
+    assert app.editor_completion_offered["t"].doc.startswith("Seconds since")
 
 
 def test_k_on_the_script_tab_answers_through_the_worker(app: Any) -> None:

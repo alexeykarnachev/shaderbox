@@ -18,7 +18,7 @@ def test_ctx_members_complete_with_the_engine_gloss() -> None:
     assert names[:4] == ["dt", "frame", "mouse", "t"]
     assert all(s.kind == SymbolKind.PY_MEMBER for s in found[:4])
     assert "__class__" not in names
-    assert next(s for s in found if s.name == "t").doc == "seconds"
+    assert next(s for s in found if s.name == "t").doc.startswith("Seconds since")
 
 
 def test_math_members_and_the_api_complete_by_kind() -> None:
@@ -38,7 +38,8 @@ def test_math_members_and_the_api_complete_by_kind() -> None:
 def test_lookup_on_ctx_field_and_on_a_builtin_and_past_the_line_end() -> None:
     text, line = _stub_with("x = ctx.t")
     found = python_lookup(text, line, 16)
-    assert found is not None and found.name == "t" and found.doc == "seconds"
+    assert found is not None and found.name == "t"
+    assert found.doc.startswith("Seconds since")
     text, line = _stub_with("y = math.sin")
     found = python_lookup(text, line, 18)
     assert found is not None and found.name == "sin" and "sin" in found.signature
@@ -53,12 +54,12 @@ def test_the_api_gloss_wins_for_an_injected_name_imported_or_not() -> None:
     text, line = _stub_with("Ct")
     found = next(s for s in python_completions(text, line, 10) if s.name == "Ctx")
     assert found.kind == SymbolKind.PY_API
-    assert found.doc.startswith("the per-frame context")
+    assert found.doc.startswith("The clock and the cursor")
     text, line = _stub_with("c: Ctx = ctx")
     looked = python_lookup(text, line, 12)
     assert looked is not None and looked.name == "Ctx"
     assert looked.kind == SymbolKind.PY_API
-    assert looked.doc.startswith("the per-frame context")
+    assert looked.doc.startswith("The clock and the cursor")
 
 
 def test_a_member_spelled_like_an_api_name_is_a_member_under_k() -> None:

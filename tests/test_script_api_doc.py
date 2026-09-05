@@ -14,8 +14,12 @@ from shaderbox.copilot.prompt_context import build_context
 from shaderbox.scripting import api_doc
 from shaderbox.scripting.api_doc import (
     _CTX_GLOSS,
+    _CTX_HELP,
     _VALUE_SHAPE_GLOSS,
     _VEC_OPERATOR_GLOSS,
+    API_NAMES,
+    api_symbol_doc,
+    ctx_field_gloss,
     script_api_summary,
 )
 from shaderbox.scripting.context import EXPORT_MOUSE, EngineContext, MouseState
@@ -94,8 +98,32 @@ def test_operator_dunders_match_the_allowlist_and_all_reach_the_summary() -> Non
 
 
 def test_ctx_gloss_keys_are_exactly_the_dataclass_fields() -> None:
-    # A new `ctx` field is undocumented until someone writes its gloss.
+    # A new `ctx` field is undocumented until someone writes its gloss — in BOTH renderings, the
+    # prompt's terse one and the `K` note's prose (079 D3).
     assert set(_CTX_GLOSS) == set(EngineContext.__dataclass_fields__)
+    assert set(_CTX_HELP) == set(EngineContext.__dataclass_fields__)
+
+
+def test_no_help_text_is_empty_or_a_semicolon_joined_list() -> None:
+    # 079 D3, from the maintainer's reading of the notes: `ctx.dt` and `ctx.frame` opened EMPTY,
+    # and `ctx.mouse` was six facts joined by `;` on one line. Every human-facing string now
+    # opens with a summary sentence and puts one fact per line. Falsifier: restore either gap and
+    # the emptiness or the `;` check goes red.
+    human = {f"ctx.{k}": v for k, v in _CTX_HELP.items()}
+    human |= {name: api_symbol_doc(name)[1] for name in sorted(API_NAMES)}
+    for where, text in human.items():
+        assert text.strip(), f"{where} opens an empty note"
+        summary = text.splitlines()[0]
+        assert summary.endswith("."), f"{where} has no summary sentence: {summary!r}"
+        assert summary[0].isupper(), f"{where}'s summary is not a sentence: {summary!r}"
+        for line in text.splitlines():
+            assert line.count(";") <= 1, f"{where} joins a list with `;`: {line!r}"
+
+
+def test_every_ctx_field_answers_under_k() -> None:
+    # The `K` path itself, not just the table: an undocumented field would return "".
+    for name in EngineContext.__dataclass_fields__:
+        assert ctx_field_gloss(name), name
 
 
 def test_summary_lists_every_ctx_field_and_the_mouse_subfields() -> None:

@@ -12,7 +12,7 @@ importing ANY submodule executes the package `__init__`, which re-exports the GL
 invariant is over this module's OWN imports."""
 
 from collections.abc import Callable, Iterable
-from inspect import signature
+from inspect import cleandoc, signature
 from textwrap import fill
 
 from shaderbox.scripting.context import EXPORT_MOUSE, EngineContext, MouseState
@@ -64,15 +64,39 @@ _EXPORT_MOUSE_AT: str = f"{EXPORT_MOUSE.x:g},{EXPORT_MOUSE.y:g}"
 # Authored gloss per `EngineContext` field, keyed by field name (the type comes from the annotation).
 # `mouse` MUST keep the freeze caveat: a script driven off the cursor reads STATIC in every probe and
 # every export even when it is correct.
+#
+# TWO renderings of one table, because the readers differ (079 D3). `_CTX_GLOSS` is the PROMPT's:
+# terse, one clause, and it costs tokens on every request carrying the RARE tier. `_CTX_HELP` is
+# what a person reads in the editor's `K` note — full sentences, one fact per line, no `;`-joined
+# lists. Every field is in both; the completeness test walks the dataclass against each.
 _CTX_GLOSS: dict[str, str] = {
-    "t": "seconds",
-    "dt": "",
-    "frame": "",
+    "t": "seconds since playback started",
+    "dt": "seconds since the previous frame",
+    "frame": "frame index from 0",
     "mouse": (
         f"({_MOUSE_FIELDS} -- FROZEN at {_EXPORT_MOUSE_AT} on export and in the "
         "headless probe, where down is False and prev equals x/y; x/y and prev_x/prev_y are the "
         "current and PREVIOUS cursor position in 0..1 y-up, down is True while LMB is held over "
         "the canvas)"
+    ),
+}
+
+_CTX_HELP: dict[str, str] = {
+    "t": "Seconds since the document started playing.",
+    "dt": (
+        "Seconds since the previous frame.\n"
+        "Multiply a rate by it to advance state at the same speed whatever the frame rate."
+    ),
+    "frame": "The frame index, counting from 0 at the start of playback.",
+    "mouse": (
+        "The cursor over the canvas, normalized to 0..1 with y pointing up.\n"
+        "x, y: the current position; 0,0 is the bottom-left corner.\n"
+        "prev_x, prev_y: last frame's position, so a shader can stamp the capsule between "
+        "the two rather than one disc per frame.\n"
+        "down: True while the left button is held over the canvas.\n"
+        f"On export and in the headless probe the cursor freezes at {_EXPORT_MOUSE_AT} with "
+        "down False and prev equal to the position. A script driven off the cursor therefore "
+        "reads as static in every probe, even when it is correct."
     ),
 }
 
@@ -92,6 +116,40 @@ API_NAMES: frozenset[str] = frozenset(
 )
 
 
+# What `K` shows for each injected API name: a summary line, a blank line, then the detail
+# (PEP 257 with the Google layout, 079 D3). A value type's entry is the shape it coerces to;
+# `Ctx` and `MouseState` read their class docstrings, which say the same thing once.
+_API_HELP: dict[str, str] = {
+    "ScriptBehavior": (
+        "The base class a document script's Behavior extends.\n"
+        "\n"
+        "Define `__init__(self)` for state that survives across frames and\n"
+        "`update(self, ctx) -> dict` for the values this frame drives. Press K on `Ctx` for\n"
+        "what `update` receives."
+    ),
+    "Vec2": "A 2-component vector, driving a vec2 uniform.",
+    "Vec3": "A 3-component vector, driving a vec3 uniform.",
+    "Vec4": "A 4-component vector, driving a vec4 uniform.",
+    "Array": (
+        "A numeric array uniform's values.\n"
+        "\n"
+        "Takes flat numbers, or rows of Vec/list which are flattened for you. The length must\n"
+        "match the array the shader declares."
+    ),
+    "Text": (
+        "A string, driving a uint[] glyph array.\n"
+        "\n"
+        "A plain str coerces the same way. Longer text than the array holds is cut."
+    ),
+}
+
+
+def _class_help(cls: type) -> str:
+    # The class's own docstring — one authored home per concept (079 D3), so `K` on `Ctx` reads
+    # what `context.py` says rather than a second summary that can drift from it.
+    return cleandoc(cls.__doc__ or "")
+
+
 def api_symbol_doc(name: str) -> tuple[str, str]:
     """(signature, doc) for one injected API name, for the editor's completion and `K`: the
     call form of a value type, the class name of the others."""
@@ -99,20 +157,18 @@ def api_symbol_doc(name: str) -> tuple[str, str]:
     cls = by_name.get(name)
     if cls is not None:
         ctor = cls.__new__ if name.startswith("Vec") else cls.__init__
-        return _call_form(cls, ctor), _VALUE_SHAPE_GLOSS[name]
+        return _call_form(cls, ctor), _API_HELP[name]
     if name == "Ctx":
-        return "Ctx", "the per-frame context `update` receives: " + ", ".join(
-            _CTX_GLOSS
-        )
+        return "Ctx", _class_help(EngineContext)
     if name == MouseState.__name__:
-        return MouseState.__name__, _CTX_GLOSS["mouse"]
-    return name, "the base class a document script's Behavior extends"
+        return MouseState.__name__, _class_help(MouseState)
+    return name, _API_HELP["ScriptBehavior"]
 
 
 def ctx_field_gloss(field: str) -> str:
     """What a `ctx` field means, for the editor's `K` and completion detail; "" when the
     field has no gloss."""
-    return _CTX_GLOSS.get(field, "")
+    return _CTX_HELP.get(field, "")
 
 
 def _type_name(annotation: object) -> str:

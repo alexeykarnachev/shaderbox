@@ -5,6 +5,7 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 
+import moderngl
 import pyperclip
 from imgui_bundle import imgui, imgui_ctx
 from loguru import logger
@@ -306,12 +307,47 @@ def modal_window(
         yield popup.visible
 
 
-def anchored_note(id_: str, anchor: tuple[float, float], title: str, body: str) -> None:
+def anchored_note(
+    id_: str,
+    anchor: tuple[float, float],
+    title: str,
+    body: str,
+    value: str = "",
+    texture: moderngl.Texture | None = None,
+) -> None:
     """A small non-interactive note pinned at a screen point (the `K` lookup under the caret):
-    an accent title line and a wrapped dim body, capped at `SIZE.NOTE_W`."""
+    an accent title line, an optional value line, a wrapped dim body and an optional picture,
+    capped at `SIZE.NOTE_W`.
+
+    The size is MEASURED and set, never auto-resized: imgui sizes an auto-resize window from
+    the PREVIOUS frame's content, so a note whose text changes while it is open draws one frame
+    inside the old note's size — the blink the maintainer saw moving `K` from symbol to symbol
+    (079 D1).
+    """
+    padding = imgui.get_style().window_padding
+    wrap = float(SIZE.NOTE_W) - 2.0 * padding.x
+    line_gap = imgui.get_style().item_spacing.y
+    title_size = imgui.calc_text_size(title, wrap_width=wrap)
+    width, height = title_size.x, title_size.y
+    if value:
+        value = _ellipsize(value, wrap)
+        value_size = imgui.calc_text_size(value)
+        width = max(width, value_size.x)
+        height += line_gap + value_size.y
+    if body:
+        body_size = imgui.calc_text_size(body, wrap_width=wrap)
+        width = max(width, body_size.x)
+        height += line_gap + body_size.y
+    picture = _note_picture_size(texture, wrap) if texture is not None else None
+    if picture is not None:
+        width = max(width, picture[0])
+        height += line_gap + picture[1]
     imgui.set_next_window_pos(imgui.ImVec2(*anchor), imgui.Cond_.always)
-    imgui.set_next_window_size_constraints(
-        imgui.ImVec2(0.0, 0.0), imgui.ImVec2(float(SIZE.NOTE_W), 1.0e6)
+    imgui.set_next_window_size(
+        imgui.ImVec2(
+            min(width, wrap) + 2.0 * padding.x,
+            height + 2.0 * padding.y,
+        )
     )
     # Opaque: the note sits over code and a translucent one made both unreadable.
     imgui.set_next_window_bg_alpha(1.0)
@@ -321,17 +357,32 @@ def anchored_note(id_: str, anchor: tuple[float, float], title: str, body: str) 
         | imgui.WindowFlags_.no_inputs
         | imgui.WindowFlags_.no_nav
         | imgui.WindowFlags_.no_saved_settings
-        | imgui.WindowFlags_.always_auto_resize
         | imgui.WindowFlags_.no_focus_on_appearing
     )
     with imgui_ctx.begin(id_, flags=flags) as window:
         if window:
-            imgui.push_text_wrap_pos(float(SIZE.NOTE_W) - 2.0 * float(SPACE.MD))
+            imgui.push_text_wrap_pos(wrap)
             imgui.text_colored(COLOR.ACCENT_PRIMARY, title)
+            if value:
+                imgui.text_colored(COLOR.FG_PRIMARY, value)
             if body:
                 imgui.text_colored(COLOR.FG_SECONDARY, body)
             imgui.pop_text_wrap_pos()
+            if texture is not None and picture is not None:
+                imgui.image(
+                    imgui.ImTextureRef(texture.glo),
+                    image_size=picture,
+                    uv0=(0, 1),
+                    uv1=(1, 0),
+                )
     imgui.pop_style_color()
+
+
+def _note_picture_size(texture: moderngl.Texture, width: float) -> tuple[float, float]:
+    # The note's content width, aspect preserved (079 D13): a thumbnail-sized picture in a
+    # note this wide reads as a swatch rather than as the texture.
+    tex_w, tex_h = texture.size
+    return (width, width * tex_h / tex_w if tex_w else width)
 
 
 def rendering_overlay(text: str) -> None:

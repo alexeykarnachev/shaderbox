@@ -5,16 +5,31 @@ from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
 class MouseState:
-    # Cursor over the document's canvas, normalized 0..1, y-UP (origin bottom-left — the GLSL
-    # convention; the preview draws uv-flipped, so the hit-test flips y back). Outside the canvas
-    # the position clamps to the last in-bounds sample and `down` clears; the next in-bounds sample
-    # restarts prev at the current position. Export uses EXPORT_MOUSE.
+    """The cursor over the document's canvas, as a script reads it.
+
+    Coordinates are normalized to 0..1 with y pointing UP, the GLSL convention: the origin is
+    the bottom-left corner. The preview draws uv-flipped, so the hit test flips y back.
+
+    Outside the canvas the position holds at the last in-bounds sample and `down` clears. The
+    next in-bounds sample restarts `prev_x`/`prev_y` at the current position, so a stroke that
+    left the canvas does not resume as one long line.
+
+    An exported render sees `EXPORT_MOUSE` instead, whatever the live cursor was doing.
+
+    Attributes:
+        x: Horizontal position across the canvas, 0 at the left edge and 1 at the right.
+        y: Vertical position, 0 at the bottom edge and 1 at the top.
+        down: True while the left button is held with the cursor over the canvas. False on
+            export and in the headless probe.
+        prev_x: Last frame's `x`. Equal to `x` on the first frame and after re-entering the
+            canvas, so a shader can stamp the capsule from previous to current rather than one
+            disc per frame.
+        prev_y: Last frame's `y`, under the same rule.
+    """
+
     x: float = 0.5
     y: float = 0.5
-    # Left button held with the cursor over the canvas. False on export and in the headless probe.
     down: bool = False
-    # Last frame's position (equal to x/y on the first frame and after re-entering the canvas),
-    # so a shader can stamp the CAPSULE from prev to current instead of one disc per frame.
     prev_x: float = 0.5
     prev_y: float = 0.5
 
@@ -28,8 +43,18 @@ EXPORT_MOUSE = MouseState(0.5, 0.5, False, 0.5, 0.5)
 
 @dataclass(frozen=True)
 class EngineContext:
-    # The clock + the cursor. state lives in the behavior instance (self.*), not here. `Ctx` is
-    # the name in scope inside a script. `mouse` defaults so the bare-clock construct sites compile.
+    """The clock and the cursor, handed to `update` once per drawn frame.
+
+    A script's own state lives on the behavior instance (`self.*`), never here: this object is
+    rebuilt every frame and is frozen. `Ctx` is the name it goes by inside a script.
+
+    Attributes:
+        t: Seconds since the document started playing.
+        dt: Seconds since the previous frame.
+        frame: The frame index, counting from 0 at the start of playback.
+        mouse: The cursor over the canvas. See `MouseState`.
+    """
+
     t: float
     dt: float
     frame: int
