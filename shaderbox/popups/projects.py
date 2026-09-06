@@ -31,6 +31,8 @@ _POPUP_H = 420.0
 # The name column, wide enough for a long project name before the count column starts.
 _NAME_W = 220.0
 _COUNT_W = 72.0
+# The `open` marker column, between the count and the path.
+_OPEN_W = 56.0
 
 
 def draw_projects(app: App) -> None:
@@ -90,20 +92,32 @@ def _draw_row(app: App, info: ProjectInfo) -> None:
     imgui.same_line(_NAME_W + _COUNT_W)
     if info.is_open:
         imgui.text_colored(COLOR.ACCENT_PRIMARY, "open")
-    imgui.same_line(_NAME_W + _COUNT_W + 56.0)
+    imgui.same_line(_NAME_W + _COUNT_W + _OPEN_W)
     imgui.text_colored(COLOR.FG_DIM, str(info.path.parent))
 
 
 def _draw_verb_row(app: App) -> bool:
     keep_open = True
     selected = app.projects_selected
+    # Enter on the selection switches, so a row reached by keyboard can be activated (the rows are
+    # `selectable`, which IS a nav stop). Suppressed while a name input holds focus, or typing a
+    # name and pressing Enter would both create the project and switch to the unrelated selection.
+    if (
+        selected is not None
+        and not app.projects_input_focused
+        and imgui.is_key_pressed(imgui.Key.enter, repeat=False)
+    ):
+        app.request_project_switch(selected)
+        return False
     if primary_button("New"):
         app.reset_projects_state()
         app.projects_new_input.open(app.default_projects_root_dir)
     imgui.same_line()
+    imgui.begin_disabled(selected is None)
     if standard_button("Duplicate") and selected is not None:
         app.reset_projects_state()
         app.projects_duplicate_input.open(selected, f"{selected.name} copy")
+    imgui.end_disabled()
     imgui.same_line()
     if standard_button("Open other..."):
         app.pick_project_dir()
@@ -114,8 +128,8 @@ def _draw_verb_row(app: App) -> bool:
     if danger_button("Delete"):
         app.projects_delete_armed = selected
     imgui.end_disabled()
-    imgui.same_line(imgui.get_content_region_avail().x - SIZE.LABEL_W)
-    if standard_button("Close"):
+    imgui.same_line(imgui.get_content_region_avail().x - float(SIZE.BTN_SM_W))
+    if standard_button("Close", width=float(SIZE.BTN_SM_W)):
         keep_open = False
     if is_open_project:
         imgui.text_colored(COLOR.FG_DIM, "switch away first")
@@ -129,7 +143,7 @@ def _draw_delete_confirm(app: App) -> bool:
     if armed is None:
         return True
     imgui.text_colored(COLOR.STATE_ERROR, "Delete to trash?")
-    imgui.same_line(imgui.get_content_region_avail().x - SIZE.LABEL_W * 2.0)
+    imgui.same_line(imgui.get_content_region_avail().x - float(SIZE.BTN_SM_W) * 2.0)
     # Yes is the PRIMARY tier, not a filled red: the armed row already carries the danger.
     if primary_button("Yes"):
         app.projects_error = app.delete_project(armed)
@@ -164,8 +178,7 @@ def _draw_name_input(
     imgui.same_line()
     cancelled = standard_button("x")
     if cancelled:
-        # The click that pressed cancel is itself what deactivated the input, so the commit is
-        # applied only when cancel did not run.
+        # Cancel wins over the deactivate its own click produced.
         state.close()
         app.projects_error = ""
         return True

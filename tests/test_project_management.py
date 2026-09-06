@@ -210,9 +210,7 @@ def test_only_two_methods_reach_init(app: Any) -> None:
     assert _init_call_sites() == {"__init__", "switch_project"}
 
 
-def test_a_switch_flushes_every_dirty_tab_not_just_the_active_one(
-    app: Any, tmp_path: Path
-) -> None:
+def test_a_switch_flushes_every_dirty_tab_not_just_the_active_one(app: Any) -> None:
     # Falsifier: flush only the current session — the inactive tab's edit is gone, which is what
     # `flush_current_editor` alone does (it is hard-wired to current_document_id).
     document_id = app.current_document_id
@@ -235,7 +233,9 @@ def test_a_switch_flushes_every_dirty_tab_not_just_the_active_one(
     assert "second edit" in second.read_text()
 
 
-def test_a_switch_mid_copilot_turn_writes_nothing_at_all(app: Any, tmp_path: Path) -> None:
+def test_a_switch_mid_copilot_turn_writes_nothing_at_all(
+    app: Any, tmp_path: Path
+) -> None:
     # Falsifier: put the busy gate AFTER save() — the project still does not change (save's own
     # inner gate skips the document and returns), but app_state.json is REWRITTEN on the way
     # through, which is the half-save. So the assertion is on the file's mtime, not on
@@ -351,20 +351,121 @@ def test_duplicate_saves_the_live_state_before_copying(app: Any) -> None:
     assert marker in copied.read_text()
 
 
+def _census(root: Path) -> list[tuple[str, int]]:
+    return sorted(
+        (p.relative_to(root).as_posix(), p.stat().st_size)
+        for p in (root / "documents").rglob("*")
+        if p.is_file()
+    )
+
+
 def test_duplicate_leaves_the_source_alone(app: Any) -> None:
-    # Falsifier: copy to the final name with no staging, so a torn copy loads as the source.
+    # Falsifier: share the tree instead of copying it (a symlink, a hardlinked copytree) — the
+    # edit made in the fork below shows up in the source's census.
     assert app.duplicate_project(app.project_dir, "forked") == ""
     fork = app.default_projects_root_dir / "forked"
-    census = sorted(
-        (p.relative_to(fork).as_posix(), p.stat().st_size)
-        for p in (fork / "documents").rglob("*")
-        if p.is_file()
-    )
+    before = _census(app.project_dir)
+    assert before, "the source must have documents, or this test proves nothing"
+
     (fork / "documents" / "intruder.txt").write_text("only in the fork")
-    source_census = sorted(
-        (p.relative_to(app.project_dir).as_posix(), p.stat().st_size)
-        for p in (app.project_dir / "documents").rglob("*")
-        if p.is_file()
+    (next(iter((fork / "documents").glob("*/"))) / "extra.glsl").write_text(
+        "// fork only\n"
     )
-    assert "documents/intruder.txt" not in [name for name, _ in source_census]
-    assert census, "the fork must actually carry documents"
+
+    assert _census(app.project_dir) == before
+
+
+# ---- the dead pointer (D10) -------------------------------------------------------------
+# Five rows, one setup. These do NOT use the `app` fixture: it builds `App(project_dir=...)`,
+# which sets persist_pointer=False and skips the whole pointer-resolve branch — the exact two
+# flags this needs the other way.
+
+
+def _app_with_pointer_at(tmp_path: Any, monkeypatch: Any, target: Path) -> Any:
+    data = tmp_path / "data"
+    data.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("SHADERBOX_DATA_DIR", str(data))
+    (data / "project_dir").write_text(str(target))
+    glfw = pytest.importorskip("glfw")
+    if not glfw.init():
+        pytest.skip("no GL")
+    from shaderbox.app import App
+
+    return App(headless=True)
+
+
+def test_a_dead_pointer_recovers_to_the_default_project(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    # Falsifier: restore the file-exists-only `is_first_launch` — the app loads the dead path.
+    dead = tmp_path / "vanished"
+    app = _app_with_pointer_at(tmp_path, monkeypatch, dead)
+    try:
+        assert app.project_dir == app.default_project_dir
+    finally:
+        app.release()
+
+
+def test_the_recovery_seeds_rather_than_landing_blank(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    # Falsifier: pass first_run=False on the recovery path — the app comes up with no document,
+    # which is the blank-app symptom D10 exists to prevent.
+    app = _app_with_pointer_at(tmp_path, monkeypatch, tmp_path / "vanished")
+    try:
+        assert app.ui_documents
+    finally:
+        app.release()
+
+
+def test_the_recovery_does_not_recreate_the_dead_path(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    # Falsifier: let ProjectPaths.for_root run on the pointer's own path — it rebuilds the whole
+    # skeleton there with exist_ok=True, which is how a transient loss became permanent.
+    dead = tmp_path / "vanished"
+    app = _app_with_pointer_at(tmp_path, monkeypatch, dead)
+    try:
+        assert not dead.exists()
+    finally:
+        app.release()
+
+
+def test_the_recovery_repoints_the_pointer_at_the_live_project(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    # Falsifier: write the pointer before resolving — it names the dead path forever.
+    dead = tmp_path / "vanished"
+    app = _app_with_pointer_at(tmp_path, monkeypatch, dead)
+    try:
+        written = Path(app.project_dir_file_path.read_text().strip())
+        assert written == app.default_project_dir
+        assert written != dead
+    finally:
+        app.release()
+
+
+def test_the_recovery_opens_projects_not_examples(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    # Falsifier: leave _init's unconditional open_examples() — the single-field popup mutex means
+    # the gallery wins and the question "which project?" is never asked.
+    app = _app_with_pointer_at(tmp_path, monkeypatch, tmp_path / "vanished")
+    try:
+        assert app.popup_state == PopupState.PROJECTS
+    finally:
+        app.release()
+
+
+def test_a_live_pointer_is_not_treated_as_a_first_launch(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    # The other half of D10: a pointer at a REAL project must still open it, with no gallery and
+    # no Projects modal. Falsifier: treat every pointer as dead.
+    live = _seed_project(tmp_path / "projects", "live")
+    app = _app_with_pointer_at(tmp_path, monkeypatch, live)
+    try:
+        assert app.project_dir == live.resolve()
+        assert app.popup_state == PopupState.CLOSED
+    finally:
+        app.release()

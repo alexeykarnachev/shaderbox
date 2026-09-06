@@ -155,10 +155,8 @@ class App:
         # First launch = no usable project pointer: fall back to the default project and seed a
         # starter. A project OPENED from a folder picker never seeds (it would pollute a folder
         # the user picked); a project CREATED by name seeds through its own path.
-        # A pointer at a VANISHED directory is a first launch too (084 D10): testing only the
-        # pointer FILE let a dead path recreate an empty skeleton, skip the starter seed because
-        # it was "not a first launch", and then repoint at what it had just made — which is what a
-        # project in /tmp becomes after a reboot.
+        # A pointer naming a directory that no longer exists is a first launch too: the seed must
+        # fire, or the recovery lands in a blank app.
         pointed = (
             Path(self.project_dir_file_path.read_text().strip())
             if self.project_dir_file_path.exists()
