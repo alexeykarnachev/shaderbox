@@ -156,3 +156,34 @@ def test_an_invalid_argument_names_the_field_that_was_wrong(app: Any) -> None:
     )
     assert not ok
     assert "document" in msg, msg
+
+
+def test_probe_render_measures_one_pass_by_address(app: Any) -> None:
+    # gemini-3.8-flash on the station probed `<id>#jfa` and was told no such document; c8960e1
+    # fixed it, and this is the regression test for that fix.
+    backend = app.copilot_backend
+    assert backend.add_pass("", "red", None, None, None, None, None, False).ok
+    short = backend._copilot_short_ids()[app.current_document_id]
+    red = "#version 460 core\nin vec2 vs_uv;\nout vec4 fs_color;\nvoid main() { fs_color = vec4(1.0, 0.0, 0.0, 1.0); }\n"
+    assert backend.apply_full_rewrite(red, f"{short}#red").errors == []
+    facts = backend.probe_render(f"{short}#red", 0.0)
+    assert "no such document" not in facts
+    assert backend.probe_render(f"{short}#nope", 0.0).startswith("error: no pass")
+
+
+def test_the_render_tools_refuse_a_pass_address_by_name(app: Any) -> None:
+    # c8960e1 fixed probe_render and wrote "every other tool takes the pass address" into a
+    # comment; it was false, and four models hit read_shader. A deliverable render of "one pass"
+    # is not a file anyone asked for, so these two refuse it and point at the tool that measures
+    # one pass -- rather than rendering the whole document behind the model's back.
+    backend = app.copilot_backend
+    assert backend.add_pass("", "red", None, None, None, None, None, False).ok
+    short = backend._copilot_short_ids()[app.current_document_id]
+    address = f"{short}#red"
+    for result in (
+        backend.render_image(address, RenderShape.NATIVE),
+        backend.render_video(address, RenderShape.NATIVE, 1.0, 12),
+    ):
+        assert not result.ok
+        assert "whole document" in (result.error or "")
+        assert "probe_render" in (result.error or "")

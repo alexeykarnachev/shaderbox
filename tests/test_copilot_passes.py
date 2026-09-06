@@ -386,3 +386,17 @@ def test_an_unreachable_pass_says_so_in_the_working_set(app: Any) -> None:
     assert by_name["composite"].is_live is True
     rendered = "\n".join(m.content or "" for m in render_working_set(members, evicted))
     assert "unreachable" in rendered
+
+
+def test_a_bad_pass_does_not_discard_the_handles_that_resolved(app: Any) -> None:
+    # An unknown DOCUMENT is skipped and reported in the tool's missing note; an unknown PASS used
+    # to raise from inside the loop, so one typo threw away every good read in the same call.
+    document_id = _two_pass(app)
+    short = app.copilot_backend._copilot_short_ids()[document_id]
+    views = app.copilot_backend.read_shaders(
+        [pass_address(short, "scene"), pass_address(short, "ghost")]
+    )
+    assert [v.document_id for v in views] == [f"{short}#scene"]
+    # And a call where NOTHING resolves is still an error, not an empty success.
+    with pytest.raises(CopilotToolError):
+        app.copilot_backend.read_shaders([pass_address(short, "ghost")])

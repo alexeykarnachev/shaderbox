@@ -26,10 +26,10 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-05, 081 has landed; the maintainer has not run the app against it. -->
-**Next: the maintainer decides.** 081 landed all fifteen decisions over the 077 corpus in three
-waves; nothing is outstanding in the spec except its three questions, and those are about what to
-do NEXT, not about the wave.
+<!-- As of 2026-09-06, 081 landed and was audited; the maintainer has not run the app against it. -->
+**Next: the maintainer decides.** 081's fifteen decisions landed, then an audit round corrected
+three code defects and restored two gates a cleanup had wrongly cut. Nothing in the spec is
+outstanding except its three questions, which are about what to do next.
 
 **What outlives it.** `read_shaders` compiled the OUTPUT pass only, so the shipped Radiance
 Cascades example answered a read with 28 of its 287 lines and the cascade both clean-compile
@@ -39,13 +39,20 @@ with prose and no tool call is the one shape no brake can see, and the models fo
 telemetry into it — provably copied from history's rendering, since the tool emits an em-dash and
 the replies carry the ASCII form only the commit path produces.
 
-**A gate can be written that cannot fail.** D12's first version compared the rendered prose
-against the table it is generated from and passed under every mutation; D13's no-gap test had no
-commit to misattribute. Both were caught by performing the break, not by reading the test.
+**A gate can be written that cannot fail, and a cleanup can cut one that could.** Two of 081's
+gates passed under every mutation until the break was actually performed; then a tidy-up deleted
+six as ceremony, and an audit found two of those were load-bearing — one had absorbed a
+pre-existing regression test for a shipped fix. Perform the break; re-check what a deletion
+removes.
+
+**A script uniform's type comes from the value it returned**, not from parsing its source: a key
+whose value is a variable has no literal shape, and one isolated tick knows what it held. Cached
+on the script's stamp — the tick re-runs `__init__`, which a precomputing script makes expensive.
 
 **Open, and unmeasured:** D6 and D7 are cost claims a fresh dogfood run would confirm (~$0.30 for
 one `rc_end_to_end` attempt on hy4). The dogfood skill still carries two FALSE claims and two
-STALE ones, recorded in `081/00_findings.md`; editing it was out of scope this round.
+STALE ones, recorded in `081/00_findings.md`. The code panel's autocomplete popup blinks while
+typing; three readings of the frame path did not find it, and it wants the running app.
 
 **Shipped:** v0.28.0 is a GitHub release only; itch stays at v0.27.0. The Windows `libeditor.dll`
 still needs a Windows host before the next cut.

@@ -2,7 +2,7 @@ from typing import Any
 
 from pydantic import Field
 
-from shaderbox.copilot.address import is_lib_address
+from shaderbox.copilot.address import is_lib_address, split_pass_address
 from shaderbox.copilot.capabilities import (
     CopilotCapabilities,
     EditResult,
@@ -242,6 +242,12 @@ def _unresolved_result(result: EditResult) -> tuple[bool, str, None] | None:
     return None
 
 
+def _handle_found(asked: str, short_ids: list[str]) -> bool:
+    # The resolver's prefix rule, either direction: a full-id ask matches a short-id view and a
+    # long-prefix ask matches too.
+    return any(s.startswith(asked) or asked.startswith(s) for s in short_ids)
+
+
 def _applied_result(result: EditResult) -> tuple[bool, str, dict]:
     # The shared success/compile-error message for any applied edit. A LIB edit returns the
     # "no standalone compile" note instead of a compile result; a DOCUMENT edit returns compile
@@ -286,12 +292,14 @@ def shader_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             )
         # A handle is "found" if it matches a returned view's SHORT id under the resolver's
         # prefix rule (either is a prefix of the other) — a direct compare would mis-report a
-        # full-id/long-prefix read as missing.
-        short_ids = [v.document_id for v in views]
+        # full-id/long-prefix read as missing. Compared on the DOCUMENT halves: a view of one
+        # pass answers as `<id>#<pass>`, and an abbreviated ask ("537#red" for "5372#red")
+        # is a prefix of neither whole string.
+        short_ids = [split_pass_address(v.document_id)[0] for v in views]
         missing = [
             nid
             for nid in document_ids
-            if not any(s.startswith(nid) or nid.startswith(s) for s in short_ids)
+            if not _handle_found(split_pass_address(nid)[0], short_ids)
         ]
         names = ", ".join(v.name for v in views)
         body = (

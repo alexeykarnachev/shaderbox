@@ -56,6 +56,7 @@ def _stats_model(stats: TurnStats | None) -> "_TurnStatsModel | None":
         context_tokens=stats.context_tokens,
         reply_tokens=stats.reply_tokens,
         cost_usd=stats.cost_usd,
+        billed_input_tokens=stats.billed_input_tokens,
     )
 
 
@@ -66,6 +67,7 @@ def _stats_or_none(model: "_TurnStatsModel | None") -> TurnStats | None:
         context_tokens=model.context_tokens,
         reply_tokens=model.reply_tokens,
         cost_usd=model.cost_usd,
+        billed_input_tokens=model.billed_input_tokens,
     )
 
 
@@ -97,6 +99,9 @@ class _TurnStatsModel(BaseModel):
     context_tokens: int = 0
     reply_tokens: int = 0
     cost_usd: float = 0.0
+    # Defaulted so a store written before the field loads rather than failing the file; a 0 there
+    # reads as "not recorded", which is what it was.
+    billed_input_tokens: int = 0
     model_config = {"extra": "forbid"}
 
 

@@ -688,6 +688,7 @@ class CopilotBackend:
             # [] -> the current document (resolved here so a concrete id is what gets stamped).
             handles = document_ids or [self._get_current_document_id()]
             views: list[ShaderView] = []
+            bad_passes: list[str] = []
             seen: set[str] = (
                 set()
             )  # dedup: two prefixes of one source resolve to the same id
@@ -721,10 +722,13 @@ class CopilotBackend:
                     view_id = short[full_id]
                 document = ui_document.document
                 if pass_name and pass_name not in document.passes:
-                    raise CopilotToolError(
+                    # Collected, not raised: a bad pass in a multi-handle read must not discard
+                    # the handles that resolved, the way an unknown DOCUMENT does not.
+                    bad_passes.append(
                         f"no pass '{pass_name}' in '{document_handle}' -- the passes are "
                         f"{sorted(document.passes)}"
                     )
+                    continue
                 # An unaddressed multi-pass EXAMPLE reads whole: it is a reference to learn from,
                 # and its output pass alone is the presentation step, not the technique.
                 targets = (
@@ -770,6 +774,12 @@ class CopilotBackend:
                             errors=_to_error_infos(render_pass.compile_unit.errors),
                         )
                     )
+            if bad_passes and not views:
+                # Nothing resolved: the whole call was wrong, so it reads as an error rather than
+                # an empty success.
+                raise CopilotToolError("; ".join(bad_passes))
+            if bad_passes:
+                logger.warning(f"copilot read_shader: {'; '.join(bad_passes)}")
             return views
 
         return self._bridge.run_on_main(_on_main)
