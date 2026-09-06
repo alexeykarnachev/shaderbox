@@ -14,7 +14,7 @@ from imgui_bundle import imgui
 
 
 class CommandId(StrEnum):
-    OPEN_PROJECT = auto()
+    OPEN_PROJECTS = auto()
     SAVE = auto()
     NEW_DOCUMENT = auto()
     EXAMPLES = auto()
@@ -104,9 +104,7 @@ C = CommandCategory
 # Static default table. Each chord lives in exactly ONE scope so a single press
 # never dispatches twice.
 COMMAND_SPECS: list[CommandSpec] = [
-    CommandSpec(
-        CommandId.OPEN_PROJECT, "Open project", _chord(K.o, K.mod_ctrl), C.FILE
-    ),
+    CommandSpec(CommandId.OPEN_PROJECTS, "Projects", _chord(K.o, K.mod_ctrl), C.FILE),
     CommandSpec(CommandId.SAVE, "Save", _chord(K.s, K.mod_ctrl), C.FILE),
     CommandSpec(CommandId.QUIT, "Quit", _chord(K.q, K.mod_ctrl), C.FILE),
     CommandSpec(

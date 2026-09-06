@@ -50,6 +50,7 @@ from shaderbox.editor_types import (
     EditorSession,
     EditorTab,
     HoverMark,
+    InlineInput,
     JumpRequest,
     LookupPopup,
 )
@@ -70,7 +71,15 @@ from shaderbox.intel.worker import (
 from shaderbox.notifications import Notifications
 from shaderbox.pass_graph import PassEntry, step_in_order, strip_order
 from shaderbox.paths import ProjectPaths, app_data_dir, pass_name_of, shader_lib_root
-from shaderbox.project_session import ProjectSession
+from shaderbox.project_session import (
+    ProjectInfo,
+    ProjectSession,
+    copy_project_to,
+    create_project,
+    list_projects,
+    trash_project,
+    validate_project_name,
+)
 from shaderbox.render_defer import RenderDefer
 from shaderbox.scripting import EXPORT_MOUSE, MouseState
 from shaderbox.shader_errors import ShaderError, next_error_line
@@ -107,6 +116,7 @@ class PopupState(Enum):
     PASS_SETTINGS = "pass_settings"
     EMOJI_PICKER = "emoji_picker"
     SHADER_LIB_PICKER = "shader_lib_picker"
+    PROJECTS = "projects"
 
 
 def _create_dir_if_needed(path: Path | str) -> Path:
@@ -142,10 +152,21 @@ class App:
     def __init__(self, project_dir: Path | None = None, headless: bool = False) -> None:
         # headless: create the glfw window hidden (the smoke test + any offscreen driver) so it
         # never pops a visible maximized window on a real display.
-        # First launch = no project pointer ever written: fall back to the default
-        # project and seed a starter. open_project later must NOT seed.
-        is_first_launch = (
-            project_dir is None and not self.project_dir_file_path.exists()
+        # First launch = no usable project pointer: fall back to the default project and seed a
+        # starter. A project OPENED from a folder picker never seeds (it would pollute a folder
+        # the user picked); a project CREATED by name seeds through its own path.
+        # A pointer at a VANISHED directory is a first launch too (084 D10): testing only the
+        # pointer FILE let a dead path recreate an empty skeleton, skip the starter seed because
+        # it was "not a first launch", and then repoint at what it had just made — which is what a
+        # project in /tmp becomes after a reboot.
+        pointed = (
+            Path(self.project_dir_file_path.read_text().strip())
+            if self.project_dir_file_path.exists()
+            else None
+        )
+        recovered_from_dead_pointer = pointed is not None and not pointed.is_dir()
+        is_first_launch = project_dir is None and (
+            pointed is None or recovered_from_dead_pointer
         )
         # An explicit project_dir means a test/smoke harness drives THIS process against a throwaway
         # dir — it must NOT become the user's saved active project (that's how a smoke/pytest run
@@ -153,12 +174,13 @@ class App:
         # saved pointer / default) persists the pointer.
         persist_pointer = project_dir is None
         if project_dir is None:
-            if self.project_dir_file_path.exists():
-                # .strip(): a stray trailing newline (an external writer / a manual `echo >`) would
-                # otherwise become a literal "dev\n"-named project dir.
-                project_dir = Path(self.project_dir_file_path.read_text().strip())
-            else:
-                project_dir = self.default_project_dir
+            # .strip() happened at the read above: a stray trailing newline (an external writer, a
+            # manual `echo >`) would otherwise become a literal "dev\n"-named project dir.
+            project_dir = (
+                self.default_project_dir
+                if pointed is None or recovered_from_dead_pointer
+                else pointed
+            )
 
         if not glfw.init():
             raise RuntimeError(
@@ -462,6 +484,22 @@ class App:
         self.splitter_dragging: bool = False
         self._splitter_press_on_splitter: bool = False
 
+        # The Projects modal (feature 084). All transient: a persisted selected path would be a
+        # second dead-pointer class. `pending_project_switch` is the deferral that keeps the
+        # switch out of the popup's own draw; `pending_project_seed` rides with it so a
+        # just-created project gets its starter document once the load has happened.
+        self.pending_project_switch: Path | None = None
+        self.pending_project_seed: bool = False
+        self.projects_rows: list[ProjectInfo] = []
+        self.projects_selected: Path | None = None
+        self.projects_delete_armed: Path | None = None
+        self.projects_new_input: InlineInput = InlineInput()
+        self.projects_duplicate_input: InlineInput = InlineInput()
+        self.projects_error: str = ""
+        # Last frame's focus of an open name input, so the outer Enter/double-click cannot fire
+        # while the user is typing a name.
+        self.projects_input_focused: bool = False
+
         # The code editor's open tabs (feature 045): an ordered list + the active index. The active
         # tab's path is what the editor shows (`current_editor_path`). Document shader, the document script
         # (`script.py`), and lib files are all closable tabs — no pinned first tab. Selecting a
@@ -491,6 +529,11 @@ class App:
             on_path_renamed=self._on_shader_lib_path_renamed,
         )
 
+        if recovered_from_dead_pointer:
+            logger.warning(
+                f"Saved project {pointed} is gone; opening {project_dir} instead"
+            )
+            self.popup_state = PopupState.PROJECTS
         self._init(
             project_dir, first_run=is_first_launch, persist_pointer=persist_pointer
         )
@@ -547,7 +590,7 @@ class App:
 
     def _build_command_callbacks(self) -> None:
         self.command_callbacks = {
-            CommandId.OPEN_PROJECT: self.open_project,
+            CommandId.OPEN_PROJECTS: self.open_projects,
             CommandId.SAVE: self.save,
             CommandId.NEW_DOCUMENT: lambda: self.create_document_from_example(
                 STARTER_EXAMPLE_ID
@@ -1224,7 +1267,10 @@ class App:
 
         # First launch lands on the examples gallery (onboarding); never for an
         # explicit-dir harness (first_run requires project_dir=None) or a project switch.
-        if first_run:
+        if first_run and self.popup_state is PopupState.CLOSED:
+            # A dead-pointer recovery sets PROJECTS before this runs: at that moment the question
+            # is "which project?", not "which example?", and the single-field popup mutex means
+            # only one of them can win.
             self.open_examples()
         # Restore persisted layout prefs into the live attrs (save() mirrors them back).
         self.active_document_tab = self.app_state.active_document_tab
@@ -1823,19 +1869,137 @@ class App:
         if hasattr(self, "rgb_view"):
             self.rgb_view.release()
 
-    def open_project(self) -> None:
-        if self._copilot_busy_blocked("Opening a project"):
+    # ---- projects (feature 084) -----------------------------------------------------------
+
+    def flush_all_dirty_editors(self) -> None:
+        # Every dirty tab's text to disk, not just the active one. `flush_current_editor` is
+        # hard-wired to current_document_id, so it cannot be called in a loop; a switch reloads
+        # every document from disk anyway, so writing the text IS the save here.
+        self.flush_current_editor()
+        for tab in self.editor_tabs:
+            if not self.is_tab_dirty(tab):
+                continue
+            session = self.editor_sessions.get(tab.path)
+            if session is None:
+                continue
+            try:
+                tab.path.write_text(session.editor.get_text(), encoding="utf-8")
+            except OSError as e:
+                logger.error(f"Failed to flush {tab.path}: {e}")
+                continue
+            session.saved_undo = session.editor.get_undo_index()
+
+    def seed_starter_into_empty_project(self) -> None:
+        # A just-created project gets a starter document, so New lands somewhere usable instead of
+        # a blank editor. The reason `first_run` gates the seed elsewhere -- don't pollute a folder
+        # the user picked -- does not apply to one the app just made at a name the user typed.
+        if self.ui_documents:
             return
+        self.session.seed_starter_document(self.set_current_document_id)
+
+    def request_project_switch(self, path: Path) -> None:
+        # The modal never switches inside its own draw: a popup body runs AFTER the editor panel
+        # and the document image have pushed their textures into the draw list, so releasing them
+        # there leaves imgui rendering freed GL names. `_tick_frame_state` consumes this before
+        # any drawing (084 D5).
+        self.pending_project_switch = path
+
+    def switch_project(self, path: Path) -> None:
+        """The ONE way a project changes: save the outgoing one, then load the incoming.
+
+        Every verb routes here and none calls `_init`, which is what makes "a switch cannot lose
+        work" structural rather than a convention (a test pins `_init`'s two call sites).
+        """
+        if self._copilot_busy_blocked("Switching project"):
+            # Refused WHOLE: App.save writes app_state regardless of the busy gate and skips only
+            # the document, so saving first would half-save and then tear the project down anyway.
+            return
+        self.flush_all_dirty_editors()
+        self.save()
+        self.save_imgui_ini()
+        self._init(path)
+        self.notifications.push(f"Project '{path.name}' opened")
+
+    def new_project(self, name: str) -> str:
+        """Create, seed and open a project. Returns "" on success, else why not."""
+        root = self.default_projects_root_dir
+        error = validate_project_name(name, root)
+        if error:
+            return error
+        project_dir = create_project(root, name.strip())
+        self.request_project_switch(project_dir)
+        # A new project seeds a starter: the reason first_run gates the seed is "don't pollute a
+        # folder the user picked", which does not apply to one the app just made at a typed name.
+        self.pending_project_seed = True
+        return ""
+
+    def duplicate_project(self, source: Path, name: str) -> str:
+        """Fork `source` and open the fork. Returns "" on success, else why not."""
+        root = self.default_projects_root_dir
+        error = validate_project_name(name, root)
+        if error:
+            return error
+        if source.resolve() == self.project_dir.resolve():
+            # Persist live state first, or the copy is a photograph of the last save.
+            self.flush_all_dirty_editors()
+            self.save()
+        try:
+            fork = copy_project_to(source, root, name.strip())
+        except OSError as e:
+            logger.error(f"Failed to duplicate {source}: {e}")
+            return "copy failed"
+        self.request_project_switch(fork)
+        return ""
+
+    def delete_project(self, path: Path) -> str:
+        """Trash a project. Returns "" on success, else why not.
+
+        Refuses the OPEN project independently of whether the button was drawn disabled: a guard
+        living only in draw code is one no headless test can reach.
+        """
+        if path.resolve() == self.project_dir.resolve():
+            return "cannot delete the open project"
+        try:
+            trash_project(path)
+        except OSError as e:
+            logger.error(f"Failed to trash {path}: {e}")
+            return "delete failed"
+        self.notifications.push(f"Project '{path.name}' trashed")
+        return ""
+
+    def pick_project_dir(self) -> None:
+        # The folder picker, demoted from a top-level verb to one control inside the modal: the
+        # only way to reach a project the switcher's root listing cannot see.
         start_dir = str(
             self.project_dir.parent
             if self.project_dir
             else self.default_projects_root_dir
         )
-        project_dir = pfd_block(
-            pfd.select_folder("Open project", default_path=start_dir)
+        picked = pfd_block(pfd.select_folder("Open project", default_path=start_dir))
+        if picked:
+            self.request_project_switch(Path(picked))
+
+    def open_projects(self) -> None:
+        # Every transient bit of modal state resets on open, so it never reopens mid-action.
+        self.reset_projects_state()
+        self.projects_rows = list_projects(
+            self.default_projects_root_dir, self.project_dir
         )
-        if project_dir:
-            self._init(Path(project_dir))
+        self.projects_selected = self.project_dir.resolve()
+        self._open_popup(PopupState.PROJECTS)
+
+    def reset_projects_state(self) -> None:
+        self.projects_delete_armed = None
+        self.projects_new_input.close()
+        self.projects_duplicate_input.close()
+        self.projects_error = ""
+        self.projects_input_focused = False
+
+    def projects_input_owns_esc(self) -> bool:
+        # Esc-ownership for the in-frame dispatch, which runs BEFORE this popup draws. Gated on
+        # the input being OPEN, not focused: a user who clicked away would otherwise find Esc
+        # dead (the lib picker's rule, same reason).
+        return self.projects_new_input.is_open or self.projects_duplicate_input.is_open
 
     def delete_current_document(self) -> None:
         self.delete_document(self.current_document_id)

@@ -88,7 +88,7 @@ cheatsheet.
 | Ctrl+S | Save + hot-reload the current shader |
 | Ctrl+N | New shader (copy of the starter) |
 | Alt+E | Examples browser |
-| Ctrl+O | Open a project |
+| Ctrl+O | Projects (new / duplicate / switch / delete) |
 | Ctrl+D | Delete the current shader |
 | Ctrl+P | Shader library picker |
 | Ctrl+Shift+P | Command palette |

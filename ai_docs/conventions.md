@@ -789,7 +789,7 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   `App(project_dir=<tmp>)`. WITHOUT this, an explicit-dir process overwrites the user's pointer with a
   throwaway tmp path that's deleted on exit, so the next real launch reads a dead pointer and silently
   falls back to a different/empty project — the user's just-created documents appear "gone" (they were
-  saved into the tmp project they were unknowingly working in). `open_project` (a real user action)
+  saved into the tmp project they were unknowingly working in). `switch_project` (a real user action)
   uses the default `persist_pointer=True`. Revisit only if a headless harness ever legitimately needs
   to set the user's active project.
 - **Release versioning is manual semver, bumped only via `make release VERSION=x.y.z`.** Bump
@@ -799,6 +799,30 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   time, not per-commit (ship flow: `dev_flow.md`). Revisit if manual bumps are repeatedly forgotten
   before a release (then consider `git describe`-derived versions).
 
+- **A project switch goes through ONE funnel that saves first, and it is DEFERRED out of the draw**
+  (feature 084). `App.switch_project` is the only caller of `_init` besides `__init__` — a test
+  AST-walks `app.py` to pin that, because "no caller can lose work" is a claim about call sites and
+  a convention alone is one a fourth caller silently breaks. The funnel is, in order: refuse if a
+  copilot turn is in flight (BEFORE saving — `App.save` writes app_state regardless of its own inner
+  gate and skips only the document, so saving first would half-save and then tear the project down)
+  → flush EVERY dirty editor tab (`flush_current_editor` is hard-wired to the current document;
+  `release()` closes every session, so the inactive tabs are the ones that get lost) → `save()` →
+  `save_imgui_ini()` → `_init`. And the verb never runs inside a popup body: a popup draws AFTER the
+  editor panel and the document image have pushed their texture handles into the frame's draw list,
+  so releasing them there leaves imgui rendering freed GL names. The modal sets
+  `pending_project_switch` and `_tick_frame_state` consumes it before any drawing. Revisit if a
+  switch ever needs to happen mid-frame.
+- **A project is forked by copying the DIRECTORY, never the live objects, and it lands via a staging
+  sibling** (feature 084). Documents hold live moderngl handles: a shallow share lets one App's
+  `release()` free another's textures and a deepcopy cannot pickle the context, so a fork is
+  `copytree` + `_init`, reloading everything from files. The copy goes to `<name>.creating` and is
+  renamed only once complete — a half-copied directory that already looked like a project would be
+  offered by the switcher — mirroring `copilot/revert.py::_swap_in_snapshot`. What travels is one
+  predicate, `_copy_into_fork`, so changing the policy is a one-line edit rather than a hunt; today
+  it says yes to everything. Deleting a project MOVES it to `app_data_dir()/trash/<name>` (a
+  millisecond suffix only on collision, the `_delete_document_unguarded` scheme) and refuses the
+  OPEN project in the model, not merely in the draw code — a guard living only in a disabled button
+  is one no headless test can reach.
 - **On-disk artifacts split by lifetime: durable-portable → the project dir; disposable-local →
   `app_data_dir()`.** A project dir (`app_state.json` + `documents/` + `media/` + `trash/`) is a
   self-contained relocatable unit — it can live anywhere and travels with the user. So state that is

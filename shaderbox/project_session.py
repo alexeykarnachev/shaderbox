@@ -18,7 +18,7 @@ import re
 import shutil
 import time
 from collections.abc import Callable, Iterator
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import moderngl
@@ -46,9 +46,11 @@ from shaderbox.pass_graph import (
 from shaderbox.paths import (
     DOCUMENT_JSON_BASENAME,
     DOCUMENT_SCRIPT_BASENAME,
+    DOCUMENTS_DIR_NAME,
     PASS_SHADER_SUFFIX,
     PASSES_DIR_NAME,
     ProjectPaths,
+    project_trash_dir,
     shader_lib_root,
 )
 from shaderbox.scripting import (
@@ -144,6 +146,140 @@ def _graph_renamed(graph: PassGraph, old: str, new: str) -> PassGraph:
     return graph.with_passes(
         entries, output=new if graph.output == old else graph.output
     )
+
+
+# ---- projects (feature 084) --------------------------------------------------------------
+# A project is a DIRECTORY, and its name is that directory's name (D3) -- nothing inside carries
+# an identity that could disagree with the path holding it. So these are all plain disk
+# operations with no App and no GL in them, which is what keeps them testable headlessly.
+
+# The suffix a fork wears while it is being copied. A half-copied directory that already looked
+# like a project would be offered by the switcher, so the copy lands here and is renamed only
+# once complete (D11).
+PROJECT_STAGING_SUFFIX = ".creating"
+
+
+@dataclass(frozen=True)
+class ProjectInfo:
+    # One row of the projects list. Computed when the modal opens, never per frame: the document
+    # count is a glob per project.
+    name: str
+    path: Path
+    document_count: int
+    is_open: bool
+
+
+def is_project_dir(path: Path) -> bool:
+    # What makes a directory loadable AS a project. The same posture sync_documents_from_disk
+    # takes per document: the marker is the dir the app would read, not a manifest.
+    return path.is_dir() and (path / DOCUMENTS_DIR_NAME).is_dir()
+
+
+def _document_count(project_dir: Path) -> int:
+    documents = project_dir / DOCUMENTS_DIR_NAME
+    if not documents.is_dir():
+        return 0
+    return sum(1 for child in documents.iterdir() if child.is_dir())
+
+
+def list_projects(root: Path, open_dir: Path | None = None) -> list[ProjectInfo]:
+    """Every project under `root`, plus `open_dir` when it lives somewhere else (D4).
+
+    The union term is what keeps a project opened from an arbitrary folder visible in its own
+    switcher instead of vanishing from it. There is no recents file: a directory listing cannot
+    go stale, and a stale recents entry is a second dead-pointer class.
+    """
+    found: dict[Path, ProjectInfo] = {}
+    if root.is_dir():
+        for child in sorted(root.iterdir()):
+            if child.name.endswith(PROJECT_STAGING_SUFFIX) or not is_project_dir(child):
+                continue
+            resolved = child.resolve()
+            found[resolved] = ProjectInfo(
+                name=child.name,
+                path=resolved,
+                document_count=_document_count(child),
+                is_open=open_dir is not None and resolved == open_dir.resolve(),
+            )
+    if open_dir is not None:
+        resolved = open_dir.resolve()
+        if resolved not in found and resolved.is_dir():
+            found[resolved] = ProjectInfo(
+                name=resolved.name,
+                path=resolved,
+                document_count=_document_count(resolved),
+                is_open=True,
+            )
+    return sorted(found.values(), key=lambda p: p.name.lower())
+
+
+def validate_project_name(name: str, root: Path) -> str:
+    """ "" when `name` may become a project directory under `root`, else why not.
+
+    One validator for New and Duplicate both, so the two cannot grow different rules.
+    """
+    cleaned = name.strip()
+    if not cleaned:
+        return "name is empty"
+    if cleaned != Path(cleaned).name or cleaned in {".", ".."}:
+        return "name is not a folder name"
+    if cleaned.endswith(PROJECT_STAGING_SUFFIX):
+        # Otherwise a user project and a fork mid-copy fight over one path.
+        return "name is reserved"
+    if (root / cleaned).exists():
+        return "name already used"
+    return ""
+
+
+def _copy_into_fork(entry: Path) -> bool:
+    # Whether one entry of a project dir travels into a fork. Everything, for now (D7) -- the
+    # maintainer asked for a copy of the folder, and this is the one place that decision lives.
+    _ = entry
+    return True
+
+
+def _fork_ignore(src: str, names: list[str]) -> set[str]:
+    # copytree's hook is (dir, names) -> names-to-skip, NOT a per-path predicate.
+    return {name for name in names if not _copy_into_fork(Path(src) / name)}
+
+
+def create_project(root: Path, name: str) -> Path:
+    """Make an empty project directory. `ProjectPaths.for_root` builds the whole layout."""
+    project_dir = root / name
+    ProjectPaths.for_root(project_dir)
+    logger.info(f"Project created: {project_dir}")
+    return project_dir
+
+
+def copy_project_to(source: Path, root: Path, name: str) -> Path:
+    """Fork `source` to `root/name`, via a staging sibling so a torn copy is never listable.
+
+    The shape `copilot/revert.py::_swap_in_snapshot` established: a complete copy exists beside
+    the target before anything claims the final name. A leftover staging dir from a crashed copy
+    is swept first, so a retry is not blocked by its own debris.
+    """
+    staging = root / f"{name}{PROJECT_STAGING_SUFFIX}"
+    shutil.rmtree(staging, ignore_errors=True)
+    shutil.copytree(source, staging, ignore=_fork_ignore)
+    final = root / name
+    staging.replace(final)
+    logger.info(f"Project duplicated: {source} -> {final}")
+    return final
+
+
+def trash_project(project_dir: Path) -> Path:
+    """Move a project to the app-data trash and return where it landed.
+
+    A MOVE, never an rmtree: the app does not recursively delete a directory the user named.
+    Bare name first, a millisecond suffix only on collision -- the same scheme
+    `_delete_document_unguarded` uses for a document.
+    """
+    dest = project_trash_dir() / project_dir.name
+    if dest.exists():
+        dest = project_trash_dir() / f"{project_dir.name}_{int(time.time() * 1000)}"
+    shutil.move(str(project_dir), str(dest))
+    logger.info(f"Project trashed: {project_dir} -> {dest}")
+    return dest
 
 
 class ProjectSession:

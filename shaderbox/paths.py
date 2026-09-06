@@ -10,6 +10,9 @@ from platformdirs import user_data_dir
 DOCUMENT_JSON_BASENAME = "document.json"
 # One ordinary fragment shader per pass, each with its own main().
 PASSES_DIR_NAME = "passes"
+# The project subdir holding one dir per document. Its presence is what makes a directory
+# loadable AS a project (feature 084's list filter).
+DOCUMENTS_DIR_NAME = "documents"
 PASS_SHADER_SUFFIX = ".frag.glsl"
 # The document's CPU behaviour script, under documents/<id>/scripts/ (feature 048: one per document).
 DOCUMENT_SCRIPT_BASENAME = "script.py"
@@ -61,6 +64,15 @@ def log_dir() -> Path:
     return path
 
 
+def project_trash_dir() -> Path:
+    # Where a deleted project goes. A document trashes into its own project's `trash/`; a project
+    # has no enclosing project, so its trash roots at app_data_dir(). Never swept — recovery is a
+    # manual move back.
+    path = app_data_dir() / "trash"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def copilot_trace_dir() -> Path:
     # Per-session full-fidelity copilot transcripts (debug ephemera, retention-capped).
     # Central, NOT in the project dir — large, disposable, never read back by the app.
@@ -85,7 +97,7 @@ class ProjectPaths:
     @classmethod
     def for_root(cls, project_dir: Path) -> Self:
         root = project_dir.resolve()
-        documents_dir = root / "documents"
+        documents_dir = root / DOCUMENTS_DIR_NAME
         media_dir = root / "media"
         trash_dir = root / "trash"
         renders_dir = root / "renders"

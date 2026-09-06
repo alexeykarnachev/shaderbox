@@ -368,6 +368,11 @@ def _handle_escape(app: App) -> None:
         if app.popup_state == PopupState.PASS_SETTINGS:
             # The gear's name field can hold an uncommitted edit; the close funnel commits it.
             app.close_pass_settings()
+        elif app.popup_state == PopupState.PROJECTS and app.projects_input_owns_esc():
+            # The Projects modal's name input owns Esc while it is OPEN (not merely focused):
+            # a user who clicked away would otherwise find Esc dead. Its own cancel runs later
+            # this frame — leave the modal open.
+            pass
         elif (
             app.popup_state != PopupState.SHADER_LIB_PICKER
             or not inline_input_owns_esc(app)
