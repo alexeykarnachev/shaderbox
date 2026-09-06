@@ -173,8 +173,14 @@ def _draw_name_input(
     # Read the deactivate IMMEDIATELY after the input, before any same_line: the item-scoped
     # queries answer for the last submitted item.
     deactivated = imgui.is_item_deactivated_after_edit()
-    # The outer Enter (a double-click switch) must not also fire while this input holds focus.
+    # The outer Enter (a switch) must not also fire while this input holds focus.
     app.projects_input_focused = imgui.is_item_focused()
+    if imgui.is_key_pressed(imgui.Key.escape, repeat=False):
+        # `hotkeys._handle_escape` leaves the modal open for exactly this; without the cancel
+        # here, Esc would be a dead key.
+        state.close()
+        app.projects_error = ""
+        return True
     imgui.same_line()
     cancelled = standard_button("x")
     if cancelled:
@@ -186,8 +192,10 @@ def _draw_name_input(
         error = commit(app, state.buf)
         app.projects_error = error
         if not error:
+            # Close rather than stay: the switch is queued, so the list this modal is showing is
+            # already stale -- and a stale `open` marker is how Delete reaches the wrong project.
             state.close()
-            return True
+            return False
     imgui.text_colored(
         COLOR.STATE_ERROR if app.projects_error else COLOR.FG_DIM,
         app.projects_error or "Enter creates",

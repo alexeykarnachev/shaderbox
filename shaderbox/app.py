@@ -157,11 +157,14 @@ class App:
         # the user picked); a project CREATED by name seeds through its own path.
         # A pointer naming a directory that no longer exists is a first launch too: the seed must
         # fire, or the recovery lands in a blank app.
-        pointed = (
-            Path(self.project_dir_file_path.read_text().strip())
+        # A blank read is NO pointer, never `Path("")` -- that is `.`, whose is_dir() is True, so
+        # a truncated file (a crash mid-write) would open the process CWD as a project.
+        pointer_text = (
+            self.project_dir_file_path.read_text().strip()
             if self.project_dir_file_path.exists()
-            else None
+            else ""
         )
+        pointed = Path(pointer_text) if pointer_text else None
         recovered_from_dead_pointer = pointed is not None and not pointed.is_dir()
         is_first_launch = project_dir is None and (
             pointed is None or recovered_from_dead_pointer
@@ -531,6 +534,8 @@ class App:
             logger.warning(
                 f"Saved project {pointed} is gone; opening {project_dir} instead"
             )
+            # Set BEFORE _init so its `first_run` gallery open stands down (one popup at a time);
+            # open_projects() below then fills the rows, which a bare assignment cannot.
             self.popup_state = PopupState.PROJECTS
         self._init(
             project_dir, first_run=is_first_launch, persist_pointer=persist_pointer
@@ -538,6 +543,8 @@ class App:
 
         self._build_command_callbacks()
         self._register_palette_commands()
+        if recovered_from_dead_pointer:
+            self.open_projects()
 
     def _install_escape_filter(self) -> None:
         renderer_cb = self.imgui_renderer.keyboard_callback
@@ -1869,23 +1876,47 @@ class App:
 
     # ---- projects (feature 084) -----------------------------------------------------------
 
-    def flush_all_dirty_editors(self) -> None:
-        # Every dirty tab's text to disk, not just the active one. `flush_current_editor` is
-        # hard-wired to current_document_id, so it cannot be called in a loop; a switch reloads
-        # every document from disk anyway, so writing the text IS the save here.
+    def flush_all_dirty_editors(self) -> int:
+        """Persist every dirty tab, not only the active one. Returns how many FAILED.
+
+        A tab holding a pass of a loaded document updates that pass IN MEMORY; a raw write to its
+        file would be undone moments later by `save()`, which serializes the document from the
+        pass objects and knows nothing about the file. Lib and script tabs have no such owner and
+        are written directly.
+        """
         self.flush_current_editor()
+        failed = 0
         for tab in self.editor_tabs:
             if not self.is_tab_dirty(tab):
                 continue
             session = self.editor_sessions.get(tab.path)
             if session is None:
                 continue
-            try:
-                tab.path.write_text(session.editor.get_text(), encoding="utf-8")
-            except OSError as e:
-                logger.error(f"Failed to flush {tab.path}: {e}")
-                continue
+            text = session.editor.get_text()
+            ui_document = self.ui_documents.get(tab.document_id)
+            edited_pass = (
+                next(
+                    (
+                        p
+                        for p in ui_document.document.passes.values()
+                        if p.source.path == tab.path
+                    ),
+                    None,
+                )
+                if ui_document is not None
+                else None
+            )
+            if edited_pass is not None:
+                edited_pass.release_program(text)
+            else:
+                try:
+                    tab.path.write_text(text, encoding="utf-8")
+                except OSError as e:
+                    logger.error(f"Failed to flush {tab.path}: {e}")
+                    failed += 1
+                    continue
             session.saved_undo = session.editor.get_undo_index()
+        return failed
 
     def seed_starter_into_empty_project(self) -> None:
         # A just-created project gets a starter document, so New lands somewhere usable instead of
@@ -1912,7 +1943,12 @@ class App:
             # Refused WHOLE: App.save writes app_state regardless of the busy gate and skips only
             # the document, so saving first would half-save and then tear the project down anyway.
             return
-        self.flush_all_dirty_editors()
+        if self.flush_all_dirty_editors():
+            # A tab that could not be written would be discarded by release(); refuse instead.
+            self.notifications.push(
+                "Unsaved changes could not be written", COLOR.STATE_ERROR[:3]
+            )
+            return
         self.save()
         self.save_imgui_ini()
         self._init(path)
@@ -1920,6 +1956,10 @@ class App:
 
     def new_project(self, name: str) -> str:
         """Create, seed and open a project. Returns "" on success, else why not."""
+        if self.copilot_turn_active:
+            # Checked HERE, not only in switch_project: a refusal one frame later would leave an
+            # orphan directory behind and report success to the user.
+            return "the assistant is working"
         root = self.default_projects_root_dir
         error = validate_project_name(name, root)
         if error:
@@ -1933,6 +1973,8 @@ class App:
 
     def duplicate_project(self, source: Path, name: str) -> str:
         """Fork `source` and open the fork. Returns "" on success, else why not."""
+        if self.copilot_turn_active:
+            return "the assistant is working"
         root = self.default_projects_root_dir
         error = validate_project_name(name, root)
         if error:

@@ -172,9 +172,12 @@ def _tick_frame_state(app: App) -> list[str] | None:
     pending = app.pending_project_switch
     if pending is not None:
         app.pending_project_switch = None
+        seed = app.pending_project_seed
+        app.pending_project_seed = False
         app.switch_project(pending)
-        if app.pending_project_seed:
-            app.pending_project_seed = False
+        # Only seed once the switch actually HAPPENED: a refused switch would otherwise seed a
+        # starter into the project the refusal was protecting.
+        if seed and app.project_dir == pending:
             app.seed_starter_into_empty_project()
 
     # ----------------------------------------------------------------

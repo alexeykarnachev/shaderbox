@@ -229,7 +229,14 @@ def test_a_switch_flushes_every_dirty_tab_not_just_the_active_one(app: Any) -> N
             "the edit must leave the tab dirty, or this test proves nothing"
         )
 
-    app.flush_all_dirty_editors()
+    assert app.flush_all_dirty_editors() == 0
+    # save() runs next in the funnel and serializes documents from their PASS objects, so a raw
+    # write to a pass file is undone here. Asserting only the script tab (which save() does not
+    # touch) is what let that loss ship: this asserts the SHADER tab across the save.
+    app.save()
+    assert "first edit" in first.read_text(), (
+        "an inactive pass tab's edit must survive the save that follows the flush"
+    )
     assert "second edit" in second.read_text()
 
 
@@ -467,5 +474,55 @@ def test_a_live_pointer_is_not_treated_as_a_first_launch(
     try:
         assert app.project_dir == live.resolve()
         assert app.popup_state == PopupState.CLOSED
+    finally:
+        app.release()
+
+
+def test_a_busy_refused_new_creates_nothing_and_says_so(app: Any) -> None:
+    # Falsifier: check the copilot gate only in switch_project — new_project returns "" (success),
+    # the directory is created, and the refusal lands a frame later with the user never told.
+    root = app.default_projects_root_dir
+    before = sorted(p.name for p in root.iterdir())
+    app.copilot_turn_active = True
+
+    assert app.new_project("orphan") != ""
+    assert app.pending_project_switch is None
+    assert not app.pending_project_seed
+    assert sorted(p.name for p in root.iterdir()) == before
+
+
+def test_a_blank_pointer_file_is_no_pointer(tmp_path: Path, monkeypatch: Any) -> None:
+    # Falsifier: `Path(text)` on an empty read — that is `Path(".")`, whose is_dir() is True, so
+    # a pointer truncated by a crash mid-write opens the process CWD as a project and mkdirs a
+    # documents/ media/ trash/ renders/ layout inside it.
+    data = tmp_path / "data"
+    data.mkdir(parents=True)
+    monkeypatch.setenv("SHADERBOX_DATA_DIR", str(data))
+    (data / "project_dir").write_text("   \n")
+    glfw = pytest.importorskip("glfw")
+    if not glfw.init():
+        pytest.skip("no GL")
+    from shaderbox.app import App
+
+    app = App(headless=True)
+    try:
+        assert app.project_dir == app.default_project_dir
+        assert app.project_dir != Path.cwd()
+    finally:
+        app.release()
+
+
+def test_the_recovery_modal_is_populated_not_empty(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    # Falsifier: assign popup_state directly and never call open_projects() — the modal opens
+    # with no rows and no selection, so the recovery shows an empty list.
+    app = _app_with_pointer_at(tmp_path, monkeypatch, tmp_path / "vanished")
+    try:
+        assert app.popup_state == PopupState.PROJECTS
+        assert app.projects_rows, (
+            "the recovery modal must list the project it recovered into"
+        )
+        assert app.projects_selected == app.project_dir.resolve()
     finally:
         app.release()
