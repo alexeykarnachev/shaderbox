@@ -32,8 +32,6 @@ _POPUP_H = 420.0
 # The name column, wide enough for a long project name before the count column starts.
 _NAME_W = 220.0
 _COUNT_W = 72.0
-# The `open` marker column, between the count and the path.
-_OPEN_W = 56.0
 
 
 def draw_projects(app: App) -> None:
@@ -89,16 +87,16 @@ def _draw_row(app: App, info: ProjectInfo) -> None:
     ):
         app.request_project_switch(info.path)
     imgui.same_line(SPACE.MD)
+    # The open project reads as the bright one and every other as secondary — the same
+    # weight difference the pass strip uses for the output pass. Selection is the row
+    # highlight, which is a different question and already drawn by `selectable`.
     imgui.text_colored(
-        COLOR.ACCENT_PRIMARY if selected else COLOR.FG_PRIMARY, info.name
+        COLOR.FG_PRIMARY if info.is_open else COLOR.FG_SECONDARY, info.name
     )
     imgui.same_line(_NAME_W)
     plural = "" if info.document_count == 1 else "s"
     imgui.text_colored(COLOR.FG_DIM, f"{info.document_count} doc{plural}")
     imgui.same_line(_NAME_W + _COUNT_W)
-    if info.is_open:
-        imgui.text_colored(COLOR.ACCENT_PRIMARY, "open")
-    imgui.same_line(_NAME_W + _COUNT_W + _OPEN_W)
     imgui.text_colored(COLOR.FG_DIM, str(info.path.parent))
 
 
@@ -137,9 +135,7 @@ def _draw_verb_row(app: App) -> bool:
     imgui.same_line(imgui.get_content_region_avail().x - float(SIZE.BTN_SM_W))
     if standard_button("Close", width=float(SIZE.BTN_SM_W)):
         keep_open = False
-    if is_open_project:
-        imgui.text_colored(COLOR.FG_DIM, "switch away first")
-    elif app.projects_error:
+    if app.projects_error:
         imgui.text_colored(COLOR.STATE_ERROR, app.projects_error)
     return keep_open
 
@@ -173,12 +169,9 @@ def _draw_name_input(
         imgui.set_keyboard_focus_here(0)
         state.needs_focus = False
     imgui.set_next_item_width(SIZE.NAME_INPUT_W)
-    changed, state.buf = imgui.input_text(
+    entered, state.buf = imgui.input_text(
         "##project_name", state.buf, imgui.InputTextFlags_.enter_returns_true
     )
-    # Read the deactivate IMMEDIATELY after the input, before any same_line: the item-scoped
-    # queries answer for the last submitted item.
-    deactivated = imgui.is_item_deactivated_after_edit()
     # The outer Enter (a switch) must not also fire while this input holds focus.
     app.projects_input_focused = imgui.is_item_focused()
     if imgui.is_key_pressed(imgui.Key.escape, repeat=False):
@@ -187,25 +180,23 @@ def _draw_name_input(
         state.close()
         app.projects_error = ""
         return True
+
     imgui.same_line()
-    cancelled = standard_button("x")
-    if cancelled:
-        # Cancel wins over the deactivate its own click produced.
+    accepted = primary_button(verb) or entered
+    imgui.same_line()
+    if standard_button("Cancel"):
         state.close()
         app.projects_error = ""
         return True
-    if changed or deactivated:
-        error = commit(app, state.buf)
-        app.projects_error = error
-        if not error:
+    if accepted:
+        app.projects_error = commit(app, state.buf)
+        if not app.projects_error:
             # Close rather than stay: the switch is queued, so the list this modal is showing is
-            # already stale -- and a stale `open` marker is how Delete reaches the wrong project.
+            # already stale.
             state.close()
             return False
-    imgui.text_colored(
-        COLOR.STATE_ERROR if app.projects_error else COLOR.FG_DIM,
-        app.projects_error or "Enter creates",
-    )
+    if app.projects_error:
+        imgui.text_colored(COLOR.STATE_ERROR, app.projects_error)
     return True
 
 

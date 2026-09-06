@@ -136,7 +136,8 @@ list. D4 unions the projects root with the open project wherever it lives, and i
 project is indistinguishable from a rooted one; in a row the difference is legible at a glance. That
 is not hypothetical — it is the exact confusion that left a real project in `/tmp` for a day.
 
-The open project's row carries an `open` marker in the accent color. `preview_cell` is NOT the
+The open project is the row drawn at full weight (`FG_PRIMARY` against `FG_SECONDARY`), not one
+carrying a word that says so. `preview_cell` is NOT the
 primitive here; a row is a `selectable` plus columns, which is also what makes it a keyboard-nav
 stop (an `invisible_button` is not).
 
@@ -290,7 +291,7 @@ actually hits it.
 ### D6 — New project: a name, validated, under the projects root.
 
 The New flow is an inline input inside the modal (the lib picker's inline-input pattern —
-`is_item_deactivated_after_edit` commits, Esc cancels, an `x` cancel button on the right), not a
+`Create`/`Cancel` buttons with Enter accepting implicitly, Esc cancelling), not a
 second modal and not a save-file dialog. The typed text is a directory name under
 `default_projects_root_dir`.
 
@@ -399,8 +400,8 @@ surviving a selection change is how Yes deletes the wrong project, which is the 
 feature can produce.
 
 **The OPEN project cannot be deleted.** `delete_project` REFUSES independently of the button state —
-the model guard is the gate, the disabled button and its `switch away first` caption are the
-cosmetic half. That order matters: a refusal living only in draw code is a guard no headless test
+the model guard is the gate, the disabled button is the cosmetic half (and carries no caption — a
+greyed Delete on the row you are working in explains itself). That order matters: a refusal living only in draw code is a guard no headless test
 can reach, and the verification row would then be testing a mechanism that does not exist. Deleting the live project would mean tearing down every GL resource, choosing a
 replacement and switching, all inside a confirm; that is a second feature wearing a confirm dialog's
 clothes. Switch away first.
@@ -539,28 +540,63 @@ is settled here rather than discovered at gate time. A button label is 3 words, 
 
 | String | Kind | Words | Where |
 |---|---|---|---|
-| `New` | button | 1 | verb row |
-| `Duplicate` | button | 1 | verb row |
+| `New` | button | 1 | verb row, and the commit button of its own input |
+| `Duplicate` | button | 1 | verb row, and the commit button of its own input |
 | `Open other...` | button | 2 | verb row |
 | `Delete` | button | 1 | verb row |
+| `Cancel` | button | 1 | beside a name input |
 | `Close` | button | 1 | action row |
 | `Yes` / `No` | button | 1 | armed-delete confirm |
 | `Delete to trash?` | caption | 3 | armed-delete confirm |
-| `switch away first` | caption | 3 | under a disabled Delete |
 | `name already used` | caption | 3 | inline-input refusal |
-| `Enter creates` | caption | 2 | under an open inline input |
 | `Projects` | menu item + modal title | 1 | File menu, modal |
 
-Three earlier drafts were over budget and are recorded so they are not re-proposed:
-`switch away to delete this one` (6), `Enter creates - Esc cancels` (5), and
-`click a row to switch` (5). The Esc half is dropped rather than shortened: Esc-cancels is the
-convention every other inline input in the app already follows, and the `x` button is the visible
-affordance for it.
+**The UI explains itself or it is wrong.** Four earlier drafts narrated instead, and each was
+replaced by a control or a visual difference rather than reworded:
 
-The menu-bar project name (D8) is NOT authored copy — it is the project's own directory name, a
-derived value, and § 2's rule is that a derived value goes in the control rather than the label.
+- `Enter creates` — deleted. Enter is the app's accept key everywhere; the input gets `Create`
+  and `Cancel` buttons instead, the `pass_settings.py` shape
+  (`(primary_button("Create") or entered)`), so Enter still works and nothing says so.
+- `switch away first` under a disabled Delete — deleted. A greyed Delete on the row you are
+  working in needs no caption.
+- The accent `open` word in a row — deleted. It labelled the project the modal opens ON, next to
+  a row already drawn selected, so it said what the highlight said. Open-ness is now the row's
+  WEIGHT: the open project draws `FG_PRIMARY`, every other `FG_SECONDARY` — the pass strip's own
+  distinction for its output pass.
+- `click a row to switch` — deleted, never shipped.
 
 ---
+
+## Blast radius of the retirement
+
+`OPEN_PROJECT` / `open_project` / the `Open project...` menu item were grepped across
+`shaderbox/`, `tests/`, `scripts/` and `dogfood/`. The retirement touches almost nothing:
+
+- **`tests/test_editor_ffi.py::test_ctrl_o_reaches_the_app_while_focused`** names `OPEN_PROJECT` in a
+  COMMENT only; its assertion is that Ctrl+O belongs to no editor keymap and the host must not
+  swallow it. The chord stays Ctrl+O, so the test passes unchanged. The comment is updated in the
+  same wave so it does not name a retired symbol.
+- **Nothing else references either symbol** outside `app.py`, `commands.py` and `ui.py` — the four
+  edit sites D9 names.
+- **Nothing enumerates `PopupState` exhaustively.** `scripts/smoke.py` and the pass tests name
+  individual members; adding `PROJECTS` breaks none of them. The smoke drives popups by assignment,
+  so the new modal is only exercised there if the smoke is extended — which is why the Verification
+  table carries its own row for it rather than assuming the smoke covers it.
+- **The command surfaces are DERIVED, not listed.** `test_command_registry_coverage.py` asserts
+  `set(SPEC_BY_ID) == set(CommandId)` and `set(app.command_callbacks) == set(CommandId)`, and the
+  cheatsheet, palette, rebinder and help all iterate `COMMAND_SPECS`. So a RENAME needs no edit in
+  any of them — but an id added without a spec or a callback fails there, which is the existing gate
+  D9's verification row leans on rather than duplicating.
+- **`help_content.py`** builds its shortcuts from the registry, so `Projects` appears in the Help
+  panel automatically; `test_every_bound_spec_reaches_the_help_shortcuts` asserts exactly that.
+- **No new persisted store**, so `tests/test_persistence_completeness.py`'s roster is untouched. This
+  is a consequence of D3 and D4 rather than luck: the project list is a DIRECTORY LISTING and the
+  name is the directory name, so there is no JSON to keep fail-soft. The pointer file stays a bare
+  path, exactly as today. A recents file would have added a rostered store and its whole corruption
+  battery — a cost D4 declines.
+
+---
+
 
 ## Files touched
 

@@ -568,10 +568,13 @@ def _draw_menu_bar(app: App) -> None:
         # button — `Projects...` two items away already owns the click.
         name = app.project_dir.name
         label = f"project {name}"
+        # SPACE.LG off the right edge: flush against it, the last glyph touches the window
+        # border.
         imgui.same_line(
             imgui.get_content_region_avail().x
             - imgui.calc_text_size(label).x
             + imgui.get_cursor_pos_x()
+            - float(SPACE.LG)
         )
         imgui.text_colored(COLOR.FG_DIM, label)
 
