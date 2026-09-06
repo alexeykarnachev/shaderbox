@@ -26,23 +26,23 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-06, 083's four ShaderBox findings landed; the re-vendor is the open half. -->
-**Next: the re-vendor of `libeditor`, waiting on the editor session's sha** (procedure: the
-vendored-binary bullet in `conventions.md ## Known quirks`). 083 split six findings
-four/two. The four here are landed and reviewed: the copilot source lock, a Uniforms tab with a pass
-selector, the sampler previews on the strip's own `preview_cell`, and `openai/gpt-5.6-luna` as the
-default model.
+<!-- As of 2026-09-06, 084 landed and the re-vendor closed; nothing is mid-flight. -->
+**Next: nothing is claimed.** 084 gave a project the verbs a document already had: a Projects modal
+(Ctrl+O) carrying new / duplicate / switch / delete / open-other, replacing the lone folder picker
+rather than sitting beside it. Two bugs rode along, both made routine by the feature — a switch
+discarded every unsaved editor buffer, and a pointer at a deleted directory recreated an empty
+skeleton there and came up blank.
 
-**The two vim findings are built in the editor repo** — one Escape leaving INSERT with the
-completion popup open, and the pending phrase in the status band. That phrase needs its own buffer:
-the `.`-repeat recorder drops count digits by design and outlives the phrase. Expect ONE new export
-plus a `ChromeFlag` member, so **the export count changes at re-vendor**, read from `nm -D` rather
-than predicted; the flag defaults true on the Vim style, so ShaderBox needs no new call. Two upstream
-commits also close six nvim divergences, so the re-vendor carries a behavior note.
+**The re-vendor is done**, at `1aadb6e`: one new export (`ed_pending_phrase`, vim's showcmd) plus a
+`ChromeFlag`. The two pending queries are an IMPLICATION, not an equivalence — an open `:` line is
+pending with NO phrase, its text being `ed_command_line`. Gate on `is_pending`, then draw whichever
+is non-empty. Nine nvim divergences closed; user-visible are `daw`/`caw`/`vaw` on whitespace-only
+lines and vertical motion after a no-op edit.
 
-**Open, unmeasured:** no brake watches cost, or a frame going from lit to flat
+**Open, unmeasured:** no brake watches cost, or a frame going lit to flat
 (`ai_docs/features/082_dogfood_post081/02_round2_report.md`); whether the one-turn dogfood build
-repeats; a multi-document mission.
+repeats; a multi-document mission. A project opened from outside the projects root drops off the
+list once you switch away (084 D1, accepted).
 
 **Shipped:** v0.28.0 is a GitHub release only; itch stays at v0.27.0. The Windows `libeditor.dll`
 needs a Windows host.
@@ -51,6 +51,7 @@ needs a Windows host.
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 084 | project_management | done | A project had one verb, `Open project`, which called `_init` directly: no create, no fork, no switcher, and the open project's name displayed nowhere. One Projects modal (Ctrl+O) now carries every verb, replacing the picker rather than sitting beside it and demoting it to `Open other...` for a project outside the root; rows show name, document count and PATH, the column that tells a rooted project from one opened anywhere else. Two bugs rode along because the feature makes both routine — a switch discarded every unsaved buffer, and a pointer at a vanished directory recreated an empty skeleton there and came up blank. The switch is DEFERRED out of the modal's draw: a popup body runs after the editor panel and document image have pushed texture handles into the frame's draw list, so releasing them there renders freed GL names. Three review rounds; a mutation pass found the entire consuming half deletable with every gate green. Spec: `ai_docs/features/084_project_management/01_spec.md`. |
 | 083 | sixth_walk_findings | partial | The maintainer's sixth walk, six findings split across two repos: the copilot's per-session source lock (twelve content tools, three answers, riding the existing gate funnel -- which found `requires_gate` answering both "do we confirm?" and "is this irreversible?", now split), a dedicated Uniforms tab with the pass selector that finally reaches a pass neither open nor on screen, the sampler previews routed through the pass strip's own `preview_cell` so a transparent texture has an edge, and luna as the default model. The two vim findings (one Escape leaving INSERT past the completion popup, the pending phrase in the status band) are the editor repo's; the re-vendor is what stays open. Spec: `ai_docs/features/083_sixth_walk_findings/01_spec.md`. |
 | — | editor_walk_findings | done | The maintainer's walk over the code panel, split across two repos: GLSL member/swizzle completion after a dot (the host owns that vocabulary, and the words provider had to yield the site — at its two-letter floor `u_gain.xf` offered the local `xfade` as a component of a float), an RGB channel view because Color and Color+Alpha were the same composite differing only in checker loudness, `Ctrl+Shift+V` paste, and a tooltip. The editor repo took the three keymap items and built a host-binding overlay (`<leader>f` formats, `Ctrl+Shift+I` untouched); its ABI went 100 -> 106, purely additive. Spec: commits `ac78d67` + `0f976be` + `d18991a` + `cc54130`. |
 | — | dogfood_report_shape | done | Five reviewers over eight reports found three incompatible heading taxonomies, a bottom line in a different place each time, and a results table whose columns changed every round (one called a raw count `requests`, the next a ratio under a near-identical label). `REPORT_TEMPLATE.md` is now THE shape — fixed headings and order, the bottom line always under `## The headline`, a mandatory animation section — and `OUTCOMES` is a closed vocabulary enforced at `end_attempt`, describing what the MODEL reached rather than that the driver stopped. The renderer had keyed on `"success"`, never a legal value, so every attempt page ever built showed a red pill. Spec: commit `86d4de9`. |
