@@ -498,8 +498,9 @@ class Editor:
     def get_pending_phrase(self) -> str:
         """The unfinished command as typed (vim's `showcmd`), empty when none.
 
-        An armed leader reads as pending here while `is_pending` reports False,
-        so a caller asking "is anything half-typed?" reads this, not that.
+        `is_pending` is the WIDER predicate: an open `:` or `/` line is pending
+        with no phrase (its text is `get_command_line`, where vim keeps it too).
+        So gate on `is_pending`, then draw whichever of the two is non-empty.
         """
         n = self._lib.ed_pending_phrase(self._h, _TEXT_BUF, len(_TEXT_BUF))
         return bytes(_TEXT_BUF[:n]).decode() if n > 0 else ""

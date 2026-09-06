@@ -523,6 +523,38 @@ def main() -> int:
     check("having run the command", text(h), "")
     lib.ed_set_text(h, b"alpha beta gamma")
 
+    # ed_pending and ed_pending_phrase are a PAIR, and a host gates on the
+    # first before drawing the second. They contradicted each other on an armed
+    # leader, which is the one state the phrase exists to show.
+    check("a phrase implies pending", lib.ed_pending(h), False)
+    lib.ed_feed(h, b"3d")
+    check("mid-phrase is pending", lib.ed_pending(h), True)
+    check("with its keys", phrase(h), "3d")
+    lib.ed_key(h, K_ESC, 0, 0)
+
+    lib.ed_set_leader(h, ord(" "))
+    lib.ed_bind(h, ord("f"), M_NONE, True, 42)
+    lib.ed_key(h, K_CHAR, M_NONE, ord(" "))
+    check("an armed leader is pending", lib.ed_pending(h), True)
+    check("and shows its key", phrase(h), " ")
+    lib.ed_key(h, K_CHAR, M_NONE, ord("f"))
+    check("the fired sequence ends both", lib.ed_pending(h), False)
+    check("clearing the phrase", phrase(h), "")
+    fired_id = ctypes.c_int32(0)
+    check("and handing over the id", lib.ed_take_binding(h, ctypes.byref(fired_id)), True)
+    check("which is the one registered", fired_id.value, 42)
+
+    # The converse does NOT hold, and the docs say so: an open `:` line is
+    # pending and carries no phrase. A host must not read the pair as one
+    # predicate.
+    lib.ed_feed(h, b":se")
+    check("an open command line is pending", lib.ed_pending(h), True)
+    check("and carries no phrase", phrase(h), "")
+    lib.ed_key(h, K_ESC, 0, 0)
+    lib.ed_clear_bindings(h)
+    lib.ed_set_leader(h, 0)
+    lib.ed_set_text(h, b"alpha beta gamma")
+
     # `K` is left to the host: unbound in every mode, so it comes back false
     # with nothing changed, the seam a keyword-lookup popup hangs on.
     print("K reaches the host")
