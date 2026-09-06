@@ -893,10 +893,13 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   Revisit if a knob needs per-project rather than per-install scope.
 
 - **A view of the render is a separate texture; the output texture is never swizzled or redrawn
-  for display.** Whatever the viewer shows besides the plain frame (the Alpha channel view, 073
-  D2) is blitted into its own canvas (`alpha_view.py`), because the output texture is also what
-  feedback reads, exports and the strip sample -- a display-only change to it would leak into
-  every consumer. Revisit if a view needs a shader the blit cannot express in one quad.
+  for display.** Whatever the viewer shows besides the plain frame (the Alpha view, 073 D2; the
+  RGB view, which discards alpha so a frame with a transparent background still shows its color)
+  is blitted into its own canvas (`channel_blit.py` -- one class holding a shader, since two
+  classes for the same one-quad GL lifecycle is the mechanism written twice), because the output
+  texture is also what feedback reads, exports and the strip sample -- a display-only change to it
+  would leak into every consumer. Revisit if a view needs a shader the blit cannot express in one
+  quad.
 - **Completion policy is host data; the library holds the popup and the word prefix.** What the
   code panel offers and when is a provider table (`completion.py`: a context predicate on the
   line before the caret, prefix floors, a candidate function), evaluated on the host with the

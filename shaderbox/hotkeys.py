@@ -57,11 +57,8 @@ def _drain_editor_input(app: App) -> None:
         editor.set_register(clip, linewise=clip.endswith("\n"))
     fired: list[int] = []
     for event in events:
-        # Drained per KEY, not once per frame. The slot holds ONE and a completing key
-        # overwrites it during the feed, so a frame carrying two sequences keeps only the
-        # second -- measured: a leader armed at the end of one frame completes at the start
-        # of the next, so three keys across two frames is enough and a loop drain after the
-        # feed still loses the first. Draining beside the key that fired it cannot.
+        # Per KEY, not per frame: the slot holds ONE and a completing key overwrites it
+        # during the feed, so a frame carrying two sequences would keep only the second.
         _collect_binding(editor, fired)
         if event.code == KeyCode.ESCAPE:
             # Esc is vim's modal key — the editor owns it UNCONDITIONALLY while

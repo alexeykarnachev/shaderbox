@@ -355,10 +355,10 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
 - **The small leaves** — one concept each, imported across packages:
   **`theme.py`** (the ONLY home for color/size/spacing tokens: `COLOR` / `SIZE` / `SPACE`; every
   UI module reads these, nothing hard-codes a literal) / **`ui_regions.py`** (`DocumentTab` — the
-  settings-panel tab enum, and `ChannelView` — the viewer's Color / Color+Alpha / Alpha
+  settings-panel tab enum, and `ChannelView` — the viewer's Color / Alpha / RGB
   state, both kept out of `commands.py` so the persisted model layer doesn't
-  pull in imgui) / **`alpha_view.py`** (the Alpha channel view's one-quad blit into its own
-  canvas; the output texture is never touched for display, 073) / **`completion.py`** (the
+  pull in imgui) / **`channel_blit.py`** (the Alpha and RGB views' one-quad blits, one class
+  holding a shader; the output texture is never touched for display, 073) / **`completion.py`** (the
   code panel's completion policy: the provider table over the intel index and `word_at`;
   GL-free, 073 / 078) / **`intel/`** (what the editor knows about a buffer, 078: `symbols`
   the kind enum, `glsl` the buffer as text, `script` the returns by `ast`, `index` the

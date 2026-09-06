@@ -10,8 +10,10 @@ ship a chord with two owners. The audit that decided each cell is
 import re
 from pathlib import Path
 
+import pytest
 from imgui_bundle import imgui
 
+from shaderbox import commands
 from shaderbox.commands import (
     COMMAND_SPECS,
     DEFAULT_LEADER,
@@ -169,6 +171,36 @@ def test_every_leader_binding_names_a_real_command() -> None:
         assert command_id in SPEC_BY_ID, command_id
         assert leader_command(index) == command_id
         assert len(key) == 1, key
+
+
+def test_the_index_resolves_row_by_row_and_not_by_luck(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`leader_command` maps each index to ITS row, driven over a table long enough to tell
+    the mappings apart.
+
+    While `LEADER_BINDINGS` holds one row every index resolves to the same command, so an
+    off-by-one inside the function passes the round-trip above -- that assertion reads as if
+    it covers the indexing and cannot until a second binding lands. Patching the table drives
+    the real function over a domain that discriminates, so the coverage is the function's
+    rather than today's data's.
+    """
+    monkeypatch.setattr(
+        commands,
+        "LEADER_BINDINGS",
+        [
+            ("f", CommandId.FORMAT_BUFFER),
+            ("s", CommandId.SAVE),
+            ("q", CommandId.QUIT),
+        ],
+    )
+    assert [commands.leader_command(i) for i in (-1, 0, 1, 2, 3)] == [
+        None,
+        CommandId.FORMAT_BUFFER,
+        CommandId.SAVE,
+        CommandId.QUIT,
+        None,
+    ]
 
 
 def test_an_id_outside_the_table_names_nothing() -> None:

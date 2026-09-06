@@ -211,7 +211,14 @@ def eligible_providers(context: CompletionContext) -> list[CompletionProvider]:
 
 def offer(context: CompletionContext) -> list[Symbol]:
     """The candidates to push: every eligible provider's matches, without repeats of the
-    inserted text, sorted by kind then name (079 D2); empty means cancel."""
+    inserted text, sorted by kind then name (079 D2); empty means cancel.
+
+    A vector's members are the one kind that keeps the order its provider generated. Their
+    names are a fixed positional vocabulary, so alphabetical is not a weaker ordering but a
+    meaningless one -- it interleaves the three component sets and puts `x` at row 16 of a
+    vec4's 21, when the reason all the singles are offered at all is that `uv.y` and `col.g`
+    are the common reach.
+    """
     seen: set[str] = set()
     found: list[Symbol] = []
     for provider in eligible_providers(context):
@@ -222,9 +229,17 @@ def offer(context: CompletionContext) -> list[Symbol]:
             seen.add(text)
             found.append(symbol)
     # The cap applies AFTER the sort, so a truncated list is the highest-ranked candidates
-    # rather than whichever provider happened to run first.
-    found.sort(key=lambda symbol: (kind_rank(symbol.kind), symbol.name))
-    return found[:MAX_CANDIDATES]
+    # rather than whichever provider happened to run first. `enumerate` before sorting keeps
+    # the sort stable on generation order, which is what members fall back to.
+    ordered = sorted(
+        enumerate(found),
+        key=lambda pair: (
+            kind_rank(pair[1].kind),
+            "" if pair[1].kind == SymbolKind.GLSL_MEMBER else pair[1].name,
+            pair[0],
+        ),
+    )
+    return [symbol for _, symbol in ordered][:MAX_CANDIDATES]
 
 
 _WORD = re.compile(r"[A-Za-z0-9_]+")

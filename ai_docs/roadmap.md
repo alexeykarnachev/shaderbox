@@ -26,52 +26,25 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-06, the maintainer's editor walk landed and the leader mechanism is in. -->
-**Next: the maintainer decides.** A walk over the code panel produced seven findings, split across
-two repos: four landed here, and the three keymap items plus a binding mechanism went to the editor
-repo, where the keys are. That loop ran to completion in one session — four re-vendors, two of them
-fixes upstream made after this host reported them.
+<!-- As of 2026-09-06, the maintainer's editor walk landed; the dogfood items are older and still open. -->
+**Next: the maintainer decides.** A walk over the code panel produced seven findings across two
+repos — four landed here (GLSL member completion after a dot, an RGB channel view, `Ctrl+Shift+V`,
+a tooltip, chip click-through); the three keymap items went to the editor repo, which built a
+host-binding overlay: `<leader>f` formats, `Ctrl+Shift+I` still does.
 
-**Two premises the host got wrong, both corrected upstream by measurement.** `Ctrl-Y` was already
-bound (a view scroll), so it was a precedence question rather than a free key; and `<Space>` is
-pinned by twenty corpus rows including `r<Space>`, where it is an OPERAND — a leader swallowing the
-key unconditionally would have broken that one silently while `d<Space>` kept passing. The leader
-shadows rather than replaces, and the compiled keymaps stay what nvim measures.
+**The editor's ABI is 106 exports at `09e3e59`.** A host claims a key and gets back an id it chose;
+the compiled keymaps stay what nvim measures. Rebinding a built-in to another built-in is
+deliberately absent — it needs a vocabulary of internal action names no oracle can measure. A
+rebinding UI is unbuilt by maintainer decision, so `commands.py`'s leader table is the only
+registration.
 
-**The completion popup blinked for weeks because a comment said it was ours.** The TODO asserted
-three readings had failed and blamed frame timing, naming an instrument this box lacks instead of a
-question that could be asked; the cause was upstream clearing a host-driven list on every inserted
-character, and one message settled it. The mitigation it had grown — a branch reconstructing from
-the prefix whether the last edit was an accept — is deleted.
+**Open, from the dogfood rounds** (both in `ai_docs/features/082_dogfood_post081/02_round2_report.md`):
+`edit_script` corrupts indentation on its exact-match path and reports the failed repair as applied;
+and every brake counts repetition while none watches cost or a frame going from lit to flat. The
+replay store is gitignored, so that evidence is on this box only.
 
-**Open:** whether the one-turn dogfood build is repeatable (one sample), and a mission spanning
-several documents — the navigation tools have never been under real pressure.
-
-**From the dogfood rounds, still open. A tool was corrupting the files it edited.** `edit_script`'s splice stripped the replacement's
-first-line indent unconditionally — right for the structural match, whose span starts after the
-source's indent, wrong for the exact match, whose span starts at the literal find and consumes it.
-A correct 4-space block came back at column 0, and the repair for THAT is an indent-only edit,
-which the same bug turned into a no-op reported as applied. One condition on the span geometry
-(`start > line_start`) fixes both halves.
-
-**Brakes count repetition, and nothing counts cost.** A turn spent $0.752 (97% hidden reasoning)
-turning a correct render flat red, past its own probe reporting `FLAT`, and undid it next turn for
-$0.027. Every brake watched: they count the same edit twice, edits changing nothing, edits failing
-to compile — never varied clean edits that collectively ruin the picture. Open. The case is
-replayable from `dogfood/runs/rc_post081_fixed/` attempt 2 turn 2 — **the station store is
-gitignored, so that evidence exists on this box only**; the numbers that must outlive it are in the
-082b report. The compile-thrash brake did get its missing hard half (`compile_failure_hard_streak`).
-
-**One report shape, and outcomes are a closed vocabulary.** Five reviewers found three
-incompatible heading taxonomies across eight reports and a results table whose columns changed
-every round. `REPORT_TEMPLATE.md` is now THE shape (bottom line always under `## The headline`),
-and `OUTCOMES` is enforced at `end_attempt` — an outcome says what the MODEL reached, never that
-the driver stopped. The renderer had keyed on `"success"`, never a legal value, so every attempt
-page ever built showed a red pill.
-
-**Open, and unmeasured:** whether the one-turn build is repeatable (one sample), and a mission
-spanning several documents — the navigation tools have never been under real pressure. The code
-panel's autocomplete popup still blinks while typing and wants the running app.
+**Also open, unmeasured:** whether the one-turn dogfood build repeats (one sample), and a mission
+spanning several documents — the navigation tools have never been under real pressure.
 
 **Shipped:** v0.28.0 is a GitHub release only; itch stays at v0.27.0. The Windows `libeditor.dll`
 still needs a Windows host before the next cut.

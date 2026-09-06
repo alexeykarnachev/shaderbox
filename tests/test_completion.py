@@ -584,3 +584,57 @@ def test_a_member_site_is_a_name_not_a_number() -> None:
         assert MEMBER_SITE.search(line), line
     for line in ("1.", "1.0.", "0.5", " ."):
         assert not MEMBER_SITE.search(line), line
+
+
+def test_the_members_reach_the_popup_in_component_order() -> None:
+    """A vector's members keep the order `members_of` generated, singles first.
+
+    The set-comparing test above cannot see this: `members_of` deliberately emits every
+    single component first because `uv.y` and `col.g` are the common reach, and the
+    `(kind_rank, name)` sort then interleaved the three sets and put `x` at row 16 of a
+    vec4's 21. Broken (drop the GLSL_MEMBER branch from `offer`'s sort key), this reads
+    `['a', 'b', 'g', ...]` and the first assert fails.
+    """
+    offered = _texts(
+        offer(_context(line_before_caret="  q = tint.", index=_member_index()))
+    )
+    assert offered[:4] == ["x", "y", "z", "w"]
+    assert offered == [
+        "x",
+        "y",
+        "z",
+        "w",
+        "xy",
+        "xyz",
+        "xyzw",
+        "r",
+        "g",
+        "b",
+        "a",
+        "rg",
+        "rgb",
+        "rgba",
+        "s",
+        "t",
+        "p",
+        "q",
+        "st",
+        "stp",
+        "stpq",
+    ]
+
+
+def test_ordinary_candidates_still_sort_by_kind_then_name() -> None:
+    # The member exemption is narrow: everything else keeps 079 D2's ordering, so a member
+    # site's special case cannot leak into an identifier site.
+    offered = offer(
+        _context(
+            line_before_caret="  q = u_",
+            prefix="u_",
+            explicit=True,
+            index=_member_index(),
+        )
+    )
+    keys = [(kind_rank(s.kind), s.name) for s in offered]
+    assert keys == sorted(keys)
+    assert len(keys) > 1, "the fixture must offer more than one candidate"

@@ -54,10 +54,13 @@ def test_the_command_cycles_the_view(app: Any) -> None:
 
 
 def test_the_alpha_view_is_the_alpha_channel_as_grayscale(app: Any) -> None:
-    # A 2x1 texture: left texel opaque red, right texel transparent green. The view must
-    # show the ALPHA (white / black), never the color, and leave the source untouched.
+    # A 2x1 texture: left texel dim red at full alpha, right texel bright green at none.
+    # The view must show the ALPHA (white / black), never the color, and leave the source
+    # untouched. Every channel differs from alpha in at least one texel, so a blit reading
+    # the wrong one cannot pass: red 64/0 and alpha 255/0 were both 255/0 under the earlier
+    # fixture, which let `.r` stand in for `.a` unnoticed.
     source = app.alpha_view._gl.texture(
-        (2, 1), 4, data=bytes([255, 0, 0, 255, 0, 255, 0, 0]), dtype="f1"
+        (2, 1), 4, data=bytes([64, 0, 0, 255, 0, 255, 128, 0]), dtype="f1"
     )
     shown = app.alpha_view.render(source)
     assert shown is not source
@@ -65,13 +68,13 @@ def test_the_alpha_view_is_the_alpha_channel_as_grayscale(app: Any) -> None:
     assert pixels[0, 0].tolist() == [255, 255, 255, 255]
     assert pixels[0, 1].tolist() == [0, 0, 0, 255]
     assert np.frombuffer(source.read(), dtype=np.uint8).tolist() == [
-        255,
+        64,
         0,
         0,
         255,
         0,
         255,
-        0,
+        128,
         0,
     ]
     source.release()

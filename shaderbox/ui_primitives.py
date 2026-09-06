@@ -497,11 +497,19 @@ def item_normalized_mouse(
     honoured by ANDing `is_window_hovered(child_windows)` (`is_mouse_hovering_rect` alone ignores
     it). Returns None when the mouse pos is invalid; clamps to the rect edge when outside it.
 
-    An overlay chip drawn ON the rect (the channel-view and FPS chips) holds the mouse for
-    itself: without that term a click on one both cycled the view and reached the script as a
-    brush-down, painting a stroke under the chip. The chips are submitted AFTER this runs, so
-    `is_any_item_hovered` answers for last frame -- the one frame of lag costs a stroke
-    nothing, since the press that matters is preceded by the hover that armed it."""
+    ANY hovered imgui item takes the mouse, not merely one drawn over this rect: the term is
+    `is_any_item_hovered`, which is global and answers for LAST frame, since the chips over
+    the preview are submitted after this runs. Both facts are wider than the case they were
+    added for -- a click on the channel-view or FPS chip used to cycle the view AND reach the
+    script as a brush-down, painting a stroke under the chip.
+
+    What the width costs, measured: a frame in which any item anywhere was hovered suppresses
+    the hit even once the mouse is back over the preview, so canvas re-entry from a widget
+    loses one frame. A press landing the same frame the mouse arrives on a chip still leaks
+    through, since last frame nothing was hovered. Both are bounded by the mouse being in one
+    place at a time; a rect-local test would close them, at the cost of this function knowing
+    what is drawn on top of it. A drag already in progress is unaffected -- imgui hover-tests
+    no widget while one is active."""
     w = rect_max.x - rect_min.x
     h = rect_max.y - rect_min.y
     if w <= 0.0 or h <= 0.0:
