@@ -32,6 +32,7 @@ from typing import Any, Protocol, TypeGuard
 import moderngl
 from OpenGL.GL import GL_INT, GL_SAMPLER_2D, GL_UNSIGNED_INT
 
+from shaderbox.intel.script import glsl_type_of_value
 from shaderbox.paths import DOCUMENT_SCRIPT_BASENAME
 from shaderbox.scripting.behavior import (
     PythonBehavior,
@@ -441,6 +442,42 @@ class ScriptEngine:
         if scripts is None or scripts.source is None:
             return None
         return PythonBehavior(_SCRIPT_FILE, scripts.source)
+
+    def returned_value_types(self, document_id: str) -> dict[tuple[str, str], str]:
+        """(pass, name) -> the GLSL type ONE isolated tick's returned value implies.
+
+        The editor's completion reads the script's source statically, so a key whose value is a
+        variable has no inferable type and its name never reaches a `uniform ` site. The value
+        itself does know, so this runs a FRESH instance for one frame and reads the raw dict —
+        before any declaration check, which is the point: the uniform being completed does not
+        exist yet. Isolated (`fresh_behavior_for`), so the live document and engine are untouched;
+        a script that raises returns nothing rather than propagating into the editor.
+        """
+        behavior = self.fresh_behavior_for(document_id)
+        if behavior is None or behavior.error is not None:
+            return {}
+        try:
+            raw = behavior.run(ScriptContext(t=0.0, dt=1.0 / 60.0, frame=0))
+        except Exception:
+            return {}
+        if not isinstance(raw, dict):
+            return {}
+        types: dict[tuple[str, str], str] = {}
+        for key, value in raw.items():
+            if not isinstance(key, str):
+                continue
+            if isinstance(value, dict):
+                for inner, inner_value in value.items():
+                    if not isinstance(inner, str):
+                        continue
+                    glsl = glsl_type_of_value(inner_value)
+                    if glsl is not None:
+                        types[(key, inner)] = glsl
+                continue
+            glsl = glsl_type_of_value(value)
+            if glsl is not None:
+                types[("", key)] = glsl
+        return types
 
     def tick(
         self,

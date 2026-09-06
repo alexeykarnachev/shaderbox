@@ -1,13 +1,10 @@
 #version 460 core
 
-in vec2 vs_uv; // Coordinate of the current pixel to be shaded
+in vec2 vs_uv;
 
-uniform float u_time;   // Time (s) since the application started
-uniform float u_aspect; // Aspect ratio of the canvas (width / height)
-// uniform vec2 u_resolution;  // Resolution of the canvas (width, height)
-uniform sampler2D u_video; // Video input texture
- // Aspect ratio of the canvas (width / height)
-// uniform vec2 u_resolution;  // Resolution of the canvas (width, height)
+uniform float u_time;
+uniform float u_aspect;
+uniform sampler2D u_video;
 
 out vec4 fs_color;
 

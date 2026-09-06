@@ -64,6 +64,33 @@ def _literal_type(value: ast.expr) -> str | None:
     return f"float[{length}]"
 
 
+def glsl_type_of_value(value: object) -> str | None:
+    """The GLSL type a live script VALUE implies, or None when nothing sensible does.
+
+    The static reader above sees literals; a script returning a variable
+    (`{"paint": {"u_brush_position": brush_position}}`) hands it an expression with no shape, so
+    the only source of truth is what `update` actually returned. Mirrors `_literal_type`'s rules
+    so a value and its literal spelling infer the same type.
+    """
+    if isinstance(value, bool):
+        return "bool"
+    if isinstance(value, int):
+        return "int"
+    if isinstance(value, float):
+        return "float"
+    try:
+        length = len(value)  # type: ignore[arg-type]
+    except TypeError:
+        return None
+    if length == 0:
+        return None
+    if not all(isinstance(item, bool | int | float) for item in value):  # type: ignore[union-attr]
+        return None
+    if 2 <= length <= 4:
+        return f"vec{length}"
+    return f"float[{length}]"
+
+
 def _update_function(tree: ast.Module) -> ast.FunctionDef | None:
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef) and node.name == "update":

@@ -1,3 +1,4 @@
+from dataclasses import replace
 from pathlib import Path
 
 import moderngl
@@ -23,7 +24,7 @@ from shaderbox.editor_types import EditorTab, HoverMark, JumpRequest, LookupPopu
 from shaderbox.engine_uniforms import ENGINE_UNIFORM_TYPES
 from shaderbox.help_content import ENGINE_UNIFORM_DOCS
 from shaderbox.intel.index import GlslContext, GlslIndex, build_glsl_index
-from shaderbox.intel.script import returned_uniforms
+from shaderbox.intel.script import ScriptReturn, returned_uniforms
 from shaderbox.intel.symbols import Symbol
 from shaderbox.intel.worker import PythonRequest, PythonRequestKind
 from shaderbox.media import MediaWithTexture
@@ -445,7 +446,7 @@ def _glsl_index_for(app: App, editor: Editor, tab: EditorTab) -> GlslIndex:
                     for name, f in app.shader_lib_index.functions.items()
                 },
                 script_returns=(
-                    returned_uniforms(_script_text(app, tab.document_id))
+                    _typed_script_returns(app, tab.document_id)
                     if script_stamp is not None
                     else ()
                 ),
@@ -459,6 +460,28 @@ def _glsl_index_for(app: App, editor: Editor, tab: EditorTab) -> GlslIndex:
     if changed:
         _feed_classes(editor, index)
     return index
+
+
+def _typed_script_returns(app: "App", document_id: str) -> tuple[ScriptReturn, ...]:
+    # The script's returned uniform names, typed where the SOURCE says so and, where it does not,
+    # where the live VALUE does: a key whose value is a variable parses to no shape, so its name
+    # never reached a `uniform ` site. One isolated tick knows what the variable held.
+    returns = returned_uniforms(_script_text(app, document_id))
+    if not any(ret.glsl_type is None for ret in returns):
+        return returns
+    runtime = app.session.script_engine.returned_value_types(document_id)
+    if not runtime:
+        return returns
+    return tuple(
+        ret
+        if ret.glsl_type is not None
+        else replace(
+            ret,
+            glsl_type=runtime.get((ret.pass_name or "", ret.name))
+            or runtime.get(("", ret.name)),
+        )
+        for ret in returns
+    )
 
 
 def _python_request(
@@ -733,11 +756,12 @@ def _offer_completion(app: App, editor: Editor, tab: EditorTab, explicit: bool) 
         app.editor_completion_offered = {}
         app.editor_completion_auto = False
         return
+    items = [symbol.inserted for symbol in matches]
     editor.complete_begin()
     for symbol in matches:
         editor.complete_push_class(symbol.inserted, kind_slot(symbol.kind))
     app.editor_completion_prefix = context.prefix
-    app.editor_completion_items = [symbol.inserted for symbol in matches]
+    app.editor_completion_items = items
     app.editor_completion_offered = {symbol.inserted: symbol for symbol in matches}
     app.editor_completion_auto = not explicit
     if not explicit:

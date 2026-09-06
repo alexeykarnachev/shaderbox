@@ -2,6 +2,7 @@
 statically. Neither touches GL or the App."""
 
 import ast
+from pathlib import Path
 
 from shaderbox.editor.ffi import Slot
 from shaderbox.intel.glsl import (
@@ -10,8 +11,14 @@ from shaderbox.intel.glsl import (
     output_declarations,
     uniform_declarations,
 )
-from shaderbox.intel.script import _literal_type, returned_uniforms
+from shaderbox.intel.script import (
+    _literal_type,
+    glsl_type_of_value,
+    returned_uniforms,
+)
 from shaderbox.intel.symbols import SymbolKind, kind_rank
+from shaderbox.paths import DOCUMENT_SCRIPT_BASENAME
+from shaderbox.scripting.engine import ScriptEngine
 from shaderbox.theme import COLOR, editor_palette, kind_color, kind_slot
 
 _SHADER = """#version 330
@@ -192,3 +199,39 @@ def test_an_empty_literal_offers_no_declaration() -> None:
     # Falsifier: return `float[0]` again and this hands the user a line GLSL rejects.
     assert _literal_type(ast.parse("[]", mode="eval").body) is None
     assert _literal_type(ast.parse("[1.0]", mode="eval").body) == "float[1]"
+
+
+def test_a_value_infers_the_type_a_literal_would_have() -> None:
+    # The maintainer's case: a script returning a VARIABLE parses to no shape, so `uniform `
+    # never offered the name and the uniform read as "does not autocomplete". The value knows.
+    assert glsl_type_of_value([0.1, 0.2, 0.3, 0.4]) == "vec4"
+    assert glsl_type_of_value(0.5) == "float"
+    assert glsl_type_of_value(3) == "int"
+    assert glsl_type_of_value(True) == "bool"
+    assert glsl_type_of_value((1.0, 2.0)) == "vec2"
+    assert glsl_type_of_value([0.0] * 6) == "float[6]"
+    # Nothing sensible: an empty sequence names no shape, a dict is a pass block, a string is
+    # neither. Each stays None rather than becoming a declaration that cannot compile.
+    assert glsl_type_of_value([]) is None
+    assert glsl_type_of_value({"u_x": 1.0}) is None
+    assert glsl_type_of_value("hello") is None
+
+
+def test_the_engine_types_a_key_whose_value_is_a_variable(tmp_path: Path) -> None:
+    source = (
+        "from shaderbox.scripting import ScriptBehavior, ScriptContext\n"
+        "\n"
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, context: ScriptContext) -> dict:\n"
+        "        brush_position = [0.1, 0.2, 0.3, 0.4]\n"
+        "        return {'paint': {'u_brush_position': brush_position}}\n"
+    )
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / DOCUMENT_SCRIPT_BASENAME).write_text(source)
+    engine = ScriptEngine()
+    engine.reload("doc", scripts, None)
+    # The static reader sees no shape here...
+    assert returned_uniforms(source)[0].glsl_type is None
+    # ...and the tick that produced the value does.
+    assert engine.returned_value_types("doc") == {("paint", "u_brush_position"): "vec4"}
