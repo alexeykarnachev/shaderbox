@@ -1368,6 +1368,17 @@ class App:
         self._focus_or_add_tab(EditorTab(path=source.path, kind="lib"))
         return session
 
+    def open_declaration_file(self, path: Path) -> None:
+        # Open (or focus) whatever file a jump landed on, as the kind the PATH says it is: a
+        # document's own pass, or a shader-lib file. A jump target comes out of the compile
+        # unit, which holds both, so the caller cannot assume either.
+        for document_id, ui_document in self.ui_documents.items():
+            for pass_name, render_pass in ui_document.document.passes.items():
+                if render_pass.source.path == path:
+                    self.ensure_shader_tab(document_id, pass_name)
+                    return
+        self.open_shader_lib_file(path)
+
     def open_script_for(self, document_id: str, focus_editor: bool = False) -> None:
         # Open the document's `script.py` in a tab, lazily creating it if absent (048 — one script per
         # document). The next reload_scripts binds it. Frozen mid-copilot-turn (a write races the reload).

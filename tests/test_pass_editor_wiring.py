@@ -12,7 +12,7 @@ Each test here names one consumer of the active tab and pins it to the tab's PAT
 from typing import Any
 
 from shaderbox.editor_types import EditorTab
-from shaderbox.paths import pass_shader_name
+from shaderbox.paths import pass_shader_name, shader_lib_root
 from shaderbox.tabs.code import _pass_for_tab, tab_label
 
 _GREEN = """#version 460 core
@@ -201,3 +201,39 @@ def test_pass_for_tab_matches_by_path_not_output(app: Any) -> None:
         assert _pass_for_tab(app, tab) is render_pass, (
             f"tab for pass {name!r} resolved a different pass"
         )
+
+
+def test_jumping_to_a_uniform_opens_its_pass_as_a_pass_tab(app: Any) -> None:
+    # The uniforms panel's name-click routed EVERY jump through the lib opener, so landing on a
+    # pass file of the document itself built a `lib` tab: labelled "library - <file>", carrying
+    # no document_id, and therefore classifying none of its uniforms (a script-driven name lost
+    # its green, and `uniform u_` offered nothing). The declaration search walks the compile
+    # unit, which holds the document's passes as well as lib files, so the opener has to read
+    # the path rather than assume.
+    document_id = _two_pass(app)
+    document = app.ui_documents[document_id].document
+    app.open_declaration_file(document.passes["second"].source.path)
+
+    tab = app.active_tab
+    assert tab.path == document.passes["second"].source.path
+    assert tab.kind == "shader", "a document's own pass is not a library file"
+    assert tab.document_id == document_id, (
+        "without the document id the tab classifies no uniform and offers no completion"
+    )
+    assert tab_label(app, tab).endswith("(second)")
+    assert "library" not in tab_label(app, tab)
+
+
+def test_jumping_to_a_lib_declaration_still_opens_a_lib_tab(app: Any) -> None:
+    # The other half of the same dispatch: a path that is NOT one of the document's passes keeps
+    # the library treatment it always had.
+    _two_pass(app)
+    lib_path = shader_lib_root() / "jump_target.glsl"
+    lib_path.write_text("float sb_jump_target() { return 1.0; }\n")
+    app.open_declaration_file(lib_path)
+
+    tab = app.active_tab
+    assert tab.path == lib_path
+    assert tab.kind == "lib"
+    assert tab_label(app, tab) == "library - jump_target"
+    assert tab.document_id == ""

@@ -72,7 +72,7 @@ def uniform_name_label(
     path, line = located
     if clicked:
         if path != app.current_editor_path:
-            app.open_shader_lib_file(path)
+            app.open_declaration_file(path)
         app.editor_jump_request = JumpRequest(path, line, 0)
     elif path == app.current_editor_path:
         # Hover only marks the active editor; a lib-declared uniform shows nothing to highlight.
