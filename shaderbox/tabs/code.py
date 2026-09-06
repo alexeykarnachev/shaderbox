@@ -446,7 +446,7 @@ def _glsl_index_for(app: App, editor: Editor, tab: EditorTab) -> GlslIndex:
                     for name, f in app.shader_lib_index.functions.items()
                 },
                 script_returns=(
-                    _typed_script_returns(app, tab.document_id)
+                    _typed_script_returns(app, tab.document_id, script_stamp)
                     if script_stamp is not None
                     else ()
                 ),
@@ -462,24 +462,31 @@ def _glsl_index_for(app: App, editor: Editor, tab: EditorTab) -> GlslIndex:
     return index
 
 
-def _typed_script_returns(app: "App", document_id: str) -> tuple[ScriptReturn, ...]:
+def _typed_script_returns(
+    app: App, document_id: str, script_stamp: tuple[str, object] | None
+) -> tuple[ScriptReturn, ...]:
     # The script's returned uniform names, typed where the SOURCE says so and, where it does not,
     # where the live VALUE does: a key whose value is a variable parses to no shape, so its name
     # never reached a `uniform ` site. One isolated tick knows what the variable held.
     returns = returned_uniforms(_script_text(app, document_id))
     if not any(ret.glsl_type is None for ret in returns):
         return returns
-    runtime = app.session.script_engine.returned_value_types(document_id)
+    # Keyed on the SCRIPT's stamp, not the shader buffer's: the index rebuilds on every shader
+    # keystroke, and the tick re-runs `__init__` from source each time -- a script precomputing a
+    # table there (the reason CPU scripting exists) costs 100 ms a keystroke unrun.
+    cache_key = (document_id, script_stamp)
+    if app.editor_script_types_key == cache_key:
+        runtime = app.editor_script_types
+    else:
+        runtime = app.session.script_engine.returned_value_types(document_id)
+        app.editor_script_types_key = cache_key
+        app.editor_script_types = runtime
     if not runtime:
         return returns
     return tuple(
         ret
         if ret.glsl_type is not None
-        else replace(
-            ret,
-            glsl_type=runtime.get((ret.pass_name or "", ret.name))
-            or runtime.get(("", ret.name)),
-        )
+        else replace(ret, glsl_type=runtime.get((ret.pass_name or "", ret.name)))
         for ret in returns
     )
 

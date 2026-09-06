@@ -280,6 +280,13 @@ class App:
         self.editor_completion_requested: bool = False
         # The prefix the last offer was filtered by; a moving prefix re-filters.
         self.editor_completion_prefix: str | None = None
+        # The script's value-inferred uniform types, cached on (document, script stamp): the
+        # tick behind them re-runs the script's `__init__`, so it must not ride the shader
+        # buffer's rebuild.
+        self.editor_script_types_key: tuple[str, tuple[str, object] | None] | None = (
+            None
+        )
+        self.editor_script_types: dict[tuple[str, str], str] = {}
         # The auto-trigger's bookkeeping (073 W-B): the (path, revision) the driver last saw,
         # so only an EDIT offers; whether the open popup was offered unasked (Enter then
         # inserts a newline unless the user navigated into the list); whether it was open

@@ -243,3 +243,30 @@ def test_the_engine_types_a_key_whose_value_is_a_variable(tmp_path: Path) -> Non
     assert returned_uniforms(source)[0].glsl_type is None
     # ...and the tick that produced the value does.
     assert engine.returned_value_types("doc") == {("paint", "u_brush_position"): "vec4"}
+
+
+def test_a_branching_script_does_not_type_one_pass_from_another(tmp_path: Path) -> None:
+    # The tick samples ONE frame, so a script that returns different shapes on different frames
+    # reports only what frame 0 produced. A pass-scoped key the tick never saw must stay untyped:
+    # taking the broadcast entry's type instead offers `uniform vec2` for a uniform holding four
+    # floats, which compiles and then fails every frame in the coercion.
+    source = (
+        "from shaderbox.scripting import ScriptBehavior, ScriptContext\n"
+        "\n"
+        "class Behavior(ScriptBehavior):\n"
+        "    def update(self, context: ScriptContext) -> dict:\n"
+        "        v2 = [0.1, 0.2]\n"
+        "        v4 = [0.1, 0.2, 0.3, 0.4]\n"
+        "        if context.frame > 0:\n"
+        "            return {'paint': {'u_x': v4}}\n"
+        "        return {'u_x': v2}\n"
+    )
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / DOCUMENT_SCRIPT_BASENAME).write_text(source)
+    engine = ScriptEngine()
+    engine.reload("doc", scripts, None)
+    runtime = engine.returned_value_types("doc")
+    # Frame 0 took the broadcast branch, so the paint-scoped key has no entry at all.
+    assert runtime == {("", "u_x"): "vec2"}
+    assert ("paint", "u_x") not in runtime
