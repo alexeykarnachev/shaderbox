@@ -269,8 +269,11 @@ in this feature may reorder those two.
 dropped.** `flush_current_editor` flushes the ACTIVE tab only, while `release()` closes every
 session in the path-keyed `editor_sessions`. A user with three shader tabs open and edits in two
 loses the inactive one — today, and after this feature too unless the funnel flushes all of them.
-It does: `switch_project` flushes EVERY dirty session, not just the current, which is one loop and
-removes the asterisk from the goal. It also calls `save_imgui_ini()`, the one line that otherwise
+It does: `switch_project` flushes EVERY dirty session, not just the current, which removes the
+asterisk from the goal. The loop iterates `editor_tabs` rather than `editor_sessions.values()`,
+because each tab carries the `document_id` the flush needs to resolve its pass — `flush_current_editor`
+is hard-wired to `current_document_id` and cannot be called in a loop. Dirtiness per tab is
+`is_tab_dirty`, the reusable form of the current-only `is_current_editor_dirty`. It also calls `save_imgui_ini()`, the one line that otherwise
 distinguishes this funnel from the quit tail (`save` → `save_imgui_ini` → `release`).
 
 So the funnel is, in order: refuse if a copilot turn is in flight → flush every dirty editor
@@ -295,10 +298,20 @@ Three more rules from the same pattern, named because omitting any one is a visi
 
 - **Focus is a ONE-SHOT** `needs_focus` flag consumed by `set_keyboard_focus_here(0)` on the input's
   first draw. Grabbing focus every frame resets the caret blink and re-asserts the nav cursor.
-- **The outer Enter and Esc are suppressed while the input has focus**, gated on `is_item_focused()`
-  read immediately after the `input_text`. This is not academic here: D2 binds Enter on the selection
-  to SWITCH PROJECT, so without the gate, typing a name and pressing Enter would both create the
-  project and switch to the unrelated selected row.
+- **The outer Enter is suppressed while the input has focus**, gated on `is_item_focused()` read
+  immediately after the `input_text`. Not academic: D2 binds Enter on the selection to SWITCH
+  PROJECT, so without the gate, typing a name and pressing Enter would both create the project and
+  switch to the unrelated selected row. Enter can be focus-gated because D2's Enter handler lives in
+  the popup body, the same frame, after the input.
+- **Esc is suppressed on OPENNESS, not focus, and the gate lives in `hotkeys.py`.** Esc is
+  dispatched by `_handle_escape` — reached from `dispatch_commands`, which `ui.py` calls BEFORE any
+  popup draws — so by the time `is_item_focused()` is readable the modal has already been closed.
+  The repo solved this once: `lib_picker`'s `inline_input_owns_esc(app)` is consulted from
+  `_handle_escape`'s `elif` chain and tests whether an input is OPEN, with the comment stating why
+  focus is the wrong test — "a user who clicked away (input open but unfocused) would otherwise find
+  Esc dead". Projects gets its own sibling predicate wired into the same chain. **This is an edit to
+  `shaderbox/hotkeys.py`**, which is why it appears in Files touched; a spec that named only
+  `is_item_focused()` would ship a modal whose Esc closes everything instead of cancelling the name.
 - **The `x` click is itself what deactivates the input**, so the deactivate is captured into a local
   and applied only if the cancel branch did not run — otherwise cancelling also commits.
 
@@ -561,6 +574,7 @@ derived value, and § 2's rule is that a derived value goes in the control rathe
 | `shaderbox/popups/projects.py` | NEW — the modal: the row list, the New/Duplicate inline inputs, the verb row, the armed-delete confirm |
 | `shaderbox/commands.py` | `OPEN_PROJECT` → `OPEN_PROJECTS`, label `Projects`, chord kept at Ctrl+O |
 | `shaderbox/ui.py` | `Projects...` menu item; the right-aligned project name (D8); `draw_projects(app)` in the popup block; the deferred-switch consume in `_tick_frame_state` |
+| `shaderbox/hotkeys.py` | the Esc-ownership predicate in `_handle_escape`'s chain, so an open name input cancels itself instead of closing the modal (D6) |
 | `tests/test_project_management.py` | NEW — see Verification |
 | `ai_docs/roadmap.md` | the 084 row + the Active-context banner |
 | `ai_docs/conventions.md` | D5 (the save funnel) and D7 (disk-copy-only fork) as design decisions; the `open_project` sentence in the active-project-pointer bullet renamed |
@@ -592,6 +606,7 @@ it — per the dev-flow rule. All headless; the app fixture builds a real `App` 
 | A torn fork leaves no listable project | make `copytree` raise mid-copy, assert no new entry in `list_projects` and no bare partial dir | copy straight to the final name |
 | A deleted project is recoverable | delete, assert the dir is gone from the root AND present under `<app_data>/trash/` with its files intact | swap the move for an `rmtree` |
 | The open project cannot be deleted | call `delete_project` on the open one, assert it refuses and the dir is untouched | drop the guard and let the confirm decide |
+| Esc cancels an open name input, not the modal | open the New input, dispatch Esc, assert the modal is still open and the input is closed | gate the suppression on focus instead of openness |
 | A row click selects and does NOT switch | set the selection to another project, assert `project_dir` is unchanged; then run the switch verb and assert it changed | make the click call `switch_project` |
 | An armed delete clears on a selection change | arm Delete on one project, select another, assert nothing is armed | leave the armed target set across selections |
 | Both New and Duplicate reach the ONE validator | drive Duplicate with `..`, a separator and a used name; assert each refuses and creates nothing | give Duplicate its own name check |
@@ -664,6 +679,13 @@ radius. Both returned NEEDS CHANGES. What they found, and what was done:
 `switch away to delete this one` and `Enter creates - Esc cancels` had already been corrected and
 pre-scored, and the copilot busy-gate ordering was already stated. Re-checked against the file
 rather than argued.
+
+**Round 2** verified all eight round-1 fixes landed and found one more blocker: D6's Esc
+suppression was focus-gated, which cannot work — `_handle_escape` runs before any popup draws, so
+`is_item_focused()` is unreadable at dispatch time and the modal would close instead of the input
+cancelling. The repo had already solved this once in `lib_picker`, on OPENNESS, with a comment
+saying why focus is the wrong test. Fixed, and `hotkeys.py` joined Files touched. Round 2 also
+named the flush mechanism (iterate `editor_tabs` for the `document_id`, not `editor_sessions`).
 
 **Rejected on the merits:** the "duplicate leaves the original alone" falsifier as originally
 written ("copy by reference") names a break that cannot be written, since a live-object copy raises
