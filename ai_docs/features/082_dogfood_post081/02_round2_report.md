@@ -3,116 +3,131 @@
 **What this was.** The same radiance-cascades build, asked once as a whole, given to three models
 in parallel on one commit. The previous round found two engine bugs; this round ran on the engine
 after those were fixed, to see what the models do when the tooling is no longer working against
-them. Two turns each: build, then react to what I could see in the render and they could not.
+them. Three turns each — build, then react to what I could see in the render and they could not —
+matching the previous round's length so the two sit side by side.
 
 **Models:** `tencent/hy4-preview`, `google/gemini-3.8-flash`, `openai/gpt-5.6-luna` — the three
-finishers of the previous round, so the two rounds sit side by side.
+finishers of the previous round.
 
 ---
 
 ## The headline
 
-**All three produced real light this time. The previous round produced none.**
+**Two of three met the brief. The previous round met it zero times.**
 
 Every attempt of the earlier round ended with a black or near-black canvas after four turns of
-debugging. This round, all three models had light spreading from both emitters in their **first
-turn**, and one of them met the full spec — both halves lit with a soft falloff, the wall casting a
-real shadow, the emitters moving.
-
-That is the difference the engine fixes made, and it is bigger than expected.
+debugging. This round, all three models had real light in their **first turn**, and two finished
+with the scene the spec asked for: both halves lit with a soft falloff, the wall casting a visible
+shadow, the emitters moving.
 
 ---
 
 ## Per model
 
-| Model | Total cost | Turns | Requests | Requests per tool call | Hidden reasoning |
+| Model | Outcome | Cost | Turns | Requests per tool call | Hidden reasoning |
 |---|---|---|---|---|---|
-| gpt-5.6-luna | **$0.062** | 2 | 24 | 0.649 | 0% |
-| hy4-preview | $0.145 | 2 | 19 | **0.528** | 0% |
-| gemini-3.8-flash | **$1.018** | 2 | 33 | 0.868 | **97%** |
+| gpt-5.6-luna | **built** | **$0.069** | 3 | 0.684 | 0% |
+| gemini-3.8-flash | built | **$1.045** | 3 | 0.875 | **97%** |
+| hy4-preview | partial | $0.165 | 3 | 0.579 | 0% |
 
-### gemini-3.8-flash — the best turn and the worst turn
+### gpt-5.6-luna — the clear winner
 
-**Turn 1 was the best single turn any model has produced in this project.** From the spec alone it
-built all seven passes and the script, and the render was correct radiance cascades: the warm
-emitter filling its half, the cool one filling the other, a genuine shadow cast by the wall between
-them, both drifting. That is the full spec, met in one go, for $0.266.
+**The whole spec, essentially met, for seven cents.** A fifteenth of gemini's bill.
 
-**Turn 2 destroyed it.** Asked to fix a brightness fade, it spent **$0.752 in a single turn** —
-more than the entire previous round cost — burning 617 seconds and 153,818 output tokens, of which
-**all but 800 were hidden reasoning**. The turn ended by hitting the wall-clock budget. The frame it
-left behind is flat red with no light anywhere.
+Turn 1 built the pipeline with real, smooth light. Turn 2 fixed the emitter bounce I pointed out.
+Turn 3 is the one worth reading: I told it to *read* the paint pass before editing again, because
+its four edits the turn before had produced nothing. It read, and found the actual cause — the wall
+endpoint had been given an already aspect-scaled x coordinate, which the segment function then
+scaled a second time, putting the wall off-canvas entirely. One edit, $0.008, and the render has
+the wall casting a shadow with both halves lit.
 
-The engine told it what was happening. Mid-turn its own probe reported `FLAT — one uniform color
-rgba(255,0,0)`, and it kept editing past that.
+That contrast is the lesson: four guessing edits achieved nothing; one instruction to read first
+solved it in a single call.
 
-### hy4-preview — the best value, and the only one that did no harm
+### gemini-3.8-flash — the best capability, the worst cost control
+
+**Turn 1 met the entire spec in one go** — all seven passes and the script from the bare
+description, both halves lit, a real wall shadow, emitters drifting. No model has done that here
+before. $0.266.
+
+**Turn 2 broke it, expensively.** Asked to fix a brightness fade, it spent **$0.752 in a single
+turn** — 617 seconds, 153,818 output tokens of which all but ~800 were hidden reasoning — hit the
+wall-clock budget, and left the canvas flat red. Its own probe reported `FLAT — one uniform color
+rgba(255,0,0)` mid-turn and it kept editing past that.
+
+**Turn 3 undid it in 13.7 seconds for $0.027.** It had left a debug red test in the cascade pass.
+Told plainly what its own probe had already said, it found it, reverted it, and the render is
+correct again.
+
+So the damage was self-inflicted, reversible, and cost **28× more to cause than to undo**. The
+attempt ends exactly where turn 1 had it, having spent $1.045 to get back.
+
+### hy4-preview — never regressed, never converged
 
 Built the whole pipeline in turn 1 for $0.118. It **opened by reading the shipped Radiance Cascades
-example and the shader library** — navigation tools that stayed completely unused through every
-attempt of the previous round — and that read returned all six passes of the example rather than
-only the final one, which is the earlier fix for reference-reading doing its job on the very
-reference these failures need.
+example and the shader library** — navigation tools that went completely unused through every
+attempt of the previous round — and that read returned all six passes rather than only the final
+one, which is the earlier reference-reading fix working on precisely the reference these failures
+need.
 
-Its render has real coloured light from both emitters and they move, but the light is built out of
-large rectangular blocks and there is no wall.
+Its behaviour was the most disciplined of the three: turn 2 ran one probe, could not confirm its
+diagnosis, and stopped and asked rather than guessing ($0.027); turn 3 read its own source and
+found a genuine bug — `length()` applied to a scalar in the wall SDF, which happens to work as
+`abs()` — plus the sharp observation that a *black* wall on a black background is invisible in
+paint's own probe, since only alpha marks it.
 
-Turn 2 is the interesting one: asked to measure before editing, it ran one probe, found it could not
-confirm the wall was in the scene, and **stopped and asked rather than guessing** — 2 requests,
-$0.027. No progress, but the only second turn of the three that left the frame no worse than it
-found it.
-
-### gpt-5.6-luna — cheapest by a wide margin
-
-$0.062 for the whole attempt — a sixteenth of gemini. Turn 1 produced smooth, correct-looking light
-with both emitters glowing and moving; turn 2 fixed the emitter drift I pointed out, so they now
-bounce independently.
-
-It never produced a wall or a shadow across two turns, so what it renders is a pretty glow rather
-than a lit scene. But nothing it did made anything worse, and per dollar it is the standout.
+But none of it reached the picture. Across three turns the render stayed blocky and the wall never
+appeared. Good judgement, no landing.
 
 ---
 
-## The one new engine finding
+## The engine finding
 
 **Nothing stops a turn that is expensive and destructive rather than repetitive.**
 
-Gemini's second turn spent three quarters of a dollar to make the picture worse, and every existing
-brake watched it happen. Those brakes count *repetition* — the same edit twice, edits that change
-nothing, edits that fail to compile. This turn did none of that. It made varied, clean, compiling
-edits that each did something, and collectively ruined the render.
+Gemini's second turn spent three quarters of a dollar to make the picture worse while every
+existing brake watched. Those brakes count *repetition* — the same edit twice, edits that change
+nothing, edits that fail to compile. That turn did none of it: varied, clean, compiling edits, each
+doing something, collectively ruining the render.
 
-Two things are missing, and they are separate:
+Two separate gaps:
 
-1. **No cost or time signal reaches the model.** It had no idea it was fifteen times more expensive
-   than its own first turn.
+1. **No cost or time signal reaches the model.** It had no idea it was running fifteen times more
+   expensive than its own first turn.
 2. **Nothing notices a frame going from lit to flat.** The engine measured `FLAT — one uniform
-   color` and passed it through as one more line of feedback, the same weight as any other.
+   color` and passed it through as one more line of feedback, weighted like any other.
 
-The second is the more tractable of the two: the engine already computes the number, and "the frame
-was rich and is now uniform" is a comparison it could make. Whether that should stop a turn or just
-be said louder is a design call, not something this round settles.
+The second is the tractable one — the engine already computes the number, and "this frame was rich
+and is now uniform" is a comparison it could make. Whether that stops a turn or is merely said
+louder is a design call this round does not settle.
+
+**Turn 3 is the encouraging half.** Every model corrected course immediately when told plainly what
+the render showed, and did so cheaply ($0.008–$0.027). The recovery path works; what is missing is
+noticing without a human in the loop.
 
 ---
 
-## Where things stand against the previous round's predictions
+## The previous round's two predictions
 
-**Prediction that held.** Keeping the pass-editing tools permanently loaded protects the prompt
-cache. Whenever the copilot loads a tool mid-turn, the very next request drops to about 4% cache
-reuse against 78–85% on the requests either side. The two tools made permanent were used heavily
-this round and triggered no such reload.
+**Held.** Keeping the pass-editing tools permanently loaded protects the prompt cache. Whenever the
+copilot loads a tool mid-turn, the very next request drops to about 4% cache reuse against 78–85%
+on the requests either side. The two tools made permanent were used heavily here and triggered no
+such reload.
 
-**Prediction that did not.** Rewriting the batching instruction was meant to make the copilot group
-its work into fewer round trips. It did not: hy4 came in at 0.528 requests per tool call against
-0.552 before — flat, within noise — while gemini at 0.868 and luna at 0.649 are both worse. The
-instruction is not doing what it was rewritten to do.
+**Did not hold.** Rewriting the batching instruction was meant to group work into fewer round
+trips. It did not: hy4 at 0.579 requests per tool call against 0.552 before, luna 0.684, gemini
+0.875 — all flat or worse. The instruction is not doing what it was rewritten to do, and that is
+now measured on three models rather than one.
 
 ---
 
 ## What a next round would test
 
-The obvious one is whether gemini's turn 1 is repeatable or was luck — it is the only evidence that
-this spec is buildable in a single turn, and it rests on one sample.
+Whether gemini's one-turn build is repeatable or was luck — it is the only evidence this spec is
+buildable in a single turn, and it rests on one sample.
 
-The other is the destructive-turn brake: gemini's turn 2 is a clean, reproducible case to build
-against, and it is sitting in the log ready to be replayed.
+The destructive-turn brake: gemini's turn 2 is a clean, reproducible case sitting in the log,
+ready to replay against any guard built for it.
+
+And whether hy4's pattern holds — three turns of good reasoning that never reached the frame is a
+different failure from luna's, and worth understanding separately.

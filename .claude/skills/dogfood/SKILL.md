@@ -54,6 +54,14 @@ and a round whose objective is "run it again and see" produces notes nobody can 
 round verifies claims from a previous one, name those claims in the intent so the report has
 something to answer.
 
+**Run every attempt to the same LENGTH, and let the outcome be the model's.** A comparison round
+gives each model the same number of turns; cutting one short makes a still-improving attempt look
+like a failure beside a round that ran longer. And `end_attempt`'s outcome describes what the MODEL
+did — `built`, `partial`, `regressed` — never the fact that the driver stopped driving. Closing
+three attempts as `abandoned` because the round ended read as an engine regression when all three
+had in fact done better than the previous round; the turn after the one that was cut short is where
+two of them met the brief, for under three cents.
+
 **Replay the SAME ask when comparing.** A comparison round re-sends the previous round's turn-1
 text verbatim (pull it from the station log, don't retype it). Change the ask and you have two
 rounds that cannot be set beside each other.
