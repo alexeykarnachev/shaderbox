@@ -120,15 +120,19 @@ def test_a_fork_carries_the_source_contents(tmp_path: Path) -> None:
 
 
 def test_a_torn_fork_leaves_nothing_listable(tmp_path: Path, monkeypatch: Any) -> None:
-    # Falsifier: copy straight to the final name — a half-copied dir is offered by the switcher.
+    # Falsifier: copy straight to the final name — the half-copy is a listable project.
+    # The fake must CREATE the destination before raising: one that raises immediately leaves
+    # nothing on disk either way, so it passes under the bug and pins nothing.
     root = tmp_path / "projects"
     root.mkdir()
     source = _seed_project(root, "alpha")
 
-    def _boom(*args: object, **kwargs: object) -> None:
+    def _torn(src: object, dst: object, **kwargs: object) -> None:
+        partial = Path(str(dst))
+        (partial / "documents").mkdir(parents=True)
         raise OSError("torn mid-copy")
 
-    monkeypatch.setattr(shutil, "copytree", _boom)
+    monkeypatch.setattr(shutil, "copytree", _torn)
     with pytest.raises(OSError):
         copy_project_to(source, root, "beta")
     assert [p.name for p in list_projects(root, None)] == ["alpha"]
@@ -526,3 +530,97 @@ def test_the_recovery_modal_is_populated_not_empty(
         assert app.projects_selected == app.project_dir.resolve()
     finally:
         app.release()
+
+
+# ---- the wires, driven through real frames ----------------------------------------------
+# Every test above stops at `pending_project_switch is not None`. That leaves the CONSUMING half
+# -- the `_tick_frame_state` block and the `draw_projects` call in `ui.py` -- invisible: both can
+# be deleted with the whole suite green, and both sit in files every UI feature edits. These
+# drive actual frames so the wire itself is the thing under test.
+
+
+def _pump(app: Any, frames: int = 3) -> None:
+    from shaderbox.ui import update_and_draw
+
+    for _ in range(frames):
+        update_and_draw(app)
+
+
+def test_a_requested_switch_is_actually_consumed_by_the_frame(
+    app: Any, tmp_path: Path
+) -> None:
+    # Falsifier: delete the pending_project_switch block from `_tick_frame_state` — every verb
+    # becomes a no-op that still reports success, and nothing else in the suite notices.
+    other = _seed_project(tmp_path / "projects", "other")
+    app.request_project_switch(other)
+    _pump(app)
+    assert app.project_dir == other.resolve()
+    assert app.pending_project_switch is None
+
+
+def test_new_project_reaches_a_seeded_project_through_the_frame(app: Any) -> None:
+    # Falsifier: make seed_starter_into_empty_project a no-op — New lands the user in a blank
+    # editor, which is the difference between "a new project" and "an empty folder".
+    assert app.new_project("through_the_frame") == ""
+    _pump(app)
+    assert app.project_dir == app.default_projects_root_dir / "through_the_frame"
+    assert app.ui_documents, "a new project must arrive seeded, not blank"
+
+
+def test_the_projects_modal_actually_draws(app: Any) -> None:
+    # Falsifier: add PopupState.PROJECTS without its draw_projects(app) call in `ui.py` — the
+    # state is enterable, every render is suppressed by the popup mutex, and nothing renders.
+    # A modal that never draws cannot close itself, so the state surviving IS the signal.
+    app.open_projects()
+    _pump(app)
+    assert app.popup_state == PopupState.PROJECTS
+    assert app.projects_rows
+
+
+def test_every_popup_state_has_a_draw_call(app: Any) -> None:
+    # The enum-derived version of the row above: a member added without wiring its draw is the
+    # class, not just this one instance. Falsifier: add a PopupState member and no draw call.
+    # A state with no draw call is INVISIBLE at runtime -- the popup mutex suppresses every
+    # render, nothing draws, and the state simply persists, which looks identical to a healthy
+    # modal. So the wiring is counted instead: `ui.py`'s popup block calls one `draw_*(app)` per
+    # PopupState member other than CLOSED. Falsifier: add a member (or delete a draw call) and
+    # the counts diverge.
+    _ = app
+    ui_source = Path("shaderbox/ui.py").read_text(encoding="utf-8")
+    # Scoped to the calls that import from `shaderbox.popups`, so an unrelated `draw_*(app)`
+    # elsewhere in ui.py (a document tab, say) cannot pad the count.
+    popup_draws = {
+        line.split("import")[1].strip()
+        for line in ui_source.splitlines()
+        if line.startswith("from shaderbox.popups")
+    }
+    draw_calls = {name for name in popup_draws if f"{name}(app)" in ui_source}
+    assert len(draw_calls) == len(PopupState) - 1, (
+        f"{len(PopupState) - 1} PopupState members need a draw call; "
+        f"ui.py calls {len(draw_calls)}: {sorted(draw_calls)}"
+    )
+
+
+def test_duplicate_refuses_a_name_that_escapes_the_projects_root(app: Any) -> None:
+    # Falsifier: drop Duplicate's validation — `../escaped` returns success and writes a project
+    # as a SIBLING of the projects root, inside app-data. New is tested for this; Duplicate was
+    # not, and the spec says one validator serves both so they cannot drift.
+    root = app.default_projects_root_dir
+    before = sorted(p.name for p in root.parent.iterdir())
+    assert app.duplicate_project(app.project_dir, "../escaped") != ""
+    assert app.pending_project_switch is None
+    assert sorted(p.name for p in root.parent.iterdir()) == before
+
+
+def test_an_armed_delete_clears_when_another_project_is_selected(app: Any) -> None:
+    # D7b calls a stale arm surviving a selection change the worst bug this feature can produce:
+    # Yes then trashes whatever is armed while the user is looking at a different row. The disarm
+    # lives in the row draw, so this drives the state the way the draw does.
+    # Falsifier: drop the `projects_delete_armed = None` line from `_draw_row`'s click branch.
+    from shaderbox.popups.projects import _select_row
+
+    app.open_projects()
+    victim = Path("/somewhere/else")
+    app.projects_delete_armed = victim
+    _select_row(app, app.project_dir.resolve())
+    assert app.projects_delete_armed is None

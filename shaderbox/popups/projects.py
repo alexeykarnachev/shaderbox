@@ -11,6 +11,7 @@ is requested and consumed by the frame tick before any drawing.
 """
 
 from collections.abc import Callable
+from pathlib import Path
 
 from imgui_bundle import imgui
 
@@ -66,15 +67,20 @@ def _draw_body(app: App) -> bool:
     return _draw_verb_row(app)
 
 
+def _select_row(app: App, path: Path) -> None:
+    # Selecting elsewhere disarms a pending delete, so Yes can never reach a project the user is
+    # no longer looking at. Split out of the draw so the rule is reachable without a frame.
+    app.projects_selected = path
+    app.projects_delete_armed = None
+    app.projects_error = ""
+
+
 def _draw_row(app: App, info: ProjectInfo) -> None:
     selected = app.projects_selected == info.path
     # The id keys on the PATH, never the display name: two projects in different roots can share
     # a name, and the path is what the verbs act on.
     if imgui.selectable(f"##project_{info.path}", selected)[0]:
-        app.projects_selected = info.path
-        # Selecting elsewhere disarms a pending delete, so Yes can never hit the wrong project.
-        app.projects_delete_armed = None
-        app.projects_error = ""
+        _select_row(app, info.path)
     if (
         selected
         and not app.projects_input_focused
