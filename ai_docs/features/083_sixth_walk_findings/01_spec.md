@@ -118,6 +118,16 @@ So the re-vendor writes up what BEHAVIOR changed, not just a new sha — six nvi
 is a roadmap line, not a silent binary swap. The export count moves off the 106 the roadmap banner
 states; it is taken from the editor session's `nm -D` delta at the sha, never predicted here.
 
+**Expect one new export, not zero.** The phrase needs its own buffer in the library rather than
+riding the existing `.`-repeat recorder, settled there by driving the dispatcher key by key: that
+recorder deliberately DROPS normal-mode count digits (so `.` can substitute a new count — with the
+digits kept, `3x2.` replayed `23x`), and it resets at the START of a phrase rather than the end, so
+after a completed `x` it still reads `x` with nothing pending. A display reading it would show the
+count-less phrase and then keep showing the last finished command forever. Both behaviors are right
+for what the recorder is for and wrong for this. Since a host cannot render a buffer it cannot read,
+and `ed_pending` collapses everything to one bool, a getter is the expectation — so the banner's
+"106 exports at `dd58aa9`" gets a new number, not a re-confirmation.
+
 ### D3 — the uniform texture preview becomes a `preview_cell`, not an `imgui.image` with a border pushed.
 
 `widgets/uniform.py`'s three texture surfaces (`_thumb_size` + the bound-media branch,
