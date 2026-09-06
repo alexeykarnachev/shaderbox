@@ -5,8 +5,15 @@ from typing import Literal, get_args
 from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.gate import GateKind
 
-# Chat render-state. Written ONLY by session.pump_events on the main thread, read ONLY by
-# the UI on the main thread -> single-writer, no lock. The worker bridges its writes via events.
+# Chat render-state. Written by session.pump_events on the main thread, read by the UI on the main
+# thread -> single-writer, no lock. The worker bridges its writes via events.
+#
+# ONE exception, `source_locked`: a SOURCE_LOCK gate answered "allow this session" is applied from
+# the worker through CopilotSession.set_source_locked, because the worker's very next tool call
+# gates on it and an event hop would leave it reading stale state for the rest of the turn. Safe
+# because the write is a bare bool (atomic under the GIL) and the UI only picks a glyph from it,
+# so a one-frame stale read is invisible. Do not extend the exception to a field the UI computes
+# layout from.
 
 MessageRole = Literal[
     "user", "assistant", "tool_status", "error", "pending_action", "turn_snippet"

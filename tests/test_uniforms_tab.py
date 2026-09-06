@@ -5,9 +5,11 @@ meant opening its tab first. An explicit pick now wins over that derivation, and
 falls back to it rather than erroring.
 """
 
+import json
 from pathlib import Path
 from typing import Any
 
+from shaderbox.model_salvage import load_model
 from shaderbox.ui_models import UIAppState, UIDocumentState
 from shaderbox.ui_regions import DocumentTab
 
@@ -22,10 +24,6 @@ def test_the_tab_choice_round_trips_and_a_bad_one_costs_only_itself(
         UIAppState.model_validate(state.model_dump()).active_document_tab
         is DocumentTab.UNIFORMS
     )
-
-    import json
-
-    from shaderbox.model_salvage import load_model
 
     path = tmp_path / "app_state.json"
     path.write_text(

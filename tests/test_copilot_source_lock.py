@@ -7,6 +7,7 @@ scripted fake client, stubbed backend, a gate answered from a helper thread, no 
 """
 
 import threading
+import time
 from typing import Any
 
 from shaderbox.copilot.agent import AgentGateOpened, run_turn
@@ -37,6 +38,10 @@ def _answer_with(
     def pump() -> None:
         while not _stop.is_set():
             if gate.take_pending() is None:
+                # A bare spin burns a core for the whole turn (measured: ~600k iterations in half
+                # a second of idle). The sleep is shorter than a gate round-trip, so it costs the
+                # tests nothing.
+                time.sleep(0.001)
                 continue
             i = opened[0]
             opened[0] = i + 1
@@ -142,3 +147,58 @@ def test_allow_this_session_stops_the_asking_and_allow_once_does_not() -> None:
     assert len(_gates(events)) == 2, "allow-once approves one call, not the turn"
     assert len(edits) == 2
     assert registry.source_locked, "allow-once leaves the session locked"
+
+
+def _session() -> Any:
+    from pathlib import Path
+
+    from shaderbox.copilot.session import CopilotSession
+
+    return CopilotSession(
+        caps=minimal_caps(),
+        client=_FakeClient([]),
+        get_project_slug=lambda: "p",
+        get_checkpoints_root=lambda: Path("/tmp"),
+    )
+
+
+def test_a_headless_session_is_locked_like_any_other() -> None:
+    # The lock is a property of a SESSION, so a session built without an App has it too -- the
+    # dogfood harness and any headless driver gate exactly as the app does. That is deliberate:
+    # a headless default of "unlocked" would make the one place nobody is watching the one place
+    # the copilot edits freely, and the harness already has auto_approve_gates for when that is
+    # what is wanted. The cost is that a headless test calling a source tool must unlock or
+    # answer, which is the right way round.
+    session = _session()
+    assert session.registry.must_confirm("set_uniform")
+    assert not session.registry.must_confirm("read_shader")
+
+
+def test_the_locks_two_fields_agree_at_every_lifecycle_point() -> None:
+    # V4, and the check that was specified and then not written -- which is exactly how a session
+    # shipped drawing a closed padlock over a registry that confirmed nothing. The two fields are
+    # born from two DIFFERENT defaults (ChatState locked, a bare registry unlocked), so agreement
+    # is something the one writer must establish, never something construction gives for free.
+    #
+    # Three lifecycle points, because each reaches the pair by a different route: construction
+    # (two defaults meeting), an explicit toggle (the icon), and a reset (which rebuilds ChatState
+    # and NOT the registry).
+    session = _session()
+    assert session.state.source_locked == session.registry.source_locked, (
+        "born diverged: the icon and the gate disagree before anything has happened"
+    )
+    assert session.registry.must_confirm("edit_shader"), (
+        "a fresh session draws a locked icon, so it must actually confirm"
+    )
+
+    session.set_source_locked(False)
+    assert session.state.source_locked == session.registry.source_locked
+    assert not session.registry.must_confirm("edit_shader")
+
+    session.reset_conversation()
+    assert session.state.source_locked == session.registry.source_locked, (
+        "reset rebuilds ChatState but not the registry; without a re-seed they diverge"
+    )
+    assert session.registry.must_confirm("edit_shader"), (
+        "a cleared chat is a new session, so it locks again"
+    )

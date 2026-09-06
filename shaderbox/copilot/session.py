@@ -110,6 +110,11 @@ class CopilotSession:
         self.bridge = CopilotBridge()
         self.gate = GateChannel()
         self.state = ChatState()
+        # The lock's two fields are born from two defaults -- ChatState locked, a bare registry
+        # unlocked (a registry in isolation is an inert catalogue). Seed the pair through the one
+        # writer here, or a session that is never reset draws a closed padlock over a registry
+        # that confirms nothing.
+        self.set_source_locked(self.state.source_locked)
         # Per-turn rollback checkpoints (feature 020·30). Built lazily: the project dir isn't
         # known at session construction (App sets it later), and reset_conversation rebuilds it
         # for the project we switch INTO. None until first accessed via `checkpoints`.
@@ -526,9 +531,8 @@ class CopilotSession:
             except queue.Empty:
                 break
         self.state = ChatState()
-        # ChatState() is born locked; re-seed the registry through the one writer so a cleared chat
-        # cannot show a locked icon over an unlocked registry. reset_conversation rebuilds the
-        # state and NOT the registry, so without this the two diverge on every Clear.
+        # ChatState() is born locked and the registry is not rebuilt here, so the lock's two
+        # fields only agree if this re-seeds through the one writer.
         self.set_source_locked(self.state.source_locked)
         self.history = []
         self._cancel = threading.Event()

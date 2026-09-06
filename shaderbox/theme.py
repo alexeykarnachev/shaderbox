@@ -113,7 +113,6 @@ class _ColorBag:
     # untinted image blit; the neutral value for a draw-list image tint
     WHITE: tuple[float, float, float, float] = (1.0, 1.0, 1.0, 1.0)
     # what an unwired sampler reads: the swatch a panel shows for it
-    BLACK: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0)
 
     # The accent's tint alpha where the accent fills a selected surface (the active tab).
     ACCENT_TINT_ALPHA: float = 0.32
@@ -256,7 +255,6 @@ class SIZE:
     SMOOTHING_LABEL_W: int = 52  # label column for the video-smoothing sliders
     SMOOTHING_DRAG_W: int = 90  # the Window/Sigma drags beside a video thumbnail
 
-    THUMB_SM: int = 90
     THUMB_LG: int = 150
     # One pass's tile in the horizontal pass strip: big enough to read what the pass draws;
     # the strip wraps when a document's passes outgrow the panel width.

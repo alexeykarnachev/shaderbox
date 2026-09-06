@@ -435,7 +435,6 @@ Said plainly rather than claimed as a behavior change.
 ## Files touched
 
 **W-C / W-D (uniforms):**
-- `shaderbox/theme.py` — the shared picture-area token.
 - `shaderbox/ui_regions.py` — `DocumentTab.UNIFORMS`.
 - `shaderbox/tabs/uniforms.py` — NEW: the tab body (pass selector + the uniform list moved here).
 - `shaderbox/tabs/document.py` — the uniforms block leaves; the strip and the document fields stay.
@@ -467,6 +466,10 @@ Said plainly rather than claimed as a behavior change.
   exists without its callback. A free gate; nothing to add there beyond letting it do its job.
 - `scripts/smoke.py` — V7's per-member loop. Today line 270 focuses RENDER only and line 146
   asserts membership; the loop over `list(DocumentTab)` is NEW code, not an existing check.
+- `tests/test_ui_prose_budget.py` — the two `_UNMEASURABLE` keys follow their sites: the renamed
+  `_draw_texture_preview`, and `_draw_auto_block`'s move to `tabs/uniforms.py`. The allowlist is
+  keyed by `(file, function)`, so a moved or renamed scored site fails it until the key follows —
+  which is the gate working, not maintenance noise.
 - `tests/test_region_system_is_gone.py` — `_table_callees`' docstring names the three `_NODE_TABS`
   entries and calls them "the only route from `document_settings` to the uniform sliders". After
   W-D that route is `tabs/uniforms.py::draw`; the AST walk still works, the sentence does not.
@@ -502,7 +505,20 @@ Answering `ALLOW_SESSION` on the first ⇒ the second never opens a gate. Answer
 does. *Falsifier:* collapsing the three answers into `approved: bool` makes these two runs
 identical, so the test cannot pass under the design D7 rejects.
 
-**V4 — the lock has one writer (D7a's divergence).** After
+**V4 — the lock has one writer (D7a's divergence). THIS ONE WAS SPECIFIED AND THEN NOT WRITTEN,
+and the gap it left shipped a live defect** — recorded here because that sequence is the lesson,
+not the bug. A fresh `CopilotSession` built `ChatState()` (locked) and `build_registry()`
+(unlocked) and seeded neither, so a session that was never reset drew a closed padlock over a
+registry that confirmed nothing: the icon said "asks before changing" and the copilot edited
+freely. That is precisely the divergence D7a exists to prevent, arriving through the one door the
+re-seed did not cover. Two independent post-implementation reviewers found it; the full suite,
+`make gates` and the 200-frame GL smoke were all green with it live.
+
+Worse, **V4 as originally worded would not have caught it** — it tested `set_source_locked(False)`
+then `reset_conversation()`, never construction. So the check that was missing was also the check
+that was mis-specified. The shipped form asserts agreement at all THREE lifecycle points that reach
+the pair by different routes: construction (two defaults meeting), an explicit toggle, and a reset.
+Each break was tried and named its own row. After
 `set_source_locked(False)` then `reset_conversation()`, assert `ChatState.source_locked` and
 `registry.source_locked` AGREE. *Falsifier — the break to try:* delete the re-seed from
 `reset_conversation` and confirm V4 goes red; a cleared chat then draws an unlocked icon over a
@@ -580,7 +596,8 @@ All three answered at plan-lock; kept here as the record of what was asked and d
 1. **Where the Uniforms tab sits.** → **SECOND**, beside Document; Render and Share renumber to
    `Ctrl+3`/`Ctrl+4`. Folded into D10.
 
-2. **What the lock covers.** → the 14 content tools that ask nothing today; the already-ALWAYS-gated
+2. **What the lock covers.** → the content tools that ask nothing today (twelve, after review
+   removed `bind_media` and `import_document` — see D6); the already-ALWAYS-gated
    deletes and publishes stay as they are rather than asking twice. Folded into D6. Answered with
    the constraint that it use the generalized gating machinery — now D7's premise.
 
@@ -651,3 +668,65 @@ way agreement from two readings of my own text is not.
 outside this repository, and both reviewers correctly labelled those relayed rather than confirmed.
 I opened `src/keymap.odin` and `src/mode.odin` directly and confirmed the popup intercept at 487-493,
 the insert-end block at 634-670, the `Pending` fields and `Bindings.armed`.
+
+
+---
+
+## Review history — post-implementation
+
+Three reviewers in parallel against different anchors: code correctness (concurrency and
+lifecycle), conventions and architecture, and spec fidelity against the maintainer's verbatim
+`../TODO`. All three returned PARTIAL. **Two independently found the same blocking defect**, which
+is the finding worth trusting most.
+
+**Blocking, fixed:**
+
+1. **A fresh session drew a locked icon over an unlocked registry.** `CopilotSession.__init__`
+   built `ChatState()` (locked) and `build_registry()` (unlocked) and seeded neither. Probed and
+   reproduced before fixing: raw construction gave icon `True`, registry `False`,
+   `must_confirm("edit_shader")` `False` — the copilot would edit freely while the padlock said it
+   would ask. One line in `__init__` through the one writer. See V4 above for why the check that
+   would have caught it was both missing AND mis-worded.
+
+   The live app was saved by accident, which is its own finding: `App.copilot` is a property over
+   `self.session` assigned before `_init`, so `hasattr(self, "copilot")` is True on the first init
+   and `reset_conversation()` re-seeded — despite the comment there stating it is "Guarded for the
+   first _init". A correct invariant held by a call whose own comment says it does not run is not
+   an invariant, and the headless drivers (dogfood) do not take that path at all.
+
+2. **Fixing it broke `test_summary_consumption.py`**, correctly: it builds a session directly and
+   calls `set_uniform`, which now confirms. Unlocked explicitly in that test, since its subject is
+   the NL turn-summary and there is no UI to answer. A new check pins the consequence — a headless
+   session locks like any other, deliberately, because a headless default of "unlocked" would make
+   the one place nobody is watching the one place the copilot edits freely.
+
+**Accepted and fixed (5):**
+
+3. **Three orphaned symbols** the uniforms move left behind: `_section_break` in
+   `tabs/document.py`, and `SIZE.THUMB_SM` / `COLOR.BLACK` in `theme.py`, whose only consumers were
+   the deleted `_thumb_size` and `_draw_black_swatch`. Ruff cannot see a dead private function or an
+   unused dataclass field, so nothing flagged them. Defined-but-never-read is this repo's named most
+   expensive class, and it landed in a commit about removing a stale claim.
+4. **Two comments narrated history** rather than the code as it is (`_draw_texture_preview`'s
+   docstring saying what the raw `imgui.image` "never gave it" and what "the old fixed-height thumb"
+   did; `reset_conversation`'s "without this the two diverge"). Rewritten to state the current
+   invariant. The rule is `conventions.md ## Code rules`, and the history belongs here and in the
+   commit message, which is where it now is.
+5. **Function-body imports** in `tests/test_uniforms_tab.py`, hoisted to module top.
+6. **The gate pump busy-spun** ~600k iterations per idle half-second; a 1ms sleep on the empty
+   branch cut the file's runtime from 0.95s to 0.44s.
+7. **Three spec inconsistencies**: an open-question line still saying "14 content tools" after D6
+   went to 12, a Files-touched entry for a `theme.py` token D4 explicitly killed, and
+   `tests/test_ui_prose_budget.py` missing from Files-touched.
+
+**Hardened beyond the findings (1):** `scripts/smoke.py`'s Examples-browser frames were fixed
+numbers while the tab sweep derives from `list(DocumentTab)` and grows with it — safe at four
+members, colliding at five. Both frames now derive from the sweep's end, so the collision cannot
+occur rather than being noticed later.
+
+**Considered and not adopted (1):** `state.py`'s single-writer docstring is now inaccurate, since
+the worker writes `source_locked` through the session writer. One reviewer suggested restructuring
+the callback into an event hop; rejected — the worker's very next tool call gates on that value, and
+an event hop would leave it reading stale state for the rest of the turn. The write is a bare bool
+and the UI only picks a glyph from it. The docstring now names the exception, its reason, and the
+limit (do not extend it to a field the UI computes layout from).

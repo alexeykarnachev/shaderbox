@@ -115,12 +115,6 @@ def _canvas_presets(ui_document: UIDocument) -> list[tuple[str, tuple[int, int]]
     return presets
 
 
-def _section_break() -> None:
-    imgui.spacing()
-    imgui.separator()
-    imgui.spacing()
-
-
 def draw(app: App) -> None:
     if not (ui_document := app.ui_documents.get(app.current_document_id)):
         return

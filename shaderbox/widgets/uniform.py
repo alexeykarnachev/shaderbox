@@ -183,14 +183,13 @@ def _draw_texture_preview(
 ) -> bool:
     """One sampler row's picture: the pass strip's tile, minus the footer and chips.
 
-    The same `preview_cell` the strip draws, at the strip's own `SIZE.PASS_THUMB`, so the border
-    (a bordered child picking up `COLOR.BORDER` at the global `child_border_size`) and the picture
-    area are the same by construction rather than by two constants agreeing. A texture with
-    `alpha = 0` now has a visible edge, which a raw `imgui.image` never gave it.
+    `preview_cell` at the strip's own `SIZE.PASS_THUMB`, so the border and the picture area are the
+    strip's by construction rather than by two constants agreeing. The border is the bordered
+    child's, which is what gives a fully transparent texture a visible edge.
 
-    Square, where the old fixed-height thumb scaled its width to the aspect: the cell letterboxes,
-    so every sampler row lands on the same box instead of running ragged. `texture=None` draws the
-    empty slot. Returns True when the picture was clicked."""
+    The cell is square and letterboxes, so every sampler row lands on the same box whatever the
+    texture's aspect. `texture=None` draws the empty slot. Returns True when the picture was
+    clicked."""
     imgui.set_cursor_pos_x(_CTRL_X)
     result = preview_cell(
         id_=id_,

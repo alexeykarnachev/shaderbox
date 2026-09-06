@@ -72,6 +72,10 @@ def test_second_turn_receives_first_turn_summary(tmp_path: Path) -> None:
         get_project_slug=lambda: "test",
         get_checkpoints_root=lambda: tmp_path / "checkpoints",
     )
+    # This turn calls set_uniform, which the source lock (083) confirms. The subject here is the
+    # NL turn-summary, not gating, and there is no UI to answer -- so unlock rather than script a
+    # gate answer that would make the test about two things.
+    session.set_source_locked(False)
     try:
         session.enqueue_turn("set the speed to 2.5")
         _drain(session)
