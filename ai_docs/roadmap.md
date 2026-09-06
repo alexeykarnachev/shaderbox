@@ -26,12 +26,11 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-06, 084 landed and the re-vendor closed; nothing is mid-flight. -->
+<!-- As of 2026-09-06, v0.29.0 shipped to GitHub; nothing is mid-flight. -->
 **Next: nothing is claimed.** 084 gave a project the verbs a document already had: a Projects modal
-(Ctrl+O) carrying new / duplicate / switch / delete / open-other, replacing the lone folder picker
-rather than sitting beside it. Two bugs rode along, both made routine by the feature — a switch
-discarded every unsaved editor buffer, and a pointer at a deleted directory recreated an empty
-skeleton there and came up blank.
+(Ctrl+O) carrying open / new / delete / open-other, replacing the lone folder picker. Two bugs rode
+along, both made routine by it — a switch discarded every unsaved editor buffer, and a pointer at a
+deleted directory recreated an empty skeleton there and came up blank.
 
 **The re-vendor is done**, at `1aadb6e`: one new export (`ed_pending_phrase`, vim's showcmd) plus a
 `ChromeFlag`. The two pending queries are an IMPLICATION, not an equivalence — an open `:` line is
@@ -44,8 +43,8 @@ lines and vertical motion after a no-op edit.
 repeats; a multi-document mission. A project opened from outside the projects root drops off the
 list once you switch away (084 D1, accepted).
 
-**Shipped:** v0.28.0 is a GitHub release only; itch stays at v0.27.0. The Windows `libeditor.dll`
-needs a Windows host.
+**Shipped:** v0.29.0 to GitHub only (features 073-084); itch stays at v0.27.0. The Windows
+`libeditor.dll` needs a Windows host, so that bundle ships without it.
 
 ## Features
 
