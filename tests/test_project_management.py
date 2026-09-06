@@ -10,7 +10,6 @@ Each test names the break that must turn it red.
 """
 
 import ast
-import shutil
 from pathlib import Path
 from typing import Any
 
@@ -20,13 +19,15 @@ from shaderbox.app import PopupState
 from shaderbox.commands import COMMAND_SPECS, CommandId
 from shaderbox.paths import project_trash_dir
 from shaderbox.project_session import (
-    PROJECT_STAGING_SUFFIX,
-    copy_project_to,
     create_project,
     list_projects,
     trash_project,
     validate_project_name,
 )
+
+# Its OWN xdist worker. The imgui font atlas is process-global and its GL texture dies with the
+# App that built it, so two frame-driving modules in one process race on it. See pyproject.toml.
+pytestmark = pytest.mark.xdist_group("gl_frames_projects")
 
 
 def _seed_project(root: Path, name: str, documents: int = 1) -> Path:
@@ -90,63 +91,8 @@ def test_an_existing_name_is_refused(tmp_path: Path) -> None:
     assert validate_project_name("alpha", tmp_path) == "name already used"
 
 
-def test_the_staging_suffix_is_reserved(tmp_path: Path) -> None:
-    # Falsifier: allow it — a user project and a fork mid-copy fight over one path.
-    assert validate_project_name(f"alpha{PROJECT_STAGING_SUFFIX}", tmp_path) != ""
-
-
 def test_a_good_name_is_accepted(tmp_path: Path) -> None:
     assert validate_project_name("  radiance  ", tmp_path) == ""
-
-
-# ---- the fork ---------------------------------------------------------------------------
-
-
-def test_a_fork_carries_the_source_contents(tmp_path: Path) -> None:
-    root = tmp_path / "projects"
-    root.mkdir()
-    source = _seed_project(root, "alpha")
-    (source / "documents" / "doc0" / "marker.txt").write_text("carried")
-
-    fork = copy_project_to(source, root, "beta")
-    assert (fork / "documents" / "doc0" / "marker.txt").read_text() == "carried"
-
-
-def test_a_torn_fork_leaves_nothing_listable(tmp_path: Path, monkeypatch: Any) -> None:
-    # Falsifier: copy straight to the final name — the half-copy is a listable project.
-    # The fake must CREATE the destination before raising: one that raises immediately leaves
-    # nothing on disk either way, so it passes under the bug and pins nothing.
-    root = tmp_path / "projects"
-    root.mkdir()
-    source = _seed_project(root, "alpha")
-
-    def _torn(src: object, dst: object, **kwargs: object) -> None:
-        partial = Path(str(dst))
-        (partial / "documents").mkdir(parents=True)
-        raise OSError("torn mid-copy")
-
-    monkeypatch.setattr(shutil, "copytree", _torn)
-    with pytest.raises(OSError):
-        copy_project_to(source, root, "beta")
-    assert [p.name for p in list_projects(root, None)] == ["alpha"]
-
-
-def test_a_leftover_staging_dir_is_never_listed_and_is_swept(tmp_path: Path) -> None:
-    # Falsifier: drop the name filter (it is listed), or the pre-copy rmtree (copytree raises
-    # onto the debris of the previous crash).
-    root = tmp_path / "projects"
-    root.mkdir()
-    source = _seed_project(root, "alpha")
-    stale = root / f"beta{PROJECT_STAGING_SUFFIX}"
-    (stale / "documents").mkdir(parents=True)
-
-    assert [p.name for p in list_projects(root, None)] == ["alpha"]
-    copy_project_to(source, root, "beta")
-    assert not stale.exists()
-    assert [p.name for p in list_projects(root, None)] == ["alpha", "beta"]
-
-
-# ---- the trash --------------------------------------------------------------------------
 
 
 def test_a_deleted_project_moves_to_trash_under_its_bare_name(
@@ -350,7 +296,7 @@ def test_deleting_another_project_trashes_it(app: Any, tmp_path: Path) -> None:
     assert not victim.exists()
 
 
-# ---- new / duplicate, through the App ---------------------------------------------------
+# ---- new, through the App ----------------------------------------------------------------
 
 
 def test_new_project_defers_the_switch_rather_than_switching_inline(app: Any) -> None:
@@ -371,52 +317,12 @@ def test_new_project_refuses_a_bad_name_and_creates_nothing(app: Any) -> None:
     assert sorted(p.name for p in root.iterdir()) == before
 
 
-def test_duplicate_saves_the_live_state_before_copying(app: Any) -> None:
-    # Falsifier: remove the save() before the copy — the fork holds the last-saved text, not
-    # what is on screen. The first assert proves the edit really was memory-only.
-    document_id = app.current_document_id
-    app.ensure_shader_tab(document_id)
-    path = app.active_tab.path
-    marker = "// carried into the fork\n"
-    app.get_session_for_path(path).editor.set_text(marker)
-    assert marker not in path.read_text(), (
-        "the edit must be memory-only, or this proves nothing"
-    )
-
-    assert app.duplicate_project(app.project_dir, "forked") == ""
-    fork = app.default_projects_root_dir / "forked"
-    copied = fork / path.relative_to(app.project_dir)
-    assert marker in copied.read_text()
-
-
 def _census(root: Path) -> list[tuple[str, int]]:
     return sorted(
         (p.relative_to(root).as_posix(), p.stat().st_size)
         for p in (root / "documents").rglob("*")
         if p.is_file()
     )
-
-
-def test_duplicate_leaves_the_source_alone(app: Any) -> None:
-    # Falsifier: share the tree instead of copying it (a symlink, a hardlinked copytree) — the
-    # edit made in the fork below shows up in the source's census.
-    assert app.duplicate_project(app.project_dir, "forked") == ""
-    fork = app.default_projects_root_dir / "forked"
-    before = _census(app.project_dir)
-    assert before, "the source must have documents, or this test proves nothing"
-
-    (fork / "documents" / "intruder.txt").write_text("only in the fork")
-    (next(iter((fork / "documents").glob("*/"))) / "extra.glsl").write_text(
-        "// fork only\n"
-    )
-
-    assert _census(app.project_dir) == before
-
-
-# ---- the dead pointer (D10) -------------------------------------------------------------
-# Five rows, one setup. These do NOT use the `app` fixture: it builds `App(project_dir=...)`,
-# which sets persist_pointer=False and skips the whole pointer-resolve branch — the exact two
-# flags this needs the other way.
 
 
 def _app_with_pointer_at(tmp_path: Any, monkeypatch: Any, target: Path) -> Any:
@@ -579,31 +485,32 @@ def _pump(app: Any, frames: int = 3) -> None:
         update_and_draw(app)
 
 
-def test_a_requested_switch_is_actually_consumed_by_the_frame(
-    app: Any, tmp_path: Path
-) -> None:
-    # Falsifier: delete the pending_project_switch block from `_tick_frame_state` — every verb
-    # becomes a no-op that still reports success, and nothing else in the suite notices.
+def test_the_consuming_half_is_wired(app: Any, tmp_path: Path) -> None:
+    """Every verb only REQUESTS a switch; `_tick_frame_state` is what performs it.
+
+    Falsifier: delete the `pending_project_switch` block from `_tick_frame_state` — every verb
+    becomes a no-op that still reports success, and no other test notices, because they all stop
+    at `pending_project_switch is not None`.
+
+    The three checks share ONE app on purpose. The imgui font atlas is process-global and its GL
+    texture dies with the App that built it, so a test that builds a second one and draws races
+    the first: split into three tests this was green only by luck of the xdist worker split.
+    """
+    # 1. a bare request is consumed and the project actually changes.
     other = _seed_project(tmp_path / "projects", "other")
     app.request_project_switch(other)
     _pump(app)
     assert app.project_dir == other.resolve()
     assert app.pending_project_switch is None
 
-
-def test_new_project_reaches_a_seeded_project_through_the_frame(app: Any) -> None:
-    # Falsifier: make seed_starter_into_empty_project a no-op — New lands the user in a blank
-    # editor, which is the difference between "a new project" and "an empty folder".
+    # 2. New reaches a SEEDED project through the same path (falsifier: no-op the seed).
     assert app.new_project("through_the_frame") == ""
     _pump(app)
     assert app.project_dir == app.default_projects_root_dir / "through_the_frame"
     assert app.ui_documents, "a new project must arrive seeded, not blank"
 
-
-def test_the_projects_modal_actually_draws(app: Any) -> None:
-    # Falsifier: add PopupState.PROJECTS without its draw_projects(app) call in `ui.py` — the
-    # state is enterable, every render is suppressed by the popup mutex, and nothing renders.
-    # A modal that never draws cannot close itself, so the state surviving IS the signal.
+    # 3. the modal draws (falsifier: no `draw_projects(app)` in ui.py — a modal that never
+    # draws cannot close itself, so the state surviving is the signal).
     app.open_projects()
     _pump(app)
     assert app.popup_state == PopupState.PROJECTS
@@ -659,17 +566,6 @@ def test_a_row_offers_open_only_where_it_means_something(app: Any) -> None:
     )
     # The row's own click target must yield to it, or the button is unreachable.
     assert "allow_overlap" in source
-
-
-def test_duplicate_refuses_a_name_that_escapes_the_projects_root(app: Any) -> None:
-    # Falsifier: drop Duplicate's validation — `../escaped` returns success and writes a project
-    # as a SIBLING of the projects root, inside app-data. New is tested for this; Duplicate was
-    # not, and the spec says one validator serves both so they cannot drift.
-    root = app.default_projects_root_dir
-    before = sorted(p.name for p in root.parent.iterdir())
-    assert app.duplicate_project(app.project_dir, "../escaped") != ""
-    assert app.pending_project_switch is None
-    assert sorted(p.name for p in root.parent.iterdir()) == before
 
 
 def test_an_armed_delete_clears_when_another_project_is_selected(app: Any) -> None:

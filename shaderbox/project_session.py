@@ -153,11 +153,6 @@ def _graph_renamed(graph: PassGraph, old: str, new: str) -> PassGraph:
 # an identity that could disagree with the path holding it. So these are all plain disk
 # operations with no App and no GL in them, which is what keeps them testable headlessly.
 
-# The suffix a fork wears while it is being copied. A half-copied directory that already looked
-# like a project would be offered by the switcher, so the copy lands here and is renamed only
-# once complete (D11).
-PROJECT_STAGING_SUFFIX = ".creating"
-
 
 @dataclass(frozen=True)
 class ProjectInfo:
@@ -183,7 +178,7 @@ def list_projects(root: Path, open_dir: Path | None = None) -> list[ProjectInfo]
     found: dict[Path, ProjectInfo] = {}
     if root.is_dir():
         for child in sorted(root.iterdir()):
-            if child.name.endswith(PROJECT_STAGING_SUFFIX) or not is_project_dir(child):
+            if not is_project_dir(child):
                 continue
             resolved = child.resolve()
             found[resolved] = ProjectInfo(
@@ -205,31 +200,16 @@ def list_projects(root: Path, open_dir: Path | None = None) -> list[ProjectInfo]
 def validate_project_name(name: str, root: Path) -> str:
     """ "" when `name` may become a project directory under `root`, else why not.
 
-    One validator for New and Duplicate both, so the two cannot grow different rules.
+    One validator, so every path that names a project applies the same rules.
     """
     cleaned = name.strip()
     if not cleaned:
         return "name is empty"
     if cleaned != Path(cleaned).name or cleaned in {".", ".."}:
         return "name is not a folder name"
-    if cleaned.endswith(PROJECT_STAGING_SUFFIX):
-        # Otherwise a user project and a fork mid-copy fight over one path.
-        return "name is reserved"
     if (root / cleaned).exists():
         return "name already used"
     return ""
-
-
-def _copy_into_fork(entry: Path) -> bool:
-    # Whether one entry of a project dir travels into a fork. Everything, for now (D7) -- the
-    # maintainer asked for a copy of the folder, and this is the one place that decision lives.
-    _ = entry
-    return True
-
-
-def _fork_ignore(src: str, names: list[str]) -> set[str]:
-    # copytree's hook is (dir, names) -> names-to-skip, NOT a per-path predicate.
-    return {name for name in names if not _copy_into_fork(Path(src) / name)}
 
 
 def create_project(root: Path, name: str) -> Path:
@@ -238,22 +218,6 @@ def create_project(root: Path, name: str) -> Path:
     ProjectPaths.for_root(project_dir)
     logger.info(f"Project created: {project_dir}")
     return project_dir
-
-
-def copy_project_to(source: Path, root: Path, name: str) -> Path:
-    """Fork `source` to `root/name`, via a staging sibling so a torn copy is never listable.
-
-    The shape `copilot/revert.py::_swap_in_snapshot` established: a complete copy exists beside
-    the target before anything claims the final name. A leftover staging dir from a crashed copy
-    is swept first, so a retry is not blocked by its own debris.
-    """
-    staging = root / f"{name}{PROJECT_STAGING_SUFFIX}"
-    shutil.rmtree(staging, ignore_errors=True)
-    shutil.copytree(source, staging, ignore=_fork_ignore)
-    final = root / name
-    staging.replace(final)
-    logger.info(f"Project duplicated: {source} -> {final}")
-    return final
 
 
 def trash_project(project_dir: Path) -> Path:

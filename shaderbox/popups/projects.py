@@ -57,10 +57,6 @@ def _draw_body(app: App) -> bool:
 
     if app.projects_new_input.is_open:
         return _draw_name_input(app, app.projects_new_input, "New", _commit_new)
-    if app.projects_duplicate_input.is_open:
-        return _draw_name_input(
-            app, app.projects_duplicate_input, "Duplicate", _commit_duplicate
-        )
     if app.projects_delete_armed is not None:
         return _draw_delete_confirm(app)
     return _draw_verb_row(app)
@@ -127,12 +123,6 @@ def _draw_verb_row(app: App) -> bool:
     if primary_button("New"):
         app.reset_projects_state()
         app.projects_new_input.open(app.default_projects_root_dir)
-    imgui.same_line()
-    imgui.begin_disabled(selected is None)
-    if standard_button("Duplicate") and selected is not None:
-        app.reset_projects_state()
-        app.projects_duplicate_input.open(selected, f"{selected.name} copy")
-    imgui.end_disabled()
     imgui.same_line()
     if standard_button("Open other..."):
         app.pick_project_dir()
@@ -213,10 +203,3 @@ def _draw_name_input(
 
 def _commit_new(app: App, name: str) -> str:
     return app.new_project(name)
-
-
-def _commit_duplicate(app: App, name: str) -> str:
-    source = app.projects_duplicate_input.target
-    if source is None:
-        return "no project selected"
-    return app.duplicate_project(source, name)

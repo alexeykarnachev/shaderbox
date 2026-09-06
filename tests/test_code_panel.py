@@ -7,11 +7,16 @@ injected imgui input, the way the walk's repro was."""
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
 from imgui_bundle import imgui
 
 from shaderbox.editor.ffi import Editor, Kind
 from shaderbox.tabs import code as code_tab
 from shaderbox.ui import update_and_draw
+
+# Its OWN xdist worker. The imgui font atlas is process-global and its GL texture dies with the
+# App that built it, so two frame-driving modules in one process race on it. See pyproject.toml.
+pytestmark = pytest.mark.xdist_group("gl_frames_code_panel")
 
 
 def _editor_with_status_row(lines: int) -> tuple[Editor, tuple[float, float], int]:

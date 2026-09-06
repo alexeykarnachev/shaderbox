@@ -88,6 +88,12 @@ known-first-party = ["shaderbox"]
 addopts = "-ra"
 testpaths = ["tests"]
 xfail_strict = true
+# `make test` runs xdist with `--dist loadgroup`. Each module that drives real frames carries
+# its OWN `xdist_group`, so no two of them share a process: the imgui font atlas is
+# process-global and its GL texture is torn down with the App that built it, so a second
+# frame-driving module gets `glTexSubImage2D` against a dead binding. Without the groups these
+# tests are green only by luck of the worker split.
+markers = ["xdist_group: pin a test to one xdist worker (see the gl_frames group)"]
 
 [tool.pyright]
 venvPath = "."

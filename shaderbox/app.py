@@ -74,7 +74,6 @@ from shaderbox.paths import ProjectPaths, app_data_dir, pass_name_of, shader_lib
 from shaderbox.project_session import (
     ProjectInfo,
     ProjectSession,
-    copy_project_to,
     create_project,
     list_projects,
     trash_project,
@@ -495,7 +494,6 @@ class App:
         self.projects_selected: Path | None = None
         self.projects_delete_armed: Path | None = None
         self.projects_new_input: InlineInput = InlineInput()
-        self.projects_duplicate_input: InlineInput = InlineInput()
         self.projects_error: str = ""
         # Last frame's focus of an open name input, so the outer Enter/double-click cannot fire
         # while the user is typing a name.
@@ -1971,26 +1969,6 @@ class App:
         self.pending_project_seed = True
         return ""
 
-    def duplicate_project(self, source: Path, name: str) -> str:
-        """Fork `source` and open the fork. Returns "" on success, else why not."""
-        if self.copilot_turn_active:
-            return "the assistant is working"
-        root = self.default_projects_root_dir
-        error = validate_project_name(name, root)
-        if error:
-            return error
-        if source.resolve() == self.project_dir.resolve():
-            # Persist live state first, or the copy is a photograph of the last save.
-            self.flush_all_dirty_editors()
-            self.save()
-        try:
-            fork = copy_project_to(source, root, name.strip())
-        except OSError as e:
-            logger.error(f"Failed to duplicate {source}: {e}")
-            return "copy failed"
-        self.request_project_switch(fork)
-        return ""
-
     def delete_project(self, path: Path) -> str:
         """Trash a project. Returns "" on success, else why not.
 
@@ -2031,7 +2009,6 @@ class App:
     def reset_projects_state(self) -> None:
         self.projects_delete_armed = None
         self.projects_new_input.close()
-        self.projects_duplicate_input.close()
         self.projects_error = ""
         self.projects_input_focused = False
 
@@ -2039,7 +2016,7 @@ class App:
         # Esc-ownership for the in-frame dispatch, which runs BEFORE this popup draws. Gated on
         # the input being OPEN, not focused: a user who clicked away would otherwise find Esc
         # dead (the lib picker's rule, same reason).
-        return self.projects_new_input.is_open or self.projects_duplicate_input.is_open
+        return self.projects_new_input.is_open
 
     def delete_current_document(self) -> None:
         self.delete_document(self.current_document_id)

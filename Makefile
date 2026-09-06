@@ -38,7 +38,7 @@ check:
 # kills the connection (see test_revert_executor.py).
 test:
 	env MESA_GL_VERSION_OVERRIDE=4.6 MESA_GLSL_VERSION_OVERRIDE=460 \
-		GLCONTEXT_LINUX_LIBGL=libGL.so.1 uv run pytest tests/ -n 8
+		GLCONTEXT_LINUX_LIBGL=libGL.so.1 uv run pytest tests/ -n 8 --dist loadgroup
 
 # Headless smoke test — runs ~200 frames of update_and_draw against a THROWAWAY tmp project
 # in an invisible glfw window. Catches import errors, callback dispatch failures,
