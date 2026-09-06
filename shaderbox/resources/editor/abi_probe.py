@@ -10,6 +10,7 @@ bindings layer, and that state persists across separate calls.
 
 import ctypes
 import pathlib
+import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -158,6 +159,18 @@ _SIG = {
     "ed_set_line_selection": (None, [ctypes.c_void_p] + [ctypes.c_int32] * 2),
     "ed_set_tab_width": (None, [ctypes.c_void_p, ctypes.c_int32]),
     "ed_tab_width": (ctypes.c_int32, [ctypes.c_void_p]),
+    "ed_set_leader": (None, [ctypes.c_void_p, ctypes.c_int32]),
+    "ed_leader": (ctypes.c_int32, [ctypes.c_void_p]),
+    "ed_bind": (
+        None,
+        [ctypes.c_void_p, ctypes.c_int32, ctypes.c_int32, ctypes.c_bool, ctypes.c_int32],
+    ),
+    "ed_unbind": (
+        ctypes.c_bool,
+        [ctypes.c_void_p, ctypes.c_int32, ctypes.c_int32, ctypes.c_bool],
+    ),
+    "ed_clear_bindings": (None, [ctypes.c_void_p]),
+    "ed_take_binding": (ctypes.c_bool, [ctypes.c_void_p, ctypes.POINTER(ctypes.c_int32)]),
     "ed_set_chrome_flag": (ctypes.c_bool, [ctypes.c_void_p, ctypes.c_int32, ctypes.c_bool]),
     "ed_chrome_flag": (ctypes.c_bool, [ctypes.c_void_p, ctypes.c_int32, ctypes.POINTER(ctypes.c_bool)]),
     "ed_set_number_width": (None, [ctypes.c_void_p, ctypes.c_int32]),
@@ -204,6 +217,32 @@ _SIG = {
 for name, (restype, argtypes) in _SIG.items():
     fn = getattr(lib, name)
     fn.restype, fn.argtypes = restype, argtypes
+
+# THE TABLE'S DOMAIN IS THE LIBRARY'S, not whatever this file happens to list.
+#
+# This probe drives what it declares, so an export it has never heard of is not
+# a failure it can express -- it is simply not exercised, and the run reports a
+# full pass over the surface it happened to cover. Six exports landed that way
+# and `make ffi` stayed green; the embedder's own gate caught it, from the other
+# side of a vendored copy, which is the wrong place for this repo to learn it.
+#
+# The list is read off the BUILT library rather than restated here, so adding an
+# export fails this file until its signature is written down. A wrong argtype is
+# still silent -- ctypes pushes what the table declares -- but an ABSENT one no
+# longer is.
+_exported = {
+    line.split()[-1]
+    for line in subprocess.run(
+        ["nm", "-D", "--defined-only", str(LIB)], capture_output=True, text=True, check=True
+    ).stdout.splitlines()
+    if " T ed_" in line
+}
+_undeclared = sorted(_exported - set(_SIG))
+if _undeclared:
+    sys.exit(
+        f"probe.py declares {len(_SIG)} of {len(_exported)} exports; missing: "
+        + " ".join(_undeclared)
+    )
 
 _buf = (ctypes.c_ubyte * 65536)()
 

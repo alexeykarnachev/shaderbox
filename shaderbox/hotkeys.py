@@ -6,6 +6,7 @@ from shaderbox.commands import (
     COMMAND_SPECS,
     CommandScope,
     CommandSpec,
+    leader_command,
     popup_suppresses,
     route_flag,
 )
@@ -54,7 +55,14 @@ def _drain_editor_input(app: App) -> None:
     clip = _read_clipboard(app)
     if clip and clip != editor.get_register():
         editor.set_register(clip, linewise=clip.endswith("\n"))
+    fired: list[int] = []
     for event in events:
+        # Drained per KEY, not once per frame. The slot holds ONE and a completing key
+        # overwrites it during the feed, so a frame carrying two sequences keeps only the
+        # second -- measured: a leader armed at the end of one frame completes at the start
+        # of the next, so three keys across two frames is enough and a loop drain after the
+        # feed still loses the first. Draining beside the key that fired it cannot.
+        _collect_binding(editor, fired)
         if event.code == KeyCode.ESCAPE:
             # Esc is vim's modal key — the editor owns it UNCONDITIONALLY while
             # focused (maintainer decision, 067 manual pass); the glfw filter
@@ -87,10 +95,31 @@ def _drain_editor_input(app: App) -> None:
                 and not editor.complete_open()
             ):
                 app.editor_completion_requested = True
+    _collect_binding(editor, fired)
     register = editor.get_register()
     if register and register != clip:
         glfw.set_clipboard_string(app.window, register)
+    _serve_leader_bindings(app, fired)
     _serve_host_command(app, session)
+
+
+def _collect_binding(editor: Editor, fired: list[int]) -> None:
+    # id 0 is a VALID binding and also falsy, so this tests `is None` rather than
+    # truthiness: the first table row would otherwise never dispatch.
+    claimed = editor.take_binding()
+    if claimed is not None:
+        fired.append(claimed)
+
+
+def _serve_leader_bindings(app: App, fired: list[int]) -> None:
+    # The `<leader>` sequences the editor claimed for us this frame, as the command ids we
+    # registered (editor da8a850). Dispatched after the whole feed rather than mid-loop: a
+    # command may open a popup or close the tab, and the remaining keys are for the editor
+    # that was focused when they were typed.
+    for claimed in fired:
+        command_id = leader_command(claimed)
+        if command_id is not None:
+            app.command_callbacks[command_id]()
 
 
 def _is_lookup_key(editor: Editor, event: KeyEvent) -> bool:

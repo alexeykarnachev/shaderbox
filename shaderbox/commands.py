@@ -231,6 +231,32 @@ COMMAND_SPECS: list[CommandSpec] = [
 
 SPEC_BY_ID: dict[CommandId, CommandSpec] = {spec.id: spec for spec in COMMAND_SPECS}
 
+
+# The vim keymap's leader sequences (editor da8a850): `<leader>` plus a key, claimed from the
+# editor and arriving back as a command id. The editor's registry is int-keyed and opaque to
+# it, so the id is this list's INDEX -- stable for a session, never persisted, and never the
+# StrEnum's name, which would need a string across the ABI for nothing.
+#
+# The leader is a setting only in the sense that the editor takes it as one; nothing exposes
+# it yet (the maintainer's call: a rebinding UI is a separate feature). Space is vim's usual
+# choice and the maintainer's own.
+DEFAULT_LEADER: str = " "
+
+# Command reached by `<leader><key>`. A new sequence is a row here, not new code.
+LEADER_BINDINGS: list[tuple[str, CommandId]] = [
+    # Matches the maintainer's nvim, where `<leader>f` is conform.nvim's format. The
+    # registry chord (Ctrl+Shift+I) keeps working -- this is a second way in, not a move.
+    ("f", CommandId.FORMAT_BUFFER),
+]
+
+
+def leader_command(index: int) -> CommandId | None:
+    """The command a fired binding's id names, or None when the id is not one of ours."""
+    if 0 <= index < len(LEADER_BINDINGS):
+        return LEADER_BINDINGS[index][1]
+    return None
+
+
 _MOD_LABELS: list[tuple[imgui.Key, str]] = [
     (K.mod_ctrl, "Ctrl"),
     (K.mod_shift, "Shift"),

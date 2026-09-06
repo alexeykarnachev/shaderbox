@@ -230,6 +230,24 @@ _SIG: dict[str, tuple[object, Sequence[object]]] = {
         ],
     ),
     "ed_take_scroll_request": (ctypes.c_bool, [ctypes.c_void_p, _P(ctypes.c_int32)]),
+    "ed_set_leader": (None, [ctypes.c_void_p, ctypes.c_int32]),
+    "ed_leader": (ctypes.c_int32, [ctypes.c_void_p]),
+    "ed_bind": (
+        None,
+        [
+            ctypes.c_void_p,
+            ctypes.c_int32,
+            ctypes.c_int32,
+            ctypes.c_bool,
+            ctypes.c_int32,
+        ],
+    ),
+    "ed_unbind": (
+        ctypes.c_bool,
+        [ctypes.c_void_p, ctypes.c_int32, ctypes.c_int32, ctypes.c_bool],
+    ),
+    "ed_clear_bindings": (None, [ctypes.c_void_p]),
+    "ed_take_binding": (ctypes.c_bool, [ctypes.c_void_p, _P(ctypes.c_int32)]),
     "ed_register": (
         ctypes.c_int32,
         [ctypes.c_void_p, _P(ctypes.c_ubyte), ctypes.c_int32],
@@ -720,6 +738,37 @@ class Editor:
         return HostCommand(
             HostCommandKind(kind), force.value, bytes(_TEXT_BUF[: n.value]).decode()
         )
+
+    def set_leader(self, key: str) -> None:
+        """vim's `mapleader`; "" unsets it. A leader consumes nothing on its own — it
+        arms, and the next key decides (editor da8a850)."""
+        self._lib.ed_set_leader(self._h, ord(key) if key else 0)
+
+    def get_leader(self) -> str:
+        code: int = self._lib.ed_leader(self._h)
+        return chr(code) if code else ""
+
+    def bind(
+        self, key: str, command_id: int, mods: int = 0, leader: bool = False
+    ) -> None:
+        """Claim a key for the host: when it fires, `take_binding` reports `command_id`
+        and the keymap never sees it. Registering the same key twice replaces it."""
+        self._lib.ed_bind(self._h, ord(key), mods, leader, command_id)
+
+    def unbind(self, key: str, mods: int = 0, leader: bool = False) -> bool:
+        """Release a claimed key, restoring the built-in with no code path in between."""
+        return bool(self._lib.ed_unbind(self._h, ord(key), mods, leader))
+
+    def clear_bindings(self) -> None:
+        self._lib.ed_clear_bindings(self._h)
+
+    def take_binding(self) -> int | None:
+        """The command id of a fired binding, or None. Holds ONE, like
+        `take_host_command` — drain once per frame after feeding keys."""
+        out = ctypes.c_int32()
+        if not self._lib.ed_take_binding(self._h, ctypes.byref(out)):
+            return None
+        return out.value
 
     def take_scroll_request(self) -> int | None:
         """A view-only scroll the keymap asked for (Ctrl+E/Y, zz/zt/zb).

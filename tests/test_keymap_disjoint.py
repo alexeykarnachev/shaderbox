@@ -14,11 +14,16 @@ from imgui_bundle import imgui
 
 from shaderbox.commands import (
     COMMAND_SPECS,
+    DEFAULT_LEADER,
+    LEADER_BINDINGS,
+    SPEC_BY_ID,
     CommandId,
     CommandScope,
     chord_to_str,
+    leader_command,
 )
-from shaderbox.hotkeys import _RESERVED_CHORDS
+from shaderbox.editor.ffi import Editor, KeyCode
+from shaderbox.hotkeys import _RESERVED_CHORDS, _collect_binding
 
 _DOCS = Path("shaderbox/resources/editor")
 _VIM_DOC = _DOCS / "vim_coverage.md"
@@ -154,3 +159,80 @@ def test_every_host_reserved_letter_is_a_vim_chord() -> None:
     assert not _RESERVED_CHORDS["standard"], (
         "standard consumes every chord it owns inside ed_key, so the host approximates none"
     )
+
+
+def test_every_leader_binding_names_a_real_command() -> None:
+    # The id crossing the ABI is the table's INDEX, so a reordered or trimmed table
+    # silently re-points a registered binding at a different command. Both directions:
+    # every row names a command that exists, and `leader_command` round-trips the index.
+    for index, (key, command_id) in enumerate(LEADER_BINDINGS):
+        assert command_id in SPEC_BY_ID, command_id
+        assert leader_command(index) == command_id
+        assert len(key) == 1, key
+
+
+def test_an_id_outside_the_table_names_nothing() -> None:
+    # The drain hands us whatever the library reports; an id we never registered must
+    # resolve to None rather than index into the table's tail.
+    assert leader_command(len(LEADER_BINDINGS)) is None
+    assert leader_command(-1) is None
+
+
+def test_the_leader_sequence_reaches_the_command_and_the_chord_still_does() -> None:
+    # The maintainer asked for `<leader>f` ALONGSIDE Ctrl+Shift+I, not instead of it.
+    # Driven through the real editor: arm the leader, send the key, drain.
+    editor = Editor("abc def\n")
+    editor.set_leader(DEFAULT_LEADER)
+    for index, (key, _) in enumerate(LEADER_BINDINGS):
+        editor.bind(key, index, leader=True)
+    editor.key(KeyCode.CHAR, 0, DEFAULT_LEADER)
+    editor.key(KeyCode.CHAR, 0, LEADER_BINDINGS[0][0])
+    fired = editor.take_binding()
+    # The first row's id is 0, which is a VALID id and also falsy: a drain written as
+    # `take_binding() or default` resolves it to the default and the binding silently does
+    # nothing. `_serve_leader_binding` tests `is None` for this reason; so does this.
+    assert fired == 0
+    assert leader_command(fired) == LEADER_BINDINGS[0][1]
+    # The registry chord is untouched by any of this.
+    assert SPEC_BY_ID[CommandId.FORMAT_BUFFER].default_chord != 0
+
+
+def test_the_leader_never_fires_where_a_command_is_in_flight() -> None:
+    # The guards the library promises (editor da8a850), pinned HERE because this host is
+    # what breaks if they regress: an operand and an operator each consume the space
+    # before the binding table is consulted, and a bare space moves nothing.
+    # `r<Space>` is the one that fails when the guard is placed above the awaiting
+    # branches rather than below them -- `d<Space>` keeps passing there.
+    editor = Editor("abc def\n")
+    for keys, expected in (
+        ("", "abc def"),
+        ("r", " bc def"),
+        ("d", "bc def"),
+    ):
+        editor.set_text("abc def\n")
+        editor.set_leader(DEFAULT_LEADER)
+        editor.bind(LEADER_BINDINGS[0][0], 0, leader=True)
+        for ch in keys:
+            editor.key(KeyCode.CHAR, 0, ch)
+        editor.key(KeyCode.CHAR, 0, " ")
+        assert editor.get_text().split("\n")[0] == expected, keys
+        assert editor.take_binding() is None, keys
+
+
+def test_two_sequences_in_one_feed_both_survive() -> None:
+    # The ABI slot holds ONE and a completing key OVERWRITES it during the feed, so where
+    # the drain sits decides whether a sequence is lost. Measured (editor 09e3e59): an armed
+    # leader survives a drain, so a leader pressed at the end of one frame completes at the
+    # start of the next -- three keys across two frames, ordinary typing. Draining once
+    # after the feed, even in a loop, yields only the SECOND id; draining beside each key
+    # yields both. Broken (move `_collect_binding` out of the loop), this returns [7].
+    editor = Editor("abc def\n")
+    editor.set_leader(DEFAULT_LEADER)
+    editor.bind("f", 0, leader=True)
+    editor.bind("q", 7, leader=True)
+    fired: list[int] = []
+    for ch in (DEFAULT_LEADER, "f", DEFAULT_LEADER, "q"):
+        _collect_binding(editor, fired)
+        editor.key(KeyCode.CHAR, 0, ch)
+    _collect_binding(editor, fired)
+    assert fired == [0, 7]

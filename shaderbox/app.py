@@ -16,6 +16,8 @@ from loguru import logger
 from shaderbox.channel_blit import ALPHA_FS, RGB_FS, ChannelBlit
 from shaderbox.commands import (
     COMMAND_SPECS,
+    DEFAULT_LEADER,
+    LEADER_BINDINGS,
     SPEC_BY_ID,
     CommandId,
     chord_to_str,
@@ -1419,6 +1421,14 @@ class App:
         )
         editor.set_tab_size(settings.tab_size)
         editor.set_line_spacing(settings.line_spacing)
+        # The leader table, re-registered from scratch on every settings change: a repeat
+        # bind REPLACES, so rebuilding never grows the registry. Vim only -- the leader is a
+        # vim concept, and the standard keymap types a space where this would arm.
+        editor.clear_bindings()
+        editor.set_leader(DEFAULT_LEADER if settings.keymap == "vim" else "")
+        if settings.keymap == "vim":
+            for index, (key, _) in enumerate(LEADER_BINDINGS):
+                editor.bind(key, index, leader=True)
 
     def apply_editor_settings(self) -> None:
         for session in self.editor_sessions.values():
