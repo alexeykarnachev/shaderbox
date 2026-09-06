@@ -505,7 +505,7 @@ iteration's input — e.g. 68k on the 4-document read turn); the real per-turn C
 per-iteration `in=` (analyze.py's `peak_iter_in_tokens`, ~10k on that turn). Don't report the cumulative
 figure as "context size" — it's the cost driver, the peak is the context-size driver.
 
-## 4. The report — the attempt page, plus the markdown flow for a scenario run
+## 4. The report — the live attempt page, and the durable markdown deliverable
 
 **Write it for a HUMAN who has not read the specs.** The report is the round's deliverable and it
 is read by the maintainer, not by the next agent. That means:
@@ -527,52 +527,71 @@ Same rule for the station's `record_triage` summary and the roadmap banner: thos
 human weeks later with no context loaded.
 
 
-**Since 075 the attempt page IS the report** for an experiment: its six axes (`fidelity` · `motion` ·
-`logic` · `honesty` · `process` · `code`) are sections, the AUTO halves (process, the honesty
-limit-forced list) filled from the log, the HUMAN halves filled by your `h.note(..., axis=...)` calls as
-you go — an axis with no note says so on the page. Close with `h.end_attempt(outcome, summary)`; the
-verdict is that summary. The axes below describe what each note should carry.
+**Two artifacts, and both are always produced.** They are not alternatives — the earlier text
+offered a station page OR a markdown report and never said which applied when, so the last two
+rounds produced neither shape and invented their own.
 
-The markdown flow that follows is the pre-station shape (a `REPORT_TEMPLATE.md` copy under
-`ai_docs/features/`), still the right tool for a SCENARIO run judged against `scripts/dogfood/scenarios/`
-rather than an open experiment. Half AUTO (filled by the analyzer from logs — you never hand-sum), half
-HUMAN (your judgment). **ONE report per SCENARIO** (a run's data dir holds one scenario). Flow:
+**The station attempt page is the LIVE record.** Filled as you go: its six axes (`fidelity` ·
+`motion` · `logic` · `honesty` · `process` · `code`) are sections, the AUTO halves from the log,
+the HUMAN halves from your `h.note(..., axis=...)` calls — an axis with no note says so on the
+page. Close each attempt with `h.end_attempt(outcome, summary)`.
 
-1. Copy `scripts/dogfood/REPORT_TEMPLATE.md` → `ai_docs/features/NNN_dogfood_report_<run>.md` (durable,
-   roadmap-linked finding — stays in `ai_docs/features/`, NOT under `scripts/dogfood/`).
-2. Run the analyzer to fill the **AUTO slots** (run label/model/turns/cost, per-turn table, render
-   list, tool-coverage table, cold tools, token range/peak, cost range, token-growth, recovery summary,
-   and the whole honesty block):
-   ```
-   uv run python scripts/dogfood/analyze.py <data_dir> --scenario <scenario name> \
-       --template scripts/dogfood/REPORT_TEMPLATE.md \
-       --report-out ai_docs/features/NNN_dogfood_report_<run>.md
-   ```
-   (Pass `--model <id>` if the run used a non-default model not recorded in the data dir's
-   `integrations.json`.)
-3. Write the **9 HUMAN sections** by hand — the things a log can't give you:
-   - **§1 Verdict** — mechanism works Y/N, overall conclusion.
-   - **§2 Dialogue** — paste `analyze.py <data_dir> --dialogue` verbatim (§3). Never retype it.
-   - **§3 fidelity** — the scenario's checklist as a table (`| check | PASS/FAIL | measurement |`), each
-     row citing the artifact that decided it, plus a counted "X of Y sub-requirements landed".
-   - **§4 motion** — verdicts against the scenario's STATED ground truth, each citing its measurement (a
-     `render_strip` sheet, a `judge.py` number).
-   - **§5 logic** — same, off `script_values` / analytic truth.
-   - **§6 honesty** — the limit-forced turns are filled for you; YOU write the two claim lines (claims
-     vs the measured facts, claims vs your own eye). The agent CANNOT see its render, so any "it looks
-     …" claim is unsupported by construction.
-   - **§7b Per-render eyeball** — open each PNG with Read; correct/wrong, quadrants, did a tuned uniform
-     visibly change anything. (NOT automatable — you have to look.)
-   - **§8 code** — read the run's FINAL sources (shader + script) end-to-end as a CODE REVIEWER and fill
-     the `| aspect | verdict | evidence |` table (dead code · duplication · structure & naming ·
-     complexity vs task · tool choice), each verdict quoting line evidence from the final source. Record
-     what the end-of-mission SWEEP turn (§1a) deleted as the edit-sediment number. This is the
-     first-class axis: the copilot's job is EXCELLENT CODE; the visual call is the human's.
-   - **§9 TODOs**, split: (a) improve the COPILOT/agent, (b) improve the DOGFOODING framework/harness/
-     skill, (c) improve the LIBRARY.
+`outcome` is a CLOSED vocabulary (`dogfood/report/log.py::OUTCOMES`, rejected at `end_attempt` if
+it is not one of them), and it says what the MODEL reached — never that the driver stopped driving:
 
-The template's inline comments mark every `{{AUTO:...}}` vs `{{HUMAN:...}}` slot. Treat full reachable-tool
-coverage (this skill's §1a) as a run goal — the report's §7c coverage table makes a thin run visible.
+| outcome | means |
+|---|---|
+| `built` | the mission's stated goal is met, judged on the render |
+| `partial` | real progress, goal not reached, nothing broken |
+| `regressed` | it had something working and ended worse than it started |
+| `blocked` | an engine or tool defect stopped it, not the model's own limits |
+| `abandoned` | the MODEL gave up or went in circles with no path forward |
+| `smoke` | an infrastructure check, not a mission |
+
+🔴 A round the DRIVER ended early is `built`/`partial` by what the model had reached — closing three
+such attempts as `abandoned` read as an engine regression when every one had beaten the round
+before, and the turn after the one that was cut short is where two of them met the brief.
+
+**The markdown report is the DURABLE deliverable**, and every round writes one:
+`ai_docs/features/NNN_<name>/NN_report.md`, from `scripts/dogfood/REPORT_TEMPLATE.md`, with its
+headings verbatim and in order. That template is the single shape — five past reports were audited
+and used three incompatible heading taxonomies, with the bottom line in a different place each
+time and one report carrying none in its first fifteen lines. Keep a section with "none this
+round" in it rather than deleting it: an absent section and an empty one mean different things.
+
+**Write it for a HUMAN who has not read the specs.** The report is read by the maintainer, not by
+the next agent:
+
+- **No internal codenames.** "D6", "F2", "wave 3" are opaque and carry nothing the reader can act
+  on. Say what the thing IS — "keeping the pass tools always-loaded protects the prompt cache" —
+  and put an id in parentheses AFTER the plain-English statement if it helps someone find the spec.
+- **Lead with what happened, then what it cost, then what changed.** The finding first; the
+  mechanism is the second paragraph, not the first clause.
+- **The bottom line goes under `## The headline`, in the first 20 lines, every time.**
+- **One idea per paragraph**, under headings, with blank lines.
+- **Numbers carry their meaning.** "4% cache reuse against 78-85% either side" reads; "2.9% vs
+  62.7%" does not say which is the bad one.
+- **Say plainly when something did NOT work.** A refuted prediction is the most valuable line in a
+  report: never soften it, never bury it under a confirmed one.
+
+Same rule for the station's `record_triage` summary and the roadmap banner — read weeks later with
+no context loaded.
+
+**Attach the animation.** A still cannot show motion, and motion is half of what these missions
+ask for. Whenever the mission produced something that moves, the final turn renders an MP4
+(`drive.py --mp4 4`, or `h.render_video_mp4(seconds=4, fps=20, size=320)`), which lands it on the
+attempt page and in the report's `## The animation` section. 🔴 The station copies renders only
+while a TURN is recording, so a video rendered after `end_attempt` reaches no page — render it on
+the last driven turn. `render_video` (webm) has no CLI flag and no recorded run has ever produced
+one; MP4 is the format to use.
+
+**Fill the AUTO slots from the logs, never by hand-summing.** `analyze.py` fills the pre-station
+slots; for a station round, read `dogfood/runs/<experiment>/events.jsonl` with a script and paste
+what it prints. Every number in the report comes from something that ran.
+
+Treat full reachable-tool coverage (§1a) as a run goal — the report's coverage section makes a thin
+run visible, and a cold tool is either "the scenario never pressured it" or "a move aimed at it and
+the model dodged", which are different findings.
 
 ## 5. Clean up
 
@@ -585,18 +604,15 @@ next run; the dumps are the stray `*.json`). NOTE: these data dirs hold the LIVE
 context block, so nothing in a run dir needs copying out first. **Purge the run dirs, never the
 station store** — stage 2 mines `dogfood/runs/<experiment>/` after every attempt closes, and a
 round whose corpus was deleted cannot be mined at all. The store is local and gitignored
-(an experiment runs to tens of MB); the findings that must outlive the box go to the feature spec. Keep a markdown report
-(when a scenario run wrote one) in `ai_docs/features/`. The harness + analyzer + template + scenarios +
-this skill stay. Prioritized findings live on the attempt page as notes (or in the REPORT §9 for a
-scenario run) and their durable half goes to the feature ledger / spec or `conventions.md` — `todo.md`
+(an experiment runs to tens of MB); the findings that must outlive the box go to the feature spec. Keep the round's markdown report in `ai_docs/features/`. The harness + analyzer + template + scenarios +
+this skill stay. Prioritized findings live on the attempt page as notes and in the report, and their durable half goes to the feature ledger / spec or `conventions.md` — `todo.md`
 is frozen drain-only and takes no new entries.
 
 ## 6. Improve this skill
 
 This is a LIVING skill. Each run, if you hit a new gotcha or the report format wants a new section, ADD it
 here so the next run is smoother. The maintainer wants the dogfooding itself to get more convenient over
-time — the report's "improve the DOGFOODING framework" TODO bucket (report §9 (b)) is where those
-findings start, and they flow back HERE (the skill) or into `scripts/dogfood/analyze.py` (the analyzer).
+time — the report's "what a next round would test" section is where those findings start, and they flow back HERE (the skill) or into `scripts/dogfood/analyze.py` (the analyzer).
 
 **And RE-CHECK before you add.** A run that measures something this file already claims must compare the
 two and correct the file when they disagree — adding beside a refuted number leaves both standing, which

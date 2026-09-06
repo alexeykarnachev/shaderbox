@@ -86,6 +86,7 @@ details > pre { margin-top: .4rem; }
 .pill { display: inline-block; padding: .05rem .45rem; border-radius: 999px; font-size: .78em; border: 1px solid var(--line); background: #fff; }
 .pill.live { border-color: var(--warn); color: var(--warn); }
 .pill.ok { border-color: var(--ok); color: var(--ok); } .pill.bad { border-color: var(--bad); color: var(--bad); }
+.pill.warn { border-color: var(--warn); color: var(--warn); }
 .ctx { margin-top: .75rem; border-top: 1px dashed var(--line); padding-top: .5rem; }
 .ctx .req { margin: .4rem 0 .8rem; }
 .kv { display: grid; grid-template-columns: max-content 1fr; gap: .15rem 1rem; margin: .5rem 0; }
@@ -441,11 +442,28 @@ def _process_axis(attempt: Attempt) -> str:
     return per_turn + coverage + mechanics
 
 
+# The outcome vocabulary split three ways for the reader: reached the goal, made ground, lost
+# ground. "success" -- the only value this ever styled green -- was never a legal outcome, so every
+# attempt page rendered its pill red, the nine `built` ones included.
+_OUTCOME_CLASS = {
+    "built": "ok",
+    "partial": "warn",
+    "smoke": "warn",
+    "regressed": "bad",
+    "blocked": "bad",
+    "abandoned": "bad",
+}
+
+
+def _outcome_class(outcome: str) -> str:
+    return _OUTCOME_CLASS.get(outcome, "") if outcome else ""
+
+
 def _attempt_page(exp: Experiment, attempt: Attempt) -> str:
     status = (
         '<span class="pill live">LIVE</span>'
         if attempt.live
-        else f'<span class="pill {"ok" if attempt.outcome == "success" else "bad" if attempt.outcome else ""}">{_e(attempt.outcome or "ended")}</span>'
+        else f'<span class="pill {_outcome_class(attempt.outcome)}">{_e(attempt.outcome or "ended")}</span>'
     )
     fixes = "".join(
         f'<div class="fix"><code>{_e(f.sha[:9])}</code> {_e(f.subject)}'
@@ -542,7 +560,7 @@ def _experiment_page(exp: Experiment) -> str:
         f"<td><code>{_e(a.sha[:9] or '—')}</code>"
         f"{' <span class="warn" title="the tree was modified: this sha names code the run did not execute">dirty</span>' if a.dirty else ''}"
         f"</td><td>{_stamp(a.started)}</td><td>{_stamp(a.ended)}</td>"
-        f"<td>{'<span class="pill live">LIVE</span>' if a.live else _e(a.outcome or 'ended')}</td>"
+        f"<td>{'<span class="pill live">LIVE</span>' if a.live else f'<span class="pill {_outcome_class(a.outcome)}">' + _e(a.outcome or 'ended') + '</span>'}</td>"
         f'<td class="num">{len(a.turns)}</td><td class="num">{_money(a.cost_usd)}</td>'
         f'<td class="num">{len(a.fixes)}</td></tr>'
         for a in exp.attempts

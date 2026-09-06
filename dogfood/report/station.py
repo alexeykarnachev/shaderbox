@@ -29,6 +29,7 @@ from typing import Any
 from dogfood.report.log import (
     LOG_NAME,
     MODES,
+    OUTCOMES,
     EventLog,
     Experiment,
     load_experiment,
@@ -452,6 +453,11 @@ class StationRecorder:
         return commits
 
     def end_attempt(self, outcome: str, summary: str = "") -> None:
+        if outcome not in OUTCOMES:
+            raise ValueError(
+                f"outcome {outcome!r} is not one of {OUTCOMES} -- an outcome says what the MODEL "
+                "reached, never that the driver stopped driving"
+            )
         self.log.append(
             "attempt_end", self.attempt, {"outcome": outcome, "summary": summary}
         )

@@ -31,6 +31,26 @@ KINDS: tuple[str, ...] = (
 
 MODES: tuple[str, ...] = ("end_to_end", "babysat", "free_run")
 
+# What the MODEL did with the mission, as a closed vocabulary -- `mode` above was validated from
+# the start and `outcome` was not, so seven ad-hoc words accumulated across five experiments
+# ("built", "abandoned", "blocked", "regressed", "partial", "smoke", "success") and the site styled
+# exactly one of them green. An outcome NEVER describes the driver: a round the driver stopped is
+# whatever the model had reached by then, not "abandoned".
+#   built     -- the mission's stated goal is met, judged on the render
+#   partial   -- real progress, goal not reached, nothing broken
+#   regressed -- it had something working and ended worse than it started
+#   blocked   -- an engine/tool defect stopped it, not the model's own limits
+#   abandoned -- the MODEL gave up or went in circles with no path forward
+#   smoke     -- an infrastructure check, not a mission
+OUTCOMES: tuple[str, ...] = (
+    "built",
+    "partial",
+    "regressed",
+    "blocked",
+    "abandoned",
+    "smoke",
+)
+
 LOG_NAME = "events.jsonl"
 
 

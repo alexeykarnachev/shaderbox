@@ -11,6 +11,8 @@ import subprocess
 import threading
 from pathlib import Path
 
+import pytest
+
 from dogfood.report.log import LOG_NAME, load_experiment, read_events
 from dogfood.report.station import POINTER_NAME, StationRecorder, ledger_gap
 from shaderbox.copilot.agent import run_turn
@@ -357,3 +359,39 @@ def test_a_dirty_tree_survives_the_read(tmp_path: Path) -> None:
         repo_root=repo,
     )
     assert load_experiment(store / "exp").attempts[0].dirty is True
+
+
+def test_end_attempt_rejects_an_outcome_outside_the_vocabulary(tmp_path: Path) -> None:
+    # `mode` was a validated closed vocabulary from the start and `outcome` was a free string, so
+    # seven ad-hoc words accumulated across five experiments and the site styled exactly one of
+    # them -- "success", which was never a legal value -- green. The worst of them described the
+    # DRIVER: three attempts were closed "abandoned" because the round ended, which read as an
+    # engine regression when every one had in fact done better than the round before.
+    rec = StationRecorder.start_experiment(
+        tmp_path / "proj",
+        "exp",
+        intent="i",
+        mode="babysat",
+        model="m",
+        store=tmp_path / "store",
+    )
+    with pytest.raises(ValueError, match="is not one of"):
+        rec.end_attempt("success", "the value the site used to style green")
+    with pytest.raises(ValueError, match="is not one of"):
+        rec.end_attempt("gave up", "free-form prose")
+    rec.end_attempt("built", "a legal one still works")
+    exp = load_experiment(tmp_path / "store" / "exp")
+    assert exp.attempt(1) is not None and exp.attempt(1).outcome == "built"
+
+
+def test_every_outcome_gets_a_pill_class_and_built_is_not_red() -> None:
+    # The renderer keyed on the literal "success", so every attempt page ever built showed a red
+    # pill -- the `built` ones included. Enumerate from the vocabulary so a new outcome is a test
+    # failure until it is classified, and pin that the three states read differently.
+    from dogfood.report.build import _outcome_class
+    from dogfood.report.log import OUTCOMES
+
+    assert all(_outcome_class(o) for o in OUTCOMES), "every outcome needs a class"
+    assert _outcome_class("built") == "ok"
+    assert _outcome_class("regressed") == "bad"
+    assert _outcome_class("partial") == "warn"
