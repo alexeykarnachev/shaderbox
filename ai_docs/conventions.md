@@ -1088,10 +1088,30 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   both are invisible, so a box is more useful than a blank you cannot distinguish from a space.
   `atlas_glyph` renders the fallback box and still advances exactly one cell, so column
   arithmetic never desyncs from buffer content — that is by design, do not ask for it to change.
+- **A measurement of THIS host's workload comes from this host, never from upstream.** The editor
+  repo can measure what the library does with a given input; it cannot know what input we send.
+  Both directions have gone wrong once. Upstream measured a 340-candidate completion batch and
+  reported it as ours, when `members_of` generates 21 for a vec4 and `offer()` caps every batch at
+  50 — a number about a repo it cannot open, written where it reads as established. The mirror was
+  ours: a report of "larger and more frequent" batches where the number was 21, an adjective sent
+  across a boundary in place of a figure, which is what prompted the wrong measurement. So a claim
+  about our cost is checked here before it is believed, and a claim about theirs is sent as a
+  number. This is also why a re-vendor's ABI delta is re-derived from `nm -D` rather than taken
+  from the report — done once and it matched, which is the point.
+- **Odin's build output is not reproducible, so a vendored binary is verified by exports and
+  behaviour, never by bytes.** The same committed sha built twice differs across ~668k bytes of
+  `.text` while exports, size and measured behaviour are identical. A `cmp` between our copy and a
+  fresh upstream build proves nothing in either direction; `nm -D` export sets and a driven
+  measurement are the instruments.
 - **Re-vendoring the editor: rebuild, copy, then delete the mitigations the new sha makes dead.**
   Rebuild from a committed sha, copy the seven files (including `ffi/probe.py` as `abi_probe.py`,
   which is what makes the binding's argtypes gate track the new ABI), update `VERSION`, then remove
-  whatever host workarounds that sha obsoletes. **The vendored set is the WHOLE set, always** — a
+  whatever host workarounds that sha obsoletes. **A green upstream is not a green re-vendor**: the
+  `da8a850` copy landed six new exports with `ffi/probe.py` still declaring the old 100, and
+  upstream's own probe run passed because a probe only drives what it declares — an export it has
+  never heard of is not a failure it can express. `test_the_binding_mirrors_the_upstream_signature_table`
+  caught it here, which is the gate earning its place; the fix belonged upstream (a vendored probe
+  edited to disagree with its source is worse than none), so the re-vendor waited a commit. **The vendored set is the WHOLE set, always** — a
   re-vendor with no ABI delta still copies every file plus `VERSION`, because upstream moves docs
   and the probe independently of `ffi.odin`. Verifying the editor's own vim surface belongs to the
   editor repo, which has its own gates for it; what this repo checks is the INTEGRATION — the host

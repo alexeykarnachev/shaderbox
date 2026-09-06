@@ -26,12 +26,28 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-06, two dogfood rounds ran, their fixes landed, and the report shape is pinned. -->
-**Next: the maintainer decides.** Two rounds drove the real engine after the 081 sweep. The first
-(082) ran one model and found two engine bugs; the second (082b) ran three models on the fixed
-engine and two of them met the brief, where the previous round met it zero times.
+<!-- As of 2026-09-06, the maintainer's editor walk landed and the leader mechanism is in. -->
+**Next: the maintainer decides.** A walk over the code panel produced seven findings, split across
+two repos: four landed here, and the three keymap items plus a binding mechanism went to the editor
+repo, where the keys are. That loop ran to completion in one session — four re-vendors, two of them
+fixes upstream made after this host reported them.
 
-**A tool was corrupting the files it edited.** `edit_script`'s splice stripped the replacement's
+**Two premises the host got wrong, both corrected upstream by measurement.** `Ctrl-Y` was already
+bound (a view scroll), so it was a precedence question rather than a free key; and `<Space>` is
+pinned by twenty corpus rows including `r<Space>`, where it is an OPERAND — a leader swallowing the
+key unconditionally would have broken that one silently while `d<Space>` kept passing. The leader
+shadows rather than replaces, and the compiled keymaps stay what nvim measures.
+
+**The completion popup blinked for weeks because a comment said it was ours.** The TODO asserted
+three readings had failed and blamed frame timing, naming an instrument this box lacks instead of a
+question that could be asked; the cause was upstream clearing a host-driven list on every inserted
+character, and one message settled it. The mitigation it had grown — a branch reconstructing from
+the prefix whether the last edit was an accept — is deleted.
+
+**Open:** whether the one-turn dogfood build is repeatable (one sample), and a mission spanning
+several documents — the navigation tools have never been under real pressure.
+
+**From the dogfood rounds, still open. A tool was corrupting the files it edited.** `edit_script`'s splice stripped the replacement's
 first-line indent unconditionally — right for the structural match, whose span starts after the
 source's indent, wrong for the exact match, whose span starts at the literal find and consumes it.
 A correct 4-space block came back at column 0, and the repair for THAT is an indent-only edit,
@@ -64,6 +80,7 @@ still needs a Windows host before the next cut.
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| — | editor_walk_findings | done | The maintainer's walk over the code panel, split across two repos: GLSL member/swizzle completion after a dot (the host owns that vocabulary, and the words provider had to yield the site — at its two-letter floor `u_gain.xf` offered the local `xfade` as a component of a float), an RGB channel view because Color and Color+Alpha were the same composite differing only in checker loudness, `Ctrl+Shift+V` paste, and a tooltip. The editor repo took the three keymap items and built a host-binding overlay (`<leader>f` formats, `Ctrl+Shift+I` untouched); its ABI went 100 -> 106, purely additive. Spec: commits `ac78d67` + `0f976be` + `d18991a` + `cc54130`. |
 | — | dogfood_report_shape | done | Five reviewers over eight reports found three incompatible heading taxonomies, a bottom line in a different place each time, and a results table whose columns changed every round (one called a raw count `requests`, the next a ratio under a near-identical label). `REPORT_TEMPLATE.md` is now THE shape — fixed headings and order, the bottom line always under `## The headline`, a mandatory animation section — and `OUTCOMES` is a closed vocabulary enforced at `end_attempt`, describing what the MODEL reached rather than that the driver stopped. The renderer had keyed on `"success"`, never a legal value, so every attempt page ever built showed a red pill. Spec: commit `86d4de9`. |
 | 082 | dogfood_post081 | done | The first round to drive the engine after the 081 sweep: `edit_script` was corrupting the files it edited (the splice stripped the replacement's indent on the exact-match path, whose span had already consumed the source's), and the sweep turn's fourteen identical failing calls were a repair the same bug had sealed into a no-op; the compile-thrash brake was found with a latching nudge and no hard half. D6 confirmed at 4.0% cached after a `load_tools`, D7 refuted at 0.552 -> 0.709 requests per call. Spec: `ai_docs/features/082_dogfood_post081/01_spec.md`. |
 | 082b | dogfood_three_models | done | The same ask given to hy4, gemini-3.8-flash and luna in parallel on the fixed engine, three turns each: TWO met the brief where the previous round met it zero times, luna for $0.069 total. gemini met the whole spec in ONE turn, then spent $0.752 (97% hidden reasoning) leaving a debug red test that turned the frame flat red past its own probe saying `FLAT`, and undid it next turn for $0.027 -- 28x more to cause than to undo. No brake counts cost or notices a frame going from lit to flat; every existing one counts repetition. Report: `ai_docs/features/082_dogfood_post081/02_round2_report.md`. |
