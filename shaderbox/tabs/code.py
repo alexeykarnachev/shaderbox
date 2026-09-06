@@ -1006,9 +1006,6 @@ def draw(app: App) -> None:
     editor.take_scroll_request()  # absolute target; applied by the read itself
     if tab.kind != "script":
         _glsl_index_for(app, editor, tab)
-    # TODO: the popup blinks while typing. Not the redraw state (it already carries complete_open /
-    # selected / count) and not the ordering (this runs before render_state), so three readings of
-    # the frame path found nothing — it wants the running app to diagnose.
     _drive_completion(app, editor, tab)
     _consume_lookup_request(app, editor, tab)
     rows = app.editor_visible_rows

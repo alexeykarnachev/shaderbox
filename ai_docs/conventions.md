@@ -915,7 +915,12 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   registered chord returns TRUE from `ed_key` (editor e6ddfbc -- shadowing is the point), so a
   binding registered as a bare Ctrl chord is taken away from `_handle_reserved_chord`, the
   host's own approximation of vim's insert chords; every row is a leader sequence today and a
-  test fails the moment one is not. Rebinding a
+  test fails the moment one is not. **Every one-slot ABI queue drains per key, not per frame**
+  -- the binding queue and `ed_take_host_command` both, since a second request overwrites the
+  first DURING the feed: `:w<CR>:q<CR>` in one frame's typeahead reached a once-per-frame drain
+  as QUIT alone, so the quit branch refused on unsaved changes it had been told to save. The
+  scroll queue is exempt because reading APPLIES it and the value is an absolute target, so
+  only the last one matters. Rebinding a
   built-in to another built-in is deliberately not offered -- it needs a vocabulary of internal
   action names outliving every keymap change, which no oracle can measure. Revisit if a rebinding
   UI is built, which needs a persisted id that is not a list position.

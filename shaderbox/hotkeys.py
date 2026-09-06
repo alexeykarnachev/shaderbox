@@ -10,7 +10,14 @@ from shaderbox.commands import (
     popup_suppresses,
     route_flag,
 )
-from shaderbox.editor.ffi import Editor, HostCommandKind, KeyCode, KeyMod, Mode
+from shaderbox.editor.ffi import (
+    Editor,
+    HostCommand,
+    HostCommandKind,
+    KeyCode,
+    KeyMod,
+    Mode,
+)
 from shaderbox.editor.input import KeyEvent
 from shaderbox.editor_types import EditorSession
 from shaderbox.popups.lib_picker import inline_input_owns_esc
@@ -56,10 +63,13 @@ def _drain_editor_input(app: App) -> None:
     if clip and clip != editor.get_register():
         editor.set_register(clip, linewise=clip.endswith("\n"))
     fired: list[int] = []
+    commands: list[HostCommand] = []
     for event in events:
-        # Per KEY, not per frame: the slot holds ONE and a completing key overwrites it
-        # during the feed, so a frame carrying two sequences would keep only the second.
+        # Both queues drain per KEY, not per frame: each holds ONE and a second request
+        # overwrites the first during the feed. `:w<CR>:q<CR>` in a single frame's typeahead
+        # otherwise arrives as QUIT alone, and the write the user asked for is gone.
         _collect_binding(editor, fired)
+        _collect_host_command(editor, commands)
         if event.code == KeyCode.ESCAPE:
             # Esc is vim's modal key — the editor owns it UNCONDITIONALLY while
             # focused (maintainer decision, 067 manual pass); the glfw filter
@@ -93,11 +103,13 @@ def _drain_editor_input(app: App) -> None:
             ):
                 app.editor_completion_requested = True
     _collect_binding(editor, fired)
+    _collect_host_command(editor, commands)
     register = editor.get_register()
     if register and register != clip:
         glfw.set_clipboard_string(app.window, register)
     _serve_leader_bindings(app, fired)
-    _serve_host_command(app, session)
+    for command in commands:
+        _serve_host_command(app, session, command)
 
 
 def _collect_binding(editor: Editor, fired: list[int]) -> None:
@@ -130,13 +142,16 @@ def _is_lookup_key(editor: Editor, event: KeyEvent) -> bool:
     )
 
 
-def _serve_host_command(app: App, session: EditorSession) -> None:
+def _collect_host_command(editor: Editor, commands: list[HostCommand]) -> None:
+    command = editor.take_host_command()
+    if command is not None:
+        commands.append(command)
+
+
+def _serve_host_command(app: App, session: EditorSession, command: HostCommand) -> None:
     # The ex commands whose OBJECT the host owns (editor c5fabc8): :w saves,
     # :q closes the tab (refusing on unsaved changes unless forced, as vim
     # does), :wq/:x both. A path argument names a host feature we don't have.
-    command = session.editor.take_host_command()
-    if command is None:
-        return
     if command.arg:
         app.notifications.push(
             "Path argument not supported", color=COLOR.STATE_WARN[:3]

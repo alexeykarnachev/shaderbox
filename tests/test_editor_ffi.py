@@ -1415,3 +1415,29 @@ def test_the_caret_glyph_is_emitted_in_the_caret_text_slot() -> None:
     )
     assert glyphs[0][1] != (0.1, 0.2, 0.3), "insert mode leaves the glyph alone"
     e.close()
+
+
+def test_two_ex_commands_in_one_frame_both_reach_the_host() -> None:
+    # `ed_take_host_command` holds ONE, and a second command overwrites the first DURING the
+    # key feed -- so `:w<CR>:q<CR>` in a single frame's typeahead reaches a once-per-frame
+    # drain as QUIT alone, and the write the user asked for is gone. Worse than lost: the
+    # quit branch then refuses on unsaved changes it was told to save. Driven through the
+    # real `_drain_editor_input`, so the loop's drain PLACEMENT is what is under test --
+    # broken (move `_collect_host_command` out of the key loop), `saved` stays False.
+    saved: list[bool] = []
+    closed: list[int] = []
+    e = _editor("hello\n")
+    app = _drain_app(e)
+    app.save = lambda: saved.append(True)
+    app.editor_tabs = [object()]
+    app.close_tab = lambda i: closed.append(i)
+    app.editor_key_events = [
+        translate_char(ord(c))
+        if c != "\r"
+        else translate_key(glfw.KEY_ENTER, glfw.PRESS, 0)
+        for c in ":w\r:q\r"
+    ]
+    _drain_editor_input(app)
+    assert saved == [True], "the :w was dropped before it reached App.save"
+    assert closed == [0], "the :q did not close the tab"
+    e.close()
