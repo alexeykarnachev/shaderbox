@@ -29,9 +29,10 @@ from shaderbox.ui_primitives import (
 _LABEL = "Projects##projects"
 _POPUP_W = 620.0
 _POPUP_H = 420.0
-# The name column, wide enough for a long project name before the count column starts.
+# The name column, wide enough for a long project name before the Open button starts.
 _NAME_W = 220.0
-_COUNT_W = 72.0
+# Where the path column begins, clear of the widest Open button.
+_PATH_X = 300.0
 
 
 def draw_projects(app: App) -> None:
@@ -76,8 +77,13 @@ def _select_row(app: App, path: Path) -> None:
 def _draw_row(app: App, info: ProjectInfo) -> None:
     selected = app.projects_selected == info.path
     # The id keys on the PATH, never the display name: two projects in different roots can share
-    # a name, and the path is what the verbs act on.
-    if imgui.selectable(f"##project_{info.path}", selected)[0]:
+    # a name, and the path is what the verbs act on. `allow_overlap` lets the inline Open button
+    # drawn on top of the row take its own click instead of the row swallowing it.
+    if imgui.selectable(
+        f"##project_{info.path}",
+        selected,
+        imgui.SelectableFlags_.allow_overlap.value,
+    )[0]:
         _select_row(app, info.path)
     if (
         selected
@@ -93,10 +99,15 @@ def _draw_row(app: App, info: ProjectInfo) -> None:
     imgui.text_colored(
         COLOR.FG_PRIMARY if info.is_open else COLOR.FG_SECONDARY, info.name
     )
-    imgui.same_line(_NAME_W)
-    plural = "" if info.document_count == 1 else "s"
-    imgui.text_colored(COLOR.FG_DIM, f"{info.document_count} doc{plural}")
-    imgui.same_line(_NAME_W + _COUNT_W)
+    if selected and not info.is_open:
+        # Open rides the SELECTED row only: a button on every row is a wall of them, and on the
+        # open project it would name something already true. Double-click still works; this is
+        # the affordance that says so.
+        imgui.same_line(_NAME_W)
+        imgui.set_next_item_allow_overlap()
+        if standard_button("Open"):
+            app.request_project_switch(info.path)
+    imgui.same_line(_PATH_X)
     imgui.text_colored(COLOR.FG_DIM, str(info.path.parent))
 
 

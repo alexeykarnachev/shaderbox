@@ -161,11 +161,9 @@ PROJECT_STAGING_SUFFIX = ".creating"
 
 @dataclass(frozen=True)
 class ProjectInfo:
-    # One row of the projects list. Computed when the modal opens, never per frame: the document
-    # count is a glob per project.
+    # One row of the projects list, computed when the modal opens rather than per frame.
     name: str
     path: Path
-    document_count: int
     is_open: bool
 
 
@@ -173,13 +171,6 @@ def is_project_dir(path: Path) -> bool:
     # What makes a directory loadable AS a project. The same posture sync_documents_from_disk
     # takes per document: the marker is the dir the app would read, not a manifest.
     return path.is_dir() and (path / DOCUMENTS_DIR_NAME).is_dir()
-
-
-def _document_count(project_dir: Path) -> int:
-    documents = project_dir / DOCUMENTS_DIR_NAME
-    if not documents.is_dir():
-        return 0
-    return sum(1 for child in documents.iterdir() if child.is_dir())
 
 
 def list_projects(root: Path, open_dir: Path | None = None) -> list[ProjectInfo]:
@@ -198,7 +189,6 @@ def list_projects(root: Path, open_dir: Path | None = None) -> list[ProjectInfo]
             found[resolved] = ProjectInfo(
                 name=child.name,
                 path=resolved,
-                document_count=_document_count(child),
                 is_open=open_dir is not None and resolved == open_dir.resolve(),
             )
     if open_dir is not None:
@@ -207,7 +197,6 @@ def list_projects(root: Path, open_dir: Path | None = None) -> list[ProjectInfo]
             found[resolved] = ProjectInfo(
                 name=resolved.name,
                 path=resolved,
-                document_count=_document_count(resolved),
                 is_open=True,
             )
     return sorted(found.values(), key=lambda p: p.name.lower())

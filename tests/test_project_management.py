@@ -72,13 +72,6 @@ def test_a_directory_without_documents_is_not_a_project(tmp_path: Path) -> None:
     assert list_projects(root, None) == []
 
 
-def test_the_document_count_is_the_number_of_document_dirs(tmp_path: Path) -> None:
-    root = tmp_path / "projects"
-    root.mkdir()
-    _seed_project(root, "alpha", documents=3)
-    assert [p.document_count for p in list_projects(root, None)] == [3]
-
-
 # ---- the validator ----------------------------------------------------------------------
 
 
@@ -573,6 +566,12 @@ def test_the_recovery_modal_is_populated_not_empty(
 # drive actual frames so the wire itself is the thing under test.
 
 
+def _select_row_for_test(app: Any, path: Path) -> None:
+    from shaderbox.popups.projects import _select_row
+
+    _select_row(app, path)
+
+
 def _pump(app: Any, frames: int = 3) -> None:
     from shaderbox.ui import update_and_draw
 
@@ -643,6 +642,23 @@ def test_every_popup_state_has_a_draw_call(app: Any) -> None:
         f"{len(PopupState) - 1} PopupState members need a draw call; "
         f"ui.py calls {len(called)}: {sorted(called)}"
     )
+
+
+def test_a_row_offers_open_only_where_it_means_something(app: Any) -> None:
+    """The Open button rides the SELECTED row that is not already open.
+
+    Falsifier: drop the `not info.is_open` term and the open project grows a button naming
+    something already true; drop `selected` and every row grows one, which is the wall of
+    buttons the single-verb-row rule exists to avoid.
+    """
+    source = Path("shaderbox/popups/projects.py").read_text(encoding="utf-8")
+    guard = "if selected and not info.is_open:"
+    assert guard in source, "Open must be conditional on selected-and-not-open"
+    assert 'standard_button("Open")' in source, (
+        "Open is a labelled verb, so it takes a tier"
+    )
+    # The row's own click target must yield to it, or the button is unreachable.
+    assert "allow_overlap" in source
 
 
 def test_duplicate_refuses_a_name_that_escapes_the_projects_root(app: Any) -> None:

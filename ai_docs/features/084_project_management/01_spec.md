@@ -131,8 +131,7 @@ rendered sketch: the examples grid earns its thumbnails because each example LOO
 while a project's picture is either blank or a borrowed render of one document inside it, which
 misrepresents a project holding four. It spends a 150x150 square per project to show two words.
 
-So: one row per project — name, document count, and **path**. The path is the column that earns the
-list. D4 unions the projects root with the open project wherever it lives, and in a grid an outside
+So: one row per project — name and **path**. The path is the column that earns the list. D4 unions the projects root with the open project wherever it lives, and in a grid an outside
 project is indistinguishable from a rooted one; in a row the difference is legible at a glance. That
 is not hypothetical — it is the exact confusion that left a real project in `/tmp` for a day.
 
@@ -152,16 +151,20 @@ name.
 ```
 Projects                                                        [modal]
 +----------------------------------------------------------------------+
-| radiance_cascade   1 doc   open    ~/.local/share/shaderbox/projects/ |  <- selected
-| default            1 doc           ~/.local/share/shaderbox/projects/ |
-| sticker_studio     4 docs          ~/.local/share/shaderbox/projects/ |
-| rc_experiment      2 docs          ~/src/scratch/                     |
+| radiance_cascade                   ~/.local/share/shaderbox/projects/ |  <- open (full weight)
+| default            [Open]          ~/.local/share/shaderbox/projects/ |  <- selected
+| sticker_studio                     ~/.local/share/shaderbox/projects/ |
+| rc_experiment                      ~/src/scratch/                     |
 |                                                                      |
 | [New] [Duplicate] [Open other...] [Delete]              [Close]      |
 +----------------------------------------------------------------------+
 ```
 
 **One rule decides where a verb goes: a row click SELECTS, and the verb row acts on the selection.**
+The single exception is `Open`, which rides the selected row itself — switching is what a row IS
+for, and a double-click is not discoverable on its own. It draws only on a selected row that is not
+already open (on the open one it would name something already true), over an `allow_overlap`
+selectable so the button takes its own click.
 
 The first draft had Duplicate drawn per-row while New and Open-other sat in a header — two homes for
 verbs with nothing distinguishing them, which the maintainer read as arbitrary because it was. Every
@@ -544,6 +547,7 @@ is settled here rather than discovered at gate time. A button label is 3 words, 
 | `Duplicate` | button | 1 | verb row, and the commit button of its own input |
 | `Open other...` | button | 2 | verb row |
 | `Delete` | button | 1 | verb row |
+| `Open` | button | 1 | the selected row, when it is not the open project |
 | `Cancel` | button | 1 | beside a name input |
 | `Close` | button | 1 | action row |
 | `Yes` / `No` | button | 1 | armed-delete confirm |
