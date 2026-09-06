@@ -925,7 +925,12 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   each `Ctrl+E` computes from the last `ed_layout`'s scroll, so several in one frame all compute
   the same `cur + 1` and the view moves by one rather than by their count (measured; three
   across three frames move three). That is bounded by key repeat delivering about one event per
-  frame. **"Same slot" is not "same semantics"**: the queue class above is a claim about what a
+  frame, and it is deliberately not fixed: the obvious remedy -- applying each request with
+  `ed_set_scroll` inside the key loop -- is a NO-OP, because the next key still computes from
+  `prev_layout` and only `ed_layout` refreshes that (measured: drain alone 1, drain plus
+  `set_scroll` 1, drain plus `set_scroll` plus a layout per key 3). The only thing that works
+  costs a layout per keystroke, which is the wrong trade for a burst that needs a stalled
+  frame to appear. **"Same slot" is not "same semantics"**: the queue class above is a claim about what a
   value MEANS, not about the mechanism holding it, and reading it as mechanism turns one
   correct generalisation into a wrong one. Rebinding a
   built-in to another built-in is deliberately not offered -- it needs a vocabulary of internal
