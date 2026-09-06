@@ -336,7 +336,10 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   (frozen value object for one project dir's layout; `for_root` eagerly mkdirs the 5 subdirs;
   `App.paths` holds the live one) (leaf, no `App`).
 - **`tabs/`** — `draw(app: App)` UI modules + optional `update(app: App)` (pre-imgui GL work).
-  `code.py` (inline GLSL editor — main-window LEFT split), `document.py`, `render.py`, `share.py`.
+  `code.py` (inline GLSL editor — main-window LEFT split), `document.py`, `uniforms.py`,
+  `render.py`, `share.py` — the last four are the settings-panel tabs, in `_NODE_TABS` order.
+  `uniforms.py` owns the uniform rows and the pass selector that picks whose uniforms they are;
+  `document.py` keeps the pass strip, since a pass is CHOSEN there and TUNED next door.
   `share_state.py` holds the share-tab dataclass (`TabState`) separately to keep `app.py`
   cycle-free (app.py imports `share_state`, NOT `share`).
 - **`widgets/`** — stateless imgui-drawing functions taking `app: App`. No shared contract.

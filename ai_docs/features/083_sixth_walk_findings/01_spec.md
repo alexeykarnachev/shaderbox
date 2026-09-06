@@ -49,7 +49,7 @@ Numbered, locked. Open questions are separate, below.
 
 ### D1 — W-A and W-B are editor-repo work; ShaderBox's half of W-A is display only.
 
-`hotkeys.py:73-79` hands Escape to `editor.key(KeyCode.ESCAPE)` unconditionally and does nothing
+`hotkeys.py::_drain_editor_input` hands Escape to `editor.key(KeyCode.ESCAPE)` unconditionally and does nothing
 else with it — no `complete_cancel()`, no mode check after. The completion popup is drawn by the
 library inside its own primitive stream, and the status band (mode badge, ruler, the `:`/`/`/`?`
 line) is library chrome too (`tabs/code.py::draw_chrome`: "The mode badge, the ruler and the
@@ -88,15 +88,15 @@ pending phrase is a field in that band. Two `ChromeFlag` members that already ex
 flag. Revisit if the maintainer wants the phrase somewhere other than the status band.
 
 Consequence for this repo, and how it was resolved. The risk was an unwired mechanism:
-`app.py:1418` sets only `ChromeFlag.LINE_NUMBERS`, and `ed_set_style` replaces chrome wholesale
+`App._apply_editor_settings_to` sets only `ChromeFlag.LINE_NUMBERS`, and `ed_set_style` replaces chrome wholesale
 (`s.chrome = ed.chrome_for(style)`), so a flag ShaderBox never sets would ship dead and pass every
 test. The editor session settled it by DEFAULT rather than by a host call: the new flag is true in
 `chrome_for(.Vim)` (where `status_shows_mode` and `status_shows_ruler` already are, and where vim's
 own `showcmd` defaults on) and false for the standard keymap, which has no pending phrase — so the
 flag exists for a host that wants it OFF. ShaderBox's existing `set_style` therefore delivers it and
-**no new line at `app.py:1418` is needed**.
+**no new `set_chrome_flag` call is needed**.
 
-What DOES remain on this side: the `ChromeFlag` IntEnum in `editor/ffi.py:125` widens by one member
+What DOES remain on this side: the `ChromeFlag` IntEnum in `editor/ffi.py` widens by one member
 in the SAME commit as the binary copy, per the re-vendor law that values are appended and never
 renumbered. The new member appends at 5, after `STATUS_SHOWS_RULER` at 4.
 
@@ -142,7 +142,7 @@ area the strip does, so "the same size" is structural rather than a matched cons
 `preview_cell` serves a uniform row at `selected=False`, `armed=False`, `footer=""`, `chips=None`,
 `overlay=None`: the delete-cross, the gear overlay, the footer, the chip row and the delete confirm
 all sit behind `if selected` / `if footer` / `if chips is not None` branches that do not run. What
-IS unconditional is the full-cell `selectable` at `ui_primitives.py:1245`, which on the strip means
+IS unconditional is the full-cell `selectable` inside `preview_cell`, which on the strip means
 "make this pass the output" and on a uniform row would mean nothing.
 
 **The selectable stays, and its click is given a job.** Suppressing it (a `clickable=False`
@@ -183,11 +183,11 @@ draws 96x54 — visibly shorter than the same texture at `_thumb_size`'s full 90
 what the uniforms panel shows today. Matching the element delivers the perception he described.
 
 **The cell becomes SQUARE, and that is a real visual change to call out.** `_thumb_size`
-(`uniform.py:180-182`) scales width from a fixed height, so a 16:9 bound video currently draws as a
+(`uniform.py::_thumb_size`, deleted by this wave) scaled width from a fixed height, so a 16:9 bound video currently draws as a
 160x90 strip; under `preview_cell` it becomes a 96 square with letterbox bars. Nobody asked for
 that specifically — it arrives with "basically the same element". It is accepted because it is what
 makes the rows align into a column instead of running ragged at every texture's aspect, and because
-`_draw_black_swatch` (`uniform.py:209-217`) is ALREADY a square: after this, all three texture
+`_draw_black_swatch` is ALREADY a square: after this, all three texture
 surfaces agree instead of two disagreeing. **Flagged for the maintainer's eye** — it is a layout
 call that cannot be judged headless (imgui skill §0), and it is the one thing in W-C he did not
 literally ask for.
@@ -241,7 +241,7 @@ maintainer's complaint.
 **Excluded, each with its reason:**
 - `telegram_connect` — mutating and ungated, but touches no project source.
 - `bind_media` and `import_document` — **both already block on a FILE gate as their first act**
-  (`backend.py:1511` and `backend.py:1590`, `GateKind.FILE`), so the user is already stopped and
+  (`CopilotBackend.bind_media` / `.import_document`, both `GateKind.FILE`), so the user is already stopped and
   shown a native picker before anything changes. Locking them would put a three-button card in
   front of a file dialog: two blocking prompts for one call, which is the double-ask this decision
   exists to avoid. Cancelling the picker already declines the action.
@@ -286,7 +286,7 @@ maintainer ruled out, and would also be a second thing to cancel, to drain on St
 with the generation sweep — three bugs the existing funnel has already paid for.
 
 **But `requires_gate` is asked TWO different questions today, and only one of them is "do we ask?"**
-Pre-implementation review found the second caller: `agent.py:326`, inside `_RunLog.summary_lines`,
+Pre-implementation review found the second caller: `_RunLog.summary_lines` in `agent.py`,
 where `requires_gate` means **"is this action irreversible?"** — its result decides whether a ledger
 line carries its identity verbatim and uncapped into the NL turn summary, so a "continue" after a
 cutoff never re-does a publish. Widening that one method would reclassify every source edit in a
@@ -307,13 +307,13 @@ irreversibility question alone. Naming the two facts apart is what makes the fun
 had they stayed one method, the lock would have silently changed what the model reads back.
 
 **`must_confirm` needs the lock state, which the registry does not hold.** The registry is a
-per-session object built at session construction (`session.py:102`), so the lock is a field ON it
+per-session object built at session construction (`CopilotSession.__init__`), so the lock is a field ON it
 (`ToolRegistry.source_locked`, default False), written by the one seam below. The alternative —
 passing the flag into the method at the call site — spreads the decision to every caller and leaves
 the tests free to forget it.
 
 **The registry field defaults UNLOCKED even though the session defaults LOCKED.** A bare
-`build_registry(caps)` is what the tests construct, and `tests/test_brake_falsifiers.py:29-31`
+`build_registry(caps)` is what the tests construct, and `test_gating_is_a_two_state_decision`
 asserts a freshly built registry gates `delete_document` and not `read_shader`. The locked default
 is a property of a chat SESSION, applied by `CopilotSession.__init__` through the one writer in
 D7a — not a property of a registry in isolation. This keeps the two facts from being conflated
@@ -395,20 +395,20 @@ notice. A stored name that no longer names a pass falls through to the derived a
 erroring, which is also what a per-key salvage would leave behind after a rename.
 
 **The lazy-row trap does not apply, but a sibling of it does.** `UIDocumentState` is eager — a field
-default on `UIDocument` (`ui_models.py:348`), built per document there and explicitly in
+default on `UIDocument`, built per document there and explicitly in
 `load_ui_document` — so there is no path where a `UIDocument` exists without one.
 
 (An earlier draft justified this by pointing at `_ui_uniform_for`'s `setdefault`. **That symbol does
-not exist in the tree** — row creation is still inline in the draw loop at `tabs/document.py:247-248`
+not exist in the tree** — row creation is still inline in the draw loop (now `tabs/uniforms.py::draw`)
 (`if hash not in ui_uniforms: ui_uniforms[hash] = UIUniform.from_uniform(uniform)`), which is exactly
 the lazy shape. `conventions.md`'s lazy-row bullet claims the eager-create fix shipped and names that
 function; it is stale about its own remedy. **Corrected in this wave** under the docs-are-living rule —
 the bullet keeps its law and loses the false claim about a symbol that is not there. The law itself
 still holds and still applies to `ui_uniforms`; only its "already fixed" sentence was wrong.)
 
-What IS live: `App.current_document_ui_state_or_default` (`app.py:1105-1112`) returns a **throwaway
+What IS live: `App.current_document_ui_state_or_default` returns a **throwaway
 `UIDocumentState()`** when no document is selected, and the uniform block being moved reads its
-state through exactly that accessor (`tabs/document.py:155`). Writes through it are silently
+state through exactly that accessor. Writes through it are silently
 discarded. `uniform_sort_key` and `uniform_sort_desc` already ride that path harmlessly — with no
 document there is nothing to sort. A `panel_pass` write must NOT: the selector's write goes through
 an explicit `App` method that resolves the real `ui_documents[id].ui_state` and no-ops on a missing
@@ -479,7 +479,7 @@ Said plainly rather than claimed as a behavior change.
 **Editor repo (W-A / W-B), then re-vendored here:**
 - `shaderbox/resources/editor/` — the seven files + `VERSION`.
 - `shaderbox/editor/ffi.py` — any new export's `_SIG` row, AND the `ChromeFlag` IntEnum
-  (`ffi.py:125`) if the band's new field arrives as a flag. Re-vendor law: values are appended,
+  if the band's new field arrives as a flag. Re-vendor law: values are appended,
   never renumbered, so a host enum mapping them widens in the SAME commit as the copy.
 
 ---
@@ -549,14 +549,14 @@ second half. (This is `drop_invalid`'s contract; the test pins that it covers th
 was theater and review caught it; the corrected form matters more than the original.
 
 Two things made it unfalsifiable. First, **the selection lands the frame AFTER the focus** —
-`ui.py:789`'s own comment says "set_selected drives the tab the frame after a Ctrl+digit jump" — so
+`_draw_document_settings`'s own comment says "set_selected drives the tab the frame after a Ctrl+digit jump" — so
 a focus-and-assert inside one frame reads the PREVIOUS tab and passes regardless. Second, "assert
 the loop covers `list(DocumentTab)`" is a claim about the test's own loop, not about the app: it
 cannot go red for a broken tab.
 
 The check instead drives the real frame loop: for each member of `list(DocumentTab)`, call
 `focus_document_tab(member)`, run **at least two** frames, then assert
-`app.active_document_tab == member` — the value `_draw_document_settings` commits at `ui.py:802`
+`app.active_document_tab == member` — the value `_draw_document_settings` commits after its tab loop
 from the tab that actually drew, not the one that was requested. That reads the CONSUMER (which tab
 imgui selected) rather than the producer (what we asked for), and it fails for exactly one reason.
 *Falsifier — the break to try:* add the `DocumentTab.UNIFORMS` member WITHOUT its `_NODE_TABS` row.
@@ -574,7 +574,7 @@ implementation fails the first half — which is the whole point of W-D.
 
 **The test writes through `app.ui_documents[id].ui_state`, never through
 `current_document_ui_state_or_default`** — the latter hands back a throwaway when no document is
-current (`app.py:1109-1110`), so a test written against it could pass or fail for a reason that has
+current, so a test written against it could pass or fail for a reason that has
 nothing to do with the override. Same rule as the production write seam above; naming it here keeps
 the test from verifying the accessor instead of the feature.
 
@@ -628,23 +628,23 @@ way agreement from two readings of my own text is not.
    after `preview_cell` had already added and removed them. The inversion mattered: at 96 the pass
    picture is LARGER than `THUMB_SM = 90`, which removed the premise for the new size token — the
    uniform cell now passes `SIZE.PASS_THUMB` itself.
-2. **D7's widening hit a second consumer.** `agent.py:326` reads `requires_gate` to mean "is this
+2. **D7's widening hit a second consumer.** `_RunLog.summary_lines` reads `requires_gate` to mean "is this
    irreversible?" for the NL turn-summary ledger. Widening it would have pushed every source edit in
    a locked session into the uncapped verbatim-identity branch of persisted history. Split into
    `requires_gate` (unchanged, ledger) and `must_confirm` (new, the loop).
-3. **`bind_media` and `import_document` already raise a FILE gate** (`backend.py:1511`, `:1590`), so
+3. **`bind_media` and `import_document` already raise a FILE gate** (`CopilotBackend.bind_media` / `.import_document`), so
    locking them meant a card in front of a file dialog. Both dropped from the roster; the roster is
    12, not 14. The check widened to reject `gate_kind is FILE` too — an ALWAYS-only check would have
    passed while the double-ask shipped.
 4. **V5 asserted an implication, not coverage** — it could not catch a new mutating, ungated tool
    that forgets the flag, which is the drift the field exists to prevent. Now a set equality against
    the registry with the exclusions named.
-5. **V7 could pass while broken.** `ui.py:789`'s own comment says the selection lands the frame
+5. **V7 could pass while broken.** `_draw_document_settings`'s own comment says the selection lands the frame
    AFTER the request, so a same-frame focus-and-assert reads the previous tab; and "assert the loop
    covers `list(DocumentTab)`" was a claim about the test, not the app. Now two frames, asserting the
    committed `active_document_tab` — the consumer, not the producer.
 6. **D11 cited `_ui_uniform_for`, which does not exist.** I took it from `conventions.md`, which is
-   itself stale about its own remedy; row creation is still inline at `tabs/document.py:247-248`.
+   itself stale about its own remedy; row creation is still inline in the uniform draw loop.
    The conventions bullet gets corrected in this wave.
 7. **Three missing Files-touched entries** (`test_command_registry_coverage.py`,
    `test_region_system_is_gone.py`, `scripts/smoke.py`) and a "seventeen source tools" count that

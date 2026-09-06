@@ -26,32 +26,31 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-06, the maintainer's editor walk landed; the brake gap below is older and open. -->
-**Next: the maintainer decides.** A walk over the code panel produced seven findings across two
-repos — four landed here (GLSL member completion after a dot, an RGB channel view,
-`Ctrl+Shift+V`, a tooltip, chip click-through); the three keymap items went to the editor repo,
-which built a host-binding overlay: `<leader>f` formats, `Ctrl+Shift+I` still does.
+<!-- As of 2026-09-06, 083's four ShaderBox findings landed; the re-vendor is the open half. -->
+**Next: the re-vendor of `libeditor`, waiting on the editor session's sha.** 083 split six findings
+four/two. The four here are landed and reviewed: the copilot source lock, a Uniforms tab with a pass
+selector, the sampler previews on the strip's own `preview_cell`, and `openai/gpt-5.6-luna` as the
+default model.
 
-**The editor's ABI is 106 exports at `dd58aa9`.** A host claims a key and gets back an id it
-chose; the compiled keymaps stay what nvim measures. Rebinding a built-in to another built-in is
-deliberately absent — it needs a vocabulary of internal action names no oracle can measure. A
-rebinding UI is unbuilt by maintainer decision, so `commands.py`'s leader table is the only
-registration.
+**The two vim findings are built in the editor repo** — one Escape leaving INSERT with the
+completion popup open, and the pending phrase in the status band. That phrase needs its own buffer:
+the `.`-repeat recorder drops count digits by design and outlives the phrase. Expect ONE new export
+plus a `ChromeFlag` member, so **the ABI's export count changes at re-vendor**, read from `nm -D`
+rather than predicted; the flag defaults true on the Vim style, so ShaderBox needs no new call. Two
+upstream commits also close six measured nvim divergences, so the re-vendor carries a behavior note.
 
-**Open: no brake watches cost, or a frame going from lit to flat**
-(`ai_docs/features/082_dogfood_post081/02_round2_report.md`). Every one counts repetition. The
-replay store is gitignored, so that evidence is on this box only.
+**Open, unmeasured:** no brake watches cost, or a frame going from lit to flat
+(`ai_docs/features/082_dogfood_post081/02_round2_report.md`); whether the one-turn dogfood build
+repeats; a mission spanning several documents.
 
-**Also open, unmeasured:** whether the one-turn dogfood build repeats (one sample), and a mission
-spanning several documents — the navigation tools have never been under pressure.
-
-**Shipped:** v0.28.0 is a GitHub release only; itch stays at v0.27.0. The Windows
-`libeditor.dll` needs a Windows host.
+**Shipped:** v0.28.0 is a GitHub release only; itch stays at v0.27.0. The Windows `libeditor.dll`
+needs a Windows host.
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 083 | sixth_walk_findings | partial | The maintainer's sixth walk, six findings split across two repos: the copilot's per-session source lock (twelve content tools, three answers, riding the existing gate funnel -- which found `requires_gate` answering both "do we confirm?" and "is this irreversible?", now split), a dedicated Uniforms tab with the pass selector that finally reaches a pass neither open nor on screen, the sampler previews routed through the pass strip's own `preview_cell` so a transparent texture has an edge, and luna as the default model. The two vim findings (one Escape leaving INSERT past the completion popup, the pending phrase in the status band) are the editor repo's; the re-vendor is what stays open. Spec: `ai_docs/features/083_sixth_walk_findings/01_spec.md`. |
 | — | editor_walk_findings | done | The maintainer's walk over the code panel, split across two repos: GLSL member/swizzle completion after a dot (the host owns that vocabulary, and the words provider had to yield the site — at its two-letter floor `u_gain.xf` offered the local `xfade` as a component of a float), an RGB channel view because Color and Color+Alpha were the same composite differing only in checker loudness, `Ctrl+Shift+V` paste, and a tooltip. The editor repo took the three keymap items and built a host-binding overlay (`<leader>f` formats, `Ctrl+Shift+I` untouched); its ABI went 100 -> 106, purely additive. Spec: commits `ac78d67` + `0f976be` + `d18991a` + `cc54130`. |
 | — | dogfood_report_shape | done | Five reviewers over eight reports found three incompatible heading taxonomies, a bottom line in a different place each time, and a results table whose columns changed every round (one called a raw count `requests`, the next a ratio under a near-identical label). `REPORT_TEMPLATE.md` is now THE shape — fixed headings and order, the bottom line always under `## The headline`, a mandatory animation section — and `OUTCOMES` is a closed vocabulary enforced at `end_attempt`, describing what the MODEL reached rather than that the driver stopped. The renderer had keyed on `"success"`, never a legal value, so every attempt page ever built showed a red pill. Spec: commit `86d4de9`. |
 | 082 | dogfood_post081 | done | The first round to drive the engine after the 081 sweep: `edit_script` was corrupting the files it edited (the splice stripped the replacement's indent on the exact-match path, whose span had already consumed the source's), and the sweep turn's fourteen identical failing calls were a repair the same bug had sealed into a no-op; the compile-thrash brake was found with a latching nudge and no hard half. D6 confirmed at 4.0% cached after a `load_tools`, D7 refuted at 0.552 -> 0.709 requests per call. Spec: `ai_docs/features/082_dogfood_post081/01_spec.md`. |

@@ -8,6 +8,8 @@ scripted fake client, stubbed backend, a gate answered from a helper thread, no 
 
 import threading
 import time
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from shaderbox.copilot.agent import AgentGateOpened, run_turn
@@ -15,6 +17,7 @@ from shaderbox.copilot.capabilities import EditResult
 from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.gate import GateChannel, GateKind, GateResponse, LockAnswer
 from shaderbox.copilot.llm.api import LLMDone, LLMStreamEvent, LLMTextDelta
+from shaderbox.copilot.session import CopilotSession
 from shaderbox.copilot.tools.registry import build_registry
 from tests._caps import minimal_caps
 from tests.test_copilot_loop import _fake_context, _FakeClient, _tool_call
@@ -25,9 +28,21 @@ _EDIT = _tool_call(
 _DONE = [LLMTextDelta("done"), LLMDone("stop")]
 
 
-def _answer_with(
-    gate: GateChannel, answers: list[GateResponse], opened: list[int]
-) -> threading.Thread:
+@dataclass
+class _GatePump:
+    """The UI half of the gate, on its own thread: it answers what the worker blocks on."""
+
+    thread: threading.Thread
+    stop: threading.Event
+    opened: list[int]
+
+    def finish(self) -> int:
+        self.stop.set()
+        self.thread.join(timeout=5.0)
+        return self.opened[0]
+
+
+def _answer_with(gate: GateChannel, answers: list[GateResponse]) -> _GatePump:
     # The worker blocks in gate.ask(); the UI answers on the main thread. Here a helper thread
     # plays the UI, popping one prepared answer per request.
     #
@@ -35,8 +50,11 @@ def _answer_with(
     # MORE gates than expected would otherwise leave the worker blocked on a request nobody
     # answers, and the test would hang forever instead of failing -- which is exactly what
     # happened while mutation-testing this file. A count assert then reports the surplus.
+    opened = [0]
+    stop = threading.Event()
+
     def pump() -> None:
-        while not _stop.is_set():
+        while not stop.is_set():
             if gate.take_pending() is None:
                 # A bare spin burns a core for the whole turn (measured: ~600k iterations in half
                 # a second of idle). The sleep is shorter than a gate round-trip, so it costs the
@@ -51,11 +69,9 @@ def _answer_with(
                 else GateResponse(False, lock_answer=LockAnswer.DENY)
             )
 
-    _stop = threading.Event()
-    t = threading.Thread(target=pump, daemon=True)
-    t.stop_flag = _stop  # type: ignore[attr-defined]
-    t.start()
-    return t
+    thread = threading.Thread(target=pump, daemon=True)
+    thread.start()
+    return _GatePump(thread=thread, stop=stop, opened=opened)
 
 
 def _run(
@@ -78,8 +94,7 @@ def _run(
     registry = build_registry(caps)
     registry.source_locked = locked
     gate = GateChannel()
-    opened_count = [0]
-    thread = _answer_with(gate, answers, opened_count)
+    pump = _answer_with(gate, answers)
     events = list(
         run_turn(
             _FakeClient(scripts),
@@ -93,8 +108,7 @@ def _run(
             unlock_source=lambda: setattr(registry, "source_locked", False),
         )
     )
-    thread.stop_flag.set()  # type: ignore[attr-defined]
-    thread.join(timeout=5.0)
+    pump.finish()
     return events, edits, registry
 
 
@@ -149,11 +163,7 @@ def test_allow_this_session_stops_the_asking_and_allow_once_does_not() -> None:
     assert registry.source_locked, "allow-once leaves the session locked"
 
 
-def _session() -> Any:
-    from pathlib import Path
-
-    from shaderbox.copilot.session import CopilotSession
-
+def _session() -> CopilotSession:
     return CopilotSession(
         caps=minimal_caps(),
         client=_FakeClient([]),
