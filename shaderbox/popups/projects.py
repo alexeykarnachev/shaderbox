@@ -29,10 +29,8 @@ from shaderbox.ui_primitives import (
 _LABEL = "Projects##projects"
 _POPUP_W = 620.0
 _POPUP_H = 420.0
-# The name column, wide enough for a long project name before the Open button starts.
-_NAME_W = 220.0
-# Where the path column begins, clear of the widest Open button.
-_PATH_X = 300.0
+# Where the path column begins, clear of the longest project name.
+_PATH_X = 240.0
 
 
 def draw_projects(app: App) -> None:
@@ -73,13 +71,8 @@ def _select_row(app: App, path: Path) -> None:
 def _draw_row(app: App, info: ProjectInfo) -> None:
     selected = app.projects_selected == info.path
     # The id keys on the PATH, never the display name: two projects in different roots can share
-    # a name, and the path is what the verbs act on. `allow_overlap` lets the inline Open button
-    # drawn on top of the row take its own click instead of the row swallowing it.
-    if imgui.selectable(
-        f"##project_{info.path}",
-        selected,
-        imgui.SelectableFlags_.allow_overlap.value,
-    )[0]:
+    # a name, and the path is what the verbs act on.
+    if imgui.selectable(f"##project_{info.path}", selected)[0]:
         _select_row(app, info.path)
     if (
         selected
@@ -95,14 +88,6 @@ def _draw_row(app: App, info: ProjectInfo) -> None:
     imgui.text_colored(
         COLOR.FG_PRIMARY if info.is_open else COLOR.FG_SECONDARY, info.name
     )
-    if selected and not info.is_open:
-        # Open rides the SELECTED row only: a button on every row is a wall of them, and on the
-        # open project it would name something already true. Double-click still works; this is
-        # the affordance that says so.
-        imgui.same_line(_NAME_W)
-        imgui.set_next_item_allow_overlap()
-        if standard_button("Open"):
-            app.request_project_switch(info.path)
     imgui.same_line(_PATH_X)
     imgui.text_colored(COLOR.FG_DIM, str(info.path.parent))
 
@@ -120,7 +105,17 @@ def _draw_verb_row(app: App) -> bool:
     ):
         app.request_project_switch(selected)
         return False
-    if primary_button("New"):
+    # Open is the modal's primary action -- switching is why it was opened -- and it acts on the
+    # selection like every other verb here. Nothing rides a row: a control that appears inside one
+    # on selection shifts the row it lives in, which is the overlay trap.
+    is_open_project = selected is not None and selected == app.project_dir.resolve()
+    imgui.begin_disabled(selected is None or is_open_project)
+    if primary_button("Open") and selected is not None:
+        app.request_project_switch(selected)
+        keep_open = False
+    imgui.end_disabled()
+    imgui.same_line()
+    if standard_button("New"):
         app.reset_projects_state()
         app.projects_new_input.open(app.default_projects_root_dir)
     imgui.same_line()
@@ -128,7 +123,6 @@ def _draw_verb_row(app: App) -> bool:
         app.pick_project_dir()
         keep_open = False
     imgui.same_line()
-    is_open_project = selected is not None and selected == app.project_dir.resolve()
     imgui.begin_disabled(selected is None or is_open_project)
     if danger_button("Delete"):
         app.projects_delete_armed = selected

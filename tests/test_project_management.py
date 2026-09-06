@@ -551,21 +551,18 @@ def test_every_popup_state_has_a_draw_call(app: Any) -> None:
     )
 
 
-def test_a_row_offers_open_only_where_it_means_something(app: Any) -> None:
-    """The Open button rides the SELECTED row that is not already open.
+def test_open_is_the_verb_row_s_primary_and_never_rides_a_row(app: Any) -> None:
+    """Every verb acts on the selection from the one row; nothing is drawn inside a project row.
 
-    Falsifier: drop the `not info.is_open` term and the open project grows a button naming
-    something already true; drop `selected` and every row grows one, which is the wall of
-    buttons the single-verb-row rule exists to avoid.
+    Falsifier: put Open back inside `_draw_row` — a control that appears there on selection
+    shifts the row it lives in, which is the overlay trap, and it reintroduces the exception to
+    the rule that placed every other verb.
     """
+    _ = app
     source = Path("shaderbox/popups/projects.py").read_text(encoding="utf-8")
-    guard = "if selected and not info.is_open:"
-    assert guard in source, "Open must be conditional on selected-and-not-open"
-    assert 'standard_button("Open")' in source, (
-        "Open is a labelled verb, so it takes a tier"
-    )
-    # The row's own click target must yield to it, or the button is unreachable.
-    assert "allow_overlap" in source
+    row = source[source.index("def _draw_row(") : source.index("def _draw_verb_row(")]
+    assert "_button(" not in row, "a project row draws data, never a control"
+    assert 'primary_button("Open")' in source, "Open is the modal's call to action"
 
 
 def test_an_armed_delete_clears_when_another_project_is_selected(app: Any) -> None:

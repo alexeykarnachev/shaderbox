@@ -152,19 +152,23 @@ name.
 Projects                                                        [modal]
 +----------------------------------------------------------------------+
 | radiance_cascade                   ~/.local/share/shaderbox/projects/ |  <- open (full weight)
-| default            [Open]          ~/.local/share/shaderbox/projects/ |  <- selected
+| default                            ~/.local/share/shaderbox/projects/ |  <- selected
 | sticker_studio                     ~/.local/share/shaderbox/projects/ |
 | rc_experiment                      ~/src/scratch/                     |
 |                                                                      |
-| [New] [Duplicate] [Open other...] [Delete]              [Close]      |
+| [Open] [New] [Open other...] [Delete]                   [Close]      |
 +----------------------------------------------------------------------+
 ```
 
-**One rule decides where a verb goes: a row click SELECTS, and the verb row acts on the selection.**
-The single exception is `Open`, which rides the selected row itself — switching is what a row IS
-for, and a double-click is not discoverable on its own. It draws only on a selected row that is not
-already open (on the open one it would name something already true), over an `allow_overlap`
-selectable so the button takes its own click.
+**One rule decides where a verb goes, with no exception: a row click SELECTS, and the verb row acts
+on the selection.** `Open` is that row's PRIMARY — switching is why the modal was opened — disabled
+when nothing is selected or the selection is already open. A double-click on a row still switches,
+as a shortcut for people who find it.
+
+An earlier draft drew `Open` inside the selected row, and it was wrong for the reason the rule
+exists: a control that appears inside a row on selection shifts that row, which is the overlay trap,
+and it made "every verb in the verb row" a rule with one carve-out to remember. A project row draws
+data only.
 
 The first draft had Duplicate drawn per-row while New and Open-other sat in a header — two homes for
 verbs with nothing distinguishing them, which the maintainer read as arbitrary because it was. Every
@@ -547,7 +551,7 @@ is settled here rather than discovered at gate time. A button label is 3 words, 
 | `Duplicate` | button | 1 | verb row, and the commit button of its own input |
 | `Open other...` | button | 2 | verb row |
 | `Delete` | button | 1 | verb row |
-| `Open` | button | 1 | the selected row, when it is not the open project |
+| `Open` | button | 1 | verb row, its primary |
 | `Cancel` | button | 1 | beside a name input |
 | `Close` | button | 1 | action row |
 | `Yes` / `No` | button | 1 | armed-delete confirm |
