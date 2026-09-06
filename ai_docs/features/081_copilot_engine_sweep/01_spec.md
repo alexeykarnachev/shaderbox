@@ -219,6 +219,9 @@ The repo's rule is that an unbroken gate is a wish, and that a gate is done when
 guards has been broken, the gate has named it, and the break restored. Each row states the break
 the commit must name.
 
+This table is the plan as written. `## Landed` below supersedes it: D12, D14 and D15 are live
+and ungated by choice.
+
 | decision | the break |
 |---|---|
 | D1 | Delete the `split_pass_address` call from `read_shaders`; the pass-read test fails with today's "no such document(s)". Second: point the example read back at `render_pass`; the example test loses five of six passes. |
@@ -273,10 +276,8 @@ every handle that had resolved in the same call.
 
 ## Open questions for the user
 
-1. **Order.** The cells' independent first choices are D1 (the unreadable reference), D4 (the
-   fabrication terminal), D6 (the cache collapse) and D13 (the ledger gap). D1 and D6 are the
-   cheapest with the clearest evidence; D4 is the one that reaches the shipped default. Ship all
-   four in one wave, or D1+D6 first and D4+D13 after a re-run confirms the measurement?
+1. ~~**Order.**~~ **ANSWERED by shipping:** all fifteen went in three waves, D1/D4/D6 in the
+   first. Kept for the record; nothing here is outstanding.
 2. **D4's greeting case.** `prompt.py`'s greeting clause blesses a zero-call reply for a greeting or a
    map-answerable question. Zero of 68 turns were that case, so the re-stream would fire on
    nothing here — but a conversational session is a different corpus. Accept one wasted cheap

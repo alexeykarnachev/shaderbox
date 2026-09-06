@@ -14,7 +14,10 @@ from shaderbox.copilot.prompt_context import CopilotContext
 # Min turns the trim keeps even over budget. A turn = user msg + one assistant summary (NL-only history).
 # Threshold-only char->token ratio (no in-tree tokenizer; real counts arrive only post-send).
 # Measured against 475 billed requests across seven models: the implied divisor is 3.39-3.85, so 4
-# under-counts real input by ~11% — the unsafe direction for a budget check.
+# under-counts real input by ~11% — the unsafe direction for a budget check. Deliberately ungated
+# (081 D14): a band test on the constant asserts the number back at itself. What would be worth
+# pinning is that this module and context_breakdown share ONE value, which the import already makes
+# structural.
 CHARS_PER_TOKEN: float = 3.6
 
 # Prompt = named blocks sorted least->most volatile for prefix-cache friendliness: STATIC < RARE
@@ -125,7 +128,7 @@ NODES, LIBRARY, MEDIA (what the tool schemas cannot say)
 - The library auto-resolves by name -- a lib file has NO standalone compile, so confirm a lib edit
   by touching a consumer document and reading its errors. `write_shader` to a new `lib:` address creates
   the file.
-- A NEW PASS is `add_pass` (lazy: `load_tools` it first) -- it creates the pass from a black stub and
+- A NEW PASS is `add_pass` -- it creates the pass from a black stub and
   you then write_shader its `<id>#<name>` address; `set_pass` sets runs per frame / target / output.
   Never put a second `main()` in an existing pass: one pass, one shader.
 

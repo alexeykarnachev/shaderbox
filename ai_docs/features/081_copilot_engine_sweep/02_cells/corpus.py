@@ -1,7 +1,8 @@
 """Shared loader for the 077 dogfood station corpus.
 
 Every sweep agent imports this so numbers come from ONE code path.
-Run from the repo root: sys.path.insert(0, "<scratchpad>/sweep")
+Run from the repo root:
+    sys.path.insert(0, "ai_docs/features/081_copilot_engine_sweep/02_cells")
 """
 import json
 from pathlib import Path

@@ -181,7 +181,7 @@ keeps you honest about reading each reply.)
 
 ## 1a. Tool-coverage discipline — DELIBERATELY route through the cold tools
 
-Run 2 fired only 5 of ~12 reachable tools (`create_document` / `read_shader` / `edit_shader` +
+Run 2 fired only 5 of the reachable tools (of ~12 then; `REACHABLE_TOOLS` is 26 today) (`create_document` / `read_shader` / `edit_shader` +
 the since-removed line tools); the whole navigation/value/integration half stayed COLD (`grep`,
 `read_lib`, `set_uniform`, `switch_document`, `delete_document`, `render_image`/`render_video`). A cheap model
 takes the lazy path — it answers "what documents exist?" from the project map instead of grepping, hard-codes a
@@ -325,11 +325,13 @@ the sweep removes IS the edit-sediment measurement — record its diff.**
   (4) the in-app default `max_tokens_per_turn` is now **30k** (was 12k — raised after these starvation
   measurements), so a fresh harness run already carries the headroom; the override above only matters
   when a run pins a lower cap.
-- **🔴 A reply that describes tool work with ZERO tool calls is a fabrication, and it happens
-  on resume.** Five turns across three models in the 077 comparison: the first request of a
-  resumed turn whose history tail is a long engine ledger (a forced-end note, twenty edits) came
-  back as prose claiming the next step was done. `drive.py`'s summary shows the tool calls -- an
-  empty list under a "done" reply is the tell; say plainly that nothing happened and ask again.
+- **🔴 A reply that describes tool work with ZERO tool calls is a fabrication.** Six turns across
+  three models in the 077 comparison, every one on a CLEAN turn (`turn_done`, no cutoff) -- the
+  "it happens on resume, after a long engine ledger" reading this file used to carry was measured
+  and disproven: only 2 of the 6 had such a predecessor, and 19 of 21 turns that did have one
+  behaved. What the models copy is history's RENDERING of a tool result (081 D4, which added an
+  engine-side retry). `drive.py`'s summary shows the tool calls -- an empty list under a "done"
+  reply is the tell; say plainly that nothing happened and ask again.
 - **🔴 ALWAYS wrap a turn process in `timeout` (`... timeout 300 uv run python -c …`).** A stalled LLM
   stream could leave the non-daemon copilot worker blocked, and interpreter `_shutdown` then hangs
   joining it — a process that never exits, never dumps. The per-delta stream cancel + the 120s client
@@ -386,9 +388,10 @@ the native `tools=` block — + max_tokens), each `llm_response` (finish_reason 
 turns, token/cost mechanics — and, per LLM request, the **context panel**: a proportional bar of every
 block (`static` / `project_context` / `dialogue` / `pending_user` / `turn_exchange` / `working_set` /
 `tools`), each expandable to the exact text sent, the trim flag when history was dropped, the estimate
-against the billed input and the cache share, plus a growth table across turns. Measured 2026-09-04 on
-codex-mini: the chars/4 estimate runs ~7-8% ABOVE the billed input (ratio 1.07-1.08), so read the bar
-as proportions and the billed column as the number. For a data dir with no station record,
+against the billed input and the cache share, plus a growth table across turns. Every context panel
+prints its own `estimate/billed` ratio, so read THAT rather than a number quoted here: a restatement
+of a rendered figure can only go stale, which this line did (it claimed 1.07-1.08 against a measured
+0.89 across 475 records, with the sign inverted). For a data dir with no station record,
 `uv run python scripts/dogfood/analyze.py <data_dir> --scenario <name>` still extracts the same AUTO
 half as a markdown block.
 
@@ -488,3 +491,11 @@ This is a LIVING skill. Each run, if you hit a new gotcha or the report format w
 here so the next run is smoother. The maintainer wants the dogfooding itself to get more convenient over
 time — the report's "improve the DOGFOODING framework" TODO bucket (report §9 (b)) is where those
 findings start, and they flow back HERE (the skill) or into `scripts/dogfood/analyze.py` (the analyzer).
+
+**And RE-CHECK before you add.** A run that measures something this file already claims must compare the
+two and correct the file when they disagree — adding beside a refuted number leaves both standing, which
+is how three claims here went stale at once (081 found the estimate ratio inverted and the fabrication
+cause disproven, both quoted from a report rather than measured, one of them propagated by the very
+commit that edited this file). A number that the station's own pages render — the estimate/billed ratio,
+a cost, a cache share — belongs THERE and not in this prose: cite the panel, do not restate it. A claim
+worth keeping here names its date and its box, so a later reader knows what it was true of.

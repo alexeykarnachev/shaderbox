@@ -45,6 +45,8 @@ def lit_fraction(im: np.ndarray, thresh: int = 13) -> float:
     on this scene lights 95%, this cascade on luna scene 14% -- the shader, not the scene") and
     lived only in the driver's notes until now. The default threshold is deliberately low: this
     asks whether light ARRIVED, not whether it is bright.
+
+    Deliberately untested (081 D15): a pure function over an array, with no caller to regress.
     """
     return float((im.max(axis=2) >= thresh).mean())
 

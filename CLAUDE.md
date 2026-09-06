@@ -13,6 +13,7 @@ For ANY work, follow this chain in order. Don't read sideways, don't pre-read au
 2. **`ai_docs/roadmap.md`** — what's built and what's next (the Active-context banner is "what's next?").
 3. **`ai_docs/todo.md`** — known blockers/deferrals, each with a **Trigger**. Grep by `Trigger` before working in an area. **FROZEN drain-only — never add entries; new defects are fixed in the wave that finds them.**
 4. **`ai_docs/dev_flow.md`** — the single source of truth for HOW work happens (feature flow, recipes, doc discipline, maintainer habits).
+5. **`ai_docs/conventions.md ## Design decisions`** — before CHANGING anything (a mechanical fix can skip it). Settled decisions in "we decided X; revisit if Y" form: the chain otherwise routes past them, and re-deriving one costs a wave while violating one costs a revert.
 
 Quick routing (full version → `dev_flow.md`):
 - **small / mechanical change** → just do it + `make gates` (check → test → smoke, one exit code; `dev_flow.md ### make gates`).
