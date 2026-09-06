@@ -33,6 +33,31 @@ That is stage 1 only — what the closed round's LOGS then say is stage 2, below
 renders and videos on the attempt page. Ad-hoc measurement answering one question is welcome; a
 standing checker is the failure.
 
+## Before the run: decide the MODELS and the OBJECTIVE, and write them down
+
+Two decisions are made BEFORE turn 1, not discovered during the round. Both go into
+`start_experiment`'s `intent` (and `criteria`) so the station page carries them.
+
+**The model set.** A round tests a SET of models, not whichever one `CopilotIntegration.model`
+happens to name. Pick it deliberately — usually the finishers of the previous round, so the two
+rounds are comparable — and run them as parallel attempts of ONE experiment on ONE sha. Drive each
+model's turn with `OPENROUTER_MODEL=<id>` and its own `SHADERBOX_DATA_DIR`; the station records
+the model per attempt, which is what makes the comparison readable later.
+🔴 A round of ONE model is not a round. It cannot separate "this model does X" from "the engine
+does X", and a per-model claim (cost, batching, tool choice) drawn from a single attempt is not
+a finding — one such claim reached a spec and had to be corrected by re-running the other two.
+
+**The objective.** State what the round is meant to ESTABLISH, in one sentence, before writing the
+ask: verifying a specific fix, comparing models on one task, exercising a cold tool surface,
+measuring a cost mechanism. The objective decides the ask, the mode, and what counts as done —
+and a round whose objective is "run it again and see" produces notes nobody can act on. Where the
+round verifies claims from a previous one, name those claims in the intent so the report has
+something to answer.
+
+**Replay the SAME ask when comparing.** A comparison round re-sends the previous round's turn-1
+text verbatim (pull it from the station log, don't retype it). Change the ask and you have two
+rounds that cannot be set beside each other.
+
 ## The shape of a run: drive, then mine, then stop
 
 A dogfood round is ONE loop with two fixing stages, and they find different things.
@@ -473,6 +498,26 @@ per-iteration `in=` (analyze.py's `peak_iter_in_tokens`, ~10k on that turn). Don
 figure as "context size" — it's the cost driver, the peak is the context-size driver.
 
 ## 4. The report — the attempt page, plus the markdown flow for a scenario run
+
+**Write it for a HUMAN who has not read the specs.** The report is the round's deliverable and it
+is read by the maintainer, not by the next agent. That means:
+
+- **No internal codenames.** "D6", "F2", "wave 3", "the 043 breakout" are opaque to the reader
+  and carry no information they can act on. Say what the thing IS: "keeping the pass tools
+  always-loaded protects the prompt cache", not "D6". Where a decision id genuinely helps someone
+  find the spec, put it in parentheses after the plain-English statement, never instead of it.
+- **Lead with what happened, then what it cost, then what changed.** A reader wants the finding
+  first; the mechanism is the second paragraph, not the first clause.
+- **Sections with headings and blank lines.** A finding buried in the middle of a 200-word
+  paragraph is a finding nobody reads. One idea per paragraph.
+- **Numbers with their meaning attached.** "4% cache reuse against 78-85% either side" reads;
+  "cached 2.9% vs 62.7%" alone does not say which is the bad one.
+- **Say plainly when something did NOT work.** A refuted prediction is the most valuable line in
+  a report and must not be softened into a hedge or buried under the confirmed one.
+
+Same rule for the station's `record_triage` summary and the roadmap banner: those are read by a
+human weeks later with no context loaded.
+
 
 **Since 075 the attempt page IS the report** for an experiment: its six axes (`fidelity` · `motion` ·
 `logic` · `honesty` · `process` · `code`) are sections, the AUTO halves (process, the honesty
