@@ -128,6 +128,7 @@ class ChromeFlag(IntEnum):
     STATUS_LINE = 2
     STATUS_SHOWS_MODE = 3
     STATUS_SHOWS_RULER = 4
+    STATUS_SHOWS_PENDING = 5
 
 
 class Style(IntEnum):
@@ -329,6 +330,10 @@ _SIG: dict[str, tuple[object, Sequence[object]]] = {
     "ed_replace_selection": (ctypes.c_bool, [ctypes.c_void_p, ctypes.c_char_p]),
     "ed_set_selection": (None, [ctypes.c_void_p] + [ctypes.c_int32] * 4),
     "ed_pending": (ctypes.c_bool, [ctypes.c_void_p]),
+    "ed_pending_phrase": (
+        ctypes.c_int32,
+        [ctypes.c_void_p, _P(ctypes.c_ubyte), ctypes.c_int32],
+    ),
     "ed_command_line": (
         ctypes.c_int32,
         [ctypes.c_void_p, _P(ctypes.c_ubyte), ctypes.c_int32],
@@ -489,6 +494,15 @@ class Editor:
         """True while the keymap is mid-phrase (a count, a half-typed operator,
         an open command line)."""
         return self._lib.ed_pending(self._h)
+
+    def get_pending_phrase(self) -> str:
+        """The unfinished command as typed (vim's `showcmd`), empty when none.
+
+        An armed leader reads as pending here while `is_pending` reports False,
+        so a caller asking "is anything half-typed?" reads this, not that.
+        """
+        n = self._lib.ed_pending_phrase(self._h, _TEXT_BUF, len(_TEXT_BUF))
+        return bytes(_TEXT_BUF[:n]).decode() if n > 0 else ""
 
     def set_read_only_enabled(self, on: bool) -> None:
         self._lib.ed_set_read_only(self._h, on)

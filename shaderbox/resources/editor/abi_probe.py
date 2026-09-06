@@ -52,7 +52,7 @@ FLAGS = {
     n: i
     for i, n in enumerate(
         "Line_Numbers Relative_Numbers Status_Line Status_Shows_Mode "
-        "Status_Shows_Ruler".split()
+        "Status_Shows_Ruler Status_Shows_Pending".split()
     )
 }
 STYLES = {"Vim": 0, "Standard": 1}
@@ -113,6 +113,10 @@ _SIG = {
     "ed_complete_select": (ctypes.c_bool, [ctypes.c_void_p, ctypes.c_int32]),
     "ed_complete_cancel": (None, [ctypes.c_void_p]),
     "ed_pending": (ctypes.c_bool, [ctypes.c_void_p]),
+    "ed_pending_phrase": (
+        ctypes.c_int32,
+        [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ubyte), ctypes.c_int32],
+    ),
     "ed_command_line": (ctypes.c_int32, [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ubyte), ctypes.c_int32]),
     "ed_command_line_prompt": (ctypes.c_int32, [ctypes.c_void_p]),
     "ed_command_message": (ctypes.c_int32, [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ubyte), ctypes.c_int32]),
@@ -249,6 +253,10 @@ _buf = (ctypes.c_ubyte * 65536)()
 
 def text(h):
     return bytes(_buf[: lib.ed_text(h, _buf, 65536)]).decode()
+
+
+def phrase(h):
+    return bytes(_buf[: max(0, lib.ed_pending_phrase(h, _buf, 65536))]).decode()
 
 
 def cstr(n):
@@ -498,6 +506,22 @@ def main() -> int:
     check("the insert bar recolours nothing", sum(g[3] == (0.0, 1.0, 0.0, 1.0) for g in glyphs), 0)
     lib.ed_key(h, K_ESC, 0, 0)
     lib.ed_reset_theme(h)
+
+    # vim's showcmd through the ABI: the keys as typed, cleared by the one that
+    # completes the phrase. A host drawing its own status row reads this.
+    print("the pending phrase")
+    lib.ed_set_text(h, b"alpha beta gamma")
+    check("nothing pending is empty", phrase(h), "")
+    lib.ed_feed(h, b"2")
+    check("a count shows", phrase(h), "2")
+    lib.ed_feed(h, b"d")
+    check("the operator joins it", phrase(h), "2d")
+    lib.ed_feed(h, b"3")
+    check("and the second count", phrase(h), "2d3")
+    lib.ed_feed(h, b"w")
+    check("the completing key clears it", phrase(h), "")
+    check("having run the command", text(h), "")
+    lib.ed_set_text(h, b"alpha beta gamma")
 
     # `K` is left to the host: unbound in every mode, so it comes back false
     # with nothing changed, the seam a keyword-lookup popup hangs on.
