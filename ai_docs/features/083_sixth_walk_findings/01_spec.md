@@ -54,8 +54,10 @@ else with it — no `complete_cancel()`, no mode check after. The completion pop
 library inside its own primitive stream, and the status band (mode badge, ruler, the `:`/`/`/`?`
 line) is library chrome too (`tabs/code.py::draw_chrome`: "The mode badge, the ruler and the
 `:`/`/`/`?` line are drawn by the library inside the editor rect"). So neither behavior is
-reachable from this repo: both are `libeditor` changes, re-vendored per the seven-file procedure in
-`conventions.md`.
+reachable from this repo: both are `libeditor` changes, re-vendored per the seven-file procedure —
+the rebuild command, the seven files and the upstream remote are in `conventions.md ## Known
+quirks`, under the vendored-editor-binary bullet. That is off the cold-start chain, so it is named
+by section here rather than left as "see conventions".
 
 **W-B's cause is located**, in the editor repo at `src/keymap.odin`: `editor_key_insert`'s Escape
 case ends the insert session at lines 634-670 (mode to `.Normal`, discard the auto-indent, commit
@@ -102,8 +104,9 @@ renumbered. The new member appends at 5, after `STATUS_SHOWS_RULER` at 4.
 
 ### D2a — the re-vendor is the last step, from a COMMITTED sha, and it carries a behavior note.
 
-`shaderbox/resources/editor/VERSION` holds `dd58aa9`. The re-vendor happens after the editor
-session lands W-A and W-B and commits — never from a dirty tree (`conventions.md`: "rebuilds from a
+`shaderbox/resources/editor/VERSION` holds `dd58aa9`; the procedure is the vendored-binary bullet in
+`conventions.md ## Known quirks`. The re-vendor happens after the editor session lands W-A and W-B
+and commits — never from a dirty tree (`conventions.md`: "rebuilds from a
 COMMITTED editor-repo sha, never a dirty tree").
 
 **The target sha is not `dd58aa9`'s successor.** Two commits already landed there that change vim

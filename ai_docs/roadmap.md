@@ -27,7 +27,8 @@ feature; brief points at the superseder).
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
 <!-- As of 2026-09-06, 083's four ShaderBox findings landed; the re-vendor is the open half. -->
-**Next: the re-vendor of `libeditor`, waiting on the editor session's sha.** 083 split six findings
+**Next: the re-vendor of `libeditor`, waiting on the editor session's sha** (procedure: the
+vendored-binary bullet in `conventions.md ## Known quirks`). 083 split six findings
 four/two. The four here are landed and reviewed: the copilot source lock, a Uniforms tab with a pass
 selector, the sampler previews on the strip's own `preview_cell`, and `openai/gpt-5.6-luna` as the
 default model.
@@ -35,13 +36,13 @@ default model.
 **The two vim findings are built in the editor repo** — one Escape leaving INSERT with the
 completion popup open, and the pending phrase in the status band. That phrase needs its own buffer:
 the `.`-repeat recorder drops count digits by design and outlives the phrase. Expect ONE new export
-plus a `ChromeFlag` member, so **the ABI's export count changes at re-vendor**, read from `nm -D`
-rather than predicted; the flag defaults true on the Vim style, so ShaderBox needs no new call. Two
-upstream commits also close six measured nvim divergences, so the re-vendor carries a behavior note.
+plus a `ChromeFlag` member, so **the export count changes at re-vendor**, read from `nm -D` rather
+than predicted; the flag defaults true on the Vim style, so ShaderBox needs no new call. Two upstream
+commits also close six nvim divergences, so the re-vendor carries a behavior note.
 
 **Open, unmeasured:** no brake watches cost, or a frame going from lit to flat
 (`ai_docs/features/082_dogfood_post081/02_round2_report.md`); whether the one-turn dogfood build
-repeats; a mission spanning several documents.
+repeats; a multi-document mission.
 
 **Shipped:** v0.28.0 is a GitHub release only; itch stays at v0.27.0. The Windows `libeditor.dll`
 needs a Windows host.
