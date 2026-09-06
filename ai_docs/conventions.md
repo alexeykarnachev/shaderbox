@@ -438,9 +438,13 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
 - **`popups/*.py`: free `draw(app: App)` functions; open/closed state lives on `App` as a single
   `PopupState` enum field.** Every modal popup shares one `app.popup_state` field, whose members
   ARE the roster — `CLOSED` plus one per modal (examples browser, help, settings, pass settings,
-  emoji picker, shader-lib picker). Each `app.open_*()` helper sets `popup_state`; the single field IS the mutex
+  emoji picker, shader-lib picker, projects). Each `app.open_*()` helper sets `popup_state`; the single field IS the mutex
   ("at most one modal open" holds by construction — one field can't be two states). A new modal popup
-  adds an enum member + its `open_*()` + a self-close to `CLOSED`. `app.any_popup_open()`
+  adds an enum member, its `open_*()`, a self-close to `CLOSED`, **and its `draw_*(app)` call in
+  `ui.py`'s popup block** — that last one is the step that gets forgotten, and forgetting it is
+  INVISIBLE at runtime: the state is enterable, the mutex suppresses every other render, and nothing
+  draws, which looks exactly like a healthy modal. `tests/test_project_management.py` counts the
+  block's calls against the enum so the omission fails instead. `app.any_popup_open()`
   (`popup_state != CLOSED`) is the render-gate question. The command palette (`is_palette_open`) stays
   a separate bool — non-modal, coexists with any modal. No popup classes. Revisit if a popup grows
   internal state that doesn't belong on `App`.
