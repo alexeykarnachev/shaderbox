@@ -902,6 +902,7 @@ def run_turn(
             False  # hard clean-edit cap: force-end the turn (vs the failed-edit giveup)
         )
         noop_streak_giveup = False  # hard no-op cap: the same force-end
+        compile_thrash_giveup = False  # hard applies-but-broken cap: the same force-end
         for tc in calls:
             args = _parse_args(tc.arguments)
             if args is None:
@@ -1076,6 +1077,11 @@ def run_turn(
                 msg += _COMPILE_THRASH_NUDGE
                 compile_nudge_sent = True
                 tr.event("compile_thrash_nudge", iteration=iteration)
+            if (
+                config.compile_failure_hard_streak > 0
+                and consecutive_compile_failures >= config.compile_failure_hard_streak
+            ):
+                compile_thrash_giveup = True
 
             # Per-FILE brake on clean edits, which trip neither counter above and so could stack
             # unbounded with the user seeing nothing. A clean write_shader RESETS it: finishing in
@@ -1149,7 +1155,7 @@ def run_turn(
             if consecutive_failed_edits >= config.max_edit_retries:
                 giveup = True
                 break
-            if clean_streak_giveup or noop_streak_giveup:
+            if clean_streak_giveup or noop_streak_giveup or compile_thrash_giveup:
                 giveup = True
                 break
 
@@ -1171,6 +1177,25 @@ def run_turn(
                     "or the same call repeated (NOT a pause you asked for), so I stopped to "
                     "keep from churning. If more is needed, tell me what should look different "
                     "and I'll continue."
+                )
+            elif compile_thrash_giveup:
+                logger.warning(
+                    f"copilot compile-thrash hard stop at "
+                    f"{config.compile_failure_hard_streak} edits that applied but still "
+                    f"failed to compile | total_in={usage.input_tokens} "
+                    f"cost=${usage.cost_usd:.6f}"
+                )
+                tr.event(
+                    "compile_thrash_giveup",
+                    streak=config.compile_failure_hard_streak,
+                    usage=usage,
+                )
+                note = (
+                    f"[engine] I hit my own limit of {config.compile_failure_hard_streak} "
+                    "edits in a row that applied but still left the file failing to compile "
+                    "(NOT a pause you asked for), so I stopped rather than keep patching the "
+                    "same error. Tell me to continue and I'll re-read the file and rewrite the "
+                    "whole block in one go."
                 )
             elif clean_streak_giveup:
                 logger.warning(

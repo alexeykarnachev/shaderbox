@@ -154,13 +154,17 @@ def splice_script(src: str, spans: list[tuple[int, int, int]], new_str: str) -> 
     cursor = 0
     for start, end, shift in spans:
         out.append(src[cursor:start])
-        # `start` sits AFTER the matched region's first-line indent (script_match_spans skips it so
-        # the span begins at the first real character), so the column is already in `src[:start]`.
-        # The replacement's own first line must therefore contribute NO leading whitespace — laying
-        # its indent on top of the column already there produced invalid Python on the exact path
-        # the indent-forgiving fallback exists to serve.
+        # Whether the source already holds this line's indent decides who supplies it. The
+        # structural path puts `start` after the matched indent, so the column is in `src[:start]`
+        # and the replacement must add none -- laying its own on top produced invalid Python. The
+        # exact path puts `start` at the literal match, which for a block quoted WITH its indent
+        # is column 0 of the line: nothing is preserved, so stripping the replacement's indent
+        # dropped it entirely and wrote the line back at column 0. That is a corruption the model
+        # cannot fix, because the repair edit is itself indent-only and strips to a no-op.
+        line_start = src.rfind("\n", 0, start) + 1
+        keeps_column = start > line_start
         shifted = reindent(new_str, shift)
-        out.append(shifted.lstrip(" "))
+        out.append(shifted.lstrip(" ") if keeps_column else shifted)
         cursor = end
     out.append(src[cursor:])
     return "".join(out)

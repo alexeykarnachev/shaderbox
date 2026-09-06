@@ -178,3 +178,31 @@ def test_structural_splice_always_produces_parseable_python() -> None:
     ast.parse(out)  # raises SyntaxError if the indent is wrong
     assert "        x = 2" in out.split("\n")
     assert "        return {'u_a': x}" in out.split("\n")
+
+
+def test_exact_match_keeps_the_line_indent_it_replaces() -> None:
+    # 082: the two match paths had incompatible span conventions and the splice applied the
+    # structural one to both. The exact path returned `src.find(old_str)` -- indent INSIDE the
+    # span -- while splice_script strips the replacement's own first-line indent, so a correct
+    # 4-space block came back at column 0 and broke the file. A model then spent fourteen
+    # edit_script calls trying to repair a def the tool itself had stranded.
+    src = "class A:\n    def _step(self):\n        # c\n        p += 1\n"
+    old = "    def _step(self):\n        # c\n        p += 1"
+    new = "    def _step(self):\n        p += 1"
+    out = splice_script(src, script_match_spans(src, old), new)
+    ast.parse(out)  # the corruption made this raise IndentationError
+    assert "    def _step(self):" in out.split("\n")
+
+
+def test_an_indent_only_edit_is_not_a_silent_noop() -> None:
+    # The other half: when the matched region has NO indent of its own to preserve, the
+    # replacement's indent is the only one on offer, so the splice must keep it. Dropping it made
+    # a repair of a stranded line byte-identical to the source and reported as applied -- the
+    # model could retry forever without learning the edit was unavailable.
+    src = "class A:\ndef _step(self):\n        p += 1\n"
+    old = "def _step(self):\n        p += 1"
+    new = "    def _step(self):\n        p += 1"
+    out = splice_script(src, script_match_spans(src, old), new)
+    assert out != src
+    ast.parse(out)
+    assert "    def _step(self):" in out.split("\n")

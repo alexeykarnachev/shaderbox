@@ -67,6 +67,7 @@ class CopilotIntegration(BaseModel):
     max_edit_retries: int = _COPILOT_DEFAULTS.max_edit_retries
     max_compile_failures: int = _COPILOT_DEFAULTS.max_compile_failures
     clean_edit_soft_streak: int = _COPILOT_DEFAULTS.clean_edit_soft_streak
+    compile_failure_hard_streak: int = _COPILOT_DEFAULTS.compile_failure_hard_streak
     clean_edit_hard_streak: int = _COPILOT_DEFAULTS.clean_edit_hard_streak
     noop_edit_soft_streak: int = _COPILOT_DEFAULTS.noop_edit_soft_streak
     noop_edit_hard_streak: int = _COPILOT_DEFAULTS.noop_edit_hard_streak
@@ -86,6 +87,7 @@ class CopilotIntegration(BaseModel):
             max_edit_retries=self.max_edit_retries,
             max_compile_failures=self.max_compile_failures,
             clean_edit_soft_streak=self.clean_edit_soft_streak,
+            compile_failure_hard_streak=self.compile_failure_hard_streak,
             clean_edit_hard_streak=self.clean_edit_hard_streak,
             noop_edit_soft_streak=self.noop_edit_soft_streak,
             noop_edit_hard_streak=self.noop_edit_hard_streak,

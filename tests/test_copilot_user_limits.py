@@ -25,6 +25,7 @@ _LIMIT_FIELDS = (
     "max_tokens_per_turn",
     "max_edit_retries",
     "max_compile_failures",
+    "compile_failure_hard_streak",
     "clean_edit_soft_streak",
     "clean_edit_hard_streak",
     "noop_edit_soft_streak",

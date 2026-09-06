@@ -260,6 +260,14 @@ _COPILOT_LIMITS: list[tuple[str, str, str, int, int]] = [
         1,
     ),
     (
+        "Broken-compile hard stop after",
+        "compile_failure_hard_streak",
+        "Consecutive edits that apply but compile broken before the turn is force-ended "
+        "(the agent returns to you). Should exceed the hint threshold. 0 = off.",
+        0,
+        1,
+    ),
+    (
         "Clean-edit hint after",
         "clean_edit_soft_streak",
         "Consecutive clean edits on one file in a turn before an escalating 'stop and "

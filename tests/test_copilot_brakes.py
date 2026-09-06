@@ -383,3 +383,41 @@ def test_a_sweep_touching_many_files_once_is_not_churn() -> None:
     )
     assert "noop_streak_nudge" not in trace.kinds
     assert isinstance(events[-1], AgentTurnDone)
+
+
+def test_broken_script_edits_force_end_the_turn_at_the_hard_streak() -> None:
+    # 082 F3: the nudge above latches on compile_nudge_sent, so it fires ONCE and nothing escalates.
+    # A sweep turn spent fourteen edit_script calls on one indentation error -- nine of them after
+    # the nudge -- and only max_iterations stopped it, costing more than the six turns before it.
+    # Every other brake family has a soft and a hard half; this one had only the soft.
+    config = replace(
+        COPILOT_CONFIG, max_compile_failures=2, compile_failure_hard_streak=3
+    )
+    events, trace = _run(
+        [_EDIT_SCRIPT, _EDIT_SCRIPT, _EDIT_SCRIPT, _EDIT_SCRIPT, _DONE],
+        config,
+        apply_script_edit=lambda _o, _n, _r, _document: ScriptWriteResult(
+            ok=True, compile_error="script.py:3: SyntaxError: invalid syntax"
+        ),
+    )
+    assert trace.kinds.count("compile_thrash_giveup") == 1
+    # The turn ends on the engine's terms, with a note owning the stop -- the sibling shape.
+    assert isinstance(events[-1], AgentError)
+    assert "still left the file failing to compile" in events[-1].message
+
+
+def test_broken_script_edits_below_the_hard_streak_do_not_force_end() -> None:
+    # The inverse that bounds the domain: under the cap the turn still runs to its own end, so the
+    # hard stop cannot drift into ending every turn that saw one broken compile.
+    config = replace(
+        COPILOT_CONFIG, max_compile_failures=2, compile_failure_hard_streak=5
+    )
+    events, trace = _run(
+        [_EDIT_SCRIPT, _EDIT_SCRIPT, _EDIT_SCRIPT, _DONE],
+        config,
+        apply_script_edit=lambda _o, _n, _r, _document: ScriptWriteResult(
+            ok=True, compile_error="script.py:3: SyntaxError: invalid syntax"
+        ),
+    )
+    assert "compile_thrash_giveup" not in trace.kinds
+    assert isinstance(events[-1], AgentTurnDone)

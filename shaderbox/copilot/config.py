@@ -40,6 +40,12 @@ class CopilotConfig:
     # apply); an edit that applies returns ok=True, so it never trips that cap — this catches the
     # apply-but-broken thrash separately. Not a giveup: the model usually recovers.
     max_compile_failures: int = 5
+    # Consecutive applies-but-compiles-with-errors edits before the engine FORCE-ENDS the turn
+    # (0 = off) — the hard half the once-latching nudge above could not enforce. A sweep turn
+    # spent fourteen edit_script calls on one indentation error, nine of them after the nudge,
+    # and only max_iterations stopped it. Must exceed max_compile_failures so the advisory gets
+    # its chance first.
+    compile_failure_hard_streak: int = 10
     # Consecutive CLEAN edit_shader edits on ONE file in a turn before an ESCALATING "stop and
     # let the user look / finish in one write_shader" fact rides each subsequent edit's result
     # (0 = off). The model is render-blind, so nothing else brakes an unbounded aesthetic-tweak
@@ -143,6 +149,7 @@ def apply_user_limits(
     max_tokens_per_turn: int,
     max_edit_retries: int,
     max_compile_failures: int,
+    compile_failure_hard_streak: int,
     clean_edit_soft_streak: int,
     clean_edit_hard_streak: int,
     noop_edit_soft_streak: int,
@@ -157,6 +164,9 @@ def apply_user_limits(
     COPILOT_CONFIG.max_tokens_per_turn = max(1_000, max_tokens_per_turn)
     COPILOT_CONFIG.max_edit_retries = max(1, max_edit_retries)
     COPILOT_CONFIG.max_compile_failures = max(0, max_compile_failures)  # 0 = off
+    COPILOT_CONFIG.compile_failure_hard_streak = max(
+        0, compile_failure_hard_streak
+    )  # 0 = off
     COPILOT_CONFIG.clean_edit_soft_streak = max(0, clean_edit_soft_streak)  # 0 = off
     COPILOT_CONFIG.clean_edit_hard_streak = max(0, clean_edit_hard_streak)  # 0 = off
     COPILOT_CONFIG.noop_edit_soft_streak = max(0, noop_edit_soft_streak)  # 0 = off
