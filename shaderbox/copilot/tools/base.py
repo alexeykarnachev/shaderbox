@@ -72,6 +72,12 @@ class ToolDefinition:
     # consecutive-failed-edits giveup cap. Deliberately NARROWER than `mutating`: a failed
     # render/publish must not trip the edit-retry cap.
     is_edit: bool = False
+    # The session source-lock's domain (083): this tool writes something in the maintainer's
+    # project that he would call "my code" — shader or script text, a uniform, a pass, a document.
+    # WIDER than `is_edit` (which is only the edit/write pairs, for the retry cap) and NARROWER
+    # than `mutating` (which also covers publishing and credentials). A locked session confirms
+    # each of these once; the roster is pinned by a set-equality test, not by this comment.
+    locks_source: bool = False
     gate_policy: GatePolicy = GatePolicy.NONE
     # Confirm-card text for a gated call; None => the generic fallback line in build_gate.
     gate_prompt: GatePrompt | None = None

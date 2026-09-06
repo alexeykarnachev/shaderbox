@@ -7,7 +7,7 @@ from imgui_bundle import imgui, imgui_ctx
 
 from shaderbox.app import App
 from shaderbox.copilot.config import COPILOT_ENGINE
-from shaderbox.copilot.gate import GateKind
+from shaderbox.copilot.gate import GateKind, LockAnswer
 from shaderbox.copilot.sanitize import sanitize_display
 from shaderbox.copilot.state import (
     CopilotLayout,
@@ -26,6 +26,7 @@ from shaderbox.ui_primitives import (
     gauge_bar,
     labeled_text_input,
     layout_icon_button,
+    lock_icon_button,
     markdown_text,
     message_bubble,
     modal_window,
@@ -575,6 +576,8 @@ def _draw_pending_action(app: App, msg: Message, idx: int) -> None:
             _draw_credential_input(app, msg, idx)
         elif msg.gate_kind is GateKind.CONFIG:
             _draw_config_panel(app, msg, idx)
+        elif msg.gate_kind is GateKind.SOURCE_LOCK:
+            _draw_lock_choices(app, idx)
         else:
             if primary_button(f"Yes##gate_yes_{idx}"):
                 app.copilot.answer_gate(approved=True)
@@ -607,6 +610,20 @@ def _draw_pending_action(app: App, msg: Message, idx: int) -> None:
     imgui.end_disabled()
     if not disabled and imgui.is_item_hovered():
         imgui.set_tooltip("Recover from trash")
+
+
+def _draw_lock_choices(app: App, idx: int) -> None:
+    # The source lock's three answers (083), in the maintainer's own order: allow for the session,
+    # allow once, deny. "Allow this session" is primary because it is the one that stops the
+    # asking -- the other two leave the lock exactly where it was.
+    if primary_button(f"Allow this session##gate_lock_session_{idx}"):
+        app.copilot.answer_gate_lock(LockAnswer.SESSION)
+    imgui.same_line()
+    if standard_button(f"Allow once##gate_lock_once_{idx}"):
+        app.copilot.answer_gate_lock(LockAnswer.ONCE)
+    imgui.same_line()
+    if standard_button(f"Deny##gate_lock_deny_{idx}"):
+        app.copilot.answer_gate_lock(LockAnswer.DENY)
 
 
 def _draw_config_panel(app: App, msg: Message, idx: int) -> None:
@@ -662,15 +679,23 @@ def _draw_top_bar(app: App) -> None:
     cluster_x: float = content_w - cluster_w
     # Leave a clear breathing gap between the gauge and the Clear button (SPACE.LG), beyond the
     # icon's same_line gap on the left.
+    # Two icons now (layout, lock), so the gauge gives up one more icon + its same_line gap.
     gauge_w: float = max(
         float(SIZE.USAGE_BARS_W),
-        cluster_x - icon_side - float(SPACE.MD) - float(SPACE.LG),
+        cluster_x - 2.0 * (icon_side + float(SPACE.MD)) - float(SPACE.LG),
     )
 
     if layout_icon_button("copilot_layout", app.copilot_layout.variant, icon_side):
         app.cycle_copilot_layout()
     if imgui.is_item_hovered():
         imgui.set_tooltip(f"Layout: {app.copilot_layout.value}")
+
+    imgui.same_line()
+    locked: bool = app.copilot.state.source_locked
+    if lock_icon_button("copilot_source_lock", locked, icon_side):
+        app.copilot.set_source_locked(not locked)
+    if imgui.is_item_hovered():
+        imgui.set_tooltip("Asks before changing" if locked else "Changes freely")
 
     imgui.same_line()
     fraction, tooltip = context_gauge_readout(

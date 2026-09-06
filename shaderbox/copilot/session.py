@@ -24,7 +24,7 @@ from shaderbox.copilot.capabilities import CopilotCapabilities
 from shaderbox.copilot.checkpoint import CheckpointStore
 from shaderbox.copilot.config import COPILOT_CONFIG, COPILOT_ENGINE
 from shaderbox.copilot.errors import CopilotConfigError
-from shaderbox.copilot.gate import GateChannel, GateResponse
+from shaderbox.copilot.gate import GateChannel, GateResponse, LockAnswer
 from shaderbox.copilot.llm.api import LLMMessage
 from shaderbox.copilot.llm.openrouter import OpenRouterLLMClient
 from shaderbox.copilot.persistence import ConversationStore
@@ -40,6 +40,13 @@ from shaderbox.copilot.state import (
 from shaderbox.copilot.tools.base import mask_secret
 from shaderbox.copilot.tools.registry import build_registry
 from shaderbox.copilot.trace import TraceListener, TraceLog, new_trace_log
+
+# A resolved SOURCE_LOCK card's outcome token (083), the same slot "Yes"/"No" use.
+_LOCK_OUTCOMES: dict[LockAnswer, str] = {
+    LockAnswer.DENY: "No",
+    LockAnswer.ONCE: "Yes, once",
+    LockAnswer.SESSION: "Yes, this session",
+}
 
 
 def _trace_stamp() -> str:
@@ -327,6 +334,34 @@ class CopilotSession:
                 )
                 return
 
+    def set_source_locked(self, locked: bool) -> None:
+        """MAIN THREAD. The ONE writer of the source lock (083). Two fields, written together:
+        `state.source_locked` is what the chat's icon draws (main-thread-only, like the rest of
+        ChatState), `registry.source_locked` is what the gate reads on the worker. Nothing else
+        assigns either -- a second writer is how the icon and the gate come to disagree."""
+        self.state.source_locked = locked
+        self.registry.source_locked = locked
+
+    def _unlock_source_from_worker(self) -> None:
+        # WORKER THREAD, from a SOURCE_LOCK gate answered "allow this session". The registry write
+        # is what the worker needs for its very next call, and the ChatState write is a plain
+        # assignment the UI reads next frame -- no queue hop, because a bool has no torn read and
+        # the alternative (an event through pump_events) would leave the worker gating on stale
+        # state for the rest of the turn.
+        self.set_source_locked(False)
+
+    def answer_gate_lock(self, answer: LockAnswer) -> None:
+        """MAIN THREAD (a SOURCE_LOCK card's three buttons). DENY declines the call; ONCE and
+        SESSION approve it. The session-wide unlock itself is applied by the agent loop through
+        `_unlock_source_from_worker`, so approval and unlocking stay one decision on one path."""
+        card = self._open_gate_card()
+        if card is not None:
+            card.resolved = True
+            card.gate_outcome = _LOCK_OUTCOMES[answer]
+        self.gate.answer(
+            GateResponse(answer is not LockAnswer.DENY, lock_answer=answer)
+        )
+
     def answer_gate(self, approved: bool) -> None:
         # MAIN THREAD (Yes/No click). Mark the open card resolved + unblock the worker.
         card = self._open_gate_card()
@@ -407,6 +442,7 @@ class CopilotSession:
                     *self.caps.read_working_set()
                 ),
                 batch_begin=self.caps.batch_begin,
+                unlock_source=self._unlock_source_from_worker,
                 model=self.client.model,
             ):
                 if isinstance(ev, AgentError):
@@ -490,6 +526,10 @@ class CopilotSession:
             except queue.Empty:
                 break
         self.state = ChatState()
+        # ChatState() is born locked; re-seed the registry through the one writer so a cleared chat
+        # cannot show a locked icon over an unlocked registry. reset_conversation rebuilds the
+        # state and NOT the registry, so without this the two diverge on every Clear.
+        self.set_source_locked(self.state.source_locked)
         self.history = []
         self._cancel = threading.Event()
         # Rebuild the checkpoint store for the project we switch INTO (rehydrates ITS persisted

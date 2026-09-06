@@ -144,3 +144,8 @@ class ChatState:
     # Last completed turn's stats; drives the header context gauge. Persisted (ConversationStore v7),
     # restored on load, reset by Clear.
     last_turn: TurnStats | None = None
+    # The source lock (083): while True a tool that writes the project asks first. Per SESSION and
+    # NOT persisted -- a new conversation starts locked, which is the point. Written ONLY through
+    # CopilotSession.set_source_locked, which writes the registry's copy in the same call; the two
+    # exist because this one is main-thread-only and the gate reads its copy on the worker.
+    source_locked: bool = True

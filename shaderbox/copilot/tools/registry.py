@@ -53,6 +53,11 @@ def _validation_message(exc: ValidationError) -> str:
 class ToolRegistry:
     def __init__(self, definitions: list[ToolDefinition]) -> None:
         self._by_name: dict[str, ToolDefinition] = {d.name: d for d in definitions}
+        # The session's source lock (083), read by `must_confirm` on the WORKER thread. Defaults
+        # OFF here on purpose: a locked SESSION is a property of a conversation, applied by
+        # CopilotSession through its one writer -- a registry built bare (every test does) is an
+        # inert catalogue, and gating it by default would silently change what those tests measure.
+        self.source_locked: bool = False
 
     def eager_specs(self) -> list[LLMToolSpec]:
         # Turn-start tools= set: eager-core only (long-tail loads lazily).
@@ -98,8 +103,24 @@ class ToolRegistry:
         return tool.precheck(args)
 
     def requires_gate(self, name: str) -> bool:
+        # "Is this tool ALWAYS-gated?" -- and, because always-gated here means destructive or
+        # external, ALSO the irreversibility test `_RunLog.summary_lines` asks when it decides
+        # whether a ledger line carries its identity verbatim and uncapped. Two readers, one
+        # meaning. The session lock deliberately does NOT widen this: a locked edit is confirmed,
+        # not irreversible, and folding it in here would push every source edit of a locked
+        # session into that uncapped branch of the turn summary.
         tool = self._by_name.get(name)
         return tool is not None and tool.gate_policy is GatePolicy.ALWAYS
+
+    def locks_source(self, name: str) -> bool:
+        tool = self._by_name.get(name)
+        return tool is not None and tool.locks_source
+
+    def must_confirm(self, name: str) -> bool:
+        """Does this call block on the user before it runs? The agent loop's one question."""
+        return self.requires_gate(name) or (
+            self.source_locked and self.locks_source(name)
+        )
 
     def status_for(self, name: str, args: dict[str, Any] | None) -> str:
         # Live status-pill phrase. `args` is the seam for arg-aware phrasing

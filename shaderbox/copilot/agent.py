@@ -11,7 +11,7 @@ from shaderbox.copilot.config import COPILOT_ENGINE, CopilotConfig
 from shaderbox.copilot.context_breakdown import breakdown_request
 from shaderbox.copilot.edit_hints import NOOP_FACTS_PREFIX
 from shaderbox.copilot.errors import CopilotConfigError
-from shaderbox.copilot.gate import GateChannel, GateKind, GateRequest
+from shaderbox.copilot.gate import GateChannel, GateKind, GateRequest, LockAnswer
 from shaderbox.copilot.llm.api import (
     LLMClient,
     LLMDone,
@@ -454,6 +454,14 @@ def build_gate(registry: ToolRegistry, name: str, args: dict) -> GateRequest:
         return GateRequest(
             kind=GateKind.CONFIG, prompt=prompt, secret_field=tool.secret_field
         )
+    if not registry.requires_gate(name) and registry.locks_source(name):
+        # The session's source lock is what stopped this call, not the tool's own policy (083).
+        # A three-answer card, and a prompt that names the lock rather than the tool's danger --
+        # the tool is ordinary; the LOCK is why we are asking.
+        return GateRequest(
+            kind=GateKind.SOURCE_LOCK,
+            prompt=f"The assistant wants to change your project ({name}). Allow it?",
+        )
     return GateRequest(kind=GateKind.CONFIRM, prompt=prompt)
 
 
@@ -469,6 +477,7 @@ def run_turn(
     trace: TraceLog | None = None,
     scratchpad_render: Callable[[], list[LLMMessage]] | None = None,
     batch_begin: Callable[[], None] | None = None,
+    unlock_source: Callable[[], None] | None = None,
     model: str = "",
 ) -> Iterator[AgentEvent]:
     # `trace` is the full-transcript sink (None in
@@ -480,6 +489,10 @@ def run_turn(
     render_scratchpad = (
         scratchpad_render if scratchpad_render is not None else (lambda: [])
     )
+    # "Allow for this session" on a SOURCE_LOCK gate (083). Injected rather than reached for:
+    # the loop must not own the lock's two fields, and the session's one writer keeps the chat
+    # icon and this registry from diverging. A no-op default keeps the tests' bare calls working.
+    release_lock = unlock_source if unlock_source is not None else (lambda: None)
     begin_batch = batch_begin if batch_begin is not None else (lambda: None)
     # `messages` is the within-turn context: full assistant/tool pairs accumulate here as the loop
     # runs (the provider 400s on an orphaned tool_call_id). Never persisted — at commit the turn
@@ -990,7 +1003,7 @@ def run_turn(
             # execute and the consecutive_failed_edits logic, so a user decline never counts toward
             # the edit-retry cap.
             secret = ""  # a CREDENTIAL gate's typed key, forwarded to execute
-            if registry.requires_gate(tc.name):
+            if registry.must_confirm(tc.name):
                 req = build_gate(registry, tc.name, args)
                 tr.event("gate_open", name=tc.name, prompt=req.prompt)
                 yield AgentGateOpened(req)
@@ -1021,6 +1034,10 @@ def run_turn(
                     )
                     continue
                 tr.event("gate_approved", name=tc.name)
+                if resp.lock_answer is LockAnswer.SESSION:
+                    # "Allow for this session": the rest of the conversation stops asking. Routed
+                    # through the session's one writer so the icon and this registry never diverge.
+                    release_lock()
                 secret = resp.secret
             ok, msg, payload = registry.execute(tc.name, args, secret)
             total_tool_calls += 1

@@ -977,6 +977,39 @@ def revert_icon_button(id_: str, side: float) -> bool:
     return clicked
 
 
+def lock_icon_button(id_: str, locked: bool, side: float) -> bool:
+    """A square ghost button drawn as a padlock — the copilot's source-lock toggle (083).
+
+    Locked draws a closed shackle over a filled body in the accent; unlocked draws the shackle
+    swung open to the right, dim. The state is the GLYPH, not the label, so the button never
+    changes width. No font dependency. Returns True on click."""
+    clicked, origin = _glyph_button(
+        id_, side, COLOR.TRANSPARENT, COLOR.BG_FRAME, COLOR.BORDER
+    )
+    col = imgui.color_convert_float4_to_u32(
+        COLOR.ACCENT_PRIMARY if locked else COLOR.FG_DIM
+    )
+    dl = imgui.get_window_draw_list()
+    # The body is the lower half; the shackle is a half-circle standing on its top edge.
+    bw: float = side * 0.44
+    bh: float = side * 0.30
+    bx: float = origin.x + (side - bw) * 0.5
+    by: float = origin.y + side * 0.56
+    dl.add_rect_filled((bx, by), (bx + bw, by + bh), col, rounding=1.5)
+    r: float = bw * 0.34
+    cy: float = by - r * 0.1
+    if locked:
+        cx: float = bx + bw * 0.5
+        dl.path_arc_to(imgui.ImVec2(cx, cy), r, math.radians(180), math.radians(360))
+        dl.path_stroke(col, thickness=1.5)
+    else:
+        # Open: the same arc hinged on the LEFT leg, swung clear of the body to the right.
+        cx = bx + bw * 0.85
+        dl.path_arc_to(imgui.ImVec2(cx, cy), r, math.radians(180), math.radians(330))
+        dl.path_stroke(col, thickness=1.5)
+    return clicked
+
+
 def layout_icon_button(id_: str, variant: int, side: float) -> bool:
     """A square ghost button drawn as a box-in-frame glyph showing a panel layout.
 

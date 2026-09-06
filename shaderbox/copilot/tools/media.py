@@ -73,6 +73,7 @@ def media_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             ),
             args_model=_BindMediaArgs,
             handler=unbind_media,
+            locks_source=True,
             mutating=True,
             eager=False,
             catalog_summary="reset a sampler2D uniform to no bound media",

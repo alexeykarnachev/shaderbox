@@ -17,6 +17,7 @@ class GateKind(StrEnum):
     FILE = (
         auto()
     )  # a native OS file picker (feature 052); its own channel slot, drawn UI-side
+    SOURCE_LOCK = auto()  # the session's source lock (083): three answers, not Yes/No
 
 
 @dataclass(frozen=True)
@@ -33,9 +34,21 @@ class GateRequest:
     switch_to: bool = False
 
 
+class LockAnswer(StrEnum):
+    # A SOURCE_LOCK gate's three answers (083). DENY and ONCE leave the session locked; SESSION
+    # unlocks it for the rest of the conversation. Kept off `approved` because "yes, and stop
+    # asking" and "yes, this once" both approve the call and differ in everything after it.
+    DENY = auto()
+    ONCE = auto()
+    SESSION = auto()
+
+
 @dataclass(frozen=True)
 class GateResponse:
     approved: bool = False
+    # SOURCE_LOCK only: which of the three the user chose. `approved` still carries run/don't-run,
+    # so every existing reader keeps working; this says what to do with the LOCK afterwards.
+    lock_answer: LockAnswer | None = None
     secret: str = ""  # CREDENTIAL: typed key — never logged/traced/persisted
     cancelled: bool = False  # the wait was released without an answer
     media_result: MediaBindResult | None = None  # FILE bind: the path-free bind outcome
