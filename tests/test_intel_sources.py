@@ -4,6 +4,8 @@ statically. Neither touches GL or the App."""
 import ast
 from pathlib import Path
 
+import numpy as np
+
 from shaderbox.editor.ffi import Slot
 from shaderbox.intel.glsl import (
     buffer_declarations,
@@ -215,6 +217,12 @@ def test_a_value_infers_the_type_a_literal_would_have() -> None:
     assert glsl_type_of_value([]) is None
     assert glsl_type_of_value({"u_x": 1.0}) is None
     assert glsl_type_of_value("hello") is None
+    # A sequence the COERCION would refuse names no type either, so the completion never seeds a
+    # declaration the next tick rejects: bools are not numbers to it, and neither is a float32.
+    assert glsl_type_of_value([True, False]) is None
+    assert glsl_type_of_value([np.float32(1.0), np.float32(2.0)]) is None
+    # A plain numpy array IS accepted -- its elements are float64, which is a real float.
+    assert glsl_type_of_value(np.array([1.0, 2.0, 3.0, 4.0])) == "vec4"
 
 
 def test_the_engine_types_a_key_whose_value_is_a_variable(tmp_path: Path) -> None:

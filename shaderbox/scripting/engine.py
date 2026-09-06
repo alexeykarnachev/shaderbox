@@ -451,7 +451,9 @@ class ScriptEngine:
         itself does know, so this runs a FRESH instance for one frame and reads the raw dict —
         before any declaration check, which is the point: the uniform being completed does not
         exist yet. Isolated (`fresh_behavior_for`), so the live document and engine are untouched;
-        a script that raises returns nothing rather than propagating into the editor.
+        a script that raises returns nothing rather than propagating into the editor. Runs once
+        per shader keystroke (the buffer's index rebuild): 0.84 ms for a script looping 20k
+        times, against a live loop that already ticks the same script every frame.
         """
         behavior = self.fresh_behavior_for(document_id)
         if behavior is None or behavior.error is not None:

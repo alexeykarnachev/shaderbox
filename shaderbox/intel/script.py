@@ -84,7 +84,13 @@ def glsl_type_of_value(value: object) -> str | None:
         return None
     if length == 0:
         return None
-    if not all(isinstance(item, bool | int | float) for item in value):  # type: ignore[union-attr]
+    # Mirrors `uniform_coerce.is_number` (not imported: that module pulls in moderngl and this
+    # package stays GL-free). A value this offers a declaration for is one the coercion accepts --
+    # a bool or a numpy float32, which it rejects, names no type here either.
+    if not all(
+        isinstance(item, int | float) and not isinstance(item, bool)
+        for item in value  # type: ignore[union-attr]
+    ):
         return None
     if 2 <= length <= 4:
         return f"vec{length}"
