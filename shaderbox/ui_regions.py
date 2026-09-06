@@ -10,6 +10,7 @@ from enum import StrEnum, auto
 class DocumentTab(StrEnum):
     # The settings-panel inner tabs; FOCUS_TAB_* jump to one directly.
     DOCUMENT = auto()
+    UNIFORMS = auto()
     RENDER = auto()
     SHARE = auto()
 

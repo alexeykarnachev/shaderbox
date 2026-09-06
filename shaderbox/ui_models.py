@@ -149,6 +149,13 @@ class UIDocumentState(BaseModel):
     render_media_details: MediaDetails = MediaDetails()
     ui_uniforms: dict[int, UIUniform] = {}
 
+    # The pass whose uniforms the Uniforms tab edits (083). "" = follow the active shader tab,
+    # which is what App.panel_pass derives and what a tile click sets. A stored name is the
+    # maintainer's explicit pick from the tab's selector, and lets him tune a pass that is neither
+    # open in the editor nor the one on screen. A name no pass carries falls back to the derived
+    # answer rather than erroring — the same place a rename leaves it.
+    panel_pass: str = ""
+
     uniform_sort_key: UniformSortKey = "code"
     uniform_sort_desc: bool = False
 

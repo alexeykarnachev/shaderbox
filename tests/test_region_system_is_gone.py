@@ -198,11 +198,11 @@ def _resolve_flags(
 
 
 def _table_callees(tree: ast.Module) -> dict[str, set[str]]:
-    """Table name -> the function references parked in it. `ui.py`'s `_NODE_TABS` holds
-    `document_tab.draw` / `render_tab.draw` / `share_tab.draw`, which the panel invokes as
-    `draw_tab(app)` after unpacking the table -- a name the walk can never resolve by itself,
-    and the only route from `document_settings` to the uniform sliders. Keyed by table so a
-    container inherits only the tables it actually iterates."""
+    """Table name -> the function references parked in it. `ui.py`'s `_NODE_TABS` holds one
+    `<tab>.draw` per `DocumentTab` member, which the panel invokes as `draw_tab(app)` after
+    unpacking the table -- a name the walk can never resolve by itself, and the only route from
+    `document_settings` to the uniform sliders (`uniforms_tab.draw` since 083). Keyed by table so
+    a container inherits only the tables it actually iterates."""
     out: dict[str, set[str]] = {}
     for node in ast.walk(tree):
         if not isinstance(node, (ast.Assign, ast.AnnAssign)):

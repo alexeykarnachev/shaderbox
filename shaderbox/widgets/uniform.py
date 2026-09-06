@@ -27,6 +27,7 @@ from shaderbox.ui_primitives import (
     clipped_caption,
     grouped_combo,
     play_stop_toggle,
+    preview_cell,
     standard_button,
 )
 from shaderbox.util import (
@@ -177,22 +178,31 @@ def _draw_play_stop(
     imgui.end_disabled()
 
 
-def _thumb_size(texture: moderngl.Texture) -> tuple[int, int]:
-    height = int(SIZE.THUMB_SM)
-    return int(height * texture.width / max(texture.height, 1)), height
+def _draw_texture_preview(
+    id_: str, texture: moderngl.Texture | None, caption: str
+) -> bool:
+    """One sampler row's picture: the pass strip's tile, minus the footer and chips.
 
+    The same `preview_cell` the strip draws, at the strip's own `SIZE.PASS_THUMB`, so the border
+    (a bordered child picking up `COLOR.BORDER` at the global `child_border_size`) and the picture
+    area are the same by construction rather than by two constants agreeing. A texture with
+    `alpha = 0` now has a visible edge, which a raw `imgui.image` never gave it.
 
-def _draw_pass_source(texture: moderngl.Texture, source: str) -> None:
-    # A live thumbnail of the producing pass, captioned with its name.
+    Square, where the old fixed-height thumb scaled its width to the aspect: the cell letterboxes,
+    so every sampler row lands on the same box instead of running ragged. `texture=None` draws the
+    empty slot. Returns True when the picture was clicked."""
     imgui.set_cursor_pos_x(_CTRL_X)
-    imgui.image(
-        imgui.ImTextureRef(texture.glo),
-        image_size=_thumb_size(texture),
-        uv0=(0, 1),
-        uv1=(1, 0),
+    result = preview_cell(
+        id_=id_,
+        cell_w=float(SIZE.PASS_THUMB),
+        texture_glo=None if texture is None else texture.glo,
+        texture_size=(0, 0) if texture is None else texture.size,
+        selected=False,
+        armed=False,
     )
     imgui.same_line()
-    caption_text(source)
+    caption_text(caption)
+    return result.clicked
 
 
 def _pick_media_file() -> Path:
@@ -204,17 +214,6 @@ def _pick_media_file() -> Path:
         )
     )
     return Path(results[0]) if results else Path()
-
-
-def _draw_black_swatch() -> None:
-    side = int(SIZE.THUMB_SM)
-    pos = imgui.get_cursor_screen_pos()
-    imgui.get_window_draw_list().add_rect_filled(
-        (pos.x, pos.y),
-        (pos.x + side, pos.y + side),
-        imgui.color_convert_float4_to_u32(COLOR.BLACK),
-    )
-    imgui.dummy((side, side))
 
 
 def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
@@ -333,32 +332,34 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
 
         source_pass = document.sampler_source(panel_pass_name, name)
         if source_pass is not None:
-            _draw_pass_source(
-                document.input_texture(panel_pass_name, source_pass), source_pass
-            )
+            # The picture is of that pass, so its click does what the strip's tile does — the two
+            # surfaces show the same thing and agree on what clicking it means.
+            if _draw_texture_preview(
+                f"u_src_{panel_pass_name}_{name}",
+                document.input_texture(panel_pass_name, source_pass),
+                source_pass,
+            ):
+                app.pick_pass(document_id, source_pass, focus_editor=False)
         elif isinstance(current_value, MediaWithTexture | moderngl.Texture):
             texture = (
                 current_value.texture
                 if isinstance(current_value, MediaWithTexture)
                 else current_value
             )
-            imgui.set_cursor_pos_x(_CTRL_X)
-            imgui.image(
-                imgui.ImTextureRef(texture.glo),
-                image_size=_thumb_size(texture),
-                uv0=(0, 1),
-                uv1=(1, 0),
+            _draw_texture_preview(
+                f"u_tex_{panel_pass_name}_{name}",
+                texture,
+                get_resolution_str(None, *texture.size),
             )
-            imgui.same_line()
-            caption_text(get_resolution_str(None, *texture.size))
             if isinstance(current_value, Video):
                 imgui.same_line(spacing=float(SPACE.LG))
                 video_value = draw_video_filters(app, current_value)
                 if video_value is not current_value:
                     new_value = video_value
         else:
-            imgui.set_cursor_pos_x(_CTRL_X)
-            _draw_black_swatch()
+            # An unfilled sampler reads black, which is indistinguishable from a transparent one
+            # without the frame — the same border the two filled branches now carry.
+            _draw_texture_preview(f"u_none_{panel_pass_name}_{name}", None, "no source")
 
     elif ui_uniform.input_type == "color":
         assert isinstance(current_value, Sequence)

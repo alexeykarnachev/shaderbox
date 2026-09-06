@@ -566,6 +566,9 @@ class App:
             CommandId.FOCUS_TAB_DOCUMENT: lambda: self.focus_document_tab(
                 DocumentTab.DOCUMENT
             ),
+            CommandId.FOCUS_TAB_UNIFORMS: lambda: self.focus_document_tab(
+                DocumentTab.UNIFORMS
+            ),
             CommandId.FOCUS_TAB_RENDER: lambda: self.focus_document_tab(
                 DocumentTab.RENDER
             ),
@@ -652,13 +655,30 @@ class App:
         it belongs to this document, else the output. Distinct from the viewer on purpose — the
         viewer follows the output, while the panel stays on the pass being worked on (open
         another pass's tab to tweak it while the output is on screen)."""
-        document = self.ui_documents[document_id].document
+        ui_document = self.ui_documents[document_id]
+        document = ui_document.document
+        # An explicit pick on the Uniforms tab wins (083): without it the panel could only ever
+        # reach a pass that was open in the editor or on screen, and tuning a third one meant
+        # opening its tab first. A stale name (a rename, a deleted pass) falls through.
+        chosen = ui_document.ui_state.panel_pass
+        if chosen and chosen in document.passes:
+            return document.passes[chosen]
         tab = self.active_tab
         if tab is not None and tab.kind == "shader" and tab.document_id == document_id:
             for render_pass in document.passes.values():
                 if render_pass.source.path == tab.path:
                     return render_pass
         return document.render_pass
+
+    def set_panel_pass(self, document_id: str, name: str) -> None:
+        """The Uniforms tab's pass pick; "" restores the follow-the-active-tab default.
+
+        Writes the document's OWN ui_state, never `current_document_ui_state_or_default` — that
+        property hands back a throwaway when no document is current, so a write through it is
+        discarded in silence."""
+        ui_document = self.ui_documents.get(document_id)
+        if ui_document is not None:
+            ui_document.ui_state.panel_pass = name
 
     def _on_document_deleted(self, document_id: str, source_path: Path) -> None:
         # A document's dir was trashed by the core; drop its editor session + close any of its open
@@ -1283,6 +1303,10 @@ class App:
             return
         document = self.ui_documents[document_id].document
         render_pass = document.passes.get(pass_name) or document.render_pass
+        # Opening a pass in the editor is itself a pick, so it retires an older explicit one (083):
+        # the uniforms panel follows the tab again, which is the path a tile click takes and the
+        # one that has to keep working without the user knowing the override exists.
+        self.set_panel_pass(document_id, "")
         self._focus_or_add_tab(
             EditorTab(
                 path=render_pass.source.path, kind="shader", document_id=document_id

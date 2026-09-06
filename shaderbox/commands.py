@@ -30,6 +30,7 @@ class CommandId(StrEnum):
     FORMAT_BUFFER = auto()
     TOGGLE_CHEATSHEET = auto()
     FOCUS_TAB_DOCUMENT = auto()
+    FOCUS_TAB_UNIFORMS = auto()
     FOCUS_TAB_RENDER = auto()
     FOCUS_TAB_SHARE = auto()
     TOGGLE_COPILOT = auto()
@@ -179,10 +180,16 @@ COMMAND_SPECS: list[CommandSpec] = [
         CommandId.FOCUS_TAB_DOCUMENT, "Document tab", _chord(K._1, K.mod_ctrl), C.VIEW
     ),
     CommandSpec(
-        CommandId.FOCUS_TAB_RENDER, "Render tab", _chord(K._2, K.mod_ctrl), C.VIEW
+        CommandId.FOCUS_TAB_UNIFORMS,
+        "Uniforms tab",
+        _chord(K._2, K.mod_ctrl),
+        C.VIEW,
     ),
     CommandSpec(
-        CommandId.FOCUS_TAB_SHARE, "Share tab", _chord(K._3, K.mod_ctrl), C.VIEW
+        CommandId.FOCUS_TAB_RENDER, "Render tab", _chord(K._3, K.mod_ctrl), C.VIEW
+    ),
+    CommandSpec(
+        CommandId.FOCUS_TAB_SHARE, "Share tab", _chord(K._4, K.mod_ctrl), C.VIEW
     ),
     CommandSpec(
         CommandId.CYCLE_CHANNEL_VIEW,

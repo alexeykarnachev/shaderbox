@@ -128,6 +128,13 @@ def _seed_tmp_project(root: Path) -> Path:
     return project
 
 
+# One DocumentTab member per focus frame, spaced so each has two frames to land before the next is
+# requested. Derived from the enum, so a new member joins the sweep instead of being forgotten.
+_TAB_FOCUS_FRAMES: dict[int, DocumentTab] = {
+    56 + 4 * i: tab for i, tab in enumerate(DocumentTab)
+}
+
+
 def _check_invariants(app: App, frame_idx: int) -> None:
     # The "at most one modal popup open" mutex is now structural — popup_state is a single
     # PopupState value, so two modals can't be open at once by construction (feature 023).
@@ -266,8 +273,20 @@ def main() -> int:
                     app.popup_state = PopupState.CLOSED
                     app.pass_settings_name = ""
                     app.set_current_document_id(canary_id)
-                if frame_idx == 60:
-                    app.focus_document_tab(DocumentTab.RENDER)
+                # Every settings tab is focused and then CHECKED two frames on (083). imgui owns
+                # the tab selection and honors `set_selected` the frame AFTER the request, so a
+                # same-frame assert reads the previous tab and passes whatever happened. Asserting
+                # the tab that actually DREW (ui.py commits it from the drawn item) is what catches
+                # a DocumentTab member with no `_NODE_TABS` row -- it would never become visible.
+                if frame_idx in _TAB_FOCUS_FRAMES:
+                    app.focus_document_tab(_TAB_FOCUS_FRAMES[frame_idx])
+                if frame_idx - 2 in _TAB_FOCUS_FRAMES:
+                    want = _TAB_FOCUS_FRAMES[frame_idx - 2]
+                    assert app.active_document_tab == want, (
+                        f"frame {frame_idx}: focused {want} but "
+                        f"{app.active_document_tab} drew — a DocumentTab member whose "
+                        "_NODE_TABS row is missing never becomes visible"
+                    )
                 # Open the Examples browser for a stretch so its draw path (grid + desc slot +
                 # action row sizing) is exercised — it never opens on its own in the loop.
                 if frame_idx == 70:

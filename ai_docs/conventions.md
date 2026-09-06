@@ -165,13 +165,17 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   code-grounded devil's-advocate that checks the premise against the runtime. Revisit: never (a law).
 - **A model flag whose ROW is created lazily-on-draw cannot be set programmatically — the writer must
   eager-create.** When per-entity state lives on an object created lazily inside a DRAW loop (the
-  `UIUniform` row born only in `tabs/document.py`'s uniform loop; feature 047's `is_script_active`), any
+  `UIUniform` row born only in `tabs/uniforms.py`'s uniform loop; feature 047's `is_script_active`), any
   programmatic or HEADLESS mutation that runs before that draw silently no-ops — the lookup returns
   None and the write is skipped. The bug is latent because the interactive path always draws the row
   first (the click that mutates is itself in the drawn UI), so it only bites smoke/dogfood/copilot/any
-  off-draw caller. Fix at the WRITE seam: `setdefault` the row from the live source before reading or
-  writing the flag (`_ui_uniform_for` now `setdefault`s `UIUniform.from_uniform(u)`), so activation is
-  independent of a prior draw. The general rule: if model state is keyed by a lazily-drawn row, the
+  off-draw caller. Fix at the WRITE seam: create the row from the live source before reading
+  or writing the flag, so activation is independent of a prior draw. (This bullet used to name a
+  `_ui_uniform_for` helper as the landed remedy; 083's review found no such symbol in the tree --
+  the row is still created inline in the draw loop. The LAW is what holds; the claim that a helper
+  had already applied it was wrong, and a stale "already fixed" is worse than an open gap, because
+  it stops the next reader from looking.)
+  The general rule: if model state is keyed by a lazily-drawn row, the
   setter owns the row's creation — never assume "drawn at least once". The verification that catches it
   is a HEADLESS one that exercises the consumer, not the producer (047's smoke tick-canary + the
   dogfood harness were the falsifiers — both were silently red until the eager-create). Revisit if row

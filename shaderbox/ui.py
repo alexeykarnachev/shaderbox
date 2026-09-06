@@ -35,6 +35,7 @@ from shaderbox.tabs import code as code_tab
 from shaderbox.tabs import document as document_tab
 from shaderbox.tabs import render as render_tab
 from shaderbox.tabs import share as share_tab
+from shaderbox.tabs import uniforms as uniforms_tab
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_primitives import (
     chip_button,
@@ -763,6 +764,7 @@ def _draw_app_panel(app: App) -> None:
 
 _NODE_TABS: list[tuple[str, DocumentTab, Callable[[App], None]]] = [
     ("Document", DocumentTab.DOCUMENT, document_tab.draw),
+    ("Uniforms", DocumentTab.UNIFORMS, uniforms_tab.draw),
     ("Render", DocumentTab.RENDER, render_tab.draw),
     ("Share", DocumentTab.SHARE, share_tab.draw),
 ]

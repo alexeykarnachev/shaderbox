@@ -139,7 +139,10 @@ _UNMEASURABLE: dict[tuple[str, str], str] = {
     ): "the channel view's name from CHANNEL_VIEW_LABELS; "
     "test_channel_view.py::test_every_label_is_within_the_control_budget measures it",
     ("shaderbox/popups/emoji_picker.py", "_draw_body"): "an emoji group/entry name",
-    ("shaderbox/widgets/uniform.py", "_draw_pass_source"): "the producing pass's name",
+    (
+        "shaderbox/widgets/uniform.py",
+        "_draw_texture_preview",
+    ): "a sampler's source name, resolution, or the empty-slot line",
     ("shaderbox/popups/lib_picker/preview.py", "draw_preview"): "the file's own path",
     (
         "shaderbox/popups/lib_picker/search.py",
@@ -167,7 +170,7 @@ _UNMEASURABLE: dict[tuple[str, str], str] = {
         "shaderbox/tabs/code.py",
         "draw_chrome",
     ): "the open file's path, tab label or error",
-    ("shaderbox/tabs/document.py", "_draw_auto_block"): "the uniform's live value",
+    ("shaderbox/tabs/uniforms.py", "_draw_auto_block"): "the uniform's live value",
     ("shaderbox/tabs/document.py", "_entry_row_label"): "the caller's row label",
     (
         "shaderbox/exporters/telegram.py",
