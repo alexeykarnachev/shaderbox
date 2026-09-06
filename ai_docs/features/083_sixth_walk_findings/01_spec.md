@@ -63,6 +63,15 @@ the repeat, break undo, step the caret left), but an OPEN POPUP is intercepted t
 at 490-493 — `autocomplete_clear(&e.autocomplete); return .Consumed` — which never falls through to
 that block. That early return is the whole bug, and vim's behavior is to do both.
 
+**The phrase is the RAW TYPED KEYS, not a rendering of `Pending`** (measured by the editor session
+against nvim on a real tty, after this spec was locked). nvim's `showcmd` shows the literal
+keystrokes in every case with no per-state formatting: `d`, `3`, `3d`, `f`, `g`, `z`, `r`, `y`, `c`,
+`2d3`, `"a`. `2d3` is the one that settles it — count, operator, second count, in typed order — and
+`"a` is not representable at all, since a register prefix never enters `Pending`. So there is no
+mapping from `Pending`'s variants to a rendering, and inventing one would be a vocabulary nvim does
+not have. The armed leader stays the one deliberate substitution (`<leader>` for a key that is
+invisible when it is a space), which is what the maintainer asked for.
+
 **W-A's data exists and is internal.** `src/mode.odin`'s `Pending` struct holds `count`,
 `operator`, `op_count` and `awaiting` (find-char, a `g`/`z` prefix, an operator's motion, `r`'s
 target); `src/bindings.odin`'s `Bindings.armed` holds the armed leader. `ed_pending` reduces all of
@@ -78,17 +87,36 @@ pending phrase is a field in that band. Two `ChromeFlag` members that already ex
 (`STATUS_SHOWS_MODE`, `STATUS_SHOWS_RULER`) establish the shape: what the band shows is a chrome
 flag. Revisit if the maintainer wants the phrase somewhere other than the status band.
 
-Consequence for this repo: if the band gains the field behind a new `ChromeFlag`, ShaderBox must
-SET it — `app.py:1418` sets only `ChromeFlag.LINE_NUMBERS`, and `set_style` resets chrome defaults,
-so an unset flag is an unwired mechanism. That line is W-A's entire ShaderBox surface.
+Consequence for this repo, and how it was resolved. The risk was an unwired mechanism:
+`app.py:1418` sets only `ChromeFlag.LINE_NUMBERS`, and `ed_set_style` replaces chrome wholesale
+(`s.chrome = ed.chrome_for(style)`), so a flag ShaderBox never sets would ship dead and pass every
+test. The editor session settled it by DEFAULT rather than by a host call: the new flag is true in
+`chrome_for(.Vim)` (where `status_shows_mode` and `status_shows_ruler` already are, and where vim's
+own `showcmd` defaults on) and false for the standard keymap, which has no pending phrase — so the
+flag exists for a host that wants it OFF. ShaderBox's existing `set_style` therefore delivers it and
+**no new line at `app.py:1418` is needed**.
 
-### D2a — the re-vendor is the last step, from a COMMITTED sha, and the editor tree is dirty today.
+What DOES remain on this side: the `ChromeFlag` IntEnum in `editor/ffi.py:125` widens by one member
+in the SAME commit as the binary copy, per the re-vendor law that values are appended and never
+renumbered. The new member appends at 5, after `STATUS_SHOWS_RULER` at 4.
 
-`shaderbox/resources/editor/VERSION` holds `dd58aa9`; editor `master` is six commits ahead at
-`86a65b5` with ten modified unstaged files (`bindings.odin` among them). `ffi.odin` is byte-identical
-across all three, so the vendored 106-export ABI is still current and nothing here is stale. The
-re-vendor happens after the editor session lands W-A and W-B and commits — never from that dirty
-tree (`conventions.md`: "rebuilds from a COMMITTED editor-repo sha, never a dirty tree").
+### D2a — the re-vendor is the last step, from a COMMITTED sha, and it carries a behavior note.
+
+`shaderbox/resources/editor/VERSION` holds `dd58aa9`. The re-vendor happens after the editor
+session lands W-A and W-B and commits — never from a dirty tree (`conventions.md`: "rebuilds from a
+COMMITTED editor-repo sha, never a dirty tree").
+
+**The target sha is not `dd58aa9`'s successor.** Two commits already landed there that change vim
+keymap BEHAVIOR without touching the ABI: six measured divergences from nvim closed (a counted `g$`
+curswant rule, a blank-line `daw` register that was charwise where nvim reports `V`, `I` on a
+whitespace-only line), and an `ed_feed_aborted` latch — `ed_key` never cleared the flag, so one
+failed `f` motion made every later key report aborted. That one cost this repo nothing: `_SIG`
+declares `ed_feed_aborted` and **no ShaderBox code calls it**, which is worth stating because it is
+the kind of latent bug a vendored-binary bump silently inherits.
+
+So the re-vendor writes up what BEHAVIOR changed, not just a new sha — six nvim divergences closed
+is a roadmap line, not a silent binary swap. The export count moves off the 106 the roadmap banner
+states; it is taken from the editor session's `nm -D` delta at the sha, never predicted here.
 
 ### D3 — the uniform texture preview becomes a `preview_cell`, not an `imgui.image` with a border pushed.
 
@@ -547,7 +575,11 @@ All three answered at plan-lock; kept here as the record of what was asked and d
    the constraint that it use the generalized gating machinery — now D7's premise.
 
 3. **The pending-phrase vocabulary.** → an armed leader renders as `<leader>`, counts and operators
-   as typed (`3d`). Folded into D2.
+   as typed (`3d`). Folded into D2. **Refined after the lock by measurement:** the editor session
+   drove nvim on a real tty and found `showcmd` renders the RAW TYPED KEYS with no per-state
+   formatting at all (`2d3`, `"a`), so the phrase accumulates keystrokes rather than formatting the
+   `Pending` struct — which could not express `"a` anyway. The maintainer's answer is unchanged and
+   `<leader>` remains the one substitution; what changed is that there is no vocabulary to invent.
 
 **`switch_document` stays unlocked** — it changes what the app shows and writes nothing.
 
