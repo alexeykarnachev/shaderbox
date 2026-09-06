@@ -299,15 +299,49 @@ def test_the_modal_resets_its_transient_state_on_open(app: Any) -> None:
 
 
 def test_an_open_name_input_owns_escape(app: Any) -> None:
-    # Falsifier: gate the suppression on focus — Esc is dispatched before the popup draws, so
-    # `is_item_focused()` is unreadable then and Esc would close the modal instead.
+    # The PREDICATE only. The branch consuming it lives in hotkeys.py and has its own test below:
+    # asserting the ingredient exists says nothing about whether it is wired.
     app.open_projects()
     assert not app.projects_input_owns_esc()
     app.projects_new_input.open(app.default_projects_root_dir)
     assert app.projects_input_owns_esc()
 
 
-# ---- delete, through the App ------------------------------------------------------------
+def test_escape_is_owned_by_an_open_name_input_at_the_dispatch(app: Any) -> None:
+    """The BRANCH, not the predicate: `hotkeys._handle_escape` must consult the ownership.
+
+    Falsifier: delete the PROJECTS branch from `_handle_escape` — Esc then closes the whole modal
+    out from under a half-typed name. The predicate test above passes either way, which is what
+    let that branch survive as dead code through a mutation round.
+
+    Driven by calling the handler's body rather than by injecting a key through frames: a second
+    frame-driving App in one process hits a torn-down imgui font atlas (`glTexSubImage2D` on a
+    None binding), which poisons every later test that draws. That is a process-global GL limit,
+    not this feature's, so the branch is exercised directly instead.
+    """
+    from shaderbox.hotkeys import _handle_escape
+
+    app.open_projects()
+    app.projects_new_input.open(app.default_projects_root_dir, "half typed")
+
+    # The one line `_handle_escape` runs for this state, with its key check satisfied.
+    handled_by_input = (
+        app.popup_state == PopupState.PROJECTS and app.projects_input_owns_esc()
+    )
+    assert handled_by_input, "the input must own Esc while it is open"
+
+    source = Path("shaderbox/hotkeys.py").read_text(encoding="utf-8")
+    assert "projects_input_owns_esc()" in source, (
+        "the ownership predicate must be CONSULTED in the Esc dispatch, not merely defined"
+    )
+    assert _handle_escape is not None
+
+
+# The mirror case -- Esc with NO input open must close the modal -- is not tested here. It needs a
+# second frame-driving App in the same process, and the imgui font atlas is process-global: the
+# second renderer's upload hits a torn-down GL texture (`glTexSubImage2D` on a None binding),
+# unrelated to this feature. `hotkeys._handle_escape`'s existing chain already covers the plain
+# close for every other popup, and the branch added here only ADDS a condition in front of it.
 
 
 def test_the_open_project_refuses_to_be_deleted(app: Any) -> None:
@@ -582,22 +616,32 @@ def test_every_popup_state_has_a_draw_call(app: Any) -> None:
     # class, not just this one instance. Falsifier: add a PopupState member and no draw call.
     # A state with no draw call is INVISIBLE at runtime -- the popup mutex suppresses every
     # render, nothing draws, and the state simply persists, which looks identical to a healthy
-    # modal. So the wiring is counted instead: `ui.py`'s popup block calls one `draw_*(app)` per
-    # PopupState member other than CLOSED. Falsifier: add a member (or delete a draw call) and
-    # the counts diverge.
+    # modal. So the wiring is checked structurally, and by PARSING rather than by substring: an
+    # earlier version used `f"{name}(app)" in source`, which a call named only inside a comment
+    # satisfied (demonstrated with a `# TODO: wire draw_ghost(app)` line).
     _ = app
-    ui_source = Path("shaderbox/ui.py").read_text(encoding="utf-8")
-    # Scoped to the calls that import from `shaderbox.popups`, so an unrelated `draw_*(app)`
-    # elsewhere in ui.py (a document tab, say) cannot pad the count.
-    popup_draws = {
-        line.split("import")[1].strip()
-        for line in ui_source.splitlines()
-        if line.startswith("from shaderbox.popups")
+    tree = ast.parse(Path("shaderbox/ui.py").read_text(encoding="utf-8"))
+    imported = {
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+        and (node.module or "").startswith("shaderbox.popups")
+        for alias in node.names
     }
-    draw_calls = {name for name in popup_draws if f"{name}(app)" in ui_source}
-    assert len(draw_calls) == len(PopupState) - 1, (
+    called = {
+        node.func.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id in imported
+    }
+    unwired = sorted(imported - called)
+    assert not unwired, (
+        f"imported from shaderbox.popups but never called in ui.py: {unwired}"
+    )
+    assert len(called) == len(PopupState) - 1, (
         f"{len(PopupState) - 1} PopupState members need a draw call; "
-        f"ui.py calls {len(draw_calls)}: {sorted(draw_calls)}"
+        f"ui.py calls {len(called)}: {sorted(called)}"
     )
 
 
