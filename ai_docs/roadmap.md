@@ -26,40 +26,34 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-06, 081 landed and was audited; the maintainer has not run the app against it. -->
-**Next: the maintainer decides.** 081's fifteen decisions landed, then an audit round corrected
-three code defects and restored two gates a cleanup had wrongly cut. Nothing in the spec is
-outstanding except its three questions, which are about what to do next.
+<!-- As of 2026-09-06, the post-081 dogfood round ran and its two fixes landed. -->
+**Next: the maintainer decides.** The first round to drive the real engine since the 081 sweep
+(082) ran ten turns on hy4-preview for $0.51. The shader never worked; what it found did.
 
-**What outlives it.** `read_shaders` compiled the OUTPUT pass only, so the shipped Radiance
-Cascades example answered a read with 28 of its 287 lines and the cascade both clean-compile
-failures got wrong was unreachable by every tool. `load_tools` grows the tools array, which
-precedes every message, so the mechanism built to save tokens voided the cached prefix. A reply
-with prose and no tool call is the one shape no brake can see, and the models forged engine
-telemetry into it — provably copied from history's rendering, since the tool emits an em-dash and
-the replies carry the ASCII form only the commit path produces.
+**A tool was corrupting the files it edited.** `edit_script`'s splice stripped the replacement's
+first-line indent unconditionally — right for the structural match, whose span starts after the
+source's indent, and wrong for the exact match, whose span starts at the literal find and so
+consumes it. A correct 4-space block came back at column 0, and the repair for that is an
+indent-only edit, which the same bug turns into a byte-identical no-op reported as applied. The
+sweep turn's fourteen identical failing calls were a model trying to repair damage through a door
+the tool had closed. One condition on the span geometry fixes both halves.
 
-**A gate can be written that cannot fail, and a cleanup can cut one that could.** Two of 081's
-gates passed under every mutation until the break was actually performed; then a tidy-up deleted
-six as ceremony, and an audit found two of those were load-bearing — one had absorbed a
-pre-existing regression test for a shipped fix. Perform the break; re-check what a deletion
-removes.
+**A brake family with only its soft half.** The compile-thrash nudge latches once, so nine of
+those fourteen failures passed unremarked and `max_iterations` was the only stop.
+`compile_failure_hard_streak` adds the missing half; the enumerated `CopilotConfig` gate caught
+the knob the moment it landed on the dataclass without the rest of the Settings seam.
 
-**A script uniform's type comes from the value it returned**, not from parsing its source: a key
-whose value is a variable has no literal shape, and one isolated tick knows what it held. Cached
-on the script's stamp — the tick re-runs `__init__`, which a precomputing script makes expensive.
+**One measured claim confirmed, one refuted.** D6 holds hard: the request after a `load_tools`
+reads 4.0% cached against 78-85% either side, and the two now-eager pass tools fired eight times
+with zero `load_tools`. D7 does not: requests per tool call went 0.552 to 0.709 on the same model
+and task — worse, and 0.660 isolating the build turns. The per-turn request count looks like an
+improvement and is confounded by narrow turns that cannot batch.
 
-**A dogfood round is one loop with two fixing stages.** Driving an attempt and mining the closed
-round's logs find different things, and only the first was recorded: a `triage` event now attaches
-a mining wave to the EXPERIMENT and renders it on that page, and the skill opens with the three
-stages (drive per attempt, mine per round, stop after one circle and let the maintainer decide).
-
-**Open, and unmeasured:** D6 and D7 are cost claims a fresh dogfood run would confirm (~$0.30 for
-one `rc_end_to_end` attempt on hy4). The dogfood skill's two FALSE and two STALE claims are
-corrected, and its "improve this skill" section now says to RE-CHECK before adding — the ADD-only
-seam is what let a refuted number stand while the same commit edited around it. The record of what
-was wrong is `081/02_cells/cell6_station.md`. The code panel's autocomplete popup blinks while
-typing; three readings of the frame path did not find it, and it wants the running app.
+**Open, and deliberately unfixed:** a reply fabricated an entire edit and its before/after table
+behind ONE real `probe_render` call, so D4's zero-call predicate missed it. The obvious widening —
+re-stream when no mutating call was made — false-fires on every read-and-report turn; catching it
+otherwise means classifying prose, which D5 ruled out. One instance justifies neither. The code
+panel's autocomplete popup still blinks while typing, and wants the running app.
 
 **Shipped:** v0.28.0 is a GitHub release only; itch stays at v0.27.0. The Windows `libeditor.dll`
 still needs a Windows host before the next cut.
@@ -68,6 +62,7 @@ still needs a Windows host before the next cut.
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 082 | dogfood_post081 | done | The first round to drive the engine after the 081 sweep: `edit_script` was corrupting the files it edited (the splice stripped the replacement's indent on the exact-match path, whose span had already consumed the source's), and the sweep turn's fourteen identical failing calls were a repair the same bug had sealed into a no-op; the compile-thrash brake was found with a latching nudge and no hard half. D6 confirmed at 4.0% cached after a `load_tools`, D7 refuted at 0.552 -> 0.709 requests per call. Spec: `ai_docs/features/082_dogfood_post081/01_spec.md`. |
 | — | dogfood_triage_stage | done | A dogfood round is ONE loop with two fixing stages: an attempt's `fix` ledger answers "this blocked the run", and a `triage` event attaches a whole mining wave to the EXPERIMENT (rendered as "What the logs changed after the round"), since it reads every attempt at once. `since_sha` is required — defaulting it swept 77 unrelated commits into a wave of 11. The skill opens with the three stages and the rule that a fix earns a test only when the regression would be silent. Spec: commit `7d077c2`. |
 | — | script_uniform_types | done | A script uniform's GLSL type comes from the value the script returned, not from parsing its source: a key whose value is a variable has no literal shape, so its name never reached a `uniform ` site. One isolated tick reads the raw dict before any declaration check, cached on the script's own stamp because the tick re-runs `__init__`. Spec: commits `c384d80` + `34e188c` + `99818de`. |
 | 081 | copilot_engine_sweep | done | The 077 station corpus mined for what it says about the engine, then fixed: `read_shader` could not read a multi-pass example (28 of 287 lines of the reference the failures needed), `load_tools` collapsed the prefix cache it exists to protect, and a zero-call reply claiming work reached the user past every brake. Fifteen decisions, each with the break that proved its gate; four documented claims disproven, and one gate caught as a tautology while being written. Spec: `ai_docs/features/081_copilot_engine_sweep/01_spec.md`. |

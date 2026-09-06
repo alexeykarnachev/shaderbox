@@ -367,6 +367,15 @@ the sweep removes IS the edit-sediment measurement — record its diff.**
   (4) the in-app default `max_tokens_per_turn` is now **30k** (was 12k — raised after these starvation
   measurements), so a fresh harness run already carries the headroom; the override above only matters
   when a run pins a lower cap.
+- **🔴 A reply can fabricate an edit behind a REAL tool call, and the zero-call brake will not
+  see it.** One turn (082, hy4) made a single `probe_render`, then described a `write_shader` it
+  never made, quoted the diff line by line, and printed a before/after table whose "after" row was
+  the same probe as the "before". Terminal `turn_done`, no cutoff. 081 D4 re-streams on ZERO tool
+  calls, so one real call falls straight through. `drive.py`'s summary lists every call: read the
+  LIST against what the reply claims, not just its length -- and when a reply quotes a measurement
+  as a result, check the call ORDER, since a probe taken BEFORE the edit reads as the result after
+  it (three turns of that round did exactly this). Verify a claimed edit at the FILE: `stat` its
+  mtime, or grep the line the reply says it changed.
 - **🔴 A reply that describes tool work with ZERO tool calls is a fabrication.** Six turns across
   three models in the 077 comparison, every one on a CLEAN turn (`turn_done`, no cutoff) -- the
   "it happens on resume, after a long engine ledger" reading this file used to carry was measured
