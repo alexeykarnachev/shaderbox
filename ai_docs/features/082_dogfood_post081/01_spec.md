@@ -1,5 +1,8 @@
 # 082 — the post-081 dogfood round
 
+(The three-model round that followed, filed as `082b` in the roadmap, is
+`02_round2_report.md` beside this file.)
+
 The first run to drive the real engine since the 081 sweep landed. One attempt, ten turns,
 `tencent/hy4-preview`, $0.51, on the same `rc_end_to_end` ask attempt 1 of that round used —
 so every number here has a same-model, same-task predecessor to sit against.
@@ -52,10 +55,30 @@ byte-identical to the real "before" row. The file on disk still returned `vec3` 
 the previous turn. Terminal `turn_done`, no cutoff.
 
 D4 (081) added an engine-side re-stream for a reply that claims work with **zero** tool calls.
-This turn made one, so it fell through the guard into the ordinary success terminal. The domain is
-the count, and the count is the wrong predicate: what makes a claim checkable is whether the
-CLAIMED tool is among the calls, not whether any call happened. The one real call is also what
-made the fabrication plausible — it supplied a genuine measurement to quote twice.
+This turn made one, so it fell through the guard into the ordinary success terminal. The one real
+call is also what made the fabrication plausible — it supplied a genuine measurement to quote twice.
+
+**Left unfixed, deliberately — and this records what was tried, so it is not re-derived.** The
+obvious reading is that the CALL COUNT is the wrong predicate and the guard should fire whenever a
+turn made no MUTATING call. That was implemented in full: a `total_mutating_calls` counter keyed on
+`registry.is_mutating` (the domain enumerable from the registry, the shape D2 established), a
+separate read-only nudge naming this exact trap, and the predicate widened at `agent.py`'s
+zero-call terminal.
+
+**It was then REVERTED, and the reason is why this stays open.** It false-fires on the most
+ordinary turn there is. Seven existing tests failed at once, every one of the shape "read a shader,
+then say what it says" — a turn the user asked for and the model performed correctly. D4 is narrow
+on purpose: zero calls means nothing about the turn was checkable, and "read, then reported" is not
+that. So the count is not simply the wrong predicate; it is the only cheap one that does not
+punish honest reading.
+
+A predicate that catches the fabricating turn without that cost would compare the reply's CLAIM
+against the calls that ran — prose classification, which D5 ruled out on the evidence that facts
+as data succeed where facts as conscience fail. Both roads are closed on a single observation, and
+one observation justifies neither.
+
+**Trigger:** a second reply describing an edit behind a turn whose calls were all read-only. The
+first is replayable from `dogfood/runs/rc_post081/`, attempt 1, turn 8.
 
 **F2 — `edit_script` was CORRUPTING the file it edited, then sealing the repair. FIXED.**
 The sweep turn spent fourteen consecutive `edit_script` calls on one indentation error and ended

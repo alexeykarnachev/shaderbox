@@ -1,4 +1,4 @@
-# Dogfood round: three models on the engine after the edit-tool fixes
+# 082b — dogfood round: three models on the engine after the edit-tool fixes
 
 **What this was.** The same radiance-cascades build — one spec, asked as a whole — given to three
 models in parallel, three turns each. The previous round found two engine bugs in the script editor
@@ -122,6 +122,10 @@ The second is the tractable one: the engine already computes the number, and "th
 and is now uniform" is a comparison it could make. Whether that stops a turn or is merely said
 louder is a design call this round does not settle.
 
+The case is replayable from `dogfood/runs/rc_post081_fixed/`, attempt 2, turn 2. **That store is
+gitignored** — it exists on this machine only, so the figures quoted here are the durable record of
+it.
+
 **The encouraging half:** every model corrected course immediately when told plainly what the
 render showed, and did so cheaply ($0.008–$0.027). The recovery path works. What is missing is
 noticing without a human in the loop.
@@ -145,6 +149,12 @@ such reload.
 trips. It did not: hy4 at 0.579 requests per tool call against 0.552 before, luna 0.684, gemini
 0.875 — all flat or worse. The instruction is not doing what it was rewritten to do, and that is
 now measured on three models rather than the one that produced the original claim.
+
+*A note on two number sets.* Commit `fcbe374` quotes 0.528 / 0.649 / 0.868 and luna at $0.062;
+this report quotes 0.579 / 0.684 / 0.875 and $0.069. Both are correct measurements — the commit
+landed when the round was two turns per model, and `d0d9b82` then ran the third turn each so the
+round matched the length of the one it compares against. The three-turn figures above are the
+round's. The conclusion is the same under either set.
 
 ---
 

@@ -26,34 +26,36 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-06, the post-081 dogfood round ran and its two fixes landed. -->
-**Next: the maintainer decides.** The first round to drive the real engine since the 081 sweep
-(082) ran ten turns on hy4-preview for $0.51. The shader never worked; what it found did.
+<!-- As of 2026-09-06, two dogfood rounds ran, their fixes landed, and the report shape is pinned. -->
+**Next: the maintainer decides.** Two rounds drove the real engine after the 081 sweep. The first
+(082) ran one model and found two engine bugs; the second (082b) ran three models on the fixed
+engine and two of them met the brief, where the previous round met it zero times.
 
 **A tool was corrupting the files it edited.** `edit_script`'s splice stripped the replacement's
 first-line indent unconditionally — right for the structural match, whose span starts after the
-source's indent, and wrong for the exact match, whose span starts at the literal find and so
-consumes it. A correct 4-space block came back at column 0, and the repair for that is an
-indent-only edit, which the same bug turns into a byte-identical no-op reported as applied. The
-sweep turn's fourteen identical failing calls were a model trying to repair damage through a door
-the tool had closed. One condition on the span geometry fixes both halves.
+source's indent, wrong for the exact match, whose span starts at the literal find and consumes it.
+A correct 4-space block came back at column 0, and the repair for THAT is an indent-only edit,
+which the same bug turned into a no-op reported as applied. One condition on the span geometry
+(`start > line_start`) fixes both halves.
 
-**A brake family with only its soft half.** The compile-thrash nudge latches once, so nine of
-those fourteen failures passed unremarked and `max_iterations` was the only stop.
-`compile_failure_hard_streak` adds the missing half; the enumerated `CopilotConfig` gate caught
-the knob the moment it landed on the dataclass without the rest of the Settings seam.
+**Brakes count repetition, and nothing counts cost.** A turn spent $0.752 (97% hidden reasoning)
+turning a correct render flat red, past its own probe reporting `FLAT`, and undid it next turn for
+$0.027. Every brake watched: they count the same edit twice, edits changing nothing, edits failing
+to compile — never varied clean edits that collectively ruin the picture. Open. The case is
+replayable from `dogfood/runs/rc_post081_fixed/` attempt 2 turn 2 — **the station store is
+gitignored, so that evidence exists on this box only**; the numbers that must outlive it are in the
+082b report. The compile-thrash brake did get its missing hard half (`compile_failure_hard_streak`).
 
-**One measured claim confirmed, one refuted.** D6 holds hard: the request after a `load_tools`
-reads 4.0% cached against 78-85% either side, and the two now-eager pass tools fired eight times
-with zero `load_tools`. D7 does not: requests per tool call went 0.552 to 0.709 on the same model
-and task — worse, and 0.660 isolating the build turns. The per-turn request count looks like an
-improvement and is confounded by narrow turns that cannot batch.
+**One report shape, and outcomes are a closed vocabulary.** Five reviewers found three
+incompatible heading taxonomies across eight reports and a results table whose columns changed
+every round. `REPORT_TEMPLATE.md` is now THE shape (bottom line always under `## The headline`),
+and `OUTCOMES` is enforced at `end_attempt` — an outcome says what the MODEL reached, never that
+the driver stopped. The renderer had keyed on `"success"`, never a legal value, so every attempt
+page ever built showed a red pill.
 
-**Open, and deliberately unfixed:** a reply fabricated an entire edit and its before/after table
-behind ONE real `probe_render` call, so D4's zero-call predicate missed it. The obvious widening —
-re-stream when no mutating call was made — false-fires on every read-and-report turn; catching it
-otherwise means classifying prose, which D5 ruled out. One instance justifies neither. The code
-panel's autocomplete popup still blinks while typing, and wants the running app.
+**Open, and unmeasured:** whether the one-turn build is repeatable (one sample), and a mission
+spanning several documents — the navigation tools have never been under real pressure. The code
+panel's autocomplete popup still blinks while typing and wants the running app.
 
 **Shipped:** v0.28.0 is a GitHub release only; itch stays at v0.27.0. The Windows `libeditor.dll`
 still needs a Windows host before the next cut.
@@ -62,6 +64,7 @@ still needs a Windows host before the next cut.
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| — | dogfood_report_shape | done | Five reviewers over eight reports found three incompatible heading taxonomies, a bottom line in a different place each time, and a results table whose columns changed every round (one called a raw count `requests`, the next a ratio under a near-identical label). `REPORT_TEMPLATE.md` is now THE shape — fixed headings and order, the bottom line always under `## The headline`, a mandatory animation section — and `OUTCOMES` is a closed vocabulary enforced at `end_attempt`, describing what the MODEL reached rather than that the driver stopped. The renderer had keyed on `"success"`, never a legal value, so every attempt page ever built showed a red pill. Spec: commit `86d4de9`. |
 | 082 | dogfood_post081 | done | The first round to drive the engine after the 081 sweep: `edit_script` was corrupting the files it edited (the splice stripped the replacement's indent on the exact-match path, whose span had already consumed the source's), and the sweep turn's fourteen identical failing calls were a repair the same bug had sealed into a no-op; the compile-thrash brake was found with a latching nudge and no hard half. D6 confirmed at 4.0% cached after a `load_tools`, D7 refuted at 0.552 -> 0.709 requests per call. Spec: `ai_docs/features/082_dogfood_post081/01_spec.md`. |
 | 082b | dogfood_three_models | done | The same ask given to hy4, gemini-3.8-flash and luna in parallel on the fixed engine, three turns each: TWO met the brief where the previous round met it zero times, luna for $0.069 total. gemini met the whole spec in ONE turn, then spent $0.752 (97% hidden reasoning) leaving a debug red test that turned the frame flat red past its own probe saying `FLAT`, and undid it next turn for $0.027 -- 28x more to cause than to undo. No brake counts cost or notices a frame going from lit to flat; every existing one counts repetition. Report: `ai_docs/features/082_dogfood_post081/02_round2_report.md`. |
 | — | dogfood_triage_stage | done | A dogfood round is ONE loop with two fixing stages: an attempt's `fix` ledger answers "this blocked the run", and a `triage` event attaches a whole mining wave to the EXPERIMENT (rendered as "What the logs changed after the round"), since it reads every attempt at once. `since_sha` is required — defaulting it swept 77 unrelated commits into a wave of 11. The skill opens with the three stages and the rule that a fix earns a test only when the regression would be silent. Spec: commit `7d077c2`. |

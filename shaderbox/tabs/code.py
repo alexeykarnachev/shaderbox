@@ -592,6 +592,10 @@ def _completion_context(
 
 
 def _drive_completion(app: App, editor: Editor, tab: EditorTab) -> None:
+    # TODO: the popup BLINKS while typing -- a typed character closes it (see the re-offer
+    # branch below) and the next frame re-opens it, so the user sees a flicker per keystroke.
+    # Three readings of this path have not found the fix; it wants the running app, since the
+    # blink is a frame-timing artifact no test or trace shows.
     # Host-driven autocomplete (pushing IS opening; the built-in buffer-word source is
     # suppressed at session creation, so the popup shows only what the providers say).
     # Three ways in: the deliberate Ctrl+N / Ctrl+P (explicit), a keystroke in insert mode
