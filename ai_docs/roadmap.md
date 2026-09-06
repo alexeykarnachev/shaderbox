@@ -49,6 +49,11 @@ removes.
 whose value is a variable has no literal shape, and one isolated tick knows what it held. Cached
 on the script's stamp — the tick re-runs `__init__`, which a precomputing script makes expensive.
 
+**A dogfood round is one loop with two fixing stages.** Driving an attempt and mining the closed
+round's logs find different things, and only the first was recorded: a `triage` event now attaches
+a mining wave to the EXPERIMENT and renders it on that page, and the skill opens with the three
+stages (drive per attempt, mine per round, stop after one circle and let the maintainer decide).
+
 **Open, and unmeasured:** D6 and D7 are cost claims a fresh dogfood run would confirm (~$0.30 for
 one `rc_end_to_end` attempt on hy4). The dogfood skill's two FALSE and two STALE claims are
 corrected, and its "improve this skill" section now says to RE-CHECK before adding — the ADD-only
@@ -63,6 +68,7 @@ still needs a Windows host before the next cut.
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| — | dogfood_triage_stage | done | A dogfood round is ONE loop with two fixing stages: an attempt's `fix` ledger answers "this blocked the run", and a `triage` event attaches a whole mining wave to the EXPERIMENT (rendered as "What the logs changed after the round"), since it reads every attempt at once. `since_sha` is required — defaulting it swept 77 unrelated commits into a wave of 11. The skill opens with the three stages and the rule that a fix earns a test only when the regression would be silent. Spec: commit `7d077c2`. |
 | — | script_uniform_types | done | A script uniform's GLSL type comes from the value the script returned, not from parsing its source: a key whose value is a variable has no literal shape, so its name never reached a `uniform ` site. One isolated tick reads the raw dict before any declaration check, cached on the script's own stamp because the tick re-runs `__init__`. Spec: commits `c384d80` + `34e188c` + `99818de`. |
 | 081 | copilot_engine_sweep | done | The 077 station corpus mined for what it says about the engine, then fixed: `read_shader` could not read a multi-pass example (28 of 287 lines of the reference the failures needed), `load_tools` collapsed the prefix cache it exists to protect, and a zero-call reply claiming work reached the user past every brake. Fifteen decisions, each with the break that proved its gate; four documented claims disproven, and one gate caught as a tautology while being written. Spec: `ai_docs/features/081_copilot_engine_sweep/01_spec.md`. |
 | 080 | nightly_sweep | done | A structural sweep over the repo's shape: an inventory of every symbol kind found four dead symbols, and `apply_theme` lost the two parameters that chose between branches nothing chose, keeping the accent presets that are an import-time invariant's domain. Three further waves were closed by review as re-opened settled decisions. Spec: `ai_docs/features/080_nightly_sweep/01_spec.md`. |
