@@ -361,8 +361,9 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   holding a shader; the output texture is never touched for display, 073) / **`completion.py`** (the
   code panel's completion policy: the provider table over the intel index and `word_at`;
   GL-free, 073 / 078) / **`intel/`** (what the editor knows about a buffer, 078: `symbols`
-  the kind enum, `glsl` the buffer as text, `script` the returns by `ast`, `index` the
-  `GlslIndex` from explicit inputs, `document` the per-handle cache, `python` + `worker` jedi on
+  the kind enum, `glsl` the buffer as text, `script` the returns by `ast`, `members` what a dot
+  reaches, `index` the `GlslIndex` from explicit inputs, `document` the per-handle cache,
+  `python` + `worker` jedi on
   its one thread; read by completion, `K` and the text's color feed) / **`engine_uniforms.py`**
   (the engine-driven uniform tables, GL-free; `core` re-imports them) / **`formatting.py`**
   (`ruff` / `clang-format` over subprocess, one formatter per tab kind, 078 W-B) / **`render_preset.py`** (the pydantic `RenderPreset` value type) /

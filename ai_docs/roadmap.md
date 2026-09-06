@@ -26,28 +26,27 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-06, the maintainer's editor walk landed; the dogfood items are older and still open. -->
+<!-- As of 2026-09-06, the maintainer's editor walk landed; the brake gap below is older and open. -->
 **Next: the maintainer decides.** A walk over the code panel produced seven findings across two
-repos — four landed here (GLSL member completion after a dot, an RGB channel view, `Ctrl+Shift+V`,
-a tooltip, chip click-through); the three keymap items went to the editor repo, which built a
-host-binding overlay: `<leader>f` formats, `Ctrl+Shift+I` still does.
+repos — four landed here (GLSL member completion after a dot, an RGB channel view,
+`Ctrl+Shift+V`, a tooltip, chip click-through); the three keymap items went to the editor repo,
+which built a host-binding overlay: `<leader>f` formats, `Ctrl+Shift+I` still does.
 
-**The editor's ABI is 106 exports at `09e3e59`.** A host claims a key and gets back an id it chose;
-the compiled keymaps stay what nvim measures. Rebinding a built-in to another built-in is
+**The editor's ABI is 106 exports at `09e3e59`.** A host claims a key and gets back an id it
+chose; the compiled keymaps stay what nvim measures. Rebinding a built-in to another built-in is
 deliberately absent — it needs a vocabulary of internal action names no oracle can measure. A
 rebinding UI is unbuilt by maintainer decision, so `commands.py`'s leader table is the only
 registration.
 
-**Open, from the dogfood rounds** (both in `ai_docs/features/082_dogfood_post081/02_round2_report.md`):
-`edit_script` corrupts indentation on its exact-match path and reports the failed repair as applied;
-and every brake counts repetition while none watches cost or a frame going from lit to flat. The
+**Open: no brake watches cost, or a frame going from lit to flat**
+(`ai_docs/features/082_dogfood_post081/02_round2_report.md`). Every one counts repetition. The
 replay store is gitignored, so that evidence is on this box only.
 
 **Also open, unmeasured:** whether the one-turn dogfood build repeats (one sample), and a mission
-spanning several documents — the navigation tools have never been under real pressure.
+spanning several documents — the navigation tools have never been under pressure.
 
-**Shipped:** v0.28.0 is a GitHub release only; itch stays at v0.27.0. The Windows `libeditor.dll`
-still needs a Windows host before the next cut.
+**Shipped:** v0.28.0 is a GitHub release only; itch stays at v0.27.0. The Windows
+`libeditor.dll` needs a Windows host.
 
 ## Features
 

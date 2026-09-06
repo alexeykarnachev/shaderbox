@@ -464,7 +464,9 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   (feature 078 W-A): `symbols.py` is the one vocabulary (`SymbolKind`, `Symbol`); `glsl.py`
   reads a shader buffer as TEXT (a declared uniform the body never reads is still declared —
   the compiled program's active-uniform set is never a source of what the editor knows);
-  `script.py` reads `update`'s returns with `ast`; `index.py` builds one `GlslIndex` from a
+  `script.py` reads `update`'s returns with `ast`; `members.py` answers what a DOT reaches (only
+  vectors have members -- a matrix is indexed and a sampler opaque, so a dot on either offers
+  nothing rather than something wrong); `index.py` builds one `GlslIndex` from a
   `GlslContext` of explicit inputs; `document.py` caches it per editor HANDLE on a cheap
   fingerprint (buffer revision, script revision or cached mtime, pass set, sampler source
   kinds, lib-index counter); `python.py` turns (text, cursor) into symbols with jedi; `worker.py`
@@ -900,6 +902,27 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   texture is also what feedback reads, exports and the strip sample -- a display-only change to it
   would leak into every consumer. Revisit if a view needs a shader the blit cannot express in one
   quad.
+- **A leader binding's id crossing the ABI is its row INDEX in `LEADER_BINDINGS`, and the drain
+  runs per KEY.** The editor's binding registry (`commands.py`) is an overlay: a host claims a key
+  and gets back an opaque `i32` it chose, and the compiled keymaps stay what nvim measures.
+  Ids are the table's indices, so **inserting or reordering a row silently re-points a live
+  registration at a different command** -- append, or renumber deliberately. The registry is
+  rebuilt from scratch in `_apply_editor_settings_to` (a repeat `ed_bind` replaces), vim only,
+  since the leader is a vim concept. Two shapes bite anyone editing this: `ed_take_binding` holds
+  ONE id and a completing key overwrites it DURING the key feed, so `_collect_binding` sits inside
+  the loop in `hotkeys.py` and moving it out drops a sequence a loop drain cannot recover; and
+  **id 0 is both valid and falsy**, so the drain tests `is None`, never truthiness. Rebinding a
+  built-in to another built-in is deliberately not offered -- it needs a vocabulary of internal
+  action names outliving every keymap change, which no oracle can measure. Revisit if a rebinding
+  UI is built, which needs a persisted id that is not a list position.
+- **A vector's completion members keep generation order; every other candidate sorts by
+  (kind, name).** 079 D2 orders candidates by `kind_rank` then name, and members are the one
+  exception (`completion.py::offer`): their names are a fixed positional vocabulary, so
+  alphabetical is not a weaker order but a meaningless one -- it interleaves `xyzw`/`rgba`/`stpq`
+  and puts `x` at row 16 of a vec4's 21, when the reason every single component is offered is that
+  `uv.y` and `col.g` are the common reach. Pinned by an ordered assertion, because the set-
+  comparing tests could not see it. Revisit if a second kind earns a positional order, which
+  would make the exception a rule about the kind rather than about members.
 - **Completion policy is host data; the library holds the popup and the word prefix.** What the
   code panel offers and when is a provider table (`completion.py`: a context predicate on the
   line before the caret, prefix floors, a candidate function), evaluated on the host with the

@@ -13,9 +13,10 @@ ROADMAP = Path("ai_docs/roadmap.md")
 
 STATUSES = frozenset({"pending", "in progress", "done", "partial", "superseded"})
 
-# The stated cap is 200; the check allows headroom so a banner is not rewritten for one word,
-# while still failing the append pattern that produced 580.
-BANNER_WORD_CEILING = 260
+# The number roadmap.md's own comment states. A gate that allows more than the rule it
+# enforces makes the rule the weaker of the two, so this is the stated cap, not a ceiling
+# with headroom -- a banner one word over is a banner to trim.
+BANNER_WORD_CEILING = 200
 
 
 def _banner() -> str:
@@ -41,7 +42,9 @@ def test_the_banner_stays_within_its_stated_budget() -> None:
     # The failure this catches is an APPEND: a new block written above the old one keeps every
     # word of both. Broken (paste the previous banner back under the current one), this fails.
     words = len(re.sub(r"<!--.*?-->", "", _banner(), flags=re.DOTALL).split())
-    assert words <= BANNER_WORD_CEILING, f"Active context is {words} words"
+    assert words <= BANNER_WORD_CEILING, (
+        f"Active context is {words} words, over the {BANNER_WORD_CEILING} it states"
+    )
 
 
 def test_the_banner_carries_its_own_date_stamp() -> None:
@@ -73,3 +76,29 @@ def test_every_feature_row_points_at_a_spec_that_exists() -> None:
             )
             for path in paths:
                 assert Path(path).exists(), f"{cells[1]}: {path} does not exist"
+
+
+def test_both_intel_rosters_name_every_module() -> None:
+    """`conventions.md` and `dev_flow.md` each enumerate `intel/`, and both read as complete.
+
+    `members.py` landed and neither roster gained it, so a session following either would put
+    member logic in `glsl.py` or `index.py` -- splitting a concern that already had a home. A
+    roster that reads complete and is not is worse than no roster, so the domain here is the
+    package's, not the prose's.
+    """
+    modules = {
+        path.stem
+        for path in Path("shaderbox/intel").glob("*.py")
+        if path.stem != "__init__"
+    }
+    for doc, anchor, span in (
+        (Path("ai_docs/conventions.md"), "lives in `shaderbox/intel/`", 1600),
+        (Path("ai_docs/dev_flow.md"), "**`intel/`**", 600),
+    ):
+        text = doc.read_text()
+        roster = text[text.index(anchor) :][:span]
+        # Matched as a backticked module name, not as a bare word: `members` also occurs in
+        # the surrounding prose, so a substring test passed with the module itself dropped.
+        named = set(re.findall(r"`(\w+)(?:\.py)?`", roster))
+        missing = sorted(modules - named)
+        assert not missing, f"{doc}: roster omits {missing}"
