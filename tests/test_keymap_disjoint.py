@@ -268,3 +268,35 @@ def test_two_sequences_in_one_feed_both_survive() -> None:
         editor.key(KeyCode.CHAR, 0, ch)
     _collect_binding(editor, fired)
     assert fired == [0, 7]
+
+
+def test_no_binding_claims_a_chord_the_host_serves_on_false() -> None:
+    """A registered chord returns TRUE from `ed_key`, so it never reaches the host's
+    unconsumed-key fallbacks.
+
+    `_drain_editor_input` treats an unconsumed key as its own: `_handle_reserved_chord`
+    approximates vim's insert-mode chords (Ctrl+U, Ctrl+W, ...) and `_is_lookup_key` serves
+    `K`. Since editor e6ddfbc a host binding SHADOWS the built-in and reports consumed --
+    the point of it -- so a binding registered with Ctrl over one of those letters would
+    take the key away from the fallback that implements it, silently.
+
+    A LEADER row is not that shape: it is reached through the leader prefix, not as a bare
+    chord, so `f` here does not collide with the host's Ctrl+F. The check is on how a row
+    is REGISTERED, which is what `_apply_editor_settings_to` passes to `ed_bind`.
+    """
+    registered = [(key, 0, True) for key, _ in LEADER_BINDINGS]
+    for key, mods, leader in registered:
+        if leader or mods == 0:
+            continue
+        assert key not in _RESERVED_CHORDS["vim"], (
+            f"Ctrl+{key} is registered as a bare chord, so `ed_key` now consumes it and "
+            "the host approximation in `_handle_reserved_chord` stops running"
+        )
+        assert key != "K", "K is served by the host's lookup path on an unconsumed key"
+
+
+def test_the_registration_shape_is_the_one_the_app_actually_uses() -> None:
+    # The test above reasons about (key, mods, leader) triples; this pins that the app
+    # registers exactly that shape, so the two cannot drift apart.
+    source = Path("shaderbox/app.py").read_text()
+    assert "editor.bind(key, index, leader=True)" in source

@@ -32,7 +32,7 @@ repos — four landed here (GLSL member completion after a dot, an RGB channel v
 `Ctrl+Shift+V`, a tooltip, chip click-through); the three keymap items went to the editor repo,
 which built a host-binding overlay: `<leader>f` formats, `Ctrl+Shift+I` still does.
 
-**The editor's ABI is 106 exports at `09e3e59`.** A host claims a key and gets back an id it
+**The editor's ABI is 106 exports at `dd58aa9`.** A host claims a key and gets back an id it
 chose; the compiled keymaps stay what nvim measures. Rebinding a built-in to another built-in is
 deliberately absent — it needs a vocabulary of internal action names no oracle can measure. A
 rebinding UI is unbuilt by maintainer decision, so `commands.py`'s leader table is the only

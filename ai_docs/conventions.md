@@ -911,7 +911,11 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   since the leader is a vim concept. Two shapes bite anyone editing this: `ed_take_binding` holds
   ONE id and a completing key overwrites it DURING the key feed, so `_collect_binding` sits inside
   the loop in `hotkeys.py` and moving it out drops a sequence a loop drain cannot recover; and
-  **id 0 is both valid and falsy**, so the drain tests `is None`, never truthiness. Rebinding a
+  **id 0 is both valid and falsy**, so the drain tests `is None`, never truthiness. A
+  registered chord returns TRUE from `ed_key` (editor e6ddfbc -- shadowing is the point), so a
+  binding registered as a bare Ctrl chord is taken away from `_handle_reserved_chord`, the
+  host's own approximation of vim's insert chords; every row is a leader sequence today and a
+  test fails the moment one is not. Rebinding a
   built-in to another built-in is deliberately not offered -- it needs a vocabulary of internal
   action names outliving every keymap change, which no oracle can measure. Revisit if a rebinding
   UI is built, which needs a persisted id that is not a list position.
