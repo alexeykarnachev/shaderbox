@@ -529,6 +529,7 @@ _KIND_COLOR: dict[SymbolKind, tuple[float, float, float, float]] = {
     SymbolKind.PY_API: COLOR.SYN_KEYWORD,
     SymbolKind.PY_MEMBER: COLOR.SYN_IDENT,
     SymbolKind.PY_LOCAL: COLOR.SYN_IDENT,
+    SymbolKind.GLSL_MEMBER: COLOR.SYN_IDENT,
 }
 
 
@@ -557,6 +558,7 @@ _KIND_SLOT: dict[SymbolKind, int] = {
     SymbolKind.PY_API: 1,
     SymbolKind.PY_MEMBER: 0,
     SymbolKind.PY_LOCAL: 0,
+    SymbolKind.GLSL_MEMBER: 0,
 }
 
 

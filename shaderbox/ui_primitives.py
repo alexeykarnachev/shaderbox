@@ -495,7 +495,13 @@ def item_normalized_mouse(
     (nx, ny, inside) normalized 0..1 — `flip_y` gives y-up (GLSL). The rect is passed in (not
     'the last item') because `image_with_bg` submits no interactive item. Popup-blocking is
     honoured by ANDing `is_window_hovered(child_windows)` (`is_mouse_hovering_rect` alone ignores
-    it). Returns None when the mouse pos is invalid; clamps to the rect edge when outside it."""
+    it). Returns None when the mouse pos is invalid; clamps to the rect edge when outside it.
+
+    An overlay chip drawn ON the rect (the channel-view and FPS chips) holds the mouse for
+    itself: without that term a click on one both cycled the view and reached the script as a
+    brush-down, painting a stroke under the chip. The chips are submitted AFTER this runs, so
+    `is_any_item_hovered` answers for last frame -- the one frame of lag costs a stroke
+    nothing, since the press that matters is preceded by the hover that armed it."""
     w = rect_max.x - rect_min.x
     h = rect_max.y - rect_min.y
     if w <= 0.0 or h <= 0.0:
@@ -503,9 +509,11 @@ def item_normalized_mouse(
     pos = imgui.get_mouse_pos()
     if pos.x < 0.0 or pos.y < 0.0:  # imgui's "no valid mouse" sentinel (-FLT_MAX)
         return None
-    inside = imgui.is_mouse_hovering_rect(
-        rect_min, rect_max
-    ) and imgui.is_window_hovered(imgui.HoveredFlags_.child_windows)
+    inside = (
+        imgui.is_mouse_hovering_rect(rect_min, rect_max)
+        and imgui.is_window_hovered(imgui.HoveredFlags_.child_windows)
+        and not imgui.is_any_item_hovered()
+    )
     nx = min(max((pos.x - rect_min.x) / w, 0.0), 1.0)
     ny = min(max((pos.y - rect_min.y) / h, 0.0), 1.0)
     if flip_y:

@@ -13,7 +13,7 @@ from imgui_bundle import portable_file_dialogs as pfd
 from imgui_bundle.python_backends.glfw_backend import GlfwRenderer
 from loguru import logger
 
-from shaderbox.alpha_view import AlphaView
+from shaderbox.channel_blit import ALPHA_FS, RGB_FS, ChannelBlit
 from shaderbox.commands import (
     COMMAND_SPECS,
     SPEC_BY_ID,
@@ -243,10 +243,11 @@ class App:
         self.preview_canvas: Canvas
         # 2x2 alpha checkerboards, drawn as ONE repeating image behind the viewer: the quiet
         # one under the Color view, the loud one under Color+Alpha. Created beside
-        # preview_canvas and released with it, as is the Alpha view's blit.
+        # preview_canvas and released with it, as are the channel blits.
         self.checker_texture: moderngl.Texture
         self.checker_loud_texture: moderngl.Texture
-        self.alpha_view: AlphaView
+        self.alpha_view: ChannelBlit
+        self.rgb_view: ChannelBlit
 
         self.exporter_registry = ExporterRegistry()
         self.exporter_registry.register(TelegramExporter())
@@ -1165,7 +1166,8 @@ class App:
         self.checker_loud_texture = _make_checker_texture(
             COLOR.CHECKER_LIGHT_LOUD, COLOR.CHECKER_DARK_LOUD
         )
-        self.alpha_view = AlphaView()
+        self.alpha_view = ChannelBlit(ALPHA_FS)
+        self.rgb_view = ChannelBlit(RGB_FS)
 
         self.frame_idx = 0
         # Wall-clock of the previous script-engine tick (feature 040), for the per-frame dt.
@@ -1786,6 +1788,9 @@ class App:
 
         if hasattr(self, "alpha_view"):
             self.alpha_view.release()
+
+        if hasattr(self, "rgb_view"):
+            self.rgb_view.release()
 
     def open_project(self) -> None:
         if self._copilot_busy_blocked("Opening a project"):

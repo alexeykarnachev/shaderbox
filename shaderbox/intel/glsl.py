@@ -10,6 +10,13 @@ _UNIFORM = re.compile(r"\buniform\s+(\w+)\s+(\w+)\s*(\[[^\]]*\])?\s*;")
 _FUNCTION = re.compile(r"^[ \t]*(\w+)\s+(\w+)\s*\(([^)]*)\)\s*\{", re.MULTILINE)
 _CONST = re.compile(r"\bconst\s+(\w+)\s+(\w+)\s*(\[[^\]]*\])?\s*=")
 _DEFINE = re.compile(r"^[ \t]*#\s*define\s+(\w+)(\([^)]*\))?", re.MULTILINE)
+# A local: `vec3 col = ...`, `float t;`, and a function's `vec2 uv` parameter. The type must
+# be a known GLSL type, so `return foo` and `else if` cannot match; the preceding character
+# rules out a member (`s.vec3 x` is not a declaration) and a longer identifier ending in the
+# type's spelling. `const` and the precision qualifiers may sit in front.
+_LOCAL = re.compile(
+    r"(?<![\w.])(?:const\s+)?(?:lowp\s+|mediump\s+|highp\s+)?(\w+)\s+(\w+)\s*(?=[=;,)])"
+)
 # `out vec4 fragColor;` at the top level. `layout(...)` may precede it, and the qualifier
 # is `out` alone — `inout` and a struct member named `out_thing` must not match.
 _OUT_VARIABLE = re.compile(
@@ -104,6 +111,23 @@ def output_declarations(text: str) -> tuple[UniformDeclaration, ...]:
         UniformDeclaration(m.group(2), m.group(1), _line_of(code, m.start()))
         for m in _OUT_VARIABLE.finditer(code)
     )
+
+
+def local_declarations(text: str, types: frozenset[str]) -> dict[str, str]:
+    """Name -> GLSL type for every local and parameter the buffer declares, comments excluded.
+
+    Body-scoped, so a name declared in two functions keeps the LAST spelling seen; the index
+    reads this only to answer what a member site's dot is attached to, where a shader
+    re-declaring one name as two types is rarer than the completion is useful. A name a
+    uniform already declares is not overwritten by the caller.
+    """
+    code = _strip_comments(text)
+    found: dict[str, str] = {}
+    for m in _LOCAL.finditer(code):
+        glsl_type = m.group(1)
+        if glsl_type in types:
+            found[m.group(2)] = glsl_type
+    return found
 
 
 def buffer_words(text: str) -> frozenset[str]:

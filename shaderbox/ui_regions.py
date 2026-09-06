@@ -17,16 +17,19 @@ class DocumentTab(StrEnum):
 class ChannelView(StrEnum):
     # What the viewer shows of the output texture. COLOR is the plain frame over the quiet
     # checker; COLOR_ALPHA composites over a loud checker so transparency reads; ALPHA shows
-    # the alpha channel alone as grayscale.
+    # the alpha channel alone as grayscale; RGB discards alpha entirely, so a frame whose
+    # background is transparent still shows the color the shader wrote there.
     COLOR = auto()
     COLOR_ALPHA = auto()
     ALPHA = auto()
+    RGB = auto()
 
 
 _CHANNEL_VIEW_CYCLE: list[ChannelView] = [
     ChannelView.COLOR,
     ChannelView.COLOR_ALPHA,
     ChannelView.ALPHA,
+    ChannelView.RGB,
 ]
 
 
@@ -40,4 +43,5 @@ CHANNEL_VIEW_LABELS: dict[ChannelView, str] = {
     ChannelView.COLOR: "Color",
     ChannelView.COLOR_ALPHA: "Color+Alpha",
     ChannelView.ALPHA: "Alpha",
+    ChannelView.RGB: "RGB",
 }

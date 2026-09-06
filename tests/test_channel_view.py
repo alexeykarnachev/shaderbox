@@ -1,7 +1,8 @@
-"""The viewer's channel view (073 W-C): Color / Color+Alpha / Alpha, default unchanged.
+"""The viewer's channel view (073 W-C): Color / Color+Alpha / Alpha / RGB, default unchanged.
 
-The Alpha view is a separate blit, so the output texture that feedback reads and exports
-sample is never touched; the view cycles through one command and persists with the app state.
+The Alpha and RGB views are separate blits, so the output texture that feedback reads and
+exports sample is never touched; the view cycles through one command and persists with the
+app state.
 """
 
 from pathlib import Path
@@ -74,3 +75,30 @@ def test_the_alpha_view_is_the_alpha_channel_as_grayscale(app: Any) -> None:
         0,
     ]
     source.release()
+
+
+def test_the_rgb_view_ignores_alpha_entirely(app: Any) -> None:
+    # The maintainer's report: a shader writing `vec4(background, 0.0)` showed only the
+    # checker in every view, because the compositing ones are honouring an alpha of 0. The
+    # RGB view answers what color is THERE. Same 2x1 source as the alpha test: left opaque
+    # red, right TRANSPARENT green -- the green must come through at full strength, and the
+    # frame must be opaque so no checker shows under it.
+    source = app.rgb_view._gl.texture(
+        (2, 1), 4, data=bytes([255, 0, 0, 255, 0, 255, 0, 0]), dtype="f1"
+    )
+    shown = app.rgb_view.render(source)
+    assert shown is not source
+    pixels = np.frombuffer(shown.read(), dtype=np.uint8).reshape(1, 2, 4)
+    assert pixels[0, 0].tolist() == [255, 0, 0, 255]
+    assert pixels[0, 1].tolist() == [0, 255, 0, 255], (
+        "a transparent texel keeps its color"
+    )
+    source.release()
+
+
+def test_the_alpha_and_rgb_views_are_separate_blits(app: Any) -> None:
+    # One class, two shaders (each its own GL program): a shared canvas would make the two
+    # views overwrite each other's texture the frame both were asked for.
+    assert app.alpha_view is not app.rgb_view
+    assert app.alpha_view.canvas is not app.rgb_view.canvas
+    assert app.alpha_view.program is not app.rgb_view.program

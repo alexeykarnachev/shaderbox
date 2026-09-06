@@ -13,6 +13,7 @@ from shaderbox.glsl_docs import BUILTINS, KEYWORDS, TYPES
 from shaderbox.intel.glsl import (
     buffer_declarations,
     buffer_words,
+    local_declarations,
     output_declarations,
     uniform_declarations,
 )
@@ -47,6 +48,9 @@ class GlslContext:
 class GlslIndex:
     # Name -> symbol; the document's own names shadow the language's.
     symbols: Mapping[str, Symbol]
+    # Name -> its GLSL type, for every name whose type the buffer states: the uniforms, the
+    # locals, the parameters. What a member site's dot is attached to.
+    types: Mapping[str, str]
     # What a `uniform ...` line offers: whole declarations the buffer lacks (their
     # `insert_text`); the same names in `words` and `symbols` insert as bare names.
     declarations: tuple[Symbol, ...]
@@ -55,6 +59,10 @@ class GlslIndex:
 
     def lookup(self, word: str) -> Symbol | None:
         return self.symbols.get(word)
+
+    def type_of(self, word: str) -> str | None:
+        """The GLSL type of a name the buffer declares, or None when nothing states one."""
+        return self.types.get(word)
 
     def classes(self) -> dict[str, SymbolKind]:
         """The names the text colors by kind (the host classes the lexer cannot know)."""
@@ -109,6 +117,17 @@ def build_glsl_index(context: GlslContext) -> GlslIndex:
     }
     document: list[Symbol] = []
     declarations: list[Symbol] = []
+    # A name's stated GLSL type. The buffer's own declarations win over the locals scan,
+    # which is regex-shaped and body-blind; a uniform line matches both and must read as the
+    # uniform. Engine and script names a buffer has NOT declared carry their type too, so a
+    # member site answers for them the moment the declaration lands.
+    types: dict[str, str] = dict(local_declarations(context.text, frozenset(TYPES)))
+    types.update({u.name: u.glsl_type for u in declared})
+    for name, glsl_type in context.engine_types.items():
+        types.setdefault(name, glsl_type)
+    for name, ret in returned.items():
+        if ret.glsl_type is not None:
+            types.setdefault(name, ret.glsl_type)
 
     for uniform in declared:
         if uniform.name in context.engine_types:
@@ -247,4 +266,9 @@ def build_glsl_index(context: GlslContext) -> GlslIndex:
             + [s.name for s in language]
         )
     )
-    return GlslIndex(symbols=symbols, declarations=tuple(declarations), words=words)
+    return GlslIndex(
+        symbols=symbols,
+        types=types,
+        declarations=tuple(declarations),
+        words=words,
+    )

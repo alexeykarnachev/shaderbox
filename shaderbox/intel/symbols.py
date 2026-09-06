@@ -36,6 +36,8 @@ class SymbolKind(StrEnum):
     PY_MEMBER = auto()
     # A name the script defines: a class, a function, a variable in scope.
     PY_LOCAL = auto()
+    # A vector component reached through a dot: `u_color.rgb`, `uv.x`.
+    GLSL_MEMBER = auto()
 
 
 @dataclass(frozen=True)
@@ -76,6 +78,7 @@ _KIND_RANK: dict[SymbolKind, int] = {
     SymbolKind.PY_API: 2,
     SymbolKind.PY_BUILTIN: 5,
     SymbolKind.PY_KEYWORD: 6,
+    SymbolKind.GLSL_MEMBER: 0,
 }
 
 

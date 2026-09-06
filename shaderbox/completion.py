@@ -15,6 +15,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 
 from shaderbox.intel.index import GlslIndex
+from shaderbox.intel.members import members_of
 from shaderbox.intel.symbols import Symbol, SymbolKind, kind_rank
 
 MAX_CANDIDATES = 50
@@ -77,12 +78,33 @@ def _declarations(context: CompletionContext) -> Sequence[Symbol]:
     return shaped
 
 
+# A GLSL member site: a dot whose left neighbour is a name, and the swizzle typed so far.
+# `\w` alone would read a float literal's dot as one (`1.0` offering `x`), so the name may
+# not start with a digit. Group 1 is the name the dot hangs off.
+MEMBER_SITE = re.compile(r"(?<![\w.])((?!\d)\w+)\.(\w*)$")
+
+
+def _members(context: CompletionContext) -> Sequence[Symbol]:
+    """The swizzles of whatever the dot hangs off, when the buffer states its type."""
+    if context.index is None:
+        return ()
+    site = MEMBER_SITE.search(context.line_before_caret)
+    if site is None:
+        return ()
+    glsl_type = context.index.type_of(site.group(1))
+    return () if glsl_type is None else members_of(glsl_type)
+
+
 def _glsl_words(context: CompletionContext) -> Sequence[Symbol]:
     # After `uniform <type> ` the line wants a NEW name: the buffer's declared names and the
     # language's words are not candidates there, only the declarations provider's. After a
     # bare `uniform ` a bare name would land a typeless `uniform u_time`.
     site = DECLARATION_SITE.search(context.line_before_caret)
     if context.index is None or (site is not None and site.group(1)):
+        return ()
+    if MEMBER_SITE.search(context.line_before_caret):
+        # After a dot the line wants a component, not a name: the library's prefix is the
+        # swizzle typed so far, and every buffer word sharing those letters would match it.
         return ()
     if site is None or context.tab_kind != "shader":
         # A lib file has no declarations provider, so its own declared names stay offered.
@@ -112,6 +134,16 @@ PROVIDERS: tuple[CompletionProvider, ...] = (
         min_prefix_auto=0,
         min_prefix_explicit=0,
         candidates=_declarations,
+    ),
+    # A member site (`u_color.`, `uv.x`) opens by itself with an empty prefix, like Python's:
+    # the dot is the ask. Ahead of `glsl`, which yields the site entirely.
+    CompletionProvider(
+        name="members",
+        tab_kinds=frozenset({"shader", "lib"}),
+        context=MEMBER_SITE,
+        min_prefix_auto=0,
+        min_prefix_explicit=0,
+        candidates=_members,
     ),
     CompletionProvider(
         name="glsl",

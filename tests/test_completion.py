@@ -5,6 +5,7 @@ from typing import Any
 
 from shaderbox.completion import (
     DECLARATION_SITE,
+    MEMBER_SITE,
     PYTHON_SITE,
     CompletionContext,
     eligible_providers,
@@ -481,3 +482,105 @@ def test_a_float_literals_dot_is_not_a_member_site() -> None:
         assert not PYTHON_SITE.search(line), line
     for line in ("x.", "f().", "a[0].", "context.t", "obj.attr.", "self.pha"):
         assert PYTHON_SITE.search(line), line
+
+
+_MEMBER_TEXT = (
+    "uniform vec3 u_color;\n"
+    "uniform float u_gain;\n"
+    "vec4 shade(vec2 uv) {\n"
+    "    vec4 tint = vec4(1.0);\n"
+    "    float xfade = 0.5;\n"
+    "    return tint;\n"
+    "}\n"
+)
+
+
+def _member_index() -> GlslIndex:
+    return _index(_MEMBER_TEXT)
+
+
+def test_a_dot_after_a_vector_offers_its_components() -> None:
+    # The maintainer's report: typing `u_color.` showed nothing. Every single component of
+    # each set comes, plus the leading runs; the sets never mix, which GLSL forbids.
+    offered = _texts(
+        offer(_context(line_before_caret="  q = u_color.", index=_member_index()))
+    )
+    assert set(offered) == {
+        "x",
+        "y",
+        "z",
+        "xy",
+        "xyz",
+        "r",
+        "g",
+        "b",
+        "rg",
+        "rgb",
+        "s",
+        "t",
+        "p",
+        "st",
+        "stp",
+    }
+    assert "w" not in offered, "a vec3 has no fourth component"
+    assert "xg" not in offered, "GLSL forbids mixing component sets"
+
+
+def test_the_dot_reads_the_type_from_a_local_a_parameter_and_a_uniform() -> None:
+    # Three declaration shapes the buffer states a type in; a vec2 stops at two components.
+    index = _member_index()
+    assert index.type_of("tint") == "vec4"
+    assert index.type_of("uv") == "vec2"
+    assert index.type_of("u_color") == "vec3"
+    for name, present, absent in (("tint", "w", None), ("uv", "y", "z")):
+        offered = _texts(
+            offer(_context(line_before_caret=f"  q = {name}.", index=index))
+        )
+        assert present in offered
+        if absent is not None:
+            assert absent not in offered
+
+
+def test_an_engine_uniform_answers_before_the_buffer_declares_it() -> None:
+    # `u_resolution.` works on a buffer that has not declared it yet: the engine states the
+    # type, so the member site does not wait for the declaration to land.
+    offered = _texts(
+        offer(_context(line_before_caret="  q = u_resolution.", index=_member_index()))
+    )
+    assert "xy" in offered and "z" not in offered
+
+
+def test_a_dot_on_something_with_no_members_offers_nothing() -> None:
+    # A float, an unknown name and a float LITERAL's dot each offer nothing. Offering the
+    # buffer's WORDS after a dot was the bug's other half: at the words provider's two-letter
+    # floor, `u_gain.xf` matched the local `xfade` and offered it as a component. Broken
+    # (the MEMBER_SITE guard in `_glsl_words` deleted), the last assert returns `xfade`.
+    index = _member_index()
+    for line in ("  q = u_gain.", "  q = nowhere.", "  q = 1.", "  q = 1.0."):
+        assert offer(_context(line_before_caret=line, index=index)) == [], line
+    assert (
+        _texts(
+            offer(
+                _context(line_before_caret="  q = u_gain.xf", prefix="xf", index=index)
+            )
+        )
+        == []
+    )
+
+
+def test_a_typed_swizzle_narrows_and_never_offers_itself() -> None:
+    offered = _texts(
+        offer(
+            _context(
+                line_before_caret="  q = u_color.x", prefix="x", index=_member_index()
+            )
+        )
+    )
+    assert offered == ["xy", "xyz"]
+
+
+def test_a_member_site_is_a_name_not_a_number() -> None:
+    for line in ("u_color.", "uv.x", "tint.rgb"):
+        assert MEMBER_SITE.search(line), line
+    for line in ("1.", "1.0.", "0.5", " ."):
+        assert not MEMBER_SITE.search(line), line

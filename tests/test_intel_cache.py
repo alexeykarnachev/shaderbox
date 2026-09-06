@@ -9,7 +9,7 @@ from shaderbox.intel.index import GlslIndex
 
 
 def _index() -> GlslIndex:
-    return GlslIndex(symbols={}, declarations=(), words=())
+    return GlslIndex(symbols={}, types={}, declarations=(), words=())
 
 
 def test_the_cache_entry_belongs_to_its_handle() -> None:

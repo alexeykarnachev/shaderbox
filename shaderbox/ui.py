@@ -637,6 +637,8 @@ def _draw_document_image(
         output_texture = ui_document.document.render_pass.canvas.texture
         if view == ChannelView.ALPHA:
             shown_texture = app.alpha_view.render(output_texture)
+        elif view == ChannelView.RGB:
+            shown_texture = app.rgb_view.render(output_texture)
         else:
             shown_texture = output_texture
         backdrop = (
@@ -736,9 +738,7 @@ def _draw_app_panel(app: App) -> None:
         if chip_button(label, chip_w, imgui.get_frame_height(), faded=True):
             app.cycle_channel_view()
         if imgui.is_item_hovered():
-            imgui.set_tooltip(
-                f"Channel view  {_hint(app, CommandId.CYCLE_CHANNEL_VIEW)}"
-            )
+            imgui.set_tooltip("Channel view")
 
     imgui.set_cursor_screen_pos(
         (cursor_pos.x, cursor_pos.y + image_height + float(SPACE.MD))

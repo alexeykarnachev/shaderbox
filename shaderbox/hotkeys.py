@@ -250,16 +250,21 @@ def _read_clipboard(app: App) -> str:
 def _handle_clipboard(app: App, editor: Editor, event: KeyEvent) -> bool:
     # Host-wired clipboard (the keymap has no registers): Ctrl+C/X/V against the
     # system clipboard. Runs before ed_key — the editor leaves these unbound.
-    if event.code != KeyCode.CHAR or event.mods != KeyMod.CTRL:
+    # Shift is accepted alongside: Ctrl+Shift+V is the terminal-style paste, and the
+    # synthesized CHAR carries the uppercase text with the shift bit set.
+    if event.code != KeyCode.CHAR or event.mods not in (
+        KeyMod.CTRL,
+        KeyMod.CTRL | KeyMod.SHIFT,
+    ):
         return False
-    if event.text not in ("c", "x", "v"):
+    if event.text.lower() not in ("c", "x", "v"):
         return False
-    if event.text in ("c", "x"):
+    if event.text.lower() in ("c", "x"):
         selected = editor.get_selection_text()
         if selected:
             glfw.set_clipboard_string(app.window, selected)
             editor.set_register(selected, linewise=selected.endswith("\n"))
-            if event.text == "x" and not app.copilot_turn_active:
+            if event.text.lower() == "x" and not app.copilot_turn_active:
                 editor.replace_selection("")
     elif not app.copilot_turn_active:
         raw = glfw.get_clipboard_string(app.window)
