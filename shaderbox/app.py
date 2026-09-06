@@ -241,11 +241,10 @@ class App:
         self.font_emoji = self.get_emoji_font(24)
 
         self.preview_canvas: Canvas
-        # 2x2 alpha checkerboards, drawn as ONE repeating image behind the viewer: the quiet
-        # one under the Color view, the loud one under Color+Alpha. Created beside
-        # preview_canvas and released with it, as are the channel blits.
+        # A 2x2 alpha checkerboard, drawn as ONE repeating image behind the viewer under the
+        # Color view. Created beside preview_canvas and released with it, as are the channel
+        # blits.
         self.checker_texture: moderngl.Texture
-        self.checker_loud_texture: moderngl.Texture
         self.alpha_view: ChannelBlit
         self.rgb_view: ChannelBlit
 
@@ -289,15 +288,10 @@ class App:
         )
         self.editor_script_types: dict[tuple[str, str], str] = {}
         # The auto-trigger's bookkeeping (073 W-B): the (path, revision) the driver last saw,
-        # so only an EDIT offers; whether the open popup was offered unasked (Enter then
-        # inserts a newline unless the user navigated into the list); whether it was open
-        # last frame (the edit that closed it was an accept, not a keystroke to re-offer on).
+        # so only an EDIT offers, and whether the open popup was offered unasked (Enter then
+        # inserts a newline unless the user navigated into the list).
         self.editor_completion_seen: tuple[Path, int] | None = None
         self.editor_completion_auto: bool = False
-        self.editor_completion_was_open: bool = False
-        # The last batch pushed: a prefix that equals one of them after the popup closed was
-        # an accept, which must not re-offer.
-        self.editor_completion_items: list[str] = []
         # `K` (073 W-B): the drain raises the request, the panel resolves it into a popup
         # that the next key or click dismisses.
         self.editor_lookup_requested: bool = False
@@ -1163,9 +1157,6 @@ class App:
         self.checker_texture = _make_checker_texture(
             COLOR.CHECKER_LIGHT, COLOR.CHECKER_DARK
         )
-        self.checker_loud_texture = _make_checker_texture(
-            COLOR.CHECKER_LIGHT_LOUD, COLOR.CHECKER_DARK_LOUD
-        )
         self.alpha_view = ChannelBlit(ALPHA_FS)
         self.rgb_view = ChannelBlit(RGB_FS)
 
@@ -1756,8 +1747,6 @@ class App:
         self.editor_completion_prefix = None
         self.editor_completion_seen = None
         self.editor_completion_auto = False
-        self.editor_completion_was_open = False
-        self.editor_completion_items = []
         self.editor_lookup_requested = False
         self.editor_lookup = None
         self.python_candidates = None
@@ -1782,9 +1771,6 @@ class App:
 
         if hasattr(self, "checker_texture"):
             self.checker_texture.release()
-
-        if hasattr(self, "checker_loud_texture"):
-            self.checker_loud_texture.release()
 
         if hasattr(self, "alpha_view"):
             self.alpha_view.release()

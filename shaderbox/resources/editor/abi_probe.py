@@ -558,7 +558,7 @@ def main() -> int:
         fills += KINDS[p.kind] == "Background"
     check("and stops drawing", fills, 0)
 
-    # A marker follows its line between rebuilds. shaderbox's report: an
+    # A marker follows its line between rebuilds. Reported from a host: an
     # error on line 9, a line inserted at 7, and the red band still on 9 while
     # the code that caused it sat on 10.
     lib.ed_set_text(h, "\n".join(f"line {i}" for i in range(20)).encode())
@@ -818,7 +818,7 @@ def main() -> int:
     check("the gutter mark is drawn, in the separator cell", marks, [lib.ed_gutter_cells(h) - 1])
     lib.ed_clear_markers(h)
     # A text colour reaches COLUMN 0 behind the gutter: the first glyph's ink
-    # overhangs its cell to the left, and shaderbox measured column 0 keeping
+    # overhangs its cell to the left, and a host measured column 0 keeping
     # its syntax colour on every line not starting with a space.
     lib.ed_set_text(h, b"int x;\nvec3 c = fn(x);\nAAAA")
     lib.ed_add_marker(h, 1, 0.8, 0.1, 0.1, 0.2, 0.0, 0.0, 0.0, 0.0, 0.92, 0.86, 0.70, 1.0, 0, None)

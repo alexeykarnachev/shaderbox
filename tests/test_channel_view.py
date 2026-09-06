@@ -1,4 +1,4 @@
-"""The viewer's channel view (073 W-C): Color / Color+Alpha / Alpha / RGB, default unchanged.
+"""The viewer's channel view (073 W-C): Color / Alpha / RGB, default unchanged.
 
 The Alpha and RGB views are separate blits, so the output texture that feedback reads and
 exports sample is never touched; the view cycles through one command and persists with the
@@ -50,7 +50,7 @@ def test_the_default_is_color_and_the_choice_persists(tmp_path: Path) -> None:
 def test_the_command_cycles_the_view(app: Any) -> None:
     assert app.app_state.channel_view == ChannelView.COLOR
     app.command_callbacks[CommandId.CYCLE_CHANNEL_VIEW]()
-    assert app.app_state.channel_view == ChannelView.COLOR_ALPHA
+    assert app.app_state.channel_view == ChannelView.ALPHA
 
 
 def test_the_alpha_view_is_the_alpha_channel_as_grayscale(app: Any) -> None:

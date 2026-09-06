@@ -641,11 +641,7 @@ def _draw_document_image(
             shown_texture = app.rgb_view.render(output_texture)
         else:
             shown_texture = output_texture
-        backdrop = (
-            app.checker_loud_texture
-            if view == ChannelView.COLOR_ALPHA
-            else app.checker_texture
-        )
+        backdrop = app.checker_texture
         # The panel runs inside `begin_disabled` during a copilot turn, which scales the style
         # alpha for every widget in it. `image_with_bg` is a widget and the checker under it is a
         # raw draw-list image, so a scaled tint would composite the render over a full-alpha

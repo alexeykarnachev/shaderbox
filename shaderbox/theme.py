@@ -130,10 +130,6 @@ class _ColorBag:
     # enough that an opaque render is not framed by a texture.
     CHECKER_LIGHT: tuple[float, float, float, float] = _P["bg_2"]
     CHECKER_DARK: tuple[float, float, float, float] = _P["bg_1"]
-    # The Color+Alpha view's checker: two mid greys far enough apart to read under a dark
-    # render, shown only in that opt-in view.
-    CHECKER_LIGHT_LOUD: tuple[float, float, float, float] = _P["gray"]
-    CHECKER_DARK_LOUD: tuple[float, float, float, float] = _P["bg_4"]
     # The viewer's 1px canvas outline. Two steps above CHECKER_LIGHT, so it reads against
     # both checker greys AND the panel -- BORDER is bg_2, which IS one of them.
     VIEWER_BORDER: tuple[float, float, float, float] = _P["bg_4"]

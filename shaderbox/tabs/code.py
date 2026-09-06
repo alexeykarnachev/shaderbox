@@ -592,10 +592,6 @@ def _completion_context(
 
 
 def _drive_completion(app: App, editor: Editor, tab: EditorTab) -> None:
-    # TODO: the popup BLINKS while typing -- a typed character closes it (see the re-offer
-    # branch below) and the next frame re-opens it, so the user sees a flicker per keystroke.
-    # Three readings of this path have not found the fix; it wants the running app, since the
-    # blink is a frame-timing artifact no test or trace shows.
     # Host-driven autocomplete (pushing IS opening; the built-in buffer-word source is
     # suppressed at session creation, so the popup shows only what the providers say).
     # Three ways in: the deliberate Ctrl+N / Ctrl+P (explicit), a keystroke in insert mode
@@ -605,41 +601,22 @@ def _drive_completion(app: App, editor: Editor, tab: EditorTab) -> None:
     revision = editor.get_undo_index()
     edited = app.editor_completion_seen != (tab.path, revision)
     app.editor_completion_seen = (tab.path, revision)
-    was_open = app.editor_completion_was_open
     if app.editor_completion_requested:
         app.editor_completion_requested = False
         _offer_completion(app, editor, tab, explicit=True)
     elif editor.complete_open():
+        # The popup now SURVIVES a typed character while the caret stays in the word it
+        # opened on (editor b2080f2), so this is the re-filter and no longer a reopen: only
+        # a moved prefix re-offers, and a keystroke with nothing new to say leaves the popup
+        # alone. Re-offering unconditionally would rebuild the list per keystroke, since
+        # `complete_begin` means "new list" -- which is the blink the branch here used to be.
         prefix = editor.complete_prefix()
         if prefix != app.editor_completion_prefix:
             _offer_completion(app, editor, tab, explicit=not app.editor_completion_auto)
     elif edited and editor.get_mode() == Mode.INSERT:
-        if was_open:
-            # The edit closed the popup (a typed character does, under host-driven
-            # completion). An accept, or a character that ended the word, re-offers
-            # nothing; a character that CONTINUED the word, or a backspace inside it,
-            # re-offers the same batch with the same asked-for-ness, so a Ctrl+N list
-            # keeps its row-0 highlight while the user keeps typing or corrects.
-            prefix = editor.complete_prefix()
-            cached = app.editor_completion_prefix
-            continued = (
-                bool(prefix)
-                and bool(cached)
-                and prefix not in app.editor_completion_items
-                and (prefix.startswith(cached) or cached.startswith(prefix))
-            )
-            if continued:
-                _offer_completion(
-                    app, editor, tab, explicit=not app.editor_completion_auto
-                )
-            else:
-                app.editor_completion_prefix = None
-        else:
-            _offer_completion(app, editor, tab, explicit=False)
+        _offer_completion(app, editor, tab, explicit=False)
     else:
         app.editor_completion_prefix = None
-    # Recorded after the offer, so the frame that opens a popup is seen as open by the next.
-    app.editor_completion_was_open = editor.complete_open()
 
 
 def _consume_lookup_request(app: App, editor: Editor, tab: EditorTab) -> None:
@@ -763,16 +740,13 @@ def _offer_completion(app: App, editor: Editor, tab: EditorTab, explicit: bool) 
     if not matches:
         editor.complete_cancel()
         app.editor_completion_prefix = None
-        app.editor_completion_items = []
         app.editor_completion_offered = {}
         app.editor_completion_auto = False
         return
-    items = [symbol.inserted for symbol in matches]
     editor.complete_begin()
     for symbol in matches:
         editor.complete_push_class(symbol.inserted, kind_slot(symbol.kind))
     app.editor_completion_prefix = context.prefix
-    app.editor_completion_items = items
     app.editor_completion_offered = {symbol.inserted: symbol for symbol in matches}
     app.editor_completion_auto = not explicit
     if not explicit:
