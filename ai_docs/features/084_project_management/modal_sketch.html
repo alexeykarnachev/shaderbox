@@ -1,0 +1,473 @@
+<title>084 — Projects modal variants</title>
+<style>
+  :root{
+    --bg-app:#1d2021; --bg-surface:#161819; --bg-popup:#222526; --bg-frame:#282828;
+    --fg-1:#ebdbb2; --fg-2:#d5c4a1; --fg-dim:#928374;
+    --accent:#fabd2f; --accent-active:#fe8019;
+    --ok:#8ec07c; --info:#458588; --error:#fb4934; --select:#d3869b;
+    --chip:#504945; --chip-hover:#665c54;
+    --xs:2px; --sm:4px; --md:8px; --lg:16px; --xl:24px;
+    --thumb:150px; --row:22px;
+    --mono:"JetBrains Mono","DejaVu Sans Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#0f1112;color:var(--fg-1);
+       font:13px/1.5 var(--mono);padding:var(--xl)}
+  h1{font-size:19px;margin:0 0 var(--sm);color:var(--fg-1);font-weight:600}
+  .lede{color:var(--fg-dim);max-width:76ch;margin:0 0 var(--xl);font-size:12px}
+  .lede b{color:var(--fg-2);font-weight:600}
+  h2{font-size:14px;margin:0 0 var(--xs);color:var(--accent);font-weight:600}
+  .verdict{color:var(--fg-dim);font-size:11.5px;margin:0 0 var(--md);max-width:82ch}
+  .verdict .yes{color:var(--ok)} .verdict .no{color:var(--error)}
+  section{margin:0 0 calc(var(--xl) * 1.6)}
+  .stage{background:var(--bg-app);padding:var(--xl);border-radius:3px;
+         display:inline-block;border:1px solid #000}
+
+  /* ---- imgui-ish modal chrome ---- */
+  .modal{background:var(--bg-popup);border:1px solid #000;border-radius:3px;
+         box-shadow:0 8px 32px rgba(0,0,0,.6)}
+  .title{background:var(--bg-frame);padding:var(--sm) var(--md);font-size:12px;
+         color:var(--fg-2);border-bottom:1px solid #000;display:flex;
+         justify-content:space-between}
+  .title .x{color:var(--fg-dim)}
+  .body{padding:var(--lg)}
+
+  /* ---- button tiers (ui_primitives) ---- */
+  .btn{display:inline-flex;align-items:center;justify-content:center;height:var(--row);
+       padding:0 10px;border:1px solid var(--chip);background:transparent;
+       color:var(--fg-2);border-radius:2px;font:inherit;font-size:12px;white-space:nowrap}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#1d2021;font-weight:600}
+  .btn.danger{border-color:var(--error);color:var(--error)}
+  .btn.wide{width:100%}
+  .row{display:flex;gap:var(--md);align-items:center}
+  .spacer{flex:1}
+
+  /* ---- tiles ---- */
+  .grid{display:grid;grid-template-columns:repeat(3,var(--thumb));gap:var(--md)}
+  .tile{width:var(--thumb);background:var(--bg-surface);border:1px solid var(--chip);
+        border-radius:2px;overflow:hidden}
+  .tile.sel{border-color:var(--accent)}
+  .tile .art{height:var(--thumb);display:flex;align-items:center;justify-content:center;
+             position:relative;background:#111314}
+  .tile .foot{padding:var(--sm) 6px;font-size:11.5px;color:var(--fg-2);
+              white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+              border-top:1px solid #000}
+  .tile.sel .foot{color:var(--accent)}
+  .chip{position:absolute;left:6px;bottom:6px;background:var(--chip);color:var(--fg-1);
+        font-size:10px;padding:1px 6px;border-radius:8px}
+  .chip.open{background:var(--accent);color:#1d2021;font-weight:600}
+  .art .swatch{width:100%;height:100%}
+
+  /* ---- list rows (variant B) ---- */
+  .rows{display:flex;flex-direction:column;gap:2px}
+  .lrow{display:flex;align-items:center;gap:var(--md);padding:var(--sm) var(--md);
+        border:1px solid transparent;border-radius:2px;background:var(--bg-surface)}
+  .lrow.sel{border-color:var(--accent);background:#1b1d1e}
+  .lrow .nm{color:var(--fg-1);min-width:180px}
+  .lrow.sel .nm{color:var(--accent)}
+  .lrow .meta{color:var(--fg-dim);font-size:11px;min-width:64px}
+  .lrow .path{color:#6f6355;font-size:10.5px;flex:1;text-align:right;
+              overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lrow .acts{display:flex;gap:var(--sm);opacity:.35}
+  .lrow.sel .acts,.lrow.hov .acts{opacity:1}
+
+  .cap{color:var(--fg-dim);font-size:11px;margin-top:var(--md)}
+  .inline-input{display:flex;align-items:center;gap:var(--md);
+                background:var(--bg-frame);border:1px solid var(--accent);
+                border-radius:2px;padding:var(--sm) var(--md)}
+  .inline-input .field{flex:1;color:var(--fg-1)}
+  .inline-input .caret{color:var(--accent)}
+  .err{color:var(--error);font-size:11px}
+  .hint{color:var(--fg-dim);font-size:11px}
+  .sep{height:1px;background:#000;margin:var(--lg) 0}
+  .side{display:flex;gap:var(--lg)}
+  .side .left{width:220px;display:flex;flex-direction:column;gap:2px}
+  .side .right{flex:1;background:var(--bg-surface);border:1px solid var(--chip);
+               border-radius:2px;padding:var(--lg)}
+  .kv{display:flex;gap:var(--md);font-size:11.5px;margin-bottom:var(--sm)}
+  .kv .k{color:var(--fg-dim);width:76px}
+  .kv .v{color:var(--fg-2)}
+  .bigprev{height:150px;background:#111314;border:1px solid var(--chip);
+           border-radius:2px;margin-bottom:var(--lg);display:flex;
+           align-items:center;justify-content:center}
+  .menubar{background:var(--bg-frame);border:1px solid #000;padding:var(--sm) var(--md);
+           display:flex;gap:var(--lg);font-size:12px;color:var(--fg-2);
+           border-radius:2px 2px 0 0;align-items:center}
+  .menubar .proj{margin-left:auto;color:var(--fg-dim);font-size:11.5px}
+  .menubar .proj b{color:var(--fg-2);font-weight:600}
+  code{background:var(--bg-frame);padding:1px 5px;border-radius:2px;
+       color:var(--accent);font-size:11.5px}
+  .note{border-left:2px solid var(--chip);padding-left:var(--md);margin:var(--md) 0 0;
+        color:var(--fg-dim);font-size:11.5px;max-width:80ch}
+  .note b{color:var(--fg-2)}
+</style>
+
+<h1>084 — Projects modal, four variants</h1>
+<p class="lede">
+  Real gruvbox tokens from <code>theme.py</code>, real sizes (<code>THUMB_LG</code> 150,
+  <code>ROW_HEIGHT</code> 22, the <code>SPACE</code> scale), real button tiers. Each variant carries
+  the same verbs — <b>switch</b>, <b>New</b>, <b>Duplicate</b>, <b>Delete</b>, <b>Open other…</b> —
+  and differs only in how it presents them. Thumbnails are stand-ins: a project has no render of its own, which
+  is the fact that separates these variants.
+</p>
+
+<!-- ============================================ A -->
+<section>
+  <h2>A — Tile grid (the examples gallery shape)</h2>
+  <p class="verdict">
+    What the spec currently locks. Mirrors <code>examples.py</code> exactly, so it reads as a
+    sibling of a surface you already know.
+    <span class="no">The cost:</span> a 150×150 square per project carrying a name and a doc count —
+    a lot of area for two words, and the art box is empty because a project has no thumbnail.
+  </p>
+  <div class="stage">
+    <div class="modal" style="width:534px">
+      <div class="title"><span>Projects</span><span class="x">✕</span></div>
+      <div class="body">
+        <div class="row" style="margin-bottom:16px">
+          <button class="btn primary">New</button>
+          <button class="btn">Duplicate</button>
+          <button class="btn">Open other…</button>
+        </div>
+        <div class="grid">
+          <div class="tile sel">
+            <div class="art"><div class="swatch" style="background:
+              radial-gradient(circle at 40% 35%,#3a2f1a,#111314 70%)"></div>
+              <span class="chip open">open</span></div>
+            <div class="foot">radiance_cascade</div>
+          </div>
+          <div class="tile">
+            <div class="art"><div class="swatch" style="background:
+              linear-gradient(140deg,#1a2426,#111314)"></div>
+              <span class="chip">1 doc</span></div>
+            <div class="foot">default</div>
+          </div>
+          <div class="tile">
+            <div class="art"><div class="swatch" style="background:
+              linear-gradient(200deg,#241a26,#111314)"></div>
+              <span class="chip">4 docs</span></div>
+            <div class="foot">sticker_studio</div>
+          </div>
+        </div>
+        <div class="sep"></div>
+        <div class="row"><span class="spacer"></span><button class="btn">Close</button></div>
+      </div>
+    </div>
+  </div>
+  <p class="note">
+    <b>The honest problem:</b> the examples grid earns its thumbnails — each example looks like
+    something. A project tile's picture is either blank or a borrowed render of one document inside
+    it, which misrepresents a project that holds four.
+  </p>
+</section>
+
+<!-- ============================================ B -->
+<section>
+  <h2>B — Dense list (name, size, path) — <span style="color:var(--ok)">CHOSEN</span></h2>
+  <p class="verdict">
+    <span class="yes">Fits the data:</span> a project's real attributes are a name, a document count
+    and a path — all text. Rows show the path, which is what tells <code>radiance_cascade</code>
+    under the projects root apart from one opened from anywhere.
+    <span class="no">The cost:</span> plainer, and unlike anything else in the app today.
+  </p>
+  <p class="verdict">
+    <b style="color:var(--fg-2)">Every verb is in the one row.</b> The first sketch put Duplicate
+    per-row and the rest on top — two homes for verbs with no rule telling them apart. There is
+    now ONE rule: <b>the row acts on the selected project</b>, whichever that is. A click SELECTS
+    (double-click, or Enter, switches) and every verb below operates on that selection — which is
+    also what makes Delete possible at all.
+  </p>
+  <div class="stage">
+    <div class="modal" style="width:620px">
+      <div class="title"><span>Projects</span><span class="x">✕</span></div>
+      <div class="body">
+        <div class="rows">
+          <div class="lrow sel">
+            <span class="nm">radiance_cascade</span>
+            <span class="meta">1 doc</span>
+            <span class="meta" style="color:var(--accent)">open</span>
+            <span class="path">~/.local/share/shaderbox/projects/</span>
+          </div>
+          <div class="lrow">
+            <span class="nm">default</span>
+            <span class="meta">1 doc</span><span class="meta"></span>
+            <span class="path">~/.local/share/shaderbox/projects/</span>
+          </div>
+          <div class="lrow">
+            <span class="nm">sticker_studio</span>
+            <span class="meta">4 docs</span><span class="meta"></span>
+            <span class="path">~/.local/share/shaderbox/projects/</span>
+          </div>
+          <div class="lrow">
+            <span class="nm">rc_experiment</span>
+            <span class="meta">2 docs</span><span class="meta"></span>
+            <span class="path">~/src/scratch/</span>
+          </div>
+        </div>
+        <div style="height:16px"></div>
+        <div class="row">
+          <button class="btn primary">New</button>
+          <button class="btn">Duplicate</button>
+          <button class="btn">Open other…</button>
+          <button class="btn danger">Delete</button>
+          <span class="spacer"></span>
+          <button class="btn">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="note">
+    <b>Why the path column matters:</b> D4 unions the projects root with the open project wherever
+    it lives. In a grid, an outside project looks identical to a rooted one; here the difference is
+    legible at a glance — and it is exactly the confusion that put a real project in <code>/tmp</code>
+    for a day.
+  </p>
+</section>
+
+<!-- ============================================ C -->
+<section>
+  <h2>C — List + detail pane</h2>
+  <p class="verdict">
+    <span class="yes">Verbs act on an explicit selection,</span> and the pane has room for the facts
+    that answer "is this the one?" — document count, last modified, full path — plus a real preview
+    of the selected project's output document.
+    <span class="no">The cost:</span> the biggest build, and it introduces a
+    <i>selected-but-not-open</i> state the other three avoid; "Switch to" becomes a button rather
+    than a click.
+  </p>
+  <div class="stage">
+    <div class="modal" style="width:660px">
+      <div class="title"><span>Projects</span><span class="x">✕</span></div>
+      <div class="body">
+        <div class="side">
+          <div class="left">
+            <div class="lrow sel"><span class="nm">radiance_cascade</span></div>
+            <div class="lrow"><span class="nm">default</span></div>
+            <div class="lrow"><span class="nm">sticker_studio</span></div>
+            <div class="lrow"><span class="nm">rc_experiment</span></div>
+            <div style="margin-top:8px" class="row">
+              <button class="btn primary">New</button>
+              <button class="btn">Open other…</button>
+            </div>
+          </div>
+          <div class="right">
+            <div class="bigprev"><div class="swatch" style="background:
+              radial-gradient(circle at 45% 40%,#4a3a1e,#111314 72%)"></div></div>
+            <div class="kv"><span class="k">name</span><span class="v">radiance_cascade</span></div>
+            <div class="kv"><span class="k">documents</span><span class="v">1</span></div>
+            <div class="kv"><span class="k">modified</span><span class="v">today 18:14</span></div>
+            <div class="kv"><span class="k">path</span>
+              <span class="v">~/.local/share/shaderbox/projects/radiance_cascade</span></div>
+            <div class="row" style="margin-top:16px">
+              <button class="btn" disabled style="opacity:.4">Switch to</button>
+              <button class="btn">Duplicate</button>
+              <span class="hint">open</span>
+            </div>
+          </div>
+        </div>
+        <div class="sep"></div>
+        <div class="row"><span class="spacer"></span><button class="btn">Close</button></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================ D -->
+<section>
+  <h2>D — Compact list, no chrome (the "one job" shape)</h2>
+  <p class="verdict">
+    <span class="yes">Smallest and fastest:</span> the list IS the switcher, one verb row beneath it,
+    Duplicate always acting on the open project (the spec's rule — a click switches immediately, so
+    there is never a selected-but-not-open target).
+    <span class="no">The cost:</span> no path, no counts — you switch by name alone.
+  </p>
+  <div class="stage">
+    <div class="modal" style="width:400px">
+      <div class="title"><span>Projects</span><span class="x">✕</span></div>
+      <div class="body">
+        <div class="rows">
+          <div class="lrow sel"><span class="nm">radiance_cascade</span>
+            <span class="spacer"></span><span class="meta">open</span></div>
+          <div class="lrow"><span class="nm">default</span></div>
+          <div class="lrow"><span class="nm">sticker_studio</span></div>
+          <div class="lrow"><span class="nm">rc_experiment</span></div>
+        </div>
+        <div style="height:16px"></div>
+        <div class="row">
+          <button class="btn primary">New</button>
+          <button class="btn">Duplicate</button>
+          <button class="btn">Open other…</button>
+          <span class="spacer"></span>
+          <button class="btn">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================ shared states -->
+<section>
+  <h2>Delete — armed, and what it refuses</h2>
+  <p class="verdict">
+    Delete is the one verb that must not fire on a click, so it arms: the row turns red and the
+    verb row becomes the confirm. Same shape as the document grid's
+    <code>cell_delete_confirm</code> — <span class="yes">Yes is the primary</span>, No is standard,
+    the red wash already carries the danger so a filled-red button would not read.
+  </p>
+  <div class="stage" style="display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap">
+    <div>
+      <div class="hint" style="margin-bottom:6px">armed</div>
+      <div class="modal" style="width:620px">
+        <div class="title"><span>Projects</span><span class="x">✕</span></div>
+        <div class="body">
+          <div class="rows">
+            <div class="lrow sel" style="border-color:var(--error);background:#2a1a19">
+              <span class="nm" style="color:var(--error)">rc_experiment</span>
+              <span class="meta">2 docs</span><span class="meta"></span>
+              <span class="path">~/src/scratch/</span>
+            </div>
+            <div class="lrow"><span class="nm">radiance_cascade</span>
+              <span class="meta">1 doc</span>
+              <span class="meta" style="color:var(--accent)">open</span>
+              <span class="path">~/.local/share/shaderbox/projects/</span></div>
+            <div class="lrow"><span class="nm">default</span>
+              <span class="meta">1 doc</span><span class="meta"></span>
+              <span class="path">~/.local/share/shaderbox/projects/</span></div>
+          </div>
+          <div style="height:16px"></div>
+          <div class="row">
+            <span class="err">Delete to trash?</span>
+            <span class="spacer"></span>
+            <button class="btn primary">Yes</button>
+            <button class="btn">No</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="hint" style="margin-bottom:6px">the open project refuses</div>
+      <div class="modal" style="width:620px">
+        <div class="title"><span>Projects</span><span class="x">✕</span></div>
+        <div class="body">
+          <div class="rows">
+            <div class="lrow sel"><span class="nm">radiance_cascade</span>
+              <span class="meta">1 doc</span>
+              <span class="meta" style="color:var(--accent)">open</span>
+              <span class="path">~/.local/share/shaderbox/projects/</span></div>
+            <div class="lrow"><span class="nm">default</span>
+              <span class="meta">1 doc</span><span class="meta"></span>
+              <span class="path">~/.local/share/shaderbox/projects/</span></div>
+          </div>
+          <div style="height:16px"></div>
+          <div class="row">
+            <button class="btn primary">New</button>
+            <button class="btn">Duplicate</button>
+            <button class="btn">Open other…</button>
+            <button class="btn danger" style="opacity:.35">Delete</button>
+            <span class="spacer"></span>
+            <button class="btn">Close</button>
+          </div>
+          <div class="cap">switch away first</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="note">
+    <b>Two rules the drawing encodes.</b> Deleting the OPEN project is disabled, not handled — it
+    would have to tear down every GL resource, pick a replacement project and switch, all inside a
+    confirm. Switch away first, then delete. And a deleted project MOVES to
+    <code>&lt;app_data&gt;/trash/&lt;name&gt;_&lt;ms&gt;</code>, never <code>rmtree</code>: a document
+    already deletes to its project's <code>trash/</code>, and a project has no enclosing project, so
+    the app-data root is where its trash goes.
+  </p>
+</section>
+
+<section>
+  <h2>The inline input (all variants)</h2>
+  <p class="verdict">
+    New and Duplicate both swap the verb row for one input — the lib picker's pattern: commit on
+    <code>is_item_deactivated_after_edit</code>, Esc cancels, an explicit <code>x</code> because Esc
+    is invisible. Only one input is ever live.
+  </p>
+  <div class="stage" style="display:flex;gap:24px;align-items:flex-start">
+    <div>
+      <div class="hint" style="margin-bottom:6px">committing</div>
+      <div class="modal" style="width:400px">
+        <div class="title"><span>Projects</span><span class="x">✕</span></div>
+        <div class="body">
+          <div class="inline-input">
+            <span class="hint">New</span>
+            <span class="field">rc_experiment<span class="caret">▏</span></span>
+            <button class="btn">x</button>
+          </div>
+          <div class="cap">Enter creates</div>
+          <div style="height:12px"></div>
+          <div class="rows">
+            <div class="lrow sel"><span class="nm">radiance_cascade</span>
+              <span class="spacer"></span><span class="meta">open</span></div>
+            <div class="lrow"><span class="nm">default</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="hint" style="margin-bottom:6px">refusing (same slot, no toast)</div>
+      <div class="modal" style="width:400px">
+        <div class="title"><span>Projects</span><span class="x">✕</span></div>
+        <div class="body">
+          <div class="inline-input" style="border-color:var(--error)">
+            <span class="hint">New</span>
+            <span class="field">default<span class="caret">▏</span></span>
+            <button class="btn">x</button>
+          </div>
+          <div class="cap err">name already used</div>
+          <div style="height:12px"></div>
+          <div class="rows">
+            <div class="lrow sel"><span class="nm">radiance_cascade</span>
+              <span class="spacer"></span><span class="meta">open</span></div>
+            <div class="lrow"><span class="nm">default</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>D8 — the open project's name in the menu bar</h2>
+  <p class="verdict">Same in every variant: right-aligned, dim, text not a button.</p>
+  <div class="stage">
+    <div style="width:660px">
+      <div class="menubar">
+        <span>File</span><span>Edit</span><span>Library</span>
+        <span>Examples</span><span>Help</span>
+        <span class="proj">project <b>radiance_cascade</b></span>
+      </div>
+      <div style="height:56px;background:var(--bg-app);border:1px solid #000;border-top:0;
+                  border-radius:0 0 2px 2px"></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Decided — B, with one verb row</h2>
+  <p class="verdict">
+    <b style="color:var(--fg-2)">B, the dense list.</b> A project's identity is text — name, count,
+    path — and B is the only variant showing the path, the fact that would have made a
+    <code>/tmp</code> project obvious on sight. A spends 150×150 per project on an empty picture box.
+    C is better <i>if</i> a project preview is worth building. D is B with the useful columns cut.
+  </p>
+  <p class="note">
+    <b>The correction that mattered:</b> the first draft had Duplicate per-row and the other verbs on
+    top — two homes for verbs, no rule separating them. There is one rule now: <b>a row click
+    selects, the verb row acts on the selection.</b> That also makes Delete possible, since a
+    per-row delete-✕ on every row is how a wrong click destroys a month of work.
+  </p>
+  <p class="note" style="margin-top:12px">
+    <b>Spec deltas from the locked version:</b> D2 (grid → list rows; <code>preview_cell</code> is no
+    longer the primitive), D4 gains a path column, Delete comes OUT of "Out of scope" and becomes its
+    own decision (armed confirm, disabled for the open project, moves to
+    <code>&lt;app_data&gt;/trash/</code>), and D7's "Duplicate acts on the open project" becomes
+    "acts on the selection" — the selection is now explicit, so it can.
+  </p>
+</section>
