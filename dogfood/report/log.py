@@ -24,6 +24,7 @@ KINDS: tuple[str, ...] = (
     "turn",
     "context",
     "fix",
+    "triage",
     "attempt_end",
     "note",
 )
@@ -211,6 +212,21 @@ class FixRecord:
 
 
 @dataclass
+class TriageRecord:
+    """A wave of fixes that came from reading the CLOSED round's logs, not from driving it.
+
+    An attempt's `fix` events answer "this blocked the run"; a triage wave answers "this was
+    invisible until there were N turns to compare" — four models making one mistake, a cache share
+    across every request, a claim no single turn could disprove. It belongs to the EXPERIMENT
+    because it reads all of the attempts at once.
+    """
+
+    summary: str = ""
+    commits: list[FixRecord] = field(default_factory=list)
+    ts: str = ""
+
+
+@dataclass
 class Attempt:
     n: int
     started: str
@@ -256,6 +272,7 @@ class Experiment:
     started: str = ""
     attempts: list[Attempt] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    triage: list[TriageRecord] = field(default_factory=list)
 
     @property
     def cost_usd(self) -> float:
@@ -295,6 +312,21 @@ def reconstruct(events: list[Event], experiment_id: str = "") -> Experiment:
             exp.mode = str(p.get("mode", ""))
             exp.criteria = [str(c) for c in p.get("criteria", [])]
             exp.started = exp.started or ev.ts
+        elif ev.kind == "triage":
+            exp.triage.append(
+                TriageRecord(
+                    summary=str(p.get("summary", "")),
+                    commits=[
+                        FixRecord(
+                            sha=str(c.get("sha", "")),
+                            subject=str(c.get("subject", "")),
+                            body=str(c.get("body", "")),
+                        )
+                        for c in p.get("commits", [])
+                    ],
+                    ts=ev.ts,
+                )
+            )
         elif ev.kind == "attempt_start":
             a = attempt_for(ev.attempt, ev.ts)
             a.started = ev.ts

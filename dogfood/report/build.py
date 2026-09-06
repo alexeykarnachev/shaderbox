@@ -563,6 +563,19 @@ def _experiment_page(exp: Experiment) -> str:
                 f"{f'<p>{_e(a.summary)}</p>' if a.summary else ''}"
                 f"{f'<p class="muted small">Landed since the previous attempt:</p>{fixes}' if fixes else ''}"
             )
+    # The round's OTHER half: what reading the closed logs found, which no single attempt could
+    # show. Kept apart from the between-attempts list so the two stages stay legible as stages.
+    triage = ""
+    for wave in exp.triage:
+        commits = "".join(
+            f'<div class="fix"><code>{_e(c.sha[:9])}</code> {_e(c.subject)}</div>'
+            for c in wave.commits
+        )
+        triage += (
+            f"<h3>{_stamp(wave.ts)}</h3>"
+            f"{f'<p>{_e(wave.summary)}</p>' if wave.summary else ''}"
+            f"{commits or "<p class='muted small'>no commits recorded</p>"}"
+        )
     criteria = (
         "<ul>" + "".join(f"<li>{_e(c)}</li>" for c in exp.criteria) + "</ul>"
         if exp.criteria
@@ -579,6 +592,7 @@ def _experiment_page(exp: Experiment) -> str:
         f"<b>criteria</b><span>{criteria}</span><b>started</b><span>{_stamp(exp.started)}</span>"
         f"<b>cost</b><span>{_money(exp.cost_usd)}</span></div>{warnings}"
         f"<h2>Attempts</h2>{table}{f'<h2>What changed between attempts</h2>{changes}' if changes else ''}"
+        f"{f'<h2>What the logs changed after the round</h2>{triage}' if triage else ''}"
     )
     crumbs = f'<a href="../../index.html">station</a> &rsaquo; {_e(exp.id)}'
     return _page(exp.id, body, crumbs=crumbs, live=exp.live)

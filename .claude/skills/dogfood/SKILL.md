@@ -28,9 +28,51 @@ thing; `babysat` — move by move; `free_run` — no stated criteria). The mode 
 experiments, not a rule. **When the copilot gets stuck:** something that can wait → `h.note()` it and
 keep running; something that BLOCKS the run → file a sub-feature, fix it, commit, re-run as the next
 attempt (the station records the commits between attempts); something really big → stop and ask.
+That is stage 1 only — what the closed round's LOGS then say is stage 2, below.
 **No scripted oracle decides an experiment — the maintainer is the final oracle,** looking at the
 renders and videos on the attempt page. Ad-hoc measurement answering one question is welcome; a
 standing checker is the failure.
+
+## The shape of a run: drive, then mine, then stop
+
+A dogfood round is ONE loop with two fixing stages, and they find different things.
+
+**Stage 1 — DRIVE (per attempt).** Run the attempts, and fix in flight whatever is small enough to
+fix: something that BLOCKS the run gets a sub-feature, a fix, a commit, and a re-run as the next
+attempt. `start_attempt` sweeps the commits since the previous attempt into that attempt's `fix`
+ledger, so the page answers *"this blocked the run"* per attempt. Something that can wait gets an
+`h.note()` and the run continues; something really big stops and asks.
+
+**Stage 2 — MINE (per round, after every attempt is closed).** Read the corpus as a whole. This is
+a different act, not more of the same: an in-flight fix can only see one turn, and the findings
+that matter most need the AGGREGATE — four models making the same mistake, a cache share across
+every request, a claim no single turn can disprove. The 077 round's mining (feature 081) found
+that the shipped reference shader was unreadable by every tool, that the mechanism built to save
+tokens was destroying the prefix cache, and that four documented claims were false — none of which
+is visible from inside an attempt.
+
+  - The corpus is tens of MB of JSONL. Read it with a LOADER, never by catting it:
+    `ai_docs/features/081_copilot_engine_sweep/02_cells/corpus.py` is the committed one
+    (`all_turns()`, `all_calls()`, `all_contexts()`, `attempts(exp)`), and its own docstring says
+    how to import it. Extract with scripts that print aggregates.
+  - Fan out over MEASURABLE dimensions (cost mechanics, tool-call behaviour, prompt composition,
+    the artefacts on disk), one agent each, every number from a script it actually ran. Then
+    VERIFY every load-bearing claim yourself at the primary artifact before it reaches a spec:
+    081's sharpest finding and three of its four corrections came from that re-check.
+  - The fixes this stage produces belong to the EXPERIMENT, not to an attempt —
+    `rec.record_triage(summary, since_sha=<where the mining started>)`. They render on the
+    experiment page under *"What the logs changed after the round"*, beside the per-attempt list.
+    `since_sha` is required on purpose: defaulting it to the last attempt's sha swept 77 unrelated
+    commits into a wave of 11.
+
+**Stage 3 — STOP.** One full circle, then stop and report: what the round found, what stage 2
+changed, and what a next round would test. Whether to run again is the maintainer's call, not a
+convergence rule the loop evaluates for itself.
+
+**On gates in either stage:** a fix earns a test when the behaviour could plausibly regress and the
+regression would be silent. Do not write one per decision as a matter of form — 081 wrote eleven,
+six were ceremony, and two of the eleven could not fail at all until the break was actually
+performed. If you cannot make a test fail by breaking the thing it guards, delete it.
 
 ## 0. Prerequisites (the run fails without these)
 
@@ -478,7 +520,9 @@ No throwaway driver to delete (the one-blocking-call-per-turn shape has none). A
 next run; the dumps are the stray `*.json`). NOTE: these data dirs hold the LIVE OpenRouter key in their
 `integrations.json`, so purging them is also key hygiene. **The station record survives the purge**:
 `dogfood/runs/<experiment>/` holds the log, every render the run produced, and the full text of every
-context block, so nothing in a run dir needs copying out first. The store is local and gitignored
+context block, so nothing in a run dir needs copying out first. **Purge the run dirs, never the
+station store** — stage 2 mines `dogfood/runs/<experiment>/` after every attempt closes, and a
+round whose corpus was deleted cannot be mined at all. The store is local and gitignored
 (an experiment runs to tens of MB); the findings that must outlive the box go to the feature spec. Keep a markdown report
 (when a scenario run wrote one) in `ai_docs/features/`. The harness + analyzer + template + scenarios +
 this skill stay. Prioritized findings live on the attempt page as notes (or in the REPORT §9 for a

@@ -436,6 +436,21 @@ class StationRecorder:
             "note", self.attempt, {"text": text, "axis": axis, "turn": turn}
         )
 
+    def record_triage(self, summary: str, since_sha: str) -> list[dict[str, str]]:
+        """Record the fixes THIS session made from reading the closed round's logs.
+
+        Attached to the experiment, not to an attempt: a triage wave reads every attempt at once,
+        so pinning it to one would say it came from that attempt's driving.
+
+        `since_sha` is REQUIRED and is the commit the triage started from — the session knows it
+        and the log cannot guess it. Defaulting to the last attempt's sha sweeps in every unrelated
+        feature that landed between the round closing and the mining starting: on `rc_full_build`
+        that was 77 commits for a wave of 11.
+        """
+        commits = commits_between(self.repo_root, since_sha) if since_sha else []
+        self.log.append("triage", 0, {"summary": summary, "commits": commits})
+        return commits
+
     def end_attempt(self, outcome: str, summary: str = "") -> None:
         self.log.append(
             "attempt_end", self.attempt, {"outcome": outcome, "summary": summary}
