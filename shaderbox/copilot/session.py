@@ -351,15 +351,17 @@ class CopilotSession:
                 return
 
     def set_source_lock(self, lock: SourceLock) -> None:
-        """MAIN THREAD. The ONE writer of the live source lock (083). Two fields, written
+        """MAIN THREAD. The ONE writer of the source lock (083), and it writes THREE copies
         together: `state.source_lock` is what the chat's chip draws (main-thread-only, like the
-        rest of ChatState), `registry.source_lock` is what the gate reads on the worker. Nothing
-        else assigns either -- a second writer is how the control and the gate come to disagree.
+        rest of ChatState), `registry.source_lock` is what the gate and the tool filter read on
+        the worker, and the project's persisted copy is what a reset re-seeds from. Nothing else
+        assigns any of them -- a second writer is how the control, the gate and the file come to
+        disagree.
 
-        Writes the PERSISTED copy too, so all three move together. Safe on the main thread by
-        the caller list: the one worker-side writer died with the session-wide unlock answer, and
-        `reset_conversation` re-seeds from the persisted value, so leaving it to save-time would
-        make a Clear before the next save revert the user's choice."""
+        The persisted write belongs HERE rather than at save-time: `reset_conversation` reads it
+        back, so a Clear between a click and the next save would revert the user's choice. Safe on
+        the main thread by the caller list, the worker-side writer having died with the
+        session-wide unlock answer."""
         self.state.source_lock = lock
         self.registry.source_lock = lock
         self._set_project_source_lock(lock)

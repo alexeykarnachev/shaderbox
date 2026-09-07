@@ -86,10 +86,15 @@ today's.
 ### D3 — the cache argument that blocked this was wrong, and saying so is the point.
 
 I defended the shipped design by claiming a mode-dependent tool list would bust prefix caching. That
-is false for this mode: the tools block must be byte-stable **across the turns of a session**, and
-`source_lock` cannot change mid-session without a project switch — which rebuilds the context block
-anyway. A READ_ONLY session has a smaller `tools=` than an ALLOW session, and each is stable within
-itself, which is all the cache requires.
+is false: what the cache needs is a byte-stable block **within a request and across consecutive
+turns at the same setting**, which each mode's list is. A READ_ONLY session simply has a smaller
+stable list than an ALLOW one.
+
+**The stronger claim — that the mode "cannot change mid-session" — was wrong**, and a review caught
+it: the chip was clickable while a turn ran. That is now disabled mid-turn (matching Clear), so the
+mode is fixed for the duration of any request that reads it. The correct statement is the narrow
+one: **stable within a request**, which is what the cache actually requires, rather than a claim
+about sessions that the UI did not enforce.
 
 The real cost of the shipped design is the one I did not count: every turn under READ_ONLY spends output
 tokens on calls that cannot succeed, plus a tool result per call, forever.

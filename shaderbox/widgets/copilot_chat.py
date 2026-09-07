@@ -709,12 +709,18 @@ def _draw_top_bar(app: App) -> None:
     imgui.same_line()
     lock: SourceLock = app.copilot.state.source_lock
     modes = list(SourceLock)
+    # Disabled mid-turn, like Clear below: the tools= block and the read-only notice are built
+    # once per turn, so a flip while one runs would leave the model holding a list that no longer
+    # matches the mode. The belt-and-braces refuse branch catches the edit either way; this keeps
+    # the request coherent instead of relying on that.
+    imgui.begin_disabled(app.copilot.state.in_flight)
     if cycle_chip(
         "copilot_source_lock",
         [_LOCK_LABELS[mode] for mode in modes],
         modes.index(lock),
     ):
         app.copilot.set_source_lock(modes[(modes.index(lock) + 1) % len(modes)])
+    imgui.end_disabled()
     if imgui.is_item_hovered():
         # A nested conditional, not a dict lookup: the prose-budget gate scores IfExp and returns
         # UNMEASURABLE for a Subscript, so a dict would hide this copy from the check that exists

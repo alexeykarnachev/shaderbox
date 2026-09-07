@@ -104,6 +104,9 @@ class _Recording:
     def __init__(self, inner: _FakeClient, sink: list[list[LLMMessage]]) -> None:
         self._inner = inner
         self._sink = sink
+        # `_run_one_turn` reads client.model to stamp the turn; without it the wrapper raises
+        # before streaming and a test driving the real session path sees no request at all.
+        self.model = inner.model
 
     def stream(
         self,
@@ -524,6 +527,41 @@ def test_the_other_modes_offer_every_tool() -> None:
     assert "edit_shader" in allow
 
 
+def test_a_real_turn_carries_the_read_only_notice() -> None:
+    """The WIRING, not the renderer.
+
+    `build_context(source_read_only=<literal>)` tests the sentence; it does not test that anything
+    ever passes True. Hardcoding that argument to False deletes the notice from every turn the app
+    will ever run, and a suite that only drives the renderer stays entirely green -- which is what
+    happened. So this drives `CopilotSession`'s own turn path and keys on the MODE.
+    """
+    seen: list[list[LLMMessage]] = []
+    marker = "SOURCE IS READ-ONLY IN THIS PROJECT"
+
+    def _prompt_for(mode: SourceLock) -> str:
+        seen.clear()
+        session = CopilotSession(
+            caps=minimal_caps(),
+            client=_Recording(_FakeClient([_DONE]), seen),
+            get_project_slug=lambda: "p",
+            get_checkpoints_root=lambda: Path("/tmp"),
+            get_source_lock=lambda: mode,
+            set_project_source_lock=lambda _lock: None,
+        )
+        session._run_one_turn("make it warmer")
+        assert seen, "the turn made no request"
+        return "\n".join(m.content or "" for m in seen[0])
+
+    assert marker in _prompt_for(SourceLock.READ_ONLY), (
+        "a real read-only turn must tell the model why its tools are gone"
+    )
+    assert marker not in _prompt_for(SourceLock.ASK), (
+        "ASK gates calls and withholds nothing, so the notice would be false there -- and it "
+        "would bust that mode's cacheable prefix"
+    )
+    assert marker not in _prompt_for(SourceLock.ALLOW)
+
+
 def test_the_prompt_says_why_the_tools_are_missing() -> None:
     # Hiding the tools without saying why leaves a model that has quietly lost an ability and
     # answers an edit request with confusion. The fact rides the project block, and ONLY in the
@@ -555,6 +593,35 @@ def test_a_model_that_keeps_calling_a_withheld_tool_is_stopped() -> None:
     assert len(cards) <= COPILOT_CONFIG.max_edit_retries, (
         f"{len(cards)} refusals against a cap of {COPILOT_CONFIG.max_edit_retries}: "
         "a withheld tool must count toward the retry cap"
+    )
+
+
+def test_a_load_of_a_withheld_tool_is_refused_in_the_real_loop() -> None:
+    """Driven through `run_turn`'s interception, not through `assemble_specs`.
+
+    The spec requires the LOADER to refuse and say why; a test that only drives the spec builder
+    leaves that requirement unheld, and gutting the refusal keeps the suite green. A mixed request
+    must report BOTH halves — a model told only about the refusal would silently hold the tool
+    that did load.
+    """
+    seen: list[list[LLMMessage]] = []
+    load = _tool_call(
+        "c1", "load_tools", '{"names": ["bind_media", "rename_document"]}'
+    )
+    _run([load, _DONE], lock=SourceLock.READ_ONLY, answers=[], record_messages=seen)
+    results = [
+        m.content or ""
+        for request in seen
+        for m in request
+        if m.role == "tool" and m.content
+    ]
+    assert results, "the load produced no tool result"
+    message = results[0]
+    assert "rename_document" in message and "READ-ONLY" in message, (
+        "a withheld load must be refused, and say why"
+    )
+    assert "bind_media" in message, (
+        "the half that DID load must be reported too, or the model holds a tool silently"
     )
 
 

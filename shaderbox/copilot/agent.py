@@ -977,17 +977,23 @@ def run_turn(
                 ]
                 loaded_tools.update(newly)
                 specs = registry.assemble_specs(loaded_tools)
+                # BOTH halves are reported, never one or the other: a mixed request loads what it
+                # can, and a model told only about the refusal would hold a tool it does not know
+                # it has -- the inverse of the mistake this branch exists to prevent.
+                parts: list[str] = []
+                if newly:
+                    parts.append(
+                        f"loaded {', '.join(newly)} — callable for the rest of this turn."
+                    )
                 if withheld:
-                    load_msg = (
+                    parts.append(
                         f"cannot load {', '.join(withheld)}: this project is READ-ONLY, so the "
-                        "source-writing tools are withheld. Tell the user editing is turned off."
+                        "tools that change or delete it are withheld. Tell the user editing is "
+                        "turned off."
                     )
-                elif newly:
-                    load_msg = f"loaded {', '.join(newly)} — callable for the rest of this turn."
-                else:
-                    load_msg = (
-                        "no new tools loaded (already loaded, or not a lazy tool name)."
-                    )
+                load_msg = " ".join(parts) or (
+                    "no new tools loaded (already loaded, or not a lazy tool name)."
+                )
                 total_tool_calls += 1
                 tr.event(
                     "tool_call",
