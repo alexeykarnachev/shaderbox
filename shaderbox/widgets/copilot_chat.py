@@ -114,7 +114,7 @@ def draw(app: App) -> None:
 
     flags = _WINDOW_FLAGS | _apply_layout(app)
     # Floor the width so the header row can't be narrowed until the right-aligned cluster overlaps
-    # the gauge. DERIVED from what the row actually holds -- layout icon, lock chips, gauge,
+    # the gauge. DERIVED from what the row actually holds -- layout icon, lock chip, gauge,
     # Clear+Close, and the gaps between them: the previous hand-summed literal still budgeted for
     # ONE icon after a second shipped, and nothing caught it because the gauge's headroom absorbed
     # the difference until the chips consumed it. Height floor is nominal.
@@ -692,7 +692,7 @@ def _draw_top_bar(app: App) -> None:
     cluster_w: float = clear_w + float(SPACE.SM) + close_w
     cluster_x: float = content_w - cluster_w
     # Leave a clear breathing gap between the gauge and the Clear button (SPACE.LG), beyond the
-    # same_line gaps after the layout icon and the lock chips.
+    # same_line gaps after the layout icon and the lock chip.
     gauge_w: float = max(
         float(SIZE.USAGE_BARS_W),
         cluster_x
@@ -708,8 +708,12 @@ def _draw_top_bar(app: App) -> None:
 
     imgui.same_line()
     lock: SourceLock = app.copilot.state.source_lock
-    if cycle_chip("copilot_source_lock", _LOCK_LABELS[lock]):
-        modes = list(SourceLock)
+    modes = list(SourceLock)
+    if cycle_chip(
+        "copilot_source_lock",
+        [_LOCK_LABELS[mode] for mode in modes],
+        modes.index(lock),
+    ):
         app.copilot.set_source_lock(modes[(modes.index(lock) + 1) % len(modes)])
     if imgui.is_item_hovered():
         # A nested conditional, not a dict lookup: the prose-budget gate scores IfExp and returns

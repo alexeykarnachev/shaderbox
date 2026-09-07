@@ -43,14 +43,19 @@ tools does this turn have", not a new seam:
     chosen = [d for d in ... if (d.eager or d.name in loaded)
               and not (self.source_lock is SourceLock.READ_ONLY and d.locks_source)]
 
-**The roster is `locks_source`, unchanged** — 083 D6's enumerated set, already gated by a test that
-computes it from the registry rather than a hand-written list. READ_ONLY withholds exactly what the lock
-covers, so the two cannot drift.
+**The roster is `locks_source` PLUS the three destructive tools.** The lock's own set (083 D6)
+excludes `delete_document` / `delete_pass` / `delete_lib_file` because they already confirm every
+time — the right answer for a GATE and the wrong one for a MODE. A project the user called read-only
+must not let the copilot delete a shader, which is the most write-like act there is. Render and
+publish stay: they produce output and change no source. The whole set is asserted against what each
+tool DOES (`mutating`) rather than against a list, so a new source-changing tool joins it or fails.
 
-**`load_tools` must not reintroduce them.** The lazy-load path calls `assemble_specs` again with a
-grown `loaded` set, so the filter applies there by construction — but a model that asks to load
-`edit_shader` under READ_ONLY must get a truthful refusal rather than a silent no-op, or it will retry.
-The load handler returns the same read-only fact.
+**`load_tools` must not ADVERTISE them either — the filter alone is not enough.** The lazy-load
+path calls `assemble_specs` again, so a withheld tool cannot be loaded; but `load_tools`' own
+description carries a CATALOGUE baked at `build_registry` time, before any mode exists. Left alone
+it invites the call the filter then refuses: the model loads, is told no, calls anyway, and is
+refused again — three wasted turns, structurally invited. The catalogue is rebuilt per mode in
+`assemble_specs`, so the offer and the filter cannot disagree.
 
 ### D2 — the prompt fact rides `project_context`, at RARE volatility.
 
@@ -60,10 +65,18 @@ shifts on a project switch and is otherwise part of the cacheable prefix.
 
 One sentence, appended to `_context_block` only under READ_ONLY:
 
-> SOURCE IS READ-ONLY: the user has set this project to decline edits, so the shader/script/pass
-> writing tools are withheld from you this session. You can still read and analyse. If asked to
-> change something, say plainly that editing is turned off and that the control is the Allow/Ask/Read-only
-> chip above the chat — do not pretend the edit happened, and do not look for another way to write.
+> SOURCE IS READ-ONLY IN THIS PROJECT: the user has turned editing off, so EVERY tool that would
+> change or delete this project is unavailable to you — writing shaders and scripts, uniforms,
+> passes, documents, canvas size, media, and the delete tools. That is why you cannot see them.
+> Reading, grepping, rendering and publishing still work. If asked to change anything, say plainly
+> that editing is turned off for this project and that the Allow/Ask/Read-only chip above the chat
+> is what changes it. Do not claim a change happened, and do not look for another way to make one.
+
+**The prose must name the same set the filter withholds.** An earlier draft said "shader, script and
+pass WRITING tools" while the filter also removed uniforms, documents, canvas size and media — so a
+model asked to rename a document would read the notice, conclude renaming was not "writing", and go
+hunting. A notice narrower than the roster is worse than none: it invites exactly the call it
+cannot serve.
 
 **This is a FACT on the channel the model already reads, not a standing rule** — the distinction the
 copilot design skill draws, and the reason this works where a conscience plea would not. It is only
@@ -91,6 +104,18 @@ ASK is the only mode where a per-call question makes sense, and it is unchanged:
 each source call gated, one `LockAnswer.DENY` latching the turn (085 D1). The gate machinery is not
 touched by this revision — what changes is that under READ_ONLY it is now unreachable, because the calls
 that would trigger it cannot be made.
+
+**The refuse branch says READ-ONLY, not "user declined".** Reusing 085's decline message here would
+tell the model the user refused something they never decided, and it would relay that to the user.
+Two facts, two messages: `_DECLINE_MSG` for an answer the user gave, `_READ_ONLY_MSG` for a tool
+that is not available. The decline template stays shared between its OWN two branches (gate answer,
+turn latch), which is what keeps that vocabulary from drifting.
+
+**A withheld call counts toward the retry cap, and the cap is CHECKED on this path.** The refuse
+branch `continue`s before the loop's own cap test, so a model ignoring the notice would otherwise
+burn every iteration of the turn on a tool that does not exist — the dummy-bot loop this feature
+exists to end. Incrementing the counter alone is a half-fix: the check has to move onto the branch
+too, which is what the test caught.
 
 **The refuse branch in the loop STAYS**, and this is deliberate rather than leftover. It is the
 belt-and-braces for a source call arriving under READ_ONLY by a path the filter did not cover — a

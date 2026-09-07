@@ -37,7 +37,7 @@ from shaderbox.copilot.llm.api import (
 from shaderbox.copilot.prompt import _context_block
 from shaderbox.copilot.prompt_context import build_context
 from shaderbox.copilot.session import _LOCK_OUTCOMES, CopilotSession
-from shaderbox.copilot.tools.registry import build_registry
+from shaderbox.copilot.tools.registry import LOAD_TOOLS_NAME, build_registry
 from shaderbox.ui_models import UIAppState
 from shaderbox.widgets.copilot_chat import _LOCK_LABELS
 from tests._caps import minimal_caps
@@ -397,28 +397,36 @@ def test_deny_reaches_the_refusal_rather_than_skipping_the_gate_block() -> None:
     )
 
 
-def test_the_decline_message_is_one_template_on_both_paths() -> None:
-    # D4: the model reads the SAME fact whether it was refused or declined live. Two copied
-    # literals drift; one template cannot. The assert is on the messages the model actually
-    # received, not on the constant, so inlining a second copy still fails here.
-    def _declines(lock: SourceLock, answers: list[GateResponse]) -> list[str]:
+def test_a_user_decline_and_a_withheld_tool_tell_the_model_different_things() -> None:
+    """Both are refusals; only one is a DECISION the user made.
+
+    Under READ_ONLY nobody declined anything -- the tool is not available -- so "user declined"
+    would send the model back to the user with an answer about a choice they never made. Asserted
+    on the messages the model RECEIVED, so inlining a literal on either path still fails here. The
+    decline template itself stays shared between ITS two branches (gate answer, turn latch), which
+    is what keeps that vocabulary from drifting.
+    """
+
+    def _tool_results(lock: SourceLock, answers: list[GateResponse]) -> list[str]:
         seen: list[list[LLMMessage]] = []
         _run([_EDIT, _DONE], lock=lock, answers=answers, record_messages=seen)
         return [
             m.content or ""
             for request in seen
             for m in request
-            if m.role == "tool" and "declined" in (m.content or "")
+            if m.role == "tool" and "error:" in (m.content or "")
         ]
 
-    refused = _declines(SourceLock.READ_ONLY, [])
-    declined = _declines(
+    declined = _tool_results(
         SourceLock.ASK, [GateResponse(False, lock_answer=LockAnswer.DENY)]
     )
-    assert refused and declined, "both paths must produce a decline the model can read"
-    assert refused[0] == declined[0], (
-        f"the two decline paths tell the model different things:\n{refused[0]!r}\n{declined[0]!r}"
+    withheld = _tool_results(SourceLock.READ_ONLY, [])
+    assert declined and withheld, "both paths must tell the model something"
+    assert "user declined" in declined[0]
+    assert "user declined" not in withheld[0], (
+        "READ-ONLY declined nothing; claiming otherwise misreports a user decision"
     )
+    assert "READ-ONLY" in withheld[0] and "not available" in withheld[0]
 
 
 def test_the_mode_round_trips_through_the_project_file(tmp_path: Path) -> None:
@@ -487,12 +495,22 @@ def test_read_only_withholds_the_source_tools_from_the_request() -> None:
     registry.source_lock = SourceLock.READ_ONLY
     offered = {spec.name for spec in registry.assemble_specs(set())}
 
-    locked = {d.name for d in registry.definitions() if d.locks_source and d.eager}
-    assert locked, "the roster is empty; this test would pass vacuously"
-    assert everything - offered == locked, (
-        "READ_ONLY must withhold exactly the source-writing tools"
+    withheld = {
+        d.name
+        for d in registry.definitions()
+        if d.eager and registry.is_withheld(d.name)
+    }
+    assert withheld, "the roster is empty; this test would pass vacuously"
+    assert everything - offered == withheld, (
+        "READ_ONLY must withhold exactly what is_withheld names"
     )
+    # The roster is WIDER than `locks_source`: a mode named read-only that still let the copilot
+    # delete a document would be lying, and the deletes are excluded from the lock's own set
+    # because they always confirm -- right for a gate, wrong for a mode.
+    assert "delete_document" in withheld
+    assert "edit_shader" in withheld
     assert "read_shader" in offered, "reading still works"
+    assert "render_image" in offered, "rendering produces output, not source"
 
 
 def test_the_other_modes_offer_every_tool() -> None:
@@ -518,6 +536,59 @@ def test_the_prompt_says_why_the_tools_are_missing() -> None:
     assert noticed.startswith(plain), (
         "the notice is APPENDED; the cacheable prefix is unchanged"
     )
+
+
+def test_a_model_that_keeps_calling_a_withheld_tool_is_stopped() -> None:
+    """A refusal that costs nothing to repeat is a loop waiting to happen.
+
+    The refuse branch `continue`s before the failed-edit counter, so without an explicit increment
+    a model ignoring the read-only notice burns every iteration of the turn on a tool that does not
+    exist -- the dummy-bot behaviour the mode was built to end. Scripted with more edit attempts
+    than the cap allows, so the turn must end early rather than run them all.
+    """
+    attempts = COPILOT_CONFIG.max_edit_retries + 4
+    events, edits, _ = _run(
+        [_EDIT] * attempts + [_DONE], lock=SourceLock.READ_ONLY, answers=[]
+    )
+    cards = [e for e in events if isinstance(e, AgentToolCard)]
+    assert not edits, "nothing may reach the backend under read-only"
+    assert len(cards) <= COPILOT_CONFIG.max_edit_retries, (
+        f"{len(cards)} refusals against a cap of {COPILOT_CONFIG.max_edit_retries}: "
+        "a withheld tool must count toward the retry cap"
+    )
+
+
+def test_the_load_tools_catalogue_never_advertises_a_withheld_tool() -> None:
+    """The catalogue is baked at build time, before any mode exists, so it would otherwise INVITE
+    a call the filter then refuses: the model loads, is told no, calls anyway, is refused again.
+
+    Three wasted turns, and the last of them used to say "user declined" about a decision nobody
+    made. Asserted against `is_withheld` rather than a list, so a tool joining the withheld set
+    leaves the catalogue automatically.
+    """
+    registry = build_registry(minimal_caps())
+
+    def _advertised() -> list[str]:
+        spec = next(
+            s for s in registry.assemble_specs(set()) if s.name == LOAD_TOOLS_NAME
+        )
+        return [
+            line.split(":")[0].removeprefix("- ").strip()
+            for line in spec.description.splitlines()
+            if line.startswith("- ")
+        ]
+
+    registry.source_lock = SourceLock.ALLOW
+    everything = _advertised()
+    assert everything, "the catalogue is empty; this test would pass vacuously"
+
+    registry.source_lock = SourceLock.READ_ONLY
+    offered = _advertised()
+    assert offered, "read-only still has lazy tools worth loading"
+    assert not [n for n in offered if registry.is_withheld(n)], (
+        "the catalogue invites a call the mode withholds"
+    )
+    assert len(offered) < len(everything), "read-only must advertise fewer tools"
 
 
 def test_load_tools_cannot_bring_back_a_withheld_tool() -> None:

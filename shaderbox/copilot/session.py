@@ -352,7 +352,7 @@ class CopilotSession:
 
     def set_source_lock(self, lock: SourceLock) -> None:
         """MAIN THREAD. The ONE writer of the live source lock (083). Two fields, written
-        together: `state.source_lock` is what the chat's chips draw (main-thread-only, like the
+        together: `state.source_lock` is what the chat's chip draws (main-thread-only, like the
         rest of ChatState), `registry.source_lock` is what the gate reads on the worker. Nothing
         else assigns either -- a second writer is how the control and the gate come to disagree.
 

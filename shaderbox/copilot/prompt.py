@@ -308,11 +308,13 @@ def _sanitize(text: str) -> str:
 # session's capabilities, on the channel the model already reads -- not a standing rule, which is
 # why it is absent in every other mode rather than a permanent clause everyone pays for.
 _READ_ONLY_NOTICE = (
-    "\n\nSOURCE IS READ-ONLY IN THIS PROJECT: the user has turned editing off, so the shader, "
-    "script and pass WRITING tools are not available to you -- that is why you cannot see them. "
-    "Reading, grepping and rendering still work. If asked to change something, say plainly that "
-    "editing is turned off for this project and that the Allow/Ask/Read-only chip above the chat "
-    "is what changes it. Do not claim an edit happened, and do not look for another way to write."
+    "\n\nSOURCE IS READ-ONLY IN THIS PROJECT: the user has turned editing off, so EVERY tool that "
+    "would change or delete this project is unavailable to you -- writing shaders and scripts, "
+    "uniforms, passes, documents, canvas size, media, and the delete tools. That is why you cannot "
+    "see them. Reading, grepping, rendering and publishing still work. If asked to change "
+    "anything, say plainly that editing is turned off for this project and that the "
+    "Allow/Ask/Read-only chip above the chat is what changes it. Do not claim a change happened, "
+    "and do not look for another way to make one."
 )
 
 

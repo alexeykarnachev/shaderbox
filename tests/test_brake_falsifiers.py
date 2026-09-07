@@ -9,7 +9,7 @@ builds its input FROM the cap can only prove the reader agrees with itself.
 from shaderbox.copilot.gate import GateKind, SourceLock
 from shaderbox.copilot.state import ChatState
 from shaderbox.copilot.tools.base import GatePolicy
-from shaderbox.copilot.tools.registry import build_registry
+from shaderbox.copilot.tools.registry import _DESTRUCTIVE_TOOLS, build_registry
 from tests._caps import minimal_caps
 
 
@@ -107,3 +107,35 @@ def test_a_bare_registry_is_inert_where_a_session_asks() -> None:
     assert build_registry(minimal_caps()).source_lock is SourceLock.ALLOW
     assert ChatState().source_lock is SourceLock.ASK
     assert build_registry(minimal_caps()).source_lock is not ChatState().source_lock
+
+
+def test_read_only_withholds_every_tool_that_changes_the_project() -> None:
+    # The mode's promise is its NAME, so the check is against what a tool DOES, not against a
+    # hand-kept roster: every mutating tool still offered under READ_ONLY must be one that
+    # produces output rather than changing source. A new mutating tool either joins the withheld
+    # set or is named here with its reason.
+    registry = build_registry(minimal_caps())
+    registry.source_lock = SourceLock.READ_ONLY
+    offered = {spec.name for spec in registry.assemble_specs(set())}
+    still_mutating = {
+        d.name for d in registry.definitions() if d.mutating and d.name in offered
+    }
+    # Render writes an image/video; publish uploads one. Neither touches project source.
+    assert still_mutating == {
+        "render_image",
+        "render_video",
+        "publish_telegram",
+        "publish_youtube",
+    }, f"a source-changing tool survives READ_ONLY: {sorted(still_mutating)}"
+
+
+def test_the_destructive_roster_names_real_tools() -> None:
+    # A stale name here silently narrows what READ_ONLY withholds, which is the domain-narrowing
+    # class this file exists for.
+    registry = build_registry(minimal_caps())
+    live = {d.name for d in registry.definitions()}
+    assert live >= _DESTRUCTIVE_TOOLS, (
+        f"destructive roster names tools that no longer exist: {_DESTRUCTIVE_TOOLS - live}"
+    )
+    for name in _DESTRUCTIVE_TOOLS:
+        assert registry.definition_for(name).mutating, name

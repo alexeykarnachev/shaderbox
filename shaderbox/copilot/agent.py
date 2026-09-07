@@ -441,12 +441,20 @@ def _tool_message(tool_call_id: str, content: str) -> LLMMessage:
     return LLMMessage(role="tool", tool_call_id=tool_call_id, content=content)
 
 
-# The decline a tool result carries, identical whether the user answered the gate or the engine
-# applied an answer already given (085). One template because the model must read the same fact on
-# both paths: two literals drift, and a drift here is a vocabulary the model has to learn twice.
+# The decline a tool result carries when the USER answered -- at the gate, or by a deny already
+# given this turn (085). One template because the model must read the same fact on both paths:
+# two literals drift, and a drift here is a vocabulary the model has to learn twice.
 _DECLINE_MSG = (
     "error: user declined — the {name} did NOT happen. "
     "Tell the user it was not done; do not retry it this turn."
+)
+
+# READ_ONLY is a different fact and says so: nobody declined anything, the tool is not available
+# in this project. Telling the model "user declined" there would be false, and would send it back
+# to the user with an answer about a decision they never made.
+_READ_ONLY_MSG = (
+    "error: {name} is not available — this project is READ-ONLY, so the source-writing tools are "
+    "withheld. Tell the user editing is turned off for this project; do not retry it this turn."
 )
 
 
@@ -1035,13 +1043,27 @@ def run_turn(
                 if refuse:
                     # The tool message is not optional: an assistant tool_call_id with no matching
                     # result 400s the next stream.
-                    logger.info(f"copilot tool {tc.name} | declined without asking")
-                    tr.event("gate_refused", name=tc.name)
-                    ran.record(tc.name, False, "error: user declined", args, None)
-                    yield AgentToolCard(tc.name, False, None, widget=None)
-                    messages.append(
-                        _tool_message(tc.id, _DECLINE_MSG.format(name=tc.name))
+                    withheld = registry.is_withheld(tc.name)
+                    template = _READ_ONLY_MSG if withheld else _DECLINE_MSG
+                    ledger = (
+                        "error: not available (read-only)"
+                        if withheld
+                        else "error: user declined"
                     )
+                    logger.info(f"copilot tool {tc.name} | refused ({ledger})")
+                    tr.event("gate_refused", name=tc.name, withheld=withheld)
+                    ran.record(tc.name, False, ledger, args, None)
+                    yield AgentToolCard(tc.name, False, None, widget=None)
+                    messages.append(_tool_message(tc.id, template.format(name=tc.name)))
+                    # A withheld tool is not one to keep trying: count it toward the edit-retry
+                    # cap AND test the cap here, since this `continue` never reaches the check at
+                    # the bottom of the loop. Without both halves a model that ignores the
+                    # read-only notice burns every iteration on a tool that does not exist.
+                    if withheld and registry.is_edit_tool(tc.name):
+                        consecutive_failed_edits += 1
+                        if consecutive_failed_edits >= config.max_edit_retries:
+                            giveup = True
+                            break
                     continue
                 req = build_gate(registry, tc.name, args)
                 tr.event("gate_open", name=tc.name, prompt=req.prompt)

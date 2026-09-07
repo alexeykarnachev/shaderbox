@@ -34,6 +34,13 @@ class _LoadToolsArgs(ToolArgs):
     )
 
 
+# Tools that REMOVE source. Excluded from `locks_source` (083 D6) because they always confirm,
+# which is right for a gate and wrong for READ_ONLY: a mode that forbids editing must forbid
+# deleting first.
+_DESTRUCTIVE_TOOLS: frozenset[str] = frozenset(
+    {"delete_document", "delete_pass", "delete_lib_file"}
+)
+
 _LOAD_TOOLS_DESC = (
     "Load extra tools you need for THIS turn by name. To keep the toolset lean, the tools below are "
     "NOT loaded by default — call load_tools with their names to make them available for the rest of "
@@ -78,15 +85,53 @@ class ToolRegistry:
             for d in self._by_name.values()
             if (d.eager or d.name in loaded) and not self.is_withheld(d.name)
         ]
-        return [d.spec() for d in sorted(chosen, key=lambda d: d.name)]
+        return [
+            self._load_tools_spec() if d.name == LOAD_TOOLS_NAME else d.spec()
+            for d in sorted(chosen, key=lambda d: d.name)
+        ]
+
+    def _load_tools_spec(self) -> LLMToolSpec:
+        # The catalogue is baked at build time, before any mode exists, so it would otherwise
+        # ADVERTISE tools the mode withholds -- the model loads one, is refused, calls it anyway,
+        # and is refused again. Rebuilt here so the offer and the filter cannot disagree.
+        tool = self._by_name[LOAD_TOOLS_NAME]
+        if self.source_lock is not SourceLock.READ_ONLY:
+            return tool.spec()
+        lazy = sorted(
+            (
+                d
+                for d in self._by_name.values()
+                if not d.eager
+                and d.name != LOAD_TOOLS_NAME
+                and not self.is_withheld(d.name)
+            ),
+            key=lambda d: d.name,
+        )
+        catalog = "\n".join(f"- {d.name}: {d.catalog_summary}" for d in lazy)
+        return LLMToolSpec(
+            name=tool.name,
+            description=_LOAD_TOOLS_DESC + catalog,
+            parameters=tool.args_model.model_json_schema(),
+        )
 
     def is_withheld(self, name: str) -> bool:
         """Is this tool absent from the request entirely, rather than merely gated?
 
-        The roster is `locks_source` -- 083 D6's enumerated set, so what READ_ONLY withholds and
-        what the lock covers cannot drift apart.
+        `locks_source` (083 D6's enumerated set) PLUS the destructive tools. The lock's own roster
+        excludes those because they already confirm every time, which is the right answer for a
+        gate and the wrong one for a mode: a project the user called read-only must not let the
+        copilot DELETE a shader, which is the most write-like act there is. Render and publish
+        stay -- they produce output and change no source.
         """
-        return self.source_lock is SourceLock.READ_ONLY and self.locks_source(name)
+        if self.source_lock is not SourceLock.READ_ONLY:
+            return False
+        return self.locks_source(name) or self.destroys_source(name)
+
+    def destroys_source(self, name: str) -> bool:
+        # Named rather than a substring match on "delete": a tool called delete_* that removed
+        # something other than source would be swept in silently, and one named otherwise would
+        # be missed. The set is asserted against the registry in the brake falsifiers.
+        return name in _DESTRUCTIVE_TOOLS
 
     def is_lazy(self, name: str) -> bool:
         # A real, lazily-loadable tool (not eager, not the load_tools meta-tool itself).

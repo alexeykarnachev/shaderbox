@@ -977,13 +977,19 @@ def revert_icon_button(id_: str, side: float) -> bool:
     return clicked
 
 
-def cycle_chip(id_: str, label: str, width: float = 0.0) -> bool:
+def cycle_chip(id_: str, labels: Sequence[str], active: int) -> bool:
     """One chip showing where a setting IS; a click advances it to the next position.
 
     The caller owns the ordering and does the advancing — this is the drawn seam, matching the
-    uniform panel's input-type selector. A fixed `width` keeps the chip from resizing as the
-    label changes, so the row around it does not shift on click."""
-    return chip_button(f"{label}##{id_}", width or float(SIZE.CHIP_W))
+    uniform panel's input-type selector. Width is the WIDEST label's, not the current one's, so
+    the chip keeps one size across the cycle and the row cannot shift on click; sizing to the
+    current label instead makes every neighbour jump. `SIZE.CHIP_W` is the floor, so a set of
+    short labels still reads as a chip rather than a nub."""
+    width = max(
+        float(SIZE.CHIP_W),
+        max(imgui.calc_text_size(label).x for label in labels) + 2.0 * float(SPACE.MD),
+    )
+    return chip_button(f"{labels[active]}##{id_}", width)
 
 
 def layout_icon_button(id_: str, variant: int, side: float) -> bool:
