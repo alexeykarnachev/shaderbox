@@ -129,6 +129,21 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   mutation there changes nothing the suite reads. The mutation goes to a copy, and the restore is
   verified, in the one tree.
 
+- **Mutate the WIRING, not the renderer — a mutation aimed one layer below the feature proves
+  nothing about the feature.** 086 shipped a prompt notice whose presence was mutation-tested at
+  the function that BUILDS the string, and passed. Hardcoding the caller's argument — which deletes
+  the notice from every turn the app will ever run — left the entire suite green, because every
+  test drove the builder with a literal instead of driving the path that decides. Same shape twice
+  in one feature: a loader's refusal was required by the spec, claimed by its verification step, and
+  exercised only through the helper it called, so gutting it stayed green.
+
+  The tell is that the test names a CONDITION (`source_read_only=True`, `withheld=[...]`) that the
+  test itself supplies. A test that passes the condition in cannot discover that nothing produces
+  it. So the falsifier for any conditional behaviour is applied at **the site that computes the
+  condition**, and the test drives whatever owns that site — the session, the loop, the app — not
+  the pure function underneath. State which layer a mutation was applied at when reporting it; "the
+  break was caught" is a claim about a layer, not about a feature.
+
 - **Structural impossibility over guard-piles — the first question of any validation-heavy review.**
   If you find yourself adding a SECOND wave of guards to second-guess what an actor (a model, a caller,
   a migration) MEANT, the CONTRACT is unsound — redesign so the unsafe outcome can't be EXPRESSED, then

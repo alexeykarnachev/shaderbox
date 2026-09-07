@@ -26,25 +26,25 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-07, 086 landed; nothing is mid-flight. -->
-**Next: nothing is claimed.** 086 made the copilot's source lock a MODE the maintainer sets rather
-than a state he discovers: Allow / Ask / Read-only on one cycling chip, persisted per project.
-Read-only WITHHOLDS the source-writing tools and says so in the prompt, so the copilot knows what it
-cannot do instead of learning it per call. It supersedes 085's split and reverses 083 D5's
-locked-by-default; both specs point at the passages 086 overrules.
+<!-- As of 2026-09-07, 086 landed; nothing is mid-flight in this repo. -->
+**Next: nothing is claimed.** 086 made the copilot's source lock a MODE the maintainer sets:
+Allow / Ask / Read-only on one cycling chip, persisted per project. Read-only WITHHOLDS every tool
+that changes or deletes the project (20 -> 12) and the prompt says why. Supersedes 085's split and
+reverses 083 D5's default; both specs point at the passages it overrules.
 
-**Blockwise visual is in**, re-vendored at `5aa51cd`. The seventh walk's third item — `:%s/…/…/g`
-said to substitute only one line — is **UNREPRODUCED from both ends**; see `conventions.md
-## Known quirks` and re-observe before changing anything.
+**Three things await the maintainer's eyes** (no WM on the dev box): the chip's look and cycling;
+what the copilot SAYS under Read-only when asked to edit; blockwise `Ctrl+V` by feel.
+
+**The editor repo is mid-work and will need a RE-VENDOR when it settles** — `5aa51cd` is not final.
+Not blocking; procedure in `conventions.md ## Known quirks`.
 
 **The eighth walk is unclaimed:** larger pass previews, a frame-time breakdown behind the FPS
-counter (mid-level — it wants a general profiling seam, not ad-hoc timers), and the Uniforms tab's
-pass selector as clickable sub-tab text.
+counter (mid-level — wants a general profiling seam), and the Uniforms tab's pass selector as
+clickable sub-tab text.
 
 **Open, unmeasured:** no brake watches cost, or a frame going lit to flat
-(`ai_docs/features/082_dogfood_post081/02_round2_report.md`); a multi-document mission.
-
-**Shipped:** v0.29.0 to GitHub only; itch stays at v0.27.0.
+(`ai_docs/features/082_dogfood_post081/02_round2_report.md`); a multi-document mission. `:%s/…/…/g`
+is UNREPRODUCED from both ends — see `conventions.md ## Known quirks` first.
 
 ## Features
 
