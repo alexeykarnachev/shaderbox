@@ -37,6 +37,7 @@ from shaderbox.copilot.llm.api import (
 from shaderbox.copilot.session import CopilotSession
 from shaderbox.copilot.tools.registry import build_registry
 from shaderbox.ui_models import UIAppState
+from shaderbox.widgets.copilot_chat import _LOCK_LABELS
 from tests._caps import minimal_caps
 from tests.test_copilot_loop import _fake_context, _FakeClient, _tool_call
 
@@ -452,6 +453,14 @@ def test_a_reset_takes_the_projects_mode_not_a_fresh_default() -> None:
         "a reset that seeds from a fresh ChatState() discards the project's mode"
     )
     assert session.registry.source_lock is SourceLock.DENY
+
+
+def test_every_mode_has_a_chip_label() -> None:
+    # The chip reads its label by lookup, so a mode without one is a KeyError at DRAW time -- in
+    # a frame callback, where it surfaces as a dead panel rather than a traceback anyone reads.
+    # Enumerated from the enum so a fourth mode fails here instead of on screen.
+    assert set(_LOCK_LABELS) == set(SourceLock)
+    assert all(_LOCK_LABELS[mode].strip() for mode in SourceLock)
 
 
 def _session() -> CopilotSession:

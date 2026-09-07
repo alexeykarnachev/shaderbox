@@ -500,8 +500,15 @@ class ProjectSession:
             load_documents_from_dir(self._document_examples_dir)
         )
 
-        if self.paths.app_state_file.exists():
-            self.app_state = UIAppState.load(self.paths.app_state_file)
+        # ALWAYS reassign, defaults included: a project with no app_state.json yet must get fresh
+        # defaults, not whatever the OUTGOING project left in this field. Guarding the assignment
+        # on existence leaks every persisted UI preference across a switch into a never-saved
+        # project -- the lock mode, the layout, the tab, the fps.
+        self.app_state = (
+            UIAppState.load(self.paths.app_state_file)
+            if self.paths.app_state_file.exists()
+            else UIAppState()
+        )
 
         self.integrations_store = IntegrationsStore.load()
         self.integrations_store.copilot.apply_limits()

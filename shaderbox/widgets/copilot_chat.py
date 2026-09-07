@@ -22,6 +22,7 @@ from shaderbox.theme import COLOR, SIZE, SPACE, fade
 from shaderbox.ui_primitives import (
     caption_text,
     copy_icon_button,
+    cycle_chip,
     danger_button,
     gauge_bar,
     labeled_text_input,
@@ -29,7 +30,6 @@ from shaderbox.ui_primitives import (
     markdown_text,
     message_bubble,
     modal_window,
-    mode_chips,
     open_path_button,
     open_url_button,
     primary_button,
@@ -120,7 +120,7 @@ def draw(app: App) -> None:
     # the difference until the chips consumed it. Height floor is nominal.
     min_w: float = (
         float(SIZE.BTN_SM_H)
-        + _lock_chips_w()
+        + float(SIZE.CHIP_W)
         + float(SIZE.USAGE_BARS_W)
         + 2.0 * float(SIZE.BTN_SM_W)
         + 4.0 * float(SPACE.LG)
@@ -672,18 +672,13 @@ def _send_button_offset(right_inset: float = 0.0) -> float:
     return -(float(SIZE.BTN_SM_W) + imgui.get_style().item_spacing.x + right_inset)
 
 
-# The lock's three positions, in enum order. Each names what happens to an EDIT, so the row reads
-# as one parallel set rather than two words about permission and one about being asked.
-_LOCK_LABELS: tuple[str, ...] = ("Allow", "Ask", "Deny")
-
-
-def _lock_chips_w() -> float:
-    # What the chip row occupies, measured from the labels rather than guessed: the top bar's
-    # width budget AND the window's own floor both depend on it, and a hand-written constant is
-    # what let the floor drift out of date once already.
-    return sum(
-        imgui.calc_text_size(label).x + 2.0 * float(SPACE.MD) for label in _LOCK_LABELS
-    ) + float(SPACE.SM) * (len(_LOCK_LABELS) - 1)
+# The lock's positions, in enum order. Each names what happens to an EDIT, so they read as one
+# parallel set rather than two words about permission and one about being asked.
+_LOCK_LABELS: dict[SourceLock, str] = {
+    SourceLock.ALLOW: "Allow",
+    SourceLock.ASK: "Ask",
+    SourceLock.DENY: "Deny",
+}
 
 
 def _draw_top_bar(app: App) -> None:
@@ -702,7 +697,7 @@ def _draw_top_bar(app: App) -> None:
         float(SIZE.USAGE_BARS_W),
         cluster_x
         - (icon_side + float(SPACE.MD))
-        - (_lock_chips_w() + float(SPACE.MD))
+        - (float(SIZE.CHIP_W) + float(SPACE.MD))
         - float(SPACE.LG),
     )
 
@@ -713,10 +708,9 @@ def _draw_top_bar(app: App) -> None:
 
     imgui.same_line()
     lock: SourceLock = app.copilot.state.source_lock
-    modes = list(SourceLock)
-    chosen = mode_chips("copilot_source_lock", _LOCK_LABELS, modes.index(lock))
-    if modes[chosen] is not lock:
-        app.copilot.set_source_lock(modes[chosen])
+    if cycle_chip("copilot_source_lock", _LOCK_LABELS[lock]):
+        modes = list(SourceLock)
+        app.copilot.set_source_lock(modes[(modes.index(lock) + 1) % len(modes)])
     if imgui.is_item_hovered():
         # A nested conditional, not a dict lookup: the prose-budget gate scores IfExp and returns
         # UNMEASURABLE for a Subscript, so a dict would hide this copy from the check that exists

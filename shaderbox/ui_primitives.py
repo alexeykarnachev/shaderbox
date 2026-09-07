@@ -977,21 +977,13 @@ def revert_icon_button(id_: str, side: float) -> bool:
     return clicked
 
 
-def mode_chips(id_: str, labels: Sequence[str], active: int) -> int:
-    """A row of chips naming the positions of one setting, the active one filled.
+def cycle_chip(id_: str, label: str, width: float = 0.0) -> bool:
+    """One chip showing where a setting IS; a click advances it to the next position.
 
-    The control for a small mutually-exclusive set where every position should be readable and
-    one click away — a cycling icon can show only where you ARE, never where you could go, and a
-    combo hides the alternatives behind a click. Returns the index clicked, or `active` when
-    nothing was."""
-    chosen: int = active
-    for index, label in enumerate(labels):
-        if index:
-            imgui.same_line(spacing=float(SPACE.SM))
-        width = imgui.calc_text_size(label).x + 2.0 * float(SPACE.MD)
-        if chip_button(f"{label}##{id_}_{index}", width, active=index == active):
-            chosen = index
-    return chosen
+    The caller owns the ordering and does the advancing — this is the drawn seam, matching the
+    uniform panel's input-type selector. A fixed `width` keeps the chip from resizing as the
+    label changes, so the row around it does not shift on click."""
+    return chip_button(f"{label}##{id_}", width or float(SIZE.CHIP_W))
 
 
 def layout_icon_button(id_: str, variant: int, side: float) -> bool:

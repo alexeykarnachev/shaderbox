@@ -96,22 +96,28 @@ button already said "Allow once" only to distinguish it from the answer being re
 already shows, and the two would drift the moment one persists and the other does not — the "two
 parallel things that must stay in lockstep" smell `conventions.md` names. One writer, one home.
 
-### D4 — the control is a chip group, not radio buttons, and it is built on the existing primitive.
+### D4 — the control is ONE chip that cycles, matching the uniform panel's input-type selector.
 
-Radio buttons draw a circle plus a label each; three of them cost roughly 200px of a bar already
-rationing width, and they read as a settings form dropped into a toolbar. A segmented chip group
-costs ~130px, says the same thing, and is what this repo already uses for a small mutually-exclusive
-set.
+Radio buttons were offered and rejected: three circles plus three labels cost ~200px of a bar that
+is already rationing width, and they read as a settings form dropped into a toolbar. A three-chip
+segmented group was then built and rejected by the maintainer on sight — *"i don't like these large
+3 chips. Looks like a shit. Let's do a single chip with rotating option (like we use for the
+uniforms)"*.
 
-`ui_primitives.chip_button` already takes `active` and its docstring already names the case ("a
-selected mode in a chip group") — so this is a `lock_mode_chips(...)` helper composing three of them,
-not a new primitive family. The chips carry no border of their own beyond the chip shape, which is
-what the maintainer asked for on the sibling pass-selector request ("something like buttons, but I
-don't want the actual button boundary").
+So it is one fixed-width chip showing where the setting IS, advancing on click:
+`ui_primitives.cycle_chip`, the drawn seam matching `draw_input_type_selector`'s shape in the
+uniform panel. The caller owns the ordering and does the advancing.
 
-**`lock_icon_button` is DELETED**, along with `SourceLock.variant` and `SourceLock.toggled` — the
-cycling icon and its glyph index exist only to serve it. A cycling control cannot show the positions
-it is cycling through, which is the complaint this feature answers.
+**This does not reintroduce 085's implicitness**, which is worth stating because the complaint that
+started this feature was about a cycling control. What made the padlock implicit was that its
+positions were *unnamed* — a colour told you which of three states you were in, and `ASK` could not
+be reached by clicking at all. The chip names its position in words, every position is on the cycle,
+and the mode is persisted rather than reset per session. The cost that remains is the honest one: a
+cycle shows where you are, not where you could go, which is the trade for a control that costs 64px
+instead of 140.
+
+`lock_icon_button` is DELETED, along with `SourceLock.variant` and `SourceLock.toggled` — the glyph
+index and the two-position toggle exist only to serve it.
 
 ### D4a — `must_confirm` KEEPS its `is not OFF` shape; only the refuse condition moves.
 
@@ -143,25 +149,18 @@ Tooltip on the group, one per chip, within the five-word `set_tooltip` budget
 | Ask | `Asks before each edit` |
 | Deny | `Declines every edit` |
 
-### D5a — the top bar's width floor is DERIVED, and two tokens move to pay for the chips.
+### D5a — the top bar's width floor is DERIVED, not hand-summed.
 
-The chip group costs ~130px where an icon cost 19. At the panel's own minimum width the row then
-needs ~60px more than it has, and `imgui.same_line(cluster_x)` with the cursor already past
-`cluster_x` moves BACKWARDS — so Clear and Close would draw on top of the chips.
+The floor's literal (`BTN_SM_H + USAGE_BARS_W + 2*BTN_SM_W + 4*SPACE.LG` = 307) budgeted for ONE
+icon while TWO had shipped since 083, and nothing caught the drift — the row survived on the gauge's
+headroom. A floor that enumerates what it is flooring cannot go stale the next time the bar gains a
+control; a hand-summed one already did. With one chip the floor is 355px against a 524px panel.
 
-The maintainer's instruction: *"we can make the session progress bar a little bit smaller (10-20 px
-smaller) and the copilot window itself a little bit wider (10-20 px wider)"*. Taken as
-**`USAGE_BARS_W` 64 → 48** and **`COPILOT_W` 504 → 524**, the larger end of both, since the gauge is
-a fill-fraction bar that reads fine narrower and the extra panel width is free.
-
-**`min_w` is then computed from the row's actual contents rather than re-summed by hand.** The
-current literal (`BTN_SM_H + USAGE_BARS_W + 2*BTN_SM_W + 4*SPACE.LG` = 307) budgets for ONE icon
-while TWO have shipped since 083, and nothing caught the drift — the row survived only on the gauge's
-headroom, which the chips consume. A floor that enumerates what it is flooring cannot go stale the
-next time the bar gains a control; a hand-summed one already did.
-
-The floor lands near 430px against a 524px panel, so it binds only when the user drags the panel
-narrow, which is what a floor is for.
+**`USAGE_BARS_W` 64 → 48 and `COPILOT_W` 504 → 524** are the maintainer's own sizing (*"we can make
+the session progress bar a little bit smaller ... and the copilot window itself a little bit
+wider"*), asked for while the three-chip group was crowding the row. They are KEPT as preferences,
+but they are **no longer load-bearing**: the floor fits either way (371px with a 64px gauge), so a
+future reader must not treat the layout as depending on them.
 
 ### D6 — persistence rides `UIAppState`, the per-project surface that already holds the sibling pref.
 

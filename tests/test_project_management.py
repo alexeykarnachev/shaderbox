@@ -17,6 +17,7 @@ import pytest
 
 from shaderbox.app import PopupState
 from shaderbox.commands import COMMAND_SPECS, CommandId
+from shaderbox.copilot.gate import SourceLock
 from shaderbox.paths import project_trash_dir
 from shaderbox.project_session import (
     create_project,
@@ -483,6 +484,34 @@ def _pump(app: Any, frames: int = 3) -> None:
 
     for _ in range(frames):
         update_and_draw(app)
+
+
+def test_a_switch_into_a_never_saved_project_takes_defaults(
+    app: Any, tmp_path: Path
+) -> None:
+    """`ProjectSession.load` reassigned `app_state` only when the file EXISTED, so a project that
+    had never been saved kept the OUTGOING project's persisted UI state — its copilot lock mode,
+    its layout, its active tab.
+
+    Driven through a real switch, because that is the only place it appears: the state is loaded
+    in `session.load` and consumed later, so every unit test that builds one project, or that
+    calls `reset_conversation` directly, sees nothing wrong. Falsifier: guard the assignment on
+    `.exists()` again and the second assert reads DENY.
+    """
+    app.copilot.set_source_lock(SourceLock.DENY)
+    app.save()
+    assert app.app_state.copilot_source_lock is SourceLock.DENY
+
+    fresh = _seed_project(tmp_path / "projects", "never_saved")
+    app.request_project_switch(fresh)
+    _pump(app)
+
+    assert app.project_dir == fresh.resolve()
+    assert app.app_state.copilot_source_lock is SourceLock.ASK, (
+        "a project with no app_state.json must take defaults, not the last project's state"
+    )
+    assert app.copilot.state.source_lock is SourceLock.ASK
+    assert app.copilot.registry.source_lock is SourceLock.ASK
 
 
 def test_the_consuming_half_is_wired(app: Any, tmp_path: Path) -> None:
