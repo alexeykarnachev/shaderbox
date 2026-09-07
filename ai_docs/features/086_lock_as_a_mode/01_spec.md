@@ -1,5 +1,21 @@
 # 086 — the source lock is a MODE you set, not a state you discover
 
+> **READ `02_deny_hides_the_tools.md` FIRST — it supersedes parts of this file.** Two things here
+> describe designs the maintainer rejected after seeing them, and a reader implementing from this
+> file alone would rebuild both:
+>
+> - The third position is **`READ_ONLY` / "Read-only"**, not `DENY`. It WITHHOLDS the tools that
+>   change or delete the project (and the prompt says why) rather than refusing their calls after
+>   the fact — "why the fuck the copilot should even see these fucking tools", and "we are not
+>   denying anything, there is just no edits at all". `LockAnswer.DENY` keeps its name: a gate
+>   answer IS a refusal.
+> - The control is **ONE cycling chip**, not the three-chip group D4 describes here ("i don't like
+>   these large 3 chips").
+>
+> What this file still governs, unchanged: D1/D2 (why a mode rather than a discovered state), D2a
+> (`must_confirm` keeps its shape — narrowing it runs the edit), D2b (the single-writer split),
+> D6/D6a (per-project persistence and the two `reset_conversation` callers).
+
 The maintainer, on 085's three-state lock:
 
 > "explicitly locked" and "locked by default" had to stop being the same value — i don't like this...
@@ -119,19 +135,21 @@ instead of 140.
 `lock_icon_button` is DELETED, along with `SourceLock.variant` and `SourceLock.toggled` — the glyph
 index and the two-position toggle exist only to serve it.
 
-### D4a — `must_confirm` KEEPS its `is not OFF` shape; only the refuse condition moves.
+### D4a — `must_confirm` KEEPS its shape; only the refuse condition moves.
 
-The tempting change is to narrow `must_confirm` to `is ASK`, on the reasoning that DENY no longer
-asks. **It would ship a Deny mode that allows everything**, and the suite would be green.
+*(Reads `is not ALLOW` as shipped; the mode below is `READ_ONLY`, renamed from `DENY`.)*
+
+The tempting change is to narrow `must_confirm` to `is ASK`, on the reasoning that the mode no longer
+asks. **It would ship a Read-only mode that allows everything**, and the suite would be green.
 
 The refuse branch lives INSIDE `if registry.must_confirm(tc.name):`, and `registry.execute` sits
-outside it. A `must_confirm` that answers False for DENY therefore does not reach the refusal — it
+outside it. A `must_confirm` that answers False for READ_ONLY therefore does not reach the refusal — it
 falls through the whole block to the execute call. `tests/test_brake_falsifiers.py` already pins this
 in as many words ("a must_confirm that went False here would route the call straight past the gate
 block and RUN the edit the lock exists to stop"), which is why **that assert is not relaxed by this
-feature**; it gains a `DENY` row instead.
+feature**; it gains a `READ_ONLY` row instead.
 
-So the predicate keeps meaning *does this call need the user's permission at all* — which DENY does,
+So the predicate keeps meaning *does this call need the user's permission at all* — which READ_ONLY does,
 in the sense the loop cares about: it must not run unexamined. 085 D2a and the promoted bullet in
 `conventions.md` already say this; the narrowing would have contradicted both.
 
