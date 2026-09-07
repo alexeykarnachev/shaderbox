@@ -99,10 +99,21 @@ user's permission at all* — `requires_gate(name) or (lock is not OFF and locks
 loop then asks the second question itself:
 
     if registry.must_confirm(tc.name):
-        if registry.source_lock is SourceLock.ARMED or deny_latched:
+        refuse = registry.locks_source(tc.name) and (
+            registry.source_lock is SourceLock.ARMED or deny_latched
+        )
+        if refuse:
             <decline without asking>
         else:
             <the existing gate block, unchanged>
+
+**The `locks_source` guard is load-bearing, not decoration.** `must_confirm` is True for two
+different reasons — the lock, and a tool's own ALWAYS policy — and only the first is the lock's
+business. Without the guard an armed lock silently swallows `render_image`, `delete_document` and
+every publish: tools the user confirms separately, which would go dead with no card saying why. A
+user arms this to stop EDITS. (Held by
+`test_the_lock_never_reaches_a_tool_that_does_not_write_source`, whose two halves — armed, and
+latched — each fail on their own.)
 
 This keeps 083 D7's funnel intact — one call site, one blocking hop — and it keeps the bool shape
 that `tests/test_brake_falsifiers.py` asserts against (`assert registry.must_confirm("edit_shader")`
@@ -184,6 +195,11 @@ call, not one mechanism per path.
 
 The gate card for the ANSWERED gate keeps its outcome text (083's `_LOCK_OUTCOMES`). Calls declined
 by the latch behind it produce ordinary failed tool cards, which is what they are.
+
+**The ledger entry is the load-bearing half, not the card.** `ran.record` is what reaches the turn
+summary the NEXT turn reads: drop it and the model is told the copilot did nothing at all, and the
+document address a "do the same to C" follow-up needs goes with it. The live-decline path records
+it, so nothing about the code looks wrong when the refuse path does not.
 
 ### D6 — the icon's tooltip and the gate card's copy change with the states.
 
@@ -297,6 +313,16 @@ this spec alone. Verdict PARTIAL; every finding accepted and folded in above:
 
 Nothing was rejected. No finding contested the design; all seven were gaps in what the spec SAID
 versus what the implementation would have to do.
+
+**Two post-implementation rounds followed, and their detail is in the commit bodies** (`12cc5d7`
+and `9ee2c4c`) rather than restated here, per `dev_flow.md`'s "spec or the commit message". The
+shape worth carrying forward: neither round found a behavioral defect, and both found gates that
+passed whether or not they worked. Eleven breaks were tried across the feature and SEVEN initially
+passed — every one a test that read as enforcement and enforced nothing. The two that most deserve
+remembering are in D2a and D5 above, because in both cases the spec had already named the
+obligation and no assert held it.
+
+A third round verified the fixes by mutation and returned PASS.
 
 ## Open questions for the user
 

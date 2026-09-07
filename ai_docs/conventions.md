@@ -1144,6 +1144,11 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   chords — bare printables reach the editor via the glfw char callback with the platform-resolved
   codepoint. If the symptom recurs, capture the exact buffer and keystrokes first; the parser and
   the routing are both cleared.
+- **`test_project_management.py::test_the_consuming_half_is_wired` is an ORDER-DEPENDENT flake, not
+  a regression.** It fails in a full parallel run and passes in isolation (39/39) and under
+  `make gates`. Reproduced at `29c0497`, so it predates feature 085; a red there is not something
+  the change under your hands broke. Worth diagnosing when someone has the appetite; worth NOT
+  re-investigating from scratch every time a full run goes red.
 - **Two "unused" surfaces are DELIBERATE — a sweep will re-find them; do not delete them.**
   Each was confirmed dead by grep and then rejected on inspection, so the grep evidence alone is
   not the test.
@@ -1239,7 +1244,25 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   renumbered, so a host mapping the value through anything narrower than an int — an enum, a
   fixed-length array, an exhaustive branch — widens that map in the same commit as the copy.**
   `test_the_mode_enum_covers_every_value_upstream_can_return` now gates it against the vendored
-  probe's own `MODES` table, so the next appended mode fails the suite instead of shipping.
+  probe's own `MODES` table, so the next appended mode fails the suite instead of shipping. **The
+  `5aa51cd` re-vendor (blockwise visual, `ed_mode` value 5) is the second instance and the gate
+  caught it, which is what a gate is for.** It also carries the OTHER host half a mode can bring:
+  the new mode's key was already bound HERE. `Ctrl+V` was the host's paste, and `_handle_clipboard`
+  runs before `ed_key`, so the collision did not shadow blockwise — it made the mode unreachable
+  while upstream's own suite proved the binding worked. **A re-vendor that adds a mode must ask
+  which KEY enters it and whether this host already claims that key**, because no upstream gate can
+  see a key that never arrives. Bare `Ctrl+V` now falls through, paste keeps `Ctrl+Shift+V`, and
+  `test_the_host_clipboard_leaves_bare_ctrl_v_to_the_editor` drives the real editor and asserts the
+  MODE reached rather than the handler's return value.
+- **A rectangular selection is `ed_block_selection`, never `ed_selection`.** The latter reports one
+  start and one end, which on a rectangle names two CORNERS and says nothing about the columns
+  between them — drawing from it highlights the charwise sweep corner to corner, not the block. The
+  block call returns false in every other mode, which is also how to ask "is this blockwise"
+  without switching on the mode number. Both ranges are INCLUSIVE, columns are DISPLAY columns (a
+  tab occupies its expanded width), and when `to_eol` is set the block reaches each line's own end
+  with `right_col` meaningless — read the flag, or a ragged `$` block draws with a straight edge.
+  Bound as `Editor.get_block_selection`; nothing draws a selection by hand today, so this is the
+  binding mirroring the ABI, and it is what a host-drawn selection would need.
   That re-vendor also closed three read-only holes (`~`, `>`, `<` edited a buffer the host had
   locked): measured here, `>>` DID indent a locked line under `5e0e8a2`, and `tabs/code.py` locks
   the editor for the whole copilot turn, so it was live.
