@@ -138,7 +138,8 @@ def _is_lookup_key(editor: Editor, event: KeyEvent) -> bool:
         event.code == KeyCode.CHAR
         and event.text == "K"
         and event.mods in (KeyMod.NONE, KeyMod.SHIFT)
-        and editor.get_mode() in (Mode.NORMAL, Mode.VISUAL, Mode.VISUAL_LINE)
+        and editor.get_mode()
+        in (Mode.NORMAL, Mode.VISUAL, Mode.VISUAL_LINE, Mode.VISUAL_BLOCK)
     )
 
 
@@ -289,16 +290,23 @@ def _read_clipboard(app: App) -> str:
 
 
 def _handle_clipboard(app: App, editor: Editor, event: KeyEvent) -> bool:
-    # Host-wired clipboard (the keymap has no registers): Ctrl+C/X/V against the
-    # system clipboard. Runs before ed_key — the editor leaves these unbound.
-    # Shift is accepted alongside: Ctrl+Shift+V is the terminal-style paste, and the
-    # synthesized CHAR carries the uppercase text with the shift bit set.
+    # Host-wired clipboard (the keymap has no registers): Ctrl+C/X against the system
+    # clipboard, and paste on Ctrl+Shift+V. Runs before ed_key, so anything claimed here
+    # never reaches the editor. The synthesized CHAR carries the uppercase text with the
+    # shift bit set.
+    #
+    # BARE Ctrl+V is the editor's, as blockwise visual (editor 5aa51cd) -- and as it is in
+    # vim, where Ctrl+Shift+V is the terminal's paste. Claiming it here would leave the mode
+    # unreachable: this function returning True is the whole decision, since ed_key never sees
+    # the event.
     if event.code != KeyCode.CHAR or event.mods not in (
         KeyMod.CTRL,
         KeyMod.CTRL | KeyMod.SHIFT,
     ):
         return False
     if event.text.lower() not in ("c", "x", "v"):
+        return False
+    if event.text.lower() == "v" and event.mods == KeyMod.CTRL:
         return False
     if event.text.lower() in ("c", "x"):
         selected = editor.get_selection_text()

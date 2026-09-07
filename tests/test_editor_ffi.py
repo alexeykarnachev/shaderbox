@@ -88,16 +88,19 @@ def test_vim_edit_undo_redo() -> None:
     e.close()
 
 
-def test_the_consumed_ctrl_chord_domain_is_eight() -> None:
-    # The collision domain decision 5 builds on. Editor 4b110f0 grew it from two
-    # to eight: Ctrl+R (redo) + the six scroll motions in normal mode, Ctrl+N in
-    # insert. Every OTHER Ctrl chord falls through as False — the registry's food.
+def test_the_consumed_ctrl_chord_domain_is_nine() -> None:
+    # The collision domain decision 5 builds on. Editor 4b110f0 grew it from two to eight
+    # (Ctrl+R redo + the six scroll motions in normal, Ctrl+N in insert); 5aa51cd added
+    # Ctrl+V, blockwise visual. Every OTHER Ctrl chord falls through as False — the
+    # registry's food. The host must NOT claim Ctrl+V for paste: `_handle_clipboard` runs
+    # before ed_key, so claiming it there leaves blockwise unreachable.
     e = _editor("\n".join(f"line {i}" for i in range(50)))
     e.layout((640.0, 420.0), 16.0)
-    consumed_normal = "rdufbey"
+    consumed_normal = "rdufbeyv"
     for ch in consumed_normal:
         assert e.key(KeyCode.CHAR, KeyMod.CTRL, ch) is True, f"Ctrl+{ch} unbound?"
-    for ch in "acghijklmnopqstvwxz":
+        e.key(KeyCode.ESCAPE)
+    for ch in "acghijklmnopqstwxz":
         assert e.key(KeyCode.CHAR, KeyMod.CTRL, ch) is False, f"Ctrl+{ch} claimed"
     e.feed("i")
     assert e.get_mode() == Mode.INSERT

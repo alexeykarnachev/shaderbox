@@ -41,7 +41,7 @@ DRAW_ORDER = [
     "Frame", "Popup_Panel", "Popup_Glyph",
     "Whitespace", "Bracket_Match", "Search_Match",
 ]
-MODES = ["NORMAL", "INSERT", "VISUAL", "V-LINE", "REPLACE"]
+MODES = ["NORMAL", "INSERT", "VISUAL", "V-LINE", "REPLACE", "V-BLOCK"]
 # Key codes and modifier bits, matching the ED_KEY_* / ED_MOD_* constants.
 K_CHAR, K_ESC, K_ENTER, K_TAB, K_BS = 1, 2, 3, 4, 5
 K_DEL, K_LEFT, K_RIGHT, K_UP, K_DOWN = 6, 7, 8, 9, 10
@@ -150,6 +150,12 @@ _SIG = {
     "ed_marker_count": (ctypes.c_int32, [ctypes.c_void_p]),
     "ed_key": (ctypes.c_bool, [ctypes.c_void_p] + [ctypes.c_int32] * 3),
     "ed_selection": (ctypes.c_bool, [ctypes.c_void_p] + [ctypes.POINTER(ctypes.c_int32)] * 4),
+    "ed_block_selection": (
+        ctypes.c_bool,
+        [ctypes.c_void_p]
+        + [ctypes.POINTER(ctypes.c_int32)] * 4
+        + [ctypes.POINTER(ctypes.c_bool)],
+    ),
     "ed_selection_text": (ctypes.c_int32, [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ubyte), ctypes.c_int32]),
     "ed_select_line": (None, [ctypes.c_void_p, ctypes.c_int32]),
     "ed_clear_selection": (None, [ctypes.c_void_p]),
@@ -313,6 +319,16 @@ def selection(h):
     return (a.value, b.value), (c.value, d.value)
 
 
+def block_selection(h):
+    a, b, c, d = (ctypes.c_int32() for _ in range(4))
+    eol = ctypes.c_bool()
+    if not lib.ed_block_selection(
+        h, *(ctypes.byref(v) for v in (a, b, c, d)), ctypes.byref(eol)
+    ):
+        return None
+    return a.value, b.value, c.value, d.value, eol.value
+
+
 def selection_text(h):
     n = lib.ed_selection_text(h, _buf, 65536)
     return None if n < 0 else bytes(_buf[:n]).decode()
@@ -330,6 +346,44 @@ def main() -> int:
         ok = got == want
         failures += not ok
         print(f"  {'ok  ' if ok else 'FAIL'} {label}: {got!r}" + ("" if ok else f" want {want!r}"))
+
+    print("blockwise visual")
+    h = lib.ed_new(b"abcdef\nghijkl\nmnopqr")
+    lib.ed_feed(h, b"<C-v>jjl")
+    check("Ctrl-V enters blockwise", MODES[lib.ed_mode(h)], "V-BLOCK")
+    # Lines 0..2, display columns 0..1, not ragged. A host draws the rectangle
+    # from this; ed_selection reports the two CORNERS and cannot say what lies
+    # between them.
+    check("the rectangle", block_selection(h), (0, 2, 0, 1, False))
+    lib.ed_feed(h, b"$")
+    check("$ makes it ragged", block_selection(h)[4], True)
+    lib.ed_feed(h, b"<Esc>")
+    check("and nothing is blockwise in normal mode", block_selection(h), None)
+    # The charwise modes answer None here, which is how a host asks "is this
+    # blockwise" without switching on the mode number.
+    lib.ed_feed(h, b"v")
+    check("charwise visual is not a block", block_selection(h), None)
+    lib.ed_free(h)
+
+    # A FRESH handle: the checks above walked the caret and left visual state
+    # behind, and reusing the handle here made a correct delete read as a
+    # broken one -- the keys were dropped rather than the operator failing.
+    h = lib.ed_new(b"abcdef\nghijkl\nmnopqr")
+    lib.ed_feed(h, b"<C-v>jld")
+    check("a blockwise delete", text(h), "cdef\nijkl\nmnopqr")
+    # The rectangle is N disjoint edits and ONE undo step, which is the whole
+    # reason the undo tree grew a run id.
+    lib.ed_feed(h, b"u")
+    check("and one undo puts every line back", text(h), "abcdef\nghijkl\nmnopqr")
+    # A fresh handle again: the undo above left the caret at the top, and `G`
+    # from there is not the walk this measures. The expected text is nvim's
+    # answer for these keys, not a guess -- the guess was wrong.
+    lib.ed_free(h)
+    h = lib.ed_new(b"abcdef\nghijkl\nmnopqr")
+    lib.ed_feed(h, b"<C-v>jjlyGp")
+    check("a blockwise paste writes rows into successive lines",
+          text(h), "abcdef\nghijkl\nmabnopqr\n gh\n mn")
+    lib.ed_free(h)
 
     print("editing")
     h = lib.ed_new(b"void main() {\n    vec3 c = vec3(1.0);\n}")

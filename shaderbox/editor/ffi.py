@@ -75,6 +75,10 @@ class Mode(IntEnum):
     # RAISES on an unknown value, so a missing member is a crash on the first `R`, not a
     # stale reading.
     REPLACE = 4
+    # `Ctrl+V`: a rectangular selection. Appended upstream at 5aa51cd, same as REPLACE was --
+    # and the same crash if omitted. Its selection is NOT `ed_selection`, which names two
+    # corners and says nothing about the columns between them; see `block_selection`.
+    VISUAL_BLOCK = 5
 
 
 class Language(IntEnum):
@@ -164,6 +168,16 @@ class KeyMod(IntEnum):
 class CursorPos(NamedTuple):
     line: int
     column: int
+
+
+class BlockSelection(NamedTuple):
+    # A blockwise visual rectangle. Both ranges INCLUSIVE, columns are DISPLAY columns.
+    # `to_eol` (`$`): the block reaches each line's own end and `right_col` means nothing.
+    first_line: int
+    last_line: int
+    left_col: int
+    right_col: int
+    to_eol: bool
 
 
 class HostCommandKind(IntEnum):
@@ -317,6 +331,10 @@ _SIG: dict[str, tuple[object, Sequence[object]]] = {
     "ed_gutter_cells": (ctypes.c_int32, [ctypes.c_void_p]),
     "ed_key": (ctypes.c_bool, [ctypes.c_void_p] + [ctypes.c_int32] * 3),
     "ed_selection": (ctypes.c_bool, [ctypes.c_void_p] + [_P(ctypes.c_int32)] * 4),
+    "ed_block_selection": (
+        ctypes.c_bool,
+        [ctypes.c_void_p] + [_P(ctypes.c_int32)] * 4 + [_P(ctypes.c_bool)],
+    ),
     "ed_selection_text": (
         ctypes.c_int32,
         [ctypes.c_void_p, _P(ctypes.c_ubyte), ctypes.c_int32],
@@ -542,6 +560,31 @@ class Editor:
         if not got:
             return None
         return CursorPos(a.value, b.value), CursorPos(c.value, d.value)
+
+    def get_block_selection(self) -> BlockSelection | None:
+        """The rectangle a blockwise visual selection covers, or None in every other mode
+        (which is also how to ask "is this blockwise" without switching on the mode number).
+
+        NOT derivable from `get_selection`, which reports one start and one end -- on a
+        rectangle those are two CORNERS, saying nothing about the columns between them, so
+        drawing from it highlights the charwise sweep instead of the block. Both ranges are
+        INCLUSIVE, and the columns are DISPLAY columns (a tab occupies its expanded width).
+        When `to_eol` the block reaches each line's OWN end and `right_col` is meaningless."""
+        first, last, left, right = (ctypes.c_int32() for _ in range(4))
+        to_eol = ctypes.c_bool()
+        got = self._lib.ed_block_selection(
+            self._h,
+            ctypes.byref(first),
+            ctypes.byref(last),
+            ctypes.byref(left),
+            ctypes.byref(right),
+            ctypes.byref(to_eol),
+        )
+        if not got:
+            return None
+        return BlockSelection(
+            first.value, last.value, left.value, right.value, to_eol.value
+        )
 
     def get_selection_text(self) -> str | None:
         n = self._lib.ed_selection_text(self._h, _TEXT_BUF, len(_TEXT_BUF))

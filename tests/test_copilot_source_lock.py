@@ -352,6 +352,16 @@ def test_a_refused_call_reaches_the_turn_ledger() -> None:
     )
 
 
+def test_each_lock_state_draws_a_distinct_glyph() -> None:
+    # The variant is what the icon draws, and three states that map to one number are three
+    # states the user cannot tell apart -- a silent failure, since nothing else reads it.
+    variants = [lock.variant for lock in SourceLock]
+    assert len(set(variants)) == len(SourceLock), (
+        f"two lock states draw the same glyph: {variants}"
+    )
+    assert SourceLock.OFF.variant == 0, "the open padlock is variant 0"
+
+
 def test_the_icon_click_moves_between_off_and_armed() -> None:
     # ARMED is reachable ONLY through this transition, so a toggle quietly rewritten to OFF <-> ASK
     # would leave the maintainer's "if I locked it, don't ask" unimplemented with every other lock

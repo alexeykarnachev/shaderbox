@@ -24,8 +24,9 @@ from shaderbox.commands import (
     chord_to_str,
     leader_command,
 )
-from shaderbox.editor.ffi import Editor, KeyCode
-from shaderbox.hotkeys import _RESERVED_CHORDS, _collect_binding
+from shaderbox.editor.ffi import Editor, KeyCode, Mode
+from shaderbox.editor.input import KeyEvent, KeyMod
+from shaderbox.hotkeys import _RESERVED_CHORDS, _collect_binding, _handle_clipboard
 
 _DOCS = Path("shaderbox/resources/editor")
 _VIM_DOC = _DOCS / "vim_coverage.md"
@@ -300,3 +301,26 @@ def test_the_registration_shape_is_the_one_the_app_actually_uses() -> None:
     # registers exactly that shape, so the two cannot drift apart.
     source = Path("shaderbox/app.py").read_text()
     assert "editor.bind(key, index, leader=True)" in source
+
+
+def test_the_host_clipboard_leaves_bare_ctrl_v_to_the_editor() -> None:
+    """`Ctrl+V` is blockwise visual (editor 5aa51cd), and `_handle_clipboard` runs BEFORE
+    `ed_key` — so claiming it there does not merely shadow the mode, it makes it unreachable.
+
+    This is the host half of a re-vendor that grew a keymap, and no editor-side gate can see
+    it: upstream's suite proves `Ctrl+V` enters blockwise while the key never arrives. The
+    outcome is what is measured — the mode the editor actually reaches — not the handler's
+    return value. Paste keeps `Ctrl+Shift+V`, where vim's terminal-style paste lives anyway.
+    """
+    editor = Editor()
+    editor.set_text("abc\ndef\n")
+    event = KeyEvent(KeyCode.CHAR, KeyMod.CTRL, "v")
+    # No app is needed: a handler that declines this event returns before reading one. Passing
+    # None is the assertion — if the host ever claims Ctrl+V here, this raises instead of
+    # quietly pasting, which is the louder failure.
+    assert not _handle_clipboard(None, editor, event)
+    assert editor.key(event.code, event.mods, event.text) is True
+    assert editor.get_mode() is Mode.VISUAL_BLOCK, (
+        "Ctrl+V reached the editor but did not enter blockwise"
+    )
+    editor.close()
