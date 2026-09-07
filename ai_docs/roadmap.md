@@ -26,17 +26,17 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-06, v0.29.0 shipped to GitHub; nothing is mid-flight. -->
-**Next: nothing is claimed.** 084 gave a project the verbs a document already had: a Projects modal
-(Ctrl+O) carrying open / new / delete / open-other, replacing the lone folder picker. Two bugs rode
-along, both made routine by it — a switch discarded every unsaved editor buffer, and a pointer at a
-deleted directory recreated an empty skeleton there and came up blank.
+<!-- As of 2026-09-07, 085 landed; nothing is mid-flight in this repo. -->
+**Next: nothing is claimed.** 085 fixed the copilot's deny semantics from the maintainer's seventh
+walk: one DENY answers the whole turn, and a deliberately armed lock declines without asking. It
+reverses 083 D5's per-call refusal on his own re-decision, and that spec now carries a pointer at
+the passage it overrules.
 
-**The re-vendor is done**, at `1aadb6e`: one new export (`ed_pending_phrase`, vim's showcmd) plus a
-`ChromeFlag`. The two pending queries are an IMPLICATION, not an equivalence — an open `:` line is
-pending with NO phrase, its text being `ed_command_line`. Gate on `is_pending`, then draw whichever
-is non-empty. Nine nvim divergences closed; user-visible are `daw`/`caw`/`vaw` on whitespace-only
-lines and vertical motion after a no-op edit.
+**Outstanding from the same walk, in the EDITOR repo:** blockwise visual (`Ctrl+V`) is confirmed
+absent and being built there; expect an appended `ED_MODE_*` value (so existing mode switches stay
+valid) and a re-vendor here when it lands. The walk's third item — `:%s/…/…/g` said to substitute
+only one line — is **UNREPRODUCED from both ends**; the measurements are in `conventions.md
+## Known quirks`, so re-observe before touching anything.
 
 **Open, unmeasured:** no brake watches cost, or a frame going lit to flat
 (`ai_docs/features/082_dogfood_post081/02_round2_report.md`); whether the one-turn dogfood build
@@ -50,6 +50,7 @@ list once you switch away (084 D1, accepted).
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 085 | lock_deny_semantics | done | The copilot asked again after being told no -- once per call, in the same turn -- and the icon the user set to "locked" was a request to be asked rather than an answer. One DENY now answers the whole turn, and the lock splits into three states so that "he armed it" and "it defaults on" stop being the same value: OFF runs, ASK (the default) confirms, ARMED declines without asking. Reverses 083 D5 for the refusal direction only, on the maintainer's own re-decision after using it; `must_confirm` stays a bool because ask-vs-refuse also depends on the turn latch, which the registry cannot see. Five breaks tried, two of which only became detectable after a test was written for them. Spec: `ai_docs/features/085_lock_deny_semantics/01_spec.md`. |
 | 084 | project_management | done | A project had one verb, `Open project`, which called `_init` directly: no create, no fork, no switcher, and the open project's name displayed nowhere. One Projects modal (Ctrl+O) now carries every verb, replacing the picker rather than sitting beside it and demoting it to `Open other...` for a project outside the root; rows show name, document count and PATH, the column that tells a rooted project from one opened anywhere else. Two bugs rode along because the feature makes both routine — a switch discarded every unsaved buffer, and a pointer at a vanished directory recreated an empty skeleton there and came up blank. The switch is DEFERRED out of the modal's draw: a popup body runs after the editor panel and document image have pushed texture handles into the frame's draw list, so releasing them there renders freed GL names. Three review rounds; a mutation pass found the entire consuming half deletable with every gate green. Spec: `ai_docs/features/084_project_management/01_spec.md`. |
 | 083 | sixth_walk_findings | partial | The maintainer's sixth walk, six findings split across two repos: the copilot's per-session source lock (twelve content tools, three answers, riding the existing gate funnel -- which found `requires_gate` answering both "do we confirm?" and "is this irreversible?", now split), a dedicated Uniforms tab with the pass selector that finally reaches a pass neither open nor on screen, the sampler previews routed through the pass strip's own `preview_cell` so a transparent texture has an edge, and luna as the default model. The two vim findings (one Escape leaving INSERT past the completion popup, the pending phrase in the status band) are the editor repo's; the re-vendor is what stays open. Spec: `ai_docs/features/083_sixth_walk_findings/01_spec.md`. |
 | — | editor_walk_findings | done | The maintainer's walk over the code panel, split across two repos: GLSL member/swizzle completion after a dot (the host owns that vocabulary, and the words provider had to yield the site — at its two-letter floor `u_gain.xf` offered the local `xfade` as a component of a float), an RGB channel view because Color and Color+Alpha were the same composite differing only in checker loudness, `Ctrl+Shift+V` paste, and a tooltip. The editor repo took the three keymap items and built a host-binding overlay (`<leader>f` formats, `Ctrl+Shift+I` untouched); its ABI went 100 -> 106, purely additive. Spec: commits `ac78d67` + `0f976be` + `d18991a` + `cc54130`. |

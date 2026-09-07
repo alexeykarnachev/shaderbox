@@ -637,6 +637,24 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
 - **A copilot tool's interactive output is a STRUCTURED entity the engine renders, never a raw value in
   the model-facing message.** A tool returns `(ok, msg, payload)`: `msg` reaches the LLM, `payload` does
   NOT. A URL / file path / button / panel a tool surfaces goes in `payload` as a structured spec the UI
+- **A user's refusal is scoped to the ASK, not to the call, and a permission control has to
+  distinguish "on by default" from "the user turned it on".** The copilot's source lock (083, widened
+  by 085) is the worked instance: one DENY on a gate latches for the rest of the TURN, because from
+  the user's side one question was asked and one answer given -- how many tool calls the model chose
+  to make is the engine's business, not his. The general form is the trap 083 fell into: a
+  per-CALL refusal is the natural implementation and the wrong user model, and it only shows up in
+  use, as "it keeps asking". The second half is the state-count rule: `source_locked: bool` could
+  not express "he armed it" separately from "it defaults armed", so honoring "if I locked it, don't
+  ask" would have silently refused everything in a fresh session. A control the user can set AND
+  that defaults on needs three states (`SourceLock`: OFF / ASK / ARMED), not two. **Where the answer
+  latches follows its scope:** turn-scoped state lives as a local in `run_turn` beside the other
+  brakes, so "the next turn starts fresh" is true by construction rather than by a reset somebody
+  must remember. And the predicate that asks "does this need permission?" stays a BOOL even when the
+  outcomes number three -- whether permission is asked for or refused outright also depends on state
+  the registry does not hold, so a three-valued answer there could only ever be half of one. Revisit
+  if the maintainer reports answering "Allow once" repeatedly within ONE turn (the allow direction is
+  deliberately still per-call: widening an approval covers calls he never saw, which is the asymmetry
+  between granting and refusing).
   renders as a first-class chat entity; `msg` stays a TERSE fact that also TELLS the agent a widget was
   shown (so it points the user at the button instead of pasting a raw value it shouldn't have). Two
   orthogonal vehicles, do NOT conflate: a **result widget** (`state.ResultWidget`, kind-dispatched in

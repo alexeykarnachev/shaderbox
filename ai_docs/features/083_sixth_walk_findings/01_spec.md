@@ -221,6 +221,13 @@ five edits and the user answers "allow once" five times asks five times. That is
 be asked. If it grates, the answer he already has is "allow this session" or the unlock icon —
 which is why the three answers are the three he specified, with no fourth "allow for this turn".
 
+> **REVERSED for DENY by feature 085** (`ai_docs/features/085_lock_deny_semantics/01_spec.md`). It
+> grated: the maintainer ran this session and answered that he does not model a turn as separable
+> edits at all, so one DENY now answers the whole turn. The allow direction above still stands
+> unchanged — 085 reverses what a REFUSAL covers, not what an approval covers. 085 also splits the
+> lock into three states, because "explicitly locked" and "locked by default" had to stop being the
+> same value for an armed lock to decline without asking.
+
 ### D6 — the lock covers SOURCE-mutating tools, defined by a field on `ToolDefinition`, not by a name list.
 
 `ToolDefinition` already carries `mutating` and `is_edit`. Neither is the right set: `mutating` is
