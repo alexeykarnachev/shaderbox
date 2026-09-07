@@ -1804,6 +1804,9 @@ class App:
         self.app_state.active_document_tab = self.active_document_tab
         self.app_state.is_copilot_open = self.is_copilot_open
         self.app_state.copilot_layout = self.copilot_layout
+        # The lock's persisted copy, mirrored from the live one here rather than written by
+        # CopilotSession.set_source_lock -- which keeps it main-thread-only by shape.
+        self.app_state.copilot_source_lock = self.copilot.state.source_lock
 
         self.integrations_store.save()
         self.app_state.save(self.paths.app_state_file)
@@ -1871,6 +1874,20 @@ class App:
 
         if hasattr(self, "rgb_view"):
             self.rgb_view.release()
+
+    def shutdown(self) -> None:
+        """Release, then tear down what `__init__` built ONCE per process.
+
+        Distinct from `release()`, which a project switch also calls and which must leave the
+        window and its imgui context intact. The context owns the font atlas, whose GL texture
+        dies with the App that built it: leaving it alive makes the next `create_context()` hand
+        back this same context, so a second App in one process inherits a dead texture and imgui
+        1.92's on-demand glyph upload fails GL_INVALID_VALUE on the first unrasterized glyph.
+        """
+        self.release()
+        if hasattr(self, "imgui_renderer"):
+            self.imgui_renderer.shutdown()
+        imgui.destroy_context()
 
     # ---- projects (feature 084) -----------------------------------------------------------
 

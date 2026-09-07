@@ -151,7 +151,7 @@ def run(app: App) -> None:
 
     app.save()
     app.save_imgui_ini()
-    app.release()
+    app.shutdown()
 
 
 def _tick_frame_state(app: App) -> list[str] | None:

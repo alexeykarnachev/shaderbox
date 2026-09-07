@@ -1144,11 +1144,6 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   chords — bare printables reach the editor via the glfw char callback with the platform-resolved
   codepoint. If the symptom recurs, capture the exact buffer and keystrokes first; the parser and
   the routing are both cleared.
-- **`test_project_management.py::test_the_consuming_half_is_wired` is an ORDER-DEPENDENT flake, not
-  a regression.** It fails in a full parallel run and passes in isolation (39/39) and under
-  `make gates`. Reproduced at `29c0497`, so it predates feature 085; a red there is not something
-  the change under your hands broke. Worth diagnosing when someone has the appetite; worth NOT
-  re-investigating from scratch every time a full run goes red.
 - **Two "unused" surfaces are DELIBERATE — a sweep will re-find them; do not delete them.**
   Each was confirmed dead by grep and then rejected on inspection, so the grep evidence alone is
   not the test.

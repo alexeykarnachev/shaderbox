@@ -67,7 +67,9 @@ def app(monkeypatch: Any, tmp_path: Path) -> Iterator[Any]:
     ].document.render()  # warm the GL program (matches the live loop)
     yield a
     with contextlib.suppress(Exception):
-        a.release()
+        # shutdown(), not release(): the imgui context and its font atlas are per-PROCESS, and a
+        # later test's App would otherwise inherit this one's dead atlas texture.
+        a.shutdown()
 
 
 @pytest.fixture(autouse=True)
