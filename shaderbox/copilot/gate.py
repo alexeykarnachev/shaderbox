@@ -34,6 +34,15 @@ class GateRequest:
     switch_to: bool = False
 
 
+class SourceLock(StrEnum):
+    # The session's source lock (083, widened by 085). THREE states, not a bool: the difference
+    # between the default guard and a switch the user reached out and flipped is what lets an
+    # ARMED lock refuse without asking while a fresh session still asks.
+    OFF = auto()  # runs, asks nothing
+    ASK = auto()  # the session default; opens the three-answer gate
+    ARMED = auto()  # the user locked it deliberately: declines, asks nothing
+
+
 class LockAnswer(StrEnum):
     # A SOURCE_LOCK gate's three answers (083). DENY and ONCE leave the session locked; SESSION
     # unlocks it for the rest of the conversation. Kept off `approved` because "yes, and stop

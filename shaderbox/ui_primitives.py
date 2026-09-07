@@ -977,17 +977,23 @@ def revert_icon_button(id_: str, side: float) -> bool:
     return clicked
 
 
-def lock_icon_button(id_: str, locked: bool, side: float) -> bool:
-    """A square ghost button drawn as a padlock — the copilot's source-lock toggle (083).
+def lock_icon_button(id_: str, variant: int, side: float) -> bool:
+    """A square ghost button drawn as a padlock — the copilot's source-lock control (083/085).
 
-    Locked draws a closed shackle over a filled body in the accent; unlocked draws the shackle
-    swung open to the right, dim. The state is the GLYPH, not the label, so the button never
-    changes width. No font dependency. Returns True on click."""
+    `variant`: 0 = open (shackle swung right, dim), 1 = asking (closed, accent), 2 = refusing
+    (closed, error color) — a lock that declines is the visual class `danger_button` already owns,
+    and the accent is runtime-swappable so it cannot carry the distinction alone. An int, not the
+    copilot's enum, because this module knows only `theme` (its sibling `layout_icon_button` takes
+    its variant the same way). All three are the same width: the state is the glyph and its color,
+    never the label. No font dependency. Returns True on click."""
     clicked, origin = _glyph_button(
         id_, side, COLOR.TRANSPARENT, COLOR.BG_FRAME, COLOR.BORDER
     )
+    locked = variant != 0
     col = imgui.color_convert_float4_to_u32(
-        COLOR.ACCENT_PRIMARY if locked else COLOR.FG_DIM
+        COLOR.STATE_ERROR
+        if variant == 2
+        else (COLOR.ACCENT_PRIMARY if locked else COLOR.FG_DIM)
     )
     dl = imgui.get_window_draw_list()
     # The body is the lower half; the shackle is a half-circle standing on its top edge.

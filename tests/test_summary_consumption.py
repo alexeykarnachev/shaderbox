@@ -8,6 +8,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from shaderbox.copilot.capabilities import SetUniformResult
+from shaderbox.copilot.gate import SourceLock
 from shaderbox.copilot.llm.api import (
     LLMDone,
     LLMMessage,
@@ -75,7 +76,7 @@ def test_second_turn_receives_first_turn_summary(tmp_path: Path) -> None:
     # This turn calls set_uniform, which the source lock (083) confirms. The subject here is the
     # NL turn-summary, not gating, and there is no UI to answer -- so unlock rather than script a
     # gate answer that would make the test about two things.
-    session.set_source_locked(False)
+    session.set_source_lock(SourceLock.OFF)
     try:
         session.enqueue_turn("set the speed to 2.5")
         _drain(session)

@@ -7,7 +7,7 @@ from imgui_bundle import imgui, imgui_ctx
 
 from shaderbox.app import App
 from shaderbox.copilot.config import COPILOT_ENGINE
-from shaderbox.copilot.gate import GateKind, LockAnswer
+from shaderbox.copilot.gate import GateKind, LockAnswer, SourceLock
 from shaderbox.copilot.sanitize import sanitize_display
 from shaderbox.copilot.state import (
     CopilotLayout,
@@ -624,6 +624,8 @@ def _draw_lock_choices(app: App, idx: int) -> None:
     imgui.same_line()
     if standard_button(f"Deny##gate_lock_deny_{idx}"):
         app.copilot.answer_gate_lock(LockAnswer.DENY)
+    if imgui.is_item_hovered():
+        imgui.set_tooltip("Denies further changes this turn")
 
 
 def _draw_config_panel(app: App, msg: Message, idx: int) -> None:
@@ -667,6 +669,15 @@ def _send_button_offset(right_inset: float = 0.0) -> float:
     return -(float(SIZE.BTN_SM_W) + imgui.get_style().item_spacing.x + right_inset)
 
 
+# The lock glyph's variant per state (`ui_primitives.lock_icon_button` takes an int, not this
+# enum -- that module knows only `theme`).
+_LOCK_VARIANTS: dict[SourceLock, int] = {
+    SourceLock.OFF: 0,
+    SourceLock.ASK: 1,
+    SourceLock.ARMED: 2,
+}
+
+
 def _draw_top_bar(app: App) -> None:
     # Row: [layout icon] [context gauge ............] [Clear][Close]. One arithmetic owner so the
     # gauge width and the right-aligned cluster x can't drift apart.
@@ -691,11 +702,21 @@ def _draw_top_bar(app: App) -> None:
         imgui.set_tooltip(f"Layout: {app.copilot_layout.value}")
 
     imgui.same_line()
-    locked: bool = app.copilot.state.source_locked
-    if lock_icon_button("copilot_source_lock", locked, icon_side):
-        app.copilot.set_source_locked(not locked)
+    lock: SourceLock = app.copilot.state.source_lock
+    if lock_icon_button("copilot_source_lock", _LOCK_VARIANTS[lock], icon_side):
+        # OFF <-> ARMED. ASK is where a session starts and where Allow-once / Deny leave it, never
+        # a destination someone reaching for this control picks.
+        app.copilot.set_source_lock(
+            SourceLock.OFF if lock is SourceLock.ARMED else SourceLock.ARMED
+        )
     if imgui.is_item_hovered():
-        imgui.set_tooltip("Asks before changing" if locked else "Changes freely")
+        imgui.set_tooltip(
+            "Declines changes"
+            if lock is SourceLock.ARMED
+            else (
+                "Asks before changing" if lock is SourceLock.ASK else "Changes freely"
+            )
+        )
 
     imgui.same_line()
     fraction, tooltip = context_gauge_readout(

@@ -5,7 +5,7 @@ from pydantic import Field, ValidationError
 
 from shaderbox.copilot.capabilities import CopilotCapabilities
 from shaderbox.copilot.errors import CopilotToolError
-from shaderbox.copilot.gate import GateKind
+from shaderbox.copilot.gate import GateKind, SourceLock
 from shaderbox.copilot.llm.api import LLMToolSpec
 from shaderbox.copilot.tools.base import (
     CredentialToolHandler,
@@ -53,11 +53,12 @@ def _validation_message(exc: ValidationError) -> str:
 class ToolRegistry:
     def __init__(self, definitions: list[ToolDefinition]) -> None:
         self._by_name: dict[str, ToolDefinition] = {d.name: d for d in definitions}
-        # The session's source lock (083), read by `must_confirm` on the WORKER thread. Defaults
-        # OFF here on purpose: a locked SESSION is a property of a conversation, applied by
-        # CopilotSession through its one writer -- a registry built bare (every test does) is an
-        # inert catalogue, and gating it by default would silently change what those tests measure.
-        self.source_locked: bool = False
+        # The session's source lock (083, three-valued since 085), read by `must_confirm` on the
+        # WORKER thread. Defaults OFF here on purpose: a locked SESSION is a property of a
+        # conversation, applied by CopilotSession through its one writer -- a registry built bare
+        # (every test does) is an inert catalogue, and gating it by default would silently change
+        # what those tests measure.
+        self.source_lock: SourceLock = SourceLock.OFF
 
     def eager_specs(self) -> list[LLMToolSpec]:
         # Turn-start tools= set: eager-core only (long-tail loads lazily).
@@ -117,9 +118,13 @@ class ToolRegistry:
         return tool is not None and tool.locks_source
 
     def must_confirm(self, name: str) -> bool:
-        """Does this call block on the user before it runs? The agent loop's one question."""
+        """Does this call need the user's permission at all? The agent loop's one question.
+
+        Deliberately a BOOL over three lock states (085): whether the permission is ASKED for or
+        refused outright also depends on the turn's deny latch, which is the loop's state and not
+        the registry's -- a three-valued answer here could only ever be half of one."""
         return self.requires_gate(name) or (
-            self.source_locked and self.locks_source(name)
+            self.source_lock is not SourceLock.OFF and self.locks_source(name)
         )
 
     def status_for(self, name: str, args: dict[str, Any] | None) -> str:

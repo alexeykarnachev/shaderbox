@@ -6,7 +6,7 @@ These drive each brake's reader rather than merely reading the field back — a 
 builds its input FROM the cap can only prove the reader agrees with itself.
 """
 
-from shaderbox.copilot.gate import GateKind
+from shaderbox.copilot.gate import GateKind, SourceLock
 from shaderbox.copilot.tools.base import GatePolicy
 from shaderbox.copilot.tools.registry import build_registry
 from tests._caps import minimal_caps
@@ -78,11 +78,18 @@ def test_the_lock_widens_must_confirm_and_leaves_requires_gate_alone() -> None:
     assert not registry.requires_gate("edit_shader")
     assert not registry.must_confirm("edit_shader")
 
-    registry.source_locked = True
+    registry.source_lock = SourceLock.ASK
     assert registry.must_confirm("edit_shader")
     assert not registry.requires_gate("edit_shader"), (
         "the lock must not reclassify a source edit as irreversible"
     )
+    # ARMED needs the user's permission just as ASK does -- must_confirm stays a bool and says
+    # "this needs permission", never "and here is how we get it" (085 D2a). The loop is what turns
+    # an ARMED answer into a refusal, so a must_confirm that went False here would route the call
+    # straight past the gate block and RUN the edit the lock exists to stop.
+    registry.source_lock = SourceLock.ARMED
+    assert registry.must_confirm("edit_shader")
+    assert not registry.requires_gate("edit_shader")
     # A read is never confirmed, locked or not.
     assert not registry.must_confirm("read_shader")
     # An always-gated tool is confirmed either way, and stays irreversible.
@@ -94,4 +101,4 @@ def test_a_bare_registry_is_unlocked() -> None:
     # A locked SESSION is a property of a conversation, applied by CopilotSession's one writer.
     # A registry built bare is an inert catalogue — if it defaulted locked, the gate-discriminates
     # test above would silently gain twelve entries while staying green.
-    assert not build_registry(minimal_caps()).source_locked
+    assert build_registry(minimal_caps()).source_lock is SourceLock.OFF

@@ -11,7 +11,13 @@ from shaderbox.copilot.config import COPILOT_ENGINE, CopilotConfig
 from shaderbox.copilot.context_breakdown import breakdown_request
 from shaderbox.copilot.edit_hints import NOOP_FACTS_PREFIX
 from shaderbox.copilot.errors import CopilotConfigError
-from shaderbox.copilot.gate import GateChannel, GateKind, GateRequest, LockAnswer
+from shaderbox.copilot.gate import (
+    GateChannel,
+    GateKind,
+    GateRequest,
+    LockAnswer,
+    SourceLock,
+)
 from shaderbox.copilot.llm.api import (
     LLMClient,
     LLMDone,
@@ -509,6 +515,9 @@ def run_turn(
     total_tool_calls = 0
     consecutive_failed_edits = 0  # self-correction cap (reset on any other outcome)
     no_action_retried = False  # the zero-call retry fires at most once a turn
+    # One DENY on a source-lock gate answers for the whole turn (085): every later locked call is
+    # declined without asking. Turn-scoped by living here -- the next turn is born without it.
+    source_deny_latched = False
     consecutive_compile_failures = 0  # applies-but-broken thrash counter
     compile_nudge_sent = (
         False  # latched once the nudge fires; re-armed by a non-thrash step
@@ -1004,6 +1013,26 @@ def run_turn(
             # the edit-retry cap.
             secret = ""  # a CREDENTIAL gate's typed key, forwarded to execute
             if registry.must_confirm(tc.name):
+                refuse = registry.locks_source(tc.name) and (
+                    registry.source_lock is SourceLock.ARMED or source_deny_latched
+                )
+                if refuse:
+                    # The user already answered -- by arming the lock, or by denying earlier this
+                    # turn. Asking again is the ask he was answering. Same message, same records as
+                    # a live decline: the tool message is what keeps the next stream from 400ing on
+                    # an orphaned tool_call_id.
+                    logger.info(f"copilot tool {tc.name} | declined without asking")
+                    tr.event("gate_refused", name=tc.name)
+                    ran.record(tc.name, False, "error: user declined", args, None)
+                    yield AgentToolCard(tc.name, False, None, widget=None)
+                    messages.append(
+                        _tool_message(
+                            tc.id,
+                            f"error: user declined — the {tc.name} did NOT happen. "
+                            "Tell the user it was not done; do not retry it this turn.",
+                        )
+                    )
+                    continue
                 req = build_gate(registry, tc.name, args)
                 tr.event("gate_open", name=tc.name, prompt=req.prompt)
                 yield AgentGateOpened(req)
@@ -1024,6 +1053,10 @@ def run_turn(
                 if not resp.approved:
                     logger.info(f"copilot tool {tc.name} | user declined")
                     tr.event("gate_declined", name=tc.name)
+                    if resp.lock_answer is LockAnswer.DENY:
+                        # DENY only: a CONFIRM "No" on an always-gated tool declines that call and
+                        # says nothing about the source lock.
+                        source_deny_latched = True
                     ran.record(tc.name, False, "error: user declined", args, None)
                     messages.append(
                         _tool_message(
