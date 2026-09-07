@@ -669,15 +669,6 @@ def _send_button_offset(right_inset: float = 0.0) -> float:
     return -(float(SIZE.BTN_SM_W) + imgui.get_style().item_spacing.x + right_inset)
 
 
-# The lock glyph's variant per state (`ui_primitives.lock_icon_button` takes an int, not this
-# enum -- that module knows only `theme`).
-_LOCK_VARIANTS: dict[SourceLock, int] = {
-    SourceLock.OFF: 0,
-    SourceLock.ASK: 1,
-    SourceLock.ARMED: 2,
-}
-
-
 def _draw_top_bar(app: App) -> None:
     # Row: [layout icon] [context gauge ............] [Clear][Close]. One arithmetic owner so the
     # gauge width and the right-aligned cluster x can't drift apart.
@@ -703,7 +694,7 @@ def _draw_top_bar(app: App) -> None:
 
     imgui.same_line()
     lock: SourceLock = app.copilot.state.source_lock
-    if lock_icon_button("copilot_source_lock", _LOCK_VARIANTS[lock], icon_side):
+    if lock_icon_button("copilot_source_lock", lock.variant, icon_side):
         # OFF <-> ARMED. ASK is where a session starts and where Allow-once / Deny leave it, never
         # a destination someone reaching for this control picks.
         app.copilot.set_source_lock(

@@ -982,10 +982,11 @@ def lock_icon_button(id_: str, variant: int, side: float) -> bool:
 
     `variant`: 0 = open (shackle swung right, dim), 1 = asking (closed, accent), 2 = refusing
     (closed, error color) — a lock that declines is the visual class `danger_button` already owns,
-    and the accent is runtime-swappable so it cannot carry the distinction alone. An int, not the
-    copilot's enum, because this module knows only `theme` (its sibling `layout_icon_button` takes
-    its variant the same way). All three are the same width: the state is the glyph and its color,
-    never the label. No font dependency. Returns True on click."""
+    and the accent is runtime-swappable so it cannot carry the distinction alone. An int rather
+    than the copilot's enum keeps this module knowing only `theme`; the caller passes a `.variant`
+    property off that enum, as `layout_icon_button` takes its own. All three are the same width:
+    the state is the glyph and its color, never the label. No font dependency. Returns True on
+    click."""
     clicked, origin = _glyph_button(
         id_, side, COLOR.TRANSPARENT, COLOR.BG_FRAME, COLOR.BORDER
     )

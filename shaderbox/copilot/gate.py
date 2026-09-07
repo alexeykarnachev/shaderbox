@@ -42,6 +42,11 @@ class SourceLock(StrEnum):
     ASK = auto()  # the session default; opens the three-answer gate
     ARMED = auto()  # the user locked it deliberately: declines, asks nothing
 
+    @property
+    def variant(self) -> int:
+        # The drawn-glyph index for lock_icon_button (which stays feature-agnostic).
+        return list(SourceLock).index(self)
+
 
 class LockAnswer(StrEnum):
     # A SOURCE_LOCK gate's three answers (083). DENY and ONCE leave the session locked; SESSION

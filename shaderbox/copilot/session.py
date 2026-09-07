@@ -350,7 +350,8 @@ class CopilotSession:
     def _unlock_source_from_worker(self) -> None:
         # WORKER THREAD, from a SOURCE_LOCK gate answered "allow this session". The registry write
         # is what the worker needs for its very next call, and the ChatState write is a plain
-        # assignment the UI reads next frame -- no queue hop, because a bool has no torn read and
+        # assignment the UI reads next frame -- no queue hop, because a single attribute store has
+        # no torn read and
         # the alternative (an event through pump_events) would leave the worker gating on stale
         # state for the rest of the turn.
         self.set_source_lock(SourceLock.OFF)

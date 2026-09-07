@@ -1017,10 +1017,8 @@ def run_turn(
                     registry.source_lock is SourceLock.ARMED or source_deny_latched
                 )
                 if refuse:
-                    # The user already answered -- by arming the lock, or by denying earlier this
-                    # turn. Asking again is the ask he was answering. Same message, same records as
-                    # a live decline: the tool message is what keeps the next stream from 400ing on
-                    # an orphaned tool_call_id.
+                    # The tool message is not optional: an assistant tool_call_id with no matching
+                    # result 400s the next stream.
                     logger.info(f"copilot tool {tc.name} | declined without asking")
                     tr.event("gate_refused", name=tc.name)
                     ran.record(tc.name, False, "error: user declined", args, None)

@@ -352,7 +352,10 @@ def _parse_transcript(path: Path, turns: list[Turn], warnings: list[str]) -> Non
             )
         elif kind == "gate_approved" and cur_turn is not None:
             cur_turn.gate_approvals += 1
-        elif kind == "gate_declined" and cur_turn is not None:
+        elif kind in ("gate_declined", "gate_refused") and cur_turn is not None:
+            # `gate_refused` is a call the source lock declined WITHOUT asking (an armed lock, or a
+            # deny already given this turn). It is the same user answer as `gate_declined`, applied
+            # without a second card, so it counts the same.
             cur_turn.gate_declines += 1
         if kind in TERMINAL_KINDS and cur_turn is not None:
             cur_turn.terminal_kind = kind

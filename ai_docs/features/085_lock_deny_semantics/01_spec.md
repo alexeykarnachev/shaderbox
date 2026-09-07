@@ -173,8 +173,14 @@ and the only useful action (stop and tell the user) is what the existing sentenc
 ### D5 — the decline still costs a card, and the card says which answer produced it.
 
 A silent decline that leaves no trace in the chat would make an `ARMED` session look like a copilot
-that ignores instructions. Every declined call still yields its `AgentToolCard` and its ledger entry
-exactly as a live decline does — what disappears is the blocking gate card, not the record.
+that ignores instructions. So a refused call yields an `AgentToolCard` and its ledger entry — what
+disappears is the blocking gate card, not the record.
+
+**This is deliberately NOT parity with a live decline, which yields no card.** The two differ
+because their visible residue differs: answering `Deny` already leaves the gate card standing in the
+chat with the outcome on it, so a tool card would say the same thing twice. A refusal has no card of
+its own, so without one it would leave nothing at all. The rule is one visible trace per refused
+call, not one mechanism per path.
 
 The gate card for the ANSWERED gate keeps its outcome text (083's `_LOCK_OUTCOMES`). Calls declined
 by the latch behind it produce ordinary failed tool cards, which is what they are.
@@ -195,7 +201,7 @@ from what 083 shipped.
 The `Deny` button on the gate card is the surface where D1's widening must be legible, because a
 user who reads it as "deny this one" and gets a turn-wide refusal has been surprised by his own
 feature. The label stays **`Deny`** — it sits in a three-button row whose widths are already tight —
-and a hover tooltip `Declines this turn's changes` carries the scope.
+and a hover tooltip `Denies further changes this turn` carries the scope.
 
 **Every string here is measured by `tests/test_ui_prose_budget.py`**, whose `set_tooltip` budget is
 five words and whose `_CLAUSE_JOINERS` rejects `;`, ` — ` and ` -- ` outright. The copy above is
