@@ -34,7 +34,9 @@ from shaderbox.copilot.llm.api import (
     LLMStreamEvent,
     LLMTextDelta,
 )
-from shaderbox.copilot.session import CopilotSession
+from shaderbox.copilot.prompt import _context_block
+from shaderbox.copilot.prompt_context import build_context
+from shaderbox.copilot.session import _LOCK_OUTCOMES, CopilotSession
 from shaderbox.copilot.tools.registry import build_registry
 from shaderbox.ui_models import UIAppState
 from shaderbox.widgets.copilot_chat import _LOCK_LABELS
@@ -196,6 +198,14 @@ def test_allow_answers_one_call_and_leaves_the_mode_alone() -> None:
     assert registry.source_lock is SourceLock.ASK, "an answer must not change the mode"
 
 
+def test_each_answer_shows_the_user_what_they_chose() -> None:
+    # The card's resolved text is the user's own record of the decision, so a swapped mapping
+    # would tell them they denied a call they allowed. Enumerated so a new answer needs a token.
+    assert set(_LOCK_OUTCOMES) == set(LockAnswer)
+    assert _LOCK_OUTCOMES[LockAnswer.ALLOW] == "Yes"
+    assert _LOCK_OUTCOMES[LockAnswer.DENY] == "No"
+
+
 def test_the_card_offers_exactly_two_answers() -> None:
     # The vocabulary itself: a third member is a third button, and the horizon it would carry is
     # the mode's job. Pinned as a count so re-adding one is a deliberate act with a red test.
@@ -279,7 +289,7 @@ def test_a_confirm_no_on_another_tool_does_not_latch_the_source_lock() -> None:
 def test_an_armed_lock_declines_without_asking() -> None:
     # The maintainer's second sentence: a lock he set deliberately is already the answer. No gate
     # card, no edit. ASK (the session default) still asks -- that is the other tests above.
-    events, edits, _ = _run([_EDIT, _DONE], lock=SourceLock.DENY, answers=[])
+    events, edits, _ = _run([_EDIT, _DONE], lock=SourceLock.READ_ONLY, answers=[])
     assert not _gates(events), "an armed lock is the answer; asking re-asks it"
     assert not edits
 
@@ -292,7 +302,7 @@ def test_a_call_declined_without_asking_still_returns_a_tool_result() -> None:
     # card alone would pass with the tool message deleted, which is the bug this stands for.
     seen: list[list[LLMMessage]] = []
     events, edits, _ = _run(
-        [_EDIT, _DONE], lock=SourceLock.DENY, answers=[], record_messages=seen
+        [_EDIT, _DONE], lock=SourceLock.READ_ONLY, answers=[], record_messages=seen
     )
     cards = [e for e in events if isinstance(e, AgentToolCard)]
     assert len(cards) == 1, "a refused call still reports a card"
@@ -324,7 +334,7 @@ def test_the_lock_never_reaches_a_tool_that_does_not_write_source() -> None:
     # silently swallow render/delete/publish -- tools with their OWN gate, which the user answers
     # separately. Two directions, because each fails on its own: an armed lock, and a latch already
     # set by a denied edit.
-    events, _, _ = _run([_RENDER, _DONE], lock=SourceLock.DENY, answers=[])
+    events, _, _ = _run([_RENDER, _DONE], lock=SourceLock.READ_ONLY, answers=[])
     opened = _gates(events)
     assert len(opened) == 1, "an armed lock must not swallow an always-gated tool"
     assert opened[0].request.kind is GateKind.CONFIRM
@@ -347,7 +357,7 @@ def test_a_refused_call_reaches_the_turn_ledger() -> None:
     # forgets it would tell the model the copilot did nothing at all, and drop the document
     # address a "do the same to C" follow-up needs. The live-decline path records this already;
     # nothing was holding the refuse path to it.
-    events, _, _ = _run([_EDIT, _DONE, _DONE], lock=SourceLock.DENY, answers=[])
+    events, _, _ = _run([_EDIT, _DONE, _DONE], lock=SourceLock.READ_ONLY, answers=[])
     done = [e for e in events if isinstance(e, AgentTurnDone)]
     assert done, "the turn ended without a summary"
     ledger = done[-1].summary.ledger
@@ -370,7 +380,7 @@ def test_each_mode_does_what_its_chip_says() -> None:
     assert len(_gates(events)) == 1, "ASK asks once"
     assert edits, "an approved ASK runs the edit"
 
-    events, edits, _ = _run([_EDIT, _DONE], lock=SourceLock.DENY, answers=[])
+    events, edits, _ = _run([_EDIT, _DONE], lock=SourceLock.READ_ONLY, answers=[])
     assert not _gates(events), "DENY asks nothing"
     assert not edits, "DENY runs nothing"
 
@@ -381,7 +391,7 @@ def test_deny_reaches_the_refusal_rather_than_skipping_the_gate_block() -> None:
     # RUN the edit. This drives the predicate directly, because the behavioural test above would
     # also go red for the opposite bug and could not tell the two apart.
     registry = build_registry(minimal_caps())
-    registry.source_lock = SourceLock.DENY
+    registry.source_lock = SourceLock.READ_ONLY
     assert registry.must_confirm("edit_shader"), (
         "DENY must still claim the call, or the loop never reaches the refusal"
     )
@@ -401,7 +411,7 @@ def test_the_decline_message_is_one_template_on_both_paths() -> None:
             if m.role == "tool" and "declined" in (m.content or "")
         ]
 
-    refused = _declines(SourceLock.DENY, [])
+    refused = _declines(SourceLock.READ_ONLY, [])
     declined = _declines(
         SourceLock.ASK, [GateResponse(False, lock_answer=LockAnswer.DENY)]
     )
@@ -419,9 +429,9 @@ def test_the_mode_round_trips_through_the_project_file(tmp_path: Path) -> None:
     assert state.copilot_source_lock is SourceLock.ASK, (
         "a project that never answered asks"
     )
-    state.copilot_source_lock = SourceLock.DENY
+    state.copilot_source_lock = SourceLock.READ_ONLY
     state.save(path)
-    assert UIAppState.load(path).copilot_source_lock is SourceLock.DENY
+    assert UIAppState.load(path).copilot_source_lock is SourceLock.READ_ONLY
 
 
 def test_a_project_file_from_before_the_mode_existed_asks(tmp_path: Path) -> None:
@@ -438,21 +448,24 @@ def test_a_reset_takes_the_projects_mode_not_a_fresh_default() -> None:
     # the incoming project's mode, and CLEAR must leave the current one alone. Seeding from the
     # project satisfies both with no branch -- seeding from a fresh ChatState() would hand Clear
     # the default and silently discard the user's setting.
-    mode = SourceLock.DENY
+    mode = SourceLock.READ_ONLY
     session = CopilotSession(
         caps=minimal_caps(),
         client=_FakeClient([]),
         get_project_slug=lambda: "p",
         get_checkpoints_root=lambda: Path("/tmp"),
         get_source_lock=lambda: mode,
+        set_project_source_lock=lambda _lock: None,
     )
-    assert session.state.source_lock is SourceLock.DENY, "born with the project's mode"
+    assert session.state.source_lock is SourceLock.READ_ONLY, (
+        "born with the project's mode"
+    )
 
     session.reset_conversation()
-    assert session.state.source_lock is SourceLock.DENY, (
+    assert session.state.source_lock is SourceLock.READ_ONLY, (
         "a reset that seeds from a fresh ChatState() discards the project's mode"
     )
-    assert session.registry.source_lock is SourceLock.DENY
+    assert session.registry.source_lock is SourceLock.READ_ONLY
 
 
 def test_every_mode_has_a_chip_label() -> None:
@@ -463,6 +476,65 @@ def test_every_mode_has_a_chip_label() -> None:
     assert all(_LOCK_LABELS[mode].strip() for mode in SourceLock)
 
 
+def test_read_only_withholds_the_source_tools_from_the_request() -> None:
+    # The point of the mode: the model does not SEE the editing tools, so it never spends a call
+    # discovering it is barred. The withheld set is computed from the registry's own roster, not
+    # listed here, so a new source tool joins it without anyone remembering.
+    registry = build_registry(minimal_caps())
+    registry.source_lock = SourceLock.ALLOW
+    everything = {spec.name for spec in registry.assemble_specs(set())}
+
+    registry.source_lock = SourceLock.READ_ONLY
+    offered = {spec.name for spec in registry.assemble_specs(set())}
+
+    locked = {d.name for d in registry.definitions() if d.locks_source and d.eager}
+    assert locked, "the roster is empty; this test would pass vacuously"
+    assert everything - offered == locked, (
+        "READ_ONLY must withhold exactly the source-writing tools"
+    )
+    assert "read_shader" in offered, "reading still works"
+
+
+def test_the_other_modes_offer_every_tool() -> None:
+    # A mode nobody set must cost nothing: ALLOW and ASK see the same list as before the filter.
+    registry = build_registry(minimal_caps())
+    registry.source_lock = SourceLock.ALLOW
+    allow = [spec.name for spec in registry.assemble_specs(set())]
+    registry.source_lock = SourceLock.ASK
+    ask = [spec.name for spec in registry.assemble_specs(set())]
+    assert allow == ask, "ASK gates calls; it does not withhold tools"
+    assert "edit_shader" in allow
+
+
+def test_the_prompt_says_why_the_tools_are_missing() -> None:
+    # Hiding the tools without saying why leaves a model that has quietly lost an ability and
+    # answers an edit request with confusion. The fact rides the project block, and ONLY in the
+    # mode it describes -- every other mode's prefix is unchanged, so the cache is untouched.
+    plain = _context_block(build_context(minimal_caps(), source_read_only=False))
+    noticed = _context_block(build_context(minimal_caps(), source_read_only=True))
+    marker = "SOURCE IS READ-ONLY IN THIS PROJECT"
+    assert marker not in plain, "no other mode pays for this sentence"
+    assert marker in noticed
+    assert noticed.startswith(plain), (
+        "the notice is APPENDED; the cacheable prefix is unchanged"
+    )
+
+
+def test_load_tools_cannot_bring_back_a_withheld_tool() -> None:
+    # The lazy path calls assemble_specs again, so the filter holds by construction -- but the
+    # model must be TOLD, or it retries a load that silently did nothing.
+    registry = build_registry(minimal_caps())
+    registry.source_lock = SourceLock.READ_ONLY
+    withheld = [d.name for d in registry.definitions() if d.locks_source]
+    assert withheld
+    for name in withheld:
+        assert registry.is_withheld(name)
+    offered = {spec.name for spec in registry.assemble_specs(set(withheld))}
+    assert not (offered & set(withheld)), (
+        "a lazy load must not reintroduce a tool the mode withholds"
+    )
+
+
 def _session() -> CopilotSession:
     return CopilotSession(
         caps=minimal_caps(),
@@ -470,6 +542,7 @@ def _session() -> CopilotSession:
         get_project_slug=lambda: "p",
         get_checkpoints_root=lambda: Path("/tmp"),
         get_source_lock=lambda: SourceLock.ASK,
+        set_project_source_lock=lambda _lock: None,
     )
 
 

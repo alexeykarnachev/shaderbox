@@ -73,6 +73,7 @@ def test_second_turn_receives_first_turn_summary(tmp_path: Path) -> None:
         get_project_slug=lambda: "test",
         get_checkpoints_root=lambda: tmp_path / "checkpoints",
         get_source_lock=lambda: SourceLock.ASK,
+        set_project_source_lock=lambda _lock: None,
     )
     # This turn calls set_uniform, which the source lock (083) confirms. The subject here is the
     # NL turn-summary, not gating, and there is no UI to answer -- so unlock rather than script a

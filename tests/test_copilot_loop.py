@@ -605,6 +605,7 @@ def test_stale_shutdown_sentinel_does_not_strand_turn(tmp_path: Path) -> None:
         get_project_slug=lambda: "test",
         get_checkpoints_root=lambda: tmp_path / "checkpoints",
         get_source_lock=lambda: SourceLock.ASK,
+        set_project_source_lock=lambda _lock: None,
     )
     sess._turn_queue.put(_SHUTDOWN)  # simulate the stale sentinel
     sess.enqueue_turn("hey")
@@ -632,6 +633,7 @@ def test_turn_snippet_collects_steps_not_status_lines(tmp_path: Path) -> None:
         get_project_slug=lambda: "test",
         get_checkpoints_root=lambda: tmp_path / "checkpoints",
         get_source_lock=lambda: SourceLock.ASK,
+        set_project_source_lock=lambda _lock: None,
     )
     sess.enqueue_turn("do stuff")  # appends the user msg + the empty turn_snippet
     sess._apply_event(AgentToolCard(name="read_shader", ok=True, payload=None))
@@ -680,6 +682,7 @@ def test_errored_turn_leaves_snippet_finished_not_live(tmp_path: Path) -> None:
             get_project_slug=lambda: "test",
             get_checkpoints_root=lambda: tmp_path / "checkpoints",
             get_source_lock=lambda: SourceLock.ASK,
+            set_project_source_lock=lambda _lock: None,
         )
 
     for terminal in (AgentError(message="boom"), AgentCancelled()):

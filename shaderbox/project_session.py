@@ -27,6 +27,7 @@ from loguru import logger
 from shaderbox.copilot.backend import CopilotBackend
 from shaderbox.copilot.capabilities import CopilotCapabilities
 from shaderbox.copilot.config import COPILOT_ENGINE
+from shaderbox.copilot.gate import SourceLock
 from shaderbox.copilot.llm.openrouter import OpenRouterLLMClient
 from shaderbox.copilot.persistence import archive_conversation
 from shaderbox.copilot.revert import RevertExecutor
@@ -310,7 +311,14 @@ class ProjectSession:
             get_project_slug=lambda: getattr(self, "project_dir", Path("project")).name,
             get_checkpoints_root=lambda: self.paths.copilot_checkpoints_dir,
             get_source_lock=lambda: self.app_state.copilot_source_lock,
+            set_project_source_lock=self._set_project_source_lock,
         )
+
+    def _set_project_source_lock(self, lock: SourceLock) -> None:
+        # A method rather than a lambda over `self.app_state`: `load` REBINDS that attribute per
+        # project, so a closure captured at construction would write into the outgoing project's
+        # state after a switch.
+        self.app_state.copilot_source_lock = lock
 
     def _build_copilot_capabilities(self) -> CopilotCapabilities:
         # Construct the CopilotBackend — it satisfies the CopilotCapabilities Protocol

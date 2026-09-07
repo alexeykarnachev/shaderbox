@@ -25,6 +25,7 @@ from shaderbox.project_session import (
     trash_project,
     validate_project_name,
 )
+from shaderbox.ui_models import UIAppState
 
 # Its OWN xdist worker. The imgui font atlas is process-global and its GL texture dies with the
 # App that built it, so two frame-driving modules in one process race on it. See pyproject.toml.
@@ -486,6 +487,46 @@ def _pump(app: Any, frames: int = 3) -> None:
         update_and_draw(app)
 
 
+def test_the_mode_survives_clear_and_reaches_the_project_file(
+    app: Any, tmp_path: Path
+) -> None:
+    """Setting the mode must persist IMMEDIATELY, not at the next save.
+
+    `reset_conversation` re-seeds from the persisted value, so any window where the live copy is
+    ahead of it is a window where Clear silently reverts the user's choice. Driven through the App
+    -- a session-level test holding the mode as a constant closure cannot see this, which is how
+    the regression shipped. Falsifier: move the persisted write back to `App.save` and Clear reads
+    ASK here.
+    """
+    _ = tmp_path
+    app.copilot.set_source_lock(SourceLock.READ_ONLY)
+    assert app.app_state.copilot_source_lock is SourceLock.READ_ONLY, (
+        "the click must persist at once; save-time is too late for Clear"
+    )
+
+    app.copilot_clear_chat()
+    assert app.copilot.state.source_lock is SourceLock.READ_ONLY, (
+        "Clear must not revert the mode"
+    )
+    assert app.copilot.registry.source_lock is SourceLock.READ_ONLY
+
+    app.save()
+    assert (
+        UIAppState.load(app.paths.app_state_file).copilot_source_lock
+        is SourceLock.READ_ONLY
+    )
+
+
+def test_the_ui_writes_the_mode_through_the_one_writer(app: Any) -> None:
+    # The chip's call site is the one place the single-writer invariant can be violated, and
+    # assigning ChatState.source_lock directly there would leave the worker's registry and the
+    # project file behind. Pinned by driving the writer and asserting all three moved.
+    app.copilot.set_source_lock(SourceLock.ALLOW)
+    assert app.copilot.state.source_lock is SourceLock.ALLOW
+    assert app.copilot.registry.source_lock is SourceLock.ALLOW
+    assert app.app_state.copilot_source_lock is SourceLock.ALLOW
+
+
 def test_a_switch_into_a_never_saved_project_takes_defaults(
     app: Any, tmp_path: Path
 ) -> None:
@@ -498,9 +539,9 @@ def test_a_switch_into_a_never_saved_project_takes_defaults(
     calls `reset_conversation` directly, sees nothing wrong. Falsifier: guard the assignment on
     `.exists()` again and the second assert reads DENY.
     """
-    app.copilot.set_source_lock(SourceLock.DENY)
+    app.copilot.set_source_lock(SourceLock.READ_ONLY)
     app.save()
-    assert app.app_state.copilot_source_lock is SourceLock.DENY
+    assert app.app_state.copilot_source_lock is SourceLock.READ_ONLY
 
     fresh = _seed_project(tmp_path / "projects", "never_saved")
     app.request_project_switch(fresh)

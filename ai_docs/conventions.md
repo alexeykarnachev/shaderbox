@@ -637,39 +637,22 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
 - **A copilot tool's interactive output is a STRUCTURED entity the engine renders, never a raw value in
   the model-facing message.** A tool returns `(ok, msg, payload)`: `msg` reaches the LLM, `payload` does
   NOT. A URL / file path / button / panel a tool surfaces goes in `payload` as a structured spec the UI
-- **A user's refusal is scoped to the ASK, not to the call, and a permission control has to
-  distinguish "on by default" from "the user turned it on".** The copilot's source lock (083, widened
-  by 085) is the worked instance: one DENY on a gate latches for the rest of the TURN, because from
-  the user's side one question was asked and one answer given -- how many tool calls the model chose
-  to make is the engine's business, not his. The general form is the trap 083 fell into: a
-  per-CALL refusal is the natural implementation and the wrong user model, and it only shows up in
-  use, as "it keeps asking". The second half is the state-count rule: `source_locked: bool` could
-  not express "he armed it" separately from "it defaults armed", so honoring "if I locked it, don't
-  ask" would have silently refused everything in a fresh session. A control the user can set AND
-  that defaults on needs three states (`SourceLock`: OFF / ASK / ARMED), not two. **Where the answer
-  latches follows its scope:** turn-scoped state lives as a local in `run_turn` beside the other
-  brakes, so "the next turn starts fresh" is true by construction rather than by a reset somebody
-  must remember. And the predicate that asks "does this need permission?" stays a BOOL even when the
-  outcomes number three -- whether permission is asked for or refused outright also depends on state
-  the registry does not hold, so a three-valued answer there could only ever be half of one. Revisit
-  if the maintainer reports answering "Allow once" repeatedly within ONE turn (the allow direction is
-  deliberately still per-call: widening an approval covers calls he never saw, which is the asymmetry
-  between granting and refusing).
-  renders as a first-class chat entity; `msg` stays a TERSE fact that also TELLS the agent a widget was
-  shown (so it points the user at the button instead of pasting a raw value it shouldn't have). Two
-  orthogonal vehicles, do NOT conflate: a **result widget** (`state.ResultWidget`, kind-dispatched in
-  `copilot_chat`) is NON-BLOCKING (a link/path button — the agent doesn't wait); a **gate**
-  (`GateKind`, the blocking worker↔UI round-trip) is for input the worker must wait on (CONFIRM /
-  CREDENTIAL secret / CONFIG setup-panel). A new such affordance picks its vehicle by blocking-ness and
-  reuses the existing channel — never a raw URL in `msg`, never a new event type, never overloading one
-  `GateKind` for both. An inline setup panel REUSES the exporter's `draw_config_ui()` verbatim (entropy:
-  the Settings widget set is the source of truth) + a Cancel the chat adds. The agent-vs-user split has no
-  third channel: a tool's `msg` is the AGENT's (it edits by line number) and the chat never shows it,
-  collapsing each call to one square in the turn snippet plus a `[verb - outcome]` line. Feature 020·23's
-  terse `payload["display"]` summary WAS that channel; the chat stopped reading it in `58018f8` and the
-  card field it fed was removed in 074, so `read_shader` still produces the key and nothing consumes it.
-  Revisit if a widget needs to carry typed input back (then it's a gate, not a result widget) or persist
-  live state.
+- **A user's refusal is scoped to the ASK, not to the call — and a permission control the user can
+  set is a MODE, not a state he discovers.** The copilot's source lock (083, 085, 086) is the worked
+  instance, and it took three passes to land because each fixed the previous shape's real defect.
+  (1) A per-CALL refusal is the natural implementation and the wrong user model: one question was
+  asked, one answer given, and how many tool calls the model chose to make is the engine's business.
+  It shows up in use as "it keeps asking". (2) A control that both defaults on AND can be set by the
+  user cannot be a bool — but splitting it into "he set it" versus "it defaults" is worse, because
+  the two look alike on screen and the user never chose the one he is in. The answer is not more
+  states, it is a MODE with every position named and reachable, persisted where the thing it governs
+  lives (here, per project). (3) **A mode that forbids an action should remove the ABILITY, not
+  refuse the attempt.** Withholding the tools and saying so in the prompt beats a guard the model
+  discovers by hitting it: it cannot plan around a wall it only learns about per call, cannot explain
+  the failure to the user, and pays output tokens rediscovering it every turn. Refusal-after-the-fact
+  survives only as belt-and-braces for a path the removal missed. Revisit if a mode ever needs to
+  change mid-turn — all of this assumes it cannot, which is what keeps the tools block cacheable.
+
 - **A static per-tool fact is a `ToolDefinition` field; a per-RESULT rendering trigger is a payload-shape
   key.** Everything true of a tool regardless of any one call (labels, gate prompt + policy, schema,
   precheck) lives ON the entity at its single definition site (`tools/{shader,publish,telegram,youtube}.py`)

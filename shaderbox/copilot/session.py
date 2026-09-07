@@ -41,8 +41,7 @@ from shaderbox.copilot.tools.base import mask_secret
 from shaderbox.copilot.tools.registry import build_registry
 from shaderbox.copilot.trace import TraceListener, TraceLog, new_trace_log
 
-# A resolved SOURCE_LOCK card's outcome token (083), the same slot "Yes"/"No" use. Plain "Yes"
-# since 086: with no session-wide sibling left, "once" contrasted with nothing.
+# A resolved SOURCE_LOCK card's outcome token (083), the same slot "Yes"/"No" use.
 _LOCK_OUTCOMES: dict[LockAnswer, str] = {
     LockAnswer.DENY: "No",
     LockAnswer.ALLOW: "Yes",
@@ -102,6 +101,7 @@ class CopilotSession:
         get_project_slug: Callable[[], str],
         get_checkpoints_root: Callable[[], Path],
         get_source_lock: Callable[[], SourceLock],
+        set_project_source_lock: Callable[[SourceLock], None],
     ) -> None:
         self.caps = caps
         self.client = client
@@ -111,6 +111,11 @@ class CopilotSession:
         # switch loads the incoming app_state before it resets the conversation, so this returns
         # the new project's mode by then, while a Clear returns the unchanged current one.
         self._get_source_lock = get_source_lock
+        # The PERSISTED half. set_source_lock writes it in the same call as the two live copies,
+        # because reset_conversation re-seeds FROM it: mirroring at save-time instead left a
+        # window where a click was live but unpersisted, and a Clear inside that window read the
+        # stale value back and silently reverted the user's choice.
+        self._set_project_source_lock = set_project_source_lock
         self._get_checkpoints_root = get_checkpoints_root
         self.registry = build_registry(caps)
         self.bridge = CopilotBridge()
@@ -351,11 +356,13 @@ class CopilotSession:
         rest of ChatState), `registry.source_lock` is what the gate reads on the worker. Nothing
         else assigns either -- a second writer is how the control and the gate come to disagree.
 
-        The PERSISTED copy is not written here: `App.save` mirrors it from ChatState, exactly as
-        `copilot_layout` is, which keeps it main-thread-only by shape rather than by coincidence
-        of who happens to call this today."""
+        Writes the PERSISTED copy too, so all three move together. Safe on the main thread by
+        the caller list: the one worker-side writer died with the session-wide unlock answer, and
+        `reset_conversation` re-seeds from the persisted value, so leaving it to save-time would
+        make a Clear before the next save revert the user's choice."""
         self.state.source_lock = lock
         self.registry.source_lock = lock
+        self._set_project_source_lock(lock)
 
     def answer_gate_lock(self, answer: LockAnswer) -> None:
         """MAIN THREAD (a SOURCE_LOCK card's two buttons). ALLOW runs this call, DENY declines it
@@ -427,7 +434,10 @@ class CopilotSession:
             self._run_one_turn(item)
 
     def _run_one_turn(self, user_text: str) -> None:
-        context = build_context(self.caps)
+        context = build_context(
+            self.caps,
+            source_read_only=self.registry.source_lock is SourceLock.READ_ONLY,
+        )
         error_text = ""
         # The terminal event flips in_flight (which gates save_conversation). Buffer it and
         # emit it ONLY after the history commit below, so a same-frame save can't observe a

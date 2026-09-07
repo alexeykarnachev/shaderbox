@@ -87,6 +87,13 @@ it is where a session starts and where "Allow once" and "Deny" leave it.
 meaning that every reader would then have to normalize. The three values are mutually exclusive by
 construction, and `must_confirm` reads one field.
 
+> **SUPERSEDED BY 086** (`ai_docs/features/086_lock_as_a_mode/`). The maintainer read this split as
+> too implicit — `ASK` and `ARMED` looked alike and he never chose the one he was in. The lock is now
+> a MODE he sets (`ALLOW` / `ASK` / `READ_ONLY`), persisted per project, on one cycling chip; and
+> `READ_ONLY` withholds the source tools from the request rather than refusing their calls. D1's
+> turn-wide DENY latch SURVIVES, in `ASK`, which is the only mode that still gates. D2a below also
+> survives and is load-bearing.
+
 ### D2a — `must_confirm` stays a BOOL; the loop, not the registry, picks ask-vs-refuse.
 
 Three outcomes now exist (ask / refuse silently / run) and the tempting move is a three-valued

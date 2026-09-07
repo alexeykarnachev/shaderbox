@@ -677,7 +677,7 @@ def _send_button_offset(right_inset: float = 0.0) -> float:
 _LOCK_LABELS: dict[SourceLock, str] = {
     SourceLock.ALLOW: "Allow",
     SourceLock.ASK: "Ask",
-    SourceLock.DENY: "Deny",
+    SourceLock.READ_ONLY: "Read-only",
 }
 
 
@@ -722,7 +722,7 @@ def _draw_top_bar(app: App) -> None:
             else (
                 "Asks before each edit"
                 if lock is SourceLock.ASK
-                else "Declines every edit"
+                else "Editing tools withheld"
             )
         )
 

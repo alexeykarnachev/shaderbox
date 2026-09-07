@@ -471,7 +471,7 @@ def build_gate(registry: ToolRegistry, name: str, args: dict) -> GateRequest:
         )
     if not registry.requires_gate(name) and registry.locks_source(name):
         # The session's source lock is what stopped this call, not the tool's own policy (083).
-        # A three-answer card, and a prompt that names the lock rather than the tool's danger --
+        # A two-answer card, and a prompt that names the lock rather than the tool's danger --
         # the tool is ordinary; the LOCK is why we are asking.
         return GateRequest(
             kind=GateKind.SOURCE_LOCK,
@@ -956,18 +956,30 @@ def run_turn(
                 # rebuild specs so the NEXT iteration's stream carries them.
                 raw = args.get("names", [])
                 requested = raw if isinstance(raw, list) else []
+                # A withheld tool is reported as withheld, never as loaded: assemble_specs would
+                # drop it anyway, and a "loaded" it cannot then call sends the model hunting for a
+                # tool that is not there.
+                withheld = [n for n in requested if registry.is_withheld(n)]
                 newly = [
                     n
                     for n in requested
-                    if registry.is_lazy(n) and n not in loaded_tools
+                    if registry.is_lazy(n)
+                    and n not in loaded_tools
+                    and not registry.is_withheld(n)
                 ]
                 loaded_tools.update(newly)
                 specs = registry.assemble_specs(loaded_tools)
-                load_msg = (
-                    f"loaded {', '.join(newly)} — callable for the rest of this turn."
-                    if newly
-                    else "no new tools loaded (already loaded, or not a lazy tool name)."
-                )
+                if withheld:
+                    load_msg = (
+                        f"cannot load {', '.join(withheld)}: this project is READ-ONLY, so the "
+                        "source-writing tools are withheld. Tell the user editing is turned off."
+                    )
+                elif newly:
+                    load_msg = f"loaded {', '.join(newly)} — callable for the rest of this turn."
+                else:
+                    load_msg = (
+                        "no new tools loaded (already loaded, or not a lazy tool name)."
+                    )
                 total_tool_calls += 1
                 tr.event(
                     "tool_call",
@@ -1018,7 +1030,7 @@ def run_turn(
             secret = ""  # a CREDENTIAL gate's typed key, forwarded to execute
             if registry.must_confirm(tc.name):
                 refuse = registry.locks_source(tc.name) and (
-                    registry.source_lock is SourceLock.DENY or source_deny_latched
+                    registry.source_lock is SourceLock.READ_ONLY or source_deny_latched
                 )
                 if refuse:
                     # The tool message is not optional: an assistant tool_call_id with no matching

@@ -1804,9 +1804,6 @@ class App:
         self.app_state.active_document_tab = self.active_document_tab
         self.app_state.is_copilot_open = self.is_copilot_open
         self.app_state.copilot_layout = self.copilot_layout
-        # The lock's persisted copy, mirrored from the live one here rather than written by
-        # CopilotSession.set_source_lock -- which keeps it main-thread-only by shape.
-        self.app_state.copilot_source_lock = self.copilot.state.source_lock
 
         self.integrations_store.save()
         self.app_state.save(self.paths.app_state_file)

@@ -331,6 +331,7 @@ def test_drop_turn_skips_commit_but_stop_does_not(tmp_path: Path) -> None:
             get_project_slug=lambda: "test",
             get_checkpoints_root=lambda: tmp_path / "checkpoints",
             get_source_lock=lambda: SourceLock.ASK,
+            set_project_source_lock=lambda _lock: None,
         )
 
     # Teardown abort -> no commit.
@@ -362,6 +363,7 @@ def test_session_save_then_load_restores(tmp_path: Path) -> None:
             get_project_slug=lambda: "test",
             get_checkpoints_root=lambda: tmp_path / "checkpoints",
             get_source_lock=lambda: SourceLock.ASK,
+            set_project_source_lock=lambda _lock: None,
         )
 
     sess = _mk()

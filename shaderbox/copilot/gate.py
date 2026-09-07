@@ -17,7 +17,7 @@ class GateKind(StrEnum):
     FILE = (
         auto()
     )  # a native OS file picker (feature 052); its own channel slot, drawn UI-side
-    SOURCE_LOCK = auto()  # the session's source lock (083): three answers, not Yes/No
+    SOURCE_LOCK = auto()  # the source lock's own card (083): Allow / Deny, not Yes/No
 
 
 @dataclass(frozen=True)
@@ -35,12 +35,13 @@ class GateRequest:
 
 
 class SourceLock(StrEnum):
-    # What the copilot does with a source edit (086): a MODE the user sets, shown as three chips in
-    # the chat's top bar and persisted per project. Every position is reachable by one click, which
-    # is the whole design -- the state you are in is one you chose.
+    # What the copilot does with a source edit (086): a MODE the user sets, shown as one cycling
+    # chip in the chat's top bar and persisted per project. READ_ONLY is not a refusal -- the
+    # source tools are absent from the request and the prompt says so, so there is nothing to
+    # refuse. Distinct from LockAnswer.DENY below, which IS a refusal and keeps that name.
     ALLOW = auto()  # runs, asks nothing
     ASK = auto()  # the default: opens the gate, and one deny answers the turn
-    DENY = auto()  # declined, asks nothing
+    READ_ONLY = auto()  # the source tools are withheld entirely; nothing to refuse
 
 
 class LockAnswer(StrEnum):

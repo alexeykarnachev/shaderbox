@@ -66,8 +66,27 @@ class ToolRegistry:
     def assemble_specs(self, loaded: set[str]) -> list[LLMToolSpec]:
         # The `tools=` for a turn iteration: the eager core + any lazily-loaded tools, SORTED by name
         # so the block is byte-stable (prefix-cacheable) regardless of load order (feature 052 §3).
-        chosen = [d for d in self._by_name.values() if d.eager or d.name in loaded]
+        #
+        # READ_ONLY withholds the source-writing tools entirely rather than refusing their calls
+        # afterwards: a model that cannot see a tool does not spend a call discovering it is barred,
+        # and the prompt says WHY they are absent so it can tell the user instead of failing
+        # mutely. Byte-stability is unaffected -- the mode is per project and cannot change without
+        # a project switch, so the list is stable across a session's turns, which is all the cache
+        # needs.
+        chosen = [
+            d
+            for d in self._by_name.values()
+            if (d.eager or d.name in loaded) and not self.is_withheld(d.name)
+        ]
         return [d.spec() for d in sorted(chosen, key=lambda d: d.name)]
+
+    def is_withheld(self, name: str) -> bool:
+        """Is this tool absent from the request entirely, rather than merely gated?
+
+        The roster is `locks_source` -- 083 D6's enumerated set, so what READ_ONLY withholds and
+        what the lock covers cannot drift apart.
+        """
+        return self.source_lock is SourceLock.READ_ONLY and self.locks_source(name)
 
     def is_lazy(self, name: str) -> bool:
         # A real, lazily-loadable tool (not eager, not the load_tools meta-tool itself).

@@ -26,29 +26,31 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-07, 085 and the 5aa51cd re-vendor landed; nothing is mid-flight. -->
-**Next: nothing is claimed.** The maintainer's seventh walk is fully drained. 085 fixed the
-copilot's deny semantics — one DENY answers the whole turn, and a deliberately armed lock declines
-without asking — reversing 083 D5's per-call refusal on his own re-decision; that spec carries a
-pointer at the passage it overrules.
+<!-- As of 2026-09-07, 086 landed; nothing is mid-flight. -->
+**Next: nothing is claimed.** 086 made the copilot's source lock a MODE the maintainer sets rather
+than a state he discovers: Allow / Ask / Read-only on one cycling chip, persisted per project.
+Read-only WITHHOLDS the source-writing tools and says so in the prompt, so the copilot knows what it
+cannot do instead of learning it per call. It supersedes 085's split and reverses 083 D5's
+locked-by-default; both specs point at the passages 086 overrules.
 
-**Blockwise visual is in**, re-vendored at `5aa51cd`; the host halves (the widened `Mode`, bare
-`Ctrl+V` yielding to the editor) are done. The walk's third item — `:%s/…/…/g` said to substitute
-only one line — is **UNREPRODUCED from both ends**; see `conventions.md ## Known quirks` and
-re-observe before changing anything.
+**Blockwise visual is in**, re-vendored at `5aa51cd`. The seventh walk's third item — `:%s/…/…/g`
+said to substitute only one line — is **UNREPRODUCED from both ends**; see `conventions.md
+## Known quirks` and re-observe before changing anything.
+
+**The eighth walk is unclaimed:** larger pass previews, a frame-time breakdown behind the FPS
+counter (mid-level — it wants a general profiling seam, not ad-hoc timers), and the Uniforms tab's
+pass selector as clickable sub-tab text.
 
 **Open, unmeasured:** no brake watches cost, or a frame going lit to flat
-(`ai_docs/features/082_dogfood_post081/02_round2_report.md`); whether the one-turn dogfood build
-repeats; a multi-document mission. A project opened from outside the projects root drops off the
-list once you switch away (084 D1, accepted).
+(`ai_docs/features/082_dogfood_post081/02_round2_report.md`); a multi-document mission.
 
-**Shipped:** v0.29.0 to GitHub only (features 073-084); itch stays at v0.27.0. The Windows
-`libeditor.dll` needs a Windows host, so that bundle ships without it.
+**Shipped:** v0.29.0 to GitHub only; itch stays at v0.27.0.
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 086 | lock_as_a_mode | done | 085's lock was two states that looked alike and one nobody chose, which the maintainer called too implicit. It is now a MODE he sets -- Allow / Ask / Read-only on one cycling chip in the chat's top bar, persisted per project -- and READ_ONLY withholds the twelve source-writing tools from the request entirely while the prompt tells the copilot why, replacing a guard the model could only discover by hitting it. Reverses 085's ARMED/OFF split and 083 D5's locked-by-default; the gate answer keeps the name DENY because answering a gate IS a refusal, while a mode that removes the tools refuses nothing. Two bugs rode along: a project switch inherited the outgoing project's whole app_state when the incoming one had never been saved, and the mode reverted on Clear because the persisted copy was only written at save time. Spec: `ai_docs/features/086_lock_as_a_mode/01_spec.md` + `02_deny_hides_the_tools.md`. |
 | 085 | lock_deny_semantics | done | The copilot asked again after being told no -- once per call, in the same turn -- and the icon the user set to "locked" was a request to be asked rather than an answer. One DENY now answers the whole turn, and the lock splits into three states so that "he armed it" and "it defaults on" stop being the same value: OFF runs, ASK (the default) confirms, ARMED declines without asking. Reverses 083 D5 for the refusal direction only, on the maintainer's own re-decision after using it; `must_confirm` stays a bool because ask-vs-refuse also depends on the turn latch, which the registry cannot see. Five breaks tried, two of which only became detectable after a test was written for them. Spec: `ai_docs/features/085_lock_deny_semantics/01_spec.md`. |
 | 084 | project_management | done | A project had one verb, `Open project`, which called `_init` directly: no create, no fork, no switcher, and the open project's name displayed nowhere. One Projects modal (Ctrl+O) now carries every verb, replacing the picker rather than sitting beside it and demoting it to `Open other...` for a project outside the root; rows show name, document count and PATH, the column that tells a rooted project from one opened anywhere else. Two bugs rode along because the feature makes both routine — a switch discarded every unsaved buffer, and a pointer at a vanished directory recreated an empty skeleton there and came up blank. The switch is DEFERRED out of the modal's draw: a popup body runs after the editor panel and document image have pushed texture handles into the frame's draw list, so releasing them there renders freed GL names. Three review rounds; a mutation pass found the entire consuming half deletable with every gate green. Spec: `ai_docs/features/084_project_management/01_spec.md`. |
 | 083 | sixth_walk_findings | done | The maintainer's sixth walk, six findings split across two repos: the copilot's per-session source lock (twelve content tools, three answers, riding the existing gate funnel -- which found `requires_gate` answering both "do we confirm?" and "is this irreversible?", now split), a dedicated Uniforms tab with the pass selector that finally reaches a pass neither open nor on screen, the sampler previews routed through the pass strip's own `preview_cell` so a transparent texture has an edge, and luna as the default model. The two vim findings (one Escape leaving INSERT past the completion popup, the pending phrase in the status band) were the editor repo's and are re-vendored in. Its D5 was later REVERSED for the deny direction by 085, which the spec carries a pointer to at the overruled passage. Spec: `ai_docs/features/083_sixth_walk_findings/01_spec.md`. |

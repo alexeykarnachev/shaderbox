@@ -148,9 +148,8 @@ class ChatState:
     # Last completed turn's stats; drives the header context gauge. Persisted (ConversationStore v7),
     # restored on load, reset by Clear.
     last_turn: TurnStats | None = None
-    # What the copilot does with a source edit (086): ALLOW runs, ASK confirms each call, DENY
-    # declines it. The live copy the icon draws; persisted per PROJECT on UIAppState and re-seeded
-    # from there on a project switch. Written ONLY through CopilotSession.set_source_lock, which
-    # writes the registry's copy in the same call; the two exist because this one is
-    # main-thread-only and the gate reads its copy on the worker.
+    # What the copilot does with a source edit (086): ALLOW runs it, ASK confirms each call,
+    # READ_ONLY withholds the writing tools from the request entirely. The live copy the chip
+    # draws, and the one CopilotSession.set_source_lock writes alongside the registry's (which the
+    # gate reads on the worker) and the project's persisted copy.
     source_lock: SourceLock = SourceLock.ASK

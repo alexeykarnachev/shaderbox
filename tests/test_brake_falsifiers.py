@@ -88,7 +88,7 @@ def test_the_lock_widens_must_confirm_and_leaves_requires_gate_alone() -> None:
     # permission", never "and here is how we get it" (085 D2a). The loop is what turns a DENY mode
     # into a refusal, and that refusal lives INSIDE the gate block, so a must_confirm that went
     # False here would route the call straight past it and RUN the edit the mode forbids.
-    registry.source_lock = SourceLock.DENY
+    registry.source_lock = SourceLock.READ_ONLY
     assert registry.must_confirm("edit_shader")
     assert not registry.requires_gate("edit_shader")
     # A read is never confirmed, locked or not.

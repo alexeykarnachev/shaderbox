@@ -95,6 +95,7 @@ def test_error_terminal_clears_streaming_ghost(tmp_path: Path) -> None:
         get_project_slug=lambda: "test",
         get_checkpoints_root=lambda: tmp_path / "checkpoints",
         get_source_lock=lambda: SourceLock.ASK,
+        set_project_source_lock=lambda _lock: None,
     )
     sess.enqueue_turn("go")
     try:

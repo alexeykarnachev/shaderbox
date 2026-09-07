@@ -304,6 +304,18 @@ def _sanitize(text: str) -> str:
     return "".join(c for c in text if ord(c) not in _CONTROL_CHARS)
 
 
+# Appended to the project block ONLY when the source tools are withheld (086). A FACT about this
+# session's capabilities, on the channel the model already reads -- not a standing rule, which is
+# why it is absent in every other mode rather than a permanent clause everyone pays for.
+_READ_ONLY_NOTICE = (
+    "\n\nSOURCE IS READ-ONLY IN THIS PROJECT: the user has turned editing off, so the shader, "
+    "script and pass WRITING tools are not available to you -- that is why you cannot see them. "
+    "Reading, grepping and rendering still work. If asked to change something, say plainly that "
+    "editing is turned off for this project and that the Allow/Ask/Read-only chip above the chat "
+    "is what changes it. Do not claim an edit happened, and do not look for another way to write."
+)
+
+
 def _context_block(context: CopilotContext) -> str:
     # Rare-volatility project map + library/example catalogues + the generated SCRIPT API +
     # conventions; sits in the cacheable prefix (after system, before history) — shifts only on
@@ -319,6 +331,7 @@ def _context_block(context: CopilotContext) -> str:
         f"{context.example_catalog}"
         f"\n\n{context.script_api}"
         f"\n\nCONVENTIONS (you follow these):\n{context.conventions}"
+        + (_READ_ONLY_NOTICE if context.source_read_only else "")
     )
 
 

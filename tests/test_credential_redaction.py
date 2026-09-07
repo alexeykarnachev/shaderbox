@@ -45,6 +45,7 @@ def test_resolved_card_and_persistence_are_redacted(tmp_path: Path) -> None:
         get_project_slug=lambda: "test",
         get_checkpoints_root=lambda: tmp_path / "checkpoints",
         get_source_lock=lambda: SourceLock.ASK,
+        set_project_source_lock=lambda _lock: None,
     )
     session.state = ChatState(
         messages=[

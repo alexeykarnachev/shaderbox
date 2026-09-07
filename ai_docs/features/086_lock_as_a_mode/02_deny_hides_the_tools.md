@@ -1,0 +1,126 @@
+# 086 revision — READ_ONLY removes the tools and TELLS the copilot why
+
+The maintainer, on the shipped DENY behavior:
+
+> why the fuck the copilot should even see these fucking tools if we set "deny"? The copilot MUST BE
+> FULLY AWARE that the user hid the editing tools and that copilot doesn't have access to them...
+> stop THESE STUPID WORK-AROUNDS, Copilot must be an intelligent machine, not the fucking dummy bot
+
+He is right, and this supersedes 086 D3's DENY half. **The mode is also RENAMED**, on his follow-up:
+*"this should be not 'Deny' we are not denying anything, there is just no edits at all"* — the label
+is `Read-only` and the member is `READ_ONLY`. "Deny" named a refusal that, after this revision, never
+happens: there is nothing to refuse because there is nothing to call. A name that describes the
+mechanism we just deleted would send every future reader looking for it.
+
+What shipped is a guard the model runs into: under DENY the twelve `locks_source` tools stay in
+`tools=`, fully described, and each call is
+refused after the fact with `error: user declined`. The model cannot plan around a wall it only
+discovers by hitting it, cannot explain to the user why an edit did not happen, and pays output
+tokens rediscovering the same wall every turn.
+
+## Goal
+
+Under READ_ONLY, the source-writing tools are **absent from the request**, and the copilot **knows they
+were withheld and by whom**. Those are one change, not two: hiding the tools alone produces a model
+that has quietly lost an ability and says something confused when asked to edit; the prompt fact is
+what turns absence into understanding.
+
+| Mode | `tools=` | Prompt | A source call |
+|---|---|---|---|
+| ALLOW | all | nothing | runs |
+| ASK | all | nothing | opens the gate |
+| READ_ONLY | **source tools removed** | **one line stating the user set this project read-only** | cannot be made |
+
+## Design decisions
+
+### D1 — the filter lives in `assemble_specs`, the ONE place the tool list is built.
+
+`ToolRegistry.assemble_specs(loaded)` is the single constructor of `tools=` (two call sites in
+`run_turn`, both for the same list), and the registry already holds `source_lock` — the field the
+gate reads on the worker. So the filter is one predicate in the place that already answers "what
+tools does this turn have", not a new seam:
+
+    chosen = [d for d in ... if (d.eager or d.name in loaded)
+              and not (self.source_lock is SourceLock.READ_ONLY and d.locks_source)]
+
+**The roster is `locks_source`, unchanged** — 083 D6's enumerated set, already gated by a test that
+computes it from the registry rather than a hand-written list. READ_ONLY withholds exactly what the lock
+covers, so the two cannot drift.
+
+**`load_tools` must not reintroduce them.** The lazy-load path calls `assemble_specs` again with a
+grown `loaded` set, so the filter applies there by construction — but a model that asks to load
+`edit_shader` under READ_ONLY must get a truthful refusal rather than a silent no-op, or it will retry.
+The load handler returns the same read-only fact.
+
+### D2 — the prompt fact rides `project_context`, at RARE volatility.
+
+The mode is per PROJECT and persisted, so it changes when a project is opened, never mid-turn. That
+is exactly `Volatility.RARE`, where the project map and library catalogue already sit — the block
+shifts on a project switch and is otherwise part of the cacheable prefix.
+
+One sentence, appended to `_context_block` only under READ_ONLY:
+
+> SOURCE IS READ-ONLY: the user has set this project to decline edits, so the shader/script/pass
+> writing tools are withheld from you this session. You can still read and analyse. If asked to
+> change something, say plainly that editing is turned off and that the control is the Allow/Ask/Read-only
+> chip above the chat — do not pretend the edit happened, and do not look for another way to write.
+
+**This is a FACT on the channel the model already reads, not a standing rule** — the distinction the
+copilot design skill draws, and the reason this works where a conscience plea would not. It is only
+present in the mode it describes, so ALLOW and ASK pay nothing and their prefix is byte-identical to
+today's.
+
+### D3 — the cache argument that blocked this was wrong, and saying so is the point.
+
+I defended the shipped design by claiming a mode-dependent tool list would bust prefix caching. That
+is false for this mode: the tools block must be byte-stable **across the turns of a session**, and
+`source_lock` cannot change mid-session without a project switch — which rebuilds the context block
+anyway. A READ_ONLY session has a smaller `tools=` than an ALLOW session, and each is stable within
+itself, which is all the cache requires.
+
+The real cost of the shipped design is the one I did not count: every turn under READ_ONLY spends output
+tokens on calls that cannot succeed, plus a tool result per call, forever.
+
+### D4 — ASK keeps the gate, and keeps every tool. The gate ANSWER stays `DENY`.
+
+`LockAnswer.DENY` is untouched by the rename: answering a gate IS an act of refusal, which is
+exactly what "deny" names correctly. Only the MODE changes, because a mode that removes the tools
+refuses nothing. Two vocabularies, deliberately not unified.
+
+ASK is the only mode where a per-call question makes sense, and it is unchanged: all tools present,
+each source call gated, one `LockAnswer.DENY` latching the turn (085 D1). The gate machinery is not
+touched by this revision — what changes is that under READ_ONLY it is now unreachable, because the calls
+that would trigger it cannot be made.
+
+**The refuse branch in the loop STAYS**, and this is deliberate rather than leftover. It is the
+belt-and-braces for a source call arriving under READ_ONLY by a path the filter did not cover — a
+persisted tool call replayed from history, a future lazy path, a bug. Structural impossibility is
+the design; the guard is what makes a hole in it loud instead of silent. Its test keeps driving the
+registry predicate directly, so it cannot rot into a branch nothing reaches.
+
+## Files touched
+
+| File | Change |
+|---|---|
+| `shaderbox/copilot/tools/registry.py` | `assemble_specs` filters `locks_source` tools under READ_ONLY; the `load_tools` handler refuses them with the read-only fact |
+| `shaderbox/copilot/prompt.py` | `_context_block` appends the read-only sentence under READ_ONLY; `build_blocks`/`CopilotContext` carry the mode |
+| `shaderbox/copilot/prompt_context.py` | `CopilotContext` gains the field, built from the session's lock |
+| `tests/test_copilot_source_lock.py` | the absent-tools and present-fact invariants |
+| `tests/test_brake_falsifiers.py` | the withheld set equals the `locks_source` roster |
+
+## Verification
+
+1. **Under READ_ONLY the source tools are absent from `tools=`**, and the withheld set equals the
+   `locks_source` roster exactly (computed from the registry, not listed). *Falsifier: drop the
+   filter → the specs contain `edit_shader`.*
+2. **Under ALLOW and ASK the tool list is unchanged** — byte-identical to before this revision, so a
+   mode nobody set costs nothing. *Falsifier: filter unconditionally → the ALLOW list shrinks.*
+3. **The read-only fact appears in the prompt under READ_ONLY and NOWHERE else.** *Falsifier: append it
+   unconditionally → it shows up in an ALLOW context and the assert fires.*
+4. **`load_tools` cannot reintroduce a withheld tool**, and says why. *Falsifier: let the lazy path
+   bypass the filter → the tool appears in the next iteration's specs.*
+5. **The refuse branch still fires if a source call arrives under READ_ONLY anyway** (D4's guard),
+   driven through the registry predicate so it stays reachable. *Falsifier: remove the branch → a
+   call constructed directly reaches `execute`.*
+6. **A model told it cannot edit does not also get a gate**: under READ_ONLY no `AgentGateOpened` is
+   emitted for any tool the filter removed.

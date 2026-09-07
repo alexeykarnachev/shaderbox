@@ -227,6 +227,11 @@ which is why the three answers are the three he specified, with no fourth "allow
 > unchanged — 085 reverses what a REFUSAL covers, not what an approval covers. 085 also splits the
 > lock into three states, because "explicitly locked" and "locked by default" had to stop being the
 > same value for an armed lock to decline without asking.
+>
+> **Then 086 reversed the DEFAULT too**, on his newer words: a project starts at `ASK` and the mode
+> is persisted per project, so the protection is a switch he sets once rather than a per-session
+> guard he re-answers. 085's three states were also renamed and re-scoped —
+> `ALLOW` / `ASK` / `READ_ONLY` — and the third now withholds the tools instead of declining calls.
 
 ### D6 — the lock covers SOURCE-mutating tools, defined by a field on `ToolDefinition`, not by a name list.
 

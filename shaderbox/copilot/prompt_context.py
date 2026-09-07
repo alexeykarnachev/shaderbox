@@ -48,6 +48,10 @@ class CopilotContext:
     )
     script_api: str  # generated SCRIPT API block (the Python side of a document script)
     conventions: str
+    # READ_ONLY only (086): the source-writing tools are absent from `tools=`, and this is what
+    # tells the model WHY -- without it the model has silently lost an ability and answers an edit
+    # request with confusion instead of the reason.
+    source_read_only: bool = False
 
 
 def _render_document_tree(entries: list[DocumentTreeEntry]) -> str:
@@ -95,11 +99,14 @@ def _render_example_catalog(entries: list[ExampleEntry]) -> str:
     return "\n".join(rows)
 
 
-def build_context(caps: CopilotCapabilities) -> CopilotContext:
+def build_context(
+    caps: CopilotCapabilities, source_read_only: bool = False
+) -> CopilotContext:
     return CopilotContext(
         document_tree=_render_document_tree(caps.document_tree()),
         lib_catalog=_render_lib_catalog(caps.lib_catalog()),
         example_catalog=_render_example_catalog(caps.example_catalog()),
         script_api=script_api_summary(),
         conventions=_CONVENTIONS,
+        source_read_only=source_read_only,
     )
