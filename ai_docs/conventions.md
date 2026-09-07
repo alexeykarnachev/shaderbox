@@ -1130,6 +1130,20 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   emoji, dynamic glyph loading, `push_font` rasterized-size, `image()` lost `tint_col`, glfw
   cursor sync gap, pfd non-blocking handles, the `.pyi`-only stub pyright warning, the
   SetCursorPos assert. Non-UI library quirks (telegram, moderngl, GLSL `#line`) stay below.
+- **`:%s/pat/rep/g` DOES substitute the whole buffer — a report that it only replaces on one line
+  is unreproduced at `libeditor 471c32d` (the vendored `resources/editor/VERSION`).** Measured from
+  both ends after a maintainer report: driven per-character through `editor/ffi.py` on the vendored
+  `.so`, `:%s/vec3/vec4/g` over three matching lines rewrites all three, the command line reads
+  `%s/vec3/vec4/g` before Enter, and `ed_command_message` is empty; `:s/vec3/vec4/g` correctly
+  rewrites one. The editor repo measured the same three ways through its own ABI. Neither host
+  routing nor an ex-command layer can eat the `%`: ShaderBox does not intercept ex commands at all
+  (it only READS `ed_command_line` to draw the status band), and the drain's one pre-`ed_key`
+  swallow, `_handle_clipboard`, returns immediately unless mods are CTRL or CTRL|SHIFT. Worth
+  knowing separately, since it looks like the culprit and is not: `editor/input.py::_key_char`
+  resolves a shifted symbol wrongly (`Ctrl+%` synthesizes `5`), but it runs ONLY for Ctrl/Alt
+  chords — bare printables reach the editor via the glfw char callback with the platform-resolved
+  codepoint. If the symptom recurs, capture the exact buffer and keystrokes first; the parser and
+  the routing are both cleared.
 - **Two "unused" surfaces are DELIBERATE — a sweep will re-find them; do not delete them.**
   Each was confirmed dead by grep and then rejected on inspection, so the grep evidence alone is
   not the test.
