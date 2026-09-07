@@ -695,11 +695,7 @@ def _draw_top_bar(app: App) -> None:
     imgui.same_line()
     lock: SourceLock = app.copilot.state.source_lock
     if lock_icon_button("copilot_source_lock", lock.variant, icon_side):
-        # OFF <-> ARMED. ASK is where a session starts and where Allow-once / Deny leave it, never
-        # a destination someone reaching for this control picks.
-        app.copilot.set_source_lock(
-            SourceLock.OFF if lock is SourceLock.ARMED else SourceLock.ARMED
-        )
+        app.copilot.set_source_lock(lock.toggled)
     if imgui.is_item_hovered():
         imgui.set_tooltip(
             "Declines changes"

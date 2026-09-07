@@ -12,7 +12,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from shaderbox.copilot.agent import AgentGateOpened, AgentToolCard, run_turn
+from shaderbox.copilot.agent import (
+    AgentGateOpened,
+    AgentToolCard,
+    AgentTurnDone,
+    run_turn,
+)
 from shaderbox.copilot.capabilities import EditResult
 from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.gate import (
@@ -310,6 +315,78 @@ def test_a_call_declined_without_asking_still_returns_a_tool_result() -> None:
     ), "the refused call must be in the history at all, or the check above is vacuous"
 
 
+def test_the_lock_never_reaches_a_tool_that_does_not_write_source() -> None:
+    # The refuse branch is guarded by locks_source, and without that guard an armed lock would
+    # silently swallow render/delete/publish -- tools with their OWN gate, which the user answers
+    # separately. Two directions, because each fails on its own: an armed lock, and a latch already
+    # set by a denied edit.
+    events, _, _ = _run([_RENDER, _DONE], lock=SourceLock.ARMED, answers=[])
+    opened = _gates(events)
+    assert len(opened) == 1, "an armed lock must not swallow an always-gated tool"
+    assert opened[0].request.kind is GateKind.CONFIRM
+
+    events, _, _ = _run(
+        [_EDIT, _RENDER, _DONE],
+        lock=SourceLock.ASK,
+        answers=[
+            GateResponse(False, lock_answer=LockAnswer.DENY),
+            GateResponse(True),
+        ],
+    )
+    opened = _gates(events)
+    assert len(opened) == 2, "a denied edit does not answer for a render"
+    assert opened[1].request.kind is GateKind.CONFIRM
+
+
+def test_a_refused_call_reaches_the_turn_ledger() -> None:
+    # The refused call must survive into the turn summary the NEXT turn reads: a ledger that
+    # forgets it would tell the model the copilot did nothing at all, and drop the document
+    # address a "do the same to C" follow-up needs. The live-decline path records this already;
+    # nothing was holding the refuse path to it.
+    events, _, _ = _run([_EDIT, _DONE, _DONE], lock=SourceLock.ARMED, answers=[])
+    done = [e for e in events if isinstance(e, AgentTurnDone)]
+    assert done, "the turn ended without a summary"
+    ledger = done[-1].summary.ledger
+    assert any("edit_shader" in line for line in ledger), (
+        f"the refused call left no ledger entry: {ledger}"
+    )
+
+
+def test_the_icon_click_moves_between_off_and_armed() -> None:
+    # ARMED is reachable ONLY through this transition, so a toggle quietly rewritten to OFF <-> ASK
+    # would leave the maintainer's "if I locked it, don't ask" unimplemented with every other lock
+    # test still green.
+    assert SourceLock.OFF.toggled is SourceLock.ARMED
+    assert SourceLock.ARMED.toggled is SourceLock.OFF
+    assert SourceLock.ASK.toggled is SourceLock.ARMED, (
+        "clicking the icon during a default session arms it; it never stops at ASK"
+    )
+
+
+def test_the_decline_message_is_one_template_on_both_paths() -> None:
+    # D4: the model reads the SAME fact whether it was refused or declined live. Two copied
+    # literals drift; one template cannot. The assert is on the messages the model actually
+    # received, not on the constant, so inlining a second copy still fails here.
+    def _declines(lock: SourceLock, answers: list[GateResponse]) -> list[str]:
+        seen: list[list[LLMMessage]] = []
+        _run([_EDIT, _DONE], lock=lock, answers=answers, record_messages=seen)
+        return [
+            m.content or ""
+            for request in seen
+            for m in request
+            if m.role == "tool" and "declined" in (m.content or "")
+        ]
+
+    refused = _declines(SourceLock.ARMED, [])
+    declined = _declines(
+        SourceLock.ASK, [GateResponse(False, lock_answer=LockAnswer.DENY)]
+    )
+    assert refused and declined, "both paths must produce a decline the model can read"
+    assert refused[0] == declined[0], (
+        f"the two decline paths tell the model different things:\n{refused[0]!r}\n{declined[0]!r}"
+    )
+
+
 def _session() -> CopilotSession:
     return CopilotSession(
         caps=minimal_caps(),
@@ -329,6 +406,12 @@ def test_a_headless_session_is_locked_like_any_other() -> None:
     session = _session()
     assert session.registry.must_confirm("set_uniform")
     assert not session.registry.must_confirm("read_shader")
+    # ASK specifically, not merely "not OFF": must_confirm answers True for ARMED too, so a
+    # default flipped to ARMED would pass every other assertion here while making a fresh session
+    # refuse every edit in silence -- the exact failure D2 exists to prevent.
+    assert session.state.source_lock is SourceLock.ASK, (
+        "a fresh session asks; it does not refuse"
+    )
 
 
 def test_the_locks_two_fields_agree_at_every_lifecycle_point() -> None:

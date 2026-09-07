@@ -47,6 +47,13 @@ class SourceLock(StrEnum):
         # The drawn-glyph index for lock_icon_button (which stays feature-agnostic).
         return list(SourceLock).index(self)
 
+    @property
+    def toggled(self) -> "SourceLock":
+        # What the icon's click does: OFF <-> ARMED. ASK is where a session starts and where
+        # "Allow once" / "Deny" leave it, never a state someone reaching for this control picks --
+        # so a click FROM it arms rather than cycling into a third stop.
+        return SourceLock.OFF if self is SourceLock.ARMED else SourceLock.ARMED
+
 
 class LockAnswer(StrEnum):
     # A SOURCE_LOCK gate's three answers (083). DENY and ONCE leave the session locked; SESSION

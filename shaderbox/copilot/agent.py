@@ -441,6 +441,15 @@ def _tool_message(tool_call_id: str, content: str) -> LLMMessage:
     return LLMMessage(role="tool", tool_call_id=tool_call_id, content=content)
 
 
+# The decline a tool result carries, identical whether the user answered the gate or the engine
+# applied an answer already given (085). One template because the model must read the same fact on
+# both paths: two literals drift, and a drift here is a vocabulary the model has to learn twice.
+_DECLINE_MSG = (
+    "error: user declined — the {name} did NOT happen. "
+    "Tell the user it was not done; do not retry it this turn."
+)
+
+
 def build_gate(registry: ToolRegistry, name: str, args: dict) -> GateRequest:
     # Engine-built gate request: the engine owns the prompt phrasing so it's accurate, not the model.
     # A CREDENTIAL tool (gate_kind) gets a secret-input gate; everything else the CONFIRM Yes/No.
@@ -1024,11 +1033,7 @@ def run_turn(
                     ran.record(tc.name, False, "error: user declined", args, None)
                     yield AgentToolCard(tc.name, False, None, widget=None)
                     messages.append(
-                        _tool_message(
-                            tc.id,
-                            f"error: user declined — the {tc.name} did NOT happen. "
-                            "Tell the user it was not done; do not retry it this turn.",
-                        )
+                        _tool_message(tc.id, _DECLINE_MSG.format(name=tc.name))
                     )
                     continue
                 req = build_gate(registry, tc.name, args)
@@ -1057,11 +1062,7 @@ def run_turn(
                         source_deny_latched = True
                     ran.record(tc.name, False, "error: user declined", args, None)
                     messages.append(
-                        _tool_message(
-                            tc.id,
-                            f"error: user declined — the {tc.name} did NOT happen. "
-                            "Tell the user it was not done; do not retry it this turn.",
-                        )
+                        _tool_message(tc.id, _DECLINE_MSG.format(name=tc.name))
                     )
                     continue
                 tr.event("gate_approved", name=tc.name)
