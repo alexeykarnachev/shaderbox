@@ -16,7 +16,7 @@ from shaderbox.copilot.agent import (
     run_turn,
 )
 from shaderbox.copilot.config import COPILOT_CONFIG
-from shaderbox.copilot.gate import GateChannel
+from shaderbox.copilot.gate import GateChannel, SourceLock
 from shaderbox.copilot.llm.api import (
     LLMDone,
     LLMMessage,
@@ -103,6 +103,7 @@ def _session(tmp_path: Path) -> CopilotSession:
         cast(OpenRouterLLMClient, object()),
         get_project_slug=lambda: "test",
         get_checkpoints_root=lambda: tmp_path / "checkpoints",
+        get_source_lock=lambda: SourceLock.ASK,
     )
 
 

@@ -16,6 +16,7 @@ from shaderbox.constants import (
     MEDIA_DIR_NAME,
     TEXTURES_DIR_NAME,
 )
+from shaderbox.copilot.gate import SourceLock
 from shaderbox.copilot.state import CopilotLayout
 from shaderbox.core import ENGINE_DRIVEN_UNIFORMS
 from shaderbox.document import Document
@@ -246,6 +247,9 @@ class UIAppState(BaseModel):
     channel_view: ChannelView = ChannelView.COLOR
     is_copilot_open: bool = False
     copilot_layout: CopilotLayout = CopilotLayout.CORNER
+    # What the copilot does with a source edit (086). Per PROJECT and persisted, which is what
+    # makes it a mode the user sets once rather than a guard he re-answers every session.
+    copilot_source_lock: SourceLock = SourceLock.ASK
 
     # Keyboard rebindings (feature 018): CommandId value -> chord int. Holds ONLY
     # bindings that differ from the spec default, so "absent = default" stays

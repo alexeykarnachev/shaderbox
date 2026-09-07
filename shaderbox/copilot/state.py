@@ -8,12 +8,9 @@ from shaderbox.copilot.gate import GateKind, SourceLock
 # Chat render-state. Written by session.pump_events on the main thread, read by the UI on the main
 # thread -> single-writer, no lock. The worker bridges its writes via events.
 #
-# ONE exception, `source_lock`: a SOURCE_LOCK gate answered "allow this session" is applied from
-# the worker through CopilotSession.set_source_lock, because the worker's very next tool call
-# gates on it and an event hop would leave it reading stale state for the rest of the turn. Safe
-# because the write is a single attribute store (atomic under the GIL) and the UI only picks a
-# glyph from it, so a one-frame stale read is invisible. Do not extend the exception to a field
-# the UI computes layout from.
+# `source_lock` is main-thread-only like the rest of this, written through
+# CopilotSession.set_source_lock (086 removed the one worker-side writer along with the
+# session-wide unlock answer that called it).
 
 MessageRole = Literal[
     "user", "assistant", "tool_status", "error", "pending_action", "turn_snippet"
@@ -151,9 +148,9 @@ class ChatState:
     # Last completed turn's stats; drives the header context gauge. Persisted (ConversationStore v7),
     # restored on load, reset by Clear.
     last_turn: TurnStats | None = None
-    # The source lock (083, three-valued since 085): OFF runs freely, ASK confirms each call that
-    # writes the project, ARMED declines it without asking. Per SESSION and NOT persisted -- a new
-    # conversation starts at ASK, which is the point. Written ONLY through
-    # CopilotSession.set_source_lock, which writes the registry's copy in the same call; the two
-    # exist because this one is main-thread-only and the gate reads its copy on the worker.
+    # What the copilot does with a source edit (086): ALLOW runs, ASK confirms each call, DENY
+    # declines it. The live copy the icon draws; persisted per PROJECT on UIAppState and re-seeded
+    # from there on a project switch. Written ONLY through CopilotSession.set_source_lock, which
+    # writes the registry's copy in the same call; the two exist because this one is
+    # main-thread-only and the gate reads its copy on the worker.
     source_lock: SourceLock = SourceLock.ASK

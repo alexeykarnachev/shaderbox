@@ -977,44 +977,21 @@ def revert_icon_button(id_: str, side: float) -> bool:
     return clicked
 
 
-def lock_icon_button(id_: str, variant: int, side: float) -> bool:
-    """A square ghost button drawn as a padlock — the copilot's source-lock control (083/085).
+def mode_chips(id_: str, labels: Sequence[str], active: int) -> int:
+    """A row of chips naming the positions of one setting, the active one filled.
 
-    `variant`: 0 = open (shackle swung right, dim), 1 = asking (closed, accent), 2 = refusing
-    (closed, error color) — a lock that declines is the visual class `danger_button` already owns,
-    and the accent is runtime-swappable so it cannot carry the distinction alone. An int rather
-    than the copilot's enum keeps this module knowing only `theme`; the caller passes a `.variant`
-    property off that enum, as `layout_icon_button` takes its own. All three are the same width:
-    the state is the glyph and its color, never the label. No font dependency. Returns True on
-    click."""
-    clicked, origin = _glyph_button(
-        id_, side, COLOR.TRANSPARENT, COLOR.BG_FRAME, COLOR.BORDER
-    )
-    locked = variant != 0
-    col = imgui.color_convert_float4_to_u32(
-        COLOR.STATE_ERROR
-        if variant == 2
-        else (COLOR.ACCENT_PRIMARY if locked else COLOR.FG_DIM)
-    )
-    dl = imgui.get_window_draw_list()
-    # The body is the lower half; the shackle is a half-circle standing on its top edge.
-    bw: float = side * 0.44
-    bh: float = side * 0.30
-    bx: float = origin.x + (side - bw) * 0.5
-    by: float = origin.y + side * 0.56
-    dl.add_rect_filled((bx, by), (bx + bw, by + bh), col, rounding=1.5)
-    r: float = bw * 0.34
-    cy: float = by - r * 0.1
-    if locked:
-        cx: float = bx + bw * 0.5
-        dl.path_arc_to(imgui.ImVec2(cx, cy), r, math.radians(180), math.radians(360))
-        dl.path_stroke(col, thickness=1.5)
-    else:
-        # Open: the same arc hinged on the LEFT leg, swung clear of the body to the right.
-        cx = bx + bw * 0.85
-        dl.path_arc_to(imgui.ImVec2(cx, cy), r, math.radians(180), math.radians(330))
-        dl.path_stroke(col, thickness=1.5)
-    return clicked
+    The control for a small mutually-exclusive set where every position should be readable and
+    one click away — a cycling icon can show only where you ARE, never where you could go, and a
+    combo hides the alternatives behind a click. Returns the index clicked, or `active` when
+    nothing was."""
+    chosen: int = active
+    for index, label in enumerate(labels):
+        if index:
+            imgui.same_line(spacing=float(SPACE.SM))
+        width = imgui.calc_text_size(label).x + 2.0 * float(SPACE.MD)
+        if chip_button(f"{label}##{id_}_{index}", width, active=index == active):
+            chosen = index
+    return chosen
 
 
 def layout_icon_button(id_: str, variant: int, side: float) -> bool:

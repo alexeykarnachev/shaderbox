@@ -7,6 +7,7 @@ builds its input FROM the cap can only prove the reader agrees with itself.
 """
 
 from shaderbox.copilot.gate import GateKind, SourceLock
+from shaderbox.copilot.state import ChatState
 from shaderbox.copilot.tools.base import GatePolicy
 from shaderbox.copilot.tools.registry import build_registry
 from tests._caps import minimal_caps
@@ -83,11 +84,11 @@ def test_the_lock_widens_must_confirm_and_leaves_requires_gate_alone() -> None:
     assert not registry.requires_gate("edit_shader"), (
         "the lock must not reclassify a source edit as irreversible"
     )
-    # ARMED needs the user's permission just as ASK does -- must_confirm stays a bool and says
-    # "this needs permission", never "and here is how we get it" (085 D2a). The loop is what turns
-    # an ARMED answer into a refusal, so a must_confirm that went False here would route the call
-    # straight past the gate block and RUN the edit the lock exists to stop.
-    registry.source_lock = SourceLock.ARMED
+    # DENY claims the call just as ASK does -- must_confirm stays a bool and says "this needs
+    # permission", never "and here is how we get it" (085 D2a). The loop is what turns a DENY mode
+    # into a refusal, and that refusal lives INSIDE the gate block, so a must_confirm that went
+    # False here would route the call straight past it and RUN the edit the mode forbids.
+    registry.source_lock = SourceLock.DENY
     assert registry.must_confirm("edit_shader")
     assert not registry.requires_gate("edit_shader")
     # A read is never confirmed, locked or not.
@@ -97,8 +98,12 @@ def test_the_lock_widens_must_confirm_and_leaves_requires_gate_alone() -> None:
     assert registry.requires_gate("delete_document")
 
 
-def test_a_bare_registry_is_unlocked() -> None:
-    # A locked SESSION is a property of a conversation, applied by CopilotSession's one writer.
-    # A registry built bare is an inert catalogue — if it defaulted locked, the gate-discriminates
-    # test above would silently gain twelve entries while staying green.
-    assert build_registry(minimal_caps()).source_lock is SourceLock.OFF
+def test_a_bare_registry_is_inert_where_a_session_asks() -> None:
+    # The two defaults DIFFER, and asserting the difference is the point: a bare registry is an
+    # inert catalogue (ALLOW), while a session carries the project's mode, which defaults ASK. A
+    # test naming only the registry's own default would assert a constant equals itself and keep
+    # passing if the two were ever unified -- at which point the gate-discriminates test above
+    # would silently gain twelve entries.
+    assert build_registry(minimal_caps()).source_lock is SourceLock.ALLOW
+    assert ChatState().source_lock is SourceLock.ASK
+    assert build_registry(minimal_caps()).source_lock is not ChatState().source_lock

@@ -492,7 +492,6 @@ def run_turn(
     trace: TraceLog | None = None,
     scratchpad_render: Callable[[], list[LLMMessage]] | None = None,
     batch_begin: Callable[[], None] | None = None,
-    unlock_source: Callable[[], None] | None = None,
     model: str = "",
 ) -> Iterator[AgentEvent]:
     # `trace` is the full-transcript sink (None in
@@ -504,10 +503,6 @@ def run_turn(
     render_scratchpad = (
         scratchpad_render if scratchpad_render is not None else (lambda: [])
     )
-    # "Allow for this session" on a SOURCE_LOCK gate (083). Injected rather than reached for:
-    # the loop must not own the lock's two fields, and the session's one writer keeps the chat
-    # icon and this registry from diverging. A no-op default keeps the tests' bare calls working.
-    release_lock = unlock_source if unlock_source is not None else (lambda: None)
     begin_batch = batch_begin if batch_begin is not None else (lambda: None)
     # `messages` is the within-turn context: full assistant/tool pairs accumulate here as the loop
     # runs (the provider 400s on an orphaned tool_call_id). Never persisted — at commit the turn
@@ -1023,7 +1018,7 @@ def run_turn(
             secret = ""  # a CREDENTIAL gate's typed key, forwarded to execute
             if registry.must_confirm(tc.name):
                 refuse = registry.locks_source(tc.name) and (
-                    registry.source_lock is SourceLock.ARMED or source_deny_latched
+                    registry.source_lock is SourceLock.DENY or source_deny_latched
                 )
                 if refuse:
                     # The tool message is not optional: an assistant tool_call_id with no matching
@@ -1066,10 +1061,6 @@ def run_turn(
                     )
                     continue
                 tr.event("gate_approved", name=tc.name)
-                if resp.lock_answer is LockAnswer.SESSION:
-                    # "Allow for this session": the rest of the conversation stops asking. Routed
-                    # through the session's one writer so the icon and this registry never diverge.
-                    release_lock()
                 secret = resp.secret
             ok, msg, payload = registry.execute(tc.name, args, secret)
             total_tool_calls += 1

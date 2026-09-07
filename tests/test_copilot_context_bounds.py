@@ -8,6 +8,7 @@ from typing import Any, cast
 
 from shaderbox.copilot.backend import CopilotBackend
 from shaderbox.copilot.config import COPILOT_ENGINE
+from shaderbox.copilot.gate import SourceLock
 from shaderbox.copilot.llm.openrouter import OpenRouterLLMClient
 from shaderbox.copilot.session import CopilotSession
 from shaderbox.project_session import ProjectSession
@@ -38,6 +39,7 @@ def test_enqueue_turn_resets_the_working_set(tmp_path: Path) -> None:
         cast(OpenRouterLLMClient, object()),
         get_project_slug=lambda: "test",
         get_checkpoints_root=lambda: tmp_path / "checkpoints",
+        get_source_lock=lambda: SourceLock.ASK,
     )
     try:
         sess.enqueue_turn("first")

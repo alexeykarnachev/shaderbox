@@ -26,10 +26,10 @@ from shaderbox.ui_primitives import (
     gauge_bar,
     labeled_text_input,
     layout_icon_button,
-    lock_icon_button,
     markdown_text,
     message_bubble,
     modal_window,
+    mode_chips,
     open_path_button,
     open_url_button,
     primary_button,
@@ -113,10 +113,17 @@ def draw(app: App) -> None:
         imgui.set_next_window_focus()
 
     flags = _WINDOW_FLAGS | _apply_layout(app)
-    # Floor the width so the header row (icon + usage bars + Clear/Close) can't be narrowed
-    # until the right-aligned cluster overlaps the bars. Height floor is nominal.
-    min_w: float = float(
-        SIZE.BTN_SM_H + SIZE.USAGE_BARS_W + 2 * SIZE.BTN_SM_W + 4 * SPACE.LG
+    # Floor the width so the header row can't be narrowed until the right-aligned cluster overlaps
+    # the gauge. DERIVED from what the row actually holds -- layout icon, lock chips, gauge,
+    # Clear+Close, and the gaps between them: the previous hand-summed literal still budgeted for
+    # ONE icon after a second shipped, and nothing caught it because the gauge's headroom absorbed
+    # the difference until the chips consumed it. Height floor is nominal.
+    min_w: float = (
+        float(SIZE.BTN_SM_H)
+        + _lock_chips_w()
+        + float(SIZE.USAGE_BARS_W)
+        + 2.0 * float(SIZE.BTN_SM_W)
+        + 4.0 * float(SPACE.LG)
     )
     imgui.set_next_window_size_constraints((min_w, 120.0), (1.0e4, 1.0e4))
     with imgui_ctx.begin("Copilot", flags=flags) as window:
@@ -613,14 +620,10 @@ def _draw_pending_action(app: App, msg: Message, idx: int) -> None:
 
 
 def _draw_lock_choices(app: App, idx: int) -> None:
-    # The source lock's three answers (083), in the maintainer's own order: allow for the session,
-    # allow once, deny. "Allow this session" is primary because it is the one that stops the
-    # asking -- the other two leave the lock exactly where it was.
-    if primary_button(f"Allow this session##gate_lock_session_{idx}"):
-        app.copilot.answer_gate_lock(LockAnswer.SESSION)
-    imgui.same_line()
-    if standard_button(f"Allow once##gate_lock_once_{idx}"):
-        app.copilot.answer_gate_lock(LockAnswer.ONCE)
+    # The card asks about THIS call; the horizon is the mode on the top bar (086), which is why
+    # there is no "for this session" answer here to keep in step with it.
+    if primary_button(f"Allow##gate_lock_allow_{idx}"):
+        app.copilot.answer_gate_lock(LockAnswer.ALLOW)
     imgui.same_line()
     if standard_button(f"Deny##gate_lock_deny_{idx}"):
         app.copilot.answer_gate_lock(LockAnswer.DENY)
@@ -669,6 +672,20 @@ def _send_button_offset(right_inset: float = 0.0) -> float:
     return -(float(SIZE.BTN_SM_W) + imgui.get_style().item_spacing.x + right_inset)
 
 
+# The lock's three positions, in enum order. Each names what happens to an EDIT, so the row reads
+# as one parallel set rather than two words about permission and one about being asked.
+_LOCK_LABELS: tuple[str, ...] = ("Allow", "Ask", "Deny")
+
+
+def _lock_chips_w() -> float:
+    # What the chip row occupies, measured from the labels rather than guessed: the top bar's
+    # width budget AND the window's own floor both depend on it, and a hand-written constant is
+    # what let the floor drift out of date once already.
+    return sum(
+        imgui.calc_text_size(label).x + 2.0 * float(SPACE.MD) for label in _LOCK_LABELS
+    ) + float(SPACE.SM) * (len(_LOCK_LABELS) - 1)
+
+
 def _draw_top_bar(app: App) -> None:
     # Row: [layout icon] [context gauge ............] [Clear][Close]. One arithmetic owner so the
     # gauge width and the right-aligned cluster x can't drift apart.
@@ -680,11 +697,13 @@ def _draw_top_bar(app: App) -> None:
     cluster_w: float = clear_w + float(SPACE.SM) + close_w
     cluster_x: float = content_w - cluster_w
     # Leave a clear breathing gap between the gauge and the Clear button (SPACE.LG), beyond the
-    # icon's same_line gap on the left.
-    # Two icons now (layout, lock), so the gauge gives up one more icon + its same_line gap.
+    # same_line gaps after the layout icon and the lock chips.
     gauge_w: float = max(
         float(SIZE.USAGE_BARS_W),
-        cluster_x - 2.0 * (icon_side + float(SPACE.MD)) - float(SPACE.LG),
+        cluster_x
+        - (icon_side + float(SPACE.MD))
+        - (_lock_chips_w() + float(SPACE.MD))
+        - float(SPACE.LG),
     )
 
     if layout_icon_button("copilot_layout", app.copilot_layout.variant, icon_side):
@@ -694,14 +713,22 @@ def _draw_top_bar(app: App) -> None:
 
     imgui.same_line()
     lock: SourceLock = app.copilot.state.source_lock
-    if lock_icon_button("copilot_source_lock", lock.variant, icon_side):
-        app.copilot.set_source_lock(lock.toggled)
+    modes = list(SourceLock)
+    chosen = mode_chips("copilot_source_lock", _LOCK_LABELS, modes.index(lock))
+    if modes[chosen] is not lock:
+        app.copilot.set_source_lock(modes[chosen])
     if imgui.is_item_hovered():
+        # A nested conditional, not a dict lookup: the prose-budget gate scores IfExp and returns
+        # UNMEASURABLE for a Subscript, so a dict would hide this copy from the check that exists
+        # to measure it -- and `_draw_top_bar`'s existing exemption (for the gauge readout) would
+        # have let it through in silence.
         imgui.set_tooltip(
-            "Declines changes"
-            if lock is SourceLock.ARMED
+            "Edits run without asking"
+            if lock is SourceLock.ALLOW
             else (
-                "Asks before changing" if lock is SourceLock.ASK else "Changes freely"
+                "Asks before each edit"
+                if lock is SourceLock.ASK
+                else "Declines every edit"
             )
         )
 

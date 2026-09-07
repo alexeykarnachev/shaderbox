@@ -309,6 +309,7 @@ class ProjectSession:
             ),
             get_project_slug=lambda: getattr(self, "project_dir", Path("project")).name,
             get_checkpoints_root=lambda: self.paths.copilot_checkpoints_dir,
+            get_source_lock=lambda: self.app_state.copilot_source_lock,
         )
 
     def _build_copilot_capabilities(self) -> CopilotCapabilities:

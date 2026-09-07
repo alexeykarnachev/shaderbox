@@ -41,11 +41,11 @@ from shaderbox.copilot.tools.base import mask_secret
 from shaderbox.copilot.tools.registry import build_registry
 from shaderbox.copilot.trace import TraceListener, TraceLog, new_trace_log
 
-# A resolved SOURCE_LOCK card's outcome token (083), the same slot "Yes"/"No" use.
+# A resolved SOURCE_LOCK card's outcome token (083), the same slot "Yes"/"No" use. Plain "Yes"
+# since 086: with no session-wide sibling left, "once" contrasted with nothing.
 _LOCK_OUTCOMES: dict[LockAnswer, str] = {
     LockAnswer.DENY: "No",
-    LockAnswer.ONCE: "Yes, once",
-    LockAnswer.SESSION: "Yes, this session",
+    LockAnswer.ALLOW: "Yes",
 }
 
 
@@ -101,20 +101,26 @@ class CopilotSession:
         client: OpenRouterLLMClient,
         get_project_slug: Callable[[], str],
         get_checkpoints_root: Callable[[], Path],
+        get_source_lock: Callable[[], SourceLock],
     ) -> None:
         self.caps = caps
         self.client = client
         self._get_project_slug = get_project_slug
+        # The PROJECT's persisted mode (086). A callable, like the slug and the checkpoints root,
+        # so the session reads the current project's value without holding App state: a project
+        # switch loads the incoming app_state before it resets the conversation, so this returns
+        # the new project's mode by then, while a Clear returns the unchanged current one.
+        self._get_source_lock = get_source_lock
         self._get_checkpoints_root = get_checkpoints_root
         self.registry = build_registry(caps)
         self.bridge = CopilotBridge()
         self.gate = GateChannel()
         self.state = ChatState()
         # The lock's two fields are born from two defaults -- ChatState at ASK, a bare registry
-        # OFF (a registry in isolation is an inert catalogue). Seed the pair through the one
-        # writer here, or a session that is never reset draws a closed padlock over a registry
-        # that confirms nothing.
-        self.set_source_lock(self.state.source_lock)
+        # ALLOW (a registry in isolation is an inert catalogue). Seed the pair from the PROJECT
+        # through the one writer here, or a session draws one mode over a registry enforcing
+        # another.
+        self.set_source_lock(get_source_lock())
         # Per-turn rollback checkpoints (feature 020·30). Built lazily: the project dir isn't
         # known at session construction (App sets it later), and reset_conversation rebuilds it
         # for the project we switch INTO. None until first accessed via `checkpoints`.
@@ -340,26 +346,20 @@ class CopilotSession:
                 return
 
     def set_source_lock(self, lock: SourceLock) -> None:
-        """MAIN THREAD. The ONE writer of the source lock (083). Two fields, written together:
-        `state.source_lock` is what the chat's icon draws (main-thread-only, like the rest of
-        ChatState), `registry.source_lock` is what the gate reads on the worker. Nothing else
-        assigns either -- a second writer is how the icon and the gate come to disagree."""
+        """MAIN THREAD. The ONE writer of the live source lock (083). Two fields, written
+        together: `state.source_lock` is what the chat's chips draw (main-thread-only, like the
+        rest of ChatState), `registry.source_lock` is what the gate reads on the worker. Nothing
+        else assigns either -- a second writer is how the control and the gate come to disagree.
+
+        The PERSISTED copy is not written here: `App.save` mirrors it from ChatState, exactly as
+        `copilot_layout` is, which keeps it main-thread-only by shape rather than by coincidence
+        of who happens to call this today."""
         self.state.source_lock = lock
         self.registry.source_lock = lock
 
-    def _unlock_source_from_worker(self) -> None:
-        # WORKER THREAD, from a SOURCE_LOCK gate answered "allow this session". The registry write
-        # is what the worker needs for its very next call, and the ChatState write is a plain
-        # assignment the UI reads next frame -- no queue hop, because a single attribute store has
-        # no torn read and
-        # the alternative (an event through pump_events) would leave the worker gating on stale
-        # state for the rest of the turn.
-        self.set_source_lock(SourceLock.OFF)
-
     def answer_gate_lock(self, answer: LockAnswer) -> None:
-        """MAIN THREAD (a SOURCE_LOCK card's three buttons). DENY declines the call; ONCE and
-        SESSION approve it. The session-wide unlock itself is applied by the agent loop through
-        `_unlock_source_from_worker`, so approval and unlocking stay one decision on one path."""
+        """MAIN THREAD (a SOURCE_LOCK card's two buttons). ALLOW runs this call, DENY declines it
+        and latches the turn. Neither touches the MODE, which the top bar owns."""
         card = self._open_gate_card()
         if card is not None:
             card.resolved = True
@@ -448,7 +448,6 @@ class CopilotSession:
                     *self.caps.read_working_set()
                 ),
                 batch_begin=self.caps.batch_begin,
-                unlock_source=self._unlock_source_from_worker,
                 model=self.client.model,
             ):
                 if isinstance(ev, AgentError):
@@ -532,9 +531,10 @@ class CopilotSession:
             except queue.Empty:
                 break
         self.state = ChatState()
-        # ChatState() is born at ASK and the registry is not rebuilt here, so the lock's two
-        # fields only agree if this re-seeds through the one writer.
-        self.set_source_lock(self.state.source_lock)
+        # Seed from the PROJECT, not from the fresh ChatState's default: this runs both on a
+        # project switch (which must take the incoming project's mode) and on Clear (which must
+        # leave the current one alone), and reading app_state satisfies both with no branch.
+        self.set_source_lock(self._get_source_lock())
         self.history = []
         self._cancel = threading.Event()
         # Rebuild the checkpoint store for the project we switch INTO (rehydrates ITS persisted

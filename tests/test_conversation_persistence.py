@@ -4,6 +4,7 @@ fail-soft load, and archive. Pure: no GL, no App."""
 import json
 from pathlib import Path
 
+from shaderbox.copilot.gate import SourceLock
 from shaderbox.copilot.llm.api import LLMMessage
 from shaderbox.copilot.persistence import ConversationStore, archive_conversation
 from shaderbox.copilot.state import (
@@ -329,6 +330,7 @@ def test_drop_turn_skips_commit_but_stop_does_not(tmp_path: Path) -> None:
             _OneTextClient(),
             get_project_slug=lambda: "test",
             get_checkpoints_root=lambda: tmp_path / "checkpoints",
+            get_source_lock=lambda: SourceLock.ASK,
         )
 
     # Teardown abort -> no commit.
@@ -359,6 +361,7 @@ def test_session_save_then_load_restores(tmp_path: Path) -> None:
             object(),  # client unused by save/load
             get_project_slug=lambda: "test",
             get_checkpoints_root=lambda: tmp_path / "checkpoints",
+            get_source_lock=lambda: SourceLock.ASK,
         )
 
     sess = _mk()

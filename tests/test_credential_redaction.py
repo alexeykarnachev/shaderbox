@@ -4,7 +4,7 @@ persisted conversation round-trip — only the masked prefix. Pure: no GL, no ne
 
 from pathlib import Path
 
-from shaderbox.copilot.gate import GateKind
+from shaderbox.copilot.gate import GateKind, SourceLock
 from shaderbox.copilot.llm.openrouter import OpenRouterLLMClient
 from shaderbox.copilot.persistence import ConversationStore
 from shaderbox.copilot.session import CopilotSession
@@ -44,6 +44,7 @@ def test_resolved_card_and_persistence_are_redacted(tmp_path: Path) -> None:
         client=client,
         get_project_slug=lambda: "test",
         get_checkpoints_root=lambda: tmp_path / "checkpoints",
+        get_source_lock=lambda: SourceLock.ASK,
     )
     session.state = ChatState(
         messages=[

@@ -28,7 +28,7 @@ from shaderbox.copilot.capabilities import (
 )
 from shaderbox.copilot.config import COPILOT_CONFIG
 from shaderbox.copilot.edit_hints import STAMPED_FACTS_PREFIX
-from shaderbox.copilot.gate import GateChannel, GateRequest, GateResponse
+from shaderbox.copilot.gate import GateChannel, GateRequest, GateResponse, SourceLock
 from shaderbox.copilot.glsl_lex import token_match
 from shaderbox.copilot.llm.api import (
     LLMDone,
@@ -604,6 +604,7 @@ def test_stale_shutdown_sentinel_does_not_strand_turn(tmp_path: Path) -> None:
         _PlainClient(),
         get_project_slug=lambda: "test",
         get_checkpoints_root=lambda: tmp_path / "checkpoints",
+        get_source_lock=lambda: SourceLock.ASK,
     )
     sess._turn_queue.put(_SHUTDOWN)  # simulate the stale sentinel
     sess.enqueue_turn("hey")
@@ -630,6 +631,7 @@ def test_turn_snippet_collects_steps_not_status_lines(tmp_path: Path) -> None:
         object(),  # client unused — we feed events directly
         get_project_slug=lambda: "test",
         get_checkpoints_root=lambda: tmp_path / "checkpoints",
+        get_source_lock=lambda: SourceLock.ASK,
     )
     sess.enqueue_turn("do stuff")  # appends the user msg + the empty turn_snippet
     sess._apply_event(AgentToolCard(name="read_shader", ok=True, payload=None))
@@ -677,6 +679,7 @@ def test_errored_turn_leaves_snippet_finished_not_live(tmp_path: Path) -> None:
             object(),
             get_project_slug=lambda: "test",
             get_checkpoints_root=lambda: tmp_path / "checkpoints",
+            get_source_lock=lambda: SourceLock.ASK,
         )
 
     for terminal in (AgentError(message="boom"), AgentCancelled()):

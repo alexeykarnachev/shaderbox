@@ -35,40 +35,27 @@ class GateRequest:
 
 
 class SourceLock(StrEnum):
-    # The session's source lock (083, widened by 085). THREE states, not a bool: the difference
-    # between the default guard and a switch the user reached out and flipped is what lets an
-    # ARMED lock refuse without asking while a fresh session still asks.
-    OFF = auto()  # runs, asks nothing
-    ASK = auto()  # the session default; opens the three-answer gate
-    ARMED = auto()  # the user locked it deliberately: declines, asks nothing
-
-    @property
-    def variant(self) -> int:
-        # The drawn-glyph index for lock_icon_button (which stays feature-agnostic).
-        return list(SourceLock).index(self)
-
-    @property
-    def toggled(self) -> "SourceLock":
-        # What the icon's click does: OFF <-> ARMED. ASK is where a session starts and where
-        # "Allow once" / "Deny" leave it, never a state someone reaching for this control picks --
-        # so a click FROM it arms rather than cycling into a third stop.
-        return SourceLock.OFF if self is SourceLock.ARMED else SourceLock.ARMED
+    # What the copilot does with a source edit (086): a MODE the user sets, shown as three chips in
+    # the chat's top bar and persisted per project. Every position is reachable by one click, which
+    # is the whole design -- the state you are in is one you chose.
+    ALLOW = auto()  # runs, asks nothing
+    ASK = auto()  # the default: opens the gate, and one deny answers the turn
+    DENY = auto()  # declined, asks nothing
 
 
 class LockAnswer(StrEnum):
-    # A SOURCE_LOCK gate's three answers (083). DENY and ONCE leave the session locked; SESSION
-    # unlocks it for the rest of the conversation. Kept off `approved` because "yes, and stop
-    # asking" and "yes, this once" both approve the call and differ in everything after it.
+    # A SOURCE_LOCK gate's two answers (083, cut to two by 086). The card asks about the call in
+    # front of you; the HORIZON is the mode, set on the top bar rather than while an agent blocks.
+    # Kept off `approved` because DENY also latches for the rest of the turn.
+    ALLOW = auto()
     DENY = auto()
-    ONCE = auto()
-    SESSION = auto()
 
 
 @dataclass(frozen=True)
 class GateResponse:
     approved: bool = False
-    # SOURCE_LOCK only: which of the three the user chose. `approved` still carries run/don't-run,
-    # so every existing reader keeps working; this says what to do with the LOCK afterwards.
+    # SOURCE_LOCK only: which answer the user gave. `approved` still carries run/don't-run, so
+    # every existing reader keeps working; this distinguishes a DENY, which also latches the turn.
     lock_answer: LockAnswer | None = None
     secret: str = ""  # CREDENTIAL: typed key — never logged/traced/persisted
     cancelled: bool = False  # the wait was released without an answer

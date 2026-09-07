@@ -6,6 +6,7 @@ they do to the lock AFTER approving, which is why the answer is not a bool. Dete
 scripted fake client, stubbed backend, a gate answered from a helper thread, no GL.
 """
 
+import inspect
 import threading
 import time
 from dataclasses import dataclass
@@ -35,6 +36,7 @@ from shaderbox.copilot.llm.api import (
 )
 from shaderbox.copilot.session import CopilotSession
 from shaderbox.copilot.tools.registry import build_registry
+from shaderbox.ui_models import UIAppState
 from tests._caps import minimal_caps
 from tests.test_copilot_loop import _fake_context, _FakeClient, _tool_call
 
@@ -144,7 +146,6 @@ def _run(
             user_text="drive it",
             gate=gate,
             cancel=threading.Event(),
-            unlock_source=lambda: setattr(registry, "source_lock", SourceLock.OFF),
         )
     )
     pump.finish()
@@ -172,36 +173,39 @@ def test_a_locked_session_confirms_a_source_edit_before_it_runs() -> None:
 def test_an_unlocked_session_asks_nothing() -> None:
     # The complement, and the check that keeps the widened condition from becoming "gate always":
     # without it, a must_confirm that returned True unconditionally would pass the test above.
-    events, edits, _ = _run([_EDIT, _DONE], lock=SourceLock.OFF, answers=[])
+    events, edits, _ = _run([_EDIT, _DONE], lock=SourceLock.ALLOW, answers=[])
     assert not _gates(events)
     assert edits, "an unlocked session edits without asking"
 
 
-def test_allow_this_session_stops_the_asking_and_allow_once_does_not() -> None:
-    # The two answers that both approve THIS call and differ in everything after it. Folding them
-    # into `approved: bool` makes these two runs identical, so this cannot pass under that design.
-    events, edits, registry = _run(
-        [_EDIT, _EDIT, _DONE],
-        lock=SourceLock.ASK,
-        answers=[GateResponse(True, lock_answer=LockAnswer.SESSION)],
-    )
-    assert len(_gates(events)) == 1, "the session unlock must not ask a second time"
-    assert len(edits) == 2
-    assert registry.source_lock is SourceLock.OFF
-
+def test_allow_answers_one_call_and_leaves_the_mode_alone() -> None:
+    # ALLOW is per-CALL: two edits, two answers, two gates. The mode is the top bar's, and no gate
+    # answer changes it -- 086 removed the session-wide answer precisely because a blocking card is
+    # the wrong place to set a horizon.
     events, edits, registry = _run(
         [_EDIT, _EDIT, _DONE],
         lock=SourceLock.ASK,
         answers=[
-            GateResponse(True, lock_answer=LockAnswer.ONCE),
-            GateResponse(True, lock_answer=LockAnswer.ONCE),
+            GateResponse(True, lock_answer=LockAnswer.ALLOW),
+            GateResponse(True, lock_answer=LockAnswer.ALLOW),
         ],
     )
-    assert len(_gates(events)) == 2, "allow-once approves one call, not the turn"
+    assert len(_gates(events)) == 2, "allow approves one call, not the turn"
     assert len(edits) == 2
-    assert registry.source_lock is SourceLock.ASK, (
-        "allow-once leaves the session locked"
-    )
+    assert registry.source_lock is SourceLock.ASK, "an answer must not change the mode"
+
+
+def test_the_card_offers_exactly_two_answers() -> None:
+    # The vocabulary itself: a third member is a third button, and the horizon it would carry is
+    # the mode's job. Pinned as a count so re-adding one is a deliberate act with a red test.
+    assert {a.name for a in LockAnswer} == {"ALLOW", "DENY"}
+
+
+def test_no_gate_answer_can_change_the_mode() -> None:
+    # The structural half of the same rule: run_turn no longer takes a way to write the lock, so a
+    # future answer cannot quietly re-acquire one. A signature check, because a deleted parameter
+    # that is merely unused would leave the plumbing wired and green.
+    assert "unlock_source" not in inspect.signature(run_turn).parameters
 
 
 def test_one_deny_answers_for_the_rest_of_the_turn() -> None:
@@ -243,7 +247,6 @@ def test_the_deny_latch_dies_with_its_turn() -> None:
                 user_text="drive it",
                 gate=gate,
                 cancel=threading.Event(),
-                unlock_source=lambda: setattr(registry, "source_lock", SourceLock.OFF),
             )
         )
         gates_per_turn.append(len(_gates(events)))
@@ -262,7 +265,7 @@ def test_a_confirm_no_on_another_tool_does_not_latch_the_source_lock() -> None:
         lock=SourceLock.ASK,
         answers=[
             GateResponse(False),
-            GateResponse(True, lock_answer=LockAnswer.ONCE),
+            GateResponse(True, lock_answer=LockAnswer.ALLOW),
         ],
     )
     opened = _gates(events)
@@ -275,7 +278,7 @@ def test_a_confirm_no_on_another_tool_does_not_latch_the_source_lock() -> None:
 def test_an_armed_lock_declines_without_asking() -> None:
     # The maintainer's second sentence: a lock he set deliberately is already the answer. No gate
     # card, no edit. ASK (the session default) still asks -- that is the other tests above.
-    events, edits, _ = _run([_EDIT, _DONE], lock=SourceLock.ARMED, answers=[])
+    events, edits, _ = _run([_EDIT, _DONE], lock=SourceLock.DENY, answers=[])
     assert not _gates(events), "an armed lock is the answer; asking re-asks it"
     assert not edits
 
@@ -288,7 +291,7 @@ def test_a_call_declined_without_asking_still_returns_a_tool_result() -> None:
     # card alone would pass with the tool message deleted, which is the bug this stands for.
     seen: list[list[LLMMessage]] = []
     events, edits, _ = _run(
-        [_EDIT, _DONE], lock=SourceLock.ARMED, answers=[], record_messages=seen
+        [_EDIT, _DONE], lock=SourceLock.DENY, answers=[], record_messages=seen
     )
     cards = [e for e in events if isinstance(e, AgentToolCard)]
     assert len(cards) == 1, "a refused call still reports a card"
@@ -320,7 +323,7 @@ def test_the_lock_never_reaches_a_tool_that_does_not_write_source() -> None:
     # silently swallow render/delete/publish -- tools with their OWN gate, which the user answers
     # separately. Two directions, because each fails on its own: an armed lock, and a latch already
     # set by a denied edit.
-    events, _, _ = _run([_RENDER, _DONE], lock=SourceLock.ARMED, answers=[])
+    events, _, _ = _run([_RENDER, _DONE], lock=SourceLock.DENY, answers=[])
     opened = _gates(events)
     assert len(opened) == 1, "an armed lock must not swallow an always-gated tool"
     assert opened[0].request.kind is GateKind.CONFIRM
@@ -343,7 +346,7 @@ def test_a_refused_call_reaches_the_turn_ledger() -> None:
     # forgets it would tell the model the copilot did nothing at all, and drop the document
     # address a "do the same to C" follow-up needs. The live-decline path records this already;
     # nothing was holding the refuse path to it.
-    events, _, _ = _run([_EDIT, _DONE, _DONE], lock=SourceLock.ARMED, answers=[])
+    events, _, _ = _run([_EDIT, _DONE, _DONE], lock=SourceLock.DENY, answers=[])
     done = [e for e in events if isinstance(e, AgentTurnDone)]
     assert done, "the turn ended without a summary"
     ledger = done[-1].summary.ledger
@@ -352,24 +355,34 @@ def test_a_refused_call_reaches_the_turn_ledger() -> None:
     )
 
 
-def test_each_lock_state_draws_a_distinct_glyph() -> None:
-    # The variant is what the icon draws, and three states that map to one number are three
-    # states the user cannot tell apart -- a silent failure, since nothing else reads it.
-    variants = [lock.variant for lock in SourceLock]
-    assert len(set(variants)) == len(SourceLock), (
-        f"two lock states draw the same glyph: {variants}"
+def test_each_mode_does_what_its_chip_says() -> None:
+    # The three positions, each its own assert so a collapse of any two names which.
+    events, edits, _ = _run([_EDIT, _DONE], lock=SourceLock.ALLOW, answers=[])
+    assert not _gates(events), "ALLOW asks nothing"
+    assert edits, "ALLOW runs the edit"
+
+    events, edits, _ = _run(
+        [_EDIT, _DONE],
+        lock=SourceLock.ASK,
+        answers=[GateResponse(True, lock_answer=LockAnswer.ALLOW)],
     )
-    assert SourceLock.OFF.variant == 0, "the open padlock is variant 0"
+    assert len(_gates(events)) == 1, "ASK asks once"
+    assert edits, "an approved ASK runs the edit"
+
+    events, edits, _ = _run([_EDIT, _DONE], lock=SourceLock.DENY, answers=[])
+    assert not _gates(events), "DENY asks nothing"
+    assert not edits, "DENY runs nothing"
 
 
-def test_the_icon_click_moves_between_off_and_armed() -> None:
-    # ARMED is reachable ONLY through this transition, so a toggle quietly rewritten to OFF <-> ASK
-    # would leave the maintainer's "if I locked it, don't ask" unimplemented with every other lock
-    # test still green.
-    assert SourceLock.OFF.toggled is SourceLock.ARMED
-    assert SourceLock.ARMED.toggled is SourceLock.OFF
-    assert SourceLock.ASK.toggled is SourceLock.ARMED, (
-        "clicking the icon during a default session arms it; it never stops at ASK"
+def test_deny_reaches_the_refusal_rather_than_skipping_the_gate_block() -> None:
+    # The trap D4a names. The refusal lives INSIDE `if must_confirm(...)` and `execute` sits
+    # outside it, so a must_confirm that excused DENY would route the call past the refusal and
+    # RUN the edit. This drives the predicate directly, because the behavioural test above would
+    # also go red for the opposite bug and could not tell the two apart.
+    registry = build_registry(minimal_caps())
+    registry.source_lock = SourceLock.DENY
+    assert registry.must_confirm("edit_shader"), (
+        "DENY must still claim the call, or the loop never reaches the refusal"
     )
 
 
@@ -387,7 +400,7 @@ def test_the_decline_message_is_one_template_on_both_paths() -> None:
             if m.role == "tool" and "declined" in (m.content or "")
         ]
 
-    refused = _declines(SourceLock.ARMED, [])
+    refused = _declines(SourceLock.DENY, [])
     declined = _declines(
         SourceLock.ASK, [GateResponse(False, lock_answer=LockAnswer.DENY)]
     )
@@ -397,12 +410,57 @@ def test_the_decline_message_is_one_template_on_both_paths() -> None:
     )
 
 
+def test_the_mode_round_trips_through_the_project_file(tmp_path: Path) -> None:
+    # It is a MODE the user sets, so it must outlive the session. Driven through the real model and
+    # a real file rather than by reading the field back off the object.
+    path = tmp_path / "app_state.json"
+    state = UIAppState()
+    assert state.copilot_source_lock is SourceLock.ASK, (
+        "a project that never answered asks"
+    )
+    state.copilot_source_lock = SourceLock.DENY
+    state.save(path)
+    assert UIAppState.load(path).copilot_source_lock is SourceLock.DENY
+
+
+def test_a_project_file_from_before_the_mode_existed_asks(tmp_path: Path) -> None:
+    # Every app_state.json on disk predates this key, so the DEFAULT is what those projects get.
+    # ASK keeps their behaviour exactly as it was; ALLOW would have quietly switched the copilot to
+    # editing unasked in projects that ask today.
+    path = tmp_path / "app_state.json"
+    path.write_text('{"current_document_id": "abc"}')
+    assert UIAppState.load(path).copilot_source_lock is SourceLock.ASK
+
+
+def test_a_reset_takes_the_projects_mode_not_a_fresh_default() -> None:
+    # reset_conversation serves two callers that want opposite things: a project SWITCH must take
+    # the incoming project's mode, and CLEAR must leave the current one alone. Seeding from the
+    # project satisfies both with no branch -- seeding from a fresh ChatState() would hand Clear
+    # the default and silently discard the user's setting.
+    mode = SourceLock.DENY
+    session = CopilotSession(
+        caps=minimal_caps(),
+        client=_FakeClient([]),
+        get_project_slug=lambda: "p",
+        get_checkpoints_root=lambda: Path("/tmp"),
+        get_source_lock=lambda: mode,
+    )
+    assert session.state.source_lock is SourceLock.DENY, "born with the project's mode"
+
+    session.reset_conversation()
+    assert session.state.source_lock is SourceLock.DENY, (
+        "a reset that seeds from a fresh ChatState() discards the project's mode"
+    )
+    assert session.registry.source_lock is SourceLock.DENY
+
+
 def _session() -> CopilotSession:
     return CopilotSession(
         caps=minimal_caps(),
         client=_FakeClient([]),
         get_project_slug=lambda: "p",
         get_checkpoints_root=lambda: Path("/tmp"),
+        get_source_lock=lambda: SourceLock.ASK,
     )
 
 
@@ -441,7 +499,7 @@ def test_the_locks_two_fields_agree_at_every_lifecycle_point() -> None:
         "a fresh session draws a locked icon, so it must actually confirm"
     )
 
-    session.set_source_lock(SourceLock.OFF)
+    session.set_source_lock(SourceLock.ALLOW)
     assert session.state.source_lock is session.registry.source_lock
     assert not session.registry.must_confirm("edit_shader")
 

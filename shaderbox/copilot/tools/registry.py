@@ -53,12 +53,11 @@ def _validation_message(exc: ValidationError) -> str:
 class ToolRegistry:
     def __init__(self, definitions: list[ToolDefinition]) -> None:
         self._by_name: dict[str, ToolDefinition] = {d.name: d for d in definitions}
-        # The session's source lock (083, three-valued since 085), read by `must_confirm` on the
-        # WORKER thread. Defaults OFF here on purpose: a locked SESSION is a property of a
-        # conversation, applied by CopilotSession through its one writer -- a registry built bare
-        # (every test does) is an inert catalogue, and gating it by default would silently change
-        # what those tests measure.
-        self.source_lock: SourceLock = SourceLock.OFF
+        # The source lock (083, a user-set mode since 086), read by `must_confirm` on the WORKER
+        # thread. Defaults ALLOW here on purpose, where a SESSION defaults ASK: a registry built
+        # bare (every test does) is an inert catalogue, and gating it by default would silently
+        # change what those tests measure.
+        self.source_lock: SourceLock = SourceLock.ALLOW
 
     def eager_specs(self) -> list[LLMToolSpec]:
         # Turn-start tools= set: eager-core only (long-tail loads lazily).
@@ -122,9 +121,13 @@ class ToolRegistry:
 
         Deliberately a BOOL over three lock states (085): whether the permission is ASKED for or
         refused outright also depends on the turn's deny latch, which is the loop's state and not
-        the registry's -- a three-valued answer here could only ever be half of one."""
+        the registry's -- a three-valued answer here could only ever be half of one.
+
+        DENY answers True here, not False: the refusal happens INSIDE the loop's gate block, so a
+        predicate that excused DENY would route the call past that block to `execute` and run the
+        very edit the mode forbids."""
         return self.requires_gate(name) or (
-            self.source_lock is not SourceLock.OFF and self.locks_source(name)
+            self.source_lock is not SourceLock.ALLOW and self.locks_source(name)
         )
 
     def status_for(self, name: str, args: dict[str, Any] | None) -> str:
