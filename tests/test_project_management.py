@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from imgui_bundle import imgui
 
 from shaderbox.app import PopupState
 from shaderbox.commands import COMMAND_SPECS, CommandId
@@ -25,7 +26,10 @@ from shaderbox.project_session import (
     trash_project,
     validate_project_name,
 )
+from shaderbox.theme import SIZE, SPACE
 from shaderbox.ui_models import UIAppState
+from shaderbox.ui_primitives import cycle_chip_width
+from shaderbox.widgets.copilot_chat import _lock_chip_labels
 
 # Its OWN xdist worker. The imgui font atlas is process-global and its GL texture dies with the
 # App that built it, so two frame-driving modules in one process race on it. See pyproject.toml.
@@ -485,6 +489,48 @@ def _pump(app: Any, frames: int = 3) -> None:
 
     for _ in range(frames):
         update_and_draw(app)
+
+
+def test_the_top_bar_row_fits_beside_the_clear_button(app: Any) -> None:
+    """The gauge overlapped Clear: the layout reserved `SIZE.CHIP_W` (64) while the chip sized
+    itself to its widest label ("Read-only", 79). Two places computing one number.
+
+    Measured with a REAL font — the whole defect is a text width, so a headless assertion about
+    the label set would have passed throughout. Falsifier: reserve `SIZE.CHIP_W` again and the row
+    runs past `cluster_x`.
+    """
+    imgui.new_frame()
+    try:
+        chip_w = cycle_chip_width(_lock_chip_labels())
+        assert chip_w > float(SIZE.CHIP_W), (
+            "this test is vacuous unless a label actually exceeds the chip floor"
+        )
+        icon = float(SIZE.BTN_SM_H)
+        pad = 2.0 * float(SPACE.MD)
+        for panel_w in (float(SIZE.COPILOT_W), 420.0, 380.0):
+            content = panel_w - 2.0 * 8.0
+            cluster = (
+                imgui.calc_text_size("Clear").x
+                + pad
+                + float(SPACE.SM)
+                + imgui.calc_text_size("Close").x
+                + pad
+            )
+            cluster_x = content - cluster
+            gauge = max(
+                float(SIZE.USAGE_BARS_W),
+                cluster_x
+                - (icon + float(SPACE.MD))
+                - (chip_w + float(SPACE.MD))
+                - float(SPACE.LG),
+            )
+            row_end = icon + float(SPACE.MD) + chip_w + float(SPACE.MD) + gauge
+            assert row_end <= cluster_x, (
+                f"at {panel_w:.0f}px the row ends at {row_end:.1f} but Clear starts at "
+                f"{cluster_x:.1f} — the gauge overlaps it"
+            )
+    finally:
+        imgui.end_frame()
 
 
 def test_the_mode_survives_clear_and_reaches_the_project_file(

@@ -23,6 +23,7 @@ from shaderbox.ui_primitives import (
     caption_text,
     copy_icon_button,
     cycle_chip,
+    cycle_chip_width,
     danger_button,
     gauge_bar,
     labeled_text_input,
@@ -120,7 +121,7 @@ def draw(app: App) -> None:
     # the difference until the chips consumed it. Height floor is nominal.
     min_w: float = (
         float(SIZE.BTN_SM_H)
-        + float(SIZE.CHIP_W)
+        + cycle_chip_width(_lock_chip_labels())
         + float(SIZE.USAGE_BARS_W)
         + 2.0 * float(SIZE.BTN_SM_W)
         + 4.0 * float(SPACE.LG)
@@ -681,6 +682,12 @@ _LOCK_LABELS: dict[SourceLock, str] = {
 }
 
 
+def _lock_chip_labels() -> list[str]:
+    # The label set, in enum order -- read by BOTH the width reserve and the draw, so they cannot
+    # disagree about how wide the chip is.
+    return [_LOCK_LABELS[mode] for mode in SourceLock]
+
+
 def _draw_top_bar(app: App) -> None:
     # Row: [layout icon] [context gauge ............] [Clear][Close]. One arithmetic owner so the
     # gauge width and the right-aligned cluster x can't drift apart.
@@ -697,7 +704,7 @@ def _draw_top_bar(app: App) -> None:
         float(SIZE.USAGE_BARS_W),
         cluster_x
         - (icon_side + float(SPACE.MD))
-        - (float(SIZE.CHIP_W) + float(SPACE.MD))
+        - (cycle_chip_width(_lock_chip_labels()) + float(SPACE.MD))
         - float(SPACE.LG),
     )
 
@@ -716,7 +723,7 @@ def _draw_top_bar(app: App) -> None:
     imgui.begin_disabled(app.copilot.state.in_flight)
     if cycle_chip(
         "copilot_source_lock",
-        [_LOCK_LABELS[mode] for mode in modes],
+        _lock_chip_labels(),
         modes.index(lock),
     ):
         app.copilot.set_source_lock(modes[(modes.index(lock) + 1) % len(modes)])

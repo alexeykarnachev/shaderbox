@@ -263,6 +263,12 @@ maintainer's complaint.
 - The ALWAYS-gated tools (`delete_document`, `delete_pass`, `delete_lib_file`, `render_image`,
   `render_video`, the four publish/pack tools, the two credential tools) — they confirm every time
   already.
+
+> **086 widened this for the MODE, not for the lock.** `delete_document` / `delete_pass` /
+> `delete_lib_file` are excluded above because they already confirm — the right answer for a GATE
+> and the wrong one for a mode called Read-only, which must forbid deleting first. So `READ_ONLY`
+> withholds 15 tools: this roster's 12 plus those three. `locks_source` itself is unchanged, and
+> the enumeration above is still exactly what the ASK gate covers.
 - The read-only tools (`read_shader`, `read_script`, `read_lib`, `grep`, `probe_render`,
   `switch_document`, `list_telegram_packs`, `load_tools`) — nothing to lock.
 

@@ -12,9 +12,15 @@
 > - The control is **ONE cycling chip**, not the three-chip group D4 describes here ("i don't like
 >   these large 3 chips").
 >
-> What this file still governs, unchanged: D1/D2 (why a mode rather than a discovered state), D2a
-> (`must_confirm` keeps its shape — narrowing it runs the edit), D2b (the single-writer split),
-> D6/D6a (per-project persistence and the two `reset_conversation` callers).
+> What this file still governs, unchanged: **D1/D2** (why a mode rather than a discovered state),
+> **D4a** (`must_confirm` keeps its shape — narrowing it routes the call past the refusal and RUNS
+> the edit), **D6/D6a** (per-project persistence, and the two `reset_conversation` callers that
+> want opposite things).
+>
+> Also superseded in detail: **D5**'s third tooltip is `Editing tools withheld`, not
+> "Declines every edit"; **D4**'s `lock_mode_chips` shipped as `cycle_chip`; and the Out-of-scope
+> note that the roster is "untouched" predates 02 D1, which widened what the MODE withholds by the
+> three destructive tools (15, not the lock's 12) while leaving `locks_source` itself alone.
 
 The maintainer, on 085's three-state lock:
 

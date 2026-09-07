@@ -1128,20 +1128,30 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   emoji, dynamic glyph loading, `push_font` rasterized-size, `image()` lost `tint_col`, glfw
   cursor sync gap, pfd non-blocking handles, the `.pyi`-only stub pyright warning, the
   SetCursorPos assert. Non-UI library quirks (telegram, moderngl, GLSL `#line`) stay below.
-- **`:%s/pat/rep/g` DOES substitute the whole buffer — a report that it only replaces on one line
-  is unreproduced at `libeditor 471c32d` (the vendored `resources/editor/VERSION`).** Measured from
-  both ends after a maintainer report: driven per-character through `editor/ffi.py` on the vendored
-  `.so`, `:%s/vec3/vec4/g` over three matching lines rewrites all three, the command line reads
-  `%s/vec3/vec4/g` before Enter, and `ed_command_message` is empty; `:s/vec3/vec4/g` correctly
-  rewrites one. The editor repo measured the same three ways through its own ABI. Neither host
-  routing nor an ex-command layer can eat the `%`: ShaderBox does not intercept ex commands at all
-  (it only READS `ed_command_line` to draw the status band), and the drain's one pre-`ed_key`
-  swallow, `_handle_clipboard`, returns immediately unless mods are CTRL or CTRL|SHIFT. Worth
-  knowing separately, since it looks like the culprit and is not: `editor/input.py::_key_char`
-  resolves a shifted symbol wrongly (`Ctrl+%` synthesizes `5`), but it runs ONLY for Ctrl/Alt
-  chords — bare printables reach the editor via the glfw char callback with the platform-resolved
-  codepoint. If the symptom recurs, capture the exact buffer and keystrokes first; the parser and
-  the routing are both cleared.
+- **A substitute over a VISUAL SELECTION does not work: `:` from visual mode does not seed
+  `'<,'>`, and the un-ranged `s` then hits the cursor's line.** Reported as "`:%s/…/…/g` only
+  replaces one line", which sent two sessions chasing the wrong path — `:%s` typed from NORMAL mode
+  is correct and always was, measured independently here and in the editor repo. The maintainer's
+  `%` meant "the whole selection", not the literal `%`. Measured at `5aa51cd` on
+  `vec3 a;\nvec3 b;\nvec3 c;\nvec3 d;`: `Vj` then `:` leaves `ed_command_line` EMPTY (vim
+  pre-fills `'<,'>`), and typing `s/vec3/vec4/g` there rewrites line 1 only — the cursor's line
+  after the motion, not even the selection's first. Filed upstream; no host change is possible
+  since ShaderBox does not intercept ex commands. **The lesson that outlives the bug: when a report
+  and a measurement disagree, the gap is usually the SEQUENCE, not the feature — reproduce the
+  user's keystrokes, not the behaviour you infer from his words.**
+- **The imgui CONTEXT is per PROCESS, and its teardown does NOT belong in `release()`.**
+  `App.__init__` calls `create_context()`; a second `create_context()` in the same process hands
+  back the SAME pointer, so a second App inherits the first's font atlas while that atlas's GL
+  texture died with the first App. imgui 1.92 uploads glyphs on demand, so the first draw needing
+  an unrasterized glyph fails `glTexSubImage2D` with `GL_INVALID_VALUE`. It surfaces only once the
+  atlas has grown past the stale texture's bounds — a test file passes alone and the full suite
+  goes red, which is what makes it look like flakiness rather than a leak. **The fix is
+  `App.shutdown`, never `release()`**: a project switch calls `release()` through `_init` and then
+  `save_imgui_ini()`, which touches the context — destroying it there segfaults on the next switch.
+  `shutdown()` = release + renderer shutdown + `destroy_context`, called at `ui.py`'s end-of-loop
+  and by the test fixture, the two places a process is genuinely done with the window. **A test
+  that passes in isolation and fails in a full run is a shared-state bug to diagnose, never a
+  "flake" to document** — that framing shipped here once and cost a day of it being believed.
 - **Two "unused" surfaces are DELIBERATE — a sweep will re-find them; do not delete them.**
   Each was confirmed dead by grep and then rejected on inspection, so the grep evidence alone is
   not the test.

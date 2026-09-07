@@ -977,19 +977,27 @@ def revert_icon_button(id_: str, side: float) -> bool:
     return clicked
 
 
+def cycle_chip_width(labels: Sequence[str]) -> float:
+    """How wide `cycle_chip` will draw for this label set.
+
+    Public because a caller laying out a row has to RESERVE this: the chip sizes to its widest
+    label, so a neighbour budgeting `SIZE.CHIP_W` instead is short by however much the longest
+    label exceeds it, and whatever the row draws next overruns. One owner of the number, read by
+    both the drawer and the layout."""
+    return max(
+        float(SIZE.CHIP_W),
+        max(imgui.calc_text_size(label).x for label in labels) + 2.0 * float(SPACE.MD),
+    )
+
+
 def cycle_chip(id_: str, labels: Sequence[str], active: int) -> bool:
     """One chip showing where a setting IS; a click advances it to the next position.
 
     The caller owns the ordering and does the advancing — this is the drawn seam, matching the
     uniform panel's input-type selector. Width is the WIDEST label's, not the current one's, so
     the chip keeps one size across the cycle and the row cannot shift on click; sizing to the
-    current label instead makes every neighbour jump. `SIZE.CHIP_W` is the floor, so a set of
-    short labels still reads as a chip rather than a nub."""
-    width = max(
-        float(SIZE.CHIP_W),
-        max(imgui.calc_text_size(label).x for label in labels) + 2.0 * float(SPACE.MD),
-    )
-    return chip_button(f"{labels[active]}##{id_}", width)
+    current label instead makes every neighbour jump."""
+    return chip_button(f"{labels[active]}##{id_}", cycle_chip_width(labels))
 
 
 def layout_icon_button(id_: str, variant: int, side: float) -> bool:
