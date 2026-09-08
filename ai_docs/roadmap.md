@@ -33,7 +33,8 @@ read two frames late), spans at the seven live-loop sites, and the tree drawn in
 panel. The profiler reaches `Document.render` as a trailing parameter, so exports and probes stay
 silent and a document rendered inside another nests by construction; recording follows the panel,
 so a closed panel creates no query. Nothing about what the numbers SHOW has been changed -- this
-feature is the instrument.
+feature is the instrument. Editor re-vendored at `5601d13`: a command key now aborts a pending
+operator instead of running it.
 
 **Six things await the maintainer's eyes** (no WM on the dev box): the profiler panel's width,
 number column and whether a five-pass tree reads at a glance; and 087's five -- the lock chip's
