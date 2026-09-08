@@ -256,7 +256,8 @@ def _tick_frame_state(app: App) -> list[str] | None:
         )
         if pending_first is not None:
             tick_documents.append(pending_first)
-    app.session.tick(tick_documents, now, dt, app.frame_idx, mouse=app.script_mouse)
+    with app.profiler.cpu("script"):
+        app.session.tick(tick_documents, now, dt, app.frame_idx, mouse=app.script_mouse)
     # Advance feedback history ONCE per frame, over the same document set the tick covers. A
     # document can be drawn more than once per frame below (its output, then a pending pass's
     # chain), so a swap inside render() would advance a feedback pass at the wrong rate.
@@ -267,7 +268,17 @@ def _tick_frame_state(app: App) -> list[str] | None:
 
 
 def update_and_draw(app: App) -> None:
-    tick_documents = _tick_frame_state(app)
+    with app.profiler.frame():
+        _update_and_draw(app)
+    app.last_profile = app.profiler.last_complete
+
+
+def _update_and_draw(app: App) -> None:
+    """The frame itself. Split from `update_and_draw` so the profiler's root is a context
+    manager around the WHOLE of it: the abort below returns, and a root left open would
+    desynchronise the query ring from the frames that actually drew."""
+    with app.profiler.cpu("tick"):
+        tick_documents = _tick_frame_state(app)
     if tick_documents is None:
         return
 
@@ -302,7 +313,9 @@ def update_and_draw(app: App) -> None:
             ui_document = app.ui_documents.get(document_id)
             if ui_document is not None:
                 document = ui_document.document
-                document.render()
+                document_name = ui_document.ui_state.ui_name
+                with app.profiler.cpu(f"document:{document_name}"):
+                    document.render(profiler=app.profiler)
                 # One never-drawn pass per document per frame draws its own chain, so a
                 # reopened document's off-chain tiles fill in instead of staying black. The
                 # output render above has already stamped its own chain, so the scan elects a
@@ -316,7 +329,8 @@ def update_and_draw(app: App) -> None:
                     None,
                 )
                 if pending is not None:
-                    document.render(target=pending)
+                    with app.profiler.cpu(f"document:{document_name}"):
+                        document.render(target=pending, profiler=app.profiler)
     elif app.popup_state == PopupState.EXAMPLES:
         # Same first-render budget as the document set above: one example compiles per frame,
         # so opening the popup never stalls on compiling the whole library at once.
@@ -344,137 +358,140 @@ def update_and_draw(app: App) -> None:
 
     # ----------------------------------------------------------------
     # Prepare new frame
-    imgui.new_frame()
-    imgui.push_font(app.font_14, _FONT_14_SIZE)
+    with app.profiler.cpu("ui"):
+        imgui.new_frame()
+        imgui.push_font(app.font_14, _FONT_14_SIZE)
 
-    # ----------------------------------------------------------------
-    # Main window
-    window_width, window_height = glfw.get_window_size(app.window)
-    imgui.set_next_window_size((window_width, window_height))
-    imgui.set_next_window_pos((0, 0))
-    with imgui_ctx.begin("ShaderBox - UI", flags=_MAIN_WINDOW_FLAGS):
-        # ------------------------------------------------------------
-        # Keyboard command dispatch — in-frame (imgui.shortcut() asserts outside a frame),
-        # at the top so ESC's editor-defocus reaches code_tab.draw the same frame.
-        dispatch_commands(app)
+        # ----------------------------------------------------------------
+        # Main window
+        window_width, window_height = glfw.get_window_size(app.window)
+        imgui.set_next_window_size((window_width, window_height))
+        imgui.set_next_window_pos((0, 0))
+        with imgui_ctx.begin("ShaderBox - UI", flags=_MAIN_WINDOW_FLAGS):
+            # ------------------------------------------------------------
+            # Keyboard command dispatch — in-frame (imgui.shortcut() asserts outside a frame),
+            # at the top so ESC's editor-defocus reaches code_tab.draw the same frame.
+            dispatch_commands(app)
 
-        # ------------------------------------------------------------
-        # Main menu bar
-        _draw_menu_bar(app)
+            # ------------------------------------------------------------
+            # Main menu bar
+            _draw_menu_bar(app)
 
-        # ------------------------------------------------------------
-        # Left editor / right app split
-        split_region = imgui.get_content_region_avail()
-        editor_width = max(
-            _EDITOR_MIN_W,
-            min(
-                split_region.x - _APP_PANEL_MIN_W,
-                split_region.x * app.app_state.editor_split_fraction,
-            ),
-        )
-
-        # Splitter hit-test computed BEFORE the editor draws (splitter is at the editor's right
-        # edge, width _SPLITTER_W). The press-latch lives on App; code.py reads
-        # app.splitter_dragging to neutralize the editor's mouse mid-drag.
-        split_origin = imgui.get_cursor_screen_pos()
-        on_splitter = (
-            split_origin.x + editor_width
-            <= imgui.get_io().mouse_pos.x
-            <= split_origin.x + editor_width + _SPLITTER_W
-        )
-        app.update_splitter_drag(on_splitter)
-
-        # Editor column = code-editor child (top) + fixed copilot bar (bottom), grouped so
-        # the splitter to their right spans the full height. The bar owns the launcher
-        # button (a reserved region the floating chat anchors above, never covers).
-        editor_height = split_region.y - _COPILOT_BAR_H
-        with imgui_ctx.begin_group():
-            # A latched focus request targets the editor child itself (067): the one-shot
-            # grab must precede its begin_child, and code.draw clears the flag once this
-            # has consumed it. Gated on no-popup — a background focus grab force-closes an
-            # open modal (imgui-ui skill §8).
-            if app.editor_focus_requested and not app.any_popup_open():
-                imgui.set_next_window_focus()
-            with imgui_ctx.begin_child(
-                "code_editor",
-                size=imgui.ImVec2(editor_width, editor_height),
-                child_flags=imgui.ChildFlags_.borders,
-                window_flags=imgui.WindowFlags_.no_nav_inputs
-                | imgui.WindowFlags_.no_scrollbar
-                | imgui.WindowFlags_.no_scroll_with_mouse,
-            ):
-                # Capture the editor child's screen rect so the chat anchors to the coding
-                # area (above the bar), not the whole glfw window.
-                ed_pos = imgui.get_window_pos()
-                ed_size = imgui.get_window_size()
-                app.editor_rect = (ed_pos.x, ed_pos.y, ed_size.x, ed_size.y)
-                code_tab.draw(app)
-
-            _draw_copilot_bar(app, editor_width)
-
-        imgui.same_line(spacing=0.0)
-        _draw_splitter(app, split_region.x, split_region.y)
-        imgui.same_line(spacing=0.0)
-
-        with imgui_ctx.begin_child("app_panel", size=imgui.ImVec2(0, split_region.y)):
-            # Freeze the panel (uniform sliders, tab controls, share) while a copilot turn
-            # runs — its inputs would race the values the worker reads. The editor has its own
-            # read-only lock; the chat (Stop) stays live in its own window.
-            imgui.begin_disabled(app.copilot_turn_active)
-            try:
-                _draw_app_panel(app)
-            except Exception as e:
-                logger.error(f"Error in app panel: {e}")
-                app.notifications.push(
-                    f"Error in app panel: {e!s}", COLOR.STATE_ERROR[:3]
-                )
-            finally:
-                imgui.end_disabled()
-
-        # ------------------------------------------------------------
-        # Popups and notifications
-        draw_examples(app)
-        draw_help(app)
-        draw_settings(app)
-        draw_pass_settings(app)
-        draw_emoji_picker(app)
-        draw_lib_picker(app)
-        draw_projects(app)
-
-        if app.is_palette_open:
-            app.is_palette_open = imcmd.command_palette_window(
-                "CommandPalette", app.is_palette_open
+            # ------------------------------------------------------------
+            # Left editor / right app split
+            split_region = imgui.get_content_region_avail()
+            editor_width = max(
+                _EDITOR_MIN_W,
+                min(
+                    split_region.x - _APP_PANEL_MIN_W,
+                    split_region.x * app.app_state.editor_split_fraction,
+                ),
             )
 
-        imgui.push_font(app.font_18, _FONT_18_SIZE)
-        app.notifications.update_and_draw()
+            # Splitter hit-test computed BEFORE the editor draws (splitter is at the editor's right
+            # edge, width _SPLITTER_W). The press-latch lives on App; code.py reads
+            # app.splitter_dragging to neutralize the editor's mouse mid-drag.
+            split_origin = imgui.get_cursor_screen_pos()
+            on_splitter = (
+                split_origin.x + editor_width
+                <= imgui.get_io().mouse_pos.x
+                <= split_origin.x + editor_width + _SPLITTER_W
+            )
+            app.update_splitter_drag(on_splitter)
+
+            # Editor column = code-editor child (top) + fixed copilot bar (bottom), grouped so
+            # the splitter to their right spans the full height. The bar owns the launcher
+            # button (a reserved region the floating chat anchors above, never covers).
+            editor_height = split_region.y - _COPILOT_BAR_H
+            with imgui_ctx.begin_group():
+                # A latched focus request targets the editor child itself (067): the one-shot
+                # grab must precede its begin_child, and code.draw clears the flag once this
+                # has consumed it. Gated on no-popup — a background focus grab force-closes an
+                # open modal (imgui-ui skill §8).
+                if app.editor_focus_requested and not app.any_popup_open():
+                    imgui.set_next_window_focus()
+                with imgui_ctx.begin_child(
+                    "code_editor",
+                    size=imgui.ImVec2(editor_width, editor_height),
+                    child_flags=imgui.ChildFlags_.borders,
+                    window_flags=imgui.WindowFlags_.no_nav_inputs
+                    | imgui.WindowFlags_.no_scrollbar
+                    | imgui.WindowFlags_.no_scroll_with_mouse,
+                ):
+                    # Capture the editor child's screen rect so the chat anchors to the coding
+                    # area (above the bar), not the whole glfw window.
+                    ed_pos = imgui.get_window_pos()
+                    ed_size = imgui.get_window_size()
+                    app.editor_rect = (ed_pos.x, ed_pos.y, ed_size.x, ed_size.y)
+                    code_tab.draw(app)
+
+                _draw_copilot_bar(app, editor_width)
+
+            imgui.same_line(spacing=0.0)
+            _draw_splitter(app, split_region.x, split_region.y)
+            imgui.same_line(spacing=0.0)
+
+            with imgui_ctx.begin_child(
+                "app_panel", size=imgui.ImVec2(0, split_region.y)
+            ):
+                # Freeze the panel (uniform sliders, tab controls, share) while a copilot turn
+                # runs — its inputs would race the values the worker reads. The editor has its own
+                # read-only lock; the chat (Stop) stays live in its own window.
+                imgui.begin_disabled(app.copilot_turn_active)
+                try:
+                    _draw_app_panel(app)
+                except Exception as e:
+                    logger.error(f"Error in app panel: {e}")
+                    app.notifications.push(
+                        f"Error in app panel: {e!s}", COLOR.STATE_ERROR[:3]
+                    )
+                finally:
+                    imgui.end_disabled()
+
+            # ------------------------------------------------------------
+            # Popups and notifications
+            draw_examples(app)
+            draw_help(app)
+            draw_settings(app)
+            draw_pass_settings(app)
+            draw_emoji_picker(app)
+            draw_lib_picker(app)
+            draw_projects(app)
+
+            if app.is_palette_open:
+                app.is_palette_open = imcmd.command_palette_window(
+                    "CommandPalette", app.is_palette_open
+                )
+
+            imgui.push_font(app.font_18, _FONT_18_SIZE)
+            app.notifications.update_and_draw()
+            imgui.pop_font()
+
         imgui.pop_font()
 
-    imgui.pop_font()
+        # Cheatsheet + copilot chat are their OWN top-level windows — drawn after the
+        # full-screen main window closes so they aren't obscured by it.
+        imgui.push_font(app.font_14, _FONT_14_SIZE)
+        cheatsheet.draw(app)
+        copilot_chat.draw(app)
+        # Apply the frame's requested cursor ONCE, only on change — every glfw.set_cursor re-poke
+        # flickers on X11. Surfaces set app.want_cursor; None = default arrow. (Done after all draws
+        # so the topmost surface's request wins; reset for next frame.)
+        if app.want_cursor is not app.cur_cursor:
+            glfw.set_cursor(app.window, app.want_cursor)
+            app.cur_cursor = app.want_cursor
+        app.want_cursor = None
+        # The "Rendering..." cue. Every render encode — Render tab, Share-tab outlet, copilot — runs
+        # AFTER this frame's swap + gl.finish (below), the one point the cue is provably on the glass
+        # before the encode freezes the loop.
+        run_render_now = app.render_defer.ready_to_fire()
+        if app.copilot.bridge.render_pending() or app.render_defer.has_request():
+            rendering_overlay("Rendering...")
+        imgui.pop_font()
 
-    # Cheatsheet + copilot chat are their OWN top-level windows — drawn after the
-    # full-screen main window closes so they aren't obscured by it.
-    imgui.push_font(app.font_14, _FONT_14_SIZE)
-    cheatsheet.draw(app)
-    copilot_chat.draw(app)
-    # Apply the frame's requested cursor ONCE, only on change — every glfw.set_cursor re-poke
-    # flickers on X11. Surfaces set app.want_cursor; None = default arrow. (Done after all draws
-    # so the topmost surface's request wins; reset for next frame.)
-    if app.want_cursor is not app.cur_cursor:
-        glfw.set_cursor(app.window, app.want_cursor)
-        app.cur_cursor = app.want_cursor
-    app.want_cursor = None
-    # The "Rendering..." cue. Every render encode — Render tab, Share-tab outlet, copilot — runs
-    # AFTER this frame's swap + gl.finish (below), the one point the cue is provably on the glass
-    # before the encode freezes the loop.
-    run_render_now = app.render_defer.ready_to_fire()
-    if app.copilot.bridge.render_pending() or app.render_defer.has_request():
-        rendering_overlay("Rendering...")
-    imgui.pop_font()
-
-    # ----------------------------------------------------------------
-    # Finalize and draw the frame
-    imgui.render()
+        # ----------------------------------------------------------------
+        # Finalize and draw the frame
+        imgui.render()
 
     glfw.make_context_current(app.window)
     moderngl.get_context().clear_errors()
@@ -483,9 +500,11 @@ def update_and_draw(app: App) -> None:
     gl.screen.use()
     gl.clear()
 
-    app.imgui_renderer.render(imgui.get_draw_data())
+    with app.profiler.gpu("ui:draw"):
+        app.imgui_renderer.render(imgui.get_draw_data())
 
-    glfw.swap_buffers(app.window)
+    with app.profiler.cpu("swap"):
+        glfw.swap_buffers(app.window)
 
     # Run every deferred render encode HERE, after the swap, so the cue frame is presented before
     # the encode blocks. glFinish forces the GPU to display it (a queued buffer can't composite
@@ -657,9 +676,11 @@ def _draw_document_image(
         view = app.app_state.channel_view
         output_texture = ui_document.document.render_pass.canvas.texture
         if view == ChannelView.ALPHA:
-            shown_texture = app.alpha_view.render(output_texture)
+            with app.profiler.gpu("viewer"):
+                shown_texture = app.alpha_view.render(output_texture)
         elif view == ChannelView.RGB:
-            shown_texture = app.rgb_view.render(output_texture)
+            with app.profiler.gpu("viewer"):
+                shown_texture = app.rgb_view.render(output_texture)
         else:
             shown_texture = output_texture
         backdrop = app.checker_texture
@@ -743,7 +764,11 @@ def _draw_app_panel(app: App) -> None:
             fps=round(app.global_fps),
             target_fps=app.app_state.global_target_fps,
             is_open=app.fps_details_open,
+            profile=app.last_profile,
+            number_font=app.font_12,
         )
+        # Recording follows the panel: closed, nothing is timed and no query exists (088 D4).
+        app.profiler.enabled = app.fps_details_open
         # The channel-view chip over the preview's top-LEFT — the opposite corner from the FPS
         # chip, so the two never collide whatever the canvas aspect.
         imgui.set_cursor_screen_pos(

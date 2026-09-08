@@ -375,7 +375,11 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   (the engine-driven uniform tables, GL-free; `core` re-imports them) / **`formatting.py`**
   (`ruff` / `clang-format` over subprocess, one formatter per tab kind, 078 W-B) / **`render_preset.py`** (the pydantic `RenderPreset` value type) /
   **`render_shape.py`** (the shape/aspect table shared by the Share tab + the copilot) /
-  **`render_defer.py`** (the one-frame render latch `ui.py` reads) / **`render_job.py`**
+  **`render_defer.py`** (the one-frame render latch `ui.py` reads) / **`profiling.py`**
+  (the frame profiler, 088: `Span` / `FrameProfile` / `Profiler` / `NULL_PROFILER` -- CPU spans
+  around a block and GPU spans as `GL_TIME_ELAPSED` queries in a three-deep path-keyed ring read
+  two frames late; imports `moderngl` alone, so any caller can take one, and `Document.render`
+  takes one as a trailing parameter) / **`render_job.py`**
   (`render_to` / `render_for` / `preset_ext` — the UI-free render-to-file job behind BOTH the Share
   tab and the copilot's render tools) / **`integrations.py`** (`IntegrationsStore`: the Telegram +
   YouTube + copilot credential/config store at `app_data_dir()/integrations.json`; peer to

@@ -1173,6 +1173,33 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   knows what a reset consists of; a new reset-shaped need (a copilot tool, a chord) calls the App
   forwarder and nothing else. A video needs no reset code of its own: `Video.update(t)` is a
   function of the clock. Revisit if a document ever needs a clock that is NOT reset with it.
+- **What a render reports to is decided by its CALLER, as an explicit parameter (feature 088).**
+  `Document.render(..., profiler: Profiler = NULL_PROFILER)`; the live loop passes `app.profiler`
+  at each of its render sites and every other caller -- exports, the copilot probe, the dogfood
+  harness, the smoke script, every test -- takes the default and reports nowhere. A module-level
+  active profiler (`shader_lib.index.active`'s shape) was weighed and rejected: those callers go
+  through the same `Document.render`, so a global would capture an export's passes into whichever
+  live frame they happened to run inside, and it would need a reset discipline nothing else here
+  needs. The parameter is also what makes nesting free -- a document rendered as a node inside
+  another document's pass runs `render(profiler=...)` from inside that pass's span and lands under
+  it by construction, with no registry and no assumption that the tree is one level deep. This is
+  `ProjectSession`'s injected-callback posture applied to instrumentation. Revisit if a second
+  measurement seam appears that a parameter genuinely cannot reach.
+- **A GPU span is a `GL_TIME_ELAPSED` query, they never nest, and the read is two frames late.**
+  Both halves are measured facts about GL, not preferences (RTX 3090, GL 3.3 core, moderngl 5.12).
+  Nesting: two queries one inside the other leave the outer reading garbage, the inner reading 0
+  and `ctx.error` at `GL_INVALID_OPERATION`, with NO exception -- and `ui.update_and_draw` calls
+  `clear_errors()` every frame, so even that late signal is gone by the time anyone could read it.
+  An `assert` at the seam is therefore the only guard available, and it is the guard. Reading:
+  a query read blocks until the GPU has drained past it, so a ring read ONE frame late stalled
+  22.3 ms under real fragment load while three-deep read two frames late stalled 0.009 ms -- a
+  profiler that adds a frame to the frame is not an instrument, so `RING_DEPTH` is 3 with the
+  numbers beside it rather than a tunable. The ring is keyed by span PATH (parent chain, name and
+  sibling ordinal), because one query object begun twice in a frame reports only the second block,
+  again silently -- and the live loop draws same-named spans twice per frame. `moderngl.Query` has
+  neither `release()` nor `__del__`, so a query is a permanent GL name for the process and the
+  ring's ONE eviction rule is that disabling the profiler drops it whole. Revisit if a GL version
+  this repo targets ever makes timer queries nestable, or if `Query` gains a release.
 - **The vendored editor binary (`shaderbox/resources/editor/`) rebuilds from a COMMITTED editor-repo
   sha, never a dirty tree.** SEVEN files ship together (feature 067): `libeditor.so`, `atlas.png`,
   `atlas.json`, `VERSION` (the sha), `vim_coverage.md`, `standard_keymap.md`, `abi_probe.py`

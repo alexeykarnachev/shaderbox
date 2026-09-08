@@ -26,18 +26,20 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-08, 087 is implemented and green; 088 is spec'd, reviewed to PASS and plan-locked. -->
-**Next: implement 088.** 087 landed the eighth walk in two commits: the host half (pass tiles on
-their own `SIZE.PASS_TILE = 168` with a boundary-correct `tiles_per_row`, the Uniforms tab's pass
-selector as a row of clickable names) and the re-vendor at `760f8ea`, which brought GLSL
-`true`/`false` in the keyword slot and search bands that survive a scrolled view. 088 is a frame
-profiler behind the FPS chip: a leaf `profiling.py`, CPU spans plus GPU timer queries in a
-three-deep ring, threaded into `Document.render` as a parameter so a document embedded in another
-nests by construction. Its spec is locked; nothing of it is implemented yet.
+<!-- As of 2026-09-08, 087 and 088 are both implemented and green. -->
+**Next: the maintainer's eyes, then the next walk.** 088 landed the frame profiler: a leaf
+`profiling.py` (CPU spans, GPU spans as `GL_TIME_ELAPSED` queries in a three-deep path-keyed ring
+read two frames late), spans at the seven live-loop sites, and the tree drawn in the widened FPS
+panel. The profiler reaches `Document.render` as a trailing parameter, so exports and probes stay
+silent and a document rendered inside another nests by construction; recording follows the panel,
+so a closed panel creates no query. Nothing about what the numbers SHOW has been changed -- this
+feature is the instrument.
 
-**Five things still await the maintainer's eyes** (no WM on the dev box): the lock chip's look
-and cycling; what the copilot SAYS under Read-only when asked to edit; blockwise `Ctrl+V` by feel;
-the 168 tiles and how the third column wraps; whether the bright-only pass row reads as clickable.
+**Six things await the maintainer's eyes** (no WM on the dev box): the profiler panel's width,
+number column and whether a five-pass tree reads at a glance; and 087's five -- the lock chip's
+look and cycling, what the copilot SAYS under Read-only when asked to edit, blockwise `Ctrl+V` by
+feel, the 168 tiles and how the third column wraps, whether the bright-only pass row reads as
+clickable.
 
 **Open, unmeasured:** no brake watches cost, or a frame going lit to flat
 (`ai_docs/features/082_dogfood_post081/02_round2_report.md`); a multi-document mission.
@@ -46,7 +48,7 @@ the 168 tiles and how the third column wraps; whether the bright-only pass row r
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 088 | frame_profiler | pending | A frame-time breakdown behind the FPS chip, built as a general seam: a leaf `profiling.py` with CPU spans and GPU timer queries (a three-deep, path-keyed ring read two frames late, since a two-deep one measured a 22 ms stall under load and a name-keyed one lost the current document's second render), threaded into `Document.render` as a parameter so exports stay silent and a document rendered inside another nests by construction; recording only while the panel is open. Spec: `ai_docs/features/088_frame_profiler/01_spec.md`. |
+| 088 | frame_profiler | done | A frame-time breakdown behind the FPS chip, built as a general seam: a leaf `profiling.py` with CPU spans and GPU timer queries (a three-deep, path-keyed ring read two frames late, since a two-deep one measured a 22 ms stall under load and a name-keyed one lost the current document's second render), threaded into `Document.render` as a parameter so exports stay silent and a document rendered inside another nests by construction; recording only while the panel is open. Spec: `ai_docs/features/088_frame_profiler/01_spec.md`. |
 | 087 | eighth_walk_findings | done | The maintainer's eighth walk, four findings across two repos: the pass strip's tiles at 168 on their own `SIZE.PASS_TILE` (the sampler rows keep `PASS_THUMB` at 112) with a boundary-correct `tiles_per_row`, the Uniforms tab's pass selector as a row of clickable names marked by color alone, GLSL `true`/`false` colored as keywords (lexer, upstream `760f8ea`), and search highlights that were drawn a screenful high or culled whenever the view was scrolled — the emitter subtracted the scroll twice, found by measurement here and fixed upstream at `c081110`; both landed in one re-vendor at `760f8ea`, pinned by two host tests born red against `410b7e7`. Spec: `ai_docs/features/087_eighth_walk_findings/01_spec.md`. |
 | 086 | lock_as_a_mode | done | 085's lock was two states that looked alike and one nobody chose, which the maintainer called too implicit. It is now a MODE he sets -- Allow / Ask / Read-only on one cycling chip in the chat's top bar, persisted per project -- and READ_ONLY withholds all 15 tools that change or delete the project -- the lock's 12 plus the three deletes its own roster excluded -- while the prompt tells the copilot why, replacing a guard the model could only discover by hitting it. Reverses 085's ARMED/OFF split and 083 D5's locked-by-default; the gate answer keeps the name DENY because answering a gate IS a refusal, while a mode that removes the tools refuses nothing. Two bugs rode along: a project switch inherited the outgoing project's whole app_state when the incoming one had never been saved, and the mode reverted on Clear because the persisted copy was only written at save time. Spec: `ai_docs/features/086_lock_as_a_mode/01_spec.md` + `02_deny_hides_the_tools.md`. |
 | 085 | lock_deny_semantics | done | The copilot asked again after being told no -- once per call, in the same turn -- and the icon the user set to "locked" was a request to be asked rather than an answer. One DENY now answers the whole turn, and the lock splits into three states so that "he armed it" and "it defaults on" stop being the same value: OFF runs, ASK (the default) confirms, ARMED declines without asking. Reverses 083 D5 for the refusal direction only, on the maintainer's own re-decision after using it; `must_confirm` stays a bool because ask-vs-refuse also depends on the turn latch, which the registry cannot see. Five breaks tried, two of which only became detectable after a test was written for them. Spec: `ai_docs/features/085_lock_deny_semantics/01_spec.md`. |

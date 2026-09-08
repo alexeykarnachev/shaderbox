@@ -1009,13 +1009,14 @@ def draw(app: App) -> None:
     _drive_completion(app, editor, tab)
     _consume_lookup_request(app, editor, tab)
     rows = app.editor_visible_rows
-    cursor = layout_following_cursor(
-        editor,
-        (float(size_px[0]), float(size_px[1])),
-        px_per_em,
-        rows,
-        app.editor_last_cursor.get(current_path),
-    )
+    with app.profiler.cpu("editor"):
+        cursor = layout_following_cursor(
+            editor,
+            (float(size_px[0]), float(size_px[1])),
+            px_per_em,
+            rows,
+            app.editor_last_cursor.get(current_path),
+        )
     if rows > 0:
         app.editor_last_cursor[current_path] = cursor
 
@@ -1045,7 +1046,8 @@ def draw(app: App) -> None:
     panel = app.editor_panel
     assert panel is not None
     if should_redraw(panel.last_state, state):
-        panel.render(editor, size_px, px_per_em, COLOR.BG_SURFACE)
+        with app.profiler.gpu("editor:draw"):
+            panel.render(editor, size_px, px_per_em, COLOR.BG_SURFACE)
         panel.last_state = state
         app.editor_redraw_count += 1
     if panel.texture is not None:

@@ -229,6 +229,11 @@ _UNMEASURABLE: dict[tuple[str, str], str] = {
     ("shaderbox/ui_primitives.py", "clipped_caption"): "forwards the caller's text",
     ("shaderbox/ui_primitives.py", "setup_steps"): "forwards the step's own url",
     ("shaderbox/ui_primitives.py", "small_caption"): "forwards the caller's text",
+    (
+        "shaderbox/ui_primitives.py",
+        "_profile_rows",
+    ): "a profiler span's own name (`pass:blur`, `document:<id>`) and its iteration count, "
+    "both data the frame produced rather than authored copy",
     ("shaderbox/ui_primitives.py", "gauge_bar"): "forwards the caller's tooltip",
     ("shaderbox/ui_primitives.py", "label_row"): "forwards the caller's label",
     (

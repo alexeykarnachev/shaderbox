@@ -71,6 +71,7 @@ from shaderbox.intel.worker import (
 from shaderbox.notifications import Notifications
 from shaderbox.pass_graph import PassEntry, step_in_order, strip_order
 from shaderbox.paths import ProjectPaths, app_data_dir, pass_name_of, shader_lib_root
+from shaderbox.profiling import FrameProfile, Profiler
 from shaderbox.project_session import (
     ProjectInfo,
     ProjectSession,
@@ -479,6 +480,11 @@ class App:
         self.code_hovered_uniform: str = ""
         self.global_fps = 0.0
         self.fps_details_open: bool = False
+        # The frame profiler (088). Recording follows the details panel; `last_profile` holds
+        # the last COMPLETE profile, which is two frames behind because a GPU query read that
+        # soon after its block stalls on the GPU.
+        self.profiler: Profiler = Profiler(enabled=False)
+        self.last_profile: FrameProfile | None = None
         # The editor↔panel splitter drag, latched in update_splitter_drag.
         self.splitter_dragging: bool = False
         self._splitter_press_on_splitter: bool = False

@@ -60,6 +60,7 @@ from shaderbox.paths import (
     PASSES_DIR_NAME,
     pass_name_of,
 )
+from shaderbox.profiling import NULL_PROFILER, Profiler
 from shaderbox.render_preset import FitPolicy, RenderPreset, resolve_dims
 from shaderbox.shader_source import ShaderSource
 
@@ -546,6 +547,7 @@ class Document:
         u_time: float | None = None,
         canvas: Canvas | None = None,
         target: str | None = None,
+        profiler: Profiler = NULL_PROFILER,
     ) -> None:
         """Draw the document: every pass the output needs, in order, each exactly once.
 
@@ -555,6 +557,10 @@ class Document:
         `target` draws that pass and its ancestor chain instead of the graph output's, skipping
         whatever already drew this frame. The graph output still decides which pass keeps full
         size and which one may receive `canvas`.
+
+        `profiler` decides what this render reports to (088 D3): the live loop passes its own,
+        every other caller takes the null default, so an export's passes never land in whatever
+        live frame they ran inside.
         """
         if canvas is None and target is None:
             self.first_render_done = True
@@ -601,33 +607,34 @@ class Document:
             # aiming every iteration at the external target would write somewhere the swap never
             # touches and the chain would silently not advance. RC's final cascade is exactly
             # this shape.
-            for iteration in range(entry.iterations):
-                last = iteration + 1 == entry.iterations
-                draw_into = canvas if (name == output and last) else None
-                # The textures the wiring fills: a pass's live canvas, or the consumer's own
-                # feedback history for a self-read. A sampler the wiring does not fill keeps its
-                # own value -- a texture the user bound, or a source, which `Pass.render` binds
-                # black (065 D3), never a picture.
-                inputs: dict[str, moderngl.Texture] = {}
-                for uniform, source_name in wiring.get(name, {}).items():
-                    if source_name == name:
-                        inputs[uniform] = self._feedback_canvas(name).texture
-                    else:
-                        inputs[uniform] = self.passes[source_name].canvas.texture
-                render_pass.render(
-                    u_time=u_time,
-                    canvas=draw_into,
-                    inputs=inputs,
-                    iteration=iteration,
-                    iterations=entry.iterations,
-                )
-                if not last:
-                    # Swap BETWEEN iterations so the next one reads what this one just wrote
-                    # (068 D5). `begin_frame` swaps once per FRAME, which is right for a
-                    # frame-to-frame trail and would leave every iteration reading the same
-                    # stale texture -- the chain would never advance. No-op unless this pass
-                    # actually reads itself.
-                    self._swap_feedback(name)
+            with profiler.gpu(f"pass:{name}", count=entry.iterations):
+                for iteration in range(entry.iterations):
+                    last = iteration + 1 == entry.iterations
+                    draw_into = canvas if (name == output and last) else None
+                    # The textures the wiring fills: a pass's live canvas, or the consumer's own
+                    # feedback history for a self-read. A sampler the wiring does not fill keeps its
+                    # own value -- a texture the user bound, or a source, which `Pass.render` binds
+                    # black (065 D3), never a picture.
+                    inputs: dict[str, moderngl.Texture] = {}
+                    for uniform, source_name in wiring.get(name, {}).items():
+                        if source_name == name:
+                            inputs[uniform] = self._feedback_canvas(name).texture
+                        else:
+                            inputs[uniform] = self.passes[source_name].canvas.texture
+                    render_pass.render(
+                        u_time=u_time,
+                        canvas=draw_into,
+                        inputs=inputs,
+                        iteration=iteration,
+                        iterations=entry.iterations,
+                    )
+                    if not last:
+                        # Swap BETWEEN iterations so the next one reads what this one just wrote
+                        # (068 D5). `begin_frame` swaps once per FRAME, which is right for a
+                        # frame-to-frame trail and would leave every iteration reading the same
+                        # stale texture -- the chain would never advance. No-op unless this pass
+                        # actually reads itself.
+                        self._swap_feedback(name)
 
     @classmethod
     def load_from_dir(

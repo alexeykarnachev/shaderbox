@@ -10,6 +10,7 @@ import pyperclip
 from imgui_bundle import imgui, imgui_ctx
 from loguru import logger
 
+from shaderbox.profiling import FrameProfile, Span, other_ms
 from shaderbox.theme import COLOR, OVERLAY_ALPHA, SIZE, SPACE, fade
 
 
@@ -1343,20 +1344,61 @@ def label_row(
     imgui.set_next_item_width(item_width)
 
 
+def _profile_number(number_font: imgui.ImFont, value: str) -> None:
+    """The number half of a profiler row: right-aligned at the panel edge, in `number_font`.
+
+    Separate from the label so every authored string in this panel stays one word -- a
+    label-plus-number-plus-unit string is six, over the caption budget the prose gate scores
+    (`tests/test_ui_prose_budget.py`).
+    """
+    imgui.push_font(number_font, number_font.legacy_size)
+    width = imgui.calc_text_size(value).x
+    imgui.same_line(
+        imgui.get_content_region_avail().x - width + imgui.get_cursor_pos_x()
+    )
+    imgui.text_colored(COLOR.FG_MUTED, value)
+    imgui.pop_font()
+
+
+def _profile_rows(span: Span, number_font: imgui.ImFont, depth: int) -> None:
+    """One span per row, its children indented under it."""
+    for child in span.children:
+        imgui.dummy((float(SPACE.MD) * depth, 0.0))
+        imgui.same_line(0.0, 0.0)
+        caption_text(child.name)
+        if child.count > 1:
+            imgui.same_line(0.0, float(SPACE.SM))
+            caption_text(f"x{child.count}")
+        _profile_number(number_font, _span_number(child))
+        _profile_rows(child, number_font, depth + 1)
+
+
+def _span_number(span: Span) -> str:
+    """A span's headline number: its GPU time where it has one, its wall otherwise."""
+    if span.gpu_ms is not None:
+        return f"{span.gpu_ms:.2f} ms"
+    return f"{span.cpu_ms:.2f} ms"
+
+
 def fps_overlay(
     anchor_x: float,
     anchor_y: float,
     fps: int,
     target_fps: int,
     is_open: bool,
+    profile: FrameProfile | None,
+    number_font: imgui.ImFont,
 ) -> bool:
     """A clickable FPS chip pinned to the top-right of a region, optionally
-    unfolding a stats panel beneath it.
+    unfolding the last complete frame's profile beneath it.
 
     `anchor_x` / `anchor_y` are the top-RIGHT screen corner of the region the overlay
     hugs (the pill's right edge sits `inset` left of `anchor_x`). Returns the new open
     state (toggled on a pill click). The pill is anchored in screen space independent
     of the detail panel, so opening it never shifts the pill.
+
+    `profile` is the last frame whose GPU queries have been read back (two frames behind
+    live, 088 D2); `None` draws the headline alone, which is the first frame after opening.
     """
     label = f"{fps} FPS"
     pad: float = float(SPACE.MD)
@@ -1380,8 +1422,24 @@ def fps_overlay(
             child_flags=imgui.ChildFlags_.borders | imgui.ChildFlags_.auto_resize_y,
             window_flags=imgui.WindowFlags_.no_scrollbar,
         ):
-            caption_text(f"Current: {fps} FPS")
-            caption_text(f"Target:  {target_fps} FPS")
+            if profile is not None:
+                # CPU and GPU overlap, so neither alone is the frame's bound -- both are
+                # shown, and which one is larger is what the reader is looking for.
+                caption_text("frame")
+                _profile_number(number_font, f"{profile.cpu_ms:.2f} ms")
+                caption_text("gpu")
+                _profile_number(number_font, f"{profile.gpu_ms:.2f} ms")
+            caption_text("budget")
+            _profile_number(number_font, f"{1e3 / target_fps:.1f} ms")
+            caption_text("fps")
+            _profile_number(number_font, str(fps))
+            caption_text("target")
+            _profile_number(number_font, str(target_fps))
+            if profile is not None:
+                imgui.dummy((0.0, float(SPACE.SM)))
+                _profile_rows(profile.root, number_font, 0)
+                caption_text("other")
+                _profile_number(number_font, f"{other_ms(profile.root):.2f} ms")
         imgui.pop_style_color(1)
 
     return not is_open if clicked else is_open
