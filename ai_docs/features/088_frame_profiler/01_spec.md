@@ -216,6 +216,33 @@ maintainer asked for is "the larger of the two, plus whatever they fail to overl
 both is what lets him see which one he is bound by. No `help_marker` — the words are the
 control's names (imgui-ui §2 word budget).
 
+### D5a — the panel shows an exponential average of the last complete profiles.
+
+Seen live, the numbers jittered frame to frame too fast to read. The maintainer asked for
+smoothing, "not too extreme, just to smooth out the very quick jitter".
+
+The profiler stays the raw instrument — a `FrameProfile` is what was measured — and the averaging
+is a presentation layer between it and the panel. `ProfileSmoother` (GL-free, in `profiling.py`
+beside the profiler) keeps one exponential moving average per span PATH, the same `name#ordinal`
+key the query ring uses, so two same-named siblings smooth separately; `smoothed()` builds a NEW
+tree of the fed profile's shape carrying the averaged numbers, never mutating the raw one, and the
+root's wall, the `gpu` total and `other` follow from it because an average of sums is the sum of
+the averages. `feed` is idempotent on `profile.index`: the panel sees `last_complete` repeat while
+the ring fills, and re-applying the same numbers would pull the average toward them. A span seen
+for the first time seeds at its raw value rather than climbing from zero; a span absent from the
+newest profile leaves with it, average and all, so a pass deleted and added back starts fresh.
+
+The factor is `SMOOTHING = 0.25`, the fresh sample's weight — a time constant of about four
+frames, enough to kill single-frame jitter and short enough that a real change lands at once. The
+chip's own EMA at 0.05 is deliberately heavier and stays as it is; it answers "am I hitting the
+cap", where the panel answers "what am I spending it on".
+
+`App` owns one smoother. `ui.py` feeds it where `last_profile` is set — `last_profile` itself
+stays RAW — and hands `smoother.smoothed()` to the overlay. The reset rides the same funnel: the
+read happens after the frame closes, so `enabled` is the value the boundary applied, and a disable
+that dropped the profiler's whole state (D4) drops the average with it rather than letting a
+re-opened panel blend its first live frames into the last session's numbers.
+
 ### D6 — the tree is dynamic nesting, which is what a cross-document node needs and nothing more.
 
 A span's parent is whatever span is open when it starts. A document rendered as a node inside
@@ -377,3 +404,7 @@ Post-implementation review, one blocker and four findings, all fixed in the foll
 - The two-deep stall is a RANGE, not the single 22.3 ms figure this spec quoted: at depth 2 the
   read blocks on the frame in flight, so it tracks GPU frame time (0.8 to 22 ms across loads on
   this box); depth 3 measured under 0.05 ms in every run.
+
+**Post-landing, from the maintainer's hands-on pass.** The panel's numbers jittered too fast to
+read; D5a is the answer, and nine mutations were tried to see the tests that hold it name the
+break.

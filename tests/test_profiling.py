@@ -17,7 +17,15 @@ import moderngl
 import pytest
 
 from shaderbox.pass_graph import PassEntry, PassGraph
-from shaderbox.profiling import NULL_PROFILER, RING_DEPTH, Profiler, Span
+from shaderbox.profiling import (
+    NULL_PROFILER,
+    RING_DEPTH,
+    SMOOTHING,
+    FrameProfile,
+    Profiler,
+    ProfileSmoother,
+    Span,
+)
 
 _RED = """#version 460 core
 in vec2 vs_uv;
@@ -456,6 +464,30 @@ def _pass_settings_frames(app: Any) -> Any:
     return app.last_profile
 
 
+def _capture_the_overlays_profile(app: Any, monkeypatch: Any) -> Any:
+    """Drive one frame with the overlay spied on, and report the profile it was handed.
+
+    Which tree reaches the panel is the decision this feature makes, and only the call site
+    knows it -- the smoother alone cannot say whether anyone draws what it returns.
+    """
+    from shaderbox import ui
+
+    handed: list[Any] = []
+    real = ui.fps_overlay
+
+    def spy(**kwargs: Any) -> Any:
+        handed.append(kwargs["profile"])
+        return real(**kwargs)
+
+    monkeypatch.setattr(ui, "fps_overlay", spy)
+    try:
+        ui.update_and_draw(app)
+    finally:
+        monkeypatch.undo()
+    assert handed, "the overlay was never drawn"
+    return handed[-1]
+
+
 def _close_the_panel(app: Any, monkeypatch: Any) -> None:
     """Make the overlay report a closing click, which is what the live toggle is."""
     from shaderbox import ui
@@ -543,6 +575,26 @@ def test_the_wire_and_the_abort_path(app: Any, monkeypatch: Any) -> None:
     )
     assert [s for s in modal_documents[0].children if s.name.startswith("pass:")]
 
+    # The panel draws the AVERAGE, so the loop must be feeding it -- the smoothed tree
+    # carries the same shape as the raw one. Falsifier: cut the `feed` call in
+    # `update_and_draw` and the smoother stays empty while the panel is open.
+    averaged = app.profile_smoother.smoothed()
+    assert averaged is not None, "the loop never fed the smoother"
+    assert _names(averaged.children) == _names(behind.children)
+
+    # What the PANEL is handed is the average, not the raw frame. The two agree on shape, so
+    # the discriminator is identity: the smoother is seeded with a childless root at an index
+    # no live frame reaches, and the overlay is drawn BEFORE the loop's own feed, so the
+    # averaged tree still carries that seed while the raw one carries the frame. Falsifier:
+    # pass `app.last_profile` at the `fps_overlay` call and the overlay reads the live tree.
+    app.profile_smoother.feed(_profile(10_000, 500.0))
+    handed = _capture_the_overlays_profile(app, monkeypatch)
+    assert handed is not None
+    assert handed.index == 10_000 and handed.children == [], (
+        f"the overlay drew index {handed.index} with {_names(handed.children)} -- "
+        "that is the frame itself, not the average"
+    )
+
     # Closing the panel writes `enabled` from INSIDE the open `ui` span, so a setter that
     # acted at once would clear the stack under a span whose `finally` has yet to run.
     _close_the_panel(app, monkeypatch)
@@ -550,3 +602,135 @@ def test_the_wire_and_the_abort_path(app: Any, monkeypatch: Any) -> None:
     update_and_draw(app)
     assert not app.profiler.enabled
     assert not app.profiler._ring, "closing the panel must leave no query behind"
+    # The profiler dropped its whole state at that boundary; the average goes with it, or a
+    # re-opened panel blends its first live frames into the last session's numbers.
+    # Falsifier: drop the `else: reset()` branch and this reads the pre-close tree.
+    assert app.profile_smoother.smoothed() is None
+
+
+# ---------------------------------------------------------------------------
+# V8 -- the panel's exponential average
+#
+# GL-free: the smoother reads a tree and writes a tree, so these build their profiles by
+# hand rather than measuring anything.
+# ---------------------------------------------------------------------------
+
+
+def _profile(index: int, cpu_ms: float, child_ms: float | None = None) -> FrameProfile:
+    root = Span("frame", cpu_ms=cpu_ms)
+    if child_ms is not None:
+        root.children.append(Span("pass:a", cpu_ms=child_ms))
+    return FrameProfile(root, index, complete=True)
+
+
+def _child_cpu(profile: FrameProfile | None, name: str) -> float:
+    assert profile is not None
+    span = _find(profile.root, name)
+    assert span is not None
+    return span.cpu_ms
+
+
+def test_a_jittering_span_converges_and_never_moves_more_than_the_factor() -> None:
+    """A 1/9 alternation settles near 5, and no single step crosses a quarter of its gap.
+
+    The step bound is the literal 0.25, not `SMOOTHING`: reading the constant the code uses
+    would leave the assertion true for every value that constant could take, which is the one
+    shape a passing run cannot tell from a broken one. The constant is pinned separately.
+
+    Falsifier: build the smoother with `smoothing=1.0` -- the raw numbers straight through --
+    and the per-step assertion fails on the first step, which moves the whole 8 ms gap.
+    """
+    smoother = ProfileSmoother()
+    previous: float | None = None
+    for index in range(40):
+        raw = 1.0 if index % 2 == 0 else 9.0
+        smoother.feed(_profile(index, 20.0, raw))
+        value = _child_cpu(smoother.smoothed(), "pass:a")
+        if previous is not None:
+            assert abs(value - previous) <= 0.25 * abs(raw - previous) + 1e-9, (
+                f"step {index} moved {abs(value - previous):.4f} ms of a "
+                f"{abs(raw - previous):.4f} ms gap"
+            )
+        previous = value
+
+    assert previous is not None
+    assert abs(previous - 5.0) < 1.0, (
+        f"a 1/9 jitter settled at {previous:.4f}, not near 5"
+    )
+
+
+def test_the_shipped_factor_is_the_one_the_step_bound_was_written_against() -> None:
+    assert SMOOTHING == 0.25
+
+
+def test_feeding_one_profile_twice_applies_it_once() -> None:
+    # The live shape: the panel sees `last_complete` repeat while the ring fills. Falsifier:
+    # drop the `profile.index == self._fed_index` check and the second feed pulls the average
+    # a second step toward 9, so the two readings differ.
+    smoother = ProfileSmoother()
+    smoother.feed(_profile(0, 20.0, 1.0))
+    repeated = _profile(1, 20.0, 9.0)
+    smoother.feed(repeated)
+    once = _child_cpu(smoother.smoothed(), "pass:a")
+    smoother.feed(repeated)
+    assert _child_cpu(smoother.smoothed(), "pass:a") == once, (
+        f"the repeat moved the average from {once:.4f} ms"
+    )
+
+
+def test_a_span_seen_for_the_first_time_seeds_at_its_raw_value() -> None:
+    # Falsifier: seed at 0.0 (start the blend from a missing key as zero) and a pass that
+    # appears mid-run climbs from nothing, reading 2.0 ms on its first frame instead of 8.0.
+    smoother = ProfileSmoother()
+    smoother.feed(_profile(0, 20.0))
+    smoother.feed(_profile(1, 20.0, 8.0))
+    assert _child_cpu(smoother.smoothed(), "pass:a") == 8.0
+
+
+def test_a_span_absent_from_the_newest_profile_leaves_the_smoothed_tree() -> None:
+    """A pass deleted from the graph leaves the panel, and one added back starts fresh.
+
+    The tree's SHAPE is the newest profile's, so the row's disappearance is structural; what
+    a merge would keep is the stale AVERAGE behind the key, which is why the second half is
+    the half with teeth. Falsifier: keep the previous frame's keys (`self._cpu.update(...)`
+    instead of replacing it) and the returning pass resumes the deleted one's average,
+    reading 8.0 ms on its first frame where the raw value is 20.0.
+    """
+    smoother = ProfileSmoother()
+    smoother.feed(_profile(0, 20.0, 4.0))
+    smoother.feed(_profile(1, 20.0))
+    smoothed = smoother.smoothed()
+    assert smoothed is not None
+    assert _find(smoothed.root, "pass:a") is None
+
+    smoother.feed(_profile(2, 20.0, 20.0))
+    assert _child_cpu(smoother.smoothed(), "pass:a") == 20.0
+
+
+def test_reset_empties_the_average() -> None:
+    # The disable path: the profiler drops its whole state at the frame boundary and the
+    # average goes with it. Falsifier: make `reset` a no-op and the panel re-opens showing
+    # the last session's numbers, and the first new frame blends into them.
+    smoother = ProfileSmoother()
+    smoother.feed(_profile(0, 20.0, 4.0))
+    smoother.reset()
+    assert smoother.smoothed() is None
+    smoother.feed(_profile(0, 20.0, 10.0))
+    assert _child_cpu(smoother.smoothed(), "pass:a") == 10.0
+
+
+def test_two_same_named_siblings_smooth_separately() -> None:
+    # The ring's own key shape, reused: `name#ordinal` per level. Falsifier: key by name
+    # alone and the two siblings share one average, so the light one reads the heavy one's.
+    smoother = ProfileSmoother()
+    for index in range(20):
+        root = Span("frame", cpu_ms=20.0)
+        root.children.append(Span("pass:a", cpu_ms=2.0))
+        root.children.append(Span("pass:a", cpu_ms=18.0))
+        smoother.feed(FrameProfile(root, index, complete=True))
+    smoothed = smoother.smoothed()
+    assert smoothed is not None
+    light, heavy = smoothed.children
+    assert abs(light.cpu_ms - 2.0) < 0.1 and abs(heavy.cpu_ms - 18.0) < 0.1, (
+        f"the siblings smoothed together: {light.cpu_ms:.4f} and {heavy.cpu_ms:.4f}"
+    )

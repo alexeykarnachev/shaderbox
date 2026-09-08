@@ -23,6 +23,10 @@ silent when violated:
   So each span PATH owns a three-deep ring of query objects, frame N runs in slot
   `N % RING_DEPTH`, and frame N's numbers are read at frame N+2's `begin_frame` -- a
   `FrameProfile` is complete two frames after it closes.
+
+`ProfileSmoother` sits between the instrument and the panel: the profile stays what was
+measured, and what the reader sees is an exponential average of the last of them, keyed by the
+same span path.
 """
 
 import time
@@ -37,6 +41,11 @@ import moderngl
 # 22 ms across loads on this box. At depth 3 it measured under 0.05 ms in every run, and depth
 # 4 bought nothing.
 RING_DEPTH: int = 3
+
+# The fresh sample's weight in the panel's exponential average -- a time constant of about four
+# frames, enough to kill single-frame jitter and short enough that a real change lands at once.
+# The FPS chip's own 0.05 is deliberately heavier; it answers a different question.
+SMOOTHING: float = 0.25
 
 _MS_PER_NS: float = 1e-6
 _MS_PER_S: float = 1e3
@@ -308,3 +317,92 @@ class Profiler:
 
 
 NULL_PROFILER: Profiler = Profiler(enabled=False)
+
+
+class ProfileSmoother:
+    """An exponential average of the profiles fed to it, for a panel to draw.
+
+    The profiler is the raw instrument -- a `FrameProfile` is what was measured -- so the
+    averaging lives here, between it and the reader. One EMA per span PATH, the same
+    `name#ordinal` key the query ring uses, so two same-named siblings smooth separately;
+    a span seen for the first time seeds at its raw value rather than climbing from zero,
+    and one absent from the newest profile leaves the tree with it.
+
+    `feed` is idempotent on `profile.index`: the panel sees `last_complete` repeat while the
+    ring fills, and re-applying the same numbers would pull the average toward them.
+    """
+
+    def __init__(self, smoothing: float = SMOOTHING) -> None:
+        self._smoothing: float = smoothing
+        self._cpu: dict[tuple[str, ...], float] = {}
+        self._gpu: dict[tuple[str, ...], float] = {}
+        self._last: FrameProfile | None = None
+        self._fed_index: int | None = None
+
+    def reset(self) -> None:
+        self._cpu = {}
+        self._gpu = {}
+        self._last = None
+        self._fed_index = None
+
+    def feed(self, profile: FrameProfile | None) -> None:
+        if profile is None or profile.index == self._fed_index:
+            return
+        self._fed_index = profile.index
+        seen_cpu: dict[tuple[str, ...], float] = {}
+        seen_gpu: dict[tuple[str, ...], float] = {}
+        self._absorb(profile.root, (), seen_cpu, seen_gpu)
+        self._cpu = seen_cpu
+        self._gpu = seen_gpu
+        self._last = profile
+
+    def smoothed(self) -> FrameProfile | None:
+        """The newest fed profile's shape carrying the averaged numbers, or None before any."""
+        if self._last is None:
+            return None
+        root = self._rebuild(self._last.root, ())
+        return FrameProfile(root, self._last.index, self._last.complete)
+
+    def _blend(self, previous: float | None, sample: float) -> float:
+        if previous is None:
+            return sample
+        return previous + self._smoothing * (sample - previous)
+
+    def _absorb(
+        self,
+        span: Span,
+        path: tuple[str, ...],
+        seen_cpu: dict[tuple[str, ...], float],
+        seen_gpu: dict[tuple[str, ...], float],
+    ) -> None:
+        seen_cpu[path] = self._blend(self._cpu.get(path), span.cpu_ms)
+        if span.gpu_ms is not None:
+            seen_gpu[path] = self._blend(self._gpu.get(path), span.gpu_ms)
+        for child, child_path in _children_by_path(span, path):
+            self._absorb(child, child_path, seen_cpu, seen_gpu)
+
+    def _rebuild(self, span: Span, path: tuple[str, ...]) -> Span:
+        gpu: float | None = self._gpu.get(path) if span.gpu_ms is not None else None
+        return Span(
+            name=span.name,
+            cpu_ms=self._cpu.get(path, span.cpu_ms),
+            gpu_ms=gpu,
+            count=span.count,
+            children=[
+                self._rebuild(child, child_path)
+                for child, child_path in _children_by_path(span, path)
+            ],
+        )
+
+
+def _children_by_path(
+    span: Span, path: tuple[str, ...]
+) -> list[tuple[Span, tuple[str, ...]]]:
+    """Each child with the path the profiler's ring would have keyed it by."""
+    ordinals: dict[str, int] = {}
+    paired: list[tuple[Span, tuple[str, ...]]] = []
+    for child in span.children:
+        ordinal = ordinals.get(child.name, 0)
+        ordinals[child.name] = ordinal + 1
+        paired.append((child, (*path, f"{child.name}#{ordinal}")))
+    return paired

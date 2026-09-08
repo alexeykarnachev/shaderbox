@@ -379,7 +379,8 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   (the frame profiler, 088: `Span` / `FrameProfile` / `Profiler` / `NULL_PROFILER` -- CPU spans
   around a block and GPU spans as `GL_TIME_ELAPSED` queries in a three-deep path-keyed ring read
   two frames late; imports `moderngl` alone, so any caller can take one, and `Document.render`
-  takes one as a trailing parameter) / **`render_job.py`**
+  takes one as a trailing parameter, plus `ProfileSmoother`, the path-keyed exponential average the
+  panel draws instead of the raw frame) / **`render_job.py`**
   (`render_to` / `render_for` / `preset_ext` — the UI-free render-to-file job behind BOTH the Share
   tab and the copilot's render tools) / **`integrations.py`** (`IntegrationsStore`: the Telegram +
   YouTube + copilot credential/config store at `app_data_dir()/integrations.json`; peer to

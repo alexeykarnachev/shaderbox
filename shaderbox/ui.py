@@ -271,6 +271,12 @@ def update_and_draw(app: App) -> None:
     with app.profiler.frame():
         _update_and_draw(app)
     app.last_profile = app.profiler.last_complete
+    # Read after the frame, so `enabled` is the value the boundary applied: a disable dropped
+    # the profiler's whole state inside `begin_frame` and the average goes with it.
+    if app.profiler.enabled:
+        app.profile_smoother.feed(app.last_profile)
+    else:
+        app.profile_smoother.reset()
 
 
 def _update_and_draw(app: App) -> None:
@@ -768,7 +774,7 @@ def _draw_app_panel(app: App) -> None:
             fps=round(app.global_fps),
             target_fps=app.app_state.global_target_fps,
             is_open=app.fps_details_open,
-            profile=app.last_profile,
+            profile=app.profile_smoother.smoothed(),
             number_font=app.font_12,
         )
         # Recording follows the panel: closed, nothing is timed and no query exists (088 D4).

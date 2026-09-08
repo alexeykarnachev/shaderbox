@@ -1183,7 +1183,9 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   needs. The parameter is also what makes nesting free -- a document rendered as a node inside
   another document's pass runs `render(profiler=...)` from inside that pass's span and lands under
   it by construction, with no registry and no assumption that the tree is one level deep. This is
-  `ProjectSession`'s injected-callback posture applied to instrumentation. Revisit if a second
+  `ProjectSession`'s injected-callback posture applied to instrumentation. And the instrument stays
+  RAW -- a `FrameProfile` is what was measured -- with any smoothing a presentation layer between it
+  and the panel (`ProfileSmoother`), keyed by the same span path. Revisit if a second
   measurement seam appears that a parameter genuinely cannot reach.
 - **A GPU span is a `GL_TIME_ELAPSED` query, they never nest, and the read is two frames late.**
   Both halves are measured facts about GL, not preferences (RTX 3090, GL 3.3 core, moderngl 5.12).
