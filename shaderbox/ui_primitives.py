@@ -1360,16 +1360,36 @@ def _profile_number(number_font: imgui.ImFont, value: str) -> None:
     imgui.pop_font()
 
 
+def _number_width(number_font: imgui.ImFont, value: str) -> float:
+    imgui.push_font(number_font, number_font.legacy_size)
+    width = imgui.calc_text_size(value).x
+    imgui.pop_font()
+    return width
+
+
 def _profile_rows(span: Span, number_font: imgui.ImFont, depth: int) -> None:
-    """One span per row, its children indented under it."""
+    """One span per row, its children indented under it.
+
+    A span name is data (`pass:cascade_gather_and_merge`, a document's own title), so it is
+    clipped to the room left before the number rather than running under it.
+    """
     for child in span.children:
+        number = _span_number(child)
+        room = (
+            imgui.get_content_region_avail().x
+            - float(SPACE.MD) * depth
+            - _number_width(number_font, number)
+            - float(SPACE.SM)
+        )
+        if child.count > 1:
+            room -= imgui.calc_text_size(f"x{child.count}").x + float(SPACE.SM)
         imgui.dummy((float(SPACE.MD) * depth, 0.0))
         imgui.same_line(0.0, 0.0)
-        caption_text(child.name)
+        clipped_caption(child.name, max(0.0, room))
         if child.count > 1:
             imgui.same_line(0.0, float(SPACE.SM))
             caption_text(f"x{child.count}")
-        _profile_number(number_font, _span_number(child))
+        _profile_number(number_font, number)
         _profile_rows(child, number_font, depth + 1)
 
 

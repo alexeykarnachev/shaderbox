@@ -274,9 +274,11 @@ def update_and_draw(app: App) -> None:
 
 
 def _update_and_draw(app: App) -> None:
-    """The frame itself. Split from `update_and_draw` so the profiler's root is a context
-    manager around the WHOLE of it: the abort below returns, and a root left open would
-    desynchronise the query ring from the frames that actually drew."""
+    """The frame itself, with the profiler's root wrapping the whole of it.
+
+    The abort below returns rather than falling through, and a root left open would
+    desynchronise the query ring from the frames that actually drew -- which is why the root
+    is a context manager in the caller and this is its own function."""
     with app.profiler.cpu("tick"):
         tick_documents = _tick_frame_state(app)
     if tick_documents is None:
@@ -344,13 +346,15 @@ def _update_and_draw(app: App) -> None:
         )
         for ui_document in app.ui_document_examples.values():
             if ui_document.document.first_render_done or ui_document is pending_example:
-                ui_document.document.render()
+                with app.profiler.cpu(f"document:{ui_document.ui_state.ui_name}"):
+                    ui_document.document.render(profiler=app.profiler)
     elif (
         app.popup_state == PopupState.PASS_SETTINGS and current_ui_document is not None
     ):
         # The pass-settings modal's whole point is watching a wiring/target change land — keep
         # the current document rendering behind it (other modals leave renders paused).
-        current_ui_document.document.render()
+        with app.profiler.cpu(f"document:{current_ui_document.ui_state.ui_name}"):
+            current_ui_document.document.render(profiler=app.profiler)
 
     # ----------------------------------------------------------------
     # Process hotkeys

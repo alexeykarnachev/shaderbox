@@ -232,7 +232,8 @@ _UNMEASURABLE: dict[tuple[str, str], str] = {
     (
         "shaderbox/ui_primitives.py",
         "_profile_rows",
-    ): "a profiler span's own name (`pass:blur`, `document:<id>`) and its iteration count, "
+    ): "a profiler span's own name (`pass:blur`, `document:<the document's title>`) and its "
+    "iteration count, "
     "both data the frame produced rather than authored copy",
     ("shaderbox/ui_primitives.py", "gauge_bar"): "forwards the caller's tooltip",
     ("shaderbox/ui_primitives.py", "label_row"): "forwards the caller's label",

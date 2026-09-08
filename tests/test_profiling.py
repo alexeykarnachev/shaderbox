@@ -200,6 +200,42 @@ def test_a_gpu_span_reads_two_frames_late(gl_ctx: moderngl.Context) -> None:
     profiler.enabled = False
 
 
+def test_two_same_named_gpu_siblings_under_one_parent_read_their_own_loads(
+    gl_ctx: moderngl.Context,
+) -> None:
+    """The live shape: the same document renders twice in one frame (its output, then a
+    pending pass's chain), so two `document:X` spans sit under the root and each carries its
+    own `pass:main`. The sibling ORDINAL in the ring key is what keeps them apart.
+
+    Falsifier: hard-code `ordinal = 0` in `_push` and the first sibling reads None -- the
+    second's query overwrites its ring slot, and one query begun twice in a frame reports
+    only the second block.
+    """
+    profiler = Profiler()
+    profiler.begin_frame()
+    with profiler.gpu("pass:a"):
+        _burn(gl_ctx, 10)
+    with profiler.gpu("pass:a"):
+        _burn(gl_ctx, 200)
+    profile = profiler.end_frame()
+    assert profile is not None
+    for _ in range(RING_DEPTH):
+        profiler.begin_frame()
+        profiler.end_frame()
+
+    light, heavy = profile.children
+    assert light.gpu_ms is not None and heavy.gpu_ms is not None, (
+        f"one sibling lost its number: {[light.gpu_ms, heavy.gpu_ms]}"
+    )
+    assert light.gpu_ms > 0.0
+    assert heavy.gpu_ms > light.gpu_ms * 2.0, (
+        f"the 200-clear sibling read {heavy.gpu_ms:.4f} ms against the 10-clear sibling's "
+        f"{light.gpu_ms:.4f} ms"
+    )
+    profiler.enabled = False
+    profiler.begin_frame()
+
+
 def test_same_name_under_two_parents_reads_two_distinct_loads(
     gl_ctx: moderngl.Context,
 ) -> None:
@@ -266,7 +302,33 @@ def test_disabling_drops_the_query_ring(gl_ctx: moderngl.Context) -> None:
     profiler.end_frame()
     assert profiler._ring
     profiler.enabled = False
+    assert profiler._ring, "the drop must wait for the frame boundary"
+    profiler.begin_frame()
+    assert not profiler.enabled
     assert not profiler._ring
+
+
+def test_a_toggle_mid_span_does_not_disturb_the_open_span(
+    gl_ctx: moderngl.Context,
+) -> None:
+    """Disabling from inside an open span leaves that span able to close.
+
+    This is the live shape: `ui.py` writes `app.profiler.enabled` from inside the `ui` span,
+    because the panel that toggles it is drawn there. Falsifier: act on the flag in the
+    setter and the enclosing span's `finally` pops an empty stack (`IndexError`).
+    """
+    profiler = Profiler()
+    profiler.begin_frame()
+    with profiler.cpu("ui"):
+        with profiler.gpu("ui:draw"):
+            _burn(gl_ctx, 4)
+        profiler.enabled = False
+    profile = profiler.end_frame()
+    assert profile is not None
+    assert _names(profile.children) == ["ui"]
+    assert profiler.enabled, "the toggle must not land until the next frame"
+    profiler.begin_frame()
+    assert not profiler.enabled
 
 
 # ---------------------------------------------------------------------------
@@ -315,7 +377,7 @@ def test_a_two_pass_document_yields_one_span_per_pass(
 def test_a_document_rendered_twice_in_one_frame_yields_its_passes_twice(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
-    # The live loop's own shape: both render sites name the span `document:<id>`, so the two
+    # The live loop's own shape: both render sites name the span `document:<name>`, so the two
     # parents are same-name siblings too. Falsifier: merge same-name siblings and the second
     # render vanishes -- the tree reports one document where two were drawn.
     document = _two_pass_document(gl_ctx, tmp_path)
@@ -351,9 +413,9 @@ def test_an_export_render_opens_no_span(
 # ---------------------------------------------------------------------------
 # V6 and V7 -- the wire from the live loop, and the abort path closing its root
 #
-# One test, one App: only ONE per process may drive `ui.update_and_draw`: only ONE test per process may drive
-# `ui.update_and_draw` (`conventions.md ## Known quirks`), and the abort is a property of that
-# loop, not of the profiler alone.
+# One test, one App: only ONE test per process may drive `ui.update_and_draw`
+# (`conventions.md ## Known quirks`), and both facts are properties of that loop rather than
+# of the profiler alone.
 # ---------------------------------------------------------------------------
 
 
@@ -374,15 +436,45 @@ def _abort_one_frame(app: Any, monkeypatch: Any) -> Any:
     return app.last_profile
 
 
+def _pass_settings_frames(app: Any) -> Any:
+    """Frames with the pass-settings modal up -- the one popup that keeps rendering.
+
+    Enough of them that the profile finally published is itself a modal frame: a profile
+    completes two frames after it closes, so fewer would still be reporting the main branch.
+    """
+    from shaderbox.app import PopupState
+    from shaderbox.ui import update_and_draw
+
+    try:
+        for _ in range(RING_DEPTH + 2):
+            # Re-set each frame: the modal's own draw closes it again, since imgui never sees
+            # the `open_popup` a real click would have made.
+            app.popup_state = PopupState.PASS_SETTINGS
+            update_and_draw(app)
+    finally:
+        app.popup_state = PopupState.CLOSED
+    return app.last_profile
+
+
+def _close_the_panel(app: Any, monkeypatch: Any) -> None:
+    """Make the overlay report a closing click, which is what the live toggle is."""
+    from shaderbox import ui
+
+    monkeypatch.setattr(ui, "fps_overlay", lambda **_kwargs: False)
+
+
 def test_the_wire_and_the_abort_path(app: Any, monkeypatch: Any) -> None:
     """`update_and_draw` with the panel open leaves a complete profile on `app.last_profile`,
     and an aborted frame still closes its root so the next tree is flat.
 
-    This is the "defined is not wired" check: cut `profiler=app.profiler` at the render site
-    in `ui.py` and the `document:` span is still there while its `pass:` child is gone; drop
-    `app.profiler.enabled = app.fps_details_open` and `last_profile` stays None; replace the
-    `with app.profiler.frame()` with a bare `begin_frame()` / `end_frame()` pair and the
-    aborted frame never closes, so every later frame nests inside it.
+    This is the "defined is not wired" check, and its falsifiers are: cut `profiler=app.profiler`
+    at a render site in `ui.py` and that site's `document:` span is still there while its
+    `pass:` child is gone; drop `app.profiler.enabled = app.fps_details_open` and
+    `last_profile` stays None; replace the `with app.profiler.frame()` with a bare
+    `begin_frame()` / `end_frame()` pair and the aborted frame never publishes; act on the
+    `enabled` flag in the setter instead of at the frame boundary and closing the panel
+    raises `IndexError: pop from empty list`; drop `_publish`'s ordering check and the
+    published index walks backwards across the abort.
     """
     from shaderbox.ui import update_and_draw
 
@@ -410,6 +502,7 @@ def test_the_wire_and_the_abort_path(app: Any, monkeypatch: Any) -> None:
 
     reads: list[float | None] = []
     drew: list[Any] = []
+    indexes: list[int] = [aborted.index]
     seen: set[int] = set()
     for _ in range(12):
         update_and_draw(app)
@@ -417,6 +510,7 @@ def test_the_wire_and_the_abort_path(app: Any, monkeypatch: Any) -> None:
         if current is None or id(current) in seen:
             continue
         seen.add(id(current))
+        indexes.append(current.index)
         assert current.root.name == "frame"
         assert _names(current.children)[0] == "tick"
         if [s for s in current.children if s.name.startswith("document:")]:
@@ -434,3 +528,25 @@ def test_the_wire_and_the_abort_path(app: Any, monkeypatch: Any) -> None:
     assert all(value is not None and value > 0.0 for value in reads), (
         f"ui:draw read {reads} after the abort -- the ring lost its alignment"
     )
+    # A frame that opens no GPU span completes the instant it closes, while the frame two
+    # behind it completes at the next `begin_frame` -- so completion is out of order across
+    # an abort, and `last_complete` publishes by frame index rather than by arrival.
+    assert indexes == sorted(indexes), (
+        f"the published index walked backwards: {indexes}"
+    )
+
+    behind = _pass_settings_frames(app)
+    assert behind is not None
+    modal_documents = [s for s in behind.children if s.name.startswith("document:")]
+    assert modal_documents, (
+        f"the pass-settings modal's render reported nowhere: {_names(behind.children)}"
+    )
+    assert [s for s in modal_documents[0].children if s.name.startswith("pass:")]
+
+    # Closing the panel writes `enabled` from INSIDE the open `ui` span, so a setter that
+    # acted at once would clear the stack under a span whose `finally` has yet to run.
+    _close_the_panel(app, monkeypatch)
+    update_and_draw(app)
+    update_and_draw(app)
+    assert not app.profiler.enabled
+    assert not app.profiler._ring, "closing the panel must leave no query behind"

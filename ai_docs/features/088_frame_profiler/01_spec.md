@@ -98,7 +98,7 @@ design turns on these numbers:
 ### D1 — one leaf module, `shaderbox/profiling.py`, holding the tree and the two span kinds.
 
 `Profiler` builds one `FrameProfile` per frame: `begin_frame()` opens a root, `cpu(name)` and
-`gpu(name)` are context managers that push a `Span(name, cpu_ms, gpu_ms, children)` under the
+`gpu(name)` are context managers that push a `Span(name, cpu_ms, gpu_ms, count, children)` under the
 current one, `end_frame() -> FrameProfile` closes the root and hands back the tree. CPU time is
 `time.perf_counter` around the block. The module imports `moderngl` for the queries and nothing
 else — no imgui, no `App`, no `Document`, so it sits with `core.py`'s leaves and any caller can
@@ -124,7 +124,10 @@ Per span PATH — the parent chain, the name and the sibling ordinal within the 
 `pass:blur` spans of one frame are two keys — the profiler keeps three `ctx.query(time=True)`
 objects. Frame N's block runs inside slot `N % 3`; at frame N+2's `begin_frame` the profiler reads
 every slot frame N used and writes the milliseconds into frame N's tree. A `FrameProfile` is
-therefore complete two frames after it closes, and the panel draws the last COMPLETE one. Two
+therefore complete two frames after it closes, and the panel draws the last COMPLETE one. A frame that opens no GPU
+span completes the instant it closes, so completion is OUT OF ORDER whenever one occurs (an
+aborted frame, a frame behind a popup that renders nothing); `last_complete` therefore publishes
+by frame INDEX and never goes backwards. Two
 frames of margin is what the measurement above says the read needs to stop blocking on the GPU
 (0.009 ms against 22.3 ms one frame earlier); the same measurement is why the depth is a named
 constant with the number beside it and not a tunable.
@@ -169,7 +172,6 @@ The spans in the loop, each at the call site that already exists:
 | `frame` (the root) | a context manager wrapping the WHOLE of `ui.update_and_draw`: `begin_frame` at entry, `end_frame` at exit, so the abort path (`_tick_frame_state` returning `None`) closes an empty root like any other frame and the ring never desynchronises from the frames that drew |
 | `tick` (sync, scripts, engine) | `ui.update_and_draw`, around `_tick_frame_state` |
 | `script` | inside `tick`, around `session.tick` |
-| `preview` | around the preview-canvas render |
 | `document:<name>` / `pass:<name>` | around each `document.render()`; the passes from inside |
 | `editor` (layout) / `editor:draw` (GPU) | `tabs/code.py` around `layout_following_cursor` and `panel.render` |
 | `viewer` (GPU) | `ui._draw_document_image`, around the channel blit on the Alpha / RGB branches only — the Color view blits nothing and gets no row |
@@ -237,8 +239,8 @@ clock.
 - `shaderbox/profiling.py` (new) — `Span`, `FrameProfile`, `Profiler`, `NULL_PROFILER`.
 - `shaderbox/document.py` — `render(..., profiler=NULL_PROFILER)`, the per-pass GPU span.
 - `shaderbox/ui.py` — the root context manager around `update_and_draw`; `tick` / `script` /
-  `preview` / `document:` / `ui` / `ui:draw` / `swap` spans; the overlay call passes the last
-  profile and `app.font_12`. `run` is untouched.
+  `document:` / `ui` / `ui:draw` / `swap` spans; the overlay call passes the last profile and
+  `app.font_12`. `run` is untouched.
 - `shaderbox/tabs/code.py` — `editor` and `editor:draw` spans.
 - `shaderbox/app.py` — `self.profiler`, `self.last_profile`.
 - `shaderbox/ui_primitives.py` — `fps_overlay` draws the tree; gains `profile` and
@@ -331,3 +333,47 @@ stall with both siblings reading their own values (5.1 ms and 20.4 ms for a 1:4 
 the prose-budget scorer over every proposed panel string (all at or under four). One false trail
 added for a later round: a three-slot ring consumed twice per frame is fine, since each path owns
 its own ring and reuse stays three frames apart.
+
+**Post-implementation.** What the implementation had to decide that this text did not, and what
+two post-implementation reviewers (opus, in worktrees) then found.
+
+Deviations reported at implementation:
+
+- The slot arithmetic was RESTATED, not corrected. The first draft of this note claimed D2's
+  "frame N runs in slot `N % 3`, read at frame N+2's `begin_frame`" was inconsistent; both
+  reviewers showed it is not — frame F reading slot `(F + 1) % 3` IS frame F-2's slot. The code
+  says `(F + 1) % RING_DEPTH` because that is the form a reader can check against `_frame_index`
+  without doing the modular arithmetic in their head.
+- `last_complete` needed an ordering guard, which no decision here anticipated (now in D2).
+- V7's stated falsifier does not falsify: `begin_frame` REPLACES the root, so a bare
+  `begin_frame` does not make the next frame nest inside the last. What is falsifiable is that
+  the aborted frame still PUBLISHES a profile carrying `tick` alone, and that is what is pinned.
+- V6 and V7 share one test and one App, because only one test per process may drive
+  `update_and_draw` (`conventions.md ## Known quirks`).
+- The abort is driven at `_tick_frame_state`, not by deleting a shader file: the disk sync runs
+  first and unloads the document, so the file-missing branch is unreachable from outside.
+- `document:<name>` uses the document's TITLE (`ui_state.ui_name`), not its id — a uuid does not
+  fit a 280-px panel.
+- `gpu()` takes a `count`, which is how D1's `x N` reaches the span.
+- No `preview` span: the preview canvas was gone before implementation (D3's table row is
+  deleted above).
+
+Post-implementation review, one blocker and four findings, all fixed in the follow-up commit:
+
+- **Blocker.** `ui.py` writes `app.profiler.enabled` from inside the open `ui` span, so a setter
+  that dropped state at once cleared the stack under a span whose `finally` had yet to run —
+  `IndexError: pop from empty list` on the closing click, a hard crash of the feature's own
+  primary interaction. A toggle now takes effect at the FRAME BOUNDARY: the setter records the
+  wish, `begin_frame` applies it and drops the ring.
+- The Examples-popup and pass-settings-modal render sites took the null profiler, so with either
+  popup open the whole render landed in `other`. Both now pass `app.profiler`.
+- The sibling ORDINAL in the ring key was ungated — `ordinal = 0` left the suite green while the
+  live double render lost its first pass. Pinned by two same-named GPU siblings under one parent
+  at 10 and 200 clears.
+- `_publish`'s never-backwards check was ungated; the published index sequence across the abort
+  frame now pins it.
+- A span name wider than the room before the number ran under it; the name is `clipped_caption`ed
+  to what is left.
+- The two-deep stall is a RANGE, not the single 22.3 ms figure this spec quoted: at depth 2 the
+  read blocks on the frame in flight, so it tracks GPU frame time (0.8 to 22 ms across loads on
+  this box); depth 3 measured under 0.05 ms in every run.

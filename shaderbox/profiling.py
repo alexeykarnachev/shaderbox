@@ -17,11 +17,12 @@ silent when violated:
   reading garbage, the inner reading 0 and `ctx.error` at `GL_INVALID_OPERATION`, with no
   exception -- and `ui.update_and_draw` calls `clear_errors()` every frame, so even that
   late signal is gone. `gpu()` asserts instead.
-- Reading a query blocks until the GPU has drained past it. Read one frame late under a real
-  fragment load the read stalled 22.3 ms; read two frames late, 0.009 ms. So each span PATH
-  owns a three-deep ring of query objects, frame N runs in slot `N % RING_DEPTH`, and frame
-  N's numbers are read at frame N+2's `begin_frame` -- a `FrameProfile` is complete two
-  frames after it closes.
+- Reading a query blocks until the GPU has drained past it. One frame of margin leaves the
+  read waiting on the frame still in flight, so the stall tracks the GPU frame time (0.8 to
+  22 ms across loads on this box); two frames of margin measured under 0.05 ms in every run.
+  So each span PATH owns a three-deep ring of query objects, frame N runs in slot
+  `N % RING_DEPTH`, and frame N's numbers are read at frame N+2's `begin_frame` -- a
+  `FrameProfile` is complete two frames after it closes.
 """
 
 import time
@@ -31,8 +32,10 @@ from dataclasses import dataclass, field
 
 import moderngl
 
-# Frames of margin between a query's block and its read. Measured, not tunable: a two-deep
-# ring stalled 22.3 ms on a loaded GPU, three-deep 0.009 ms, four-deep 0.007 ms.
+# Frames of margin between a query's block and its read. Measured, not tunable: at depth 2 the
+# read blocks on the frame still in flight, so the stall tracks the GPU frame time -- 0.8 to
+# 22 ms across loads on this box. At depth 3 it measured under 0.05 ms in every run, and depth
+# 4 bought nothing.
 RING_DEPTH: int = 3
 
 _MS_PER_NS: float = 1e-6
@@ -121,6 +124,8 @@ class Profiler:
         # The newest profile whose GPU numbers have been read back: two frames behind live
         # while GPU spans are open, this frame's own once a frame opens none.
         self.last_complete: FrameProfile | None = None
+        # What `enabled` was last set to. Applied at the next frame boundary, never mid-frame.
+        self._wanted: bool = enabled
 
     @property
     def enabled(self) -> bool:
@@ -128,28 +133,44 @@ class Profiler:
 
     @enabled.setter
     def enabled(self, value: bool) -> None:
-        if value == self._enabled:
+        """Record the wish; `begin_frame` applies it.
+
+        The write happens from inside the UI's own span -- the panel that toggles it is drawn
+        there -- so acting on it here would clear the stack under a span whose `finally` has
+        yet to run. A toggle takes effect at the FRAME BOUNDARY, and a span already open
+        finishes cleanly whichever way the flag moved under it.
+        """
+        self._wanted = value
+
+    def _apply_wanted(self) -> None:
+        if self._wanted == self._enabled:
             return
-        self._enabled = value
-        if not value:
-            self._ring = {}
-            self._pending = {}
-            self._gpu_spans = {}
-            self.last_complete = None
-            self._ordinals = {}
-            self._stack = []
-            self._path = []
-            self._root = None
-            self._gpu_open = False
-            self._gl = None
+        self._enabled = self._wanted
+        if not self._enabled:
+            self._drop()
+
+    def _drop(self) -> None:
+        """Forget everything, ring included -- the ring's one eviction rule (D2)."""
+        self._ring = {}
+        self._pending = {}
+        self._gpu_spans = {}
+        self.last_complete = None
+        self._ordinals = {}
+        self._stack = []
+        self._path = []
+        self._root = None
+        self._gpu_open = False
+        self._gl = None
 
     def begin_frame(self) -> None:
-        """Open this frame's root, first reading back the frame two behind it.
+        """Apply a pending enable/disable, then open this frame's root after reading back the
+        frame two behind it.
 
         Frame F reads slot `(F + 1) % RING_DEPTH`, which frame F-2 wrote: two frames of
         margin, and one full frame still standing between the read and that slot's reuse at
         frame F+1.
         """
+        self._apply_wanted()
         if not self._enabled:
             return
         self._read_pending((self._frame_index + 1) % RING_DEPTH)
@@ -241,8 +262,12 @@ class Profiler:
         return span
 
     def _pop(self) -> None:
-        self._stack.pop()
-        self._path.pop()
+        # A span that opened while enabled must be able to close even if the profiler was
+        # dropped under it; the frame-boundary deferral above is what makes that rare.
+        if self._stack:
+            self._stack.pop()
+        if self._path:
+            self._path.pop()
 
     def _query_for(self, path: tuple[str, ...]) -> moderngl.Query:
         assert self._gl is not None

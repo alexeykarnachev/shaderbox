@@ -1191,10 +1191,12 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   and `ctx.error` at `GL_INVALID_OPERATION`, with NO exception -- and `ui.update_and_draw` calls
   `clear_errors()` every frame, so even that late signal is gone by the time anyone could read it.
   An `assert` at the seam is therefore the only guard available, and it is the guard. Reading:
-  a query read blocks until the GPU has drained past it, so a ring read ONE frame late stalled
-  22.3 ms under real fragment load while three-deep read two frames late stalled 0.009 ms -- a
-  profiler that adds a frame to the frame is not an instrument, so `RING_DEPTH` is 3 with the
-  numbers beside it rather than a tunable. The ring is keyed by span PATH (parent chain, name and
+  a query read blocks until the GPU has drained past it, so a ring read ONE frame late is
+  waiting on the frame still in flight and its stall TRACKS the GPU frame time -- 0.8 to 22 ms
+  across loads measured on this box, which is a range rather than a figure because that is what
+  it is. Two frames of margin measured under 0.05 ms in every run. A profiler that adds a frame
+  to the frame is not an instrument, so `RING_DEPTH` is 3 with the measurement beside it rather
+  than a tunable. The ring is keyed by span PATH (parent chain, name and
   sibling ordinal), because one query object begun twice in a frame reports only the second block,
   again silently -- and the live loop draws same-named spans twice per frame. `moderngl.Query` has
   neither `release()` nor `__del__`, so a query is a permanent GL name for the process and the
