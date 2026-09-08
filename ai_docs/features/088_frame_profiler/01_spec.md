@@ -68,22 +68,23 @@ design turns on these numbers:
   the target; the FPS it shows is an EMA of the SLEPT period, which is exactly "capped by fps". The
   honest number already exists as a local and is thrown away.
 - **What the frame does, in order** (`ui.update_and_draw`): reconcile disk and scripts and tick the
-  engine (`_tick_frame_state`); render the CURRENT document into the 200-px preview canvas — the
-  whole chain, intermediates at full size; render every document in the tick set into its own
-  canvas — the current one AGAIN, plus every other document when "render all" is on (the default);
-  then imgui builds the frame, the editor lays out and (when its state moved) redraws its panel,
-  the channel blit runs for the viewer, imgui draws, the buffer swaps. The current document's
-  chain therefore draws twice per frame; the profiler is what makes that visible (see Out of
-  scope).
+  engine (`_tick_frame_state`); render every document in the tick set into its own canvas — the
+  current one plus every other document when "render all" is on (the default), plus one pending
+  pass's chain per document; then imgui builds the frame, the editor lays out and (when its
+  state moved) redraws its panel, the channel blit runs for the viewer, imgui draws, the buffer
+  swaps. Until plan-lock the current document's whole chain ALSO drew into a 200-px preview
+  canvas first, intermediates at full size — twice per frame. The Render tab was that canvas's
+  only remaining reader (the document grid already scales the live output texture), so it now
+  reads the same texture and the canvas is gone; the profiler's first tree shows the chain once.
 
 ---
 
 ## Out of scope
 
-- **Fixing what the numbers show.** The preview canvas re-render (the pass strip already blits
-  the live target instead of re-rendering, 065; the document grid's preview could do the same) and
-  every-document-every-frame under "render all" are both real and both stay as they are here: this
-  feature is the instrument. Trigger: the maintainer reads the panel and asks.
+- **Fixing what the numbers show.** Every-document-every-frame under "render all" is real and
+  stays as it is here: this feature is the instrument. Trigger: the maintainer reads the panel and
+  asks. (The preview-canvas double render was the other candidate; it was cheap and landed on
+  its own before this feature.)
 - **Persisting or exporting a profile.** The panel shows the last completed frame; nothing is
   written. Trigger: the maintainer wants a trace over time (a chart, a CSV).
 - **Profiling exports and the copilot probe.** Both render through `Document.render` with the null
@@ -285,13 +286,15 @@ clock.
 
 ---
 
-## Open questions for the user
+## Plan-lock
 
-1. **D3 — explicit parameter (A) or module-level active profiler (B)?** Recommended: A.
-2. **D4 — record only while the panel is open?** Recommended: yes. Alternative: always on, so the
-   first click already shows a tree — costs about 0.1 ms per frame per handful of GPU spans.
-3. **Out of scope — the preview-canvas double render.** Recommended: leave it for the numbers to
-   argue. Alternative: fold a blit-based preview into this feature.
+Locked by the maintainer on 2026-09-08 from a rendered options page (`trash/plan_lock_087_088.html`,
+gitignored): the profiler reaches `Document.render` as an explicit parameter (D3 — the maintainer
+delegated this one as an architectural call, and the parameter is it: one trailing keyword on one
+signature, exports and probes silent by default, nothing global to reset); recording only while
+the panel is open (D4). On the double render he asked whether one render is possible; it is, and
+it landed as its own small change before this feature (see Out of scope), so the profiler's first
+tree shows the chain once.
 
 ---
 

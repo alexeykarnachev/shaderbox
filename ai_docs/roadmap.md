@@ -26,22 +26,20 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-08, 087 and 088 are spec'd and reviewed to PASS; awaiting the maintainer's plan-lock. -->
-**Next: plan-lock 087 and 088, then implement.** The maintainer's eighth walk is two specs:
+<!-- As of 2026-09-08, 087 and 088 are spec'd, reviewed to PASS and plan-locked; implementation is next. -->
+**Next: implement 087 (host items, then the re-vendor), then 088.** The maintainer's eighth walk is two specs:
 087 (pass tiles at 168 with boundary-correct wrapping, the Uniforms tab's pass row as clickable
 names, `true`/`false` as keywords, search highlights that survive a scrolled view — the last two
 landed upstream at `760f8ea` and wait for ONE re-vendor) and 088 (a frame profiler behind the FPS
 chip: a leaf `profiling.py`, CPU spans plus GPU timer queries in a three-deep ring, the profiler
 threaded into `Document.render` as a parameter so a document embedded in another nests by
-construction). Both specs carry open questions for the maintainer; nothing is implemented yet.
+construction). Both specs are locked (each carries a `## Plan-lock` section); nothing is implemented yet. The current document's chain now renders once per frame — the Render tab reads the live output texture and the preview canvas is gone.
 
 **Three things still await the maintainer's eyes** (no WM on the dev box): the lock chip's look
 and cycling; what the copilot SAYS under Read-only when asked to edit; blockwise `Ctrl+V` by feel.
 
 **Open, unmeasured:** no brake watches cost, or a frame going lit to flat
-(`ai_docs/features/082_dogfood_post081/02_round2_report.md`); a multi-document mission. The
-current document's chain renders twice per frame (preview canvas + own canvas); 088 measures it,
-nothing fixes it yet.
+(`ai_docs/features/082_dogfood_post081/02_round2_report.md`); a multi-document mission.
 
 ## Features
 

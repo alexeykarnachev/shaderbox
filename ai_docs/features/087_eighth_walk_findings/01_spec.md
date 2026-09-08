@@ -90,7 +90,7 @@ px of tab content by the first estimate and 549 by the reviewer's measured frame
 need 520 (`3 * 168 + 2 * 8`), four need 696, so three either way. At 1600 wide it is about 470:
 two tiles.
 
-### D3 — the pass selector is a `text_tab_row` primitive: clickable names, no frame, accent underline on the active one.
+### D3 — the pass selector is a `text_tab_row` primitive: clickable names, no frame, the active one bright.
 
 `tabs/uniforms.py::_draw_pass_selector` draws a `pass` caption and a `begin_combo` over
 `strip_order`. It becomes one call to a new `ui_primitives.text_tab_row(id_, names, active) ->
@@ -99,13 +99,13 @@ str | None`, which draws every name on one line as an `imgui.selectable` sized t
 returns the name clicked this frame or `None`, and wraps to a second line when the next name would
 cross the content width (`same_line` only while it fits, `SPACE.LG` between names).
 
-State is carried by color and one line: the active name in `COLOR.FG_TITLE` with a 1 px
-`COLOR.ACCENT_PRIMARY` underline drawn from the draw list at the text's baseline plus `SPACE.XS`;
-the others in `COLOR.FG_DIM`, `COLOR.FG_SECONDARY` on hover. The underline is what makes a row of
-words read as sub-tabs rather than as prose; the maintainer ruled out a frame, and the imgui skill's
-"a low-emphasis tier still needs a frame" is about VERBS — this is a selector, which names a state
-the surface is in (imgui-ui §1: chips are not in the count). `tests/test_button_tiers.py` is
-untouched: a `selectable` is not a raw button call.
+State is carried by color alone: the active name in `COLOR.FG_TITLE`, the others in
+`COLOR.FG_DIM`, `COLOR.FG_SECONDARY` on hover — the maintainer's pick at plan-lock (an accent
+underline and a left tick were offered as mockups and declined). The maintainer ruled out a frame,
+and the imgui skill's "a low-emphasis tier still needs a frame" is about VERBS — this is a
+selector, which names a state the surface is in (imgui-ui §1: chips are not in the count).
+`tests/test_button_tiers.py` is untouched: a `selectable` is not a raw button call. If the row
+reads as a caption once seen live, the underline is the one-line addition to try first.
 
 The `pass` caption goes: a row of pass names under the tab's own heading says what it is, and the
 label was the combo's, not the row's. The `< 2 passes -> draw nothing` rule stays (083 D10). The
@@ -245,18 +245,15 @@ Each step fails for exactly one reason; the falsifier is named.
 - **V6 the re-vendor gates:** `test_the_binding_mirrors_the_upstream_signature_table` and
   `test_the_mode_enum_covers_every_value_upstream_can_return` stay green; `nm -D` diff is empty.
 - **Maintainer's eyes (no WM on the dev box):** the tiles at 168 and how the third column wraps;
-  the underline's weight and the name spacing on the pass row; `true` in a shader.
+  whether the bright-only pass row reads as clickable; `true` in a shader.
 
 ---
 
-## Open questions for the user
+## Plan-lock
 
-1. **D1 — strip only, or both?** Recommended: strip only (`PASS_TILE`), uniform rows stay 112.
-   The alternative is one token at 168 for both, which triples the height of every sampler row.
-2. **D3 — the active mark.** Recommended: bright name + accent underline. Alternative: bright name
-   alone, no line — reads closer to plain text, which is the risk the skill names.
-3. **D3 — the `pass` caption.** Recommended: drop it. Alternative: keep a dim `pass` word at the
-   row's left as a column label.
+Locked by the maintainer on 2026-09-08 from a rendered options page (`trash/plan_lock_087_088.html`,
+gitignored): strip only, new `PASS_TILE = 168`, sampler rows stay 112 (D1); the active pass name
+marked by color alone, no underline (D3); the `pass` caption dropped (D3).
 
 ---
 
