@@ -26,21 +26,19 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-08, 087 and 088 are both implemented and green, and the maintainer has
-     walked them once. -->
-**Next: the maintainer's eyes on the FPS panel, then the next walk.** 088 landed the frame
-profiler: a leaf `profiling.py` (CPU spans, GPU spans as `GL_TIME_ELAPSED` queries in a three-deep
-path-keyed ring read two frames late), a span at every stage of the live loop, and the tree drawn
-in the widened FPS panel. It reaches `Document.render` as a trailing parameter, so exports and
-probes stay silent and a nested document nests by construction. Nothing about what the numbers
-SHOW has changed -- this is the instrument. Two follow-ups from his hands-on pass: the active pass
-name takes the theme's accent, and the panel draws a path-keyed exponential average, not the raw
-frame. Editor re-vendored at `5601d13`: a command key aborts a pending operator.
+<!-- As of 2026-09-08, 087 and 088 are implemented, green, and confirmed by the maintainer's eyes. -->
+**Next: nothing is claimed; the ninth walk is his.** 088 landed the frame profiler: a leaf
+`profiling.py` (CPU spans, GPU spans as `GL_TIME_ELAPSED` queries in a three-deep path-keyed ring
+read two frames late), a span at every stage of the live loop, and the tree drawn in the widened
+FPS panel. It reaches `Document.render` as a trailing parameter, so exports and probes stay silent
+and a nested document nests by construction. Nothing about what the numbers SHOW has changed --
+this is the instrument. Two follow-ups from his hands-on pass: the active pass name takes the
+theme's accent, and the panel draws a path-keyed exponential average, not the raw frame. Editor
+re-vendored at `5601d13`: a command key aborts a pending operator.
 
-**What awaits the maintainer's eyes** (no WM on the dev box). The FPS panel: its width, its number
-column, whether a five-pass tree reads at a glance, how the smoothing feels. Confirmed already:
-087's tiles, the pass row's clickability, `true`. Older: the lock chip's look and cycling, what the
-copilot SAYS under Read-only, blockwise `Ctrl+V`.
+**Confirmed by the maintainer:** 087's tiles, the pass row and its accent, `true` in a shader, the
+FPS panel and its smoothing. **Still awaiting his eyes** (no WM on the dev box), from before this
+batch: the lock chip's look and cycling, what the copilot SAYS under Read-only, blockwise `Ctrl+V`.
 
 **Open, unmeasured:** no brake watches cost, or a frame going lit to flat
 (`ai_docs/features/082_dogfood_post081/02_round2_report.md`); a multi-document mission.
