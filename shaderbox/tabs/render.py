@@ -31,7 +31,7 @@ def draw(app: App) -> None:
     controls_h = imgui.get_item_rect_size().y
 
     imgui.set_cursor_pos(row_start)
-    tex = app.preview_canvas.texture
+    tex = ui_document.document.render_pass.canvas.texture
     centered_image(tex.glo, tex.size, preview_col_w, controls_h)
     imgui.set_cursor_pos(row_start)
     imgui.dummy((0.0, controls_h))

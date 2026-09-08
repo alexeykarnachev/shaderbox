@@ -46,7 +46,6 @@ from shaderbox.ui_primitives import (
     toggle_button,
 )
 from shaderbox.ui_regions import CHANNEL_VIEW_LABELS, ChannelView, DocumentTab
-from shaderbox.util import adjust_size
 from shaderbox.watch import maybe_rebuild_lib_index, reload_document_if_changed
 from shaderbox.widgets import cheatsheet, copilot_chat
 from shaderbox.widgets.document_grid import draw_document_preview_grid
@@ -259,8 +258,8 @@ def _tick_frame_state(app: App) -> list[str] | None:
             tick_documents.append(pending_first)
     app.session.tick(tick_documents, now, dt, app.frame_idx, mouse=app.script_mouse)
     # Advance feedback history ONCE per frame, over the same document set the tick covers. A
-    # document is drawn twice per frame below (preview + own canvas), so a swap inside render()
-    # would advance a feedback pass at 2x.
+    # document can be drawn more than once per frame below (its output, then a pending pass's
+    # chain), so a swap inside render() would advance a feedback pass at the wrong rate.
     for document_id in tick_documents:
         app.ui_documents[document_id].document.begin_frame(app.frame_idx)
 
@@ -272,17 +271,7 @@ def update_and_draw(app: App) -> None:
     if tick_documents is None:
         return
 
-    # ----------------------------------------------------------------
-    # Render previews
     if app.current_document_id in app.ui_documents:
-        ui_document = app.ui_documents[app.current_document_id]
-        preview_size = adjust_size(
-            ui_document.document.render_pass.canvas.texture.size, width=SIZE.PREVIEW_W
-        )
-
-        app.preview_canvas.set_size(preview_size)
-        ui_document.document.render(canvas=app.preview_canvas)
-
         try:
             share_tab.update(app)
         except Exception as e:

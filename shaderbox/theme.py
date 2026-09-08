@@ -260,7 +260,6 @@ class SIZE:
     # the strip wraps when a document's passes outgrow the panel width.
     PASS_THUMB: int = 112
 
-    PREVIEW_W: int = 200
     PANEL_CTRL_MINH: int = 600
 
     # One square of the viewer's alpha checkerboard. At 8 the pattern is busy behind a small

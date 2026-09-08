@@ -351,9 +351,9 @@ class Document:
     def begin_frame(self, frame: int | None = None) -> None:
         """Advance feedback history to `frame`, at most once per frame.
 
-        Tied to the FRAME, not to a render call: the live loop renders the current document
-        twice per frame (preview + own canvas) and the probe renders twice back to back, so a
-        swap per call would advance a feedback pass at the wrong rate.
+        Tied to the FRAME, not to a render call: the live loop can render a document more than
+        once per frame (its output, then a pending pass's chain) and the probe renders twice
+        back to back, so a swap per call would advance a feedback pass at the wrong rate.
 
         Identity, not call count, is what makes that true: passing the frame number makes a
         second call for the same frame a no-op, so an extra call site cannot corrupt the history

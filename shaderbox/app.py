@@ -35,7 +35,7 @@ from shaderbox.copilot.persistence import ConversationStore
 from shaderbox.copilot.revert import RevertExecutor
 from shaderbox.copilot.session import CopilotSession
 from shaderbox.copilot.state import CopilotLayout, Message
-from shaderbox.core import Canvas, Pass
+from shaderbox.core import Pass
 from shaderbox.editor.ffi import (
     ChromeFlag,
     CursorPos,
@@ -264,9 +264,8 @@ class App:
         self.font_18 = self.get_font(18)
         self.font_emoji = self.get_emoji_font(24)
 
-        self.preview_canvas: Canvas
         # A 2x2 alpha checkerboard, drawn as ONE repeating image behind the viewer under the
-        # Color view. Created beside preview_canvas and released with it, as are the channel
+        # Color view. Created with the GL context and released with it, as are the channel
         # blits.
         self.checker_texture: moderngl.Texture
         self.alpha_view: ChannelBlit
@@ -1221,7 +1220,6 @@ class App:
     ) -> None:
         self.release()
 
-        self.preview_canvas = Canvas()
         self.checker_texture = _make_checker_texture(
             COLOR.CHECKER_LIGHT, COLOR.CHECKER_DARK
         )
@@ -1859,9 +1857,6 @@ class App:
 
         for document in self.ui_document_examples.values():
             document.document.release()
-
-        if hasattr(self, "preview_canvas"):
-            self.preview_canvas.release()
 
         if hasattr(self, "checker_texture"):
             self.checker_texture.release()
