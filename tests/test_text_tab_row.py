@@ -115,3 +115,22 @@ def test_a_row_too_long_for_the_panel_wraps_inside_the_content_region(app: Any) 
         assert rect_max[0] <= right_edge, (
             f"`{name}` ends at {rect_max[0]}, past the content region's {right_edge}"
         )
+
+
+def test_a_wrapped_row_measures_the_full_width_not_the_first_rows_remainder(
+    app: Any,
+) -> None:
+    # Falsifier: drop the `avail = get_content_region_avail().x` re-read on the wrap branch
+    # and a wrapped row is measured against the leader's remainder, fitting one name fewer.
+    names = ["aaaa", "bbbb", "cccc", "dddd", "eeee", "ffff", "gggg", "hhhh"]
+
+    def lead() -> None:
+        imgui.text("lead:")
+        imgui.same_line()
+
+    drawn = _drive(names, 196.0, (500.0, 250.0), before=lead)
+    rows: dict[float, list[str]] = {}
+    for name in names:
+        rows.setdefault(drawn[name][1][0][1], []).append(name)
+    second = rows[sorted(rows)[1]]
+    assert len(second) == 4, f"the wrapped row fitted {second}, not four names"
