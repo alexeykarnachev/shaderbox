@@ -1507,12 +1507,15 @@ def text_tab_row(id_: str, names: Sequence[str], active: str) -> str | None:
     hover. The row wraps to a new line when the next name would cross the content width.
     Returns the name clicked this frame, or None.
     """
-    avail: float = imgui.get_content_region_avail().x
     gap: float = float(SPACE.LG)
+    pad = imgui.get_style().item_spacing
     clicked: str | None = None
     imgui.push_style_color(imgui.Col_.header, COLOR.TRANSPARENT)
     imgui.push_style_color(imgui.Col_.header_hovered, COLOR.TRANSPARENT)
     imgui.push_style_color(imgui.Col_.header_active, COLOR.TRANSPARENT)
+    # Re-read per row, not once: `avail` is measured from the CURSOR, so a caller that
+    # left it mid-line gives the first row less than a wrapped row gets.
+    avail: float = imgui.get_content_region_avail().x
     x: float = 0.0
     for index, name in enumerate(names):
         width: float = imgui.calc_text_size(name).x
@@ -1522,14 +1525,19 @@ def text_tab_row(id_: str, names: Sequence[str], active: str) -> str | None:
                 x += gap
             else:
                 x = 0.0
+                avail = imgui.get_content_region_avail().x
         # The hover color is decided BEFORE the item is submitted, so the name is drawn
-        # once at its final color; `imgui.selectable` has no pre-hover to read.
+        # once at its final color; `imgui.selectable` has no pre-hover to read. The rect
+        # imgui gives the item is the text outset by half an item spacing on each side.
         origin = imgui.get_cursor_screen_pos()
         hovered: bool = imgui.is_window_hovered(
             imgui.HoveredFlags_.child_windows
         ) and imgui.is_mouse_hovering_rect(
-            origin,
-            (origin.x + width, origin.y + imgui.get_text_line_height_with_spacing()),
+            (origin.x - pad.x / 2, origin.y - pad.y / 2),
+            (
+                origin.x + width + pad.x / 2,
+                origin.y + imgui.get_text_line_height() + pad.y / 2,
+            ),
         )
         if name == active:
             color = COLOR.FG_TITLE

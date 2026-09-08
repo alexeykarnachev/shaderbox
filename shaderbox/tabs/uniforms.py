@@ -39,7 +39,7 @@ def _draw_pass_selector(app: App, document_id: str) -> None:
     # (App.panel_pass), so this row is how a pass that is neither open nor on screen gets tuned --
     # picking one here pins it until a shader tab is opened, which retires the pick.
     document = app.ui_documents[document_id].document
-    # The strip's own order (producers left of consumers), so the combo lists the passes
+    # The strip's own order (producers left of consumers), so the row lists the passes
     # in the order the Document tab shows them rather than by name.
     names = strip_order(document.passes, document.effective_wiring())
     if len(names) < 2:

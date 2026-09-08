@@ -243,7 +243,7 @@ Each step fails for exactly one reason; the falsifier is named.
 - **V4 the scrolled search (D6):** born red at `410b7e7`, green at the re-vendored sha.
 - **V5 the keyword color (D6):** red at `410b7e7`, green after.
 - **V6 the re-vendor gates:** `test_the_binding_mirrors_the_upstream_signature_table` and
-  `test_the_mode_enum_covers_every_value_upstream_can_return` stay green; `nm -D` diff is empty.
+  `test_every_mirrored_enum_covers_the_vendored_probe_table` stay green; `nm -D` diff is empty.
 - **Maintainer's eyes (no WM on the dev box):** the tiles at 168 and how the third column wraps;
   whether the bright-only pass row reads as clickable; `true` in a shader.
 

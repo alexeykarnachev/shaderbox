@@ -1249,7 +1249,7 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   stale reading upstream's note anticipated. **The general rule: values are appended, never
   renumbered, so a host mapping the value through anything narrower than an int — an enum, a
   fixed-length array, an exhaustive branch — widens that map in the same commit as the copy.**
-  `test_the_mode_enum_covers_every_value_upstream_can_return` now gates it against the vendored
+  `test_every_mirrored_enum_covers_the_vendored_probe_table` now gates it against the vendored
   probe's own `MODES` table, so the next appended mode fails the suite instead of shipping. **The
   `5aa51cd` re-vendor (blockwise visual, `ed_mode` value 5) is the second instance and the gate
   caught it, which is what a gate is for.** It also carries the OTHER host half a mode can bring:
