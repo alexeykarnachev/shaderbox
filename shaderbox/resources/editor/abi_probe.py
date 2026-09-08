@@ -363,6 +363,30 @@ def main() -> int:
     # blockwise" without switching on the mode number.
     lib.ed_feed(h, b"v")
     check("charwise visual is not a block", block_selection(h), None)
+    # Cancelling a LIVE block with a second Ctrl-V. Checked HERE and not in the
+    # differential corpus, because a correct cancel is indistinguishable from
+    # never having entered: the buffer and the caret are the same either way,
+    # and the corpus asserts only those two. Four rows added to cover this
+    # were measured to pass with the `<C-v>` stripped out entirely, which is a
+    # row that tests nothing. The MODE is the observable that separates them.
+    # `0` as well as `gg`: an earlier `$` in these checks leaves curswant at
+    # end-of-line, and `l` there FAILS -- which drops the rest of the fed
+    # string, so the keys after it never ran and the switch looked broken.
+    lib.ed_feed(h, b"<Esc>gg0")
+    lib.ed_feed(h, b"<C-v>jl")
+    check("a live block is blockwise", MODES[lib.ed_mode(h)], "V-BLOCK")
+    lib.ed_feed(h, b"<C-v>")
+    check("a second Ctrl-V cancels it", MODES[lib.ed_mode(h)], "NORMAL")
+    check("and the rectangle is gone with it", block_selection(h), None)
+    # `v` and `V` SWITCH rather than cancel, keeping the anchor. From `gg`,
+    # because the checks above left the caret on the last line where `j` cannot
+    # move and the whole fed string is dropped -- which read as a broken switch
+    # on the first attempt at this check.
+    lib.ed_feed(h, b"gg0<C-v>jlv")
+    check("v switches out of blockwise", MODES[lib.ed_mode(h)], "VISUAL")
+    lib.ed_feed(h, b"<C-v>")
+    check("and Ctrl-V switches back in", MODES[lib.ed_mode(h)], "V-BLOCK")
+    lib.ed_feed(h, b"<Esc>")
     lib.ed_free(h)
 
     # A FRESH handle: the checks above walked the caret and left visual state

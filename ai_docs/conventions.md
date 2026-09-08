@@ -1128,17 +1128,17 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   emoji, dynamic glyph loading, `push_font` rasterized-size, `image()` lost `tint_col`, glfw
   cursor sync gap, pfd non-blocking handles, the `.pyi`-only stub pyright warning, the
   SetCursorPos assert. Non-UI library quirks (telegram, moderngl, GLSL `#line`) stay below.
-- **A substitute over a VISUAL SELECTION does not work: `:` from visual mode does not seed
-  `'<,'>`, and the un-ranged `s` then hits the cursor's line.** Reported as "`:%s/…/…/g` only
-  replaces one line", which sent two sessions chasing the wrong path — `:%s` typed from NORMAL mode
-  is correct and always was, measured independently here and in the editor repo. The maintainer's
-  `%` meant "the whole selection", not the literal `%`. Measured at `5aa51cd` on
-  `vec3 a;\nvec3 b;\nvec3 c;\nvec3 d;`: `Vj` then `:` leaves `ed_command_line` EMPTY (vim
-  pre-fills `'<,'>`), and typing `s/vec3/vec4/g` there rewrites line 1 only — the cursor's line
-  after the motion, not even the selection's first. Filed upstream; no host change is possible
-  since ShaderBox does not intercept ex commands. **The lesson that outlives the bug: when a report
-  and a measurement disagree, the gap is usually the SEQUENCE, not the feature — reproduce the
-  user's keystrokes, not the behaviour you infer from his words.**
+- **A substitute over a VISUAL SELECTION was broken from `5aa51cd` to `410b7e7`: `:` from visual
+  mode did not seed `'<,'>`, and the un-ranged `s` hit the cursor's line.** Reported as "`:%s/…/…/g`
+  only replaces one line", which sent two sessions chasing the wrong path — `:%s` typed from NORMAL
+  mode was correct and always was, measured independently here and in the editor repo. The
+  maintainer's `%` meant "the whole selection", not the literal `%`. Fixed upstream by the editor's
+  feature 020 (ex line ranges) and re-vendored at `410b7e7`, where `Vj:` pre-fills `'<,'>` and
+  `s/vec3/vec4/g` rewrites both selected lines; `:2,3s`, `:.,+1s` and a bare `:3` jump work with it.
+  No host code was involved in either the bug or the fix — ShaderBox does not intercept ex commands.
+  **The lesson that outlives the bug: when a report and a measurement disagree, the gap is usually
+  the SEQUENCE, not the feature — reproduce the user's keystrokes, not the behaviour you infer from
+  his words.**
 - **The imgui CONTEXT is per PROCESS, and its teardown does NOT belong in `release()`.**
   `App.__init__` calls `create_context()`; a second `create_context()` in the same process hands
   back the SAME pointer, so a second App inherits the first's font atlas while that atlas's GL
@@ -1236,7 +1236,8 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   editor repo, which has its own gates for it; what this repo checks is the INTEGRATION — the host
   mitigations it drops, and whether `make gates` still passes without them. Most re-vendors
   delete host code that was a second derivation of something the library now emits itself (the
-  aa8c6719 one, 071 W-A, was additions only and deleted nothing), so
+  aa8c6719 one, 071 W-A, was additions only and deleted nothing; the `410b7e7` one had no ABI
+  delta at all and its whole host half was one Known-quirks entry going from bug to record), so
   the question to ask of a new sha is which host workaround it makes redundant, not whether it
   breaks anything. **The `5e0e8a2` -> `f738744` re-vendor is the worked example of the
   host-side half.** Upstream APPENDED a fifth `Mode` member (replace, `ed_mode` returns `4`,

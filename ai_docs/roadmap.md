@@ -26,7 +26,7 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-07, 086 landed; nothing is mid-flight in this repo. -->
+<!-- As of 2026-09-08, the editor is re-vendored at 410b7e7; nothing is mid-flight in this repo. -->
 **Next: nothing is claimed.** 086 made the copilot's source lock a MODE the maintainer sets:
 Allow / Ask / Read-only on one cycling chip, persisted per project. Read-only WITHHOLDS every tool
 that changes or deletes the project (15 of them; the eager set goes 20 -> 11) and the
@@ -36,16 +36,15 @@ reverses 083 D5's default; both specs point at the passages it overrules.
 **Three things await the maintainer's eyes** (no WM on the dev box): the chip's look and cycling;
 what the copilot SAYS under Read-only when asked to edit; blockwise `Ctrl+V` by feel.
 
-**The editor repo is mid-work and will need a RE-VENDOR when it settles** — `5aa51cd` is not final.
-Not blocking; procedure in `conventions.md ## Known quirks`.
+**The editor is vendored at `410b7e7`** (editor feature 020: ex line ranges, `:` from a selection
+seeds `'<,'>`). No ABI delta, no host code changed; the `:%s`-over-a-selection quirk is closed.
 
 **The eighth walk is unclaimed:** larger pass previews, a frame-time breakdown behind the FPS
 counter (mid-level — wants a general profiling seam), and the Uniforms tab's pass selector as
 clickable sub-tab text.
 
 **Open, unmeasured:** no brake watches cost, or a frame going lit to flat
-(`ai_docs/features/082_dogfood_post081/02_round2_report.md`); a multi-document mission. `:%s` over a VISUAL
-selection is broken upstream (the range never reaches the parser) — `conventions.md ## Known quirks`.
+(`ai_docs/features/082_dogfood_post081/02_round2_report.md`); a multi-document mission.
 
 ## Features
 
