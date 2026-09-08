@@ -99,7 +99,7 @@ str | None`, which draws every name on one line as an `imgui.selectable` sized t
 returns the name clicked this frame or `None`, and wraps to a second line when the next name would
 cross the content width (`same_line` only while it fits, `SPACE.LG` between names).
 
-State is carried by color alone: the active name in `COLOR.FG_TITLE`, the others in
+State is carried by color alone: the active name in `COLOR.ACCENT_PRIMARY`, the others in
 `COLOR.FG_DIM`, `COLOR.FG_SECONDARY` on hover — the maintainer's pick at plan-lock (an accent
 underline and a left tick were offered as mockups and declined). The maintainer ruled out a frame,
 and the imgui skill's "a low-emphasis tier still needs a frame" is about VERBS — this is a
@@ -253,7 +253,10 @@ Each step fails for exactly one reason; the falsifier is named.
 
 Locked by the maintainer on 2026-09-08 from a rendered options page (`trash/plan_lock_087_088.html`,
 gitignored): strip only, new `PASS_TILE = 168`, sampler rows stay 112 (D1); the active pass name
-marked by color alone, no underline (D3); the `pass` caption dropped (D3).
+marked by color alone, no underline (D3); the `pass` caption dropped (D3). Seen live, he asked
+for a more accented active mark than `FG_TITLE`, and the theme's own mark for active text is
+`ACCENT_PRIMARY` — the editor's active-tab tick, the `play_stop_toggle`'s `stop` label, the library
+picker's highlighted name — so that is what the active name takes; no new token.
 
 ---
 

@@ -1581,8 +1581,8 @@ def text_tab_row(id_: str, names: Sequence[str], active: str) -> str | None:
     """A row of clickable names selecting one of them (the Uniforms tab's pass pick).
 
     A selector, not a verb: each name is a frameless `selectable` sized to its own text,
-    and the state is carried by color alone — `active` bright, the rest dim, brighter on
-    hover. The row wraps to a new line when the next name would cross the content width.
+    and the state is carried by color alone — `active` in the accent, the rest dim, brighter
+    on hover. The row wraps to a new line when the next name would cross the content width.
     Returns the name clicked this frame, or None.
     """
     gap: float = float(SPACE.LG)
@@ -1618,7 +1618,7 @@ def text_tab_row(id_: str, names: Sequence[str], active: str) -> str | None:
             ),
         )
         if name == active:
-            color = COLOR.FG_TITLE
+            color = COLOR.ACCENT_PRIMARY
         else:
             color = COLOR.FG_SECONDARY if hovered else COLOR.FG_DIM
         imgui.push_style_color(imgui.Col_.text, color)
