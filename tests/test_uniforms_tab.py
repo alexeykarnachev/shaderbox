@@ -9,7 +9,12 @@ import json
 from pathlib import Path
 from typing import Any
 
+from imgui_bundle import imgui
+
 from shaderbox.model_salvage import load_model
+from shaderbox.pass_graph import strip_order
+from shaderbox.tabs import uniforms as uniforms_tab
+from shaderbox.theme import SPACE
 from shaderbox.ui_models import UIAppState, UIDocumentState
 from shaderbox.ui_regions import DocumentTab
 
@@ -75,3 +80,50 @@ def test_the_write_seam_ignores_an_unknown_document(app: Any) -> None:
     # there is a no-op rather than a write into a throwaway that is discarded in silence.
     app.set_panel_pass("no-such-document", "whatever")
     assert UIDocumentState().panel_pass == ""
+
+
+def _strip_names(app: Any, document_id: str) -> list[str]:
+    document = app.ui_documents[document_id].document
+    return strip_order(document.passes, document.effective_wiring())
+
+
+def _second_name(app: Any, document_id: str) -> str:
+    return _strip_names(app, document_id)[1]
+
+
+def test_a_click_on_a_name_in_the_row_writes_the_pick(app: Any) -> None:
+    # W-B: the selector is a row of clickable names, so what this pins is the WIRE -- a real
+    # click on the second name reaching `set_panel_pass`. Falsifier: delete the
+    # `set_panel_pass` call from `_draw_pass_selector` and `panel_pass` stays "".
+    document_id = _two_pass_document(app)
+    target = _second_name(app, document_id)
+    app.set_panel_pass(document_id, "")
+
+    io = imgui.get_io()
+    imgui.set_window_focus(None)
+    center: tuple[float, float] | None = None
+
+    for frame in range(8):
+        if center is not None:
+            io.add_mouse_pos_event(*center)
+            io.add_mouse_button_event(0, frame in (4, 5))
+        imgui.new_frame()
+        # Wide enough that the two names share one line, as the real panel is.
+        imgui.set_next_window_size((600.0, 300.0))
+        imgui.begin("rig")
+        origin = imgui.get_cursor_screen_pos()
+        line_h = imgui.get_text_line_height_with_spacing()
+        first_w = imgui.calc_text_size(_strip_names(app, document_id)[0]).x
+        target_w = imgui.calc_text_size(target).x
+        uniforms_tab._draw_pass_selector(app, document_id)
+        imgui.end()
+        imgui.end_frame()
+        if frame == 2:
+            # The row starts at the cursor the selector was called on; the second name sits
+            # one name plus one SPACE.LG to its right.
+            left = origin.x + first_w + float(SPACE.LG)
+            center = (left + target_w / 2, origin.y + line_h / 2)
+
+    assert app.ui_documents[document_id].ui_state.panel_pass == target, (
+        "the click on the second name never reached set_panel_pass"
+    )

@@ -5,7 +5,7 @@ from shaderbox.glyph_tables import TABLE_UNIFORMS
 from shaderbox.pass_graph import strip_order
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_models import UIUniform, UniformSortKey, sort_uniform_hashes
-from shaderbox.ui_primitives import standard_button
+from shaderbox.ui_primitives import standard_button, text_tab_row
 from shaderbox.util import format_auto_value, get_uniform_hash
 from shaderbox.widgets.uniform import draw_ui_uniform, uniform_name_label
 
@@ -48,14 +48,9 @@ def _draw_pass_selector(app: App, document_id: str) -> None:
     current_name = next(
         (n for n in names if document.passes[n] is current), names[0] if names else ""
     )
-    imgui.text_colored(COLOR.FG_DIM, "pass")
-    imgui.same_line(float(SIZE.LABEL_W))
-    imgui.set_next_item_width(float(SIZE.UNIFORM_CTRL_W))
-    if imgui.begin_combo("##uniforms_pass", current_name):
-        for name in names:
-            if imgui.selectable(name, name == current_name)[0]:
-                app.set_panel_pass(document_id, name)
-        imgui.end_combo()
+    picked = text_tab_row("uniforms_pass", names, current_name)
+    if picked is not None:
+        app.set_panel_pass(document_id, picked)
     imgui.dummy((0, SPACE.MD))
 
 

@@ -256,9 +256,11 @@ class SIZE:
     SMOOTHING_DRAG_W: int = 90  # the Window/Sigma drags beside a video thumbnail
 
     THUMB_LG: int = 150
-    # One pass's tile in the horizontal pass strip: big enough to read what the pass draws;
-    # the strip wraps when a document's passes outgrow the panel width.
+    # A sampler row's picture on the Uniforms tab: big enough to read what it reads.
     PASS_THUMB: int = 112
+    # One pass's tile in the horizontal pass strip; the strip wraps when a document's
+    # passes outgrow the panel width.
+    PASS_TILE: int = 168
 
     PANEL_CTRL_MINH: int = 600
 

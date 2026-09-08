@@ -181,11 +181,9 @@ def _draw_play_stop(
 def _draw_texture_preview(
     id_: str, texture: moderngl.Texture | None, caption: str
 ) -> bool:
-    """One sampler row's picture: the pass strip's tile, minus the footer and chips.
-
-    `preview_cell` at the strip's own `SIZE.PASS_THUMB`, so the border and the picture area are the
-    strip's by construction rather than by two constants agreeing. The border is the bordered
-    child's, which is what gives a fully transparent texture a visible edge.
+    """One sampler row's picture: a `preview_cell` at `SIZE.PASS_THUMB`, minus the footer and
+    chips. The border is the bordered child's, which is what gives a fully transparent texture a
+    visible edge.
 
     The cell is square and letterboxes, so every sampler row lands on the same box whatever the
     texture's aspect. `texture=None` draws the empty slot. Returns True when the picture was

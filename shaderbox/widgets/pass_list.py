@@ -29,6 +29,16 @@ from shaderbox.ui_primitives import (
 FEEDBACK_CHIP = "prev"
 
 
+def tiles_per_row(avail: float, tile: float, gap: float) -> int:
+    """How many `tile`-wide cells fit in `avail` with `gap` between them.
+
+    The last tile is charged no trailing gap, so a row of the returned `n` spans
+    `n * tile + (n - 1) * gap <= avail` — the strip cannot cross the panel's right edge.
+    One tile always fits: a narrower panel clips rather than draws nothing.
+    """
+    return max(1, int((avail + gap) // (tile + gap)))
+
+
 def _reads(name: str, wiring: Wiring, order: Sequence[str]) -> list[str]:
     """The chips under a tile: each pass `name` reads, in strip order, then `prev` when it
     reads its own previous frame. One chip per source pass however many samplers read it.
@@ -106,7 +116,7 @@ def _draw_pass_tile(
 
     result = preview_cell(
         id_=f"pass_{name}",
-        cell_w=float(SIZE.PASS_THUMB),
+        cell_w=float(SIZE.PASS_TILE),
         texture_glo=render_pass.canvas.texture.glo,
         texture_size=render_pass.canvas.texture.size,
         selected=is_output,
@@ -162,8 +172,7 @@ def draw(app: App, document_id: str) -> None:
         else set(document.passes)
     )
     avail = imgui.get_content_region_avail().x
-    step = float(SIZE.PASS_THUMB) + float(SPACE.MD)
-    per_row = max(1, int(avail // step))
+    per_row = tiles_per_row(avail, float(SIZE.PASS_TILE), float(SPACE.MD))
     order = strip_order(document.passes, wiring)
     for i, name in enumerate(order):
         if i % per_row:

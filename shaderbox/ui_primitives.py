@@ -1499,6 +1499,51 @@ def clickable_label(
     return clicked
 
 
+def text_tab_row(id_: str, names: Sequence[str], active: str) -> str | None:
+    """A row of clickable names selecting one of them (the Uniforms tab's pass pick).
+
+    A selector, not a verb: each name is a frameless `selectable` sized to its own text,
+    and the state is carried by color alone — `active` bright, the rest dim, brighter on
+    hover. The row wraps to a new line when the next name would cross the content width.
+    Returns the name clicked this frame, or None.
+    """
+    avail: float = imgui.get_content_region_avail().x
+    gap: float = float(SPACE.LG)
+    clicked: str | None = None
+    imgui.push_style_color(imgui.Col_.header, COLOR.TRANSPARENT)
+    imgui.push_style_color(imgui.Col_.header_hovered, COLOR.TRANSPARENT)
+    imgui.push_style_color(imgui.Col_.header_active, COLOR.TRANSPARENT)
+    x: float = 0.0
+    for index, name in enumerate(names):
+        width: float = imgui.calc_text_size(name).x
+        if index:
+            if x + gap + width <= avail:
+                imgui.same_line(spacing=gap)
+                x += gap
+            else:
+                x = 0.0
+        # The hover color is decided BEFORE the item is submitted, so the name is drawn
+        # once at its final color; `imgui.selectable` has no pre-hover to read.
+        origin = imgui.get_cursor_screen_pos()
+        hovered: bool = imgui.is_window_hovered(
+            imgui.HoveredFlags_.child_windows
+        ) and imgui.is_mouse_hovering_rect(
+            origin,
+            (origin.x + width, origin.y + imgui.get_text_line_height_with_spacing()),
+        )
+        if name == active:
+            color = COLOR.FG_TITLE
+        else:
+            color = COLOR.FG_SECONDARY if hovered else COLOR.FG_DIM
+        imgui.push_style_color(imgui.Col_.text, color)
+        if imgui.selectable(f"{name}##{id_}_{name}", False, size=(width, 0))[0]:
+            clicked = name
+        imgui.pop_style_color(1)
+        x += width
+    imgui.pop_style_color(3)
+    return clicked
+
+
 def chord_row(
     label: str, chord_str: str, label_w: float, *, highlight: bool = False
 ) -> None:

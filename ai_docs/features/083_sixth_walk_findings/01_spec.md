@@ -195,6 +195,10 @@ surfaces agree instead of two disagreeing. **Flagged for the maintainer's eye** 
 call that cannot be judged headless (imgui skill §0), and it is the one thing in W-C he did not
 literally ask for.
 
+> **087 D1 SPLIT the two sizes** (`ai_docs/features/087_eighth_walk_findings/01_spec.md`). The strip
+> grew 1.5x onto its own `SIZE.PASS_TILE = 168`; the sampler rows keep `PASS_THUMB` at 112, so the
+> uniform preview now matches what the strip WAS rather than what it is.
+
 ### D5 — the lock is per-session, defaults to LOCKED, and lives on `ChatState`.
 
 The maintainer's words: "which will lock the code modification in each session by default". So the
