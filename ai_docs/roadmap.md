@@ -29,18 +29,17 @@ feature; brief points at the superseder).
 <!-- As of 2026-09-08, 087 and 088 are both implemented and green. -->
 **Next: the maintainer's eyes, then the next walk.** 088 landed the frame profiler: a leaf
 `profiling.py` (CPU spans, GPU spans as `GL_TIME_ELAPSED` queries in a three-deep path-keyed ring
-read two frames late), spans at the seven live-loop sites, and the tree drawn in the widened FPS
-panel. The profiler reaches `Document.render` as a trailing parameter, so exports and probes stay
-silent and a document rendered inside another nests by construction; recording follows the panel,
-so a closed panel creates no query. Nothing about what the numbers SHOW has been changed -- this
-feature is the instrument. Editor re-vendored at `5601d13`: a command key now aborts a pending
-operator instead of running it.
+read two frames late), a span at every stage of the live loop, and the tree drawn in the widened
+FPS panel. The profiler reaches `Document.render` as a trailing parameter, so exports and probes
+stay silent and a document rendered inside another nests by construction; a closed panel creates
+no query. Nothing about what the numbers SHOW has changed -- this feature is the instrument.
+Editor re-vendored at `5601d13`: a command key now aborts a pending operator, as vim does.
 
-**Six things await the maintainer's eyes** (no WM on the dev box): the profiler panel's width,
-number column and whether a five-pass tree reads at a glance; and 087's five -- the lock chip's
-look and cycling, what the copilot SAYS under Read-only when asked to edit, blockwise `Ctrl+V` by
-feel, the 168 tiles and how the third column wraps, whether the bright-only pass row reads as
-clickable.
+**What awaits the maintainer's eyes** (no WM on the dev box). From 088: the panel's width, its
+number column, whether a five-pass tree reads at a glance. From 087: the 168 tiles and how the
+third column wraps, whether the bright-only pass row reads as clickable, `true` in a shader. Older
+and still open: the lock chip's look and cycling, what the copilot SAYS under Read-only, blockwise
+`Ctrl+V` by feel.
 
 **Open, unmeasured:** no brake watches cost, or a frame going lit to flat
 (`ai_docs/features/082_dogfood_post081/02_round2_report.md`); a multi-document mission.

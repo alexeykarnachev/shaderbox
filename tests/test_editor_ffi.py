@@ -1451,11 +1451,9 @@ def test_two_ex_commands_in_one_frame_both_reach_the_host() -> None:
 
 
 def test_search_highlights_survive_a_scrolled_view() -> None:
-    # 087 W-D: the host scrolls right after every search (layout_following_cursor), so a scrolled
-    # view IS the host's search view. The emitter used to subtract the scroll twice, landing the
-    # band on view row `line - 2 * scroll` and culling it once that left the viewport. Both halves
-    # are pinned: scroll 2 pins the PLACEMENT (it drew on row 1), scroll 3 pins the CULLING (it
-    # drew nothing) -- a fix that only stopped culling would still fail the first.
+    # The host scrolls right after every search (layout_following_cursor), so a scrolled view IS
+    # the host's search view. Both scroll values are load-bearing: 2 pins the band's PLACEMENT,
+    # 3 pins that it is not CULLED -- a copy that only stops the culling still fails the first.
     text = "\n".join(
         ("foo here" if line in (5, 60) else f"line {line}") for line in range(90)
     )
@@ -1477,9 +1475,7 @@ def test_search_highlights_survive_a_scrolled_view() -> None:
 
 
 def test_boolean_literals_draw_in_the_keyword_slot() -> None:
-    # 087 W-C: `true` / `false` were in none of the lexer's GLSL word tables, so they came back
-    # Token_Class.None and rendered as plain text. They are keywords, the slot `bool` and `if`
-    # already draw in.
+    # `true` / `false` are GLSL keywords, so they draw in the slot `bool` and `if` already use.
     palette = editor_palette()
     keyword = tuple(round(c, 2) for c in palette[Slot.SYNTAX_1][:3])
     text_slot = tuple(round(c, 2) for c in palette[Slot.TEXT][:3])
