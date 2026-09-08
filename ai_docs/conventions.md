@@ -1237,7 +1237,9 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   mitigations it drops, and whether `make gates` still passes without them. Most re-vendors
   delete host code that was a second derivation of something the library now emits itself (the
   aa8c6719 one, 071 W-A, was additions only and deleted nothing; the `410b7e7` one had no ABI
-  delta at all and its whole host half was one Known-quirks entry going from bug to record), so
+  delta at all and its whole host half was one Known-quirks entry going from bug to record; the
+  `760f8ea` one carried two born-red host tests instead, the search-band one pinning PLACEMENT and
+  CULLING in the same case so a copy that only stopped the culling stays red), so
   the question to ask of a new sha is which host workaround it makes redundant, not whether it
   breaks anything. **The `5e0e8a2` -> `f738744` re-vendor is the worked example of the
   host-side half.** Upstream APPENDED a fifth `Mode` member (replace, `ed_mode` returns `4`,

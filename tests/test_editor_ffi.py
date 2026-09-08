@@ -43,6 +43,7 @@ from shaderbox.editor.render import (
 from shaderbox.editor_types import EditorSession
 from shaderbox.hotkeys import _delete_word_back, _drain_editor_input, spec_eligible
 from shaderbox.shader_source import ShaderSource
+from shaderbox.theme import editor_palette
 
 
 @pytest.fixture(autouse=True)
@@ -1444,3 +1445,65 @@ def test_two_ex_commands_in_one_frame_both_reach_the_host() -> None:
     assert saved == [True], "the :w was dropped before it reached App.save"
     assert closed == [0], "the :q did not close the tab"
     e.close()
+
+
+# --- 087 re-vendor (editor 760f8ea): the eighth walk's two library items ------------------------
+
+
+def test_search_highlights_survive_a_scrolled_view() -> None:
+    # 087 W-D: the host scrolls right after every search (layout_following_cursor), so a scrolled
+    # view IS the host's search view. The emitter used to subtract the scroll twice, landing the
+    # band on view row `line - 2 * scroll` and culling it once that left the viewport. Both halves
+    # are pinned: scroll 2 pins the PLACEMENT (it drew on row 1), scroll 3 pins the CULLING (it
+    # drew nothing) -- a fix that only stopped culling would still fail the first.
+    text = "\n".join(
+        ("foo here" if line in (5, 60) else f"line {line}") for line in range(90)
+    )
+    e = Editor(text)
+    e.set_language(Language.GLSL)
+    e.set_style(Style.VIM)
+    e.set_chrome_flag(ChromeFlag.LINE_NUMBERS, True)
+    e.feed("/foo<CR>")
+    for scroll, expected_row in ((2, 3), (3, 2)):
+        e.set_scroll(scroll)
+        e.layout((640.0, 320.0), 16.0)
+        cell_h = e.get_cell_size()[1]
+        bands = [p for p in e.prims_list() if p.kind == int(Kind.SEARCH_MATCH)]
+        rows = [int(p.y0 // cell_h) for p in bands]
+        assert rows == [expected_row], (
+            f"at scroll {scroll} line 5's band is on rows {rows}, not {expected_row}"
+        )
+    e.close()
+
+
+def test_boolean_literals_draw_in_the_keyword_slot() -> None:
+    # 087 W-C: `true` / `false` were in none of the lexer's GLSL word tables, so they came back
+    # Token_Class.None and rendered as plain text. They are keywords, the slot `bool` and `if`
+    # already draw in.
+    palette = editor_palette()
+    keyword = tuple(round(c, 2) for c in palette[Slot.SYNTAX_1][:3])
+    text_slot = tuple(round(c, 2) for c in palette[Slot.TEXT][:3])
+    assert keyword != text_slot, "the two slots must differ or this test cannot fail"
+
+    for literal in ("true", "false"):
+        e = Editor(f"bool b = {literal};\nx")
+        e.set_language(Language.GLSL)
+        e.set_palette(palette)
+        # The caret recolors the glyph under it (reverse video), so park it off the line.
+        e.feed("j")
+        e.layout((600.0, 300.0), 16.0)
+        origin_y = e.get_text_origin()[1]
+        first_row_bottom = origin_y + e.get_cell_size()[1]
+        row = sorted(
+            (p.x0, (round(p.r, 2), round(p.g, 2), round(p.b, 2)))
+            for p in e.prims_list()
+            if p.kind == int(Kind.GLYPH) and p.y0 < first_row_bottom
+        )
+        # `bool b = true;` without its spaces; the literal's glyphs are the len(literal)
+        # before the trailing semicolon.
+        assert len(row) == len(f"bool b = {literal};".replace(" ", ""))
+        literal_colors = {color for _, color in row[-len(literal) - 1 : -1]}
+        assert literal_colors == {keyword}, (
+            f"`{literal}` drew in {literal_colors}, not the keyword slot {keyword}"
+        )
+        e.close()
