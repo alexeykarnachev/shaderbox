@@ -1326,7 +1326,7 @@ def test_the_routing_table(
 ) -> None:
     # The (bare, nested) x (declared in one pass, in two, in none) matrix (069 D3; the undeclared
     # rows carry 079 D5's silent skip). Falsifier: route every key to one pass (the pre-069
-    # output-only behaviour) — rows 1/2/4 go red on the write side, rows 3/5 on the no-error side
+    # output-only behavior) — rows 1/2/4 go red on the write side, rows 3/5 on the no-error side
     # and row 6 on the error side, so no single wrong implementation passes the table.
     _write_script(tmp_path, _script(update_body=f"        return {returned}\n"))
     document = _two_pass()

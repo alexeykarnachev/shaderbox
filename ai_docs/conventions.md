@@ -139,7 +139,7 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
 
   The tell is that the test names a CONDITION (`source_read_only=True`, `withheld=[...]`) that the
   test itself supplies. A test that passes the condition in cannot discover that nothing produces
-  it. So the falsifier for any conditional behaviour is applied at **the site that computes the
+  it. So the falsifier for any conditional behavior is applied at **the site that computes the
   condition**, and the test drives whatever owns that site — the session, the loop, the app — not
   the pure function underneath. State which layer a mutation was applied at when reporting it; "the
   break was caught" is a claim about a layer, not about a feature.
@@ -1007,7 +1007,7 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
 - **The dogfooding station records; it never judges.** `dogfood/` holds an append-only log and a
   site regenerated from it; no pass/fail about shader quality and no standing checker (068's
   oracle, `judge.py`) is wired into a run's verdict — the maintainer is the final oracle, and a
-  scripted one overfits the noise and becomes the thing the work is optimised against. A
+  scripted one overfits the noise and becomes the thing the work is optimized against. A
   measurement that answers one question in the moment and is then deleted is fine; one that
   stands is the failure. An observer of the copilot engine reads the `TraceLog` listener seam
   (`CopilotSession.trace_listeners`, structured `(kind, fields)`), never the plain-text transcript.
@@ -1140,7 +1140,7 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   `s/vec3/vec4/g` rewrites both selected lines; `:2,3s`, `:.,+1s` and a bare `:3` jump work with it.
   No host code was involved in either the bug or the fix — ShaderBox does not intercept ex commands.
   **The lesson that outlives the bug: when a report and a measurement disagree, the gap is usually
-  the SEQUENCE, not the feature — reproduce the user's keystrokes, not the behaviour you infer from
+  the SEQUENCE, not the feature — reproduce the user's keystrokes, not the behavior you infer from
   his words.**
 - **The imgui CONTEXT is per PROCESS, and its teardown does NOT belong in `release()`.**
   `App.__init__` calls `create_context()`; a second `create_context()` in the same process hands
@@ -1252,8 +1252,8 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   number. This is also why a re-vendor's ABI delta is re-derived from `nm -D` rather than taken
   from the report — done once and it matched, which is the point.
 - **Odin's build output is not reproducible, so a vendored binary is verified by exports and
-  behaviour, never by bytes.** The same committed sha built twice differs across ~668k bytes of
-  `.text` while exports, size and measured behaviour are identical. A `cmp` between our copy and a
+  behavior, never by bytes.** The same committed sha built twice differs across ~668k bytes of
+  `.text` while exports, size and measured behavior are identical. A `cmp` between our copy and a
   fresh upstream build proves nothing in either direction; `nm -D` export sets and a driven
   measurement are the instruments.
 - **Re-vendoring the editor: rebuild, copy, then delete the mitigations the new sha makes dead.**

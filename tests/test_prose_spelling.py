@@ -1,13 +1,17 @@
 """American spelling on every surface a user or the copilot reads (071 D3): `color`, never
-`colour`.
+the British form.
+
+The banned list is the `-our` / `-ise` words this repo has actually written, each added when
+one slipped past a reader. One word alone was never the rule; it was the instance that had a
+gate.
 
 The roster is every tracked text file except three kinds, each excluded for a reason a reader
 can check: the vendored editor set (`shaderbox/resources/editor/`, upstream's files, re-copied
 whole on every re-vendor), the feature records under `ai_docs/features/` other than the living
 tutorial body (they quote what was said at the time, the maintainer's own words included), and
 dogfood run transcripts (records of what a model wrote), and this file, which has to name the
-word it bans. Identifiers already use `color`, so a hit is prose: a comment, a docstring, a
-string, a doc.
+word it bans. Identifiers already use the American form, so a hit is prose: a comment, a
+docstring, a string, a doc.
 """
 
 import re
@@ -15,7 +19,20 @@ import subprocess
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent
-_BRITISH = re.compile(r"colour", re.IGNORECASE)
+_BRITISH_WORDS: tuple[str, ...] = (
+    "colour",
+    "quantise",
+    "quantised",
+    "optimise",
+    "optimised",
+    "initialise",
+    "initialised",
+    "serialise",
+    "serialised",
+    "behaviour",
+    "favourite",
+)
+_BRITISH = re.compile(r"\b(?:" + "|".join(_BRITISH_WORDS) + r")", re.IGNORECASE)
 _EXCLUDED_PREFIXES = (
     "shaderbox/resources/editor/",
     "ai_docs/features/",

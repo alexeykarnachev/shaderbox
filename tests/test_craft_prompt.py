@@ -125,7 +125,7 @@ def test_the_prompt_does_not_restate_what_the_tool_schemas_carry() -> None:
         "set_youtube_credentials",  # lazy: ditto + youtube_precheck's handoff
     ):
         assert cut not in p, cut
-    # What CANNOT live in any single schema survives: the cross-tool order and the reply behaviour.
+    # What CANNOT live in any single schema survives: the cross-tool order and the reply behavior.
     assert "Cross-tool order" in p
     assert "never deflect the user to Settings" in p
     assert "never invent a path" in p

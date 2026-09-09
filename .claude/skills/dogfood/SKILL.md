@@ -88,7 +88,7 @@ is visible from inside an attempt.
     `ai_docs/features/081_copilot_engine_sweep/02_cells/corpus.py` is the committed one
     (`all_turns()`, `all_calls()`, `all_contexts()`, `attempts(exp)`), and its own docstring says
     how to import it. Extract with scripts that print aggregates.
-  - Fan out over MEASURABLE dimensions (cost mechanics, tool-call behaviour, prompt composition,
+  - Fan out over MEASURABLE dimensions (cost mechanics, tool-call behavior, prompt composition,
     the artefacts on disk), one agent each, every number from a script it actually ran. Then
     VERIFY every load-bearing claim yourself at the primary artifact before it reaches a spec:
     081's sharpest finding and three of its four corrections came from that re-check.
@@ -102,7 +102,7 @@ is visible from inside an attempt.
 changed, and what a next round would test. Whether to run again is the maintainer's call, not a
 convergence rule the loop evaluates for itself.
 
-**On gates in either stage:** a fix earns a test when the behaviour could plausibly regress and the
+**On gates in either stage:** a fix earns a test when the behavior could plausibly regress and the
 regression would be silent. Do not write one per decision as a matter of form — 081 wrote eleven,
 six were ceremony, and two of the eleven could not fail at all until the break was actually
 performed. If you cannot make a test fail by breaking the thing it guards, delete it.

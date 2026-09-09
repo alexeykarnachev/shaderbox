@@ -1,4 +1,4 @@
-"""ShaderLibFavoritesStore — the sidecar JSON favourites store.
+"""ShaderLibFavoritesStore — the sidecar JSON favorites store.
 
 It lives in `app_data_dir()`, outside git and with no backup, and `ProjectSession.__init__`
 loads it unguarded — so a malformed file used to raise `TypeError` straight out of startup

@@ -391,7 +391,7 @@ def test_each_mode_does_what_its_chip_says() -> None:
 def test_deny_reaches_the_refusal_rather_than_skipping_the_gate_block() -> None:
     # The trap D4a names. The refusal lives INSIDE `if must_confirm(...)` and `execute` sits
     # outside it, so a must_confirm that excused DENY would route the call past the refusal and
-    # RUN the edit. This drives the predicate directly, because the behavioural test above would
+    # RUN the edit. This drives the predicate directly, because the behavioral test above would
     # also go red for the opposite bug and could not tell the two apart.
     registry = build_registry(minimal_caps())
     registry.source_lock = SourceLock.READ_ONLY
@@ -447,7 +447,7 @@ def test_the_mode_round_trips_through_the_project_file(tmp_path: Path) -> None:
 
 def test_a_project_file_from_before_the_mode_existed_asks(tmp_path: Path) -> None:
     # Every app_state.json on disk predates this key, so the DEFAULT is what those projects get.
-    # ASK keeps their behaviour exactly as it was; ALLOW would have quietly switched the copilot to
+    # ASK keeps their behavior exactly as it was; ALLOW would have quietly switched the copilot to
     # editing unasked in projects that ask today.
     path = tmp_path / "app_state.json"
     path.write_text('{"current_document_id": "abc"}')
@@ -581,7 +581,7 @@ def test_a_model_that_keeps_calling_a_withheld_tool_is_stopped() -> None:
 
     The refuse branch `continue`s before the failed-edit counter, so without an explicit increment
     a model ignoring the read-only notice burns every iteration of the turn on a tool that does not
-    exist -- the dummy-bot behaviour the mode was built to end. Scripted with more edit attempts
+    exist -- the dummy-bot behavior the mode was built to end. Scripted with more edit attempts
     than the cap allows, so the turn must end early rather than run them all.
     """
     attempts = COPILOT_CONFIG.max_edit_retries + 4

@@ -855,3 +855,24 @@ def test_the_plan_indents_a_child_under_its_parent() -> None:
     depths = {row.name: row.depth for row in rows}
     assert depths["document:one"] == 0
     assert depths["pass:inner"] == 1
+
+
+def test_the_gap_before_the_tree_is_marked_on_the_first_tree_row() -> None:
+    # The draw reads the boundary off the row, so the panel never re-derives which rows
+    # lead. Falsifier: stop setting the flag and no row carries it.
+    root = Span("frame", cpu_ms=20.0)
+    root.children.append(Span("pass:a", cpu_ms=1.0))
+    root.children.append(Span("pass:b", cpu_ms=3.0))
+    rows = profile_rows_plan(
+        FrameProfile(root, 0, complete=True), fps=60, target_fps=60
+    )
+    marked = [row.name for row in rows if row.starts_tree]
+    assert marked == ["pass:b"]
+    assert rows[[row.name for row in rows].index("pass:b") - 1].name == "target"
+
+
+def test_a_plan_without_a_profile_marks_no_row() -> None:
+    # Three static rows and no tree, so there is no boundary to mark.
+    rows = profile_rows_plan(None, fps=60, target_fps=60)
+    assert [row.name for row in rows] == ["budget", "fps", "target"]
+    assert not any(row.starts_tree for row in rows)

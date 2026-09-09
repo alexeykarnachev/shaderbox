@@ -142,7 +142,7 @@ The non-mid sizes are judged per situation: the agent proposes "this looks tiny 
      read by nothing; 022 the headline per-turn save never wired). "Defined" ≠ "wired". It's
      mechanically greppable: grep the symbol for a READER, not just its definition. For each safety
      guarantee, name the call site that reads it and the test that exercises that consumer.
-   - **A behavioural gate may only cite a baseline produced under the SAME actor configuration**
+   - **A behavioral gate may only cite a baseline produced under the SAME actor configuration**
      (model id, engine flags — reasoning effort, token/time budgets). Changing one of those flags
      INVALIDATES every prior baseline: the comparison then measures the flag, not the change. Run a
      fresh control BEFORE the change, or demote the gate to an observation and say so.
@@ -335,7 +335,9 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   recurse into nested models and no-op on a non-dict. Coverage is enumerated by
   `tests/test_persistence_completeness.py`, which also fails on an unrostered JSON loader.
 - **`paths.py`** — `app_data_dir()`, `shader_lib_root()`, `shader_lib_trash_dir()`, the document-dir
-  basenames (`DOCUMENT_JSON_BASENAME` / `PASS_SHADER_SUFFIX` — the ONE home; never re-spell them)
+  basenames (`DOCUMENT_JSON_BASENAME` / `PASS_SHADER_SUFFIX` / `FEEDBACK_DIR_NAME`, which is both
+  the directory holding a feedback pass's saved frame and the `document.json` key describing it,
+  one spelling for the two — the ONE home; never re-spell them)
   + `ProjectPaths`
   (frozen value object for one project dir's layout; `for_root` eagerly mkdirs the 5 subdirs;
   `App.paths` holds the live one) (leaf, no `App`).
@@ -380,7 +382,9 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   around a block and GPU spans as `GL_TIME_ELAPSED` queries in a three-deep path-keyed ring read
   two frames late; imports `moderngl` alone, so any caller can take one, and `Document.render`
   takes one as a trailing parameter, plus `ProfileSmoother`, the path-keyed exponential average the
-  panel draws instead of the raw frame) / **`render_job.py`**
+  panel draws instead of the raw frame, and `headline_ms` / `by_cost` -- the number a span prints
+  and a new list of children ordered by it, which is the cost order the panel's plan walks while
+  the recorded tree keeps its own) / **`render_job.py`**
   (`render_to` / `render_for` / `preset_ext` — the UI-free render-to-file job behind BOTH the Share
   tab and the copilot's render tools) / **`integrations.py`** (`IntegrationsStore`: the Telegram +
   YouTube + copilot credential/config store at `app_data_dir()/integrations.json`; peer to
@@ -390,7 +394,9 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   panel's static copy) / **`logging_setup.py`** (loguru sinks: console + the rotating file in
   `app_data_dir()/logs`).
 - **`ui_primitives.py`** (imgui+theme draw helpers: button
-  tiers + shared draw primitives — `context_menu_style()`, `pill_button`, `preview_cell`, …) /
+  tiers + shared draw primitives — `context_menu_style()`, `pill_button`, `preview_cell`, …;
+  plus `profile_rows_plan` / `ProfileRow`, the FPS panel's rows decided as pure headless data —
+  order, depth, formatted number and color — which the overlay then only draws) /
   **`util.py`** (non-UI helpers: `adjust_size`, `select_next_value`, `get_uniform_hash`, `pfd_block`,
   `open_in_file_manager`, `format_auto_value`, …) / **`constants.py`** / **`notifications.py`** /
   **`watch.py`** (the per-frame mtime watcher: `reload_document_if_changed` / `maybe_rebuild_lib_index`,
@@ -598,6 +604,10 @@ Three things it does that a hand-rolled `make check && make test && make smoke` 
   information is lost, which is the only time anyone would read it.
 
 Judge it by the exit code, captured unpiped: `make gates > /tmp/gates.log 2>&1; echo $?`.
+
+**Its log is `$TMPDIR/shaderbox-gates.log`, one path for every worktree**, so two runs at once
+overwrite each other's log and the second's failure reads as the first's. Concurrent runs each set
+their own `TMPDIR`.
 
 **Stage new files before running it.** `make check` is `pre-commit run --all-files`, and
 pre-commit only sees files git tracks: an UNTRACKED module is skipped by ruff, formatter and

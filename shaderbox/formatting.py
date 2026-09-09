@@ -27,6 +27,7 @@ GLSL_STYLE = (
 # A line beginning with `.` is only ever a member access in GLSL, and clang-format writes
 # `);`, `) {` and `),` for every other close.
 _MEMBER_ACCESS = re.compile(r"^\s*\.[A-Za-z_]")
+_COMMENT_MARKER = re.compile(r"//|/\*|\*/")
 
 
 @dataclass(frozen=True)
@@ -73,11 +74,17 @@ def format_python(text: str) -> FormatResult:
     )
 
 
+def _is_anchor(line: str) -> bool:
+    # A `)` inside a comment closes prose, not a call: joining onto that line would move
+    # the member access into the comment and leave the statement unterminated.
+    return line.endswith(")") and not _COMMENT_MARKER.search(line)
+
+
 def _attach_member_access(text: str) -> str:
     lines: list[str] = text.split("\n")
     joined: list[str] = []
     for line in lines:
-        if joined and joined[-1].endswith(")") and _MEMBER_ACCESS.match(line):
+        if joined and _is_anchor(joined[-1]) and _MEMBER_ACCESS.match(line):
             joined[-1] += line.lstrip()
         else:
             joined.append(line)

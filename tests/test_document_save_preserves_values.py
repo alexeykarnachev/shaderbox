@@ -84,7 +84,7 @@ def test_save_with_a_live_program_still_rebuilds_from_the_program(
     gl: moderngl.Context, tmp_path: Path
 ) -> None:
     # The carry-forward must not become a path that freezes stale values: with a program
-    # present, the rebuild-from-live-program behaviour is unchanged.
+    # present, the rebuild-from-live-program behavior is unchanged.
     document_dir = tmp_path / "document"
     shutil.copytree(_EXAMPLE, document_dir)
     ui_document = load_document_from_dir(document_dir)

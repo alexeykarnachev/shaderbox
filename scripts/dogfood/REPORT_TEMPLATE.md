@@ -82,7 +82,7 @@ cost, what went right, what went wrong. Lead with the outcome, then the mechanis
 
 {{HUMAN:engine_findings}}
 
-<!-- Defects and behaviours of ShaderBox itself, NOT of the models. For each: what happens, the
+<!-- Defects and behaviors of ShaderBox itself, NOT of the models. For each: what happens, the
 evidence, and whether it is fixed or open. A finding with no fix says so plainly and says why
 (a wrong fix reverted, one instance not enough to act on). Write "none this round" if there were
 none -- that is a real result. -->

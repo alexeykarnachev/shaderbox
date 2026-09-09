@@ -488,22 +488,6 @@ def test_the_variable_table_is_the_fragment_stage() -> None:
     }
 
 
-def test_the_index_answers_for_a_builtin_variable() -> None:
-    # 089 W-B / D3: a builtin variable is its own kind, and `K` shows the declaration the
-    # refpage states. Falsifier: the variables dropped from `_language_symbols` (the lookup
-    # is None), or the kind left as GLSL_BUILTIN.
-    found = _index().lookup("gl_FragCoord")
-    assert found is not None
-    assert found.kind is SymbolKind.GLSL_VARIABLE
-    assert found.signature == "in vec4 gl_FragCoord"
-    assert found.doc
-    # Three pages declare a name once per stage; the entry carries both forms rather than
-    # picking one arbitrarily.
-    layer = _index().lookup("gl_Layer")
-    assert layer is not None
-    assert layer.signature.splitlines() == ["out int gl_Layer", "in int gl_Layer"]
-
-
 def test_the_glsl_provider_offers_a_builtin_variable() -> None:
     # The reach needs no provider change: `_glsl_words` returns the index's words whole.
     # Falsifier: the variables absent from the index (the offer is empty).

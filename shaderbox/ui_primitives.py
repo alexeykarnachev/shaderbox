@@ -3,7 +3,7 @@ import re
 import webbrowser
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import moderngl
 import pyperclip
@@ -1349,7 +1349,9 @@ class ProfileRow:
     """One row of the FPS panel, decided before any imgui call.
 
     `name` is the raw span name where the row is a span, so the draw clips it itself;
-    `number` is the formatted readout and `color` the hue it draws in.
+    `number` is the formatted readout and `color` the hue it draws in. `starts_tree` marks
+    the row the panel puts a gap above, so the draw reads the boundary off the row rather
+    than recounting the plan's leading rows.
     """
 
     depth: int
@@ -1357,12 +1359,7 @@ class ProfileRow:
     count: int
     number: str
     color: tuple[float, float, float, float]
-
-
-# The plan's leading rows, which the panel separates from the tree by a gap: `budget`,
-# `fps` and `target` always, `frame` and `gpu` ahead of them whenever a profile arrived.
-_STATIC_ROWS: int = 3
-_HEADLINE_ROWS: int = 2
+    starts_tree: bool = False
 
 
 def profile_rows_plan(
@@ -1385,8 +1382,10 @@ def profile_rows_plan(
     rows.append(ProfileRow(0, "fps", 1, str(fps), COLOR.FG_MUTED))
     rows.append(ProfileRow(0, "target", 1, str(target_fps), COLOR.FG_MUTED))
     if profile is not None:
+        first_tree_row = len(rows)
         _plan_tree(profile.root, 0, budget_ms, rows)
         rows.append(_measured_row(0, "other", 1, other_ms(profile.root), budget_ms))
+        rows[first_tree_row] = replace(rows[first_tree_row], starts_tree=True)
     return rows
 
 
@@ -1435,9 +1434,12 @@ def _profile_rows(rows: list[ProfileRow], number_font: imgui.ImFont) -> None:
     """One planned row per line, indented by its depth.
 
     A span name is data (`pass:cascade_gather_and_merge`, a document's own title), so it is
-    clipped to the room left before the number rather than running under it.
+    clipped to the room left before the number rather than running under it. The row that
+    starts the tree takes a gap above it.
     """
     for row in rows:
+        if row.starts_tree:
+            imgui.dummy((0.0, float(SPACE.SM)))
         indent = float(SPACE.MD) * row.depth
         room = (
             imgui.get_content_region_avail().x
@@ -1498,12 +1500,7 @@ def fps_overlay(
             child_flags=imgui.ChildFlags_.borders | imgui.ChildFlags_.auto_resize_y,
             window_flags=imgui.WindowFlags_.no_scrollbar,
         ):
-            rows = profile_rows_plan(profile, fps, target_fps)
-            head = _STATIC_ROWS + (_HEADLINE_ROWS if profile is not None else 0)
-            _profile_rows(rows[:head], number_font)
-            if len(rows) > head:
-                imgui.dummy((0.0, float(SPACE.SM)))
-                _profile_rows(rows[head:], number_font)
+            _profile_rows(profile_rows_plan(profile, fps, target_fps), number_font)
         imgui.pop_style_color(1)
 
     return not is_open if clicked else is_open

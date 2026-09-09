@@ -14,7 +14,7 @@ PASSES_DIR_NAME = "passes"
 # loadable AS a project (feature 084's list filter).
 DOCUMENTS_DIR_NAME = "documents"
 PASS_SHADER_SUFFIX = ".frag.glsl"
-# The document's CPU behaviour script, under documents/<id>/scripts/ (feature 048: one per document).
+# The document's CPU behavior script, under documents/<id>/scripts/ (feature 048: one per document).
 DOCUMENT_SCRIPT_BASENAME = "script.py"
 # The pass graph: which passes exist, what fills each input, each target's configuration, and
 # which pass is the output. App-written derived state, exactly as document.json is.

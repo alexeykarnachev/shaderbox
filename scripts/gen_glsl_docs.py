@@ -92,9 +92,10 @@ _STAGE_ONLY: dict[str, str] = {
     "EndStreamPrimitive": "geometry",
 }
 
-# Pages that document no name a shader can write, each with what it documents instead. A
-# page absent here that yields neither a prototype nor a declaration is REPORTED, so a
-# family page whose entries stop arriving cannot pass as one of these.
+# Pages that document no name a shader can write, each with what it documents instead.
+# These are parsed like any other page and excused only from the empty-page report, so a
+# page listed here that starts yielding entries contributes them, and a family page whose
+# entries stop arriving is REPORTED rather than passing as one of these.
 _NAMES_NOTHING: dict[str, str] = {
     "gl_PointSize.xml": "a gl_PerVertex member, declared in a programlisting block",
     "gl_Position.xml": "a gl_PerVertex member, declared in a programlisting block",
@@ -239,14 +240,16 @@ def parse_refpages(
     on the refname loses the page whole. A variable entry is named from its
     `fieldsynopsis`, filtered to `_FRAGMENT_VARIABLES`.
 
-    The third value is every page that produced no entry at all -- a hole in the table, not
-    a curiosity. A caller that ignores it ships a partial table.
+    The third value is every page that named nothing at all -- a hole in the table, not a
+    curiosity; the `_NAMES_NOTHING` pages are the excused ones, and the membership test
+    sits here rather than before the parse so a page listed there still contributes what it
+    yields. A caller that ignores this value ships a partial table.
     """
     functions: dict[str, tuple[list[str], str]] = {}
     variables: dict[str, tuple[list[str], str]] = {}
     empty: list[str] = []
     for path in sorted(root.glob("*.xml")):
-        if _API_PREFIX.match(path.stem) or path.name in _NAMES_NOTHING:
+        if _API_PREFIX.match(path.stem):
             continue
         try:
             entry = _load(path)
@@ -256,7 +259,7 @@ def parse_refpages(
             empty.append(path.name)
             continue
         purpose = _purpose(entry)
-        yielded = False
+        named = False
         # One entry per function the page's prototypes name, carrying only the overloads
         # whose own name matches it: a page may document several (dFdx/dFdy share one).
         by_name: dict[str, list[str]] = {}
@@ -266,17 +269,21 @@ def parse_refpages(
                 continue
             by_name.setdefault(call.group(1), []).append(signature)
         for name, signatures in by_name.items():
-            yielded = True
+            named = True
             if name not in _STAGE_ONLY:
                 functions[name] = (signatures, purpose)
         for name, declaration in _declarations(entry):
-            yielded = True
+            named = True
             if name in _FRAGMENT_VARIABLES:
                 held, _ = variables.get(name, ([], purpose))
                 if declaration not in held:
                     held.append(declaration)
                 variables[name] = (held, purpose)
-        if not yielded:
+        # The hole is a page that names nothing: a family page whose entries stopped
+        # arriving, a formula that would not parse. A page whose names a filter drops
+        # (`_STAGE_ONLY`, `_FRAGMENT_VARIABLES`) named them, and the filter is the record
+        # of why the table has none of them.
+        if not named and path.name not in _NAMES_NOTHING:
             empty.append(path.name)
     return functions, variables, empty
 

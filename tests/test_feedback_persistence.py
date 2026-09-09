@@ -7,7 +7,7 @@ black on every app start -- the accumulated canvas the maintainer had drawn into
 
 Raw bytes throughout, never `texture_to_rgba8`: the state being kept is an accumulator whose
 values sit outside [0, 1] on an `f2` target, which a tonemapped 8-bit round trip would clamp and
-quantise -- so byte equality against the original's next frame is the assertion, and it is only
+quantize -- so byte equality against the original's next frame is the assertion, and it is only
 meaningful on the raw read.
 
 The fixture is the bloom-chain shape rather than a single pass: the feedback pass sits at

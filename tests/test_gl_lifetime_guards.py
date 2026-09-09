@@ -282,7 +282,7 @@ def test_the_app_rebinds_the_default_context_to_its_window(
     # moderngl binds its process-wide default context ONCE, to whatever GL context is current at
     # the first get_context(). A standalone fixture context that took that role leaves a wrapper
     # every later App would inherit: module-order-only failures (an export rendered garbage after
-    # test_document_graph + test_default_wiring). App.__init__ therefore re-initialises the default
+    # test_document_graph + test_default_wiring). App.__init__ therefore re-initializes the default
     # to its own window. Falsifier: drop that init_context() call -- `after` is then the very
     # object the stale fixture handed out.
     after = moderngl.get_context()

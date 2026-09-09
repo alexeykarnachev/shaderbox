@@ -94,6 +94,37 @@ def test_a_chain_folds_one_link_per_line() -> None:
     )
 
 
+_COMMENT_BETWEEN = (
+    "void main() {\n"
+    "    vec3 light = collect_light(vs_uv, u_n_rays, u_max_n_steps, band_offset, "
+    "band_size)\n"
+    "        // pick the rgb (drop alpha)\n"
+    "        .rgb;\n"
+    "}\n"
+)
+_TRAILING_COMMENT = (
+    "void main() {\n"
+    "    vec3 light = collect_light(vs_uv, u_n_rays, u_max_n_steps, band_offset, "
+    "band_size) // see f(x)\n"
+    "        .rgb;\n"
+    "}\n"
+)
+
+
+def test_a_comment_between_the_bracket_and_the_member_is_not_an_anchor() -> None:
+    result = format_glsl(_COMMENT_BETWEEN)
+    assert result.ok
+    assert "(drop alpha).rgb" not in result.text
+    assert result.text.splitlines()[-2].strip() == ".rgb;"
+
+
+def test_a_comment_ending_the_call_line_is_not_an_anchor() -> None:
+    result = format_glsl(_TRAILING_COMMENT)
+    assert result.ok
+    assert "// see f(x).rgb" not in result.text
+    assert result.text.splitlines()[-2].strip() == ".rgb;"
+
+
 def test_a_continued_expression_is_not_a_member_access() -> None:
     unchanged = "    a = f(x)\n        + 1.0;\n"
     assert _attach_member_access(unchanged) == unchanged
