@@ -97,7 +97,8 @@ post-pass on the formatted text, `_attach_member_access`: **a line that ends in 
 line that is whitespace, a dot and an identifier joins into `).ident...` on the first line.**
 Applied line by line in order, so a chain (`).bar(x)` then `.rgb;`) folds one link per step and
 reaches `).bar(x).rgb;`; and it covers the second shape the reviewers found, a call that fits
-while the statement does not (`... = texture(u_s, uv)` / `.rgb;`), which has no bare `)` line.
+while the statement does not (`... = texture(u_sampler, vs_uv)` / `.rgb;` -- the call must be short
+enough to fit; a longer one splits into a bare `)` like his), which has no bare `)` line.
 In GLSL a line beginning with `.` is only ever a member access, so the rule has no false join:
 clang-format writes `);`, `) {` and `),` in every other case and none ends in a bare `)`. It is
 idempotent under `format_glsl` (clang-format re-splits the joined line, the post-pass re-joins
@@ -452,8 +453,10 @@ Each step fails for exactly one reason; the falsifier is named; the shape to cop
 - **V8 the mismatch and the lifetime (W-C):** a `feedback` entry whose `size` disagrees with the
   graph's expected size is ignored -- the pass starts black and the document loads; in
   `tests/test_gl_lifetime_guards.py`, a loaded seed's texture and fbo are released by
-  `Document.release` and by `reset_feedback`. Falsifier: the match rule removed
-  (`texture.write` raises on the byte count); the release path skipped.
+  `Document.release` and by `reset_feedback`. Falsifier: the match rule removed (the tampered
+  entry seeds where it should not -- the canvas is allocated at the GRAPH's size, so the file
+  still fits and `texture.write` does not raise; only a truncated FILE reaches that raise, which
+  its own case covers); the release path skipped.
 - **V9 the bands (W-D):** `load_color(0.49) is STATE_OK`, `load_color(0.5) is STATE_WARN`,
   `load_color(0.99) is STATE_WARN`, `load_color(1.0) is STATE_ERROR`; and on the plan, a row at
   1.2 x budget carries `STATE_ERROR`. Falsifier: either threshold moved.
@@ -551,3 +554,37 @@ module); `test_generated_artifacts.py` is parametrized over the glyph tables onl
 keys paths in recording order, so a sort in the plan cannot re-key it; the checkpoint and
 duplicate paths carry an unknown subdirectory by construction; the budget denominator cannot
 be zero.
+
+**Round 3 (implementation, four agents on opus, one worktree each, merged linearly onto `dev`;
+`make gates` exit 0 on every branch and on the merged tree).** What the implementers found that
+the spec had wrong or had not said, each recorded with its evidence:
+
+- **W-A:** D1's illustrating string for the fitting-call shape split into a bare `)` like his
+  line; a shorter call exhibits it, and the text now says so. Third break tried beyond the
+  two named: the anchor narrowed to a bare `)` turns the fitting-call and chain tests red,
+  pinning the plan-lock choice.
+- **W-B:** the generator prints 157 builtins, 14 variables, 33 keywords, 28 types; no es3.0
+  name lost, `noise.xml` and `packUnorm.xml` were the empty pages. Three gl4 pages
+  legitimately yield nothing (`gl_PointSize`, `gl_Position` declare inside a `gl_PerVertex`
+  listing; `removedTypes` is API) and the generator carries them as a named set with what each
+  documents, so "report an empty page" and "exit 0" stop contradicting. `_ENTITIES` grew three
+  names from the gl4 corpus. The old `mix`-has-three-overloads assertion went red on gl4's
+  nine and was rewritten to name two forms rather than a count. Family pages hold names the
+  file-name diff missed (`dFdxCoarse`, `packUnorm4x8`, `imulExtended` ...), so the editor's
+  lexer brief was re-sent as the table's own 171 names.
+- **W-C:** V8's falsifier pointed at the wrong lever (corrected above); a truncated-file case
+  was added because that branch releases a canvas. The `feedback` block key and the directory
+  are one name, and the layout gate rejected two literal spellings at once, so both read
+  `FEEDBACK_DIR_NAME`. Measured through a real `App`: a save moves `document.json`'s mtime,
+  the sync releases the live `Document` (its `_feedback` with it) and loads fresh, and the
+  first frame after continues from the seed -- consistent, a read after every write. The reset
+  case runs through `Document.reset`, since the session half is the script engine's.
+- **W-D:** `headline_ms` was lifted so the sort and the printed number agree by construction;
+  V11 rides inside `test_the_wire_and_the_abort_path` because one test per process may drive
+  `update_and_draw`. For the maintainer's eyes: a parent without a GPU span prints its CPU wall
+  and can read cheaper than its GPU-bound child (4 ms green over 9 ms yellow) -- unchanged
+  numbers, louder now that they are colored; the headline rule is the lever if it reads wrong.
+- **Tooling:** `make gates` writes `$TMPDIR/shaderbox-gates.log`, one path for every worktree, so
+  concurrent runs overwrite each other's log; each agent set its own `TMPDIR`. Under `xvfb-run`
+  two GPU timer-query tests read a saturated `0xFFFFFFFF` ns on llvmpipe; they pass on the real
+  display.
