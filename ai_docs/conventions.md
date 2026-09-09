@@ -527,7 +527,10 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   --line-length 88` for the script and `clang-format` with the maintainer's nvim fallback
   style for shaders and lib files, both binary wheels called by subprocess; a missing formatter
   raises. The apply is one host edit (select all + `replace_selection`), because `ed_set_text`
-  is not undoable.
+  is not undoable. `format_glsl` then runs one host post-pass, `_attach_member_access`, joining
+  a `.member` line onto the `)` above it: a member access after a block-closing bracket is a
+  forced break in clang-format, not a penalty outcome, so no style option can buy it back (089
+  D1).
 - **`InlineInput` dataclass for mutually-exclusive inline editors.** A picker / panel hosting
   multiple inline text-input affordances (rename / new-file / new-dir) uses one `InlineInput`
   instance per kind — `target: Path | None`, `buf: str`, `needs_focus: bool` with

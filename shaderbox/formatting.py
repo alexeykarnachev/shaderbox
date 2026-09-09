@@ -7,6 +7,7 @@ wheels the app depends on, called by subprocess over stdin; a formatter that is 
 runtime raises, it never quietly returns the text unchanged. A leaf: no GL, no App.
 """
 
+import re
 import subprocess
 import sys
 from collections.abc import Callable
@@ -16,7 +17,16 @@ from pathlib import Path
 import clang_format
 
 PYTHON_LINE_LENGTH = 88
-GLSL_STYLE = "{BasedOnStyle: LLVM, IndentWidth: 4, TabWidth: 4, UseTab: Never}"
+GLSL_STYLE = (
+    "{BasedOnStyle: LLVM, IndentWidth: 4, TabWidth: 4, UseTab: Never, "
+    "AlignAfterOpenBracket: false, BreakAfterOpenBracketFunction: true, "
+    "BreakBeforeCloseBracketFunction: true, BinPackArguments: true, "
+    "PenaltyBreakAssignment: 1000}"
+)
+
+# A line beginning with `.` is only ever a member access in GLSL, and clang-format writes
+# `);`, `) {` and `),` for every other close.
+_MEMBER_ACCESS = re.compile(r"^\s*\.[A-Za-z_]")
 
 
 @dataclass(frozen=True)
@@ -63,11 +73,25 @@ def format_python(text: str) -> FormatResult:
     )
 
 
+def _attach_member_access(text: str) -> str:
+    lines: list[str] = text.split("\n")
+    joined: list[str] = []
+    for line in lines:
+        if joined and joined[-1].endswith(")") and _MEMBER_ACCESS.match(line):
+            joined[-1] += line.lstrip()
+        else:
+            joined.append(line)
+    return "\n".join(joined)
+
+
 def format_glsl(text: str) -> FormatResult:
-    return _run(
+    result = _run(
         [str(_clang_format_executable()), f"--style={GLSL_STYLE}", "-"],
         text,
     )
+    if not result.ok:
+        return result
+    return FormatResult(text=_attach_member_access(result.text))
 
 
 # Tab kind -> formatter. Every kind the code panel opens has one; `formatter_for` answering

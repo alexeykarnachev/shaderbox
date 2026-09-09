@@ -4,7 +4,12 @@ import types
 from typing import Any
 
 from shaderbox.commands import SPEC_BY_ID, CommandId
-from shaderbox.formatting import format_glsl, format_python, formatter_for
+from shaderbox.formatting import (
+    _attach_member_access,
+    format_glsl,
+    format_python,
+    formatter_for,
+)
 from shaderbox.scripting import script_stub_for
 
 _UGLY_GLSL = (
@@ -30,6 +35,83 @@ def test_glsl_formats_with_the_nvim_fallback_style() -> None:
     result = format_glsl(_UGLY_GLSL)
     assert result.ok
     assert result.text == _NEAT_GLSL
+
+
+_HIS_LINE = (
+    "void main() {\n"
+    "    vec3 light = collect_light(vs_uv, u_n_rays, u_max_n_steps, band_offset, "
+    "band_size).rgb;\n"
+    "}\n"
+)
+_HIS_LINE_FORMATTED = (
+    "void main() {\n"
+    "    vec3 light = collect_light(\n"
+    "        vs_uv, u_n_rays, u_max_n_steps, band_offset, band_size\n"
+    "    ).rgb;\n"
+    "}\n"
+)
+_FITTING_CALL = (
+    "void main() {\n"
+    "    vec3 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa = "
+    "texture(u_sampler, vs_uv).rgb;\n"
+    "}\n"
+)
+_CHAIN = (
+    "void main() {\n"
+    "    vec3 light = collect_light(vs_uv, u_n_rays, u_max_n_steps, band_offset, "
+    "band_size).bar(x).rgb;\n"
+    "}\n"
+)
+_CHAIN_FORMATTED = (
+    "void main() {\n"
+    "    vec3 light = collect_light(\n"
+    "        vs_uv, u_n_rays, u_max_n_steps, band_offset, band_size\n"
+    "    ).bar(x).rgb;\n"
+    "}\n"
+)
+
+
+def test_the_maintainers_line_breaks_after_the_bracket_and_keeps_the_member() -> None:
+    result = format_glsl(_HIS_LINE)
+    assert result.ok
+    assert result.text == _HIS_LINE_FORMATTED
+
+
+def test_a_bare_close_bracket_takes_the_member_access() -> None:
+    assert _attach_member_access("    )\n    .rgb;\n") == "    ).rgb;\n"
+
+
+def test_a_call_that_fits_takes_the_member_access() -> None:
+    assert (
+        _attach_member_access("    x = texture(u_s, uv)\n        .rgb;\n")
+        == "    x = texture(u_s, uv).rgb;\n"
+    )
+
+
+def test_a_chain_folds_one_link_per_line() -> None:
+    assert (
+        _attach_member_access("    ).bar(x)\n        .rgb;\n") == "    ).bar(x).rgb;\n"
+    )
+
+
+def test_a_continued_expression_is_not_a_member_access() -> None:
+    unchanged = "    a = f(x)\n        + 1.0;\n"
+    assert _attach_member_access(unchanged) == unchanged
+
+
+def test_the_member_access_join_is_a_fixed_point_of_format_glsl() -> None:
+    for source in (_HIS_LINE, _FITTING_CALL, _CHAIN):
+        once = format_glsl(source)
+        assert once.ok
+        twice = format_glsl(once.text)
+        assert twice.ok
+        assert twice.text == once.text
+
+
+def test_a_chain_survives_the_round_trip_through_clang_format() -> None:
+    result = format_glsl(_CHAIN)
+    assert result.ok
+    assert result.text == _CHAIN_FORMATTED
 
 
 def test_python_formats_with_ruff_at_88() -> None:
