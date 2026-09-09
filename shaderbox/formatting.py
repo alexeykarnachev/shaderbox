@@ -75,9 +75,13 @@ def format_python(text: str) -> FormatResult:
 
 
 def _is_anchor(line: str) -> bool:
-    # A `)` inside a comment closes prose, not a call: joining onto that line would move
-    # the member access into the comment and leave the statement unterminated.
-    return line.endswith(")") and not _COMMENT_MARKER.search(line)
+    # A `)` inside a comment or a preprocessor directive closes prose, not a call: joining
+    # onto that line would move the member access there and leave the statement unterminated.
+    return (
+        line.endswith(")")
+        and not _COMMENT_MARKER.search(line)
+        and not line.lstrip().startswith("#")
+    )
 
 
 def _attach_member_access(text: str) -> str:

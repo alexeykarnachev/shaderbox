@@ -125,6 +125,25 @@ def test_a_comment_ending_the_call_line_is_not_an_anchor() -> None:
     assert result.text.splitlines()[-2].strip() == ".rgb;"
 
 
+_DIRECTIVE_BETWEEN = (
+    "void main() {\n"
+    "    vec3 c = collect_light(vs_uv, u_n_rays, 256, 0.125, 0.03125)\n"
+    "#if defined(FOO)\n"
+    "        .rgb;\n"
+    "#else\n"
+    "        .rrr;\n"
+    "#endif\n"
+    "}\n"
+)
+
+
+def test_a_directive_ending_in_a_bracket_is_not_an_anchor() -> None:
+    result = format_glsl(_DIRECTIVE_BETWEEN)
+    assert result.ok
+    assert "#if defined(FOO).rgb" not in result.text
+    assert ".rgb;" in result.text.splitlines()[3]
+
+
 def test_a_continued_expression_is_not_a_member_access() -> None:
     unchanged = "    a = f(x)\n        + 1.0;\n"
     assert _attach_member_access(unchanged) == unchanged

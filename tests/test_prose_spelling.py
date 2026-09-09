@@ -22,13 +22,13 @@ _ROOT = Path(__file__).resolve().parent.parent
 _BRITISH_WORDS: tuple[str, ...] = (
     "colour",
     "quantise",
-    "quantised",
+    "quantisation",
     "optimise",
-    "optimised",
+    "optimisation",
     "initialise",
-    "initialised",
+    "initialisation",
     "serialise",
-    "serialised",
+    "serialisation",
     "behaviour",
     "favourite",
 )

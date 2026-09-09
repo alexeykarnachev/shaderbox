@@ -99,8 +99,12 @@ Applied line by line in order, so a chain (`).bar(x)` then `.rgb;`) folds one li
 reaches `).bar(x).rgb;`; and it covers the second shape the reviewers found, a call that fits
 while the statement does not (`... = texture(u_sampler, vs_uv)` / `.rgb;` -- the call must be short
 enough to fit; a longer one splits into a bare `)` like his), which has no bare `)` line.
-In GLSL a line beginning with `.` is only ever a member access, so the rule has no false join:
-clang-format writes `);`, `) {` and `),` in every other case and none ends in a bare `)`. It is
+In GLSL a line beginning with `.` is only ever a member access, and clang-format writes `);`,
+`) {` and `),` in every other statement shape -- but a COMMENT can end in `)` too, and the
+post-implementation review compiled the proof: a comment line between the call and its `.rgb;`,
+or a trailing `// see f(x)`, took the member and left the statement unterminated. So an anchor
+is a line that ends in `)` and carries no comment marker (`//`, `/*`, `*/`); with that clause
+the rule has no false join. It is
 idempotent under `format_glsl` (clang-format re-splits the joined line, the post-pass re-joins
 it: a fixed point after one round, V2). A line that fits stays one line, as before: `float x =
 short(a).x;` is untouched by every option above, and the existing
@@ -342,20 +346,42 @@ and the mark family do not exist there and are moot. The lexer brief is the unio
 measured gap: the fourteen variables, the gl4-only functions, and the 42 documented names that
 do not lex as builtins today.
 
-Host-side routing needs nothing: `_drain_editor_input` hands every chord to `ed_key` first, a
-consumed chord lands in `editor_consumed_chords`, and `spec_eligible` refuses `OPEN_PROJECTS` for
-that frame -- the Ctrl+R precedent, confirmed by a live probe (chord 4659 consumed; Ctrl+O 4656
-not consumed at `5601d13`, so `OPEN_PROJECTS` fires today). Once the library consumes `Ctrl+O`
-in NORMAL mode, the Projects modal no longer opens from a focused editor, and still opens from
-an unfocused one, from insert mode (the library does not consume it there), and from the menu
-(`ui.py`, `Projects...`). That is the intended trade and the one he asked for.
-`_RESERVED_CHORDS` is untouched: it is the fallback for chords the keymap lacks, and `o` stays
-absent from it.
+Host-side routing: `_drain_editor_input` hands every chord to `ed_key` first, a consumed chord
+lands in `editor_consumed_chords`, and `spec_eligible` refuses the registry command for that
+frame -- the Ctrl+R precedent, confirmed by a live probe (chord 4659 consumed; Ctrl+O 4656 not
+consumed at `5601d13`). The editor session's report read the host as intercepting the chord
+BEFORE `ed_key`; V14b is the demonstration that it does not. `_RESERVED_CHORDS` is untouched:
+it is the fallback for chords the keymap lacks, and `o` stays absent from it.
+
+**The Projects modal moves to `Alt+O`** *(mine)*. The spec first planned to keep `OPEN_PROJECTS`
+on `Ctrl+O` and let the frame-by-frame consumed-chord guard decide -- and
+`tests/test_keymap_disjoint.py::test_no_global_app_chord_belongs_to_either_keymap` (069 W-E D7)
+refused the re-vendor exactly as it was built to: a GLOBAL command may not share a chord with
+either keymap, and the 069 audit's reason for keeping `Ctrl+O` ("neither keymap lists it") had
+expired. Three ways out were weighed -- move the command, excuse the chord in the gate, keep two
+owners -- and the command moved: `Alt+O` is free in the registry and both keymaps, the gate keeps
+its full strength, and an Alt chord routes `route_always`, so the modal now opens from inside a
+focused buffer, which `Ctrl+O` never did. The menu hint and the cheatsheet derive the string from
+the registry. Two host tests the new sha made false were rewritten, not excused: the
+unfocused-`Ctrl+O` test became `test_alt_o_reaches_the_app_focused_or_not`, and the consumed-chord
+census went from nine to eleven, measured through the same code path on both binaries
+(`bdefruvy` -> `bdefioruvy`, exactly `+i +o`).
+
+**What the editor session decided, measured on nvim 0.11.5 rather than taken from the brief:** a
+bare `:N` does NOT push (nvim does not), `:s` pushes when it substitutes; `ed_find` / `ed_find_next`
+push, so a find-box search is `Ctrl+O`-returnable; in a visual mode the three keys are consumed
+and fail (nvim's beep, selection kept), with an operator pending they cancel it, in insert mode
+they stay unbound; entries track by LINE on the visual marks' rules (an insert above moves an
+entry down, a delete above moves it up, an entry on a deleted line keeps its number), the column
+clamped on landing, with one recorded divergence after `J`; `ed_set_text` rebuilds the state and
+clears the list. Bare `Tab` in normal and visual mode is the editor's as `Ctrl+I` (nothing here
+binds it; `Ctrl+Tab` never reaches `ed_key`). One hundred nvim-generated rows in its corpus and
+five hand-written tests pin it upstream; the ABI delta re-derived here from `nm -D` is zero.
 
 **Landing order, which 087's re-vendor (`0e3dbaf`) is the template for.** W-A, the host half of
 W-B, W-C and W-D land as normal commits with `make gates` green. The three born-red tests --
 V12 (the jumplist through the binding), V13 (every documented name in the builtin slot; red at
-`5601d13` for 42 + 13 + the new functions) and V14b (a real `Ctrl+O` through the drain lands in
+`5601d13` for 123 of 171 names: 42 + 69 + 12) and V14b (a real `Ctrl+O` through the drain lands in
 `editor_consumed_chords`) -- are written against the old binary, their red output recorded, and
 COMMITTED TOGETHER WITH the seven re-vendored files, whose commit message names each test's red
 line the way 087's does. They never sit on `dev` red. The re-vendor follows the seven-file
@@ -506,6 +532,8 @@ without him, so the following are mine and each reverts by one line once he has 
 - **D9 answering in the Help panel rather than on the panel itself** -- if he wants a hint
   beside `gpu`, that is a two-word caption within budget.
 - **D1's post-pass reaching every `)`-ending line, not only a bare `)`** -- the regex's anchor.
+- **The Projects modal on `Alt+O`** -- one chord row in `commands.py` (the gate forbids `Ctrl+O`
+  now that the keymap has it; another free chord is a one-row change).
 
 ---
 
@@ -588,3 +616,46 @@ the spec had wrong or had not said, each recorded with its evidence:
   concurrent runs overwrite each other's log; each agent set its own `TMPDIR`. Under `xvfb-run`
   two GPU timer-query tests read a saturated `0xFFFFFFFF` ns on llvmpipe; they pass on the real
   display.
+
+**Round 4 (post-implementation, three reviewers on opus against the merged `dev`: code
+correctness, architecture and conventions, spec fidelity).** Fidelity PASS: every decision and
+V-step landed, wired and pinned, five named mutations red on the predicted assertion, the
+quit-and-relaunch chain traced function by function. Correctness PARTIAL with one blocking
+finding; architecture PARTIAL with one. Accepted and fixed in one wave (`06a04ef`):
+
+- The formatter's anchor took a comment line ending in `)` and buried live code (compiled: input
+  true, formatted false) -- the anchor now excludes comment markers; two tests through
+  `format_glsl`.
+- The generator checked `_NAMES_NOTHING` before parsing, so those pages could never be reported
+  -- the membership test moved to the report site, and a test over a temp corpus pins it; the
+  naming flag means "named anything", since a filter is the record of why a name was dropped.
+- `quantise` in a docstring; the spelling gate's regex was one word, widened to eleven, which
+  found nineteen more British spellings across twelve files, all fixed.
+- The module map and the `make gates` section gained what the diff added (the shared
+  `$TMPDIR/shaderbox-gates.log`).
+- The panel's head/tail split re-derived the plan's layout by two integers; `ProfileRow` carries
+  `starts_tree` instead, and a test pins the first tree row.
+- Four assertions duplicated across two test files, dropped from the one that does not own
+  the index.
+
+Rejected with reason: `load_color` on NaN and `target_fps = 0` (unreachable; the divisor is
+pydantic-bounded `ge=30`) and the resize-then-save-without-render warning (the accepted resize
+cost, self-healing on the next save).
+
+**Round 5 (the re-vendor, `9f5070b`).** The three born-red tests went green on the new binary
+with no host change; the ABI delta is zero, re-derived here. The keymap-disjointness gate fired
+on `Ctrl+O` and the modal moved to `Alt+O` (D10). Contrary to the editor session's report,
+`ffi/README.md` did change (twelve lines: bare `Tab` is the editor's in normal and visual mode),
+and its reading of the host's chord routing was wrong in the direction V14b shows.
+
+**Round 6 (the closing round, the same two reviewers against the patched tree; the fidelity
+auditor had passed).** Architecture PASS on its six with one new catch -- the working-tree
+banner at 201 words against `test_roadmap_shape`'s stated 200, trimmed. Correctness closed
+three of four (the NaN and resize nits stay rejected) and found the same class once more: a
+preprocessor directive ending in `)` (`#if defined(FOO)`) was still an anchor, compiled and
+demonstrated; `_is_anchor` now also refuses a line starting with `#`, with a test through
+`format_glsl` broken and restored. The spelling gate's list was de-duplicated (the trailing
+`\b` is absent by design, so `quantise` already covers `quantised`) and gained the `-isation`
+forms, which found one more in the 068 tutorial body. The generator's `named` flag was the one
+round-4 suggestion the fix wave refuted with a measurement (nineteen filtered pages would have
+read as holes), and the reviewer accepted the refutation.

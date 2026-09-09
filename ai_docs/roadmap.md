@@ -26,27 +26,31 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-08, 087 and 088 are implemented, green, and confirmed by the maintainer's eyes. -->
-**Next: nothing is claimed; the ninth walk is his.** 088 landed the frame profiler: a leaf
-`profiling.py` (CPU spans, GPU spans as `GL_TIME_ELAPSED` queries in a three-deep path-keyed ring
-read two frames late), a span at every stage of the live loop, and the tree drawn in the widened
-FPS panel. It reaches `Document.render` as a trailing parameter, so exports and probes stay silent
-and a nested document nests by construction. Nothing about what the numbers SHOW has changed --
-this is the instrument. Two follow-ups from his hands-on pass: the active pass name takes the
-theme's accent, and the panel draws a path-keyed exponential average, not the raw frame. Editor
-re-vendored at `5601d13`: a command key aborts a pending operator.
+<!-- As of 2026-09-09, 089 is implemented, merged on dev, gates green; every item below awaits his eyes. -->
+**Next: nothing is claimed; the tenth walk is his.** 089 landed the ninth walk's five findings:
+the shader formatter breaks after the open bracket and keeps `.rgb` on the close (clang-format's
+bracket options plus one host post-pass); completion knows every 4.60
+fragment builtin (`glsl_docs.py` regenerated from gl4, a `VARIABLES` table, `GLSL_VARIABLE`); a
+feedback pass's newest frame is saved as `feedback/<pass>.bin` and seeds its history on load; the
+FPS panel colors by budget share and sorts by cost behind a pure `profile_rows_plan`; and the
+editor gained vim's single-buffer jumplist, re-vendored at `d1ef029` with the lexer's builtins
+synced. That re-vendor moved the Projects modal to `Alt+O`: the keymap-disjointness gate refused
+a chord with two owners.
 
-**Confirmed by the maintainer:** 087's tiles, the pass row and its accent, `true` in a shader, the
-FPS panel and its smoothing. **Still awaiting his eyes** (no WM on the dev box), from before this
-batch: the lock chip's look and cycling, what the copilot SAYS under Read-only, blockwise `Ctrl+V`.
+**Awaiting his eyes** (no WM here): the formatted shape on his own file; the bands and
+whether 0.5 is the right knee (a parent without a GPU span can read cheaper than its child); the
+sorted tree; a feedback document surviving a restart; `Ctrl+O` after a search and
+normal-mode `Tab`; the modal from `Alt+O`. From before: the lock chip, the copilot under Read-only,
+blockwise `Ctrl+V`.
 
-**Open, unmeasured:** no brake watches cost, or a frame going lit to flat
-(`ai_docs/features/082_dogfood_post081/02_round2_report.md`); a multi-document mission.
+**Open, unmeasured:** no brake watches cost, or a frame going lit to flat (082's round-2
+report); a multi-document mission.
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 089 | ninth_walk_findings | done | The maintainer's ninth walk, five findings over two repos: the shader formatter's bracket shape (clang-format 23's bracket-break options plus one host post-pass, since the member access after a block-closing bracket is a forced break no option buys back), the completion vocabulary re-sourced from the gl4 refpages with entries named from their prototypes (a family refname had silently dropped `noise1..4` and would have lost three pack names) and the fourteen fragment-stage variables as `SymbolKind.GLSL_VARIABLE`, a feedback pass's newest frame persisted as `feedback/<pass>.bin` and seeded into its history on load (the first-frame swap and the scaled-pass size were both found broken by the pre-implementation probes and fixed before a line landed), the FPS panel colored by budget share and sorted by cost behind a pure plan the wire test can spy, and the editor library's single-buffer jumplist re-vendored at `d1ef029` with the lexer's builtin set synced to the table's 171 names -- which moved the Projects modal to `Alt+O` when the keymap-disjointness gate refused two owners for `Ctrl+O`. Spec: `ai_docs/features/089_ninth_walk_findings/01_spec.md` + `00_findings.md`. |
 | 088 | frame_profiler | done | A frame-time breakdown behind the FPS chip, built as a general seam: a leaf `profiling.py` with CPU spans and GPU timer queries (a three-deep, path-keyed ring read two frames late, since a two-deep one measured a 22 ms stall under load and a name-keyed one lost the current document's second render), threaded into `Document.render` as a parameter so exports stay silent and a document rendered inside another nests by construction; recording only while the panel is open, and the panel drawing a path-keyed exponential average while the profile it reads stays what was measured. Spec: `ai_docs/features/088_frame_profiler/01_spec.md`. |
 | 087 | eighth_walk_findings | done | The maintainer's eighth walk, four findings across two repos: the pass strip's tiles at 168 on their own `SIZE.PASS_TILE` (the sampler rows keep `PASS_THUMB` at 112) with a boundary-correct `tiles_per_row`, the Uniforms tab's pass selector as a row of clickable names marked by color alone, GLSL `true`/`false` colored as keywords (lexer, upstream `760f8ea`), and search highlights that were drawn a screenful high or culled whenever the view was scrolled — the emitter subtracted the scroll twice, found by measurement here and fixed upstream at `c081110`; both landed in one re-vendor at `760f8ea`, pinned by two host tests born red against `410b7e7`. Spec: `ai_docs/features/087_eighth_walk_findings/01_spec.md`. |
 | 086 | lock_as_a_mode | done | 085's lock was two states that looked alike and one nobody chose, which the maintainer called too implicit. It is now a MODE he sets -- Allow / Ask / Read-only on one cycling chip in the chat's top bar, persisted per project -- and READ_ONLY withholds all 15 tools that change or delete the project -- the lock's 12 plus the three deletes its own roster excluded -- while the prompt tells the copilot why, replacing a guard the model could only discover by hitting it. Reverses 085's ARMED/OFF split and 083 D5's locked-by-default; the gate answer keeps the name DENY because answering a gate IS a refusal, while a mode that removes the tools refuses nothing. Two bugs rode along: a project switch inherited the outgoing project's whole app_state when the incoming one had never been saved, and the mode reverted on Clear because the persisted copy was only written at save time. Spec: `ai_docs/features/086_lock_as_a_mode/01_spec.md` + `02_deny_hides_the_tools.md`. |
