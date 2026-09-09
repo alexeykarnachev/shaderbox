@@ -25,7 +25,9 @@ from shaderbox.profiling import (
     Profiler,
     ProfileSmoother,
     Span,
+    by_cost,
 )
+from shaderbox.ui_primitives import profile_rows_plan
 
 _RED = """#version 460 core
 in vec2 vs_uv;
@@ -488,6 +490,31 @@ def _capture_the_overlays_profile(app: Any, monkeypatch: Any) -> Any:
     return handed[-1]
 
 
+def _capture_the_plan_call(app: Any, monkeypatch: Any) -> Any:
+    """Drive one frame with `profile_rows_plan` spied on, and report its arguments.
+
+    The spy goes on `ui_primitives`, the module `fps_overlay` resolves the name in at call
+    time; `ui.fps_overlay` stays real, so the plan call actually runs inside a live draw.
+    """
+    from shaderbox import ui_primitives
+
+    calls: list[Any] = []
+    real = ui_primitives.profile_rows_plan
+
+    def spy(profile: Any, fps: int, target_fps: int) -> Any:
+        calls.append((profile, fps, target_fps))
+        return real(profile, fps, target_fps)
+
+    monkeypatch.setattr(ui_primitives, "profile_rows_plan", spy)
+    try:
+        from shaderbox import ui
+
+        ui.update_and_draw(app)
+    finally:
+        monkeypatch.undo()
+    return calls
+
+
 def _close_the_panel(app: Any, monkeypatch: Any) -> None:
     """Make the overlay report a closing click, which is what the live toggle is."""
     from shaderbox import ui
@@ -594,6 +621,20 @@ def test_the_wire_and_the_abort_path(app: Any, monkeypatch: Any) -> None:
         f"the overlay drew index {handed.index} with {_names(handed.children)} -- "
         "that is the frame itself, not the average"
     )
+
+    # V11 -- the panel draws from the PLAN, and the plan is handed the same smoothed tree
+    # and the live target. Without this seam a sort or a color inside the draw loop would be
+    # unfalsifiable: the overlay spy above sees only what goes IN. Falsifier: cut the
+    # `profile_rows_plan` call from `fps_overlay` and no call is recorded.
+    app.profile_smoother.feed(_profile(10_001, 500.0))
+    calls = _capture_the_plan_call(app, monkeypatch)
+    assert calls, "the overlay drew without planning its rows"
+    planned_profile, _planned_fps, planned_target = calls[-1]
+    assert planned_profile is not None
+    assert planned_profile.index == 10_001 and planned_profile.children == [], (
+        f"the plan was handed index {planned_profile.index} -- that is not the average"
+    )
+    assert planned_target == app.app_state.global_target_fps
 
     # Closing the panel writes `enabled` from INSIDE the open `ui` span, so a setter that
     # acted at once would clear the stack under a span whose `finally` has yet to run.
@@ -734,3 +775,83 @@ def test_two_same_named_siblings_smooth_separately() -> None:
     assert abs(light.cpu_ms - 2.0) < 0.1 and abs(heavy.cpu_ms - 18.0) < 0.1, (
         f"the siblings smoothed together: {light.cpu_ms:.4f} and {heavy.cpu_ms:.4f}"
     )
+
+
+# ---------------------------------------------------------------------------
+# V10 -- the panel's cost order (feature 089 D8)
+#
+# GL-free: `by_cost` reads a list and writes a list, and the plan is a pure function of a
+# tree, so these build their spans by hand.
+# ---------------------------------------------------------------------------
+
+
+def test_by_cost_puts_the_costliest_first() -> None:
+    # Falsifier: drop `reverse=True` and recording order comes back as 1, 2, 3.
+    children = [Span("a", cpu_ms=1.0), Span("b", cpu_ms=3.0), Span("c", cpu_ms=2.0)]
+    assert _names(by_cost(children)) == ["b", "c", "a"]
+
+
+def test_by_cost_ranks_a_gpu_span_by_its_gpu_number() -> None:
+    # The headline number is what the row PRINTS, so a GPU span sorts by its GPU time even
+    # where its wall is larger. Falsifier: key on `cpu_ms` and the cheap GPU span, whose
+    # CPU issue cost is the highest of the three, leads.
+    children = [
+        Span("gpu_light", cpu_ms=9.0, gpu_ms=1.0),
+        Span("cpu_mid", cpu_ms=4.0),
+        Span("gpu_heavy", cpu_ms=1.0, gpu_ms=8.0),
+    ]
+    assert _names(by_cost(children)) == ["gpu_heavy", "cpu_mid", "gpu_light"]
+
+
+def test_equal_costs_keep_recording_order() -> None:
+    # Falsifier: an unstable sort, or a tie-break on the name, and the two 5 ms spans swap.
+    children = [Span("first", cpu_ms=5.0), Span("second", cpu_ms=5.0)]
+    assert _names(by_cost(children)) == ["first", "second"]
+
+
+def test_by_cost_leaves_the_instrument_alone() -> None:
+    # The profile is what was measured, so only the reader sorts. Falsifier: sort in place
+    # (`children.sort(...)`) and the recorded tree is reordered under every other consumer.
+    children = [Span("a", cpu_ms=1.0), Span("b", cpu_ms=3.0)]
+    sorted_children = by_cost(children)
+    assert sorted_children is not children
+    assert _names(children) == ["a", "b"]
+
+
+def test_the_plans_tree_is_cost_ordered_with_other_last() -> None:
+    # The order reaches the panel through the plan, which is what the draw loop walks.
+    # Falsifier: iterate `span.children` in the plan and the rows come out a, b, c.
+    root = Span("frame", cpu_ms=20.0)
+    root.children.append(Span("pass:a", cpu_ms=1.0))
+    root.children.append(Span("pass:b", cpu_ms=3.0))
+    root.children.append(Span("pass:c", cpu_ms=2.0))
+    rows = profile_rows_plan(
+        FrameProfile(root, 0, complete=True), fps=60, target_fps=60
+    )
+    names = [row.name for row in rows]
+    assert names == [
+        "frame",
+        "gpu",
+        "budget",
+        "fps",
+        "target",
+        "pass:b",
+        "pass:c",
+        "pass:a",
+        "other",
+    ]
+
+
+def test_the_plan_indents_a_child_under_its_parent() -> None:
+    # Depth is the plan's, so the draw loop only multiplies it by the spacing token.
+    # Falsifier: pass a constant depth in `_plan_tree` and the tree flattens.
+    root = Span("frame", cpu_ms=20.0)
+    outer = Span("document:one", cpu_ms=10.0)
+    outer.children.append(Span("pass:inner", cpu_ms=6.0))
+    root.children.append(outer)
+    rows = profile_rows_plan(
+        FrameProfile(root, 0, complete=True), fps=60, target_fps=60
+    )
+    depths = {row.name: row.depth for row in rows}
+    assert depths["document:one"] == 0
+    assert depths["pass:inner"] == 1

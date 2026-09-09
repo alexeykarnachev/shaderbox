@@ -101,6 +101,20 @@ def other_ms(span: Span) -> float:
     return max(0.0, span.cpu_ms - sum(child.cpu_ms for child in span.children))
 
 
+def headline_ms(span: Span) -> float:
+    """A span's own cost as a reader reads it: its GPU time where it has one, its wall
+    otherwise."""
+    return span.gpu_ms if span.gpu_ms is not None else span.cpu_ms
+
+
+def by_cost(children: list[Span]) -> list[Span]:
+    """A NEW list of `children`, costliest first, ties in recording order.
+
+    The instrument's own tree keeps the order the frame measured; only a reader sorts.
+    """
+    return sorted(children, key=headline_ms, reverse=True)
+
+
 class Profiler:
     """Builds one `FrameProfile` per frame while `enabled`; a null object while not.
 

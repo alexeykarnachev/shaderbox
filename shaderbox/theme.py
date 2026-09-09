@@ -317,6 +317,21 @@ def fade(
     return (color[0], color[1], color[2], a)
 
 
+# The share of a frame budget at which a measured number stops reading as healthy, and the
+# share at which it has spent the whole budget. Both are the panel's knees (089 D7).
+LOAD_WARN_RATIO: float = 0.5
+LOAD_ERROR_RATIO: float = 1.0
+
+
+def load_color(ratio: float) -> tuple[float, float, float, float]:
+    """The state hue for a measurement taking `ratio` of the frame budget."""
+    if ratio >= LOAD_ERROR_RATIO:
+        return COLOR.STATE_ERROR
+    if ratio >= LOAD_WARN_RATIO:
+        return COLOR.STATE_WARN
+    return COLOR.STATE_OK
+
+
 # Whole-pane alpha for the code editor when it lacks keyboard focus; style.Alpha
 # reaches the editor's glyph draws.
 EDITOR_UNFOCUSED_ALPHA: float = 0.6

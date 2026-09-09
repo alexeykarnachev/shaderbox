@@ -198,5 +198,26 @@ def help_sections() -> list[HelpSection]:
                 "rarely worth it."
             ),
         ),
+        HelpSection(
+            key="fps_panel",
+            title="The FPS panel",
+            body=(
+                "Click the FPS chip over the render and the panel unfolds the last measured "
+                "frame, one row per span, costliest first. A row's color is its share of the "
+                "budget: green under half, yellow past half, red once it has spent the whole "
+                "budget on its own.\n"
+                "\n"
+                "**frame** is the wall clock around one turn of the loop on the CPU, the buffer "
+                "swap included and the wait that holds you at the target frame rate excluded.\n"
+                "\n"
+                "**gpu** is what the GPU spent drawing that frame. The CPU never waits for it, "
+                "so the GPU can still be working on one frame while the CPU submits the next — "
+                "which is why **gpu** runs larger than **frame** on a heavy shader, and is the "
+                "real bound when it does.\n"
+                "\n"
+                "The GPU numbers arrive two frames after the frame they measure, so a change "
+                "you make shows up a couple of frames later."
+            ),
+        ),
         _shortcuts_section(),
     ]

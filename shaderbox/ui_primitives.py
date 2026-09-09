@@ -10,8 +10,8 @@ import pyperclip
 from imgui_bundle import imgui, imgui_ctx
 from loguru import logger
 
-from shaderbox.profiling import FrameProfile, Span, other_ms
-from shaderbox.theme import COLOR, OVERLAY_ALPHA, SIZE, SPACE, fade
+from shaderbox.profiling import FrameProfile, Span, by_cost, headline_ms, other_ms
+from shaderbox.theme import COLOR, OVERLAY_ALPHA, SIZE, SPACE, fade, load_color
 
 
 def _ellipsize(text: str, max_width: float) -> str:
@@ -1344,7 +1344,71 @@ def label_row(
     imgui.set_next_item_width(item_width)
 
 
-def _profile_number(number_font: imgui.ImFont, value: str) -> None:
+@dataclass(frozen=True)
+class ProfileRow:
+    """One row of the FPS panel, decided before any imgui call.
+
+    `name` is the raw span name where the row is a span, so the draw clips it itself;
+    `number` is the formatted readout and `color` the hue it draws in.
+    """
+
+    depth: int
+    name: str
+    count: int
+    number: str
+    color: tuple[float, float, float, float]
+
+
+# The plan's leading rows, which the panel separates from the tree by a gap: `budget`,
+# `fps` and `target` always, `frame` and `gpu` ahead of them whenever a profile arrived.
+_STATIC_ROWS: int = 3
+_HEADLINE_ROWS: int = 2
+
+
+def profile_rows_plan(
+    profile: FrameProfile | None, fps: int, target_fps: int
+) -> list[ProfileRow]:
+    """The panel's rows in draw order, colored by each measurement's share of the budget.
+
+    The tree's children are ordered by cost (`profiling.by_cost`); the profile itself is
+    never reordered. Pure and imgui-free, so the order and the bands are testable without
+    a window.
+    """
+    budget_ms: float = 1e3 / target_fps
+    rows: list[ProfileRow] = []
+    if profile is not None:
+        # CPU and GPU overlap, so neither alone is the frame's bound -- both are shown,
+        # and which one is larger is what the reader is looking for.
+        rows.append(_measured_row(0, "frame", 1, profile.cpu_ms, budget_ms))
+        rows.append(_measured_row(0, "gpu", 1, profile.gpu_ms, budget_ms))
+    rows.append(ProfileRow(0, "budget", 1, f"{budget_ms:.1f} ms", COLOR.FG_MUTED))
+    rows.append(ProfileRow(0, "fps", 1, str(fps), COLOR.FG_MUTED))
+    rows.append(ProfileRow(0, "target", 1, str(target_fps), COLOR.FG_MUTED))
+    if profile is not None:
+        _plan_tree(profile.root, 0, budget_ms, rows)
+        rows.append(_measured_row(0, "other", 1, other_ms(profile.root), budget_ms))
+    return rows
+
+
+def _measured_row(
+    depth: int, name: str, count: int, ms: float, budget_ms: float
+) -> ProfileRow:
+    return ProfileRow(depth, name, count, f"{ms:.2f} ms", load_color(ms / budget_ms))
+
+
+def _plan_tree(
+    span: Span, depth: int, budget_ms: float, rows: list[ProfileRow]
+) -> None:
+    for child in by_cost(span.children):
+        rows.append(
+            _measured_row(depth, child.name, child.count, headline_ms(child), budget_ms)
+        )
+        _plan_tree(child, depth + 1, budget_ms, rows)
+
+
+def _profile_number(
+    number_font: imgui.ImFont, value: str, color: tuple[float, float, float, float]
+) -> None:
     """The number half of a profiler row: right-aligned at the panel edge, in `number_font`.
 
     Separate from the label so every authored string in this panel stays one word -- a
@@ -1356,7 +1420,7 @@ def _profile_number(number_font: imgui.ImFont, value: str) -> None:
     imgui.same_line(
         imgui.get_content_region_avail().x - width + imgui.get_cursor_pos_x()
     )
-    imgui.text_colored(COLOR.FG_MUTED, value)
+    imgui.text_colored(color, value)
     imgui.pop_font()
 
 
@@ -1367,37 +1431,29 @@ def _number_width(number_font: imgui.ImFont, value: str) -> float:
     return width
 
 
-def _profile_rows(span: Span, number_font: imgui.ImFont, depth: int) -> None:
-    """One span per row, its children indented under it.
+def _profile_rows(rows: list[ProfileRow], number_font: imgui.ImFont) -> None:
+    """One planned row per line, indented by its depth.
 
     A span name is data (`pass:cascade_gather_and_merge`, a document's own title), so it is
     clipped to the room left before the number rather than running under it.
     """
-    for child in span.children:
-        number = _span_number(child)
+    for row in rows:
+        indent = float(SPACE.MD) * row.depth
         room = (
             imgui.get_content_region_avail().x
-            - float(SPACE.MD) * depth
-            - _number_width(number_font, number)
+            - indent
+            - _number_width(number_font, row.number)
             - float(SPACE.SM)
         )
-        if child.count > 1:
-            room -= imgui.calc_text_size(f"x{child.count}").x + float(SPACE.SM)
-        imgui.dummy((float(SPACE.MD) * depth, 0.0))
+        if row.count > 1:
+            room -= imgui.calc_text_size(f"x{row.count}").x + float(SPACE.SM)
+        imgui.dummy((indent, 0.0))
         imgui.same_line(0.0, 0.0)
-        clipped_caption(child.name, max(0.0, room))
-        if child.count > 1:
+        clipped_caption(row.name, max(0.0, room))
+        if row.count > 1:
             imgui.same_line(0.0, float(SPACE.SM))
-            caption_text(f"x{child.count}")
-        _profile_number(number_font, number)
-        _profile_rows(child, number_font, depth + 1)
-
-
-def _span_number(span: Span) -> str:
-    """A span's headline number: its GPU time where it has one, its wall otherwise."""
-    if span.gpu_ms is not None:
-        return f"{span.gpu_ms:.2f} ms"
-    return f"{span.cpu_ms:.2f} ms"
+            caption_text(f"x{row.count}")
+        _profile_number(number_font, row.number, row.color)
 
 
 def fps_overlay(
@@ -1442,24 +1498,12 @@ def fps_overlay(
             child_flags=imgui.ChildFlags_.borders | imgui.ChildFlags_.auto_resize_y,
             window_flags=imgui.WindowFlags_.no_scrollbar,
         ):
-            if profile is not None:
-                # CPU and GPU overlap, so neither alone is the frame's bound -- both are
-                # shown, and which one is larger is what the reader is looking for.
-                caption_text("frame")
-                _profile_number(number_font, f"{profile.cpu_ms:.2f} ms")
-                caption_text("gpu")
-                _profile_number(number_font, f"{profile.gpu_ms:.2f} ms")
-            caption_text("budget")
-            _profile_number(number_font, f"{1e3 / target_fps:.1f} ms")
-            caption_text("fps")
-            _profile_number(number_font, str(fps))
-            caption_text("target")
-            _profile_number(number_font, str(target_fps))
-            if profile is not None:
+            rows = profile_rows_plan(profile, fps, target_fps)
+            head = _STATIC_ROWS + (_HEADLINE_ROWS if profile is not None else 0)
+            _profile_rows(rows[:head], number_font)
+            if len(rows) > head:
                 imgui.dummy((0.0, float(SPACE.SM)))
-                _profile_rows(profile.root, number_font, 0)
-                caption_text("other")
-                _profile_number(number_font, f"{other_ms(profile.root):.2f} ms")
+                _profile_rows(rows[head:], number_font)
         imgui.pop_style_color(1)
 
     return not is_open if clicked else is_open

@@ -735,6 +735,25 @@ def test_consumed_chord_suppresses_the_registry_spec() -> None:
     assert spec_eligible(app, spec, chord, popup_open=False) is True
 
 
+def test_a_consumed_ctrl_o_suppresses_the_projects_modal() -> None:
+    """The routing the jumplist rides: once the library takes `Ctrl+O` in NORMAL mode, the
+    Projects modal stays shut for that frame and needs no host-side change (089 D10).
+
+    The chord comes from the command table rather than being typed here, so a rebinding
+    moves the test with it. Falsifier: drop the `editor_consumed_chords` clause from
+    `spec_eligible` and a focused editor both jumps back and opens the modal.
+    """
+    spec = SPEC_BY_ID[CommandId.OPEN_PROJECTS]
+    app = SimpleNamespace(
+        editor_consumed_chords={spec.default_chord},
+        editor_focused=True,
+        copilot_focused=False,
+    )
+    assert spec_eligible(app, spec, spec.default_chord, popup_open=False) is False
+    app.editor_consumed_chords = set()
+    assert spec_eligible(app, spec, spec.default_chord, popup_open=False) is True
+
+
 # --- text getters -----------------------------------------------------------
 
 
