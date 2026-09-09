@@ -129,6 +129,26 @@ def test_lookup_and_classes_and_the_lib_file_shape() -> None:
     assert not [s for s in lib.declarations if s.kind == SymbolKind.WIRABLE_SAMPLER]
 
 
+def test_a_builtin_variable_is_its_own_kind_carrying_every_declaration() -> None:
+    # 089 W-B / D3: `in vec4 gl_FragCoord` is neither a call signature nor the one name the
+    # shader writes, so it is `GLSL_VARIABLE`. Falsifier: `_language_symbols` stops emitting
+    # from `VARIABLES` (the lookup is None, as it was before 089).
+    index = build_glsl_index(_context())
+    coord = index.lookup("gl_FragCoord")
+    assert coord is not None
+    assert coord.kind is SymbolKind.GLSL_VARIABLE
+    assert coord.signature == "in vec4 gl_FragCoord"
+    assert coord.doc
+    layer = index.lookup("gl_Layer")
+    assert layer is not None
+    assert layer.signature.splitlines() == ["out int gl_Layer", "in int gl_Layer"]
+    # The legacy outputs stay the buffer's own kind: 460 core removed both names, and the
+    # host colors them where the lexer no longer does.
+    assert index.lookup("gl_FragColor").kind is SymbolKind.OUTPUT_VARIABLE
+    # A builtin variable is a completion candidate, in the same list as the builtins.
+    assert "gl_FragCoord" in {s.name for s in index.words}
+
+
 def test_intel_is_gl_free() -> None:
     # A fresh interpreter, so another test's imports cannot mask a GL pull. The GLSL half and
     # the completion policy; the Python half reaches `shaderbox.scripting` for the API glosses,

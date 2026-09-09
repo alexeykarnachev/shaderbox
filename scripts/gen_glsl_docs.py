@@ -2,8 +2,19 @@
 
 The GLSL builtins a shader author calls -- their FULL overload sets and the spec's own
 one-line purpose -- are data Khronos publishes, not something to type from memory. This
-reads the ES 3.0 refpages (one DocBook XML per function, a `funcprototype` per overload)
-and emits a table the code panel reads for `K` and for the completion popup's detail note.
+reads the gl4 refpages (one DocBook XML per page, a `funcprototype` per overload), which
+is the vocabulary a `#version 460` shader may name, and emits a table the code panel reads
+for `K` and for the completion popup's detail note.
+
+An entry is named from its PROTOTYPE, never from the page's refname: a family page
+(`packUnorm.xml`, `noise.xml`) carries a refname no prototype matches, and keying on the
+refname drops such a page whole. A page that yields no entry at all is reported the way an
+unparsable one is, so the table cannot shrink in silence.
+
+A builtin VARIABLE (`gl_FragCoord` and kin) is declared in a `fieldsynopsis` rather than a
+prototype; those pages fill a second table, filtered to the fragment stage by
+`_FRAGMENT_VARIABLES` -- the refpages do not encode the stage, so that list is held here
+with its citation while the declarations and the purpose still come from the page.
 
 The keyword and type vocabulary comes from the editor library's own GLSL lexer
 (`src/lex_glsl.odin` in the editor repo), which is the list that actually colors this
@@ -13,8 +24,8 @@ is typed from memory.
 Usage:
     git clone --depth 1 --filter=blob:none --sparse \\
         https://github.com/KhronosGroup/OpenGL-Refpages.git /tmp/refpages
-    cd /tmp/refpages && git sparse-checkout set es3.0
-    uv run python scripts/gen_glsl_docs.py /tmp/refpages/es3.0 ~/src/editor/src/lex_glsl.odin
+    cd /tmp/refpages && git sparse-checkout set gl4
+    uv run python scripts/gen_glsl_docs.py /tmp/refpages/gl4 ~/src/editor/src/lex_glsl.odin
 
 Output (repo-anchored): shaderbox/glsl_docs.py
 """
@@ -27,6 +38,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 OUT_PATH = REPO_ROOT / "shaderbox" / "glsl_docs.py"
 DOCBOOK = "{http://docbook.org/ns/docbook}"
+# The repo's ruff line length, which the emitted table is already formatted to.
+_LINE_LENGTH = 88
 
 # Pages in the refpages tree that document the API, not the shading language. The GLSL
 # pages are the ones whose refentry carries a funcsynopsis with a funcprototype; a gl*
@@ -38,7 +51,7 @@ _API_PREFIX = re.compile(r"^gl[A-Z]")
 # a reported skip rather than a silent drop, so the table can never quietly shrink.
 _ENTITIES: dict[str, str] = {
     # Enumerated from the corpus itself:
-    #   grep -ohE '&[a-zA-Z][a-zA-Z0-9]*;' es3.0/*.xml | sort -u
+    #   grep -ohE '&[a-zA-Z][a-zA-Z0-9]*;' gl4/*.xml | sort -u
     # A page using an entity absent here fails to parse and is REPORTED, never dropped in
     # silence -- the generator exits non-zero if any page is skipped.
     "af": "",
@@ -47,9 +60,11 @@ _ENTITIES: dict[str, str] = {
     "Delta": "Delta",
     "ge": "&#8805;",
     "gt": "&#62;",
+    "infin": "&#8734;",
     "it": "",
     "lambda": "lambda",
     "lceil": "ceil(",
+    "lcub": "{",
     "le": "&#8804;",
     "lfloor": "floor(",
     "lt": "&#60;",
@@ -62,8 +77,51 @@ _ENTITIES: dict[str, str] = {
     "rfloor": ")",
     "sdot": "*",
     "times": "x",
+    "VerticalBar": "|",
     "VerticalLine": "|",
 }
+
+# Stage-only verbs a fragment shader may not call. The gl4 tree documents the whole
+# pipeline; each name here is excluded with the stage that owns it as the reason. Image,
+# atomic and barrier functions are NOT excluded: the 4.60 spec's 7.1.5 states their
+# behavior inside helper invocations, which is a fragment-stage fact.
+_STAGE_ONLY: dict[str, str] = {
+    "EmitVertex": "geometry",
+    "EndPrimitive": "geometry",
+    "EmitStreamVertex": "geometry",
+    "EndStreamPrimitive": "geometry",
+}
+
+# Pages that document no name a shader can write, each with what it documents instead. A
+# page absent here that yields neither a prototype nor a declaration is REPORTED, so a
+# family page whose entries stop arriving cannot pass as one of these.
+_NAMES_NOTHING: dict[str, str] = {
+    "gl_PointSize.xml": "a gl_PerVertex member, declared in a programlisting block",
+    "gl_Position.xml": "a gl_PerVertex member, declared in a programlisting block",
+    "removedTypes.xml": "the API types removed in OpenGL 4.2, not a shader name",
+}
+
+# The fragment stage's builtin variables, the declaration block of the OpenGL Shading
+# Language 4.60 specification 7.1.5 ("Fragment Shader Special Variables"). The refpages
+# carry a variable's declarations and purpose but not the stage it belongs to, which is why
+# this list is held here rather than read; every name is looked up in the corpus, and one
+# that finds no page is reported.
+_FRAGMENT_VARIABLES: tuple[str, ...] = (
+    "gl_FragCoord",
+    "gl_FrontFacing",
+    "gl_ClipDistance",
+    "gl_CullDistance",
+    "gl_PointCoord",
+    "gl_PrimitiveID",
+    "gl_SampleID",
+    "gl_SamplePosition",
+    "gl_SampleMaskIn",
+    "gl_Layer",
+    "gl_ViewportIndex",
+    "gl_HelperInvocation",
+    "gl_FragDepth",
+    "gl_SampleMask",
+)
 
 
 class NotARefpage(Exception):
@@ -142,44 +200,85 @@ def _purpose(entry: ET.Element) -> str:
     return _text(node) if node is not None else ""
 
 
-def parse_refpages(root: Path) -> tuple[dict[str, tuple[list[str], str]], list[str]]:
-    """name -> (overload signatures, purpose) for every GLSL builtin page, plus the pages
-    that failed to parse. A caller that ignores the second half ships a partial table."""
-    found: dict[str, tuple[list[str], str]] = {}
-    unparsed: list[str] = []
+def _declarations(entry: ET.Element) -> list[tuple[str, str]]:
+    """Every `fieldsynopsis` in the page, as (variable name, `<modifier> <type> <name>`).
+
+    A builtin variable is declared rather than called, so its page carries no prototype. A
+    page may carry two declarations for one name (an `in` form and an `out` form, one per
+    stage); both are kept, in page order.
+    """
+    out: list[tuple[str, str]] = []
+    for field in entry.iter(f"{DOCBOOK}fieldsynopsis"):
+        varname = field.find(f"{DOCBOOK}varname")
+        type_node = field.find(f"{DOCBOOK}type")
+        if varname is None or not varname.text or type_node is None:
+            continue
+        # `gl_ClipDistance[]` declares the name `gl_ClipDistance`.
+        name = varname.text.strip().split("[")[0]
+        modifier = field.find(f"{DOCBOOK}modifier")
+        parts = [
+            (modifier.text or "").strip() if modifier is not None else "",
+            (type_node.text or "").strip(),
+            varname.text.strip(),
+        ]
+        declaration = " ".join(part for part in parts if part)
+        if (name, declaration) not in out:
+            out.append((name, declaration))
+    return out
+
+
+def parse_refpages(
+    root: Path,
+) -> tuple[
+    dict[str, tuple[list[str], str]], dict[str, tuple[list[str], str]], list[str]
+]:
+    """The function table, the variable table, and the pages that yielded neither.
+
+    A function entry is named from its own prototype: a page whose refname is a family name
+    (`packUnorm`, `noise`) documents several functions and matches none of them, so keying
+    on the refname loses the page whole. A variable entry is named from its
+    `fieldsynopsis`, filtered to `_FRAGMENT_VARIABLES`.
+
+    The third value is every page that produced no entry at all -- a hole in the table, not
+    a curiosity. A caller that ignores it ships a partial table.
+    """
+    functions: dict[str, tuple[list[str], str]] = {}
+    variables: dict[str, tuple[list[str], str]] = {}
+    empty: list[str] = []
     for path in sorted(root.glob("*.xml")):
-        if _API_PREFIX.match(path.stem):
+        if _API_PREFIX.match(path.stem) or path.name in _NAMES_NOTHING:
             continue
         try:
             entry = _load(path)
         except NotARefpage:
             continue
         if entry is None:
-            unparsed.append(path.name)
+            empty.append(path.name)
             continue
-        signatures = _prototypes(entry)
-        if not signatures:
-            continue
-        # The page's own name, not the filename: `abs.xml` documents `abs`, but a few
-        # pages carry a different refname.
-        # A page may document several functions (dFdx/dFdy share one). Each gets its own
-        # entry, carrying only the overloads whose own name matches it.
         purpose = _purpose(entry)
-        # A refname may list several functions in one string ("dFdx, dFdy"), and a page may
-        # carry several refname elements. Both forms split into one entry per function.
-        names = [
-            part.strip()
-            for n in entry.findall(f".//{DOCBOOK}refname")
-            for part in (n.text or "").split(",")
-            if part.strip()
-        ] or [path.stem]
-        for name in names:
-            if _API_PREFIX.match(name):
+        yielded = False
+        # One entry per function the page's prototypes name, carrying only the overloads
+        # whose own name matches it: a page may document several (dFdx/dFdy share one).
+        by_name: dict[str, list[str]] = {}
+        for signature in _prototypes(entry):
+            call = re.search(r"\b(\w+)\s*\(", signature)
+            if call is None or _API_PREFIX.match(call.group(1)):
                 continue
-            own = [s for s in signatures if re.search(rf"\b{re.escape(name)}\s*\(", s)]
-            if own:
-                found[name] = (own, purpose)
-    return found, unparsed
+            by_name.setdefault(call.group(1), []).append(signature)
+        for name, signatures in by_name.items():
+            yielded = True
+            if name not in _STAGE_ONLY:
+                functions[name] = (signatures, purpose)
+        for name, declaration in _declarations(entry):
+            yielded = True
+            if name in _FRAGMENT_VARIABLES:
+                held, _ = variables.get(name, ([], purpose))
+                if declaration not in held:
+                    held.append(declaration)
+                variables[name] = (held, purpose)
+        if not yielded:
+            empty.append(path.name)
+    return functions, variables, empty
 
 
 def parse_lexer_words(path: Path) -> tuple[list[str], list[str]]:
@@ -201,28 +300,36 @@ def _q(text: str) -> str:
     return f'"{body}"'
 
 
+def _table(entries: dict[str, tuple[list[str], str]]) -> str:
+    """The rows of a `name -> (forms, purpose)` table, in the shape ruff-format emits."""
+    rows: list[str] = []
+    for name in sorted(entries):
+        forms, purpose = entries[name]
+        # Double quotes and a trailing comma: the repo formats with ruff, and a generated
+        # file it wants to rewrite produces a spurious diff on every run.
+        collapsed = f"        ({_q(forms[0])},),"
+        if len(forms) == 1 and len(collapsed) <= _LINE_LENGTH:
+            # ruff-format collapses a one-element tuple onto its own line while it fits;
+            # emit the shape it would, so the generated file is already formatted.
+            form_block = collapsed
+        else:
+            form_lines = "\n".join(f"            {_q(form)}," for form in forms)
+            form_block = f"        (\n{form_lines}\n        ),"
+        rows.append(f"    {_q(name)}: (\n{form_block}\n        {_q(purpose)},\n    ),")
+    return "\n".join(rows)
+
+
 def render(
     builtins: dict[str, tuple[list[str], str]],
+    variables: dict[str, tuple[list[str], str]],
     source: str,
     keywords: list[str],
     types: list[str],
     lexer_source: str,
 ) -> str:
-    rows: list[str] = []
-    for name in sorted(builtins):
-        signatures, purpose = builtins[name]
-        # Double quotes and a trailing comma: the repo formats with ruff, and a generated
-        # file it wants to rewrite produces a spurious diff on every run.
-        if len(signatures) == 1:
-            # ruff-format collapses a one-element tuple onto its own line; emit that shape
-            # so the generated file is already formatted.
-            sig_block = f"        ({_q(signatures[0])},),"
-        else:
-            sig_lines = "\n".join(f"            {_q(sig)}," for sig in signatures)
-            sig_block = f"        (\n{sig_lines}\n        ),"
-        rows.append(f"    {_q(name)}: (\n{sig_block}\n        {_q(purpose)},\n    ),")
-    body = "\n".join(rows)
-    return f'''"""GLSL builtin functions: every overload and the spec's own one-line purpose.
+    body = _table(builtins)
+    variable_body = _table(variables)
+    return f'''"""GLSL builtin functions and variables: every form and the spec's own one-line purpose.
 
 GENERATED by scripts/gen_glsl_docs.py from the Khronos OpenGL-Refpages ({source}) --
 do not hand-edit. The code panel reads this for `K` over a builtin and for the detail
@@ -231,11 +338,20 @@ Khronos publishes rather than anything typed from memory.
 
 `genType` is the spec's notation for "float, vec2, vec3 or vec4, the same throughout";
 `genIType`, `genUType` and `genBType` are its int, uint and bool counterparts.
+
+`VARIABLES` holds the fragment stage's builtin variables. A name carries every declaration
+its page states, because three of them are declared once per stage and picking one would
+be arbitrary.
 """
 
 # name -> (overload signatures, one-line purpose)
 BUILTINS: dict[str, tuple[tuple[str, ...], str]] = {{
 {body}
+}}
+
+# name -> (declarations, one-line purpose)
+VARIABLES: dict[str, tuple[tuple[str, ...], str]] = {{
+{variable_body}
 }}
 
 # The language's reserved words and type names, from the editor library's GLSL lexer
@@ -254,7 +370,7 @@ TYPES: tuple[str, ...] = (
 def main() -> None:
     if len(sys.argv) != 3:
         raise SystemExit(
-            f"usage: {sys.argv[0]} <refpages es3.0 dir> <editor src/lex_glsl.odin>"
+            f"usage: {sys.argv[0]} <refpages gl4 dir> <editor src/lex_glsl.odin>"
         )
     root = Path(sys.argv[1])
     lexer = Path(sys.argv[2])
@@ -262,22 +378,27 @@ def main() -> None:
         raise SystemExit(f"not a directory: {root}")
     if not lexer.is_file():
         raise SystemExit(f"not a file: {lexer}")
-    builtins, unparsed = parse_refpages(root)
+    builtins, variables, empty = parse_refpages(root)
     if not builtins:
         raise SystemExit(f"no builtin pages parsed from {root}")
-    if unparsed:
-        # A page that will not parse is a HOLE in the table, not a curiosity: the builtin it
-        # documents would silently have no doc. Fix the entity list and re-run.
+    if empty:
+        # A page that yields no entry is a HOLE in the table, not a curiosity: whether it
+        # would not parse or its refname matched no prototype, the name it documents
+        # silently has no doc. Fix the entity list or the naming rule and re-run.
         raise SystemExit(
-            f"{len(unparsed)} page(s) failed to parse: {', '.join(sorted(unparsed))}"
+            f"{len(empty)} page(s) yielded no entry: {', '.join(sorted(empty))}"
         )
+    missing = [name for name in _FRAGMENT_VARIABLES if name not in variables]
+    if missing:
+        raise SystemExit(f"no page for: {', '.join(missing)}")
     keywords, types = parse_lexer_words(lexer)
     OUT_PATH.write_text(
-        render(builtins, root.name, keywords, types, lexer.name), encoding="utf-8"
+        render(builtins, variables, root.name, keywords, types, lexer.name),
+        encoding="utf-8",
     )
     print(
         f"{OUT_PATH.relative_to(REPO_ROOT)}: {len(builtins)} builtins, "
-        f"{len(keywords)} keywords, {len(types)} types"
+        f"{len(variables)} variables, {len(keywords)} keywords, {len(types)} types"
     )
 
 

@@ -12,6 +12,8 @@ class SymbolKind(StrEnum):
     GLSL_KEYWORD = auto()
     GLSL_TYPE = auto()
     GLSL_BUILTIN = auto()
+    # A builtin variable the fragment stage declares for the shader: `gl_FragCoord` and kin.
+    GLSL_VARIABLE = auto()
     LIB_FUNCTION = auto()
     # An engine-driven uniform (`u_time`, `u_resolution`, ...), declared or not.
     ENGINE_UNIFORM = auto()
@@ -71,6 +73,7 @@ _KIND_RANK: dict[SymbolKind, int] = {
     SymbolKind.WIRABLE_SAMPLER: 3,
     SymbolKind.LIB_FUNCTION: 4,
     SymbolKind.GLSL_BUILTIN: 5,
+    SymbolKind.GLSL_VARIABLE: 5,
     SymbolKind.GLSL_KEYWORD: 6,
     SymbolKind.GLSL_TYPE: 6,
     SymbolKind.PY_LOCAL: 0,

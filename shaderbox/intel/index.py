@@ -9,7 +9,7 @@ graph's pass names through `wired_pass`, never the compiled program's sampler se
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 
-from shaderbox.glsl_docs import BUILTINS, KEYWORDS, TYPES
+from shaderbox.glsl_docs import BUILTINS, KEYWORDS, TYPES, VARIABLES
 from shaderbox.intel.glsl import (
     buffer_declarations,
     buffer_words,
@@ -94,6 +94,15 @@ def _language_symbols() -> list[Symbol]:
                 name,
                 SymbolKind.GLSL_BUILTIN,
                 signature="\n".join(signatures),
+                doc=purpose,
+            )
+        )
+    for name, (declarations, purpose) in sorted(VARIABLES.items()):
+        found.append(
+            Symbol(
+                name,
+                SymbolKind.GLSL_VARIABLE,
+                signature="\n".join(declarations),
                 doc=purpose,
             )
         )

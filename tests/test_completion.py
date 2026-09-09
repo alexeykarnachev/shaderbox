@@ -17,7 +17,7 @@ from shaderbox.editor.ffi import Editor, KeyCode, KeyMod, Language, Mode
 from shaderbox.editor.input import KeyEvent
 from shaderbox.editor_types import EditorTab
 from shaderbox.engine_uniforms import ENGINE_UNIFORM_TYPES
-from shaderbox.glsl_docs import BUILTINS
+from shaderbox.glsl_docs import BUILTINS, VARIABLES
 from shaderbox.help_content import ENGINE_UNIFORM_DOCS
 from shaderbox.hotkeys import _is_lookup_key
 from shaderbox.intel.index import GlslContext, GlslIndex, build_glsl_index
@@ -447,7 +447,71 @@ def test_the_generated_table_covers_the_builtins_a_shader_uses() -> None:
         signatures, purpose = BUILTINS[name]
         assert signatures and all(f"{name}(" in s for s in signatures), name
         assert purpose, name
-    assert len(BUILTINS["mix"][0]) == 3
+    # Every overload of an overloaded name, not just the page's first: `mix` selects
+    # between two values on a float and on a bool, and each has its own prototype.
+    forms = BUILTINS["mix"][0]
+    assert "genType mix(genType x, genType y, genType a)" in forms
+    assert "genType mix(genType x, genType y, genBType a)" in forms
+
+
+def test_the_generated_table_names_the_gl4_vocabulary() -> None:
+    # 089 W-B: the table is the gl4 refpages, named from each prototype rather than from
+    # the page's refname. `fma` is gl4-only; `noise1` and `packUnorm2x16` sit on family
+    # pages (`noise.xml`, `packUnorm.xml`) whose refname matches no prototype, so keying on
+    # the refname dropped both pages whole. Falsifier: regenerate against es3.0 (no `fma`)
+    # or key on the refname again (no `noise1`, no `packUnorm2x16`).
+    for name in ("fma", "noise1", "packUnorm2x16"):
+        assert name in BUILTINS, name
+    # A geometry-stage verb is not callable from a fragment shader, so it is not offered.
+    assert "EmitVertex" not in BUILTINS
+
+
+def test_the_variable_table_is_the_fragment_stage() -> None:
+    # The 4.60 spec's 7.1.5 declaration block, exactly: the generator's `_FRAGMENT_VARIABLES`
+    # filter. Falsifier: a vertex- or compute-stage page reaching the table (`gl_VertexID`,
+    # `gl_WorkGroupID`), or the filter dropped.
+    assert set(VARIABLES) == {
+        "gl_FragCoord",
+        "gl_FrontFacing",
+        "gl_ClipDistance",
+        "gl_CullDistance",
+        "gl_PointCoord",
+        "gl_PrimitiveID",
+        "gl_SampleID",
+        "gl_SamplePosition",
+        "gl_SampleMaskIn",
+        "gl_Layer",
+        "gl_ViewportIndex",
+        "gl_HelperInvocation",
+        "gl_FragDepth",
+        "gl_SampleMask",
+    }
+
+
+def test_the_index_answers_for_a_builtin_variable() -> None:
+    # 089 W-B / D3: a builtin variable is its own kind, and `K` shows the declaration the
+    # refpage states. Falsifier: the variables dropped from `_language_symbols` (the lookup
+    # is None), or the kind left as GLSL_BUILTIN.
+    found = _index().lookup("gl_FragCoord")
+    assert found is not None
+    assert found.kind is SymbolKind.GLSL_VARIABLE
+    assert found.signature == "in vec4 gl_FragCoord"
+    assert found.doc
+    # Three pages declare a name once per stage; the entry carries both forms rather than
+    # picking one arbitrarily.
+    layer = _index().lookup("gl_Layer")
+    assert layer is not None
+    assert layer.signature.splitlines() == ["out int gl_Layer", "in int gl_Layer"]
+
+
+def test_the_glsl_provider_offers_a_builtin_variable() -> None:
+    # The reach needs no provider change: `_glsl_words` returns the index's words whole.
+    # Falsifier: the variables absent from the index (the offer is empty).
+    found = _texts(
+        offer(_context(line_before_caret="  vec2 p = gl_Fr", prefix="gl_Fr"))
+    )
+    assert "gl_FragCoord" in found
+    assert "gl_FrontFacing" in found
 
 
 def test_the_index_answers_for_a_glsl_builtin() -> None:
