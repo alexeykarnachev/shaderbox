@@ -212,7 +212,7 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   mutex: one pass's name, run count and target controls. Opens from a tile's gear, its context
   menu, or automatically on `add pass` — set-up-once choices live here, off the strip. What a
   pass reads is not here since 072: that is each sampler's own row.
-- **`popups/projects.py`** — the Projects modal (feature 084, Ctrl+O), in the `PopupState` mutex:
+- **`popups/projects.py`** — the Projects modal (feature 084, Alt+O), in the `PopupState` mutex:
   every project verb in one surface — a row per project (name, document count, path), New,
   Duplicate, Delete, and the folder picker demoted to `Open other...`. Requests a switch rather
   than performing one; `ui.py`'s frame tick consumes it before any drawing.

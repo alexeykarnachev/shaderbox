@@ -1,4 +1,4 @@
-"""The Projects modal (Ctrl+O) — every project verb in one surface (feature 084).
+"""The Projects modal (Alt+O) — every project verb in one surface (feature 084).
 
 A row per project: name, document count, path. The path is the column that earns the list — it is
 the only thing distinguishing a project under the projects root from one opened from anywhere else,

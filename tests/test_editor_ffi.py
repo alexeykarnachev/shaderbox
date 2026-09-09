@@ -41,9 +41,11 @@ from shaderbox.editor.render import (
     should_redraw,
 )
 from shaderbox.editor_types import EditorSession
+from shaderbox.glsl_docs import BUILTINS, VARIABLES
 from shaderbox.hotkeys import _delete_word_back, _drain_editor_input, spec_eligible
+from shaderbox.intel.symbols import SymbolKind
 from shaderbox.shader_source import ShaderSource
-from shaderbox.theme import editor_palette
+from shaderbox.theme import editor_palette, kind_slot
 
 
 @pytest.fixture(autouse=True)
@@ -89,19 +91,20 @@ def test_vim_edit_undo_redo() -> None:
     e.close()
 
 
-def test_the_consumed_ctrl_chord_domain_is_nine() -> None:
+def test_the_consumed_ctrl_chord_domain_is_eleven() -> None:
     # The collision domain decision 5 builds on. Editor 4b110f0 grew it from two to eight
     # (Ctrl+R redo + the six scroll motions in normal, Ctrl+N in insert); 5aa51cd added
-    # Ctrl+V, blockwise visual. Every OTHER Ctrl chord falls through as False — the
-    # registry's food. The host must NOT claim Ctrl+V for paste: `_handle_clipboard` runs
-    # before ed_key, so claiming it there leaves blockwise unreachable.
+    # Ctrl+V, blockwise visual; d1ef029 added Ctrl+O and Ctrl+I, the jumplist. Every OTHER
+    # Ctrl chord falls through as False — the registry's food. The host must NOT claim
+    # Ctrl+V for paste: `_handle_clipboard` runs before ed_key, so claiming it there leaves
+    # blockwise unreachable.
     e = _editor("\n".join(f"line {i}" for i in range(50)))
     e.layout((640.0, 420.0), 16.0)
-    consumed_normal = "rdufbeyv"
+    consumed_normal = "rdufbeyvoi"
     for ch in consumed_normal:
         assert e.key(KeyCode.CHAR, KeyMod.CTRL, ch) is True, f"Ctrl+{ch} unbound?"
         e.key(KeyCode.ESCAPE)
-    for ch in "acghijklmnopqstwxz":
+    for ch in "acghjklmnpqstwxz":
         assert e.key(KeyCode.CHAR, KeyMod.CTRL, ch) is False, f"Ctrl+{ch} claimed"
     e.feed("i")
     assert e.get_mode() == Mode.INSERT
@@ -435,20 +438,27 @@ def test_ctrl_f_b_move_cursor_and_e_y_request_view_scroll() -> None:
     e.close()
 
 
-def test_ctrl_o_reaches_the_app_while_focused() -> None:
-    # 069 W-E: Ctrl+O is in NEITHER keymap's chord list, so the ownership rule gives it to
-    # OPEN_PROJECT in all three states; the host consuming it would be inventing a binding.
-    e = _editor()
-    app = _drain_app(e)
-    app.editor_key_events = [_ctrl("o")]
-    _drain_editor_input(app)
-    assert e.get_text() == "one\ntwo\nthree\n"
-    assert (
-        int(imgui.Key.o) | int(imgui.Key.mod_ctrl)
-    ) not in app.editor_consumed_chords, (
-        "Ctrl+O belongs to no keymap; the host must not swallow it"
-    )
-    e.close()
+def test_alt_o_reaches_the_app_focused_or_not() -> None:
+    # 069 W-E's rule with the chord 089 moved it to. Ctrl+O was in neither keymap until
+    # editor d1ef029 gave it to the jumplist, which is why OPEN_PROJECTS is on Alt+O now;
+    # what the rule demands of the new chord is that a FOCUSED editor leave it alone, since
+    # the unfocused case is the drain dropping the queue and says nothing about ownership.
+    # The editor binds no Alt letter at all, so the modal is reachable from inside a buffer.
+    alt_o = translate_key(glfw.KEY_O, glfw.PRESS, glfw.MOD_ALT)
+    assert alt_o is not None
+    assert alt_o.imgui_chord == SPEC_BY_ID[CommandId.OPEN_PROJECTS].default_chord
+
+    for focused in (True, False):
+        e = _editor()
+        app = _drain_app(e, focused=focused)
+        app.editor_key_events = [alt_o]
+        _drain_editor_input(app)
+        assert e.get_text() == "one\ntwo\nthree\n", "Alt+O must not edit the buffer"
+        assert alt_o.imgui_chord not in app.editor_consumed_chords, (
+            f"a {'focused' if focused else 'unfocused'} editor must leave Alt+O to "
+            "OPEN_PROJECTS"
+        )
+        e.close()
 
 
 def test_insert_ctrl_w_deletes_word_back_not_the_tab() -> None:
@@ -735,13 +745,14 @@ def test_consumed_chord_suppresses_the_registry_spec() -> None:
     assert spec_eligible(app, spec, chord, popup_open=False) is True
 
 
-def test_a_consumed_ctrl_o_suppresses_the_projects_modal() -> None:
-    """The routing the jumplist rides: once the library takes `Ctrl+O` in NORMAL mode, the
-    Projects modal stays shut for that frame and needs no host-side change (089 D10).
+def test_a_consumed_chord_suppresses_the_projects_modal() -> None:
+    """The suppression OPEN_PROJECTS would need if the editor ever claimed its chord.
 
-    The chord comes from the command table rather than being typed here, so a rebinding
-    moves the test with it. Falsifier: drop the `editor_consumed_chords` clause from
-    `spec_eligible` and a focused editor both jumps back and opens the modal.
+    At 089 it does not: the chord moved to Alt+O precisely because the editor took Ctrl+O
+    for the jumplist, and the editor binds no Alt letter. So this drives `spec_eligible`
+    over whatever chord the table holds rather than a typed one, and stays the guard for
+    the next keymap that grows into it. Falsifier: drop the `editor_consumed_chords`
+    clause from `spec_eligible` and the first assertion returns True.
     """
     spec = SPEC_BY_ID[CommandId.OPEN_PROJECTS]
     app = SimpleNamespace(
@@ -1522,3 +1533,124 @@ def test_boolean_literals_draw_in_the_keyword_slot() -> None:
             f"`{literal}` drew in {literal_colors}, not the keyword slot {keyword}"
         )
         e.close()
+
+
+# --- 089 re-vendor: the ninth walk's jumplist and lexer items ------------------------------------
+
+
+def test_the_jumplist_walks_back_and_forward() -> None:
+    # 089 W-E / V12: vim's within-buffer jumplist. `G` is a jump motion, so it pushes the
+    # position it left; `Ctrl+O` walks back to it and `Ctrl+I` forward again. The chord
+    # crosses the ABI the way `input.py` translates it -- a CHAR carrying the CTRL mod bit,
+    # since no platform emits a char event for Ctrl+letter.
+    text = "\n".join(f"line {line}" for line in range(40))
+    e = Editor(text)
+    e.set_language(Language.GLSL)
+    e.set_style(Style.VIM)
+
+    e.feed("G")
+    assert e.get_current_cursor_position().line == 39, "G must reach the last line"
+    e.key(KeyCode.CHAR, KeyMod.CTRL, "o")
+    assert e.get_current_cursor_position().line == 0, (
+        f"Ctrl+O must walk back to the line G left, not "
+        f"{e.get_current_cursor_position().line}"
+    )
+    e.key(KeyCode.CHAR, KeyMod.CTRL, "i")
+    assert e.get_current_cursor_position().line == 39, (
+        f"Ctrl+I must walk forward to where G landed, not "
+        f"{e.get_current_cursor_position().line}"
+    )
+    e.close()
+
+    # A search is the other jump motion the host leans on, and its own entry point in the
+    # library (`search_jump`, not `resolve_motion`) -- a push wired only into the motion
+    # dispatcher leaves this half red.
+    lines = [f"line {line}" for line in range(40)]
+    lines[30] = "foo here"
+    e = Editor("\n".join(lines))
+    e.set_language(Language.GLSL)
+    e.set_style(Style.VIM)
+    e.feed("/foo<CR>")
+    assert e.get_current_cursor_position().line == 30, "/foo must land on the match"
+    e.key(KeyCode.CHAR, KeyMod.CTRL, "o")
+    assert e.get_current_cursor_position().line == 0, (
+        f"Ctrl+O after a search must return to line 0, not "
+        f"{e.get_current_cursor_position().line}"
+    )
+    e.close()
+
+
+def test_every_documented_builtin_draws_in_the_builtin_slot() -> None:
+    # 089 W-B/W-E / V13: `glsl_docs` and the editor's lexer are two lists of the same thing,
+    # and the popup showing a signature for a name that lexes as plain identifier is the
+    # visible symptom of their drift. This is the equality check: every name the host
+    # documents draws in the slot the host colors builtins with.
+    palette = editor_palette()
+    builtin = tuple(round(c, 2) for c in palette[Slot.SYNTAX_6][:3])
+    text_slot = tuple(round(c, 2) for c in palette[Slot.TEXT][:3])
+    assert builtin != text_slot, "the two slots must differ or this test cannot fail"
+    # SYNTAX_6 is the slot the host's own tables color a builtin symbol with, so a
+    # rebinding of the syntax slot moves this test with it rather than past it.
+    assert kind_slot(SymbolKind.GLSL_BUILTIN) == 6
+    assert kind_slot(SymbolKind.GLSL_VARIABLE) == 6
+
+    wrong: list[str] = []
+    for name in list(BUILTINS) + list(VARIABLES):
+        e = Editor(f"{name}\nx")
+        e.set_language(Language.GLSL)
+        e.set_palette(palette)
+        # The caret recolors the glyph under it (reverse video), so park it off the line.
+        e.feed("j")
+        e.layout((900.0, 300.0), 16.0)
+        first_row_bottom = e.get_text_origin()[1] + e.get_cell_size()[1]
+        colors = {
+            (round(p.r, 2), round(p.g, 2), round(p.b, 2))
+            for p in e.prims_list()
+            if p.kind == int(Kind.GLYPH) and p.y0 < first_row_bottom
+        }
+        e.close()
+        if colors != {builtin}:
+            wrong.append(name)
+
+    total = len(BUILTINS) + len(VARIABLES)
+    assert not wrong, (
+        f"{len(wrong)} of {total} documented names do not lex as builtins: "
+        f"{', '.join(wrong[:10])}{' ...' if len(wrong) > 10 else ''}"
+    )
+
+
+def test_a_consumed_ctrl_o_lands_in_the_editors_chords() -> None:
+    # 089 W-E / V14b: the real drain, not the synthetic set of the eligibility test above.
+    # NORMAL-mode Ctrl+O is the jumplist's, so `ed_key` returns true and the chord is
+    # recorded in registry space. That recording is what a chord-sharing command would be
+    # refused by, and it is why OPEN_PROJECTS moved off Ctrl+O rather than relying on it.
+    # INSERT mode is the other half: the library does not take it there.
+    ctrl_o = translate_key(glfw.KEY_O, glfw.PRESS, glfw.MOD_CONTROL)
+    assert ctrl_o is not None
+    assert ctrl_o.imgui_chord == int(imgui.Key.o) | int(imgui.Key.mod_ctrl)
+
+    e = _editor()
+    e.feed("G")
+    app = _drain_app(e)
+    app.editor_key_events = [ctrl_o]
+    _drain_editor_input(app)
+    assert e.get_mode() == Mode.NORMAL
+    assert e.get_current_cursor_position().line == 0, (
+        "the jumplist is what consumes it: G then Ctrl+O walks back"
+    )
+    assert ctrl_o.imgui_chord in app.editor_consumed_chords, (
+        "a NORMAL-mode Ctrl+O the editor takes for the jumplist must be recorded in "
+        "registry space, or the same press also fires whatever command holds the chord"
+    )
+    e.close()
+
+    e = _editor()
+    e.feed("i")
+    app = _drain_app(e)
+    app.editor_key_events = [ctrl_o]
+    _drain_editor_input(app)
+    assert e.get_mode() == Mode.INSERT
+    assert ctrl_o.imgui_chord not in app.editor_consumed_chords, (
+        "insert-mode Ctrl+O is not the library's"
+    )
+    e.close()

@@ -1293,7 +1293,16 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   which KEY enters it and whether this host already claims that key**, because no upstream gate can
   see a key that never arrives. Bare `Ctrl+V` now falls through, paste keeps `Ctrl+Shift+V`, and
   `test_the_host_clipboard_leaves_bare_ctrl_v_to_the_editor` drives the real editor and asserts the
-  MODE reached rather than the handler's return value.
+  MODE reached rather than the handler's return value. **The `d1ef029` re-vendor (the jumplist and
+  the 4.60 builtin set, ABI delta zero) is the same question without a new mode**: it added no
+  `ed_mode` value but took `Ctrl+O`, `Ctrl+I` and normal-mode bare `Tab` into the vim keymap, and
+  `Ctrl+O` was `OPEN_PROJECTS`'s, so the command moved to `Alt+O` — the editor binds no Alt letter,
+  which is what makes that tier the landing spot 069's audit already named. `test_keymap_disjoint`
+  is what refused it, reading the chord list out of the re-vendored `vim_coverage.md`; the domain
+  census (`test_the_consumed_ctrl_chord_domain_is_eleven`) named the two new letters. So **ask which
+  KEYS a re-vendor claims, mode or no mode** — and note that a chord's justification can expire
+  without anything in this repo changing, which is why both gates read the vendored artifact rather
+  than a retyped list.
 - **A rectangular selection is `ed_block_selection`, never `ed_selection`.** The latter reports one
   start and one end, which on a rectangle names two CORNERS and says nothing about the columns
   between them — drawing from it highlights the charwise sweep corner to corner, not the block. The

@@ -113,6 +113,14 @@ app command fires; a chord in parentheses after **app** is the new chord.
 | App command | Chord today | App unfocused | Vim focused | Standard focused | Verdict |
 |---|---|---|---|---|---|
 | `OPEN_PROJECT` | Ctrl+O | app | app | app | keep, neither keymap lists Ctrl+O |
+
+> **This row's premise EXPIRED at feature 089** (`ai_docs/features/089_ninth_walk_findings/01_spec.md`).
+> Editor `d1ef029` gave `Ctrl+O` to vim's jumplist, so the vim column became **vim** and the verdict's
+> own reason ("neither keymap lists Ctrl+O") stopped holding. The command — `OPEN_PROJECTS` since 084 —
+> moved to **Alt+O** under this table's own MOVE rule. The rule is unchanged and is what caught it:
+> `test_no_global_app_chord_belongs_to_either_keymap` reads the chord list out of the re-vendored
+> `vim_coverage.md`, so the re-vendor turned it red rather than shipping a chord with two owners.
+
 | `SAVE` | Ctrl+S | app | app | app | keep |
 | `QUIT` | Ctrl+Q | app | app | app | keep |
 | `NEW_DOCUMENT` | Ctrl+N | app | **vim** (down) | **standard** (completion) | **MOVE 1** → Ctrl+Shift+N |
