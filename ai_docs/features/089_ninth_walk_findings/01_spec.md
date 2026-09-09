@@ -176,7 +176,12 @@ frame is a document-level question, `Document.newest_frame(name) -> Canvas | Non
 live canvas once it has drawn (`drawn_frame >= 0`; after frame N the live canvas holds N and the
 history N-1), and the history itself before it has -- which is the seeded canvas of a document
 loaded and saved without a render, the exact path `duplicate_document` takes (save the source,
-load it, save the copy). Without that second branch a duplicate would persist black.
+load it, save the copy). Without that second branch a duplicate would persist black. The first
+branch is also right where the live canvas is BLANK but is the only one whose format matches:
+after `set_target` or `set_canvas_size` the pass keeps `drawn_frame >= 0`, its live canvas is
+reallocated blank and the history holds the old format or size, which the load-side rule would
+reject -- so a blank seed at the right shape is what gets written, and the pass starts black
+exactly as a live target change or resize costs it today (measured by the first reviewer).
 
 Its description goes in `document.json` under a new top-level key `feedback`: `{<pass>:
 {"file_path", "size", "components", "dtype"}}`, the four fields the raw-texture uniform entry
@@ -221,7 +226,7 @@ at the document's full `canvas_size`, and a non-output pass takes its `scale` on
 expression for a non-output pass and `canvas_size` for the output, and a history allocated from
 the live canvas would be rejected for every scaled pass (the bloom chain's, the RC's). The match
 rule is strict and fail-soft: the entry's `size` must equal the expected size, its `dtype` the
-target's, and `components` 4 (every `Canvas` is RGBA, so this is a corruption sniff rather than
+one the pass's canvas was built with (the target's, or `Canvas`'s `f1` for a graph-less pass), and `components` 4 (every `Canvas` is RGBA, so this is a corruption sniff rather than
 a target property); else the file is ignored and the pass starts black, with one
 `logger.warning` naming the pass. A missing or unreadable file is the same branch.
 
