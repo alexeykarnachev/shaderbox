@@ -17,6 +17,7 @@ import pytest
 from shaderbox.paths import (
     DOCUMENT_JSON_BASENAME,
     DOCUMENT_SCRIPT_BASENAME,
+    FEEDBACK_DIR_NAME,
     GRAPH_JSON_BASENAME,
     PASS_SHADER_SUFFIX,
     PASSES_DIR_NAME,
@@ -50,6 +51,7 @@ def _modules_with_literal(literal: str) -> list[str]:
         DOCUMENT_SCRIPT_BASENAME,
         PASSES_DIR_NAME,
         PASS_SHADER_SUFFIX,
+        FEEDBACK_DIR_NAME,
     ],
 )
 def test_basename_is_never_respelled(literal: str) -> None:

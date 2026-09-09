@@ -55,6 +55,7 @@ from shaderbox.pass_graph import (
 )
 from shaderbox.paths import (
     DOCUMENT_JSON_BASENAME,
+    FEEDBACK_DIR_NAME,
     GRAPH_JSON_BASENAME,
     PASS_SHADER_SUFFIX,
     PASSES_DIR_NAME,
@@ -191,6 +192,16 @@ def _uniforms_by_pass(metadata: dict[str, Any]) -> dict[str, dict[str, Any]]:
     if not isinstance(uniforms, dict):
         return {}
     return {name: rows for name, rows in uniforms.items() if isinstance(rows, dict)}
+
+
+def _feedback_rows(metadata: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    # `feedback` is keyed by pass name: the newest frame of each feedback history at save time
+    # (089 D4). Guarded per key the way `_uniforms_by_pass` is -- `document.json`'s top level is
+    # a raw dict with no model behind it, so a malformed entry costs that pass its history.
+    rows = metadata.get(FEEDBACK_DIR_NAME)
+    if not isinstance(rows, dict):
+        return {}
+    return {name: row for name, row in rows.items() if isinstance(row, dict)}
 
 
 def _load_uniform_value(gl: moderngl.Context, document_dir: Path, value: Any) -> Any:
@@ -369,8 +380,12 @@ class Document:
             render_pass = self.passes.get(name)
             # Only a pass that DREW last frame has a new history to advance to. A pass the
             # sweep drew once and never again would otherwise alternate between its two
-            # canvases every frame, strobing a tile that should hold still.
-            if render_pass is not None and render_pass.drawn_frame != previous_frame:
+            # canvases every frame, strobing a tile that should hold still. A pass that has
+            # never drawn has no new history at all, which is what keeps a loaded seed
+            # (089 D5) out of the live slot on the first frame.
+            if render_pass is not None and (
+                render_pass.drawn_frame < 0 or render_pass.drawn_frame != previous_frame
+            ):
                 continue
             self._swap_feedback(name)
 
@@ -430,6 +445,93 @@ class Document:
         self._feedback_generation.pop(name, None)
         if canvas is not None:
             canvas.release()
+
+    def _seed_feedback(
+        self, document_dir: Path, rows: dict[str, dict[str, Any]]
+    ) -> None:
+        """Rebuild each feedback history from the frame the last save wrote (089 D5).
+
+        The expected SIZE is computed from the graph, never read off the live canvas: at load
+        every pass's canvas sits at the document's full `canvas_size` and a non-output pass
+        takes its `scale` only inside `render`, so a history checked against the live canvas
+        would be rejected for every scaled pass. The match is strict and fail-soft -- a size,
+        dtype or component count that disagrees, or a file that will not read, costs that pass
+        its history and nothing else.
+        """
+        output = self.graph.output_pass
+        for name, row in rows.items():
+            render_pass = self.passes.get(name)
+            if render_pass is None:
+                continue
+            live = render_pass.canvas
+            entry = self.graph.passes.get(name, PassEntry())
+            expected_size = (
+                self.canvas_size
+                if name == output
+                else entry.target.target_size(self.canvas_size)
+            )
+            size = row.get("size")
+            size = tuple(size) if isinstance(size, list) else size
+            file_path = row.get("file_path")
+            if (
+                not isinstance(file_path, str)
+                or size != expected_size
+                or row.get("dtype") != live.dtype
+                or row.get("components") != 4
+            ):
+                logger.warning(
+                    f"{document_dir.name}: feedback for '{name}' does not match the pass "
+                    f"(expected {expected_size} {live.dtype} x4); it starts black"
+                )
+                continue
+            try:
+                data = (document_dir / file_path).read_bytes()
+            except OSError as e:
+                logger.warning(
+                    f"{document_dir.name}: unreadable feedback for '{name}' ({e}); "
+                    f"it starts black"
+                )
+                continue
+            canvas = Canvas(
+                gl=self._gl,
+                size=expected_size,
+                dtype=live.dtype,
+                filter=live.filter,
+                wrap=live.wrap,
+            )
+            try:
+                canvas.texture.write(data)
+            except moderngl.Error as e:
+                canvas.release()
+                logger.warning(
+                    f"{document_dir.name}: feedback for '{name}' would not load ({e}); "
+                    f"it starts black"
+                )
+                continue
+            self._feedback[name] = canvas
+            self._feedback_generation[name] = render_pass.target_generation
+
+    def feedback_passes(self) -> list[str]:
+        """The passes holding a feedback history — exactly what a save persists (089 D4)."""
+        return list(self._feedback)
+
+    def newest_frame(self, name: str) -> Canvas | None:
+        """The most recent frame of `name`'s feedback, or None when it has no history.
+
+        The pass's LIVE canvas once it has drawn: after frame N the live canvas holds N and the
+        history N-1. Before it has drawn, the history IS the newest frame -- the seed of a
+        document loaded and saved without a render, which is the path `duplicate_document`
+        takes. The live branch also covers a pass whose canvas was just reallocated blank
+        (`set_target`, `set_canvas_size`): the history then holds the old shape, which the load
+        rule would reject, so a blank frame at the right shape is what gets written.
+        """
+        history = self._feedback.get(name)
+        if history is None:
+            return None
+        render_pass = self.passes.get(name)
+        if render_pass is not None and render_pass.drawn_frame >= 0:
+            return render_pass.canvas
+        return history
 
     def _feedback_canvas(self, name: str) -> Canvas:
         # Born matching its pass's target, so the first frame reads black at the right size
@@ -701,6 +803,7 @@ class Document:
                         f"'{uniform_name}' ({e})"
                     )
 
+        document._seed_feedback(document_dir, _feedback_rows(metadata))
         return document, metadata
 
     def _render_image(

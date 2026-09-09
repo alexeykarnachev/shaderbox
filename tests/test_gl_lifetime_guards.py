@@ -19,6 +19,7 @@ from shaderbox.document import Document
 from shaderbox.pass_graph import PassEntry, PassGraph, TargetConfig
 from shaderbox.paths import DOCUMENT_SCRIPT_BASENAME, shader_lib_root
 from shaderbox.shader_lib import ShaderLibIndex, set_active
+from shaderbox.ui_models import UIDocument
 
 _EXAMPLE = (
     Path(__file__).resolve().parent.parent
@@ -215,6 +216,52 @@ def test_a_target_format_change_never_leaves_the_pair_disagreeing(
             f"{doc.passes['fb'].canvas.dtype} -- the pass reads its history through the "
             f"wrong format"
         )
+    doc.release()
+
+
+def _seeded_document(gl: moderngl.Context, tmp_path: Path) -> Document:
+    # A document whose history came off DISK (089), not from a render: the seed is allocated in
+    # the loader, so nothing that releases a rendered history necessarily releases this one.
+    doc = _feedback_document(gl)
+    ui_document = UIDocument(document=doc)
+    ui_document.save(tmp_path, "doc")
+    doc.release()
+    loaded, _ = Document.load_from_dir(tmp_path / "doc", gl)
+    assert "fb" in loaded._feedback, (
+        "the fixture loaded no seed -- the check would be vacuous"
+    )
+    return loaded
+
+
+def test_document_release_frees_a_loaded_feedback_seed(
+    gl: moderngl.Context, tmp_path: Path
+) -> None:
+    doc = _seeded_document(gl, tmp_path)
+    texture = doc._feedback["fb"].texture
+    fbo = doc._feedback["fb"].fbo
+
+    doc.release()
+
+    assert _released(texture), (
+        "the seeded history's texture outlived Document.release()"
+    )
+    assert _released(fbo), (
+        "the seeded history's framebuffer outlived Document.release()"
+    )
+
+
+def test_reset_feedback_frees_a_loaded_feedback_seed(
+    gl: moderngl.Context, tmp_path: Path
+) -> None:
+    doc = _seeded_document(gl, tmp_path)
+    texture = doc._feedback["fb"].texture
+    fbo = doc._feedback["fb"].fbo
+
+    doc.reset_feedback()
+
+    assert doc._feedback == {}
+    assert _released(texture), "the seeded history's texture outlived reset_feedback()"
+    assert _released(fbo), "the seeded history's framebuffer outlived reset_feedback()"
     doc.release()
 
 

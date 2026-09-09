@@ -442,10 +442,13 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   WITHOUT it `App` creates a visible MAXIMIZED window that pops up + hangs the loop on a real
   display). Any offscreen driver should use `App(headless=True)`, not a hand-rolled hidden window.
 - **Document-dir data format:** a project lives in `<project>/documents/<uuid>/{document.json, graph.json,
-  passes/<name>.frag.glsl, media/<pass>/, textures/<pass>/}` + `<project>/app_state.json`. One `.glsl`
+  passes/<name>.frag.glsl, media/<pass>/, textures/<pass>/, feedback/<pass>.bin}` + `<project>/app_state.json`. One `.glsl`
   per pass, each with its own `main()`; `graph.json` says which pass fills which input, how each
   target is configured and which pass is the output; media and textures are namespaced by pass, since
-  each pass owns its uniforms and two could otherwise collide on one name (feature 065). The active-project pointer is
+  each pass owns its uniforms and two could otherwise collide on one name (feature 065);
+  `feedback/<pass>.bin` is the newest frame of a feedback pass's history as raw target bytes,
+  described by `document.json`'s `feedback` block, so a self-reading pass resumes where it stopped
+  across a restart (feature 089). The active-project pointer is
   `~/.local/share/shaderbox/project_dir`; shipped examples live under `shaderbox/resources/document_examples/`.
   Exporter render-output scratch files live in `<project>/exporter_scratch/` (cleaned per export).
 

@@ -19,6 +19,10 @@ DOCUMENT_SCRIPT_BASENAME = "script.py"
 # The pass graph: which passes exist, what fills each input, each target's configuration, and
 # which pass is the output. App-written derived state, exactly as document.json is.
 GRAPH_JSON_BASENAME = "graph.json"
+# One raw <pass>.bin per feedback pass: the newest frame of its history, so a self-reading pass
+# continues from where it was across a restart (feature 089). Referenced by no uniform, so it
+# gets its own write-and-sweep rather than riding the media/texture sweeps.
+FEEDBACK_DIR_NAME = "feedback"
 
 
 def pass_shader_name(pass_name: str) -> str:

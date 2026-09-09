@@ -26,6 +26,7 @@ from shaderbox.model_salvage import drop_invalid, load_model
 from shaderbox.pass_graph import AutoSource, NoSource, PassEntry, PassSource
 from shaderbox.paths import (
     DOCUMENT_JSON_BASENAME,
+    FEEDBACK_DIR_NAME,
     GRAPH_JSON_BASENAME,
     PASS_SHADER_SUFFIX,
     PASSES_DIR_NAME,
@@ -501,6 +502,36 @@ class UIDocument(BaseModel):
                         ):
                             logger.debug(f"Dropping orphaned asset {asset.name}")
                             asset.unlink()
+
+        # ----------------------------------------------------------------
+        # The newest frame of every feedback pass, so a self-reading document continues from
+        # where it was across a restart (089 D4). OUTSIDE the `if live:` guard above: a document
+        # whose source is broken still holds its seeded history and must carry it, the way its
+        # uniform rows are carried forward. The files that survive are exactly the passes with
+        # a history -- a feedback file is referenced by no uniform, so the asset sweep above
+        # structurally cannot see it.
+        feedback_dir = dir / FEEDBACK_DIR_NAME
+        feedback_rows: dict[str, Any] = {}
+        for pass_name in self.document.feedback_passes():
+            canvas = self.document.newest_frame(pass_name)
+            if canvas is None:
+                continue
+            file_path = feedback_dir / f"{pass_name}.bin"
+            file_path.parent.mkdir(exist_ok=True, parents=True)
+            file_path.write_bytes(canvas.texture.read())
+            feedback_rows[pass_name] = {
+                "file_path": f"{FEEDBACK_DIR_NAME}/{file_path.name}",
+                "size": list(canvas.texture.size),
+                "components": canvas.texture.components,
+                "dtype": canvas.texture.dtype,
+            }
+        meta[FEEDBACK_DIR_NAME] = feedback_rows
+        if feedback_dir.is_dir():
+            kept = {row["file_path"] for row in feedback_rows.values()}
+            for stale in feedback_dir.iterdir():
+                if stale.is_file() and f"{FEEDBACK_DIR_NAME}/{stale.name}" not in kept:
+                    logger.debug(f"Dropping orphaned feedback frame {stale.name}")
+                    stale.unlink()
 
         with (dir / DOCUMENT_JSON_BASENAME).open("w") as f:
             json.dump(meta, f, indent=4)
