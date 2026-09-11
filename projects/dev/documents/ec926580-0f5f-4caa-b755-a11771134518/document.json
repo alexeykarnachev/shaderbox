@@ -5,6 +5,10 @@
     "ui_state": {
         "ui_name": "UV Mango",
         "resolution_mode": "auto",
+        "aspect": [
+            4,
+            3
+        ],
         "resolution": [
             1280,
             960

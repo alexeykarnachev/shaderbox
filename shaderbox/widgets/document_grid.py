@@ -89,11 +89,6 @@ def draw_document_preview_grid(app: App, width: float, height: float) -> None:
                 )
                 or not ui_document.document.first_render_done,
             )
-            # What this tile DREW (090 D2): an Auto document renders at the largest region
-            # showing it, and a grid tile is one of them. The drawn size, not the cell's --
-            # the cell is square and a non-square document is letterboxed inside it.
-            if result.drawn_size != (0.0, 0.0):
-                app.record_displayed_size(id, result.drawn_size)
             if result.clicked:
                 app.select_document(id)
             if result.delete_armed:

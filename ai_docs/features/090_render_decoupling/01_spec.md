@@ -999,3 +999,119 @@ captured unpiped, smoke RAN; 2161 passed, 4 skipped (eight new tests).
 `shaderbox/tabs/document.py`; `tests/test_theme.py`, `tests/test_render_plan.py`,
 `tests/test_render_decoupling_loop.py`; `ai_docs/conventions.md`,
 `ai_docs/features/090_render_decoupling/probes/always_on_queries.py` (new), and this section.
+
+---
+
+## Revision 1 — Auto owns only an aspect
+
+**The maintainer, after using the shipped feature: a new document showed 64×64 under Auto and
+rendered square.** The cause was the model, not a bug in it. D1 gave every document a stored
+width × height and D2 sized an Auto one from "the largest region showing it" — so a document no
+surface had drawn yet had no region, fell back to its stored pair, and a fresh one's pair is
+`DEFAULT_CANVAS_SIZE`, which is 64×64 and square. The rule also meant one document could be
+rendered at a grid tile's size while the viewer showed it scaled up, and that which surface drew
+first decided the shape.
+
+D1, D2 and D5 are replaced by the mechanics below; D3, D4 and D6–D11 stand unchanged.
+
+**R1 — under AUTO a document stores NO size. It stores an ASPECT**, persisted as a reduced
+integer ratio `aspect: tuple[int, int]`, `(16, 9)` for a new document. The live canvas is the
+application's document canvas — the viewer region `_draw_document_image` computes — fitted to
+that aspect, and it follows every window and panel resize (D3's damping unchanged). EVERY Auto
+document renders at that size, current or not: one size source, the viewer. The largest-region
+rule, the grid and Examples recorders and `App.displayed_sizes` are gone, replaced by a single
+`App.viewer_region`. Previews and tiles show the live texture scaled, as they did before 090.
+
+**R2 — under FIXED the document stores `resolution` and the user edits it, exactly as today.**
+The pair is meaningful only under Fixed and is neither shown nor editable under Auto.
+
+**R3 — a mode switch never jumps the picture.** Auto → Fixed seeds `resolution` from the live
+`canvas_size`; Fixed → Auto seeds `aspect` from the reduced ratio of `resolution`.
+
+**R4 — export.** Under Auto there is no document pair, so the Render tab's `resolution_details`
+and its shape presets decide, as they do today. `RenderShape.NATIVE` and the `FREE` fall-through
+resolve to the LIVE canvas under Auto — what the user sees — and to `resolution` under Fixed;
+the `preset=None` path renders at that same source and still resizes to `resolution_details`.
+One seam answers for all of it, `Document.export_source_size`, which the copilot render tools
+and `_artifact_matches_shape` share. A copilot `set_canvas_size` still switches to Fixed with
+the explicit pair (and seeds the aspect from it, so a later switch back keeps that shape).
+
+**R5 — the Document tab.** The maintainer picked **variant A** from the design sketch
+(`design/aspect_picker.html`) with two tweaks. Row 1, right of the document-name field: a
+two-way segmented control `Auto | Fixed` replacing the lone `Fixed` toggle, then the mode's own
+control in the same slot — under Auto the aspect preset chips (`16:9` `4:3` `1:1` `3:4` `9:16`
+`21:9`, the current one lit) followed by two small integer fields for a custom ratio, writing
+the REDUCED ratio; under Fixed today's `W × H` fields and presets menu, unchanged. Row 2,
+directly under the mode's control, dim, `font_12`, aligned to the control's left edge: a plain
+readout and nothing else — **tweak 1**, the sketch's "renders at … follows the viewer" prose is
+cut. Under Auto it is the live size (`1214x683`); **tweak 2**, under Fixed it is the ASPECT of
+the stored size rather than the size again, since the row above already carries the size.
+Caption: `Aspect` under Auto, `Canvas` under Fixed.
+
+*The Fixed readout's rounding rule.* Reduce W:H by their gcd; if the result is within 1 % of a
+preset chip's ratio, show that preset; otherwise show the reduced integers. So 1280×720 reads
+`16:9`, 1280×960 reads `4:3`, and **1920×1088 reads `16:9`** — the eight extra rows are an
+encoder's alignment, and `30:17` would be arithmetically right and useless. **Known conflict
+with the brief:** the brief also named 1214×683 as a case that should show its reduced integers,
+but 1214/683 is within 0.02 % of 16:9 — *closer* than 1920×1088's 0.44 % — so no ratio tolerance
+can snap the second without snapping the first. The stated general rule is implemented and
+1214×683 reads `16:9`; the maintainer may want a different rule (largest-reduced-term, say) and
+only `aspect_label` changes if so.
+
+**R6 — `u_resolution` is the viewer-fitted live size under Auto**, in `help_content.py`. The
+copilot's working-set line reports the aspect under Auto (`1214x683 (auto, aspect 16:9)`) and
+the pair under Fixed.
+
+**R7 — the eleven tracked `document.json` files** gained `aspect`, reduced from the pair each
+already had (1280×960 → `[4, 3]`, 512×512 → `[1, 1]`, 1600×900 → `[16, 9]`, 1080×1920 →
+`[9, 16]`), and kept `resolution` for the day they switch to Fixed. `77a84d27-…` stays Fixed.
+`test_document_shapes.py` asserts both keys per file AND that they agree.
+
+### Breaks tried (each red on the named test, then restored)
+
+- Clamp the aspect terms BEFORE reducing → `test_an_aspect_is_stored_in_lowest_terms` red on
+  1280×960 (`25:24`). **This was a real bug, found by writing the test**: the first
+  `reduce_aspect` clamped first, which corrupts the ratio it is reducing.
+- Compare the two ratios the wrong way round in `fit_to_aspect` → the wide and tall cases swap
+  (crop instead of letterbox), red in both the pure test and the loop's viewer-fit case.
+- Drop the preset snap in `aspect_label` → only 1920×1088 goes red, which is the alignment case
+  the snap exists for.
+- Delete the viewer's `app.viewer_region = …` → `test_the_viewer_records_the_region_…` red.
+- Size only the current document in `_resolve_resolutions` →
+  `test_every_auto_document_renders_at_the_viewer_region_not_only_the_current_one` red: the
+  per-surface model this revision removes.
+- Read a `None` region as `(0, 0)` → `test_an_auto_document_keeps_its_size_until_the_viewer_has_drawn`
+  red (every document would collapse to the minimum canvas on frame one).
+- Seed Auto → Fixed from the stored pair instead of the live canvas → the seeding test red.
+- Leave `aspect` alone on Fixed → Auto → the mirror test red.
+- Print `resolution` in the Auto readout, or the size again in the Fixed one → the two readout
+  tests red, one each.
+- Store the aspect as typed rather than reduced → `test_the_aspect_chips_write_the_reduced_ratio`
+  red (a `32:18` custom ratio would never light the `16:9` chip).
+- `export_source_size` ignoring the mode → three export/publish tests red.
+- Default the aspect to `(1, 1)` → `test_a_new_document_opens_wide_…` red, which is the
+  maintainer's original report as a test.
+- The loader opening an Auto document at its stored pair → `test_an_auto_document_opens_at_its_aspect_not_at_its_stored_pair`
+  red. **This falsifier found a missing gate**: nothing covered the loader's Auto branch until
+  the break was tried, so the test was written in response.
+
+### Files changed
+
+`shaderbox/`: `render_shape.py` (the aspect vocabulary: `DEFAULT_ASPECT`, `ASPECT_PRESETS`,
+`reduce_aspect`, `aspect_of`, `aspect_ratio`, `fit_to_aspect`, `aspect_label`), `ui_models.py`,
+`document.py` (`aspect`, `shape_aspect`, `export_source_size`, the clamp now taking a ratio),
+`ui.py`, `app.py` (`viewer_region` replaces `displayed_sizes`; the aspect buffer),
+`ui_primitives.py` (`segmented_choice`; `PreviewCellResult.drawn_size` removed with its last
+consumer), `theme.py` (`ASPECT_FIELD_W`), `tabs/document.py` (`_draw_aspect_control`,
+`_draw_canvas_fields`, `_draw_size_readout`, `_switch_resolution_mode`),
+`widgets/details.py`, `widgets/document_grid.py`, `popups/examples.py`, `help_content.py`,
+`copilot/backend.py`, `exporters/youtube.py`. `render_plan.py` lost `auto_canvas_size`, which
+`fit_to_aspect` replaces.
+
+`tests/`: `test_render_plan.py`, `test_render_decoupling_loop.py`, `test_canvas_fields.py`,
+`test_canvas_resample.py`, `test_document_shapes.py`, `test_render_for.py`,
+`test_youtube_exporter.py`, `test_probe_clock_and_turn_end.py`, `test_document_dir_sync.py`.
+
+Data: the eleven tracked `document.json` files. Docs: `ai_docs/conventions.md` (the 090
+bullets), `ai_docs/dev_flow.md` (the module map), `02_throttle_and_resolution.md` (a pointer at
+the top of its premises), `.claude/skills/shader-lab/SKILL.md` (the document template).

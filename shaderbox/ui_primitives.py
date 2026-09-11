@@ -123,6 +123,28 @@ def toggle_button(label: str, active: bool, width: float = 0.0) -> bool:
     return _framed_button(label, width, COLOR.FG_SECONDARY, COLOR.BORDER)
 
 
+def segmented_choice(
+    id_: str, options: Sequence[str], selected: int, width: float = 0.0
+) -> int:
+    """A two-or-more-way selector drawn as one joined strip; returns the chosen index.
+
+    The chosen segment is filled accent and the rest carry the standard frame, so the strip
+    reads as ONE control with a position rather than as several buttons -- which is what
+    separates it from a row of toggles: these options are mutually exclusive and always
+    exactly one is on. `width` sizes each segment; 0.0 lets each take its own label's width.
+    """
+    chosen = selected
+    spacing = imgui.get_style().item_spacing
+    imgui.push_style_var(imgui.StyleVar_.item_spacing, (0.0, spacing.y))
+    for index, label in enumerate(options):
+        if index:
+            imgui.same_line()
+        if toggle_button(f"{label}##{id_}_{index}", index == selected, width):
+            chosen = index
+    imgui.pop_style_var()
+    return chosen
+
+
 def danger_button(label: str, width: float = 0.0) -> bool:
     """A destructive verb: `Delete`, `Reset`, `Clear`. The standard frame in the error
     color — the confirm step carries the weight, not a filled-red fill."""
@@ -1148,10 +1170,6 @@ class PreviewCellResult:
     delete_armed: bool = False  # the delete-✕ was pressed this frame
     delete_confirmed: bool = False  # `Yes` on the in-cell confirm wash
     delete_cancelled: bool = False  # `No` on the in-cell confirm wash
-    # The size the image was actually DRAWN at, after the fit (090 D2). The cell's own width
-    # over-reports every non-square tile, so an Auto document sized from it would render
-    # wider than it is shown. (0.0, 0.0) when the cell drew no image.
-    drawn_size: tuple[float, float] = (0.0, 0.0)
 
 
 def _chip_row(
@@ -1273,7 +1291,6 @@ def preview_cell(
                 (1, 0),
                 imgui.color_convert_float4_to_u32(COLOR.WHITE),
             )
-            result.drawn_size = (dw, dh)
 
         # allow_overlap so the buttons drawn on top win the click; the transparent
         # header colors leave the image/border carrying the visual.

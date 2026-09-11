@@ -12,12 +12,17 @@ user never touched.
 What the pair WRITES is the document's stored `resolution` (090 D5), and the live canvas
 follows on the next tick through `App.pending_resolution` -- a resize inside the draw phase
 would release textures imgui is still holding. So the assertions here read `resolution`.
+
+The fields exist only under FIXED (090 revision 1): under Auto the same slot draws the aspect
+control instead, since a pair the mode never reads is a control that lies about what it does.
+Every rig here therefore puts its document in Fixed first.
 """
 
 from typing import Any
 
 from imgui_bundle import imgui
 
+from shaderbox.render_shape import ResolutionMode
 from shaderbox.tabs import document as document_tab
 from tests.conftest import seed_extra_document
 
@@ -34,6 +39,11 @@ def _run_row_frames(app: Any, external_write: tuple[int, int] | None) -> None:
     imgui.set_window_focus(None)
     app.canvas_w_editing = False
     app.canvas_h_editing = False
+    # The W x H fields are the FIXED-mode control; under Auto the row draws aspect chips and
+    # this rig's keystrokes would land on a different widget entirely.
+    app.ui_documents[
+        app.current_document_id
+    ].document.resolution_mode = ResolutionMode.FIXED
 
     for frame in range(9):
         if frame == 3:
@@ -45,11 +55,12 @@ def _run_row_frames(app: Any, external_write: tuple[int, int] | None) -> None:
         imgui.new_frame()
         imgui.begin("rig")
         # Offsets count focusable items from the cursor: 079 D7 put Reset on the caption row
-        # ABOVE the inputs, so both shifted by one.
+        # ABOVE the inputs, and 090 revision 1 made the mode control a two-button segment
+        # where it was one toggle -- each shifted everything after it by one.
         if frame in (0, 1, 2):
-            imgui.set_keyboard_focus_here(2)
-        if frame == 5:
             imgui.set_keyboard_focus_here(4)
+        if frame == 5:
+            imgui.set_keyboard_focus_here(6)
         document_tab.draw(app)
         imgui.end()
         imgui.end_frame()
@@ -103,6 +114,8 @@ def test_a_document_switch_mid_edit_does_not_resize_the_new_document(app: Any) -
     imgui.set_window_focus(None)
     app.canvas_w_editing = False
     app.canvas_h_editing = False
+    for document_id in (original_id, other_id):
+        app.ui_documents[document_id].document.resolution_mode = ResolutionMode.FIXED
 
     for frame in range(9):
         if frame == 3:
@@ -112,9 +125,9 @@ def test_a_document_switch_mid_edit_does_not_resize_the_new_document(app: Any) -
         imgui.new_frame()
         imgui.begin("rig")
         if frame in (0, 1, 2):
-            imgui.set_keyboard_focus_here(1)
-        if frame == 6:
             imgui.set_keyboard_focus_here(3)
+        if frame == 6:
+            imgui.set_keyboard_focus_here(5)
         document_tab.draw(app)
         imgui.end()
         imgui.end_frame()
@@ -125,3 +138,72 @@ def test_a_document_switch_mid_edit_does_not_resize_the_new_document(app: Any) -
     assert app.ui_documents[original_id].document.resolution == (1280, 960), (
         "the document being edited was resized by a switch that should have discarded the edit"
     )
+
+
+def _draw_tab_once(app: Any) -> None:
+    imgui.new_frame()
+    imgui.begin("rig")
+    document_tab.draw(app)
+    imgui.end()
+    imgui.end_frame()
+
+
+def _captions(app: Any, monkeypatch: Any) -> list[str]:
+    """Every `small_caption` string the tab drew, in order.
+
+    The readout is the LAST one: the row above it is the caption row's two labels. Captured
+    rather than asserted against the pixels, because what this pins is the string the mode
+    decides -- a layout swap must be free, which is why the control lives in one function.
+    """
+    seen: list[str] = []
+    real = document_tab.small_caption
+
+    def spy(font: Any, text: str) -> None:
+        seen.append(text)
+        real(font, text)
+
+    monkeypatch.setattr(document_tab, "small_caption", spy)
+    _draw_tab_once(app)
+    return seen
+
+
+def test_an_auto_documents_readout_is_its_live_size(app: Any, monkeypatch: Any) -> None:
+    # Row 2 under Auto shows the number the control does NOT carry: the control names a ratio,
+    # so the readout is the pixels. Falsifier: read `resolution` there and it reports a pair
+    # the mode never renders at.
+    document = app.ui_documents[app.current_document_id].document
+    document.resolution_mode = ResolutionMode.AUTO
+    document.aspect = (16, 9)
+    document.resolution = (111, 222)  # a stale pair the readout must not show
+    document.set_canvas_size((1214, 683))
+
+    captions = _captions(app, monkeypatch)
+    assert captions[-1] == "1214x683", captions
+    assert "Aspect" in captions, "the caption row does not name the aspect under Auto"
+
+
+def test_a_fixed_documents_readout_is_the_aspect_of_its_pair(
+    app: Any, monkeypatch: Any
+) -> None:
+    # The mirror: the control names a size, so the readout is the shape. Falsifier: print the
+    # size again and row 2 repeats what the row above already says.
+    document = app.ui_documents[app.current_document_id].document
+    document.resolution_mode = ResolutionMode.FIXED
+    document.resolution = (1280, 720)
+
+    captions = _captions(app, monkeypatch)
+    assert captions[-1] == "16:9", captions
+    assert "Canvas" in captions, "the caption row does not name the canvas under Fixed"
+
+
+def test_the_aspect_chips_write_the_reduced_ratio(app: Any) -> None:
+    # The control's whole contract with the rest of the app: whatever the user picks arrives
+    # reduced. Driven through `_apply_aspect`, the one seam every chip and both fields reach.
+    # Falsifier: store the pair as typed and a `32:18` custom ratio never lights the 16:9 chip.
+    from shaderbox.tabs.document import _apply_aspect
+
+    ui_document = app.ui_documents[app.current_document_id]
+    ui_document.document.resolution_mode = ResolutionMode.AUTO
+    _apply_aspect(app, ui_document, (32, 18))
+    assert ui_document.ui_state.aspect == (16, 9)
+    assert ui_document.document.aspect == (16, 9)

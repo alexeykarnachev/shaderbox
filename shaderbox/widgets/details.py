@@ -1,7 +1,6 @@
 from collections.abc import Sequence
 from pathlib import Path
 
-import numpy as np
 from imgui_bundle import imgui
 from imgui_bundle import portable_file_dialogs as pfd
 from loguru import logger
@@ -9,6 +8,7 @@ from loguru import logger
 from shaderbox.app import App
 from shaderbox.constants import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
 from shaderbox.media import FileDetails, MediaDetails, ResolutionDetails
+from shaderbox.render_shape import aspect_ratio
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_primitives import (
     caption_text,
@@ -79,11 +79,12 @@ def draw_resolution_details(
     details.width = new_width
     details.height = new_height
 
-    # The document's STORED resolution, never the live canvas (090 D2): under Auto the live
-    # canvas is the panel's size, so these presets would offer the panel rather than the
-    # document, and would move as the window does.
-    full_w, full_h = ui_document.document.resolution
-    half_w, half_h = adjust_size(ui_document.document.resolution, max_size=512)
+    # What an export would actually render its source at (090 D5): the stored pair under
+    # Fixed, the live canvas under Auto, where the document carries no pair. These presets are
+    # a shortcut to "what I am looking at", so under Auto following the viewer is the point.
+    source = ui_document.document.export_source_size()
+    full_w, full_h = source
+    half_w, half_h = adjust_size(source, max_size=512)
 
     row_label(app.font_12, "Presets")
     if standard_button(f"{full_w}x{full_h}") or not details.width or not details.height:
@@ -103,7 +104,7 @@ def draw_media_details(
     aspect = None
 
     if ui_document := app.ui_documents.get(app.current_document_id):
-        aspect = np.divide(*ui_document.document.resolution)
+        aspect = aspect_ratio(ui_document.document.shape_aspect())
 
     output_type_name = "video" if details.is_video else "image"
     options = ["video", "image"]

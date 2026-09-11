@@ -7,8 +7,9 @@ window.
 `plan_render_set` is the whole throttle rule. The current document draws on the shared GPU
 budget first; every other displayed document shares what is left at one common fps, and each
 lands on its own phase within its interval so same-`k` documents do not pile onto one frame.
-`auto_canvas_size` and `apply_damping` are the Auto-resolution half: the size the display asks
-for, and whether that request is worth a reallocation yet.
+`apply_damping` is the Auto-resolution half kept here: whether a newly requested size is worth a
+reallocation yet. WHAT the size is belongs to `render_shape.fit_to_aspect` -- since revision 1 an
+Auto document is its aspect fitted to the viewer, which is a shape question, not a policy one.
 """
 
 import math
@@ -91,26 +92,6 @@ class RenderPlan:
     intervals: dict[str, int] = field(default_factory=dict)
     phases: dict[str, int] = field(default_factory=dict)
     document_fps: dict[str, float] = field(default_factory=dict)
-
-
-def auto_canvas_size(
-    displayed: tuple[int, int] | None, aspect: float, previous: tuple[int, int]
-) -> tuple[int, int]:
-    """The size an Auto document wants, given the largest region showing it.
-
-    `aspect` is the STORED resolution's, never the live canvas's — reading the live one closes
-    a loop on itself. A document displayed nowhere keeps `previous`.
-    """
-    if displayed is None:
-        return previous
-    width, height = displayed
-    if width <= 0 or height <= 0:
-        return previous
-    # The drawn region already carries the document's aspect (the cell fits the texture into
-    # it), so the constrained axis is whichever the region ran out of first.
-    if width / height >= aspect:
-        return (max(1, round(height * aspect)), max(1, round(height)))
-    return (max(1, round(width)), max(1, round(width / aspect)))
 
 
 def apply_damping(

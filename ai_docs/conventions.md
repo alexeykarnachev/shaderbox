@@ -795,7 +795,9 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   compute 143 uncapped, which is a tile refreshing once every 2.4 s. Same-interval documents take
   different PHASES, or three previews at one interval land on one frame and leave 42 empty. A
   four-frame hysteresis absorbs the cost input's own two-frame read lag (088 D2), so an interval
-  never moves on a number the ring has not finished reporting. With the throttle off every
+  never moves on a number the ring has not finished reporting. Every Auto document renders at
+  the VIEWER's own size whatever its interval, so a grid tile shows that render scaled down
+  rather than a second, separately-sized one. With the throttle off every
   interval is 1 and every phase 0 — today's set exactly, which is what makes the setting a
   reversible one rather than a mode with its own behavior.
   **Whatever reads the plan must read it EVERYWHERE.** There are three render sites and the

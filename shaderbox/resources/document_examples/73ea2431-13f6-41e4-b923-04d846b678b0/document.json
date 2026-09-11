@@ -27,6 +27,10 @@
     "ui_state": {
         "ui_name": "Media Input",
         "resolution_mode": "auto",
+        "aspect": [
+            1,
+            1
+        ],
         "resolution": [
             1280,
             1280

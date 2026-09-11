@@ -6,6 +6,13 @@ submits per UI frame, which on this driver is the only thing that shortens the U
 is implemented. Reports: `research/resolution_flow.md`, `research/cadence_flow.md`,
 `research/cost_and_throttle.md`; probes `probes/cost_*.py`, `probes/throttle_*.py`.
 
+> **Superseded in part by `01_spec.md ## Revision 1 — Auto owns only an aspect`.** D1, D2 and D5
+> below describe a document storing a width x height under BOTH modes, with the live size
+> following the largest region showing it. That shipped and was rejected in use: a new document
+> opened 64x64 and rendered square. Auto now stores an ASPECT and no size, and the live canvas is
+> the viewer's region fitted to it. Everything else here — the throttle, the budget, the profiler
+> — stands as written.
+
 **Settled by the maintainer, carried here as premises:**
 
 - A document has a **resolution mode**: **Auto**, the live render target sized to the displayed

@@ -1,5 +1,9 @@
 """Every tracked `document.json` is in the 090 shape, and carries the mode it is meant to.
 
+The shape is `resolution_mode` + `aspect` + `resolution` (090 revision 1): the aspect is what an
+Auto document renders by, the pair is what Fixed renders at and what a switch to Fixed seeds
+from, and the two are kept consistent so neither mode opens on a shape the other never had.
+
 Without this gate a document missed by the sweep loads at `DEFAULT_CANVAS_SIZE` = (64, 64) in
 SILENCE: `_load_ui_state` fills a missing key from the model's default and never raises, so a
 forgotten file renders at a 64-pixel canvas and nothing anywhere says why.
@@ -14,6 +18,8 @@ import subprocess
 from pathlib import Path
 
 import pytest
+
+from shaderbox.render_shape import aspect_of
 
 _ROOT = Path(__file__).resolve().parent.parent
 
@@ -54,12 +60,19 @@ def test_a_tracked_document_carries_the_new_resolution_keys(path: str) -> None:
     ui_state = data.get("ui_state")
     assert isinstance(ui_state, dict), f"{path} has no ui_state object"
     assert "resolution_mode" in ui_state, f"{path} carries no resolution_mode"
-    resolution = ui_state.get("resolution")
-    assert isinstance(resolution, list) and len(resolution) == 2, (
-        f"{path} carries no resolution pair"
-    )
-    assert all(isinstance(n, int) and n > 0 for n in resolution), (
-        f"{path} carries a malformed resolution {resolution}"
+    for key in ("resolution", "aspect"):
+        pair = ui_state.get(key)
+        assert isinstance(pair, list) and len(pair) == 2, (
+            f"{path} carries no {key} pair"
+        )
+        assert all(isinstance(n, int) and n > 0 for n in pair), (
+            f"{path} carries a malformed {key} {pair}"
+        )
+    # Every document carries BOTH: the aspect is what Auto renders by, the pair is what a
+    # switch to Fixed seeds from, and a document missing either loses one of the two modes.
+    assert tuple(ui_state["aspect"]) == aspect_of(tuple(ui_state["resolution"])), (
+        f"{path}'s aspect {ui_state['aspect']} is not the reduced ratio of its "
+        f"resolution {ui_state['resolution']}"
     )
 
 

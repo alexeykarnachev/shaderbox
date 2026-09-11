@@ -203,11 +203,11 @@ def test_size_gate_rejects_mismatched_artifact() -> None:
     exp = YouTubeExporter()
     document_canvas: tuple[int, int] = (1920, 1080)
 
-    # The gate resolves against the document's stored `resolution`, not the live canvas (090
-    # D5) -- under Auto the live one is the panel's size and the gate would disarm publish
-    # whenever the panel moved.
+    # The gate resolves against the size an EXPORT renders its source at (090 D5): the stored
+    # pair under Fixed, the live canvas under Auto, where the document carries no pair.
     class _Document:
-        resolution = document_canvas
+        def export_source_size(self) -> tuple[int, int]:
+            return document_canvas
 
     class _UIDocument:
         document = _Document()

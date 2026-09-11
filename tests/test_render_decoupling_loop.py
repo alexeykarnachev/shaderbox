@@ -1,6 +1,6 @@
 """The throttle and the Auto sizing as the LOOP runs them (090 D2, D6, D9, D10).
 
-Every check here is a wiring check. `plan_render_set`, `auto_canvas_size` and `apply_damping`
+Every check here is a wiring check. `plan_render_set`, `fit_to_aspect` and `apply_damping`
 are pure and tested on their own in `test_render_plan.py`; what cannot be seen there is whether
 anything PRODUCES their inputs and whether anything READS their answers. A plan computed and
 never consulted, a recorder nobody calls, a chip handed `None` unconditionally -- each passes
@@ -16,11 +16,10 @@ time and a `k = 12` document renders either 12 times or 0. Moving the increment 
 from typing import Any
 
 import pytest
-from imgui_bundle import imgui
 
 from shaderbox.constants import STARTER_EXAMPLE_ID
-from shaderbox.render_plan import CostRecord
-from shaderbox.render_shape import ResolutionMode
+from shaderbox.render_plan import AUTO_RESIZE_STABLE_FRAMES, CostRecord
+from shaderbox.render_shape import DEFAULT_ASPECT, ResolutionMode, fit_to_aspect
 from shaderbox.ui import _tick_frame_state
 from tests.conftest import seed_extra_document
 
@@ -73,6 +72,19 @@ def _count_renders(
 
     monkeypatch.setattr(type(sample), "render", counted)
     return counts
+
+
+def _count_resizes(app: Any, monkeypatch: Any, document: Any) -> list[tuple[int, int]]:
+    """Every size `set_canvas_size` is actually called with, in order."""
+    calls: list[tuple[int, int]] = []
+    real = type(document).set_canvas_size
+
+    def counted(self: Any, size: tuple[int, int]) -> None:
+        calls.append(size)
+        real(self, size)
+
+    monkeypatch.setattr(type(document), "set_canvas_size", counted)
+    return calls
 
 
 def _count_begin_frames(app: Any, monkeypatch: Any) -> dict[str, int]:
@@ -216,21 +228,14 @@ def test_the_loop_damps_a_drag_ramp_instead_of_resizing_every_frame(
     document_id = app.current_document_id
     document = app.ui_documents[document_id].document
     document.resolution_mode = ResolutionMode.AUTO
-    document.resolution = (800, 600)
+    document.aspect = (4, 3)
 
-    calls: list[tuple[int, int]] = []
-    real = type(document).set_canvas_size
-
-    def counted(self: Any, size: tuple[int, int]) -> None:
-        calls.append(size)
-        real(self, size)
-
-    monkeypatch.setattr(type(document), "set_canvas_size", counted)
+    calls = _count_resizes(app, monkeypatch, document)
     for width in range(764, 941, 3):
-        app.displayed_sizes[document_id] = (width, round(width * 3 / 4))
+        app.viewer_region = (float(width), width * 3 / 4)
         _drive(app, 1)
-    # One more than the pure ramp's bound: the document starts at its loaded 1280x960, so the
-    # first request is a jump rather than a step.
+    # One more than the pure ramp's bound: the document starts at its loaded size, so the first
+    # request is a jump rather than a step.
     assert 0 < len(calls) <= 5, f"{len(calls)} resizes across the ramp: {calls}"
 
 
@@ -250,21 +255,13 @@ def test_a_stationary_region_settles_whatever_the_canvas_bounds_do(
     # every frame read as "past the dead band" and re-entered the resize funnel forever, with
     # the damping state permanently disarmed. Falsifier: drop the `clamped_size` call in
     # `_resolve_resolutions` and the two out-of-bounds cases report 30 calls instead of 1.
-    document_id = app.current_document_id
-    document = app.ui_documents[document_id].document
+    document = app.ui_documents[app.current_document_id].document
     document.resolution_mode = ResolutionMode.AUTO
-    document.resolution = (800, 600)
+    document.aspect = (4, 3)
 
-    calls: list[tuple[int, int]] = []
-    real = type(document).set_canvas_size
-
-    def counted(self: Any, size: tuple[int, int]) -> None:
-        calls.append(size)
-        real(self, size)
-
-    monkeypatch.setattr(type(document), "set_canvas_size", counted)
+    calls = _count_resizes(app, monkeypatch, document)
     for _ in range(30):
-        app.displayed_sizes[document_id] = region
+        app.viewer_region = (float(region[0]), float(region[1]))
         _drive(app, 1)
     assert len(calls) == 1, (
         f"{label}: a stationary region produced {len(calls)} resizes over 30 frames"
@@ -272,81 +269,99 @@ def test_a_stationary_region_settles_whatever_the_canvas_bounds_do(
 
 
 # ---------------------------------------------------------------------------
-# V9 -- the recorders are wired
+# V9 (revision 1) -- the viewer region is the ONE size source
 # ---------------------------------------------------------------------------
 
 
-def test_the_viewer_records_the_size_it_drew_the_current_document_at(
-    app: Any,
-) -> None:
-    # Cutting a recorder is SILENT: `auto_canvas_size(None, ...)` answers `previous`, so the
-    # document keeps its loaded size and every other test still passes. Falsifier: delete the
-    # `record_displayed_size` call in `_draw_document_image` and `displayed_sizes` stays empty.
+def test_the_viewer_records_the_region_it_drew_the_document_image_at(app: Any) -> None:
+    # The one recorder left, and cutting it is SILENT: `_resolve_resolutions` skips Auto
+    # documents while the region is None, so every document simply keeps its loaded size and
+    # nothing else fails. Falsifier: delete the `app.viewer_region = ...` assignment in
+    # `_draw_document_image` and this stays None.
     from shaderbox.theme import SIZE
     from shaderbox.ui import update_and_draw
 
-    document_id = app.current_document_id
-    app.ui_documents[document_id].document.resolution_mode = ResolutionMode.AUTO
-    app.displayed_sizes.clear()
+    app.ui_documents[
+        app.current_document_id
+    ].document.resolution_mode = ResolutionMode.AUTO
+    app.viewer_region = None
     update_and_draw(app)
-    assert document_id in app.displayed_sizes, (
-        "the viewer drew the current document and recorded nothing"
-    )
-    # The SIZE is the discriminator, not the key: the grid tile below the viewer records the
-    # current document too, so an id alone is there whether or not the viewer recorded. The
-    # viewer is by far the largest region showing it, and the largest wins.
-    width, height = app.displayed_sizes[document_id]
+    assert app.viewer_region is not None, "the viewer drew and recorded no region"
+    width, height = app.viewer_region
+    # The VIEWER's own region, not a thumbnail's: the whole point of revision 1 is that the
+    # size comes from the big surface, so a tile-sized answer means the wrong site recorded.
     assert max(width, height) > float(SIZE.THUMB_LG), (
-        f"the recorded size {width}x{height} is a thumbnail's, not the viewer's -- the "
-        "viewer's own recorder is not wired"
+        f"the recorded region {width}x{height} is a thumbnail's, not the viewer's"
     )
 
 
-def test_the_document_grid_records_each_tile_it_draws(app: Any) -> None:
-    # The grid's own recorder, driven in a headless imgui frame the way `test_canvas_fields.py`
-    # drives the Document tab. Falsifier: delete the grid's `record_displayed_size` and the
-    # second document -- which the viewer never draws -- has no entry.
-    from shaderbox.widgets.document_grid import draw_document_preview_grid
+def test_every_auto_document_renders_at_the_viewer_region_not_only_the_current_one(
+    app: Any,
+) -> None:
+    # Revision 1's core: ONE size source. Before it, a non-current document was sized by
+    # whichever surface happened to draw it, so a document nothing had drawn yet stayed at its
+    # loaded size -- which is how a new document rendered 64x64 and square. Falsifier: size
+    # only `app.current_document_id` in `_resolve_resolutions` and the sibling keeps its own.
+    other = seed_extra_document(app, "sibling-0000-4000-8000-000000000004")
+    for document_id in (app.current_document_id, other):
+        document = app.ui_documents[document_id].document
+        document.resolution_mode = ResolutionMode.AUTO
+        document.aspect = (16, 9)
 
-    other = seed_extra_document(app, "gridrec-0000-4000-8000-000000000002")
-    app.displayed_sizes.clear()
-    imgui.new_frame()
-    imgui.begin("rig")
-    draw_document_preview_grid(app, 400.0, 400.0)
-    imgui.end()
-    imgui.end_frame()
-    assert other in app.displayed_sizes, "the grid drew a tile and recorded nothing"
+    app.viewer_region = (640.0, 480.0)
+    _drive(app, AUTO_RESIZE_STABLE_FRAMES + 2)
 
-
-def test_the_examples_popup_records_its_own_thumbnails(app: Any) -> None:
-    # While the popup is open its examples ARE the displayed set (D10), so its thumbnails are
-    # the only recorders those documents have. Falsifier: delete the popup's
-    # `record_displayed_size` and no example id appears.
-    from shaderbox.popups.examples import _draw_grid
-
-    app.displayed_sizes.clear()
-    imgui.new_frame()
-    imgui.begin("rig")
-    _draw_grid(app)
-    imgui.end()
-    imgui.end_frame()
-    assert set(app.displayed_sizes) & set(app.ui_document_examples), (
-        "the examples grid drew thumbnails and recorded nothing"
-    )
+    expected = fit_to_aspect((640.0, 480.0), (16, 9))
+    for document_id in (app.current_document_id, other):
+        assert app.ui_documents[document_id].document.canvas_size == expected, (
+            f"{document_id} rendered at "
+            f"{app.ui_documents[document_id].document.canvas_size}, not the viewer's "
+            f"{expected}"
+        )
 
 
-def test_an_auto_document_with_no_recorder_keeps_its_size(app: Any) -> None:
-    # The other half of the rule: a document displayed nowhere must not resize to anything.
-    document_id = app.current_document_id
-    document = app.ui_documents[document_id].document
+@pytest.mark.parametrize(
+    ("region", "aspect", "expected"),
+    [
+        # A viewer WIDER than the aspect: the height runs out first and the width follows it.
+        ((1000.0, 400.0), (16, 9), (711, 400)),
+        # A viewer TALLER than the aspect: the width runs out first.
+        ((400.0, 1000.0), (16, 9), (400, 225)),
+        # Square into a wide viewer, and a tall aspect into a wide one.
+        ((1000.0, 400.0), (1, 1), (400, 400)),
+        ((1000.0, 400.0), (9, 16), (225, 400)),
+    ],
+)
+def test_an_auto_document_fits_its_aspect_inside_the_viewer(
+    app: Any,
+    region: tuple[float, float],
+    aspect: tuple[int, int],
+    expected: tuple[int, int],
+) -> None:
+    # The fit is the whole of Auto sizing, and it must hold on BOTH sides of the aspect --
+    # a rule that only handles the wider case letterboxes correctly and crops the other way.
+    # Falsifier: compare the region's ratio the wrong way round in `fit_to_aspect` and the
+    # wider and taller cases swap answers.
+    document = app.ui_documents[app.current_document_id].document
+    document.resolution_mode = ResolutionMode.AUTO
+    document.aspect = aspect
+    app.viewer_region = region
+    _drive(app, AUTO_RESIZE_STABLE_FRAMES + 2)
+    assert document.canvas_size == expected
+
+
+def test_an_auto_document_keeps_its_size_until_the_viewer_has_drawn(app: Any) -> None:
+    # Before the first frame nothing knows the region, and a document must not resize to a
+    # guess. Falsifier: treat a None region as (0, 0) and every document collapses to the
+    # minimum canvas on frame one.
+    document = app.ui_documents[app.current_document_id].document
     document.resolution_mode = ResolutionMode.AUTO
     before = document.canvas_size
-    app.displayed_sizes.clear()
+    app.viewer_region = None
     _drive(app, 3)
     assert document.canvas_size == before
 
 
-# ---------------------------------------------------------------------------
 # V9a -- a throttled example is actually skipped in the popup's set
 # ---------------------------------------------------------------------------
 
@@ -506,8 +521,8 @@ def test_the_costs_refresh_from_the_profile(app: Any) -> None:
 
 def test_the_copilots_canvas_size_survives_the_next_frame(app: Any) -> None:
     # An explicit pixel request switches the document to Fixed (D5). Falsifier: leave the mode
-    # Auto and the next frame's resolution step resizes it back to the panel -- the tool
-    # silently does nothing while every one of its own assertions passes.
+    # Auto and the next frame's resolution step resizes it back to the viewer's region -- the
+    # tool silently does nothing while every one of its own assertions passes.
     document_id = app.current_document_id
     result = app.copilot_backend.set_canvas_size(document_id, 128, 200)
     assert result.ok and (result.width, result.height) == (128, 200)
@@ -515,7 +530,7 @@ def test_the_copilots_canvas_size_survives_the_next_frame(app: Any) -> None:
     assert document.resolution_mode is ResolutionMode.FIXED
     assert document.resolution == (128, 200)
 
-    app.displayed_sizes[document_id] = (900, 700)  # a panel asking for something else
+    app.viewer_region = (900.0, 700.0)  # a viewer asking for something else
     _drive(app, 1)
     assert document.canvas_size == (128, 200), (
         "the next frame overwrote the size the copilot set"
@@ -557,8 +572,9 @@ def test_closing_a_document_forgets_its_ephemeral_render_state(app: Any) -> None
     # Falsifier: drop the `forget_render_state` call from `_on_document_deleted` and the four
     # entries survive the delete.
     other = seed_extra_document(app, "closeme-0000-4000-8000-000000000003")
+    # A region, or no Auto document is ever sized and  stays empty.
+    app.viewer_region = (800.0, 600.0)
     _drive(app, 6)
-    app.displayed_sizes[other] = (200, 150)
     app.pending_resolution[other] = (200, 150)
     _plant_cost(app, other, 4.0)
     assert other in app.throttle_states
@@ -570,10 +586,75 @@ def test_closing_a_document_forgets_its_ephemeral_render_state(app: Any) -> None
         ("throttle_states", app.throttle_states),
         ("auto_size_states", app.auto_size_states),
         ("document_costs", app.document_costs),
-        ("displayed_sizes", app.displayed_sizes),
         ("pending_resolution", app.pending_resolution),
     ):
         assert other not in holder, f"{name} still holds the closed document"
+
+
+def test_switching_to_fixed_seeds_the_pair_from_the_live_canvas(app: Any) -> None:
+    # A mode switch must never jump the picture (revision 1 D3). Auto -> Fixed keeps the size
+    # the document is rendering at RIGHT NOW, not the pair it happened to be saved with.
+    # Falsifier: seed `resolution` from anything else and the canvas jumps on the switch.
+    from shaderbox.tabs.document import _switch_resolution_mode
+
+    ui_document = app.ui_documents[app.current_document_id]
+    document = ui_document.document
+    document.resolution_mode = ResolutionMode.AUTO
+    document.aspect = (16, 9)
+    document.resolution = (111, 222)  # a stale pair from some earlier life
+    app.viewer_region = (640.0, 480.0)
+    _drive(app, AUTO_RESIZE_STABLE_FRAMES + 2)
+    live = document.canvas_size
+
+    _switch_resolution_mode(app, ui_document, ResolutionMode.FIXED)
+    assert document.resolution == live
+    assert ui_document.ui_state.resolution == live
+    _drive(app, 2)
+    assert document.canvas_size == live, "the switch to Fixed moved the picture"
+
+
+def test_switching_to_auto_seeds_the_aspect_from_the_live_canvas(app: Any) -> None:
+    # The mirror: Fixed -> Auto keeps the SHAPE, so only the sizing rule changes. Falsifier:
+    # leave `aspect` alone and the document snaps to whatever shape it last had under Auto.
+    from shaderbox.tabs.document import _switch_resolution_mode
+
+    ui_document = app.ui_documents[app.current_document_id]
+    document = ui_document.document
+    document.resolution_mode = ResolutionMode.FIXED
+    document.aspect = (1, 1)  # a stale ratio from some earlier life
+    document.resolution = (1280, 720)
+    _drive(app, 2)
+    assert document.canvas_size == (1280, 720)
+
+    _switch_resolution_mode(app, ui_document, ResolutionMode.AUTO)
+    assert document.aspect == (16, 9)
+    assert ui_document.ui_state.aspect == (16, 9)
+    # ... and the next frames render at that shape in the viewer, not at the stale square.
+    app.viewer_region = (800.0, 800.0)
+    _drive(app, AUTO_RESIZE_STABLE_FRAMES + 2)
+    assert document.canvas_size == fit_to_aspect((800.0, 800.0), (16, 9))
+
+
+def test_a_new_document_opens_wide_and_sizes_itself_to_the_viewer(app: Any) -> None:
+    # The bug this revision exists for: a new document showed 64x64 and rendered SQUARE,
+    # because nothing had recorded a region for it and its stored pair was the default canvas.
+    # Now it carries an aspect and the viewer sizes it. Falsifier: default `aspect` to anything
+    # square, or skip non-current documents in `_resolve_resolutions`, and this goes red.
+    from shaderbox.constants import STARTER_EXAMPLE_ID
+
+    created = app.create_document_from_example(STARTER_EXAMPLE_ID)
+    document_id = created if isinstance(created, str) else app.current_document_id
+    document = app.ui_documents[document_id].document
+    document.resolution_mode = ResolutionMode.AUTO
+    document.aspect = DEFAULT_ASPECT
+    assert DEFAULT_ASPECT == (16, 9)
+
+    app.viewer_region = (1000.0, 400.0)
+    _drive(app, AUTO_RESIZE_STABLE_FRAMES + 2)
+    assert document.canvas_size == fit_to_aspect((1000.0, 400.0), (16, 9))
+    assert document.canvas_size[0] != document.canvas_size[1], (
+        "a fresh Auto document is still rendering square"
+    )
 
 
 def test_the_starter_document_is_the_fixture_it_claims_to_be(app: Any) -> None:

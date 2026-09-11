@@ -377,11 +377,14 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   (the engine-driven uniform tables, GL-free; `core` re-imports them) / **`formatting.py`**
   (`ruff` / `clang-format` over subprocess, one formatter per tab kind, 078 W-B) / **`render_preset.py`** (the pydantic `RenderPreset` value type) /
   **`render_shape.py`** (the shape/aspect table shared by the Share tab + the copilot, plus
-  `ResolutionMode` -- whether a document's stored size is its live canvas or its export size, 090) /
-  **`render_plan.py`** (leaf, GL-free, 090: how often each displayed document renders and what
-  size an Auto one renders at -- `plan_render_set` over per-document `CostRecord`s under one
-  shared GPU budget, answering an interval and a phase each; `auto_canvas_size` /
-  `apply_damping` and their `AutoSizeState`; the constants) /
+  `ResolutionMode` -- whether a document is shaped by an ASPECT and sized by the viewer (Auto)
+  or by a stored pair (Fixed), 090 -- and the aspect vocabulary that goes with it:
+  `reduce_aspect` / `aspect_of` / `fit_to_aspect` / `aspect_label`, `ASPECT_PRESETS`,
+  `DEFAULT_ASPECT`) /
+  **`render_plan.py`** (leaf, GL-free, 090: how often each displayed document renders --
+  `plan_render_set` over per-document `CostRecord`s under one shared GPU budget, answering an
+  interval and a phase each; `apply_damping` and its `AutoSizeState`; the `document:` span key
+  both the writer and the panel read through; the constants) /
   **`render_defer.py`** (the one-frame render latch `ui.py` reads) / **`profiling.py`**
   (the frame profiler, 088: `Span` / `FrameProfile` / `Profiler` / `NULL_PROFILER` -- CPU spans
   around a block and GPU spans as `GL_TIME_ELAPSED` queries in a three-deep path-keyed ring read

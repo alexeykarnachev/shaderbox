@@ -113,7 +113,12 @@ from shaderbox.pass_graph import (
 )
 from shaderbox.paths import DOCUMENT_SCRIPT_BASENAME, pass_name_of, shader_lib_root
 from shaderbox.render_preset import RenderPreset
-from shaderbox.render_shape import RenderShape, ResolutionMode, shape_to_preset
+from shaderbox.render_shape import (
+    RenderShape,
+    ResolutionMode,
+    aspect_of,
+    shape_to_preset,
+)
 from shaderbox.scripting import (
     ScriptError,
     ScriptProbe,
@@ -278,17 +283,18 @@ class _CopilotEditTarget:
 
 
 def _canvas_line(ui_document: UIDocument) -> str:
-    """The working set's canvas line: the stored size, and which mode decides the live one.
+    """The working set's canvas line: what the document is shaped by, and what it renders at.
 
-    Under Auto the number is what an EXPORT renders at while the live canvas follows the panel,
-    so a bare `WxH` would read as a promise the live frame does not keep (090 D5).
+    Under Auto the document stores an ASPECT and no size (090 revision 1), so the pair is the
+    LIVE canvas and the aspect is the thing the user set -- reporting a stored pair there would
+    name a number the model does not carry.
     """
     document = ui_document.document
-    width, height = document.resolution
+    width, height = document.canvas_size
     if document.resolution_mode is ResolutionMode.FIXED:
-        return f"{width}x{height}"
-    live_w, live_h = document.canvas_size
-    return f"{width}x{height} (export; auto, live {live_w}x{live_h})"
+        return f"{document.resolution[0]}x{document.resolution[1]} (fixed)"
+    ratio_w, ratio_h = document.aspect
+    return f"{width}x{height} (auto, aspect {ratio_w}:{ratio_h})"
 
 
 def _driven_on(driven: set[tuple[str, str]], pass_name: str) -> set[str]:
@@ -1256,6 +1262,11 @@ class CopilotBackend:
             ui_document.ui_state.resolution = (w, h)
             ui_document.document.resolution_mode = ResolutionMode.FIXED
             ui_document.document.resolution = (w, h)
+            # The aspect rides along so a later switch back to Auto keeps the shape the tool
+            # just asked for, rather than the one the document had before it.
+            seeded_aspect = aspect_of((w, h))
+            ui_document.ui_state.aspect = seeded_aspect
+            ui_document.document.aspect = seeded_aspect
             ui_document.document.set_canvas_size((w, h))
             self._save_ui_document(ui_document)
             logger.info(f"copilot set canvas of {document_id} -> {w}x{h}")
@@ -2168,7 +2179,7 @@ class CopilotBackend:
             size = COPILOT_ENGINE.render_facts_size
             # Match the document's canvas aspect — a square probe would lay out
             # aspect-corrected shaders (u_aspect) differently from the preview.
-            cw, ch = document.resolution
+            cw, ch = document.export_source_size()
             h = min(4 * size, max(8, round(size * ch / cw))) if cw else size
             raw0 = _probe_frame(document, t, size, h, target)
             # Stamp the sample time: an animated shader's facts change with phase,

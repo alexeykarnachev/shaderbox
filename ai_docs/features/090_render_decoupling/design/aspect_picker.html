@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>090 — aspect picker sketches</title>
+<style>
+  :root {
+    --bg: #1d2021; --surface: #161819; --panel: #282828; --border: #3c3836; --border2: #665c54;
+    --fg: #ebdbb2; --fg0: #fbf1c7; --dim: #928374; --chip: #bdae93; --accent: #fabd2f;
+    --accent-tint: rgba(250,189,47,0.18); --ok: #b8bb26;
+  }
+  body { margin: 0; padding: 28px 32px 60px; background: var(--bg); color: var(--fg);
+         font: 14px/1.45 "DejaVu Sans", "Noto Sans", sans-serif; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 6px; }
+  .lead { color: var(--dim); max-width: 900px; margin-bottom: 26px; }
+  .variant { margin: 0 0 40px; }
+  .variant h2 { font-size: 16px; margin: 0 0 4px; }
+  .variant h2 span { color: var(--accent); margin-right: 8px; }
+  .variant p { color: var(--dim); margin: 0 0 12px; max-width: 900px; }
+  .states { display: flex; gap: 24px; flex-wrap: wrap; }
+  .state { flex: 1 1 420px; max-width: 560px; }
+  .state .label { font-size: 12px; color: var(--dim); margin-bottom: 6px; letter-spacing: .04em; }
+  .tab { background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
+         padding: 12px 14px; font-size: 13px; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 6px; min-height: 26px; }
+  .caprow { display: flex; gap: 8px; margin-top: 0; }
+  .cap { font-size: 11px; color: var(--dim); }
+  .cap.left { width: 168px; }
+  .field { background: var(--panel); border: 1px solid var(--border); border-radius: 3px;
+           padding: 3px 8px; color: var(--fg); min-width: 40px; text-align: right; }
+  .field.name { width: 150px; text-align: left; color: var(--fg); }
+  .field.ro { color: var(--dim); border-style: dashed; }
+  .x { color: var(--dim); }
+  .btn { border: 1px solid var(--border2); border-radius: 3px; padding: 3px 9px; color: var(--chip);
+         background: transparent; cursor: default; }
+  .btn.on { background: var(--accent-tint); border-color: var(--accent); color: var(--fg0); }
+  .btn.menu::after { content: " ▾"; color: var(--dim); }
+  .seg { display: inline-flex; border: 1px solid var(--border2); border-radius: 3px; overflow: hidden; }
+  .seg .btn { border: 0; border-radius: 0; }
+  .seg .btn + .btn { border-left: 1px solid var(--border2); }
+  .chips { display: inline-flex; gap: 4px; }
+  .chip { border: 1px solid var(--border); border-radius: 3px; padding: 2px 7px; color: var(--chip); font-size: 12px; }
+  .chip.on { background: var(--accent-tint); border-color: var(--accent); color: var(--fg0); }
+  .readout { color: var(--dim); font-size: 12px; margin-left: 4px; }
+  .readout b { color: var(--ok); font-weight: 500; }
+  .menu { position: relative; display: inline-block; }
+  .popup { background: var(--panel); border: 1px solid var(--border2); border-radius: 3px;
+           padding: 6px 0; margin-top: 6px; width: 210px; font-size: 12px; }
+  .popup .h { color: var(--dim); padding: 3px 10px; font-size: 11px; letter-spacing: .05em; }
+  .popup .i { padding: 3px 18px; color: var(--fg); }
+  .popup .i.on { color: var(--fg0); background: var(--accent-tint); }
+  .popup hr { border: 0; border-top: 1px solid var(--border); margin: 4px 0; }
+  .lock { color: var(--dim); font-size: 12px; }
+  .note { font-size: 12px; color: var(--dim); margin-top: 8px; }
+  .pick { margin-top: 30px; padding: 12px 14px; border: 1px dashed var(--border2); border-radius: 4px;
+          color: var(--dim); max-width: 900px; }
+</style>
+</head>
+<body>
+<h1>Aspect picker × resolution selector — four layouts</h1>
+<div class="lead">
+  The Document tab's size controls today: a caption row (<i>Document name</i> · <i>Canvas</i>), the name
+  field on the left, and on the right <b>W × H</b> integer fields plus a presets menu (squares, the video
+  shapes, bound texture sizes). Revision 1 adds the mode: <b>Auto</b> stores an aspect only and renders at the
+  viewer's size; <b>Fixed</b> stores W × H as today. Each variant is drawn in both states. The dashed
+  <span class="field ro" style="padding:0 6px">1214×683</span> style marks a read-only live number.
+</div>
+
+<!-- A -->
+<div class="variant">
+  <h2><span>A</span>Mode toggle, the row swaps its content</h2>
+  <p>The smallest change from today. A two-way segmented control replaces the current <i>Fixed</i> toggle;
+     the same slot on the row shows aspect chips under Auto and the W × H fields plus presets under Fixed.
+     The live size is a dim readout so the user always sees what the shader gets.</p>
+  <div class="states">
+    <div class="state"><div class="label">AUTO</div>
+      <div class="tab">
+        <div class="caprow"><span class="cap left">Document name</span><span class="cap">Aspect</span></div>
+        <div class="row">
+          <span class="field name">UV Mango</span>
+          <span class="seg"><span class="btn on">Auto</span><span class="btn">Fixed</span></span>
+          <span class="chips"><span class="chip on">16:9</span><span class="chip">4:3</span><span class="chip">1:1</span><span class="chip">3:4</span><span class="chip">9:16</span><span class="chip">21:9</span></span>
+          <span class="field" style="min-width:26px">16</span><span class="x">:</span><span class="field" style="min-width:26px">9</span>
+        </div>
+        <div class="row"><span style="width:150px"></span><span class="readout">renders at <b>1214×683</b>, follows the viewer</span></div>
+      </div>
+    </div>
+    <div class="state"><div class="label">FIXED</div>
+      <div class="tab">
+        <div class="caprow"><span class="cap left">Document name</span><span class="cap">Canvas</span></div>
+        <div class="row">
+          <span class="field name">UV Mango</span>
+          <span class="seg"><span class="btn">Auto</span><span class="btn on">Fixed</span></span>
+          <span class="field">1280</span><span class="x">×</span><span class="field">720</span>
+          <span class="btn menu">presets</span>
+        </div>
+        <div class="row"><span style="width:150px"></span><span class="readout">renders at <b>1280×720</b></span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- B -->
+<div class="variant">
+  <h2><span>B</span>One menu owns both: aspects and resolutions</h2>
+  <p>No explicit mode control. A single dropdown lists <i>Aspect</i> entries and <i>Resolution</i> entries in two
+     groups; picking an aspect makes the document Auto, picking a resolution makes it Fixed. The W × H fields
+     appear only after a resolution is picked (or "Custom…"). Fewest pixels; the mode is implied by what you chose.</p>
+  <div class="states">
+    <div class="state"><div class="label">AUTO (an aspect is chosen)</div>
+      <div class="tab">
+        <div class="caprow"><span class="cap left">Document name</span><span class="cap">Size</span></div>
+        <div class="row">
+          <span class="field name">UV Mango</span>
+          <span class="menu"><span class="btn on menu">Auto · 16:9</span>
+            <div class="popup">
+              <div class="h">ASPECT — follows the viewer</div>
+              <div class="i on">16:9</div><div class="i">4:3</div><div class="i">1:1</div><div class="i">3:4</div><div class="i">9:16</div><div class="i">21:9</div><div class="i">Custom ratio…</div>
+              <hr>
+              <div class="h">RESOLUTION — fixed size</div>
+              <div class="i">256 × 256</div><div class="i">512 × 512</div><div class="i">1280 × 720</div><div class="i">1920 × 1080</div><div class="i">2560 × 1440</div><div class="i">Custom size…</div>
+            </div>
+          </span>
+          <span class="readout">→ <b>1214×683</b></span>
+        </div>
+      </div>
+    </div>
+    <div class="state"><div class="label">FIXED (a resolution is chosen)</div>
+      <div class="tab">
+        <div class="caprow"><span class="cap left">Document name</span><span class="cap">Size</span></div>
+        <div class="row">
+          <span class="field name">UV Mango</span>
+          <span class="btn menu">Fixed · 1280×720</span>
+          <span class="field">1280</span><span class="x">×</span><span class="field">720</span>
+        </div>
+        <div class="row"><span style="width:150px"></span><span class="readout">edit the fields for a size not in the list</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- C -->
+<div class="variant">
+  <h2><span>C</span>The fields stay, locked under Auto and showing the live size</h2>
+  <p>The W × H fields never leave. Under Auto they are read-only and show the live size as it changes with the
+     viewer, with an aspect combo beside them; a lock glyph says why they are grey. <i>Fixed</i> unlocks them and
+     the aspect combo disappears. Communicates "auto = derived from the canvas" the most directly.</p>
+  <div class="states">
+    <div class="state"><div class="label">AUTO</div>
+      <div class="tab">
+        <div class="caprow"><span class="cap left">Document name</span><span class="cap">Canvas · auto</span></div>
+        <div class="row">
+          <span class="field name">UV Mango</span>
+          <span class="field ro">1214</span><span class="x">×</span><span class="field ro">683</span>
+          <span class="lock" title="follows the viewer">🔒</span>
+          <span class="btn menu">16:9</span>
+          <span class="btn">Fixed</span>
+        </div>
+        <div class="row"><span style="width:150px"></span><span class="readout">the fields follow the viewer; pick the aspect, or press Fixed to type a size</span></div>
+      </div>
+    </div>
+    <div class="state"><div class="label">FIXED</div>
+      <div class="tab">
+        <div class="caprow"><span class="cap left">Document name</span><span class="cap">Canvas</span></div>
+        <div class="row">
+          <span class="field name">UV Mango</span>
+          <span class="field">1280</span><span class="x">×</span><span class="field">720</span>
+          <span class="btn menu">presets</span>
+          <span class="btn on">Fixed</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- D -->
+<div class="variant">
+  <h2><span>D</span>Aspect in the caption, mode on the row, one combo</h2>
+  <p>Like A but with a combo instead of a chip row, so the row stays one line at any panel width. The caption
+     itself carries the summary ("Canvas · Auto 16:9 · 1214×683"), so the row has only the toggle and one control.</p>
+  <div class="states">
+    <div class="state"><div class="label">AUTO</div>
+      <div class="tab">
+        <div class="caprow"><span class="cap left">Document name</span><span class="cap">Canvas · Auto 16:9 · <span style="color:var(--ok)">1214×683</span></span></div>
+        <div class="row">
+          <span class="field name">UV Mango</span>
+          <span class="seg"><span class="btn on">Auto</span><span class="btn">Fixed</span></span>
+          <span class="btn menu">16:9</span>
+          <span class="field" style="min-width:26px">16</span><span class="x">:</span><span class="field" style="min-width:26px">9</span>
+        </div>
+      </div>
+    </div>
+    <div class="state"><div class="label">FIXED</div>
+      <div class="tab">
+        <div class="caprow"><span class="cap left">Document name</span><span class="cap">Canvas · Fixed · <span style="color:var(--ok)">1280×720</span></span></div>
+        <div class="row">
+          <span class="field name">UV Mango</span>
+          <span class="seg"><span class="btn">Auto</span><span class="btn on">Fixed</span></span>
+          <span class="field">1280</span><span class="x">×</span><span class="field">720</span>
+          <span class="btn menu">presets</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="pick">
+  Common to all four: the Render tab's own resolution and shape presets are untouched and decide export sizes;
+  NATIVE means the live canvas under Auto and the stored size under Fixed. Pick a letter, or a letter plus a
+  tweak ("A with a combo", "C without the lock glyph").
+</div>
+</body>
+</html>

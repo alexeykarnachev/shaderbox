@@ -96,13 +96,10 @@ def test_changed_document_json_reloads(app: Any) -> None:
 
     app.session.sync_documents_from_disk()
 
-    # Both halves: the reloaded document carries the new stored resolution, and its live canvas
-    # opens at it -- an Auto document starts there and only a frame's recorder moves it.
+    # The stored pair is what the reload picked up. The live canvas is NOT it: this document is
+    # Auto, so it opens at its aspect fitted to a region (090 revision 1) and the pair is only
+    # what a switch to Fixed would seed from.
     assert app.ui_documents[target].document.resolution == (123, 123)
-    assert tuple(app.ui_documents[target].document.render_pass.canvas.texture.size) == (
-        123,
-        123,
-    )
 
 
 def test_quiet_frame_is_a_noop(app: Any) -> None:

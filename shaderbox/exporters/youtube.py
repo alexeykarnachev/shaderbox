@@ -512,10 +512,11 @@ class YouTubeExporter(Exporter):
     ) -> bool:
         if artifact is None:
             return False
-        # The document's stored `resolution`, never the live canvas (090 D5): under Auto the
-        # live size is the panel's, so this gate would disarm publish whenever the panel moved.
+        # The same source size the export itself resolves from (090 D5): the stored pair under
+        # Fixed, the live canvas under Auto. Reading anything else here disarms publish on an
+        # artifact that does match what a render would now produce.
         expected: tuple[int, int] = resolve_dims(
-            self.render_preset(), current_document.document.resolution
+            self.render_preset(), current_document.document.export_source_size()
         )
         return artifact.size == expected
 

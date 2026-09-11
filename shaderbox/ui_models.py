@@ -34,10 +34,17 @@ from shaderbox.paths import (
     pass_name_of,
     pass_shader_name,
 )
-from shaderbox.render_shape import ResolutionMode
+from shaderbox.render_shape import DEFAULT_ASPECT, ResolutionMode, fit_to_aspect
 from shaderbox.scripting.keys import StoppedKey
 from shaderbox.ui_regions import ChannelView, DocumentTab
 from shaderbox.util import get_uniform_hash
+
+# The region an Auto document is fitted to before any frame has drawn: a typical viewer at a
+# 1080p window with the editor split. Only the first frame or two of a freshly loaded document
+# render at it -- the tick then fits the real region -- but it decides the allocation the
+# document's passes and feedback seeds are built at, so it is a plausible size rather than a
+# placeholder.
+INITIAL_AUTO_REGION: tuple[float, float] = (960.0, 540.0)
 
 UIUniformInputType = Literal[
     "texture", "buffer", "array", "color", "text", "drag", "auto"
@@ -147,11 +154,13 @@ def sort_uniform_hashes(
 class UIDocumentState(BaseModel):
     ui_name: str = ""
 
-    # How the live render size is decided, and the one stored width x height (090 D1). Under
-    # FIXED, `resolution` IS the live size. Under AUTO the live size follows the largest UI
-    # region showing the document and `resolution` is the EXPORT size -- what RenderShape.NATIVE
-    # and resolve_dims's FREE fall-through resolve to. There is no second size field.
+    # How the live render size is decided (090 D1, revision 1). Under AUTO the document owns an
+    # ASPECT and no size: its live canvas is the viewer region fitted to that aspect and follows
+    # every resize. Under FIXED the `resolution` pair IS the live size and the user edits it.
+    # Each field is meaningful in ONE mode; the other is what a switch seeds from, so a mode
+    # change never jumps the picture.
     resolution_mode: ResolutionMode = ResolutionMode.AUTO
+    aspect: tuple[int, int] = DEFAULT_ASPECT
     resolution: tuple[int, int] = DEFAULT_CANVAS_SIZE
     # A human/agent-facing one-line summary of what a document (esp. a shipped EXAMPLE) is for;
     # on a shipped example's document.json it's maintainer-authored, read-only.
@@ -582,16 +591,24 @@ def _load_ui_state(ui_state_dict: dict[str, Any], dir_name: str) -> UIDocumentSt
 def load_document_from_dir(document_dir: Path) -> UIDocument:
     # `ui_state` is parsed FIRST, then the effective live size resolved from it and handed to
     # the loader (090 D1): the size decides how every pass and every feedback seed is allocated,
-    # so it cannot be discovered after the Document is built. Under AUTO the live size starts at
-    # the stored `resolution` and the first frame's recorder moves it to the display's.
+    # so it cannot be discovered after the Document is built.
+    #
+    # Under AUTO the document stores no size, and the size it will RENDER at is the viewer's
+    # region, which nothing knows until the first frame draws (revision 1). So it opens at its
+    # aspect fitted to a nominal region and the first tick moves it to the real one -- the load
+    # has to allocate something, and something shaped correctly beats something square.
     dir_name = document_dir.name
     metadata = load_document_metadata(document_dir / DOCUMENT_JSON_BASENAME)
     ui_state = _load_ui_state(metadata.get("ui_state", {}), dir_name)
 
-    document, _meta = Document.load_from_dir(
-        document_dir, canvas_size=ui_state.resolution
+    initial_size = (
+        fit_to_aspect(INITIAL_AUTO_REGION, ui_state.aspect)
+        if ui_state.resolution_mode is ResolutionMode.AUTO
+        else ui_state.resolution
     )
+    document, _meta = Document.load_from_dir(document_dir, canvas_size=initial_size)
     document.resolution_mode = ui_state.resolution_mode
+    document.aspect = ui_state.aspect
     document.resolution = ui_state.resolution
 
     return UIDocument(

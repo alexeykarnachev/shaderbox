@@ -25,7 +25,12 @@ from shaderbox.render_preset import (
     ResolutionPolicy,
     resolve_dims,
 )
-from shaderbox.render_shape import RenderShape, ResolutionMode, shape_to_preset
+from shaderbox.render_shape import (
+    RenderShape,
+    ResolutionMode,
+    aspect_of,
+    shape_to_preset,
+)
 from shaderbox.ui_models import UIDocument
 
 
@@ -150,8 +155,9 @@ def test_render_for_cleans_up_on_render_failure(
 
 
 # ---------------------------------------------------------------------------
-# 090 D5 -- export resolves its source size from the document's stored `resolution`,
-# never from the live canvas, and the Render tab's own W x H still decides the file.
+# 090 D5 (revision 1) -- an export resolves its source from `export_source_size`: the stored
+# pair under Fixed, the LIVE canvas under Auto, where the document carries no pair. The Render
+# tab's own W x H still decides the file on the `preset=None` path.
 # ---------------------------------------------------------------------------
 
 
@@ -179,26 +185,26 @@ def _record_source_sizes(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(Document, "_render_media_into", spy)
 
 
-def _auto_document(gl: moderngl.Context, resolution: tuple[int, int]) -> Document:
-    doc = Document(gl=gl, canvas_size=resolution)
+def _auto_document(gl: moderngl.Context, size: tuple[int, int]) -> Document:
+    """An Auto document at a live size: it stores the ASPECT, and the size is the viewer's."""
+    doc = Document(gl=gl, canvas_size=size)
     doc.resolution_mode = ResolutionMode.AUTO
-    doc.resolution = resolution
+    doc.aspect = aspect_of(size)
     doc.render()
     return doc
 
 
 @pytest.mark.parametrize("shape", [None, "native", "wide"])
-def test_an_export_never_reads_the_live_auto_size(
+def test_an_auto_export_renders_at_the_live_size(
     gl_ctx: moderngl.Context, tmp_path: Path, shape: str | None
 ) -> None:
-    # Under Auto the live canvas is whatever the panel happens to be, and the three export paths
-    # -- a bare `preset=None`, RenderShape.NATIVE (which lowers to FREE + RENDER_AT_TARGET) and a
-    # FIXED_ASPECT shape -- must all resolve from the STORED resolution instead. Falsifier: pass
-    # `render_pass.canvas.texture.size` as `resolve_dims`'s source and the None and NATIVE cases
-    # come out 320x180, the size the panel happened to be.
+    # Under Auto the document stores NO size (090 revision 1), so `RenderShape.NATIVE` and
+    # `resolve_dims`'s FREE fall-through mean the LIVE canvas -- what the user is looking at.
+    # Falsifier: resolve from anything else (a stored pair, a constant) and the None and NATIVE
+    # cases stop tracking the size the viewer put the document at.
     document = _auto_document(gl_ctx, (640, 480))
-    document.set_canvas_size((320, 180))  # what a narrow panel would ask for
-    assert document.render_pass.canvas.texture.size != (640, 480)
+    document.set_canvas_size((320, 180))  # what the viewer put it at
+    assert document.render_pass.canvas.texture.size == (320, 180)
 
     preset = (
         None
@@ -217,33 +223,40 @@ def test_an_export_never_reads_the_live_auto_size(
     details.resolution_details.width, details.resolution_details.height = (640, 480)
     document.render_media(details, preset)
 
-    expected = {
-        None: (640, 480),
-        "native": (640, 480),
-        "wide": (1280, 720),
-    }[shape]
-    assert PILImage.open(path).size == expected
-    # The SOURCE the frame was drawn at, not only the file the resize produced: on the
-    # `preset=None` path the Render tab's W x H resizes whatever it was handed, so the file
-    # comes out right even when the render was at the panel's size and every pixel is an
-    # upscale of a 320x180 frame. `_render_image` records the canvas it captured.
+    # The Render tab's own W x H still decides the FILE on the `preset=None` path, as it always
+    # has; a shape preset decides it from the shape. NATIVE's 320x180 comes back 16-ALIGNED,
+    # which `resolve_dims` has always done for codec compatibility and which this revision does
+    # not change.
+    assert (
+        PILImage.open(path).size
+        == {
+            None: (640, 480),
+            "native": (320, 192),
+            "wide": (1280, 720),
+        }[shape]
+    )
+    # The SOURCE the frame was drawn at, which is what the revision moves: the live canvas on
+    # both free paths, the shape's own size on the fixed-aspect one. `_render_media_into`
+    # records the canvas it was handed.
     assert (
         _last_source_size()
         == {
-            None: (640, 480),
-            "native": (640, 480),
+            None: (320, 180),
+            "native": (320, 192),
             "wide": (1280, 720),
         }[shape]
     )
     document.release()
 
 
-def test_an_artifact_still_matches_its_shape_after_a_live_resize(
+def test_the_publish_gate_resolves_from_the_same_source_the_export_does(
     gl_ctx: moderngl.Context,
 ) -> None:
-    # YouTube's staleness gate resolves against the same number, so moving the panel must not
-    # disarm publish. Falsifier: resolve against the live canvas and the gate goes False the
-    # moment the panel moves.
+    # The gate answers "would a render now produce this artifact?", so it must resolve from the
+    # size a render WOULD use. Under Auto that is the live canvas, so an artifact rendered at
+    # the old size stops matching once the viewer resizes -- correct, and why the Render button
+    # sits beside it. A FIXED document's gate is immune to the viewer entirely. Falsifier:
+    # resolve the gate from anything but `export_source_size` and one of the two halves flips.
     from shaderbox.exporters.base import RenderedArtifact
     from shaderbox.exporters.youtube import YouTubeExporter
 
@@ -251,15 +264,29 @@ def test_an_artifact_still_matches_its_shape_after_a_live_resize(
     ui_document = UIDocument(document=document)
     exporter = YouTubeExporter()
     exporter._render_state.shape = RenderShape.NATIVE
-    expected = resolve_dims(exporter.render_preset(), document.resolution)
+    expected = resolve_dims(exporter.render_preset(), document.export_source_size())
     artifact = RenderedArtifact(
         path=Path("x.mp4"), is_video=True, duration=4.0, size=expected
     )
     assert exporter._artifact_matches_shape(artifact, ui_document)
 
+    # Auto: the source moved, so the artifact is genuinely stale.
     document.set_canvas_size((320, 180))
-    assert exporter._artifact_matches_shape(artifact, ui_document), (
-        "a panel resize disarmed publish on an artifact that still matches the shape"
+    assert not exporter._artifact_matches_shape(artifact, ui_document)
+
+    # Fixed: the stored pair is the source, and no resize can move it.
+    document.resolution_mode = ResolutionMode.FIXED
+    document.resolution = (1920, 1080)
+    fixed_artifact = RenderedArtifact(
+        path=Path("y.mp4"),
+        is_video=True,
+        duration=4.0,
+        size=resolve_dims(exporter.render_preset(), document.export_source_size()),
+    )
+    assert exporter._artifact_matches_shape(fixed_artifact, ui_document)
+    document.set_canvas_size((640, 360))
+    assert exporter._artifact_matches_shape(fixed_artifact, ui_document), (
+        "a live resize disarmed publish on a FIXED document, whose source cannot move"
     )
     document.release()
 

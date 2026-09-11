@@ -132,6 +132,10 @@
     "ui_state": {
         "ui_name": "Night City",
         "resolution_mode": "auto",
+        "aspect": [
+            16,
+            9
+        ],
         "resolution": [
             1600,
             900

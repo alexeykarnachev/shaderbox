@@ -141,6 +141,7 @@ uniforms). `SB_*` helpers resolve from the live shader lib automatically. The sm
 { "uniforms": { "main": {} },
   "ui_state": { "ui_name": "<effect> v01 (port)",
                 "resolution_mode": "fixed",
+                "aspect": [9, 16],
                 "resolution": [720, 1280],
                 "render_media_details": { "duration": 1.0 } } }
 ```
@@ -150,11 +151,13 @@ uniforms). `SB_*` helpers resolve from the live shader lib automatically. The sm
   Defaults come from the shader's inline-default uniforms, not here.
 - **Do NOT copy `uniforms` / `ui_uniforms` from an unrelated document** — you'll drag its saved state in.
   Leave `ui_uniforms` out entirely; introspection rebuilds it on load (you never hand-author the keys).
-- `ui_name` = grid label; `resolution` = the one stored width x height, and `resolution_mode` says what
-  it means — `"fixed"` makes it the live canvas (what a lab step wants, so a render is the size you
-  asked for), `"auto"` makes it the EXPORT size while the live canvas follows the largest region
-  showing the document; `ui_state.render_media_details.duration` = render loop length. (JSON has no
-  comments — keep the legend in your head, not in the file.)
+- `ui_name` = grid label; `ui_state.render_media_details.duration` = render loop length.
+  `resolution_mode` decides which of the two size keys the document actually uses:
+  **`"fixed"` renders at `resolution`** — what a lab step wants, so a render is the size you asked
+  for — while **`"auto"` renders at `aspect` fitted to the viewer**, whatever the window is doing,
+  and `resolution` then only says what a later switch to Fixed would start from. Write both keys
+  (`aspect` reduced: 720x1280 is `[9, 16]`), so either mode opens correctly. (JSON has no comments —
+  keep the legend in your head, not in the file.)
 - For a fuller real example to mirror, open any committed document, e.g.
   `projects/_lab/night_city/documents/<uuid>/document.json`.
 

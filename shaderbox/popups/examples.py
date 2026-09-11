@@ -101,10 +101,6 @@ def _draw_grid(app: App) -> str:
             # An example still queued for its first render (066 D2) has nothing drawn yet.
             stale=not ui_document_example.document.first_render_done,
         )
-        # While this popup is open its examples ARE the displayed set (090 D10), so its
-        # thumbnails are the recorders an Auto example sizes from.
-        if result.drawn_size != (0.0, 0.0):
-            app.record_displayed_size(ui_document_example.id, result.drawn_size)
         if result.clicked:
             app.app_state.selected_example_id = ui_document_example.id
             selected_id = ui_document_example.id

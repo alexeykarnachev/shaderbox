@@ -65,7 +65,7 @@ from shaderbox.paths import (
 )
 from shaderbox.profiling import NULL_PROFILER, Profiler
 from shaderbox.render_preset import FitPolicy, RenderPreset, resolve_dims
-from shaderbox.render_shape import ResolutionMode
+from shaderbox.render_shape import ResolutionMode, aspect_of, aspect_ratio
 from shaderbox.shader_source import ShaderSource
 
 DEFAULT_PASS_NAME = "main"
@@ -89,22 +89,21 @@ def as_canvas_size(size: object) -> tuple[int, int] | None:
 
 
 def _clamped_to_aspect(
-    size: tuple[int, int], resolution: tuple[int, int]
+    size: tuple[int, int], aspect: tuple[int, int]
 ) -> tuple[int, int]:
-    """`size` inside the canvas bounds, keeping `resolution`'s aspect where the clamp bit.
+    """`size` inside the canvas bounds, keeping `aspect` where the clamp bit.
 
-    A bare per-axis clamp changes the aspect, which under Auto feeds back into the next
-    frame's requested size and drifts. So the axis the clamp CONSTRAINED is authoritative and
-    the other is re-derived from the stored aspect.
+    A bare per-axis clamp changes the shape, which under Auto feeds back into the next frame's
+    requested size and drifts. So the axis the clamp CONSTRAINED is authoritative and the other
+    is re-derived from the ratio the document is shaped to.
     """
     clamped = clamp_canvas_size(size)
     if clamped == size:
         return clamped
-    width, height = resolution
-    aspect = width / height if height else 1.0
+    ratio = aspect_ratio(aspect)
     if clamped[0] != size[0]:
-        return clamp_canvas_size((clamped[0], max(1, round(clamped[0] / aspect))))
-    return clamp_canvas_size((max(1, round(clamped[1] * aspect)), clamped[1]))
+        return clamp_canvas_size((clamped[0], max(1, round(clamped[0] / ratio))))
+    return clamp_canvas_size((max(1, round(clamped[1] * ratio)), clamped[1]))
 
 
 def _keyed_entry_fields() -> dict[str, type[BaseModel]]:
@@ -301,11 +300,12 @@ class Document:
         self.canvas_size: tuple[int, int] = (
             as_canvas_size(canvas_size) or DEFAULT_CANVAS_SIZE
         )
-        # The persisted pair the loader and the Document tab set (090 D1). Under FIXED,
-        # `resolution` IS the live size; under AUTO it is the EXPORT size and the live size
-        # follows the display. Every export path resolves from `resolution`, never from the
-        # live canvas.
+        # What the loader and the Document tab set (090 D1, revision 1). Under AUTO the document
+        # owns an ASPECT and the live canvas is the viewer region fitted to it; under FIXED the
+        # `resolution` pair IS the live size. Each is meaningful in one mode, and a mode switch
+        # seeds the other from the live canvas so the picture never jumps.
         self.resolution_mode: ResolutionMode = ResolutionMode.AUTO
+        self.aspect: tuple[int, int] = aspect_of(self.canvas_size)
         self.resolution: tuple[int, int] = self.canvas_size
         self._resampler: CanvasResampler | None = None
         self.passes: dict[str, Pass] = {
@@ -381,6 +381,25 @@ class Document:
             self._resampler.release()
             self._resampler = None
 
+    def shape_aspect(self) -> tuple[int, int]:
+        """The ratio this document is shaped to: its own `aspect` under Auto, its pair's
+        under Fixed. The one place the two modes' answers to "what shape is it?" meet."""
+        if self.resolution_mode is ResolutionMode.AUTO:
+            return self.aspect
+        return aspect_of(self.resolution)
+
+    def export_source_size(self) -> tuple[int, int]:
+        """The size an export renders its source frame at (090 D5, revision 1).
+
+        Under FIXED that is the stored `resolution` -- the number the user set, which no panel
+        can move. Under AUTO the document stores no size at all, so it is the LIVE canvas: what
+        the user is looking at is what `RenderShape.NATIVE` and `resolve_dims`'s FREE
+        fall-through mean, and the Render tab's own W x H still decides what lands on disk.
+        """
+        if self.resolution_mode is ResolutionMode.AUTO:
+            return self.canvas_size
+        return self.resolution
+
     def clamped_size(self, size: tuple[int, int]) -> tuple[int, int]:
         """What `set_canvas_size(size)` would actually store.
 
@@ -390,7 +409,7 @@ class Document:
         the number it kept requesting.
         """
         return _clamped_to_aspect(
-            as_canvas_size(size) or DEFAULT_CANVAS_SIZE, self.resolution
+            as_canvas_size(size) or DEFAULT_CANVAS_SIZE, self.shape_aspect()
         )
 
     def resample_canvas(self, old: Canvas, size: tuple[int, int]) -> Canvas:
@@ -1032,15 +1051,15 @@ class Document:
             # reset HERE rather than per export path — otherwise the same document exports
             # differently depending on how long the app has been open.
             self.reset_feedback()
-            # The source size is `resolution`, never the live canvas (090 D5): under Auto the
-            # live size is whatever the panel happens to be, so RenderShape.NATIVE -- the
-            # default of every copilot render tool and YouTube's initial shape -- would resolve
-            # to the panel. `resolution_details` is untouched: the Render tab's W x H still
+            # ONE source size for every branch (090 D5): the stored pair under Fixed, the live
+            # canvas under Auto, where the document has no pair to read.
+            # `resolution_details` is untouched either way: the Render tab's W x H still
             # decides what lands on disk, through the PIL resize and ffmpeg's -s.
+            source_size = self.export_source_size()
             if preset is None or preset.fit is FitPolicy.SCALE_DISTORT:
                 scratch = Canvas(
                     gl=self._gl,
-                    size=self.resolution,
+                    size=source_size,
                     dtype=self.render_pass.canvas.dtype,
                     filter=self.render_pass.canvas.filter,
                     wrap=self.render_pass.canvas.wrap,
@@ -1050,7 +1069,7 @@ class Document:
                 finally:
                     scratch.release()
 
-            target_w, target_h = resolve_dims(preset, self.resolution)
+            target_w, target_h = resolve_dims(preset, source_size)
             details = details.model_copy(deep=True)
             details.resolution_details.width = target_w
             details.resolution_details.height = target_h

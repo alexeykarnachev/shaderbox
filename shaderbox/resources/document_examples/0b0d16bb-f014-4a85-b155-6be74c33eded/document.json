@@ -372,6 +372,10 @@
     "ui_state": {
         "ui_name": "Fire",
         "resolution_mode": "auto",
+        "aspect": [
+            9,
+            16
+        ],
         "resolution": [
             1080,
             1920

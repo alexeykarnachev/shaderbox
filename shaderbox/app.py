@@ -87,6 +87,7 @@ from shaderbox.render_plan import (
     RenderPlan,
     ThrottleState,
 )
+from shaderbox.render_shape import DEFAULT_ASPECT
 from shaderbox.scripting import EXPORT_MOUSE, MouseState
 from shaderbox.shader_errors import ShaderError, next_error_line
 from shaderbox.shader_lib import ShaderLibIndex
@@ -381,6 +382,11 @@ class App:
         self.canvas_size_buf: tuple[int, int] = (0, 0)
         self.canvas_w_editing: bool = False
         self.canvas_h_editing: bool = False
+        # The same shape for the Auto side's custom ratio fields (090 revision 1): each half
+        # mirrors the document's aspect on every frame in which its own field is not active.
+        self.aspect_buf: tuple[int, int] = DEFAULT_ASPECT
+        self.aspect_w_editing: bool = False
+        self.aspect_h_editing: bool = False
 
         # The pass list's inline add input (name a new pass).
         # The pass being created in the settings modal; None outside create mode.
@@ -677,6 +683,8 @@ class App:
         # land mid-edit; re-arm both mirrors or the new document draws the old one's half-typed pair.
         self.canvas_w_editing = False
         self.canvas_h_editing = False
+        self.aspect_w_editing = False
+        self.aspect_h_editing = False
         if new_id:
             self.ensure_shader_tab(new_id)
 
@@ -765,9 +773,8 @@ class App:
         an interval that lost its hysteresis counter for a frame would restart at 1 and pay the
         window again, so absence from the plan is deliberately not the trigger. `document_costs`
         goes with them, or a cost recorded two frames before the close would plan an id nothing
-        can render.
+        can render. The viewer's region is not per-document and so is not here.
         """
-        self.displayed_sizes.pop(document_id, None)
         self.pending_resolution.pop(document_id, None)
         self.auto_size_states.pop(document_id, None)
         self.throttle_states.pop(document_id, None)
@@ -1213,20 +1220,6 @@ class App:
     def set_document_delete_armed(self, id: str = "") -> None:
         self.document_delete_armed = id
 
-    def record_displayed_size(
-        self, document_id: str, size: tuple[float, float]
-    ) -> None:
-        """Report the size a surface DREW `document_id` at this frame (090 D2).
-
-        Several surfaces can show one document at once -- the viewer and a grid tile -- and the
-        LARGEST wins, which is what "the live size follows the display" means. The dict is
-        cleared at the head of each frame's tick, so every frame's answer is that frame's.
-        """
-        width, height = (max(1, round(size[0])), max(1, round(size[1])))
-        previous = self.displayed_sizes.get(document_id)
-        if previous is None or width * height > previous[0] * previous[1]:
-            self.displayed_sizes[document_id] = (width, height)
-
     def _rewire_exporters(self) -> None:
         """Point the exporter registry at the project just loaded.
 
@@ -1277,9 +1270,10 @@ class App:
 
         # The render decoupling's per-document state (090), all EPHEMERAL and all keyed by
         # document id, so a project switch starts them empty:
-        #   displayed_sizes   what each document's largest displaying region DREW last frame,
-        #                     written by the recorders in the draw phase and read at the head
-        #                     of the next `_tick_frame_state`
+        #   viewer_region     the size the viewer DREW the document image at last frame, the
+        #                     ONE source every Auto document fits its aspect into (revision 1);
+        #                     written in the draw phase, read at the head of the next
+        #                     `_tick_frame_state`, and None until the first frame has drawn
         #   pending_resolution a Fixed W x H the Document tab committed INSIDE the draw phase,
         #                     applied by step 4 of the next frame -- a resize there would
         #                     release textures imgui is still holding (the 084 D5 hazard)
@@ -1287,7 +1281,7 @@ class App:
         #   throttle_states   the hysteresis counters behind each interval
         #   document_costs    the last measured cost per document, written in step 3 alone
         #   render_plan       this frame's intervals and phases, or None before the first plan
-        self.displayed_sizes: dict[str, tuple[int, int]] = {}
+        self.viewer_region: tuple[float, float] | None = None
         self.pending_resolution: dict[str, tuple[int, int]] = {}
         self.auto_size_states: dict[str, AutoSizeState] = {}
         self.throttle_states: dict[str, ThrottleState] = {}

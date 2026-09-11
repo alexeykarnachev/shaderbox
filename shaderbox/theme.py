@@ -240,6 +240,8 @@ class SIZE:
     # The Document tab's canvas cluster: two dimension fields, a separator and the presets
     # dropdown. 56 holds a four-digit number (4096 is the clamp's ceiling) inside its padding.
     CANVAS_FIELD_W: int = 56
+    # Narrower than a canvas field: a ratio term is one or two digits, not four.
+    ASPECT_FIELD_W: int = 36
     CANVAS_PRESETS_W: int = 64
     # The Document tab's engine-uniform block: a fixed name column so the rows read as a
     # block. 128 fits the longest engine name in the 12px face (tests/test_ui_prose_budget.py).

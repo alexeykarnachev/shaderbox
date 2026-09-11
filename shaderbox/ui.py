@@ -5,7 +5,6 @@ from pathlib import Path
 
 import glfw
 import moderngl
-import numpy as np
 from imgui_bundle import imgui, imgui_ctx
 from imgui_bundle import imgui_command_palette as imcmd
 from imgui_bundle import portable_file_dialogs as pfd
@@ -36,12 +35,11 @@ from shaderbox.render_plan import (
     AutoSizeState,
     CostRecord,
     apply_damping,
-    auto_canvas_size,
     document_id_of_span,
     document_span_name,
     plan_render_set,
 )
-from shaderbox.render_shape import ResolutionMode
+from shaderbox.render_shape import ResolutionMode, aspect_ratio, fit_to_aspect
 from shaderbox.scripting import MouseState
 from shaderbox.tabs import code as code_tab
 from shaderbox.tabs import document as document_tab
@@ -365,15 +363,16 @@ def _resolve_resolutions(
     """Bring every planned document to the size its mode asks for, resampling what changes.
 
     Fixed takes `resolution`, consuming any `pending_resolution` the Document tab's picker
-    committed inside the previous frame's draw first. Auto asks `auto_canvas_size` from the
-    sizes the PREVIOUS frame's recorders wrote, then `apply_damping`, so a window drag
-    reallocates a handful of times rather than every frame.
+    committed inside the previous frame's draw first. Auto fits its own ASPECT into the viewer
+    region the previous frame drew (revision 1), then damps, so a window drag reallocates a
+    handful of times rather than every frame.
+
+    ONE size source, the viewer -- not the largest of several surfaces. Every Auto document
+    renders at the viewer's region whether or not it is the current one, so a grid tile shows
+    the same picture scaled down rather than a separately-sized render, and a new document can
+    no longer open square because nothing had recorded a region for it yet.
     """
-    displayed = app.displayed_sizes
-    # This frame's recorders write into a fresh dict: a document that stopped being displayed
-    # must fall through to `auto_canvas_size`'s "keep the previous size", not keep answering
-    # with the region that showed it three frames ago.
-    app.displayed_sizes = {}
+    region = app.viewer_region
     # A commit for a document this frame does not plan is consumed all the same: the pair is
     # already on the document, so leaving the entry parked would apply it on some later frame
     # that happens to plan the document, long after the user moved on.
@@ -393,14 +392,12 @@ def _resolve_resolutions(
             if wanted != document.canvas_size:
                 document.set_canvas_size(wanted)
             continue
-        width, height = document.resolution
-        aspect = width / height if height else 1.0
+        if region is None:
+            continue
         # Clamped to what the funnel will actually STORE, so the damping compares like with
         # like: a region past the canvas bounds is a request `canvas_size` can never equal, and
         # an unclamped comparison re-enters the resize funnel on every frame forever.
-        requested = document.clamped_size(
-            auto_canvas_size(displayed.get(document_id), aspect, document.canvas_size)
-        )
+        requested = document.clamped_size(fit_to_aspect(region, document.aspect))
         state = app.auto_size_states.setdefault(document_id, AutoSizeState())
         applied = apply_damping(state, requested, document.canvas_size)
         if applied is not None:
@@ -831,15 +828,17 @@ def _draw_document_image(
             avail.y - control_panel_min_height - 10,
         )
         max_image_width = avail.x
-        # The STORED resolution's aspect, never the live canvas's (090 D2): under Auto the live
-        # size is derived from this region, so reading it back here would close a loop on itself
-        # and let the shape drift a rounding step every frame.
-        image_aspect = np.divide(*ui_document.document.resolution)
+        # The document's own SHAPE, never the live canvas's (090 D2): under Auto the live size
+        # is derived from this region, so reading it back here would close a loop on itself and
+        # let the shape drift a rounding step every frame.
+        image_aspect = aspect_ratio(ui_document.document.shape_aspect())
         image_width = min(max_image_width, max_image_height * image_aspect)
         image_height = min(max_image_height, max_image_width / image_aspect)
-        # The viewer is the largest region showing the current document, and the size it draws
-        # at is what an Auto document renders at next frame (090 D2).
-        app.record_displayed_size(app.current_document_id, (image_width, image_height))
+        # This region is what EVERY Auto document renders at next frame (revision 1) -- one
+        # size source rather than a per-surface map, so a document shows the same picture in
+        # the viewer and in its tile, and a new one is never sized by whichever surface drew
+        # it first.
+        app.viewer_region = (image_width, image_height)
 
         # On compile failure the last-good program stays bound — kept bright; the error
         # surfaces in the editor pane strip.

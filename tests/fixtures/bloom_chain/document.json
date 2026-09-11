@@ -3,6 +3,10 @@
     "ui_state": {
         "ui_name": "Bloom Chain",
         "resolution_mode": "auto",
+        "aspect": [
+            1,
+            1
+        ],
         "resolution": [
             960,
             960

@@ -18,11 +18,11 @@ from shaderbox.render_plan import (
     CostRecord,
     ThrottleState,
     apply_damping,
-    auto_canvas_size,
     document_id_of_span,
     document_span_name,
     plan_render_set,
 )
+from shaderbox.render_shape import aspect_label, fit_to_aspect, reduce_aspect
 
 _PERIOD = 16.7  # ms, the spec's frame period for every worked example
 _BUDGET = 0.5
@@ -246,25 +246,6 @@ def test_an_unchanged_request_is_never_reapplied() -> None:
 
 
 # ---------------------------------------------------------------------------
-# The Auto size itself
-# ---------------------------------------------------------------------------
-
-
-def test_a_document_displayed_nowhere_keeps_its_size() -> None:
-    # `None` is what a document shown in no region answers, and it must not resize to anything.
-    assert auto_canvas_size(None, 4 / 3, (800, 600)) == (800, 600)
-
-
-def test_the_auto_size_follows_the_region_on_its_constrained_axis() -> None:
-    # The region carries the document's own aspect once the cell has fitted it, so both axes
-    # agree; where they do not, the smaller one decides and the other is re-derived from the
-    # STORED aspect, which is what stops the shape drifting a rounding step per frame.
-    assert auto_canvas_size((400, 300), 4 / 3, (800, 600)) == (400, 300)
-    assert auto_canvas_size((400, 400), 4 / 3, (800, 600)) == (400, 300)
-    assert auto_canvas_size((400, 100), 4 / 3, (800, 600)) == (133, 100)
-
-
-# ---------------------------------------------------------------------------
 # The document span key -- one home for both ends of the wire
 # ---------------------------------------------------------------------------
 
@@ -284,3 +265,67 @@ def test_a_span_that_measures_something_else_names_no_document() -> None:
     # document row carrying a plan lookup that can never hit.
     for name in ("pass:blur", "ui:draw", "frame", "script", "documents"):
         assert document_id_of_span(name) is None, name
+
+
+# ---------------------------------------------------------------------------
+# Revision 1 -- the aspect: reduction, the fit, and how a size is named
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("ratio", "expected"),
+    [
+        ((32, 18), (16, 9)),  # the control writes the REDUCED pair, not what was typed
+        ((1280, 960), (4, 3)),
+        ((512, 512), (1, 1)),
+        ((1280, 720), (16, 9)),
+        ((1080, 1920), (9, 16)),
+        ((0, 5), (1, 5)),  # a field the user emptied
+        ((-3, 4), (1, 4)),
+    ],
+)
+def test_an_aspect_is_stored_in_lowest_terms(
+    ratio: tuple[int, int], expected: tuple[int, int]
+) -> None:
+    # One shape, one spelling: a document persisting `32:18` would compare unequal to the
+    # `16:9` chip that set it, so the chip would never light. Falsifier: clamp the terms BEFORE
+    # dividing by the gcd and 1280x960 comes back 25:24 instead of 4:3 -- which is the bug this
+    # was written against.
+    assert reduce_aspect(ratio) == expected
+
+
+@pytest.mark.parametrize(
+    ("region", "aspect", "expected"),
+    [
+        ((800.0, 600.0), (16, 9), (800, 450)),  # wider region: the width decides
+        ((400.0, 900.0), (16, 9), (400, 225)),  # taller region: the width decides
+        ((800.0, 600.0), (1, 1), (600, 600)),  # square into a wide region
+        ((800.0, 600.0), (9, 16), (338, 600)),  # a tall aspect into a wide region
+        ((0.0, 600.0), (16, 9), (1, 1)),  # a region with no area yet
+    ],
+)
+def test_an_aspect_fits_inside_a_region_on_whichever_axis_runs_out(
+    region: tuple[float, float], aspect: tuple[int, int], expected: tuple[int, int]
+) -> None:
+    # The whole of Auto sizing. Falsifier: compare the two ratios the wrong way round and the
+    # wide and tall cases swap, which crops instead of letterboxing.
+    assert fit_to_aspect(region, aspect) == expected
+
+
+@pytest.mark.parametrize(
+    ("size", "expected"),
+    [
+        ((1280, 720), "16:9"),
+        ((1280, 960), "4:3"),
+        ((512, 512), "1:1"),
+        # The alignment case: an encoder's eight extra rows are not a shape anyone chose, and
+        # `30:17` is arithmetically right and useless.
+        ((1920, 1088), "16:9"),
+        # Genuinely not a standard shape: its own reduced integers, not a nearest-preset lie.
+        ((100, 31), "100:31"),
+    ],
+)
+def test_a_size_is_named_by_its_aspect(size: tuple[int, int], expected: str) -> None:
+    # The Fixed-mode readout. Falsifier: drop the preset snap and 1920x1088 reads `30:17`;
+    # widen the tolerance past a few percent and a 3:2 photo starts claiming to be 16:9.
+    assert aspect_label(size) == expected

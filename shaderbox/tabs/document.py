@@ -5,10 +5,14 @@ from shaderbox.media import MediaWithTexture
 from shaderbox.pass_graph import clamp_canvas_size
 from shaderbox.render_preset import resolve_dims
 from shaderbox.render_shape import (
+    ASPECT_PRESETS,
     MENU_SHAPES,
     SHAPE_TABLE,
     RenderShape,
     ResolutionMode,
+    aspect_label,
+    aspect_of,
+    reduce_aspect,
     shape_to_preset,
 )
 from shaderbox.theme import COLOR, SIZE, SPACE
@@ -16,11 +20,12 @@ from shaderbox.ui_models import (
     UIDocument,
 )
 from shaderbox.ui_primitives import (
+    chip_button,
     danger_button,
     play_stop_toggle,
+    segmented_choice,
     small_caption,
     standard_button,
-    toggle_button,
 )
 from shaderbox.util import get_resolution_str
 from shaderbox.widgets import pass_list
@@ -42,19 +47,183 @@ def _draw_canvas_presets(app: App, ui_document: UIDocument) -> None:
         imgui.end_combo()
 
 
+_MODES: tuple[ResolutionMode, ...] = (ResolutionMode.AUTO, ResolutionMode.FIXED)
+
+
 def _draw_resolution_mode(app: App, ui_document: UIDocument) -> None:
-    # A toggle, not a combo: two positions, and the style carries which one is on (/imgui-ui
-    # §1). ON means the numbers beside it are the live canvas; off, the document follows the
-    # panel and they are its export size.
-    fixed = ui_document.document.resolution_mode is ResolutionMode.FIXED
-    if toggle_button("Fixed", fixed):
-        mode = ResolutionMode.AUTO if fixed else ResolutionMode.FIXED
-        ui_document.ui_state.resolution_mode = mode
-        ui_document.document.resolution_mode = mode
-        # Switching to Fixed asks for the stored number as the LIVE size, which the next tick
-        # applies through the same deferred path the picker uses.
-        if mode is ResolutionMode.FIXED:
-            app.pending_resolution[ui_document.id] = ui_document.ui_state.resolution
+    # A segmented control, not a lone toggle: the two modes are mutually exclusive positions of
+    # one setting, and a single `Fixed` button left "not Fixed" unnamed. Both words on screen
+    # also say what the other position would do.
+    current = _MODES.index(ui_document.document.resolution_mode)
+    chosen = segmented_choice("resolution_mode", ("Auto", "Fixed"), current)
+    if chosen != current:
+        _switch_resolution_mode(app, ui_document, _MODES[chosen])
+
+
+def _switch_resolution_mode(
+    app: App, ui_document: UIDocument, mode: ResolutionMode
+) -> None:
+    """Change the mode, seeding the field the new mode reads from the live canvas.
+
+    A switch must never jump the picture (revision 1 D3): Auto -> Fixed takes the size the
+    document is rendering at right now, so the canvas keeps its pixels; Fixed -> Auto takes
+    that size's reduced ratio, so the shape survives and only the sizing rule changes.
+    """
+    document = ui_document.document
+    if mode is ResolutionMode.FIXED:
+        seeded = document.clamped_size(document.canvas_size)
+        ui_document.ui_state.resolution = seeded
+        document.resolution = seeded
+        app.canvas_size_buf = seeded
+        # The live size is already `seeded`; the deferred write is what makes the Fixed branch
+        # of the next tick agree rather than resize on its first frame.
+        app.pending_resolution[ui_document.id] = seeded
+    else:
+        seeded_aspect = aspect_of(document.canvas_size)
+        ui_document.ui_state.aspect = seeded_aspect
+        document.aspect = seeded_aspect
+    ui_document.ui_state.resolution_mode = mode
+    document.resolution_mode = mode
+
+
+def _apply_aspect(app: App, ui_document: UIDocument, ratio: tuple[int, int]) -> None:
+    reduced = reduce_aspect(ratio)
+    if reduced == ui_document.ui_state.aspect:
+        return
+    ui_document.ui_state.aspect = reduced
+    ui_document.document.aspect = reduced
+    app.aspect_buf = reduced
+    app.notifications.push(f"Aspect: {reduced[0]}:{reduced[1]}")
+
+
+def _draw_aspect_control(app: App, ui_document: UIDocument) -> None:
+    """The whole Auto-side control: a row of preset chips plus two fields for a custom ratio.
+
+    One function on purpose -- the layout is the half still being designed, so it can be
+    rebuilt without touching the model, the seeding or the tests behind it. What it owes the
+    rest of the app is only this: whatever the user picks reaches `_apply_aspect` reduced.
+    """
+    current = ui_document.ui_state.aspect
+    for preset in ASPECT_PRESETS:
+        label = f"{preset[0]}:{preset[1]}"
+        width = imgui.calc_text_size(label).x + 2.0 * float(SPACE.MD)
+        if chip_button(
+            label, width, imgui.get_frame_height(), active=preset == current
+        ):
+            _apply_aspect(app, ui_document, preset)
+        imgui.same_line(spacing=float(SPACE.SM))
+
+    # The custom pair mirrors the document unless ITS OWN field is active, the same rule the
+    # canvas fields follow: a field the user is not in never holds a stale number.
+    if not app.aspect_w_editing:
+        app.aspect_buf = (current[0], app.aspect_buf[1])
+    if not app.aspect_h_editing:
+        app.aspect_buf = (app.aspect_buf[0], current[1])
+
+    imgui.same_line(spacing=float(SPACE.MD))
+    imgui.set_next_item_width(float(SIZE.ASPECT_FIELD_W))
+    entered_w, buf_w = imgui.input_int(
+        "##aspect_w",
+        app.aspect_buf[0],
+        step=0,
+        flags=imgui.InputTextFlags_.enter_returns_true,
+    )
+    active_w = imgui.is_item_active()
+    committed_w = entered_w or imgui.is_item_deactivated_after_edit()
+    app.aspect_buf = (buf_w, app.aspect_buf[1])
+
+    imgui.same_line(spacing=float(SPACE.SM))
+    imgui.text_colored(COLOR.FG_DIM, ":")
+    imgui.same_line(spacing=float(SPACE.SM))
+
+    imgui.set_next_item_width(float(SIZE.ASPECT_FIELD_W))
+    entered_h, buf_h = imgui.input_int(
+        "##aspect_h",
+        app.aspect_buf[1],
+        step=0,
+        flags=imgui.InputTextFlags_.enter_returns_true,
+    )
+    active_h = imgui.is_item_active()
+    committed_h = entered_h or imgui.is_item_deactivated_after_edit()
+    app.aspect_buf = (app.aspect_buf[0], buf_h)
+
+    app.aspect_w_editing = active_w
+    app.aspect_h_editing = active_h
+    if committed_w or committed_h:
+        _apply_aspect(app, ui_document, app.aspect_buf)
+        app.aspect_buf = ui_document.ui_state.aspect
+
+
+def _draw_canvas_fields(app: App, ui_document: UIDocument) -> None:
+    """The whole Fixed-side control: the W x H pair and the presets chip, exactly as before 090.
+
+    The pair is meaningful ONLY under Fixed, so it is not drawn under Auto at all -- an editable
+    number the mode does not read is a control that lies about what it does.
+    """
+    # Each half mirrors the document unless ITS OWN field is active, so a field the user is not
+    # in never holds a stale number to carry over an external write.
+    doc_w, doc_h = ui_document.document.resolution
+    if not app.canvas_w_editing:
+        app.canvas_size_buf = (doc_w, app.canvas_size_buf[1])
+    if not app.canvas_h_editing:
+        app.canvas_size_buf = (app.canvas_size_buf[0], doc_h)
+
+    imgui.set_next_item_width(float(SIZE.CANVAS_FIELD_W))
+    entered_w, buf_w = imgui.input_int(
+        "##canvas_w",
+        app.canvas_size_buf[0],
+        step=0,
+        flags=imgui.InputTextFlags_.enter_returns_true,
+    )
+    active_w = imgui.is_item_active()
+    committed_w = entered_w or imgui.is_item_deactivated_after_edit()
+    app.canvas_size_buf = (buf_w, app.canvas_size_buf[1])
+
+    imgui.same_line(spacing=float(SPACE.SM))
+    imgui.text_colored(COLOR.FG_DIM, "x")
+    imgui.same_line(spacing=float(SPACE.SM))
+
+    imgui.set_next_item_width(float(SIZE.CANVAS_FIELD_W))
+    entered_h, buf_h = imgui.input_int(
+        "##canvas_h",
+        app.canvas_size_buf[1],
+        step=0,
+        flags=imgui.InputTextFlags_.enter_returns_true,
+    )
+    active_h = imgui.is_item_active()
+    committed_h = entered_h or imgui.is_item_deactivated_after_edit()
+    app.canvas_size_buf = (app.canvas_size_buf[0], buf_h)
+
+    imgui.same_line(spacing=float(SPACE.MD))
+    _draw_canvas_presets(app, ui_document)
+
+    app.canvas_w_editing = active_w
+    app.canvas_h_editing = active_h
+
+    # The buffer IS the pair to commit: the mirror above already refreshed the half whose field
+    # is not active from the document this same frame, so an external write during the edit
+    # stands without the commit re-reading it.
+    if committed_w or committed_h:
+        _apply_canvas_size(app, ui_document, app.canvas_size_buf)
+        app.canvas_size_buf = ui_document.document.resolution
+
+
+def _draw_size_readout(app: App, ui_document: UIDocument, control_x: float) -> None:
+    """The second line under the mode's control: the number the control does not carry.
+
+    Under Auto the control names a RATIO, so the readout is the live pixel size; under Fixed
+    the control names a SIZE, so the readout is its aspect. Each mode shows the other half of
+    the same fact, and neither repeats what is already on the row above. A plain readout, no
+    label -- the caption already said which of the two is being edited.
+    """
+    document = ui_document.document
+    if document.resolution_mode is ResolutionMode.FIXED:
+        text = aspect_label(document.resolution)
+    else:
+        width, height = document.canvas_size
+        text = f"{width}x{height}"
+    imgui.set_cursor_pos_x(control_x)
+    small_caption(app.font_12, text)
 
 
 def _draw_document_reset(app: App) -> None:
@@ -110,8 +279,8 @@ def _canvas_presets(ui_document: UIDocument) -> list[tuple[str, tuple[int, int]]
     never-attempted pass (066 D1), which on the Document tab's every frame would compile
     the whole graph.
     """
-    # The STORED resolution, never the live canvas (090 D2/F2): under Auto the live size is the
-    # display's, so a preset list built from it would offer whatever the panel happens to be.
+    # The stored pair. This list is drawn only under Fixed (revision 1), where the pair IS the
+    # live canvas, so "the current size" has exactly one meaning here.
     current = ui_document.document.resolution
     presets: list[tuple[str, tuple[int, int]]] = []
     seen: set[tuple[int, int]] = {current}
@@ -164,13 +333,13 @@ def draw(app: App) -> None:
     # destructive verb reads as document-wide rather than as another canvas field.
     small_caption(app.font_12, "Document name")
     imgui.same_line(combo_offset)
-    # The same pair of numbers means two things (090 D5): under Fixed it IS the live canvas,
-    # under Auto it is what an export renders at while the live size follows the display.
+    # The two modes edit different things, so the caption names the one on screen: a pixel
+    # pair under Fixed, a ratio under Auto.
     small_caption(
         app.font_12,
         "Canvas"
         if ui_document.document.resolution_mode is ResolutionMode.FIXED
-        else "Export",
+        else "Aspect",
     )
     _draw_document_reset(app)
 
@@ -186,55 +355,16 @@ def draw(app: App) -> None:
     # document's half-typed digit re-latch onto the incoming one and commit to it.
     imgui.push_id(ui_document.id)
 
-    # Each half mirrors the document unless ITS OWN field is active, so a field the user is not
-    # in never holds a stale number to carry over an external write.
-    doc_w, doc_h = ui_document.document.resolution
-    if not app.canvas_w_editing:
-        app.canvas_size_buf = (doc_w, app.canvas_size_buf[1])
-    if not app.canvas_h_editing:
-        app.canvas_size_buf = (app.canvas_size_buf[0], doc_h)
-
-    imgui.set_next_item_width(float(SIZE.CANVAS_FIELD_W))
-    entered_w, buf_w = imgui.input_int(
-        "##canvas_w",
-        app.canvas_size_buf[0],
-        step=0,
-        flags=imgui.InputTextFlags_.enter_returns_true,
-    )
-    active_w = imgui.is_item_active()
-    committed_w = entered_w or imgui.is_item_deactivated_after_edit()
-    app.canvas_size_buf = (buf_w, app.canvas_size_buf[1])
-
-    imgui.same_line(spacing=float(SPACE.SM))
-    imgui.text_colored(COLOR.FG_DIM, "x")
-    imgui.same_line(spacing=float(SPACE.SM))
-
-    imgui.set_next_item_width(float(SIZE.CANVAS_FIELD_W))
-    entered_h, buf_h = imgui.input_int(
-        "##canvas_h",
-        app.canvas_size_buf[1],
-        step=0,
-        flags=imgui.InputTextFlags_.enter_returns_true,
-    )
-    active_h = imgui.is_item_active()
-    committed_h = entered_h or imgui.is_item_deactivated_after_edit()
-    app.canvas_size_buf = (app.canvas_size_buf[0], buf_h)
-
-    imgui.same_line(spacing=float(SPACE.MD))
-    _draw_canvas_presets(app, ui_document)
-
-    imgui.same_line(spacing=float(SPACE.MD))
     _draw_resolution_mode(app, ui_document)
+    imgui.same_line(spacing=float(SPACE.MD))
+    control_x = imgui.get_cursor_pos_x()
 
-    app.canvas_w_editing = active_w
-    app.canvas_h_editing = active_h
+    if ui_document.document.resolution_mode is ResolutionMode.FIXED:
+        _draw_canvas_fields(app, ui_document)
+    else:
+        _draw_aspect_control(app, ui_document)
 
-    # The buffer IS the pair to commit: the mirror above already refreshed the half whose field
-    # is not active from the document this same frame, so an external write during the edit
-    # stands without the commit re-reading it.
-    if committed_w or committed_h:
-        _apply_canvas_size(app, ui_document, app.canvas_size_buf)
-        app.canvas_size_buf = ui_document.document.resolution
+    _draw_size_readout(app, ui_document, control_x)
 
     imgui.pop_id()
 

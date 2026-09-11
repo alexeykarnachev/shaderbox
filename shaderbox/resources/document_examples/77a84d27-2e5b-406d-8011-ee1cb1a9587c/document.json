@@ -3,6 +3,10 @@
     "ui_state": {
         "ui_name": "Radiance Cascades",
         "resolution_mode": "fixed",
+        "aspect": [
+            1,
+            1
+        ],
         "resolution": [
             512,
             512

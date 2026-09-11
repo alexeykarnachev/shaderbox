@@ -90,7 +90,10 @@ def _write_document(dir: Path) -> Path:
         json.dumps(
             {
                 "uniforms": {},
-                "ui_state": {"resolution_mode": "auto", "resolution": list(_CANVAS)},
+                # FIXED, so the document's live size is the pair this fixture names rather
+                # than whatever region the viewer would have handed an Auto document (090
+                # revision 1). The resample under test is the same either way.
+                "ui_state": {"resolution_mode": "fixed", "resolution": list(_CANVAS)},
             }
         )
     )
@@ -278,3 +281,53 @@ def test_a_dtype_mismatch_is_still_refused(
     reopened = load_document_from_dir(document_dir)
     assert reopened.document.feedback_passes() == []
     reopened.document.release()
+
+
+def test_an_auto_document_opens_at_its_aspect_not_at_its_stored_pair(
+    gl_ctx: moderngl.Context, tmp_path: Path
+) -> None:
+    """A loaded Auto document is shaped by its ASPECT before any frame has drawn.
+
+    The stored pair is what a switch to Fixed seeds from and nothing else, so opening at it
+    would render the document at a size its mode does not use -- and a pair left over from an
+    older shape would render it at the WRONG shape until the first tick corrected it.
+    Falsifier: pass `ui_state.resolution` as the loader's size whatever the mode, and the
+    aspect assertion below goes red while the pair one passes.
+    """
+    from shaderbox.render_shape import ResolutionMode, aspect_of, fit_to_aspect
+    from shaderbox.ui_models import INITIAL_AUTO_REGION, load_document_from_dir
+
+    document_dir = tmp_path / "doc"
+    (document_dir / "passes").mkdir(parents=True)
+    (document_dir / "passes" / "main.frag.glsl").write_text(
+        "#version 460 core\nin vec2 vs_uv;\nout vec4 fs_color;\n"
+        "void main() { fs_color = vec4(vs_uv, 0.0, 1.0); }\n"
+    )
+    # A 16:9 document whose stored pair is SQUARE: the two disagree on purpose, so only one of
+    # them can be the size it opens at.
+    (document_dir / "document.json").write_text(
+        json.dumps(
+            {
+                "uniforms": {},
+                "ui_state": {
+                    "resolution_mode": "auto",
+                    "aspect": [16, 9],
+                    "resolution": [512, 512],
+                },
+            }
+        )
+    )
+
+    ui_document = load_document_from_dir(document_dir)
+    document = ui_document.document
+    assert document.resolution_mode is ResolutionMode.AUTO
+    assert document.aspect == (16, 9)
+    # The pair is carried, untouched, for the day it switches to Fixed.
+    assert document.resolution == (512, 512)
+    # ... and the live canvas is its ASPECT fitted to the nominal region, never the pair.
+    assert aspect_of(document.canvas_size) == (16, 9), (
+        f"a 16:9 Auto document opened at {document.canvas_size}, which is "
+        f"{aspect_of(document.canvas_size)}"
+    )
+    assert document.canvas_size == fit_to_aspect(INITIAL_AUTO_REGION, (16, 9))
+    document.release()
