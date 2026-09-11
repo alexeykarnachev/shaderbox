@@ -369,8 +369,7 @@ def _resolve_resolutions(
 
     ONE size source, the viewer -- not the largest of several surfaces. Every Auto document
     renders at the viewer's region whether or not it is the current one, so a grid tile shows
-    the same picture scaled down rather than a separately-sized render, and a new document can
-    no longer open square because nothing had recorded a region for it yet.
+    the same picture scaled down rather than a separately-sized render.
     """
     region = app.viewer_region
     # A commit for a document this frame does not plan is consumed all the same: the pair is

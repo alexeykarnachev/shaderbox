@@ -751,32 +751,29 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   Revisit if a third exporter needs a size tier the table lacks, or a real need for free copilot dims
   surfaces (then a `CUSTOM` member, NOT a return to raw w/h — that re-admits the foot-gun).
 
-- **A document stores ONE size, and its MODE says what that number means (feature 090).**
-  `ResolutionMode` (`render_shape.py`, GL-free) is `AUTO` or `FIXED`, and `UIDocumentState`
-  carries it beside a single `resolution` pair. Under FIXED the pair IS the live canvas, as it
-  always was. Under AUTO the live canvas follows the largest UI region showing the document and
-  the pair is the document's EXPORT resolution — what `RenderShape.NATIVE` and `resolve_dims`'s
-  FREE fall-through resolve to. There is no second size field, and no derivation rule: the
-  number a document has is the number it keeps.
-  Four consequences a change here must not break. **`resolution` and `resolution_mode` live in
-  two places, `UIDocumentState` (persisted) and `Document` (live), and a writer sets BOTH** —
-  nothing enforces the pairing but this sentence, so a new write site is not done until it has
-  the second line. **`Document.canvas_size` is the EFFECTIVE
-  live size with one writer, `set_canvas_size`**, which resamples the output canvas and every
-  feedback history into new-size replacements before releasing anything — resampling the
-  history alone loses the picture one frame later, since `Canvas.set_size` blanks the live
-  canvas and the next swap trades that blank in. The rescale is a one-quad draw:
-  `copy_framebuffer` between differently-sized framebuffers copies 1:1 into a corner, with no
-  GL error and a plausible picture (measured twice). **Every ASPECT reader reads `resolution`,
-  never the live canvas** — under Auto the live size is derived from the region the aspect
-  decides, so reading it back closes a loop on itself. **Every EXPORT path resolves from
-  `resolution`**, or `NATIVE` — the default of all three copilot render tools and YouTube's
-  initial shape — silently means "whatever the panel happens to be"; the Render tab's own
-  `resolution_details` is untouched and still decides what lands on disk. A write from inside
-  the draw phase is DEFERRED through `App.pending_resolution` rather than applied in place: a
-  resize there releases textures imgui is still holding (the 084 D5 hazard), now across the
-  output canvas and every history rather than one canvas. Revisit if a document needs a live
-  size that is neither its own number nor its display's.
+- **Under Auto a document stores an ASPECT and no size; under Fixed it stores a size (feature
+  090, revision 1).** `ResolutionMode` (`render_shape.py`, GL-free) is `AUTO` or `FIXED`.
+  `UIDocumentState` carries `aspect`, a reduced integer ratio (default 16:9), and `resolution`,
+  a pair. Under AUTO the live canvas is the viewer region fitted to the aspect, for EVERY Auto
+  document whether or not it is current — one size source, the viewer; tiles show that texture
+  scaled. Under FIXED the pair IS the live canvas. A mode switch seeds the other field from the
+  live canvas so the picture never jumps. There is no stored export size: the Render tab's own
+  `resolution_details` and shape presets decide exports, and `Document.export_source_size` is
+  the ONE seam every export, copilot render and shape check reads — the live canvas under Auto
+  (`NATIVE` means what you see), the pair under Fixed.
+  Three consequences a change here must not break. **`aspect`, `resolution` and
+  `resolution_mode` live in two places, `UIDocumentState` (persisted) and `Document` (live),
+  and a writer sets BOTH** — nothing enforces the pairing but this sentence, so a new write site
+  is not done until it has the second line. **`Document.canvas_size` is the EFFECTIVE live size
+  with one writer, `set_canvas_size`**, which resamples the output canvas and every feedback
+  history into new-size replacements before releasing anything — resampling the history alone
+  loses the picture one frame later, since `Canvas.set_size` blanks the live canvas and the next
+  swap trades that blank in; the rescale is a one-quad draw, because `copy_framebuffer` between
+  differently-sized framebuffers copies 1:1 into a corner with no GL error (measured twice). **A
+  write from inside the draw phase is DEFERRED through `App.pending_resolution`** rather than
+  applied in place: a resize there releases textures imgui is still holding (the 084 D5 hazard),
+  now across the output canvas and every history. Revisit if a document needs a live size that
+  is neither the viewer's nor its own number.
 
 - **A document's draw is never split into tiles, and the UI never waits on a smaller piece of it
   (feature 090).** Tiling a fullscreen pass into ~6 ms scissor draws was measured to hold the UI

@@ -19,7 +19,7 @@ import pytest
 
 from shaderbox.constants import STARTER_EXAMPLE_ID
 from shaderbox.render_plan import AUTO_RESIZE_STABLE_FRAMES, CostRecord
-from shaderbox.render_shape import DEFAULT_ASPECT, ResolutionMode, fit_to_aspect
+from shaderbox.render_shape import ResolutionMode, fit_to_aspect
 from shaderbox.ui import _tick_frame_state
 from tests.conftest import seed_extra_document
 
@@ -636,18 +636,16 @@ def test_switching_to_auto_seeds_the_aspect_from_the_live_canvas(app: Any) -> No
 
 
 def test_a_new_document_opens_wide_and_sizes_itself_to_the_viewer(app: Any) -> None:
-    # The bug this revision exists for: a new document showed 64x64 and rendered SQUARE,
-    # because nothing had recorded a region for it and its stored pair was the default canvas.
-    # Now it carries an aspect and the viewer sizes it. Falsifier: default `aspect` to anything
-    # square, or skip non-current documents in `_resolve_resolutions`, and this goes red.
-    from shaderbox.constants import STARTER_EXAMPLE_ID
-
-    created = app.create_document_from_example(STARTER_EXAMPLE_ID)
-    document_id = created if isinstance(created, str) else app.current_document_id
+    # The bug this revision exists for: a new document showed 64x64 and rendered SQUARE. A new
+    # document is a copy of the starter example, so its arrival shape is the starter's; nothing
+    # is assigned here. Falsifier: give the starter a square aspect, or skip non-current
+    # documents in `_resolve_resolutions`, and this goes red.
+    before = set(app.ui_documents)
+    app.create_document_from_example(STARTER_EXAMPLE_ID)
+    (document_id,) = set(app.ui_documents) - before
     document = app.ui_documents[document_id].document
-    document.resolution_mode = ResolutionMode.AUTO
-    document.aspect = DEFAULT_ASPECT
-    assert DEFAULT_ASPECT == (16, 9)
+    assert document.resolution_mode is ResolutionMode.AUTO
+    assert document.aspect == (16, 9)
 
     app.viewer_region = (1000.0, 400.0)
     _drive(app, AUTO_RESIZE_STABLE_FRAMES + 2)
@@ -661,5 +659,6 @@ def test_the_starter_document_is_the_fixture_it_claims_to_be(app: Any) -> None:
     # A guard on the rig itself: every test above drives the shipped starter, and the shape of
     # its persisted state is what the loop reads.
     document = app.ui_documents[STARTER_EXAMPLE_ID].document
-    assert document.resolution == (1280, 960)
+    assert document.resolution == (1280, 720)
+    assert document.aspect == (16, 9)
     assert document.resolution_mode is ResolutionMode.AUTO
