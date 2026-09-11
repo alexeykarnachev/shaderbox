@@ -17,10 +17,16 @@ from typing import Any
 
 import pytest
 
+from shaderbox import ui
+from shaderbox.app import PopupState
 from shaderbox.constants import STARTER_EXAMPLE_ID
-from shaderbox.render_plan import AUTO_RESIZE_STABLE_FRAMES, CostRecord
+from shaderbox.profiling import FrameProfile, Span
+from shaderbox.render_plan import AUTO_RESIZE_STABLE_FRAMES, CostRecord, RenderPlan
 from shaderbox.render_shape import ResolutionMode, fit_to_aspect
-from shaderbox.ui import _tick_frame_state
+from shaderbox.tabs.document import _apply_canvas_size, _switch_resolution_mode
+from shaderbox.theme import SIZE
+from shaderbox.ui import _tick_frame_state, update_and_draw
+from shaderbox.ui_primitives import profile_rows_plan
 from tests.conftest import seed_extra_document
 
 # This module drives real frames, so it gets its own worker: the imgui font atlas is per
@@ -41,7 +47,6 @@ def _plant_cost(app: Any, document_id: str, gpu_ms: float) -> None:
 
 def _freeze_costs(app: Any, monkeypatch: Any) -> None:
     """Stop step 3 overwriting a planted cost with the profile's own (zero) numbers."""
-    from shaderbox import ui
 
     monkeypatch.setattr(ui, "_refresh_document_costs", lambda _app: None)
 
@@ -146,7 +151,6 @@ def test_an_expensive_current_document_advances_once_in_twelve_frames(
     # `_frame` correct while every frame still submits the document's whole GPU cost, which is
     # the bug the throttle exists to prevent and the one the feedback counter cannot see.
     renders = _count_renders(app, monkeypatch, app.ui_documents)
-    from shaderbox.ui import update_and_draw
 
     for _ in range(12):
         update_and_draw(app)
@@ -182,8 +186,6 @@ def test_a_throttled_document_behind_the_pass_settings_modal_is_gated_too(
     # `begin_frame` -- so the throttle was inert exactly where a user sits adjusting an
     # expensive graph, and its feedback pass took many renders per integration step. Falsifier:
     # remove the `renders_this_frame` guard from the PASS_SETTINGS branch and this counts 24.
-    from shaderbox.app import PopupState
-    from shaderbox.ui import update_and_draw
 
     _freeze_costs(app, monkeypatch)
     _plant_cost(app, app.current_document_id, 100.0)
@@ -278,8 +280,6 @@ def test_the_viewer_records_the_region_it_drew_the_document_image_at(app: Any) -
     # documents while the region is None, so every document simply keeps its loaded size and
     # nothing else fails. Falsifier: delete the `app.viewer_region = ...` assignment in
     # `_draw_document_image` and this stays None.
-    from shaderbox.theme import SIZE
-    from shaderbox.ui import update_and_draw
 
     app.ui_documents[
         app.current_document_id
@@ -373,8 +373,6 @@ def test_a_throttled_example_renders_less_often_than_a_cheap_one(
     # example id has to be read by the EXAMPLES branch or it is read by nothing at all.
     # Falsifier: render the examples loop without the `(frame_idx + phase) % k` gate and both
     # examples advance every frame while the plan's intervals look perfect.
-    from shaderbox.app import PopupState
-    from shaderbox.ui import update_and_draw
 
     ids = list(app.ui_document_examples)[:2]
     if len(ids) < 2:
@@ -422,7 +420,6 @@ def test_the_chip_carries_the_current_documents_own_rate(
 ) -> None:
     # Falsifier: pass `document_fps=None` unconditionally at the `fps_overlay` call -- every
     # prose gate still passes and the chip silently never shows the second number.
-    from shaderbox import ui
 
     _freeze_costs(app, monkeypatch)
     _plant_cost(app, app.current_document_id, 100.0)
@@ -448,9 +445,6 @@ def test_the_chip_carries_the_current_documents_own_rate(
 def test_the_panel_rows_match_documents_by_id_not_by_title(app: Any) -> None:
     # Two documents sharing a title are two rows with their OWN numbers. Falsifier: match a
     # `document:` span through its title and one row takes the other's interval.
-    from shaderbox.profiling import FrameProfile, Span
-    from shaderbox.render_plan import RenderPlan
-    from shaderbox.ui_primitives import profile_rows_plan
 
     root = Span("frame", cpu_ms=20.0)
     root.children.append(Span("document:aaa", cpu_ms=40.0, gpu_ms=40.0))
@@ -486,7 +480,6 @@ def test_gpu_spans_record_while_the_panel_is_closed(app: Any) -> None:
     # The throttle's cost input is the profiler, so recording cannot follow the panel (D9a).
     # Falsifier: restore `app.profiler.enabled = app.fps_details_open` and `last_profile`
     # carries no `document:` child with a GPU number.
-    from shaderbox.ui import update_and_draw
 
     app.fps_details_open = False
     for _ in range(4):
@@ -504,7 +497,6 @@ def test_the_costs_refresh_from_the_profile(app: Any) -> None:
     # Step 3 is the ONE write site (D7), and it is what turns a recorded span into the plan's
     # input. Falsifier: drop the refresh and `document_costs` stays empty forever, so every
     # document plans at k = 1 whatever it costs.
-    from shaderbox.ui import update_and_draw
 
     app.document_costs.clear()
     for _ in range(6):
@@ -546,7 +538,6 @@ def test_a_pickers_commit_applies_on_the_next_tick_not_inside_the_draw(
     # is still holding -- now the output canvas AND every feedback history. The commit therefore
     # parks and step 4 applies it. Falsifier: resize in place at the picker and this test's
     # first assertion (the canvas has NOT moved yet) goes red.
-    from shaderbox.tabs.document import _apply_canvas_size
 
     document_id = app.current_document_id
     ui_document = app.ui_documents[document_id]
@@ -595,7 +586,6 @@ def test_switching_to_fixed_seeds_the_pair_from_the_live_canvas(app: Any) -> Non
     # A mode switch must never jump the picture (revision 1 D3). Auto -> Fixed keeps the size
     # the document is rendering at RIGHT NOW, not the pair it happened to be saved with.
     # Falsifier: seed `resolution` from anything else and the canvas jumps on the switch.
-    from shaderbox.tabs.document import _switch_resolution_mode
 
     ui_document = app.ui_documents[app.current_document_id]
     document = ui_document.document
@@ -616,7 +606,6 @@ def test_switching_to_fixed_seeds_the_pair_from_the_live_canvas(app: Any) -> Non
 def test_switching_to_auto_seeds_the_aspect_from_the_live_canvas(app: Any) -> None:
     # The mirror: Fixed -> Auto keeps the SHAPE, so only the sizing rule changes. Falsifier:
     # leave `aspect` alone and the document snaps to whatever shape it last had under Auto.
-    from shaderbox.tabs.document import _switch_resolution_mode
 
     ui_document = app.ui_documents[app.current_document_id]
     document = ui_document.document

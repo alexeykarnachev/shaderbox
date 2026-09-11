@@ -26,8 +26,9 @@ from shaderbox.paths import (
     pass_shader_name,
     shader_lib_root,
 )
+from shaderbox.render_shape import ResolutionMode, aspect_of, fit_to_aspect
 from shaderbox.shader_lib import ShaderLibIndex, set_active
-from shaderbox.ui_models import UIDocument, load_document_from_dir
+from shaderbox.ui_models import INITIAL_AUTO_REGION, UIDocument, load_document_from_dir
 
 # A pass that reads itself and draws a NON-UNIFORM picture: bright in one corner, dark in the
 # other. A uniform fill cannot see a 1:1 corner copy (which is what `copy_framebuffer` does
@@ -294,8 +295,6 @@ def test_an_auto_document_opens_at_its_aspect_not_at_its_stored_pair(
     Falsifier: pass `ui_state.resolution` as the loader's size whatever the mode, and the
     aspect assertion below goes red while the pair one passes.
     """
-    from shaderbox.render_shape import ResolutionMode, aspect_of, fit_to_aspect
-    from shaderbox.ui_models import INITIAL_AUTO_REGION, load_document_from_dir
 
     document_dir = tmp_path / "doc"
     (document_dir / "passes").mkdir(parents=True)
