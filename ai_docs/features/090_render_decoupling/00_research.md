@@ -173,6 +173,36 @@ render thread's outbound side should match. `todo.md` is empty; no trigger fires
 D5, 088 and the export funnel) — 2+ pre-implementation reviewers, a post-implementation
 spec-fidelity audit, swarm convergence, sanitization sweep.
 
+## Recommendation
+
+Stated after the priority experiment, for the spec to start from:
+
+1. **One GL thread owns every draw, on the window's own context.** The main thread keeps the event
+   pump, imgui logic, the editor, the script tick and the disk sync, and hands the GL thread a
+   per-frame package: the imgui draw-data snapshot, uniform values, the resolved time and frame
+   number, and structural commands (compile, pass delete, document or project switch). The GL
+   thread makes the window's context current once and does all GL in program order: document
+   passes, the UI upload and draw, the swap, exports, copilot renders, feedback readbacks. Results
+   return as polled data, the shape compile errors already have; the copilot bridge becomes the
+   request queue to this thread. A second context is unnecessary once no GL remains on the main
+   thread, and dropping it removes the fences, the shared-object visibility rules and the GIL
+   hazards the two-context design carried.
+2. **The GL thread time-slices documents between UI frames.** Per iteration: a slice of document
+   tiles up to a GPU-time budget (timer queries), the UI draw, the swap. Vsync is the throttle and
+   glfw's swap releases the GIL. Every document frame completes in full, over several iterations
+   when heavy, into a back texture presented only when done, so the viewer never shows a torn
+   frame. Same context, so ordering is free.
+3. **Tiling is engine-issued and adaptive per pass**, scissored draws sized from the measured cost
+   toward a few ms; a light document stays one draw. The slice budget widens when the UI is idle,
+   which is the knob that returns full throughput to a heavy document when nobody is typing.
+4. `XMODIFIERS=@im=none` before `glfw.init()`.
+
+What it buys: input latency independent of the GPU (the terminal's property), a UI at target fps
+beside any document. What it costs: the document runs slower while the UI is interactive, by an
+amount one probe must still settle; and the largest refactor in the repo's history (47 GL sites,
+23 lifecycle sites, the frame loop split, the profiler on two cadences, a synchronous mode for
+the test harness that steps the GL loop inline).
+
 ## Decisions the spec must take (open, for discussion)
 
 1. **The document tax.** Tiling costs a heavy document 25–35 % throughput while the UI is
