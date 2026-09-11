@@ -76,7 +76,9 @@ breaks. The natural cost input is 088's GPU timer ring, which records only while
 is open (`ui.py`, `app.profiler.enabled = app.fps_details_open`, 088 D4); the always-on cost of
 the queries was never measured.
 
-## Design decisions (proposed, for lock)
+## Design decisions
+
+Locked by the maintainer on 2026-09-11 unless marked *proposed*.
 
 D1 **Resolution mode is a per-document persisted field, `Auto | Fixed(w, h)`**, replacing the
 bare `canvas_size` as the user-facing setting; `canvas_size` becomes the effective live size the
@@ -85,58 +87,60 @@ mode resolves to. Fixed keeps today's behavior exactly. Default for a new docume
 D2 **Under Auto, the live size is the largest region currently displaying the document**, at
 the display's pixel size: the viewer when the document is current, a grid tile or pass-strip
 thumbnail otherwise. A document displayed nowhere keeps its last size. The rule is one function
-over the frame's layout, computed on the main thread before the render set.
+over the frame's layout, computed before the render set and before any draw.
 
-D3 **Auto resizes are damped.** A new size is applied only when it differs from the current one
-by more than a threshold (say 5 % in either dimension) or after the size has been stable for N
-frames, so a window drag does not reallocate canvases every frame. The exact numbers are the
-implementer's, pinned by a test that drags a size through a ramp and counts reallocations.
+D3 *(proposed)* **Auto resizes are damped.** A new size is applied only when it differs from the
+current one by more than a threshold (say 5 % in either dimension) or after the size has been
+stable for N frames, so a window drag does not reallocate canvases every frame. The numbers are
+the implementer's, pinned by a test that drags a size through a ramp and counts reallocations.
 
-D4 **Feedback under Auto survives a resize by resampling, not by restarting.** On a size
-change the feedback canvas is drawn into a canvas of the new size with a linear blit before the
-old one is released. Restarting black on every panel resize would make Auto unusable for any
-feedback document. Fixed is unaffected. The persisted `feedback/<pass>.bin` seeds through the
+D4 **Feedback under Auto survives a resize by resampling.** On a size change a canvas of the new
+size is allocated, the old feedback frame is blitted into it with linear filtering, the old
+canvas is released, and the document keeps rendering into the new one from the next frame. The
+release goes through the same path `Canvas.set_size` uses today. Ordering makes it safe: the
+resize runs before the frame's draw phase, so no imgui draw list references the released texture
+(the 084 D5 hazard). A test drags the size through a ramp and asserts the count of live GL
+textures is constant. Fixed is unaffected. The persisted `feedback/<pass>.bin` seeds through the
 same resample when its stored size differs from the live one.
 
-D5 **Export never reads the live size.** `SCALE_DISTORT` takes its dimensions from the render
-preset; a preset with no explicit size falls back to the document's Fixed size, or, under Auto,
-to a per-document export size stored beside the mode (default 1920×1080 at the document's
-aspect). The scaled-feedback-pass-inside-export interaction gets a test.
+D5 **The resolution picker stays as it is, list and all.** In Fixed mode it sets the live size,
+as today. Under Auto it sets the EXPORT size only, stored per document beside the mode; the
+default is the largest list entry with the document's aspect (1920×1080 for 16:9). Export never
+reads the live size: `SCALE_DISTORT` takes its dimensions from the preset, falling back to the
+Fixed size or the Auto export size. The scaled-feedback-pass-inside-export interaction gets a
+test.
 
-D6 **The throttle is a per-document, ephemeral render interval `k`, recomputed from the
-measured document cost**: render when `frame_idx % k == 0`, with `k = ceil(cost / (share ×
-frame_period))`, `share = 0.5` (088's knee), `k = 1` for any document under the budget. The
-measurement's optimism is accepted: it errs toward rendering the document more often, never
-less. No persisted setting; a user who wants a fixed document fps has Fixed resolution and can
-lower the app's target fps.
+D6 **One GPU budget, shared automatically.** A single constant, the fraction of the UI frame all
+documents together may occupy (proposed `0.5`, 088's knee). The current document draws on it
+first: its interval is `k = ceil(cost / (budget × frame_period))`, `k = 1` when it fits. Every
+other displayed document shares what remains at one common fps, the highest at which the sum of
+their costs fits the remainder; from that fps each gets its own `k`. One preview gets most of
+the remainder, twenty get a little each, and no preview constant exists. The whole rule is a
+pure function `plan_render_set(costs, current, displayed, budget, frame_period) -> {doc: k}`,
+tested without GL, the shape 088's `profile_rows_plan` set. The intervals are ephemeral, never
+persisted. The measurement's optimism (a document-carrying frame is longer than the nominal
+period) is accepted: it errs toward rendering more often, never less.
 
-D7 **The cost input is 088's GPU span, recorded always, read two frames late as today.** The
-always-on cost is measured before this lands (a probe over the app with the panel closed vs
-open, the number written into the spec); if it is not negligible, the fallback input is the
-CPU-side swap wait attributed to the document, which the baseline showed carries the GPU cost
-1:1 in a single-context loop.
+D7 *(proposed)* **The cost input is a per-document cost record with GPU and CPU fields**, the
+GPU field from 088's timer span, recorded always and read two frames late as today; the policy
+reads only the GPU field now, so a CPU throttle later is a policy change, not plumbing. The
+always-on cost of the queries is measured before this lands (a probe over the app with the panel
+closed vs open, the number written into the spec); if it is not negligible, the fallback input
+is the CPU-side swap wait attributed to the document, which the baseline showed carries the GPU
+cost 1:1 in a single-context loop.
 
-D8 **The script tick runs once per document render, not once per UI frame**, with `dt` equal
-to the wall time since the document's previous render. Scripts already receive `context.t` on
-wall time; a script that integrates by `dt` keeps its meaning under a throttle.
+D8 **The script ticks once per UI frame, as today.** A throttled document's script keeps
+running at the UI rate; its uniform values reach the render on the document's next frame. GPU
+cost is the bottleneck being addressed; CPU throttling is a later policy over D7's CPU field.
 
-D9 **The FPS panel shows the throttle**: a document's row carries its effective fps and `k`,
-and the budget-share coloring reads the share over wall time (cost × document fps), so a
+D9 *(proposed)* **The FPS panel shows the plan**: a document's row carries its effective fps and
+`k`, and the budget coloring reads the share over wall time (cost × document fps), so a
 converged throttled document reads green, not red.
 
 D10 **Render all keeps its meaning** (every open document renders), but under Auto each renders
-at its tile size and under D6 each is throttled on its own cost, so the sum that governs the
-frame today shrinks on both axes.
-
-D11 **A document that is not current is throttled harder, in both modes.** The throttle's
-share is `0.5` for the current document and a `PREVIEW_SHARE` (proposed `0.05`) for every other
-displayed document, so `k` follows the same formula with the smaller budget. This is what makes
-Fixed affordable: a Fixed document shown only as a thumbnail must render at its full
-resolution (its shader needs the size), and rendering it rarely is the only lever left. With
-`0.05` at 60 fps: a 1 ms document previews at 30 fps, a 5 ms one at 10 fps, a 100 ms one every
-2 s. Under Auto the tile is already cheap and the smaller share is a bonus. A flat preview fps
-was considered and rejected: at 10 fps it would waste GPU on cheap documents and still spend
-100 % of the GPU on a 100 ms one.
+at its tile size and under D6 each is scheduled from the shared budget, so the sum that governs
+the frame today shrinks on both axes. Under Fixed a preview must render at its full resolution,
+and D6's remainder rule is what keeps it affordable: it renders rarely.
 
 ## Out of scope (with triggers)
 
@@ -145,27 +149,40 @@ was considered and rejected: at 10 fps it would waste GPU on cheap documents and
   input latency independent of the document after this refinement lands.
 - Resolution-independence shims for pixel-dependent shaders. They use Fixed. Trigger: a
   user-facing document that must be Auto and pixel-exact.
+- A CPU throttle. Trigger: a script tick measured above a few ms per frame; it plugs into D6
+  through D7's CPU field.
 
 ## Files touched (estimate)
 
 `document.py` (mode field, resolve, feedback resample, export size source), `ui_models.py`
-(persisted mode + export size), `ui.py` (layout-driven size before the render set, the
-throttle in the render set, the script tick per document render), `render_preset.py` /
-`render_shape.py` (D5), `profiling.py` and the FPS panel (D7, D9), `tabs/` where the
-resolution is edited (the mode control), `widgets/pass_list.py` and `document_grid.py` (report
-their displayed size), `help_content.py` (`u_resolution` under Auto), `projects/dev` documents
-hand-fixed to the new field, tests for D2, D3, D4, D5, D6, D8.
+(persisted mode + export size), `ui.py` (layout-driven size before the render set, the plan in
+the render set), a new pure module for `plan_render_set` (leaf, no GL), `render_preset.py` /
+`render_shape.py` (D5), `profiling.py` and the FPS panel (D7, D9), `tabs/` where the resolution
+is edited (the mode control beside the unchanged picker), `widgets/pass_list.py` and
+`document_grid.py` (report their displayed size), `help_content.py` (`u_resolution` under
+Auto), `projects/dev` documents hand-fixed to the new field, tests for D2, D3, D4, D5, D6.
 
-## Open questions for the maintainer
+## Sizing
 
-1. D2's rule when the document is both current and in the grid: the largest region, or the
-   viewer always?
-2. D4: resample feedback on resize, or accept a restart? Resampling is the robust default and
-   costs one blit per resize.
-3. D5: is 1920×1080 at the document's aspect the right default export size under Auto?
-4. D6 and D11: `share = 0.5` current / `0.05` preview, or expose them as app settings?
-5. D8 changes what a script sees; confirm that a throttled document's script ticking at the
-   document's rate is what you want.
-6. Sizing: with the thread out of scope this is a mid feature touching the document model, the
-   render set, exports and the profiler. Proposed: 2 pre-implementation reviewers, 3
-   post-implementation, plus a spec-fidelity pass, since it changes persisted document state.
+Large, with the full review cycle: the maintainer's call, to be revisited after the discussion.
+Per the `dev_flow.md` preamble that means the upper end of the mid range or beyond: 2
+pre-implementation reviewers, 3 post-implementation plus a spec-fidelity pass, and a
+sanitization sweep, since persisted document state changes shape.
+
+## Resolved questions
+
+Asked and answered 2026-09-11, kept so the spec does not re-open them:
+
+1. Viewer and grid tile at once: the largest region, which is the viewer (D2).
+2. Feedback on an Auto resize: resample, keep rendering at the new size, release the old canvas
+   without a leak, pinned by a texture-count test (D4).
+3. Export size under Auto: the existing picker, unchanged, sets it; default the largest list
+   entry at the document's aspect (D5).
+4. Preview budget: not a constant; one shared budget split automatically by what is displayed
+   (D6).
+5. Script tick: per UI frame as today; the cost record carries a CPU field for a later throttle
+   (D7, D8).
+6. Size: large, full review cycle (Sizing).
+
+Still open, small: D3's damping numbers, D6's budget constant, D9's panel shape. The
+implementer proposes them in the spec.
