@@ -173,6 +173,18 @@ render thread's outbound side should match. `todo.md` is empty; no trigger fires
 D5, 088 and the export funnel) — 2+ pre-implementation reviewers, a post-implementation
 spec-fidelity audit, swarm convergence, sanitization sweep.
 
+## Maintainer decision: no tiling
+
+Taken 2026-09-11 after reading the recommendation below: tiling is rejected as too many moving
+parts for the friction it adds. Consequence, from the measurements: nothing else on this driver
+interleaves a long draw, so the editor's picture refreshes at the document's rate while a heavy
+document renders, as the terminal's does. What remains fixable is input. The recommendation's
+items 2 and 3 are withdrawn; the choice is between item 4 alone (the input-method opt-out, which
+removes the after-release motion and leaves keys one frame late, applied in one batch) and item 1
+(a GL thread owning every draw with no tiling, which makes the editor react to keys on arrival
+regardless of the GPU). Item 1 keeps its size; it loses the fences, the second context and the
+scheduler.
+
 ## Recommendation
 
 Stated after the priority experiment, for the spec to start from:
