@@ -1,11 +1,14 @@
-"""The viewer's channel blits: the output texture shown as one of its channels.
+"""One-quad blits over a render target: the channel views, and the Auto-resize resampler.
 
 A separate texture on purpose. The output texture is sampled by feedback reads, exports and
 the pass strip, so it is never swizzled or redrawn; each blit sends it through a one-quad
 program into a view canvas the viewer shows instead.
 
-The two blits differ only in their fragment shader, so they are one class holding a shader
-rather than two classes holding the same GL lifecycle.
+The blits differ only in their fragment shader, so they are one class holding a shader rather
+than one class each holding the same GL lifecycle. `CanvasResampler` (090 D4) is the same
+mechanism aimed at a canvas the caller owns: it draws a source into a DIFFERENT-sized target,
+which `copy_framebuffer` cannot do -- measured, that copies 1:1 into a corner between
+differently-sized framebuffers, with no GL error and a plausible picture.
 """
 
 import moderngl
@@ -37,6 +40,14 @@ ALPHA_FS = (
 RGB_FS = (
     _HEAD
     + """    frag_color = vec4(texture(u_source, vs_uv).rgb, 1.0);
+}
+"""
+)
+
+# The source, rescaled: the sampler's own filter IS the rescale.
+RESAMPLE_FS = (
+    _HEAD
+    + """    frag_color = texture(u_source, vs_uv);
 }
 """
 )
@@ -73,6 +84,40 @@ class ChannelBlit:
 
     def release(self) -> None:
         self.canvas.release()
+        self.vao.release()
+        self.vbo.release()
+        self.program.release()
+
+
+class CanvasResampler:
+    """One source texture drawn whole into a target canvas of any size (090 D4).
+
+    Holds no canvas of its own: the caller allocates the destination, so a resize can allocate,
+    blit and only then release the old canvas -- `Canvas.set_size` is release-then-allocate,
+    which blanks content that matters.
+    """
+
+    def __init__(self, gl: moderngl.Context | None = None) -> None:
+        self._gl = gl or moderngl.get_context()
+        self.program: moderngl.Program = self._gl.program(
+            vertex_shader=DEFAULT_VS_FILE_PATH.read_text(encoding="utf-8"),
+            fragment_shader=RESAMPLE_FS,
+        )
+        self.vbo: moderngl.Buffer = self._gl.buffer(
+            np.array(FULLSCREEN_QUAD_VERTICES, dtype="f4")
+        )
+        self.vao: moderngl.VertexArray = self._gl.vertex_array(
+            self.program, [(self.vbo, "2f", "a_pos")]
+        )
+
+    def blit(self, source: moderngl.Texture, target: Canvas) -> None:
+        source.use(location=0)
+        self.program["u_source"] = 0
+        target.fbo.use()
+        self._gl.clear()
+        self.vao.render()
+
+    def release(self) -> None:
         self.vao.release()
         self.vbo.release()
         self.program.release()

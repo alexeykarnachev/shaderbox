@@ -1,11 +1,12 @@
 {
-    "canvas_size": [
-        960,
-        960
-    ],
     "uniforms": {},
     "ui_state": {
         "ui_name": "Bloom Chain",
+        "resolution_mode": "auto",
+        "resolution": [
+            960,
+            960
+        ],
         "description": "A five-pass document: a scene of orbiting blobs, a bright-pass and a blur that turn its highlights into bloom, a feedback pass that leaves motion trails, and a composite that adds them and tonemaps. Open the Passes list to see what fills each input, and try rewiring one.",
         "render_media_details": {
             "is_video": true,

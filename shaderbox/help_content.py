@@ -39,7 +39,7 @@ class HelpSection:
 ENGINE_UNIFORM_DOCS: dict[str, str] = {
     "u_time": "seconds since launch — the animation clock",
     "u_aspect": "canvas width / height",
-    "u_resolution": "canvas size in pixels",
+    "u_resolution": "canvas size in pixels; follows the view under Auto",
     "u_pass_iteration": "which run this is, 0-based (see Runs)",
     "u_pass_iterations": "how many runs this pass makes per frame",
 }

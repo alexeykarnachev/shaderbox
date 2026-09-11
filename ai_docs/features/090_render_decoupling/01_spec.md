@@ -796,3 +796,123 @@ findings confirmed closed, none regressed. Five new items, every one applied:
   `_artifact_matches_shape` test stubs a document exposing only `render_pass.canvas.texture.size`,
   which D5's fix stops reading; the stub needs a `resolution`. → added to *Files touched* and to
   the old-shape test list as a seventh file, breaking for a different reason than the six.
+
+---
+
+## Implementation notes
+
+Landed in one diff on `dev`. `make gates` **exit 0 — `== gates: GREEN -- check passed, test
+passed, smoke passed ==`**, captured unpiped; the smoke RAN rather than skipping (this box has a
+display), and the suite is 2153 passed, 4 skipped.
+
+### The falsifier tried per verification item
+
+Every gate below was broken once, watched go red on the named assertion, and restored; each
+restore was verified with `diff` against a pre-mutation copy before anything else ran. A
+mutation aimed at a pure function is stated as such; the wiring items name the layer the break
+was applied at, since "the break was caught" is a claim about a layer.
+
+- **V1** (`test_render_plan.py`, the nine worked examples) — `ceil` -> `floor` reddened example
+  2 (11, not 12) and four others; dropping the `MAX_INTERVAL` clamp reddened example 9 (143);
+  taking the remainder before the current document's share reddened example 3. Green restored.
+- **V2** — applying the candidate interval at once reddened both hysteresis tests (the hovering
+  cost moved, and the steady one moved on frame 1 rather than 4). Green restored.
+- **V2a** — `phases[id] = 0` reddened the three-preview test: all three took every render frame.
+- **V3** — dropping the dead band reddened the ramp (60 reallocations) and the
+  applies-at-once case; dropping the stability clause reddened the held-size case (never lands).
+- **V3a** (the LOOP, not `apply_damping`) — passing the raw request to `set_canvas_size` in
+  `_resolve_resolutions` reddened the drive-through-a-ramp test at ~60 resizes.
+- **V4** (`test_canvas_resample.py`) — five breaks at `Document.set_canvas_size` /
+  `resample_canvas`: `Canvas.set_size` on the live canvas (live canvas blank at (96, 96));
+  release-before-allocate (blit reads a freed texture); skipping the release (the
+  allocated-minus-released count climbs); `copy_framebuffer` for the one-quad blit (far corner
+  black while a mean check still passes); sizing a scaled pass's history from the document
+  ("'trail' history is (96, 96), not its own target (48, 48)"). **Two of these first found the
+  TEST wrong rather than the code**: asserting after the next render hid both, because the
+  shader redraws its picture from `vs_uv` and `_feedback_canvas` repairs a wrong history size —
+  the assertions moved onto the resize frame itself (`_assert_resized`).
+- **V5** (`test_render_for.py`) — passing `render_pass.canvas.texture.size` as `resolve_dims`'s
+  source reddened the `None` and `native` cases. The first version of this test could not see
+  the `None` case at all: the Render tab's resize produces the right FILE from a wrong-sized
+  frame, so the test now records the canvas each export actually rendered into.
+- **V5-yt** — resolving `_artifact_matches_shape` against the live canvas reddened the
+  after-a-live-resize case.
+- **V5a** — overwriting `resolution_details` from `resolution` reddened the Render-tab-size test.
+- **V6** — sizing a non-output pass from the export canvas reddened the scaled-feedback export.
+  Like V4, the picture could not see it (a smooth gradient resampled 16 -> 32 looks the same),
+  so the assertion is the pass's own canvas size.
+- **V7** (the LOOP) — cutting ONLY the render-site gate reddened the render count while `_frame`
+  stayed correct; cutting ONLY step 8's gate reddened the advance count. Both halves are
+  asserted because each is a separate read of the plan, and the first version of this test
+  covered only the second.
+- **V8** — ignoring `is_throttle_documents` reddened the every-frame count.
+- **V9** — each of the three recorders deleted in turn reddened its own case. The viewer's case
+  first passed under its own falsifier, because the grid tile below records the current document
+  too; the discriminator is now the recorded SIZE, which only the viewer can produce.
+- **V9a** — removing the `(frame_idx + phase) % k` gate from the Examples loop reddened the
+  throttled-example case. This too first passed under its falsifier: the assertion read
+  `Document._frame`, which step 8 sets, so it was measuring the other gate. It counts renders now.
+- **V10** — `document_fps=None` at the `fps_overlay` call reddened the chip test.
+- **V10a** — covered by construction: the two same-titled rows carry different numbers, so one
+  lookup cannot fill both.
+- **V11** — restoring `app.profiler.enabled = app.fps_details_open` reddens the panel-closed
+  recording test (asserted as the named falsifier in `test_profiling.py` and in the new case).
+- **Costs (D7 step 3)** — dropping `_refresh_document_costs` reddened the cost-refresh test.
+- **V12** (`test_document_shapes.py`) — three breaks on one tracked file: flipping its mode,
+  leaving its top-level `canvas_size`, and dropping its `resolution` key. Each named that file.
+- **V13** — leaving the copilot's write on Auto reddened the survives-the-next-frame case.
+- **R2** (the deferred picker commit) — resizing in place at `_apply_canvas_size` reddened the
+  new "applies on the next tick" case on its first assertion.
+- **V14** — `test_roadmap_shape.py`, `test_prose_spelling.py`, `test_ui_prose_budget.py` and
+  `test_persistence_completeness.py` all pass against the reshaped models and the new copy.
+
+### Deviations from the spec
+
+1. **`ProfileRow` gained one field, `tooltip`.** D9c requires the millisecond cost in a throttled
+   row's tooltip, and correctness F11 dropped two fields (`k`, `share`) *because they duplicated
+   the formatted number*. `tooltip` duplicates nothing — it carries the number the compact form
+   deliberately drops, and nothing else in the row can reach it. Read as a clarification of F11
+   rather than a reversal of it.
+2. **`profile_rows_plan` gained a `budget` parameter.** D9c's color is
+   `throttle_color(share / budget, ...)` and `share` is `cost x document fps`, a fraction of wall
+   time; the function's existing `budget_ms` is the frame period, a different quantity. The
+   budget had to arrive from `UIAppState`, the same way `target_fps` already does.
+3. **`Document._load_document_metadata` is now public as `load_document_metadata`.** The reordered
+   loader (correctness F4) needs `ui_state` before `Document.load_from_dir` runs, and that is a
+   second caller for the one metadata reader. The alternative — a second `json.load` of the same
+   file in `ui_models.py` — would be the concept written twice.
+4. **`Document.as_canvas_size` is public.** D1 deletes the top-level `canvas_size` key, which is
+   what the "malformed pair" test used to exercise; the coercion still guards
+   `Document.__init__`'s parameter, so the test moved onto it directly rather than through a
+   loader path that no longer reads a raw pair.
+5. **Six test files beyond the spec's list needed edits**, each a mechanical consequence of a
+   locked decision rather than new scope: `test_document_graph.py` (three `_apply_canvas_size`
+   cases, now deferred), `test_probe_clock_and_turn_end.py` (its document stub needs
+   `resolution`, the same break the spec found in `test_youtube_exporter.py`),
+   `test_radiance_cascades_example.py` (it called `Document.load_from_dir` directly and so
+   opened the Fixed example at 64x64 — it goes through the app's own loader now, which makes it
+   a second gate on that document's mode).
+6. **`test_profiling.py` got an `xdist_group`.** The corrected quirk (blast F7) says a
+   frame-driving module declares one; that module drives frames and had none.
+
+### Files changed
+
+`shaderbox/`: `render_plan.py` (new), `render_shape.py`, `channel_blit.py`, `document.py`,
+`ui_models.py`, `ui.py`, `app.py`, `ui_primitives.py`, `theme.py`, `tabs/document.py`,
+`widgets/details.py`, `widgets/document_grid.py`, `popups/examples.py`, `popups/settings.py`,
+`help_content.py`, `copilot/backend.py`, `exporters/youtube.py`.
+
+`tests/`: `test_render_plan.py`, `test_document_shapes.py`, `test_canvas_resample.py`,
+`test_render_decoupling_loop.py` (all new); edits to `test_canvas_presets.py`,
+`test_canvas_fields.py`, `test_graph_persistence.py`, `test_pass_hot_reload.py`,
+`test_uniform_row_pruning.py`, `test_document_dir_sync.py`, `test_feedback_persistence.py`,
+`test_document_graph.py`, `test_render_for.py`, `test_profiling.py`, `test_youtube_exporter.py`,
+`test_probe_clock_and_turn_end.py`, `test_radiance_cascades_example.py`,
+`test_ui_prose_budget.py`.
+
+Data: all eleven tracked `document.json` files, per the table.
+
+Docs: `ai_docs/conventions.md` (two new Design decisions; the `update_and_draw` quirk corrected
+to xdist groups; the ring's eviction rule noted as one the app no longer takes),
+`ai_docs/dev_flow.md` (the module map's `render_plan.py` line), `ai_docs/roadmap.md` (the 090 row,
+the rewritten banner, and 088's row corrected where it said recording follows the panel).

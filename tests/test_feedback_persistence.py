@@ -89,7 +89,15 @@ def _write_document(dir: Path, dtype: str, trail_source: str = _ACCUMULATE) -> P
     }
     (dir / GRAPH_JSON_BASENAME).write_text(json.dumps(graph))
     (dir / DOCUMENT_JSON_BASENAME).write_text(
-        json.dumps({"canvas_size": list(_CANVAS), "uniforms": {}, "ui_state": {}})
+        json.dumps(
+            {
+                "uniforms": {},
+                "ui_state": {
+                    "resolution_mode": "fixed",
+                    "resolution": list(_CANVAS),
+                },
+            }
+        )
     )
     return dir
 

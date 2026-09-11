@@ -68,8 +68,8 @@ def _chain_document(gl: moderngl.Context, root: Path) -> UIDocument:
     (passes / pass_shader_name("a")).write_text(_CONST % "0.8")
     (passes / pass_shader_name("b")).write_text(_HALVE % "0.5")
     (document_dir / "document.json").write_text(
-        '{"canvas_size": [8, 8], "uniforms": {"b": {"u_src": {"pass": "a"}}},'
-        ' "ui_state": {}}'
+        '{"uniforms": {"b": {"u_src": {"pass": "a"}}}, "ui_state": '
+        '{"resolution_mode": "fixed", "resolution": [8, 8]}}'
     )
     graph = PassGraph(output="b", passes={"a": PassEntry(), "b": PassEntry()})
     (document_dir / "graph.json").write_text(graph.model_dump_json())
@@ -149,7 +149,7 @@ def test_a_single_pass_document_still_hot_reloads(
     passes.mkdir(parents=True)
     (passes / pass_shader_name(DEFAULT_PASS_NAME)).write_text(_CONST % "1.0")
     (document_dir / "document.json").write_text(
-        '{"canvas_size": [8, 8], "uniforms": {}, "ui_state": {}}'
+        '{"uniforms": {}, "ui_state": {"resolution_mode": "fixed", "resolution": [8, 8]}}'
     )
     ui_document = load_document_from_dir(document_dir)
     ui_document.document.render(u_time=0.0)

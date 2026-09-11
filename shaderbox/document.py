@@ -22,6 +22,7 @@ from loguru import logger
 from OpenGL.GL import GL_SAMPLER_2D
 from pydantic import BaseModel, ValidationError
 
+from shaderbox.channel_blit import CanvasResampler
 from shaderbox.constants import (
     DEFAULT_CANVAS_SIZE,
     MEDIA_DIR_NAME,
@@ -49,6 +50,7 @@ from shaderbox.pass_graph import (
     PassEntry,
     PassGraph,
     PassSource,
+    clamp_canvas_size,
     plan_for_output,
     plan_passes,
     wired_pass,
@@ -63,15 +65,16 @@ from shaderbox.paths import (
 )
 from shaderbox.profiling import NULL_PROFILER, Profiler
 from shaderbox.render_preset import FitPolicy, RenderPreset, resolve_dims
+from shaderbox.render_shape import ResolutionMode
 from shaderbox.shader_source import ShaderSource
 
 DEFAULT_PASS_NAME = "main"
 
 
-def _as_canvas_size(size: object) -> tuple[int, int] | None:
-    """Coerce a loaded `canvas_size` to a tuple, or None if it is not a usable pair.
+def as_canvas_size(size: object) -> tuple[int, int] | None:
+    """Coerce a loaded size to a tuple, or None if it is not a usable pair.
 
-    `document.json` stores this as a JSON LIST, and a list is unhashable and never equals a
+    `document.json` stores a size as a JSON LIST, and a list is unhashable and never equals a
     tuple -- so an unconverted value breaks every `size in seen` membership test and every
     unchanged-size guard downstream, on disk-loaded documents only. A pair that is malformed
     (wrong length, a non-integer) degrades to the default rather than raising, like every other
@@ -83,6 +86,25 @@ def _as_canvas_size(size: object) -> tuple[int, int] | None:
     if not isinstance(w, int) or not isinstance(h, int):
         return None
     return (w, h)
+
+
+def _clamped_to_aspect(
+    size: tuple[int, int], resolution: tuple[int, int]
+) -> tuple[int, int]:
+    """`size` inside the canvas bounds, keeping `resolution`'s aspect where the clamp bit.
+
+    A bare per-axis clamp changes the aspect, which under Auto feeds back into the next
+    frame's requested size and drifts. So the axis the clamp CONSTRAINED is authoritative and
+    the other is re-derived from the stored aspect.
+    """
+    clamped = clamp_canvas_size(size)
+    if clamped == size:
+        return clamped
+    width, height = resolution
+    aspect = width / height if height else 1.0
+    if clamped[0] != size[0]:
+        return clamp_canvas_size((clamped[0], max(1, round(clamped[0] / aspect))))
+    return clamp_canvas_size((max(1, round(clamped[1] * aspect)), clamped[1]))
 
 
 def _keyed_entry_fields() -> dict[str, type[BaseModel]]:
@@ -157,7 +179,7 @@ def load_graph(path: Path) -> PassGraph:
         return PassGraph()
 
 
-def _load_document_metadata(path: Path) -> dict[str, Any]:
+def load_document_metadata(path: Path) -> dict[str, Any]:
     """Read `document.json`, degrading to defaults rather than raising.
 
     Symmetric with `load_graph` beside it, and for the same reason: this runs from the live
@@ -277,8 +299,15 @@ class Document:
         # Normalized here and in `set_canvas_size` -- the field's only two writers -- so every
         # reader downstream gets a hashable, comparable pair whatever the loader handed in.
         self.canvas_size: tuple[int, int] = (
-            _as_canvas_size(canvas_size) or DEFAULT_CANVAS_SIZE
+            as_canvas_size(canvas_size) or DEFAULT_CANVAS_SIZE
         )
+        # The persisted pair the loader and the Document tab set (090 D1). Under FIXED,
+        # `resolution` IS the live size; under AUTO it is the EXPORT size and the live size
+        # follows the display. Every export path resolves from `resolution`, never from the
+        # live canvas.
+        self.resolution_mode: ResolutionMode = ResolutionMode.AUTO
+        self.resolution: tuple[int, int] = self.canvas_size
+        self._resampler: CanvasResampler | None = None
         self.passes: dict[str, Pass] = {
             DEFAULT_PASS_NAME: Pass(
                 gl=self._gl, source=source, canvas_size=self.canvas_size
@@ -348,17 +377,65 @@ class Document:
             canvas.release()
         self._feedback.clear()
         self._feedback_generation.clear()
+        if self._resampler is not None:
+            self._resampler.release()
+            self._resampler = None
+
+    def resample_canvas(self, old: Canvas, size: tuple[int, int]) -> Canvas:
+        """`old`'s content at `size`, as a NEW canvas; `old` is released. Allocate, blit, release.
+
+        Never release-then-allocate (`Canvas.set_size`): a canvas whose content matters must be
+        readable while the replacement is being written. The rescale is the sampler's own
+        filter -- `copy_framebuffer` between differently-sized framebuffers copies 1:1 into a
+        corner, with no GL error (090 D4, measured).
+        """
+        if old.texture.size == size:
+            return old
+        if self._resampler is None:
+            self._resampler = CanvasResampler(self._gl)
+        new = Canvas(
+            gl=self._gl,
+            size=size,
+            dtype=old.dtype,
+            filter=old.filter,
+            wrap=old.wrap,
+        )
+        self._resampler.blit(old.texture, new)
+        old.release()
+        return new
 
     def set_canvas_size(self, size: tuple[int, int]) -> None:
-        """Resize the document: its output target now, its other passes on the next render.
+        """Resize the document: its output target and every feedback history, now.
 
         The single funnel, because `canvas_size` is what every other pass scales FROM. A caller
         that resized `render_pass.canvas` directly — which is what the copilot's set_canvas_size
         did — left this field stale, so the rest of the graph kept sizing off the old dimensions
         and the output sampled mismatched targets.
+
+        Both the live canvas and each history are RESAMPLED (090 D4): resampling the history
+        alone loses the picture one frame later, since a blanked live canvas is what the next
+        `_swap_feedback` trades into the history. `_feedback_generation` carries over unchanged
+        -- it tracks FORMAT changes, and a resample changes no format.
+
+        Every write clamps, Auto's included. A clamp that would change the ASPECT resolves on
+        the constrained axis and re-derives the other from `resolution`'s aspect, so the Auto
+        loop closes on the stored aspect instead of drifting a little further each frame.
         """
-        self.canvas_size = _as_canvas_size(size) or DEFAULT_CANVAS_SIZE
-        self.render_pass.canvas.set_size(self.canvas_size)
+        self.canvas_size = _clamped_to_aspect(
+            as_canvas_size(size) or DEFAULT_CANVAS_SIZE, self.resolution
+        )
+        output = self.graph.output_pass
+        self.render_pass.canvas = self.resample_canvas(
+            self.render_pass.canvas, self.canvas_size
+        )
+        for name in list(self._feedback):
+            entry = self.graph.passes.get(name, PassEntry())
+            target = (
+                self.canvas_size
+                if name == output
+                else entry.target.target_size(self.canvas_size)
+            )
+            self._feedback[name] = self.resample_canvas(self._feedback[name], target)
 
     def begin_frame(self, frame: int | None = None) -> None:
         """Advance feedback history to `frame`, at most once per frame.
@@ -454,9 +531,11 @@ class Document:
         The expected SIZE is computed from the graph, never read off the live canvas: at load
         every pass's canvas sits at the document's full `canvas_size` and a non-output pass
         takes its `scale` only inside `render`, so a history checked against the live canvas
-        would be rejected for every scaled pass. The match is strict and fail-soft -- a size,
-        dtype or component count that disagrees, or a file that will not read, costs that pass
-        its history and nothing else.
+        would be rejected for every scaled pass. A stored size that DISAGREES is resampled to
+        that expectation rather than dropped (090 D4) -- under Auto the size a save wrote is
+        whatever the panel was then. dtype and component count stay strict rejections: they are
+        format, and nothing can rescale a format. A file that will not read costs that pass its
+        history and nothing else.
         """
         output = self.graph.output_pass
         for name, row in rows.items():
@@ -470,18 +549,17 @@ class Document:
                 if name == output
                 else entry.target.target_size(self.canvas_size)
             )
-            size = row.get("size")
-            size = tuple(size) if isinstance(size, list) else size
+            stored_size = as_canvas_size(row.get("size"))
             file_path = row.get("file_path")
             if (
                 not isinstance(file_path, str)
-                or size != expected_size
+                or stored_size is None
                 or row.get("dtype") != live.dtype
                 or row.get("components") != 4
             ):
                 logger.warning(
                     f"{document_dir.name}: feedback for '{name}' does not match the pass "
-                    f"(expected {expected_size} {live.dtype} x4); it starts black"
+                    f"(expected {live.dtype} x4); it starts black"
                 )
                 continue
             try:
@@ -494,7 +572,7 @@ class Document:
                 continue
             canvas = Canvas(
                 gl=self._gl,
-                size=expected_size,
+                size=stored_size,
                 dtype=live.dtype,
                 filter=live.filter,
                 wrap=live.wrap,
@@ -508,7 +586,7 @@ class Document:
                     f"it starts black"
                 )
                 continue
-            self._feedback[name] = canvas
+            self._feedback[name] = self.resample_canvas(canvas, expected_size)
             self._feedback_generation[name] = render_pass.target_generation
 
     def feedback_passes(self) -> list[str]:
@@ -559,7 +637,8 @@ class Document:
             self._feedback[name] = canvas
             self._feedback_generation[name] = generation
         elif canvas.texture.size != live.texture.size:
-            canvas.set_size(live.texture.size)
+            canvas = self.resample_canvas(canvas, live.texture.size)
+            self._feedback[name] = canvas
         return canvas
 
     def sampler_source(self, pass_name: str, uniform: str) -> str | None:
@@ -743,17 +822,24 @@ class Document:
         cls,
         document_dir: Path | str,
         gl: moderngl.Context | None = None,
+        canvas_size: tuple[int, int] | None = None,
     ) -> tuple["Document", dict[str, Any]]:
         """Read a document: its graph, every pass file, and each pass's uniforms.
+
+        `canvas_size` is the effective LIVE size the caller already resolved from the
+        persisted mode (090 D1): the size decides how every pass and every feedback seed is
+        allocated, so it has to be known before the first `Pass` is built. Nothing here reads
+        `document.json`'s `ui_state` -- one reader per concept, and that one is
+        `ui_models.load_document_from_dir`.
 
         A pass file that cannot be read costs THAT pass, never the document (D14), and a
         malformed `graph.json` costs the wiring, never the passes — an unwired document still
         opens with its shaders intact, which is what makes it fixable.
         """
         document_dir = Path(document_dir)
-        metadata = _load_document_metadata(document_dir / DOCUMENT_JSON_BASENAME)
+        metadata = load_document_metadata(document_dir / DOCUMENT_JSON_BASENAME)
 
-        document = Document(gl=gl, canvas_size=metadata.get("canvas_size"))
+        document = Document(gl=gl, canvas_size=canvas_size)
         graph = load_graph(document_dir / GRAPH_JSON_BASENAME)
         uniforms_by_pass = _uniforms_by_pass(metadata)
 
@@ -937,13 +1023,25 @@ class Document:
             # reset HERE rather than per export path — otherwise the same document exports
             # differently depending on how long the app has been open.
             self.reset_feedback()
+            # The source size is `resolution`, never the live canvas (090 D5): under Auto the
+            # live size is whatever the panel happens to be, so RenderShape.NATIVE -- the
+            # default of every copilot render tool and YouTube's initial shape -- would resolve
+            # to the panel. `resolution_details` is untouched: the Render tab's W x H still
+            # decides what lands on disk, through the PIL resize and ffmpeg's -s.
             if preset is None or preset.fit is FitPolicy.SCALE_DISTORT:
-                canvas = self.render_pass.canvas
-                return self._render_media_into(details, canvas)
+                scratch = Canvas(
+                    gl=self._gl,
+                    size=self.resolution,
+                    dtype=self.render_pass.canvas.dtype,
+                    filter=self.render_pass.canvas.filter,
+                    wrap=self.render_pass.canvas.wrap,
+                )
+                try:
+                    return self._render_media_into(details, scratch)
+                finally:
+                    scratch.release()
 
-            target_w, target_h = resolve_dims(
-                preset, self.render_pass.canvas.texture.size
-            )
+            target_w, target_h = resolve_dims(preset, self.resolution)
             details = details.model_copy(deep=True)
             details.resolution_details.width = target_w
             details.resolution_details.height = target_h

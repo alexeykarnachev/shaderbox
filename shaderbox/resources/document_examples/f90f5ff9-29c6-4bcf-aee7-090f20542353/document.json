@@ -1,8 +1,4 @@
 {
-    "canvas_size": [
-        1280,
-        960
-    ],
     "uniforms": {
         "main": {
             "u_char_scale": 0.5,
@@ -92,6 +88,11 @@
     },
     "ui_state": {
         "ui_name": "Text Rendering",
+        "resolution_mode": "auto",
+        "resolution": [
+            1280,
+            960
+        ],
         "description": "Renders text on screen using SDF (signed-distance-field) 7-segment glyphs synthesised in the shader from codepoints in u_text - NOT a font texture/atlas. Start here for any text- or number-display shader.",
         "render_media_details": {
             "is_video": true,

@@ -19,7 +19,7 @@ from PIL import Image as PILImage
 
 from shaderbox.constants import DEFAULT_CANVAS_SIZE
 from shaderbox.core import Pass
-from shaderbox.document import DEFAULT_PASS_NAME, Document
+from shaderbox.document import DEFAULT_PASS_NAME, Document, as_canvas_size
 from shaderbox.media import Image
 from shaderbox.pass_graph import PassEntry, PassGraph, clamp_canvas_size
 from shaderbox.paths import shader_lib_root
@@ -97,14 +97,20 @@ def _one_pass(gl: moderngl.Context, size: tuple[int, int] = (8, 8)) -> Document:
 def _loaded_document(root: Path, size: tuple[int, int]) -> UIDocument:
     """A document built the way the app builds one: written to disk, read back by the loader.
 
-    `document.json` stores `canvas_size` as a JSON LIST, so a document constructed in-test from
-    a literal tuple cannot see the class of bug an unconverted list causes downstream.
+    `document.json` stores `ui_state.resolution` as a JSON LIST, so a document constructed
+    in-test from a literal tuple cannot see the class of bug an unconverted list causes
+    downstream.
     """
     document_dir = root / "document"
     (document_dir / "passes").mkdir(parents=True, exist_ok=True)
     (document_dir / "passes" / f"{DEFAULT_PASS_NAME}.frag.glsl").write_text(_PLAIN)
     (document_dir / "document.json").write_text(
-        json.dumps({"canvas_size": list(size), "uniforms": {}, "ui_state": {}})
+        json.dumps(
+            {
+                "uniforms": {},
+                "ui_state": {"resolution_mode": "fixed", "resolution": list(size)},
+            }
+        )
     )
     return load_document_from_dir(document_dir)
 
@@ -208,10 +214,11 @@ def test_no_preset_duplicates_the_current_size(gl_ctx: moderngl.Context) -> None
 def test_a_disk_loaded_document_opens_its_presets(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
-    # `document.json` stores canvas_size as a JSON list. Unconverted it is unhashable, so
+    # `document.json` stores the resolution as a JSON list. Unconverted it is unhashable, so
     # `seen = {current}` raises inside the imgui frame body and takes the app down; and being
     # never equal to a tuple, it also lets the current size through as a dead menu entry.
     ui_document = _loaded_document(tmp_path, (1280, 960))
+    assert ui_document.document.resolution == (1280, 960)
     assert ui_document.document.canvas_size == (1280, 960)
     presets = _canvas_presets(ui_document)
     assert (1280, 960) not in [size for _, size in presets]
@@ -219,16 +226,15 @@ def test_a_disk_loaded_document_opens_its_presets(
 
 
 def test_a_malformed_canvas_size_falls_back_to_the_default(
-    gl_ctx: moderngl.Context, tmp_path: Path
+    gl_ctx: moderngl.Context,
 ) -> None:
-    # A hand-edited document.json never passes a widget; a bad pair costs the default, not a raise.
-    document_dir = tmp_path / "document"
-    (document_dir / "passes").mkdir(parents=True, exist_ok=True)
-    (document_dir / "passes" / f"{DEFAULT_PASS_NAME}.frag.glsl").write_text(_PLAIN)
-    (document_dir / "document.json").write_text(
-        json.dumps({"canvas_size": [1280], "uniforms": {}, "ui_state": {}})
-    )
-    ui_document = load_document_from_dir(document_dir)
-    assert ui_document.document.canvas_size == DEFAULT_CANVAS_SIZE
-    _canvas_presets(ui_document)
-    ui_document.document.release()
+    # A hand-edited document.json never passes a widget; a bad pair costs the default, not a
+    # raise. The guard that answers for it is `Document.__init__`'s parameter coercion, which is
+    # where a malformed number still reaches the engine (090 D1 dropped the top-level key, so
+    # `ui_state.resolution` is pydantic's to reject and the loader's default to replace).
+    assert as_canvas_size([1280]) is None
+    assert as_canvas_size("1280x960") is None
+    assert as_canvas_size([1280, "960"]) is None
+    doc = Document(gl=gl_ctx, canvas_size=None)
+    assert doc.canvas_size == DEFAULT_CANVAS_SIZE
+    doc.release()

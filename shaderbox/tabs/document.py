@@ -8,6 +8,7 @@ from shaderbox.render_shape import (
     MENU_SHAPES,
     SHAPE_TABLE,
     RenderShape,
+    ResolutionMode,
     shape_to_preset,
 )
 from shaderbox.theme import COLOR, SIZE, SPACE
@@ -19,6 +20,7 @@ from shaderbox.ui_primitives import (
     play_stop_toggle,
     small_caption,
     standard_button,
+    toggle_button,
 )
 from shaderbox.util import get_resolution_str
 from shaderbox.widgets import pass_list
@@ -36,8 +38,25 @@ def _draw_canvas_presets(app: App, ui_document: UIDocument) -> None:
         for preset_label, size in _canvas_presets(ui_document):
             if imgui.selectable(preset_label, False)[0]:
                 _apply_canvas_size(app, ui_document, size)
-                app.canvas_size_buf = ui_document.document.canvas_size
+                app.canvas_size_buf = ui_document.document.resolution
         imgui.end_combo()
+
+
+def _draw_resolution_mode(app: App, ui_document: UIDocument) -> None:
+    # A toggle, not a combo: two positions, and the style carries which one is on (/imgui-ui
+    # §1). ON means the numbers beside it are the live canvas; off, the document follows the
+    # panel and they are its export size.
+    fixed = ui_document.document.resolution_mode is ResolutionMode.FIXED
+    if toggle_button("Fixed", fixed):
+        mode = ResolutionMode.AUTO if fixed else ResolutionMode.FIXED
+        ui_document.ui_state.resolution_mode = mode
+        ui_document.document.resolution_mode = mode
+        # Switching to Fixed asks for the stored number as the LIVE size, which the next tick
+        # applies through the same deferred path the picker uses.
+        if mode is ResolutionMode.FIXED:
+            app.pending_resolution[ui_document.id] = ui_document.ui_state.resolution
+    if imgui.is_item_hovered():
+        imgui.set_tooltip("Fixed canvas size")
 
 
 def _draw_document_reset(app: App) -> None:
@@ -63,11 +82,27 @@ def _draw_document_reset(app: App) -> None:
 def _apply_canvas_size(
     app: App, ui_document: UIDocument, size: tuple[int, int]
 ) -> None:
+    """Commit the picker's W x H as the document's stored `resolution` (090 D5).
+
+    The write is DEFERRED, never applied in place: this runs inside the draw phase, after
+    `_draw_document_image` pushed the output texture into this frame's draw list, and a resize
+    releases that texture and every feedback history with it. Step 4 of the next
+    `_tick_frame_state` consumes `pending_resolution` through the same path Auto takes, where
+    every release precedes any draw — the shape `pending_project_switch` uses for the same
+    084 D5 hazard.
+    """
     w, h = clamp_canvas_size(size)
-    if (w, h) == ui_document.document.canvas_size:
+    if (w, h) == ui_document.ui_state.resolution:
         return
-    ui_document.document.set_canvas_size((w, h))
-    app.notifications.push(f"Canvas: {w}x{h}")
+    ui_document.ui_state.resolution = (w, h)
+    ui_document.document.resolution = (w, h)
+    app.pending_resolution[ui_document.id] = (w, h)
+    label = (
+        "Canvas"
+        if ui_document.document.resolution_mode is ResolutionMode.FIXED
+        else "Export"
+    )
+    app.notifications.push(f"{label}: {w}x{h}")
 
 
 def _canvas_presets(ui_document: UIDocument) -> list[tuple[str, tuple[int, int]]]:
@@ -77,7 +112,9 @@ def _canvas_presets(ui_document: UIDocument) -> list[tuple[str, tuple[int, int]]
     never-attempted pass (066 D1), which on the Document tab's every frame would compile
     the whole graph.
     """
-    current = ui_document.document.canvas_size
+    # The STORED resolution, never the live canvas (090 D2/F2): under Auto the live size is the
+    # display's, so a preset list built from it would offer whatever the panel happens to be.
+    current = ui_document.document.resolution
     presets: list[tuple[str, tuple[int, int]]] = []
     seen: set[tuple[int, int]] = {current}
 
@@ -129,7 +166,14 @@ def draw(app: App) -> None:
     # destructive verb reads as document-wide rather than as another canvas field.
     small_caption(app.font_12, "Document name")
     imgui.same_line(combo_offset)
-    small_caption(app.font_12, "Canvas")
+    # The same pair of numbers means two things (090 D5): under Fixed it IS the live canvas,
+    # under Auto it is what an export renders at while the live size follows the display.
+    small_caption(
+        app.font_12,
+        "Canvas"
+        if ui_document.document.resolution_mode is ResolutionMode.FIXED
+        else "Export",
+    )
     _draw_document_reset(app)
 
     imgui.set_next_item_width(SIZE.NAME_INPUT_W)
@@ -146,7 +190,7 @@ def draw(app: App) -> None:
 
     # Each half mirrors the document unless ITS OWN field is active, so a field the user is not
     # in never holds a stale number to carry over an external write.
-    doc_w, doc_h = ui_document.document.canvas_size
+    doc_w, doc_h = ui_document.document.resolution
     if not app.canvas_w_editing:
         app.canvas_size_buf = (doc_w, app.canvas_size_buf[1])
     if not app.canvas_h_editing:
@@ -181,6 +225,9 @@ def draw(app: App) -> None:
     imgui.same_line(spacing=float(SPACE.MD))
     _draw_canvas_presets(app, ui_document)
 
+    imgui.same_line(spacing=float(SPACE.MD))
+    _draw_resolution_mode(app, ui_document)
+
     app.canvas_w_editing = active_w
     app.canvas_h_editing = active_h
 
@@ -189,7 +236,7 @@ def draw(app: App) -> None:
     # stands without the commit re-reading it.
     if committed_w or committed_h:
         _apply_canvas_size(app, ui_document, app.canvas_size_buf)
-        app.canvas_size_buf = ui_document.document.canvas_size
+        app.canvas_size_buf = ui_document.document.resolution
 
     imgui.pop_id()
 

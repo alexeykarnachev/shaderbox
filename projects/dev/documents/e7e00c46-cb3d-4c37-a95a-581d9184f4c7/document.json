@@ -1,13 +1,14 @@
 {
-    "canvas_size": [
-        1280,
-        960
-    ],
     "uniforms": {
         "main": {}
     },
     "ui_state": {
         "ui_name": "UV Mango",
+        "resolution_mode": "auto",
+        "resolution": [
+            1280,
+            960
+        ],
         "description": "The default blank-canvas starter: a minimal shader that colors the screen by UV coordinate + time. Start here for a shader from scratch.",
         "render_media_details": {
             "is_video": true,

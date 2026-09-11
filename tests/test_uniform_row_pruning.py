@@ -138,7 +138,12 @@ def test_renaming_a_sampler_does_not_orphan_its_media_file(gl, tmp_path: Path) -
     document_dir = tmp_path / "document"
     (document_dir / PASSES_DIR_NAME).mkdir(parents=True)
     (document_dir / DOCUMENT_JSON_BASENAME).write_text(
-        json.dumps({"canvas_size": [64, 64], "uniforms": {}, "ui_state": {}})
+        json.dumps(
+            {
+                "uniforms": {},
+                "ui_state": {"resolution_mode": "fixed", "resolution": [64, 64]},
+            }
+        )
     )
 
     for name in ("u_tex0", "u_tex1", "u_tex2"):
@@ -166,7 +171,12 @@ def test_a_bound_sampler_keeps_its_file(gl, tmp_path: Path) -> None:
         _SAMPLER_SHADER.format(name="u_tex")
     )
     (document_dir / DOCUMENT_JSON_BASENAME).write_text(
-        json.dumps({"canvas_size": [64, 64], "uniforms": {}, "ui_state": {}})
+        json.dumps(
+            {
+                "uniforms": {},
+                "ui_state": {"resolution_mode": "fixed", "resolution": [64, 64]},
+            }
+        )
     )
     ui_document = load_document_from_dir(document_dir)
     ui_document.document.render_pass.uniform_values["u_tex"] = _bind_image(

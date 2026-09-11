@@ -31,6 +31,15 @@ from shaderbox.popups.lib_picker import draw_lib_picker
 from shaderbox.popups.pass_settings import draw_pass_settings
 from shaderbox.popups.projects import draw_projects
 from shaderbox.popups.settings import draw_settings
+from shaderbox.profiling import gpu_total
+from shaderbox.render_plan import (
+    AutoSizeState,
+    CostRecord,
+    apply_damping,
+    auto_canvas_size,
+    plan_render_set,
+)
+from shaderbox.render_shape import ResolutionMode
 from shaderbox.scripting import MouseState
 from shaderbox.tabs import code as code_tab
 from shaderbox.tabs import document as document_tab
@@ -38,6 +47,7 @@ from shaderbox.tabs import render as render_tab
 from shaderbox.tabs import share as share_tab
 from shaderbox.tabs import uniforms as uniforms_tab
 from shaderbox.theme import COLOR, SIZE, SPACE
+from shaderbox.ui_models import UIDocument
 from shaderbox.ui_primitives import (
     chip_button,
     fps_overlay,
@@ -50,6 +60,7 @@ from shaderbox.watch import maybe_rebuild_lib_index, reload_document_if_changed
 from shaderbox.widgets import cheatsheet, copilot_chat
 from shaderbox.widgets.document_grid import draw_document_preview_grid
 
+_DOCUMENT_SPAN_PREFIX = "document:"
 _FONT_14_SIZE = 14.0
 _FONT_18_SIZE = 18.0
 _EDITOR_MIN_W = 320.0
@@ -256,15 +267,140 @@ def _tick_frame_state(app: App) -> list[str] | None:
         )
         if pending_first is not None:
             tick_documents.append(pending_first)
+
+    # ----------------------------------------------------------------
+    # The PLANNED set (090 D10): while the Examples popup is open its documents REPLACE the
+    # normal set — `ui.py`'s render block is `if not any_popup_open(): ... elif EXAMPLES: ...`,
+    # so no `tick_documents` document renders behind it, and an interval computed for a
+    # document nothing draws would be read by nothing.
+    examples_open: bool = app.popup_state == PopupState.EXAMPLES
+    planned_documents: list[str] = (
+        list(app.ui_document_examples) if examples_open else tick_documents
+    )
+    planned: dict[str, UIDocument] = (
+        app.ui_document_examples if examples_open else app.ui_documents
+    )
+    current_planned: str | None = (
+        app.app_state.selected_example_id
+        if examples_open and app.app_state.selected_example_id in planned
+        else (app.current_document_id if app.current_document_id in planned else None)
+    )
+
+    # ----------------------------------------------------------------
+    # Step 3 — costs refresh from the last complete profile's `document:<id>` spans. THE one
+    # write site (090 D7): the render sites open the span and write nothing, so a cost has one
+    # home and the plan reads it a frame fresher than any render-site write could be.
+    _refresh_document_costs(app)
+
+    # ----------------------------------------------------------------
+    # Steps 4 and 5 — resolve each planned document's size and resample what changed. Before
+    # the plan, because `k` must be computed from the cost at the size actually rendered; before
+    # any draw, because every reallocation and release must happen while this frame's draw list
+    # is still empty (the 084 D5 hazard).
+    _resolve_resolutions(app, planned_documents, planned)
+
+    # ----------------------------------------------------------------
+    # Step 6 — the plan.
+    app.render_plan = plan_render_set(
+        costs=app.document_costs,
+        current=current_planned,
+        displayed=planned_documents,
+        budget=app.app_state.document_gpu_budget,
+        frame_period_ms=1e3 / app.app_state.global_target_fps,
+        states=app.throttle_states,
+        enabled=app.app_state.is_throttle_documents,
+    )
+
+    # ----------------------------------------------------------------
+    # Step 7 — the script ticks over the FULL set at the UI rate (090 D8), so integrators stay
+    # smooth and `ctx.frame` keeps meaning the UI frame. A throttled document's feedback pass
+    # integrates at its own rate, which is a coarser integration under load, accepted.
     with app.profiler.cpu("script"):
         app.session.tick(tick_documents, now, dt, app.frame_idx, mouse=app.script_mouse)
-    # Advance feedback history ONCE per frame, over the same document set the tick covers. A
+
+    # ----------------------------------------------------------------
+    # Step 8 — advance feedback history ONCE per frame, for the documents the plan admits. A
     # document can be drawn more than once per frame below (its output, then a pending pass's
-    # chain), so a swap inside render() would advance a feedback pass at the wrong rate.
-    for document_id in tick_documents:
-        app.ui_documents[document_id].document.begin_frame(app.frame_idx)
+    # chain), so a swap inside render() would advance a feedback pass at the wrong rate; a
+    # SKIPPED document is not begun at all, so its `_frame` holds and nothing swaps.
+    for document_id in planned_documents:
+        if renders_this_frame(app, document_id):
+            planned[document_id].document.begin_frame(app.frame_idx)
 
     return tick_documents
+
+
+def renders_this_frame(app: App, document_id: str) -> bool:
+    """Whether the plan admits `document_id` on this frame (090 D6).
+
+    The one reader of an interval and its phase, so the feedback advance and the render gate
+    cannot disagree about which frames a document draws on.
+    """
+    plan = app.render_plan
+    if plan is None:
+        return True
+    interval = plan.intervals.get(document_id, 1)
+    if interval <= 1:
+        return True
+    return (app.frame_idx + plan.phases.get(document_id, 0)) % interval == 0
+
+
+def _refresh_document_costs(app: App) -> None:
+    profile = app.last_profile
+    if profile is None:
+        return
+    for span in profile.children:
+        if not span.name.startswith(_DOCUMENT_SPAN_PREFIX):
+            continue
+        document_id = span.name[len(_DOCUMENT_SPAN_PREFIX) :]
+        app.document_costs[document_id] = CostRecord(
+            gpu_ms=gpu_total(span), cpu_ms=span.cpu_ms
+        )
+
+
+def _resolve_resolutions(
+    app: App, document_ids: list[str], documents: dict[str, UIDocument]
+) -> None:
+    """Bring every planned document to the size its mode asks for, resampling what changes.
+
+    Fixed takes `resolution`, consuming any `pending_resolution` the Document tab's picker
+    committed inside the previous frame's draw first. Auto asks `auto_canvas_size` from the
+    sizes the PREVIOUS frame's recorders wrote, then `apply_damping`, so a window drag
+    reallocates a handful of times rather than every frame.
+    """
+    displayed = app.displayed_sizes
+    # This frame's recorders write into a fresh dict: a document that stopped being displayed
+    # must fall through to `auto_canvas_size`'s "keep the previous size", not keep answering
+    # with the region that showed it three frames ago.
+    app.displayed_sizes = {}
+    # A commit for a document this frame does not plan is consumed all the same: the pair is
+    # already on the document, so leaving the entry parked would apply it on some later frame
+    # that happens to plan the document, long after the user moved on.
+    pending = app.pending_resolution
+    app.pending_resolution = {}
+    for document_id in document_ids:
+        ui_document = documents.get(document_id)
+        if ui_document is None:
+            continue
+        document = ui_document.document
+        committed = pending.get(document_id)
+        if committed is not None:
+            ui_document.ui_state.resolution = committed
+            document.resolution = committed
+        if document.resolution_mode is ResolutionMode.FIXED:
+            wanted = document.resolution
+            if wanted != document.canvas_size:
+                document.set_canvas_size(wanted)
+            continue
+        width, height = document.resolution
+        aspect = width / height if height else 1.0
+        requested = auto_canvas_size(
+            displayed.get(document_id), aspect, document.canvas_size
+        )
+        state = app.auto_size_states.setdefault(document_id, AutoSizeState())
+        applied = apply_damping(state, requested, document.canvas_size)
+        if applied is not None:
+            document.set_canvas_size(applied)
 
 
 def update_and_draw(app: App) -> None:
@@ -319,10 +455,12 @@ def _update_and_draw(app: App) -> None:
     if not app.any_popup_open():
         for document_id in tick_documents:
             ui_document = app.ui_documents.get(document_id)
-            if ui_document is not None:
+            # The plan's gate covers the OUTPUT render and the pending-pass sweep together:
+            # they share one `frame_idx`, and splitting them would let the sweep become a
+            # throttled document's only measured cost.
+            if ui_document is not None and renders_this_frame(app, document_id):
                 document = ui_document.document
-                document_name = ui_document.ui_state.ui_name
-                with app.profiler.cpu(f"document:{document_name}"):
+                with app.profiler.cpu(f"{_DOCUMENT_SPAN_PREFIX}{document_id}"):
                     document.render(profiler=app.profiler)
                 # One never-drawn pass per document per frame draws its own chain, so a
                 # reopened document's off-chain tiles fill in instead of staying black. The
@@ -337,7 +475,7 @@ def _update_and_draw(app: App) -> None:
                     None,
                 )
                 if pending is not None:
-                    with app.profiler.cpu(f"document:{document_name}"):
+                    with app.profiler.cpu(f"{_DOCUMENT_SPAN_PREFIX}{document_id}"):
                         document.render(target=pending, profiler=app.profiler)
     elif app.popup_state == PopupState.EXAMPLES:
         # Same first-render budget as the document set above: one example compiles per frame,
@@ -350,16 +488,23 @@ def _update_and_draw(app: App) -> None:
             ),
             None,
         )
-        for ui_document in app.ui_document_examples.values():
-            if ui_document.document.first_render_done or ui_document is pending_example:
-                with app.profiler.cpu(f"document:{ui_document.ui_state.ui_name}"):
-                    ui_document.document.render(profiler=app.profiler)
+        for example_id, ui_document in app.ui_document_examples.items():
+            if not (
+                ui_document.document.first_render_done or ui_document is pending_example
+            ):
+                continue
+            # The popup's own set IS the displayed set while it is open (090 D10), so its
+            # documents take the same interval gate the normal set does.
+            if not renders_this_frame(app, example_id):
+                continue
+            with app.profiler.cpu(f"{_DOCUMENT_SPAN_PREFIX}{example_id}"):
+                ui_document.document.render(profiler=app.profiler)
     elif (
         app.popup_state == PopupState.PASS_SETTINGS and current_ui_document is not None
     ):
         # The pass-settings modal's whole point is watching a wiring/target change land — keep
         # the current document rendering behind it (other modals leave renders paused).
-        with app.profiler.cpu(f"document:{current_ui_document.ui_state.ui_name}"):
+        with app.profiler.cpu(f"{_DOCUMENT_SPAN_PREFIX}{app.current_document_id}"):
             current_ui_document.document.render(profiler=app.profiler)
 
     # ----------------------------------------------------------------
@@ -676,9 +821,15 @@ def _draw_document_image(
             avail.y - control_panel_min_height - 10,
         )
         max_image_width = avail.x
-        image_aspect = np.divide(*ui_document.document.render_pass.canvas.texture.size)
+        # The STORED resolution's aspect, never the live canvas's (090 D2): under Auto the live
+        # size is derived from this region, so reading it back here would close a loop on itself
+        # and let the shape drift a rounding step every frame.
+        image_aspect = np.divide(*ui_document.document.resolution)
         image_width = min(max_image_width, max_image_height * image_aspect)
         image_height = min(max_image_height, max_image_width / image_aspect)
+        # The viewer is the largest region showing the current document, and the size it draws
+        # at is what an Auto document renders at next frame (090 D2).
+        app.record_displayed_size(app.current_document_id, (image_width, image_height))
 
         # On compile failure the last-good program stays bound — kept bright; the error
         # surfaces in the editor pane strip.
@@ -760,6 +911,36 @@ def _draw_document_image(
     return cursor_pos, image_width, image_height
 
 
+def _current_document_fps(app: App) -> int | None:
+    """The current document's own rate for the chip, or None while it renders every frame."""
+    plan = app.render_plan
+    if plan is None:
+        return None
+    interval = plan.intervals.get(app.current_document_id, 1)
+    if interval <= 1:
+        return None
+    return round(plan.document_fps.get(app.current_document_id, 0.0))
+
+
+def _document_titles(app: App) -> dict[str, str]:
+    """id -> title for the panel's `document:` rows (090 D7).
+
+    The spans are keyed by ID so nothing is matched through a title; this is what turns an id
+    back into the name a 280-px panel can show, and two same-titled documents stay two rows.
+    """
+    titles = {
+        document_id: ui_document.ui_state.ui_name
+        for document_id, ui_document in app.ui_documents.items()
+    }
+    titles.update(
+        {
+            document_id: ui_document.ui_state.ui_name
+            for document_id, ui_document in app.ui_document_examples.items()
+        }
+    )
+    return titles
+
+
 def _draw_app_panel(app: App) -> None:
     control_panel_min_height = SIZE.PANEL_CTRL_MINH
 
@@ -776,9 +957,11 @@ def _draw_app_panel(app: App) -> None:
             is_open=app.fps_details_open,
             profile=app.profile_smoother.smoothed(),
             number_font=app.font_12,
+            document_fps=_current_document_fps(app),
+            plan=app.render_plan,
+            titles=_document_titles(app),
+            budget=app.app_state.document_gpu_budget,
         )
-        # Recording follows the panel: closed, nothing is timed and no query exists (088 D4).
-        app.profiler.enabled = app.fps_details_open
         # The channel-view chip over the preview's top-LEFT — the opposite corner from the FPS
         # chip, so the two never collide whatever the canvas aspect.
         imgui.set_cursor_screen_pos(

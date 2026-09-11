@@ -332,6 +332,30 @@ def load_color(ratio: float) -> tuple[float, float, float, float]:
     return COLOR.STATE_OK
 
 
+# A throttled document's wall-time share, over the allowance the plan gave it, at which the row
+# stops reading as converged (090 D9c). Distinct knees from `load_color`'s: a document AT its
+# allowance is the healthy converged state the throttle aims for, where `load_color` reads 1.0
+# as the error band.
+THROTTLE_WARN_RATIO: float = 1.0
+THROTTLE_ERROR_RATIO: float = 1.5
+
+
+def throttle_color(
+    share_ratio: float, frame_over_budget: bool
+) -> tuple[float, float, float, float]:
+    """The hue of a throttled document's row: its share of its allowance, and the frame's own
+    health.
+
+    A document inside its allowance while the UI frame still misses its target is what the
+    reader must see, so that case is the error band whatever the share says.
+    """
+    if frame_over_budget or share_ratio > THROTTLE_ERROR_RATIO:
+        return COLOR.STATE_ERROR
+    if share_ratio > THROTTLE_WARN_RATIO:
+        return COLOR.STATE_WARN
+    return COLOR.STATE_OK
+
+
 # Whole-pane alpha for the code editor when it lacks keyboard focus; style.Alpha
 # reaches the editor's glyph draws.
 EDITOR_UNFOCUSED_ALPHA: float = 0.6

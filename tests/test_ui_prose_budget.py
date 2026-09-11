@@ -232,9 +232,9 @@ _UNMEASURABLE: dict[tuple[str, str], str] = {
     (
         "shaderbox/ui_primitives.py",
         "_profile_rows",
-    ): "a profiler span's own name (`pass:blur`, `document:<the document's title>`) and its "
-    "iteration count, "
-    "both data the frame produced rather than authored copy",
+    ): "a profiler span's own name (`pass:blur`) or a document's own title, resolved from the "
+    "`document:<uuid>` span key through the id -> title map, and its iteration count -- all "
+    "data the frame produced rather than authored copy",
     ("shaderbox/ui_primitives.py", "gauge_bar"): "forwards the caller's tooltip",
     ("shaderbox/ui_primitives.py", "label_row"): "forwards the caller's label",
     (
@@ -309,6 +309,12 @@ _OVER_BUDGET: dict[tuple[str, str, int], str] = {
         "_draw_turn_snippet",
         9,
     ): "a derived turn readout: tool/token/cost figures around three authored words",
+    (
+        "shaderbox/ui_primitives.py",
+        "fps_overlay",
+        4,
+    ): "a derived readout: the two fps figures around one authored word, which is what the "
+    "chip says when the document the user is watching redraws at its own rate",
 }
 
 

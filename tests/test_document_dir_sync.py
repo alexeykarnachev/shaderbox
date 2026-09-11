@@ -18,11 +18,11 @@ from tests.conftest import seed_extra_document
 
 
 def _bump_document_json(document_dir: Path) -> None:
-    # Rewrite document.json (canvas_size tweak) with a guaranteed-newer mtime so the mtime diff fires
-    # even on a coarse filesystem clock.
+    # Rewrite document.json (a resolution tweak) with a guaranteed-newer mtime so the mtime diff
+    # fires even on a coarse filesystem clock.
     meta_path = document_dir / "document.json"
     meta = json.loads(meta_path.read_text())
-    meta["canvas_size"] = [123, 123]
+    meta["ui_state"]["resolution"] = [123, 123]
     meta_path.write_text(json.dumps(meta, indent=4))
     future = meta_path.lstat().st_mtime + 100.0
     os.utime(meta_path, (future, future))
@@ -91,14 +91,14 @@ def test_removed_current_dir_reselects(app: Any) -> None:
 
 def test_changed_document_json_reloads(app: Any) -> None:
     target = seed_extra_document(app, "target-document")
-    assert tuple(app.ui_documents[target].document.render_pass.canvas.texture.size) != (
-        123,
-        123,
-    )
+    assert app.ui_documents[target].document.resolution != (123, 123)
     _bump_document_json(app.paths.documents_dir / target)
 
     app.session.sync_documents_from_disk()
 
+    # Both halves: the reloaded document carries the new stored resolution, and its live canvas
+    # opens at it -- an Auto document starts there and only a frame's recorder moves it.
+    assert app.ui_documents[target].document.resolution == (123, 123)
     assert tuple(app.ui_documents[target].document.render_pass.canvas.texture.size) == (
         123,
         123,

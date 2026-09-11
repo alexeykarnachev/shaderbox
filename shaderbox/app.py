@@ -81,6 +81,12 @@ from shaderbox.project_session import (
     validate_project_name,
 )
 from shaderbox.render_defer import RenderDefer
+from shaderbox.render_plan import (
+    AutoSizeState,
+    CostRecord,
+    RenderPlan,
+    ThrottleState,
+)
 from shaderbox.scripting import EXPORT_MOUSE, MouseState
 from shaderbox.shader_errors import ShaderError, next_error_line
 from shaderbox.shader_lib import ShaderLibIndex
@@ -480,10 +486,11 @@ class App:
         self.code_hovered_uniform: str = ""
         self.global_fps = 0.0
         self.fps_details_open: bool = False
-        # The frame profiler (088). Recording follows the details panel; `last_profile` holds
-        # the last COMPLETE profile, which is two frames behind because a GPU query read that
-        # soon after its block stalls on the GPU.
-        self.profiler: Profiler = Profiler(enabled=False)
+        # The frame profiler (088). Records ALWAYS since 090 D9a -- its GPU spans are the
+        # throttle's cost input, and the measured always-on cost is a +0.005 ms p95 delta. The
+        # panel's open state decides only what is DRAWN. `last_profile` holds the last COMPLETE
+        # profile, two frames behind because a GPU query read sooner stalls on the GPU.
+        self.profiler: Profiler = Profiler(enabled=True)
         self.last_profile: FrameProfile | None = None
         # The panel draws an exponential average of those, not the raw frame.
         self.profile_smoother: ProfileSmoother = ProfileSmoother()
@@ -1190,6 +1197,20 @@ class App:
     def set_document_delete_armed(self, id: str = "") -> None:
         self.document_delete_armed = id
 
+    def record_displayed_size(
+        self, document_id: str, size: tuple[float, float]
+    ) -> None:
+        """Report the size a surface DREW `document_id` at this frame (090 D2).
+
+        Several surfaces can show one document at once -- the viewer and a grid tile -- and the
+        LARGEST wins, which is what "the live size follows the display" means. The dict is
+        cleared at the head of each frame's tick, so every frame's answer is that frame's.
+        """
+        width, height = (max(1, round(size[0])), max(1, round(size[1])))
+        previous = self.displayed_sizes.get(document_id)
+        if previous is None or width * height > previous[0] * previous[1]:
+            self.displayed_sizes[document_id] = (width, height)
+
     def _rewire_exporters(self) -> None:
         """Point the exporter registry at the project just loaded.
 
@@ -1237,6 +1258,25 @@ class App:
         self.frame_idx = 0
         # Wall-clock of the previous script-engine tick (feature 040), for the per-frame dt.
         self.last_tick_time = 0.0
+
+        # The render decoupling's per-document state (090), all EPHEMERAL and all keyed by
+        # document id, so a project switch starts them empty:
+        #   displayed_sizes   what each document's largest displaying region DREW last frame,
+        #                     written by the recorders in the draw phase and read at the head
+        #                     of the next `_tick_frame_state`
+        #   pending_resolution a Fixed W x H the Document tab committed INSIDE the draw phase,
+        #                     applied by step 4 of the next frame -- a resize there would
+        #                     release textures imgui is still holding (the 084 D5 hazard)
+        #   auto_size_states  the damping counters behind each Auto size
+        #   throttle_states   the hysteresis counters behind each interval
+        #   document_costs    the last measured cost per document, written in step 3 alone
+        #   render_plan       this frame's intervals and phases, or None before the first plan
+        self.displayed_sizes: dict[str, tuple[int, int]] = {}
+        self.pending_resolution: dict[str, tuple[int, int]] = {}
+        self.auto_size_states: dict[str, AutoSizeState] = {}
+        self.throttle_states: dict[str, ThrottleState] = {}
+        self.document_costs: dict[str, CostRecord] = {}
+        self.render_plan: RenderPlan | None = None
         # The live cursor over the current document's preview, fed into the script tick as context.mouse
         # (feature 042). Updated from the preview hit-test in ui.py; defaults to center (the
         # export value) until the preview is hovered. One frame stale by construction (tick runs

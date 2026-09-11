@@ -750,6 +750,45 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   concept with its own home) and Telegram's hard 512px cap (a platform limit, not a user choice).
   Revisit if a third exporter needs a size tier the table lacks, or a real need for free copilot dims
   surfaces (then a `CUSTOM` member, NOT a return to raw w/h — that re-admits the foot-gun).
+
+- **A document stores ONE size, and its MODE says what that number means (feature 090).**
+  `ResolutionMode` (`render_shape.py`, GL-free) is `AUTO` or `FIXED`, and `UIDocumentState`
+  carries it beside a single `resolution` pair. Under FIXED the pair IS the live canvas, as it
+  always was. Under AUTO the live canvas follows the largest UI region showing the document and
+  the pair is the document's EXPORT resolution — what `RenderShape.NATIVE` and `resolve_dims`'s
+  FREE fall-through resolve to. There is no second size field, and no derivation rule: the
+  number a document has is the number it keeps.
+  Three consequences a change here must not break. **`Document.canvas_size` is the EFFECTIVE
+  live size with one writer, `set_canvas_size`**, which resamples the output canvas and every
+  feedback history into new-size replacements before releasing anything — resampling the
+  history alone loses the picture one frame later, since `Canvas.set_size` blanks the live
+  canvas and the next swap trades that blank in. The rescale is a one-quad draw:
+  `copy_framebuffer` between differently-sized framebuffers copies 1:1 into a corner, with no
+  GL error and a plausible picture (measured twice). **Every ASPECT reader reads `resolution`,
+  never the live canvas** — under Auto the live size is derived from the region the aspect
+  decides, so reading it back closes a loop on itself. **Every EXPORT path resolves from
+  `resolution`**, or `NATIVE` — the default of all three copilot render tools and YouTube's
+  initial shape — silently means "whatever the panel happens to be"; the Render tab's own
+  `resolution_details` is untouched and still decides what lands on disk. A write from inside
+  the draw phase is DEFERRED through `App.pending_resolution` rather than applied in place: a
+  resize there releases textures imgui is still holding (the 084 D5 hazard), now across the
+  output canvas and every history rather than one canvas. Revisit if a document needs a live
+  size that is neither its own number nor its display's.
+
+- **One shared GPU budget decides how often each displayed document renders (feature 090).**
+  `render_plan.py` is the whole rule as a pure function — `plan_render_set` over a per-document
+  `CostRecord`, answering an interval and a phase per document, with `MAX_INTERVAL` binding
+  every interval and a four-frame hysteresis absorbing the cost input's own two-frame read lag.
+  The cost is written in ONE place, `_tick_frame_state`'s step 3, from the profiler's
+  `document:<id>` spans; the render sites open the span and write nothing. The span key is the
+  document ID, and a title reaches the FPS panel through an id -> title map — matching through
+  a title gives two same-titled documents one set of numbers. Same-interval documents take
+  different phases, or three previews at one interval land on one frame and leave 42 empty.
+  The profiler therefore records ALWAYS (the panel's open state decides only what is drawn):
+  measured, the always-on query cost is a +0.005 ms p95 delta, under 0.03 % of a frame.
+  A throttled feedback pass steps fewer times per wall second, so a trail is a coarser
+  integration under load — accepted, with the Settings checkbox as the escape. Revisit if a CPU
+  throttle is wanted: `CostRecord` already carries the field and no policy reads it.
 - **The generic exporter seam carries NO exporter-domain vocabulary.** `RenderControl` is pure render
   plumbing; `exporters/base.py`, `registry.py`, `tabs/share.py`, `popups/emoji_picker.py` name no
   Telegram/sticker/pack/emoji concept. A per-exporter UI need (e.g. Telegram's emoji affordances)
@@ -1034,15 +1073,17 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   showed through an opaque render for the length of every copilot turn. A view inside a disabled
   scope pushes `StyleVar_.alpha` 1.0 around itself; only controls are meant to fade.
 
-- **Only ONE test per process may drive `ui.update_and_draw`.** The second `App` that renders a
-  full frame in the same interpreter dies inside `imgui_renderer.render` with
-  `GLError(1281, glTexSubImage2D)` — a font-atlas glyph upload against a texture the first App
-  released. It is order-dependent, so whichever such test runs second fails and the other looks
-  innocent; a fresh test file does not help, because pytest shares the process. Today
-  `tests/test_code_panel.py::test_ctrl_tab_focuses_an_unfocused_editor_first_then_cycles` holds
-  that slot. A new frame-level geometry fact goes INTO that test, or the fact is verified at the
-  display instead. (`app`-fixture tests that never call `update_and_draw` are unaffected — most
-  of the suite.)
+- **Two `App`s that both drive `ui.update_and_draw` may not share a PROCESS, and the mechanism
+  that keeps them apart is xdist GROUPS.** The second App to render a full frame in one
+  interpreter dies inside `imgui_renderer.render` with `GLError(1281, glTexSubImage2D)` — a
+  font-atlas glyph upload against a texture the first App released. It is order-dependent, so
+  whichever such test runs second fails and the other looks innocent. The remedy is
+  per-MODULE: a module that drives real frames declares `pytestmark =
+  pytest.mark.xdist_group("<its own name>")` and `make test` runs `--dist loadgroup`, so each
+  such module gets a worker of its own. A module WITHOUT a group can still land beside
+  another's, which is a latent version of the same crash rather than a safe default — add the
+  mark when you add the module. (`app`-fixture tests that never call `update_and_draw` are
+  unaffected — most of the suite.)
 
 - **Read a render target through `media.texture_to_rgba8`, never `texture.read()[0]`.** A raw read
   returns the texture's OWN bytes, so on an `f2` target the first "pixel" is half of one float16
@@ -1212,8 +1253,10 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   sibling ordinal), because one query object begun twice in a frame reports only the second block,
   again silently -- and the live loop draws same-named spans twice per frame. `moderngl.Query` has
   neither `release()` nor `__del__`, so a query is a permanent GL name for the process and the
-  ring's ONE eviction rule is that disabling the profiler drops it whole. Revisit if a GL version
-  this repo targets ever makes timer queries nestable, or if `Query` gains a release.
+  ring's ONE eviction rule is that disabling the profiler drops it whole -- which the app itself
+  never does since 090 made recording always-on, so the ring grows with the span paths a session
+  visits and is bounded by them. Revisit if a GL version this repo targets ever makes timer
+  queries nestable, or if `Query` gains a release.
 - **The vendored editor binary (`shaderbox/resources/editor/`) rebuilds from a COMMITTED editor-repo
   sha, never a dirty tree.** SEVEN files ship together (feature 067): `libeditor.so`, `atlas.png`,
   `atlas.json`, `VERSION` (the sha), `vim_coverage.md`, `standard_keymap.md`, `abi_probe.py`

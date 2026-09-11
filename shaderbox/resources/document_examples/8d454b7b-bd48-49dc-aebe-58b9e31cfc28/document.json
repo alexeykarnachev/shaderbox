@@ -1,8 +1,4 @@
 {
-    "canvas_size": [
-        1600,
-        900
-    ],
     "uniforms": {
         "main": {
             "u_cam_fov": 76.62000274658203,
@@ -135,6 +131,11 @@
     },
     "ui_state": {
         "ui_name": "Night City",
+        "resolution_mode": "auto",
+        "resolution": [
+            1600,
+            900
+        ],
         "description": "A city at night, raymarched from scratch: procedural blocks and towers, warm lit windows, traffic threading the avenues, moonlight and haze fading into the skyline. Every part of it is a slider - camera, building density, window warmth, fog, traffic. Open a copy and rebuild the mood.",
         "render_media_details": {
             "is_video": true,

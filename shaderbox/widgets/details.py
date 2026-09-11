@@ -79,10 +79,11 @@ def draw_resolution_details(
     details.width = new_width
     details.height = new_height
 
-    full_w, full_h = ui_document.document.render_pass.canvas.texture.size
-    half_w, half_h = adjust_size(
-        ui_document.document.render_pass.canvas.texture.size, max_size=512
-    )
+    # The document's STORED resolution, never the live canvas (090 D2): under Auto the live
+    # canvas is the panel's size, so these presets would offer the panel rather than the
+    # document, and would move as the window does.
+    full_w, full_h = ui_document.document.resolution
+    half_w, half_h = adjust_size(ui_document.document.resolution, max_size=512)
 
     row_label(app.font_12, "Presets")
     if standard_button(f"{full_w}x{full_h}") or not details.width or not details.height:
@@ -102,7 +103,7 @@ def draw_media_details(
     aspect = None
 
     if ui_document := app.ui_documents.get(app.current_document_id):
-        aspect = np.divide(*ui_document.document.render_pass.canvas.texture.size)
+        aspect = np.divide(*ui_document.document.resolution)
 
     output_type_name = "video" if details.is_video else "image"
     options = ["video", "image"]

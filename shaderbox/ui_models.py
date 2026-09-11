@@ -11,6 +11,7 @@ from OpenGL.GL import GL_SAMPLER_2D, GL_UNSIGNED_INT
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from shaderbox.constants import (
+    DEFAULT_CANVAS_SIZE,
     DEFAULT_TEMPORAL_SIGMA,
     DEFAULT_TEMPORAL_WINDOW_SIZE,
     MEDIA_DIR_NAME,
@@ -19,7 +20,7 @@ from shaderbox.constants import (
 from shaderbox.copilot.gate import SourceLock
 from shaderbox.copilot.state import CopilotLayout
 from shaderbox.core import ENGINE_DRIVEN_UNIFORMS
-from shaderbox.document import Document
+from shaderbox.document import Document, load_document_metadata
 from shaderbox.glyph_tables import TABLE_UNIFORMS
 from shaderbox.media import MediaDetails, MediaWithTexture
 from shaderbox.model_salvage import drop_invalid, load_model
@@ -33,6 +34,7 @@ from shaderbox.paths import (
     pass_name_of,
     pass_shader_name,
 )
+from shaderbox.render_shape import ResolutionMode
 from shaderbox.scripting.keys import StoppedKey
 from shaderbox.ui_regions import ChannelView, DocumentTab
 from shaderbox.util import get_uniform_hash
@@ -144,6 +146,13 @@ def sort_uniform_hashes(
 
 class UIDocumentState(BaseModel):
     ui_name: str = ""
+
+    # How the live render size is decided, and the one stored width x height (090 D1). Under
+    # FIXED, `resolution` IS the live size. Under AUTO the live size follows the largest UI
+    # region showing the document and `resolution` is the EXPORT size -- what RenderShape.NATIVE
+    # and resolve_dims's FREE fall-through resolve to. There is no second size field.
+    resolution_mode: ResolutionMode = ResolutionMode.AUTO
+    resolution: tuple[int, int] = DEFAULT_CANVAS_SIZE
     # A human/agent-facing one-line summary of what a document (esp. a shipped EXAMPLE) is for;
     # on a shipped example's document.json it's maintainer-authored, read-only.
     description: str = ""
@@ -235,6 +244,12 @@ class UIAppState(BaseModel):
     # Bounded because the frame loop divides by it: a 0 here raises inside update_and_draw,
     # which skips the save()/release() tail and costs the user their session state.
     global_target_fps: int = Field(default=60, ge=30, le=240)
+
+    # The document throttle (090 D11), beside the target fps because both are properties of the
+    # machine rather than of the project. Off means today's behavior: every displayed document
+    # renders every frame. The budget is the share of wall time ALL documents together may take.
+    is_throttle_documents: bool = True
+    document_gpu_budget: float = Field(default=0.5, ge=0.1, le=1.0)
 
     editor_split_fraction: float = Field(default=0.5, ge=0.0, le=1.0)
     editor_settings: EditorSettings = EditorSettings()
@@ -378,7 +393,6 @@ class UIDocument(BaseModel):
         dir.mkdir(exist_ok=True, parents=True)
 
         meta: dict[str, Any] = {
-            "canvas_size": list(self.document.canvas_size),
             "uniforms": {},
             "ui_state": self.ui_state.model_dump(),
         }
@@ -566,9 +580,19 @@ def _load_ui_state(ui_state_dict: dict[str, Any], dir_name: str) -> UIDocumentSt
 
 
 def load_document_from_dir(document_dir: Path) -> UIDocument:
-    document, meta = Document.load_from_dir(document_dir)
+    # `ui_state` is parsed FIRST, then the effective live size resolved from it and handed to
+    # the loader (090 D1): the size decides how every pass and every feedback seed is allocated,
+    # so it cannot be discovered after the Document is built. Under AUTO the live size starts at
+    # the stored `resolution` and the first frame's recorder moves it to the display's.
     dir_name = document_dir.name
-    ui_state = _load_ui_state(meta.get("ui_state", {}), dir_name)
+    metadata = load_document_metadata(document_dir / DOCUMENT_JSON_BASENAME)
+    ui_state = _load_ui_state(metadata.get("ui_state", {}), dir_name)
+
+    document, _meta = Document.load_from_dir(
+        document_dir, canvas_size=ui_state.resolution
+    )
+    document.resolution_mode = ui_state.resolution_mode
+    document.resolution = ui_state.resolution
 
     return UIDocument(
         id=dir_name,

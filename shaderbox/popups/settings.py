@@ -87,6 +87,18 @@ def _draw_body(app: App) -> bool:
     app.app_state.show_cheatsheet = imgui.checkbox(
         "Show keyboard cheatsheet", app.app_state.show_cheatsheet
     )[1]
+    app.app_state.is_throttle_documents = imgui.checkbox(
+        "Throttle documents", app.app_state.is_throttle_documents
+    )[1]
+    label_row(app.font_12, "Document GPU budget", ctrl_w, label_w)
+    percent = imgui.drag_int(
+        "##document_gpu_budget",
+        round(app.app_state.document_gpu_budget * 100),
+        v_min=10,
+        v_max=100,
+        flags=imgui.SliderFlags_.always_clamp,
+    )[1]
+    app.app_state.document_gpu_budget = percent / 100.0
 
     imgui.dummy((0.0, SPACE.MD))
     imgui.separator_text("Editor")

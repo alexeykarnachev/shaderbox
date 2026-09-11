@@ -1,8 +1,4 @@
 {
-    "canvas_size": [
-        1280,
-        1280
-    ],
     "uniforms": {
         "main": {
             "u_color": [
@@ -30,6 +26,11 @@
     },
     "ui_state": {
         "ui_name": "Media Input",
+        "resolution_mode": "auto",
+        "resolution": [
+            1280,
+            1280
+        ],
         "description": "Samples external media: an image (u_image) and a video (u_video) bound as sampler2D textures, tinted by u_color. Use this when a shader needs to read a picture or video.",
         "render_media_details": {
             "is_video": true,

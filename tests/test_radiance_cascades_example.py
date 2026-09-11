@@ -16,8 +16,9 @@ import moderngl
 import pytest
 
 from shaderbox.constants import EXAMPLE_ORDER
-from shaderbox.document import Document
 from shaderbox.media import texture_to_rgba8
+from shaderbox.render_shape import ResolutionMode
+from shaderbox.ui_models import load_document_from_dir
 
 _RC_ID = "77a84d27-2e5b-406d-8011-ee1cb1a9587c"
 _DOC = (
@@ -54,7 +55,13 @@ def _render(context: moderngl.Context, frames: int = 24):
     OUTPUT pass), so the example rendered BLACK in the app while these tests passed. The scene is
     analytic now, so the honest test is to load it and render it exactly as the app does.
     """
-    doc, _ = Document.load_from_dir(_DOC, context)
+    # Through `load_document_from_dir`, the app's own loader: it parses `ui_state` first and
+    # resolves the effective live size from the persisted mode (090 D1). `Document.load_from_dir`
+    # alone takes the size as a parameter and would open this document at the 64x64 default,
+    # where every pixel assertion below addresses a texel that does not exist.
+    doc = load_document_from_dir(_DOC).document
+    assert doc.resolution_mode is ResolutionMode.FIXED
+    assert doc.canvas_size == (512, 512)
     for frame in range(frames):
         doc.begin_frame(frame)
         doc.render(u_time=frame / 30.0)

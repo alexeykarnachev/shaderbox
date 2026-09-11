@@ -11,7 +11,16 @@ from imgui_bundle import imgui, imgui_ctx
 from loguru import logger
 
 from shaderbox.profiling import FrameProfile, Span, by_cost, headline_ms, other_ms
-from shaderbox.theme import COLOR, OVERLAY_ALPHA, SIZE, SPACE, fade, load_color
+from shaderbox.render_plan import RenderPlan
+from shaderbox.theme import (
+    COLOR,
+    OVERLAY_ALPHA,
+    SIZE,
+    SPACE,
+    fade,
+    load_color,
+    throttle_color,
+)
 
 
 def _ellipsize(text: str, max_width: float) -> str:
@@ -1139,6 +1148,10 @@ class PreviewCellResult:
     delete_armed: bool = False  # the delete-✕ was pressed this frame
     delete_confirmed: bool = False  # `Yes` on the in-cell confirm wash
     delete_cancelled: bool = False  # `No` on the in-cell confirm wash
+    # The size the image was actually DRAWN at, after the fit (090 D2). The cell's own width
+    # over-reports every non-square tile, so an Auto document sized from it would render
+    # wider than it is shown. (0.0, 0.0) when the cell drew no image.
+    drawn_size: tuple[float, float] = (0.0, 0.0)
 
 
 def _chip_row(
@@ -1260,6 +1273,7 @@ def preview_cell(
                 (1, 0),
                 imgui.color_convert_float4_to_u32(COLOR.WHITE),
             )
+            result.drawn_size = (dw, dh)
 
         # allow_overlap so the buttons drawn on top win the click; the transparent
         # header colors leave the image/border carrying the visual.
@@ -1351,7 +1365,8 @@ class ProfileRow:
     `name` is the raw span name where the row is a span, so the draw clips it itself;
     `number` is the formatted readout and `color` the hue it draws in. `starts_tree` marks
     the row the panel puts a gap above, so the draw reads the boundary off the row rather
-    than recounting the plan's leading rows.
+    than recounting the plan's leading rows. `tooltip`, where a row has one, carries what the
+    compact number left out -- a throttled document's own milliseconds (090 D9c).
     """
 
     depth: int
@@ -1360,19 +1375,36 @@ class ProfileRow:
     number: str
     color: tuple[float, float, float, float]
     starts_tree: bool = False
+    tooltip: str = ""
+
+
+_DOCUMENT_SPAN_PREFIX = "document:"
 
 
 def profile_rows_plan(
-    profile: FrameProfile | None, fps: int, target_fps: int
+    profile: FrameProfile | None,
+    fps: int,
+    target_fps: int,
+    plan: RenderPlan | None = None,
+    titles: dict[str, str] | None = None,
+    budget: float = 1.0,
 ) -> list[ProfileRow]:
     """The panel's rows in draw order, colored by each measurement's share of the budget.
 
     The tree's children are ordered by cost (`profiling.by_cost`); the profile itself is
     never reordered. Pure and imgui-free, so the order and the bands are testable without
     a window.
+
+    A `document:<id>` span is rendered through `titles` and, when `plan` throttles it, reads as
+    its effective fps, its interval and its share of wall time rather than as a millisecond
+    count (090 D7/D9c); `budget` is the share of wall time all documents together may take,
+    which that percentage is measured against. The match is by ID: two documents sharing a
+    title are two rows with their own numbers, which matching through a title could not
+    express.
     """
     budget_ms: float = 1e3 / target_fps
     rows: list[ProfileRow] = []
+    frame_over_budget: bool = profile is not None and profile.cpu_ms > budget_ms
     if profile is not None:
         # CPU and GPU overlap, so neither alone is the frame's bound -- both are shown,
         # and which one is larger is what the reader is looking for.
@@ -1383,7 +1415,16 @@ def profile_rows_plan(
     rows.append(ProfileRow(0, "target", 1, str(target_fps), COLOR.FG_MUTED))
     if profile is not None:
         first_tree_row = len(rows)
-        _plan_tree(profile.root, 0, budget_ms, rows)
+        _plan_tree(
+            profile.root,
+            0,
+            budget_ms,
+            rows,
+            plan,
+            titles or {},
+            frame_over_budget,
+            budget,
+        )
         rows.append(_measured_row(0, "other", 1, other_ms(profile.root), budget_ms))
         rows[first_tree_row] = replace(rows[first_tree_row], starts_tree=True)
     return rows
@@ -1395,14 +1436,66 @@ def _measured_row(
     return ProfileRow(depth, name, count, f"{ms:.2f} ms", load_color(ms / budget_ms))
 
 
-def _plan_tree(
-    span: Span, depth: int, budget_ms: float, rows: list[ProfileRow]
-) -> None:
-    for child in by_cost(span.children):
-        rows.append(
-            _measured_row(depth, child.name, child.count, headline_ms(child), budget_ms)
+def _document_row(
+    depth: int,
+    span: Span,
+    budget_ms: float,
+    plan: RenderPlan | None,
+    titles: dict[str, str],
+    frame_over_budget: bool,
+    budget: float,
+) -> ProfileRow:
+    """One `document:<id>` span's row: its title, and its plan numbers where it is throttled."""
+    document_id = span.name[len(_DOCUMENT_SPAN_PREFIX) :]
+    title = titles.get(document_id, document_id)
+    ms = headline_ms(span)
+    interval = plan.intervals.get(document_id, 1) if plan is not None else 1
+    if plan is None or interval <= 1:
+        return ProfileRow(
+            depth, title, span.count, f"{ms:.2f} ms", load_color(ms / budget_ms)
         )
-        _plan_tree(child, depth + 1, budget_ms, rows)
+    document_fps = plan.document_fps.get(document_id, 0.0)
+    # The share of WALL TIME this document takes at its own rate (D9c: cost x document fps),
+    # against the budget all documents together may take. A converged one sits at ~100 %.
+    share = ms * document_fps / 1e3
+    ratio = share / budget if budget > 0.0 else 0.0
+    return ProfileRow(
+        depth,
+        title,
+        span.count,
+        f"{document_fps:.0f} fps x{interval}  {ratio * 100:.0f}%",
+        throttle_color(ratio, frame_over_budget),
+        tooltip=f"{ms:.2f} ms",
+    )
+
+
+def _plan_tree(
+    span: Span,
+    depth: int,
+    budget_ms: float,
+    rows: list[ProfileRow],
+    plan: RenderPlan | None = None,
+    titles: dict[str, str] | None = None,
+    frame_over_budget: bool = False,
+    budget: float = 1.0,
+) -> None:
+    names = titles or {}
+    for child in by_cost(span.children):
+        if child.name.startswith(_DOCUMENT_SPAN_PREFIX):
+            rows.append(
+                _document_row(
+                    depth, child, budget_ms, plan, names, frame_over_budget, budget
+                )
+            )
+        else:
+            rows.append(
+                _measured_row(
+                    depth, child.name, child.count, headline_ms(child), budget_ms
+                )
+            )
+        _plan_tree(
+            child, depth + 1, budget_ms, rows, plan, names, frame_over_budget, budget
+        )
 
 
 def _profile_number(
@@ -1452,6 +1545,8 @@ def _profile_rows(rows: list[ProfileRow], number_font: imgui.ImFont) -> None:
         imgui.dummy((indent, 0.0))
         imgui.same_line(0.0, 0.0)
         clipped_caption(row.name, max(0.0, room))
+        if row.tooltip and imgui.is_item_hovered():
+            imgui.set_tooltip(row.tooltip)
         if row.count > 1:
             imgui.same_line(0.0, float(SPACE.SM))
             caption_text(f"x{row.count}")
@@ -1466,6 +1561,10 @@ def fps_overlay(
     is_open: bool,
     profile: FrameProfile | None,
     number_font: imgui.ImFont,
+    document_fps: int | None = None,
+    plan: RenderPlan | None = None,
+    titles: dict[str, str] | None = None,
+    budget: float = 1.0,
 ) -> bool:
     """A clickable FPS chip pinned to the top-right of a region, optionally
     unfolding the last complete frame's profile beneath it.
@@ -1477,8 +1576,13 @@ def fps_overlay(
 
     `profile` is the last frame whose GPU queries have been read back (two frames behind
     live, 088 D2); `None` draws the headline alone, which is the first frame after opening.
+
+    `document_fps` is the current document's own rate where the throttle gave it one (090 D9b):
+    the chip then carries both numbers, since the UI's fps alone says nothing about how often
+    the document the user is watching actually redraws. `None` draws today's single number.
+    `plan` / `titles` / `budget` go to the panel's rows.
     """
-    label = f"{fps} FPS"
+    label = f"{fps} FPS" if document_fps is None else f"{fps} | doc {document_fps}"
     pad: float = float(SPACE.MD)
     pill_w = imgui.calc_text_size(label).x + 2.0 * pad
     pill_h = imgui.get_frame_height()
@@ -1500,7 +1604,10 @@ def fps_overlay(
             child_flags=imgui.ChildFlags_.borders | imgui.ChildFlags_.auto_resize_y,
             window_flags=imgui.WindowFlags_.no_scrollbar,
         ):
-            _profile_rows(profile_rows_plan(profile, fps, target_fps), number_font)
+            _profile_rows(
+                profile_rows_plan(profile, fps, target_fps, plan, titles, budget),
+                number_font,
+            )
         imgui.pop_style_color(1)
 
     return not is_open if clicked else is_open

@@ -70,7 +70,12 @@ def _write_document(
     for name, src in sources.items():
         (passes / pass_shader_name(name)).write_text(src)
     (document_dir / DOCUMENT_JSON_BASENAME).write_text(
-        json.dumps({"canvas_size": [16, 16], "uniforms": {}, "ui_state": {}})
+        json.dumps(
+            {
+                "uniforms": {},
+                "ui_state": {"resolution_mode": "fixed", "resolution": [16, 16]},
+            }
+        )
     )
     if graph is not None:
         (document_dir / GRAPH_JSON_BASENAME).write_text(json.dumps(graph.model_dump()))
@@ -340,7 +345,12 @@ def test_a_document_with_no_pass_file_is_skipped_not_crashed(
     document_dir = tmp_path / "empty"
     document_dir.mkdir()
     (document_dir / DOCUMENT_JSON_BASENAME).write_text(
-        json.dumps({"canvas_size": [16, 16], "uniforms": {}, "ui_state": {}})
+        json.dumps(
+            {
+                "uniforms": {},
+                "ui_state": {"resolution_mode": "fixed", "resolution": [16, 16]},
+            }
+        )
     )
     with pytest.raises(ValueError, match="no readable pass file"):
         Document.load_from_dir(document_dir, gl=gl_ctx)

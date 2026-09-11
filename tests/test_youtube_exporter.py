@@ -203,15 +203,11 @@ def test_size_gate_rejects_mismatched_artifact() -> None:
     exp = YouTubeExporter()
     document_canvas: tuple[int, int] = (1920, 1080)
 
-    class _Canvas:
-        class texture:
-            size = document_canvas
-
-    class _Pass:
-        canvas = _Canvas()
-
+    # The gate resolves against the document's stored `resolution`, not the live canvas (090
+    # D5) -- under Auto the live one is the panel's size and the gate would disarm publish
+    # whenever the panel moved.
     class _Document:
-        render_pass = _Pass()
+        resolution = document_canvas
 
     class _UIDocument:
         document = _Document()

@@ -630,6 +630,8 @@ class _NotificationRecorder:
 class _AppStub:
     def __init__(self) -> None:
         self.notifications = _NotificationRecorder()
+        # The picker's commit is DEFERRED into this dict (090 D4/R2); the frame tick applies it.
+        self.pending_resolution: dict[str, tuple[int, int]] = {}
 
 
 def _ui_document(doc: Document) -> UIDocument:
@@ -656,7 +658,13 @@ def test_a_ui_resize_moves_every_pass_together(gl_ctx: moderngl.Context) -> None
         wiring={"out": {"u_a": "half", "u_b": "full"}},
     )
     doc.render(u_time=0.0)
-    _apply_canvas_size(_AppStub(), _ui_document(doc), (32, 32))
+    app = _AppStub()
+    ui_document = _ui_document(doc)
+    _apply_canvas_size(app, ui_document, (32, 32))
+    # The picker parks the pair; the frame tick is what applies it (090 D4/R2), so the resize is
+    # driven here the way step 4 drives it.
+    assert app.pending_resolution[ui_document.id] == (32, 32)
+    doc.set_canvas_size(app.pending_resolution[ui_document.id])
     doc.render(u_time=0.0)
     assert doc.canvas_size == (32, 32)
     assert doc.passes["full"].canvas.texture.size == (32, 32)
@@ -665,10 +673,14 @@ def test_a_ui_resize_moves_every_pass_together(gl_ctx: moderngl.Context) -> None
 
 
 def test_the_ui_resize_clamps_both_ends(gl_ctx: moderngl.Context) -> None:
-    # Both entry points clamp through the same constant.
+    # Both entry points clamp through the same constant, and the picker clamps what it PARKS --
+    # an out-of-range pair must never reach the frame tick and be clamped only there.
     doc = _document(gl_ctx, {DEFAULT_PASS_NAME: _CONST % "1.0"}, PassGraph())
-    _apply_canvas_size(_AppStub(), _ui_document(doc), (99999, 4))
-    assert doc.canvas_size == (4096, 16)
+    app = _AppStub()
+    ui_document = _ui_document(doc)
+    _apply_canvas_size(app, ui_document, (99999, 4))
+    assert ui_document.ui_state.resolution == (4096, 16)
+    assert app.pending_resolution[ui_document.id] == (4096, 16)
     doc.release()
 
 
@@ -679,8 +691,11 @@ def test_an_unchanged_size_pushes_no_notification(gl_ctx: moderngl.Context) -> N
         gl_ctx, {DEFAULT_PASS_NAME: _CONST % "1.0"}, PassGraph(), size=(16, 16)
     )
     app = _AppStub()
-    _apply_canvas_size(app, _ui_document(doc), (16, 16))
+    ui_document = _ui_document(doc)
+    ui_document.ui_state.resolution = (16, 16)
+    _apply_canvas_size(app, ui_document, (16, 16))
     assert app.notifications.pushed == []
+    assert app.pending_resolution == {}
     doc.release()
 
 

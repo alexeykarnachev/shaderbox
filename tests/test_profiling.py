@@ -29,6 +29,10 @@ from shaderbox.profiling import (
 )
 from shaderbox.ui_primitives import profile_rows_plan
 
+# This module drives real frames, so it gets a worker of its own (`conventions.md ## Known
+# quirks`): two Apps that both render a full frame in one process die on the font atlas.
+pytestmark = pytest.mark.xdist_group("gl_frames_profiling")
+
 _RED = """#version 460 core
 in vec2 vs_uv;
 out vec4 fs_color;
@@ -501,9 +505,9 @@ def _capture_the_plan_call(app: Any, monkeypatch: Any) -> Any:
     calls: list[Any] = []
     real = ui_primitives.profile_rows_plan
 
-    def spy(profile: Any, fps: int, target_fps: int) -> Any:
-        calls.append((profile, fps, target_fps))
-        return real(profile, fps, target_fps)
+    def spy(*args: Any, **kwargs: Any) -> Any:
+        calls.append((args, kwargs))
+        return real(*args, **kwargs)
 
     monkeypatch.setattr(ui_primitives, "profile_rows_plan", spy)
     try:
@@ -528,8 +532,8 @@ def test_the_wire_and_the_abort_path(app: Any, monkeypatch: Any) -> None:
 
     This is the "defined is not wired" check, and its falsifiers are: cut `profiler=app.profiler`
     at a render site in `ui.py` and that site's `document:` span is still there while its
-    `pass:` child is gone; drop `app.profiler.enabled = app.fps_details_open` and
-    `last_profile` stays None; replace the `with app.profiler.frame()` with a bare
+    `pass:` child is gone; construct `App`'s profiler disabled and `last_profile` stays None;
+    replace the `with app.profiler.frame()` with a bare
     `begin_frame()` / `end_frame()` pair and the aborted frame never publishes; act on the
     `enabled` flag in the setter instead of at the frame boundary and closing the panel
     raises `IndexError: pop from empty list`; drop `_publish`'s ordering check and the
@@ -629,24 +633,30 @@ def test_the_wire_and_the_abort_path(app: Any, monkeypatch: Any) -> None:
     app.profile_smoother.feed(_profile(10_001, 500.0))
     calls = _capture_the_plan_call(app, monkeypatch)
     assert calls, "the overlay drew without planning its rows"
-    planned_profile, _planned_fps, planned_target = calls[-1]
+    planned_args, _planned_kwargs = calls[-1]
+    planned_profile, _planned_fps, planned_target = planned_args[:3]
     assert planned_profile is not None
     assert planned_profile.index == 10_001 and planned_profile.children == [], (
         f"the plan was handed index {planned_profile.index} -- that is not the average"
     )
     assert planned_target == app.app_state.global_target_fps
 
-    # Closing the panel writes `enabled` from INSIDE the open `ui` span, so a setter that
-    # acted at once would clear the stack under a span whose `finally` has yet to run.
+    # Closing the panel stops the DRAW, never the recording (090 D9a): the GPU spans are the
+    # throttle's cost input, so they are what the plan reads on every frame whether or not
+    # anyone is looking. Falsifier: restore `app.profiler.enabled = app.fps_details_open` and
+    # both assertions go red -- the profiler disables and its ring empties.
     _close_the_panel(app, monkeypatch)
     update_and_draw(app)
     update_and_draw(app)
-    assert not app.profiler.enabled
-    assert not app.profiler._ring, "closing the panel must leave no query behind"
-    # The profiler dropped its whole state at that boundary; the average goes with it, or a
-    # re-opened panel blends its first live frames into the last session's numbers.
-    # Falsifier: drop the `else: reset()` branch and this reads the pre-close tree.
-    assert app.profile_smoother.smoothed() is None
+    assert app.profiler.enabled, (
+        "the panel's state must not decide whether spans record"
+    )
+    assert app.profiler._ring, (
+        "a closed panel left no query, so nothing is being measured"
+    )
+    # The smoother keeps averaging, since its feed is gated on `enabled` and that is now
+    # always true -- the panel simply stops drawing what it holds.
+    assert app.profile_smoother.smoothed() is not None
 
 
 # ---------------------------------------------------------------------------
@@ -850,10 +860,14 @@ def test_the_plan_indents_a_child_under_its_parent() -> None:
     outer.children.append(Span("pass:inner", cpu_ms=6.0))
     root.children.append(outer)
     rows = profile_rows_plan(
-        FrameProfile(root, 0, complete=True), fps=60, target_fps=60
+        FrameProfile(root, 0, complete=True),
+        fps=60,
+        target_fps=60,
+        titles={"one": "One"},
     )
     depths = {row.name: row.depth for row in rows}
-    assert depths["document:one"] == 0
+    # A `document:` row carries the TITLE the id maps to (090 D7), never the span name.
+    assert depths["One"] == 0
     assert depths["pass:inner"] == 1
 
 

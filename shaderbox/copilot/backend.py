@@ -113,7 +113,7 @@ from shaderbox.pass_graph import (
 )
 from shaderbox.paths import DOCUMENT_SCRIPT_BASENAME, pass_name_of, shader_lib_root
 from shaderbox.render_preset import RenderPreset
-from shaderbox.render_shape import RenderShape, shape_to_preset
+from shaderbox.render_shape import RenderShape, ResolutionMode, shape_to_preset
 from shaderbox.scripting import (
     ScriptError,
     ScriptProbe,
@@ -275,6 +275,20 @@ class _CopilotEditTarget:
     render_pass: "Pass | None" = None
     lib_path: Path | None = None
     lib_create: bool = False
+
+
+def _canvas_line(ui_document: UIDocument) -> str:
+    """The working set's canvas line: the stored size, and which mode decides the live one.
+
+    Under Auto the number is what an EXPORT renders at while the live canvas follows the panel,
+    so a bare `WxH` would read as a promise the live frame does not keep (090 D5).
+    """
+    document = ui_document.document
+    width, height = document.resolution
+    if document.resolution_mode is ResolutionMode.FIXED:
+        return f"{width}x{height}"
+    live_w, live_h = document.canvas_size
+    return f"{width}x{height} (export; auto, live {live_w}x{live_h})"
 
 
 def _driven_on(driven: set[tuple[str, str]], pass_name: str) -> set[str]:
@@ -858,7 +872,7 @@ class CopilotBackend:
             errors=_to_error_infos(document.render_pass.compile_unit.errors),
             script_listing=_number_lines(script_text) if script_text else "",
             script_errors=script_errors,
-            canvas=f"{document.canvas_size[0]}x{document.canvas_size[1]}",
+            canvas=_canvas_line(ui_document),
             passes=self._pass_views(full_id, short, document),
         )
 
@@ -1235,6 +1249,13 @@ class CopilotBackend:
             self._capture_document(
                 document_id
             )  # pre-change rollback snapshot (best-effort)
+            # An explicit pixel request is a FIXED one (090 D5): left on Auto, the next frame's
+            # resolution step would resize the document back to the panel and the tool would
+            # silently have done nothing.
+            ui_document.ui_state.resolution_mode = ResolutionMode.FIXED
+            ui_document.ui_state.resolution = (w, h)
+            ui_document.document.resolution_mode = ResolutionMode.FIXED
+            ui_document.document.resolution = (w, h)
             ui_document.document.set_canvas_size((w, h))
             self._save_ui_document(ui_document)
             logger.info(f"copilot set canvas of {document_id} -> {w}x{h}")
@@ -2147,7 +2168,7 @@ class CopilotBackend:
             size = COPILOT_ENGINE.render_facts_size
             # Match the document's canvas aspect — a square probe would lay out
             # aspect-corrected shaders (u_aspect) differently from the preview.
-            cw, ch = document.render_pass.canvas.texture.size
+            cw, ch = document.resolution
             h = min(4 * size, max(8, round(size * ch / cw))) if cw else size
             raw0 = _probe_frame(document, t, size, h, target)
             # Stamp the sample time: an animated shader's facts change with phase,

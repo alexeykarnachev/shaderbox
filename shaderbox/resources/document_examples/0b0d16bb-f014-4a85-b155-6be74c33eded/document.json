@@ -1,8 +1,4 @@
 {
-    "canvas_size": [
-        1080,
-        1920
-    ],
     "uniforms": {
         "main": {
             "u_debug_step": 0,
@@ -375,6 +371,11 @@
     },
     "ui_state": {
         "ui_name": "Fire",
+        "resolution_mode": "auto",
+        "resolution": [
+            1080,
+            1920
+        ],
         "description": "An SDF fire built step by step: gradient heat, fbm domain warp, a flame silhouette, glow and flicker - each stage revealed with a caption, then the full effect holds and loops (17s, 9:16). Open a copy and dig into how every layer works.",
         "render_media_details": {
             "is_video": true,

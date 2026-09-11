@@ -10,6 +10,17 @@ from shaderbox.render_preset import FitPolicy, RenderPreset, ResolutionPolicy
 # never a RenderPreset member; RenderPreset stays the transient resolved form one layer below.
 
 
+class ResolutionMode(StrEnum):
+    """How a document's live render size is decided (090 D1).
+
+    AUTO: the live target follows the largest UI region showing the document, and the stored
+    `resolution` is the document's EXPORT size. FIXED: the stored `resolution` IS the live size.
+    """
+
+    AUTO = "auto"
+    FIXED = "fixed"
+
+
 class RenderShape(StrEnum):
     NATIVE = "native"  # FREE -> the document's canvas size, any aspect
     SHORT_720 = "short_720"  # 9:16, longest edge 1280

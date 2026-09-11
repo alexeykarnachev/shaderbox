@@ -29,6 +29,9 @@ def _facts_for(t: float | None) -> str:
         read=lambda: b"\x00" * (64 * 64 * 4),
     )
     document = types.SimpleNamespace(
+        # The probe matches the document's STORED resolution's aspect, not the live canvas's
+        # (090 D5) -- under Auto the live one is whatever the panel happens to be.
+        resolution=(64, 64),
         render_pass=types.SimpleNamespace(
             canvas=types.SimpleNamespace(texture=texture)
         ),
