@@ -410,3 +410,115 @@ churn; unpruned ephemeral state dicts; a uuid fallback in a closing document's p
 arithmetic, the GL lifecycle, the resample funnel, the export resolution and the eleven
 hand-edited documents are all correct, and the verification items' falsifiers do what the
 Implementation notes say they do.
+
+---
+
+## Closure
+
+Against `5cc18fb` ("090: close the post-implementation reviews"). Read-only; every mutation ran in
+a detached worktree at `5cc18fb` with that worktree first on `PYTHONPATH`, and each was restored
+and the worktree confirmed clean (`git status --porcelain` empty) before the next.
+
+### Findings
+
+| id | fix (`file:line` at `5cc18fb`) | pinned by | mutation → red | restored → green | status |
+|---|---|---|---|---|---|
+| **MAJOR-1** | `shaderbox/ui.py:504-512` — the `PASS_SETTINGS` branch gained `and renders_this_frame(app, app.current_document_id)` as its third condition | `test_render_decoupling_loop.py::test_a_throttled_document_behind_the_pass_settings_modal_is_gated_too` | ✅ `AssertionError: a k = 12 document rendered 24 times in 24 frames behind the pass-settings modal -- that branch is not reading the plan` | ✅ `1 passed` | **CLOSED** |
+| **MINOR-1** | `shaderbox/ui.py:398-400` wraps the request in `document.clamped_size(...)`; the helper is `shaderbox/document.py:384-395`, and `set_canvas_size` (`document.py:436`) now calls the same helper so the two cannot drift | `test_render_decoupling_loop.py::test_a_stationary_region_settles_whatever_the_canvas_bounds_do` (3 parametrized regions) | ✅ `past MAX_CANVAS_PX: a stationary region produced 30 resizes over 30 frames` and `under MIN_CANVAS_PX: ... 30 resizes over 30 frames` | ✅ `3 passed` | **CLOSED** |
+| **MINOR-2** | `shaderbox/app.py:761-774` `App.forget_render_state`, called from `_on_document_deleted` (`app.py:759`), which `project_session.py` reaches on both the delete path (`:432`) and the external-removal path (`:591`) | `test_render_decoupling_loop.py::test_closing_a_document_forgets_its_ephemeral_render_state` | ✅ `AssertionError: throttle_states still holds the closed document` | ✅ `1 passed` | **CLOSED** |
+| **MINOR-3** | `shaderbox/ui_primitives.py:1451-1455` — `titles.get(document_id) or document_id[:_CLOSED_DOCUMENT_ID_CHARS]`, cap 8 at `ui_primitives.py:1436-1438` | **nothing** | n/a — see below | n/a | **CLOSED in code, UNPINNED** |
+
+The two mutations that reproduced my original numbers exactly (24 renders in 24 frames; 30 resizes
+in 30 frames) are the ones that matter: the fix addresses the defect I measured, not a
+near-neighbour of it.
+
+**MINOR-3 is fixed but has no gate.** Reverting the truncation to the pre-fix
+`titles.get(document_id, document_id)` leaves the suite green:
+
+```
+M-D (MINOR-3): revert the truncation to the full uuid
+  -- every test that touches profile_rows_plan --
+  77 passed in 10.12s
+```
+
+`grep -rn "_CLOSED_DOCUMENT_ID_CHARS" tests/` returns nothing, and no test passes a `document:`
+span whose id is absent from `titles`. This is the repo's own "a rule with no gate is a wish"
+shape — the code is right and a later edit can undo it silently. It is the smallest of the four
+findings (a two-frame cosmetic in a panel that is only drawn when open), so I record it rather
+than reopen it: **one assertion closes it**, beside the existing `test_theme.py` cases —
+
+```python
+def test_a_closed_documents_row_falls_back_to_a_short_handle() -> None:
+    root = Span("frame", cpu_ms=10.0)
+    root.children.append(Span("document:77a84d27-2e5b-406d-8011-ee1cb1a9587c", cpu_ms=4.0, gpu_ms=4.0))
+    rows = profile_rows_plan(FrameProfile(root, 0, complete=True), 60, 60, titles={})
+    assert "77a84d27" in [row.name for row in rows]
+    assert "77a84d27-2e5b-406d-8011-ee1cb1a9587c" not in [row.name for row in rows]
+```
+
+Its falsifier is exactly the M-D mutation above.
+
+### Fresh pass over the lines the fix changed
+
+`git show 5cc18fb --stat` names six source files. Every hunk read in context, and each new or
+changed line probed:
+
+- **`app.py` `forget_render_state`** — both `_on_document_deleted` call sites reach it. Probed the
+  second one (an external `rmtree` picked up by `sync_documents_from_disk`, which the new test does
+  not cover): `external removal leftovers: []`. And the docstring's claim that a mere reload must
+  NOT drop the state holds — after `_load_one_document_from_disk`, `ThrottleState(interval=12,
+  candidate=12, agreeing_frames=0)` is the *same object*, so a document edited on disk does not pay
+  the hysteresis window again.
+- **`document.py` `clamped_size`** — the new helper must be exactly what the funnel stores, or
+  MINOR-1 is only half fixed. `set_canvas_size` now calls it, so they cannot disagree by
+  construction; verified anyway over six `resolution`/request pairs including the three that
+  originally failed to settle (`(5000,3750)→(4096,3072)`, `(12,9)→(16,16)`, `(50,3)@16:1→(256,16)`,
+  `(20,15)→(21,16)`): predicted == stored on every one. Also checked **idempotence** —
+  `clamped_size(clamped_size(x)) == clamped_size(x)` across five `resolution` values × six requests
+  — since a helper that moved a value twice would leave the loop un-settled through a second door.
+- **`render_plan.py` `DOCUMENT_SPAN_PREFIX` / `document_span_name` / `document_id_of_span`** — the
+  two-homes consolidation. Round trip closes; `pass:blur`, `ui:draw`, `frame`, `script` and the
+  near-miss `documents:x` all answer `None`; matching is case-sensitive as the writer is. One edge:
+  `document_id_of_span("document:")` returns `""`, which is falsy, so `_document_row`'s
+  `document_id_of_span(span.name) or span.name` falls back to the whole span name. Unreachable —
+  a document id is a directory name and cannot be empty — and the row degrades to the literal text
+  `document`, which is harmless. Not a finding.
+- **`ui.py`** — all three render sites and `_refresh_document_costs` now go through the helpers,
+  so the writer and the reader cannot drift; the `PASS_SETTINGS` guard reads
+  `app.current_document_id`, which is the same id the span is opened under two lines below and the
+  same one step 8 gates. No third spelling.
+- **`ui_primitives.py` the `or` in the title fallback** — this changed behaviour for a case beyond
+  the one it was written for: `ui_name` defaults to `""` and the Document tab lets a user clear it
+  (`tabs/document.py:178`), so a *live, named-blank* document previously drew a blank row and now
+  draws its 8-character handle. Verified: `named -> 'My doc'`, `name cleared -> '77a84d27'`, both
+  with the correct `'10 fps x6  100%'`. An improvement, not a regression.
+- **`tabs/document.py`** — the deleted two lines are the Fixed toggle's tooltip, which restated its
+  own label. No behavior beyond the tooltip.
+- **`test_theme.py`** — the new `throttle_color` band tests pin the edges (1.0 OK, 1.2 WARN, 1.6
+  ERROR) *and* the `frame_over_budget` clause *and* the band reaching the panel through
+  `_document_row`. That last one is the valuable member: it is the only assertion that would catch
+  coloring the throttled branch with `load_color`, which is correctness F10 verbatim. This closes a
+  hole I did not find — my report noted `throttle_color`'s bands matched D9c but never checked
+  whether anything pinned them.
+
+**No new finding.** Nothing the fix wave introduced is demonstrably wrong.
+
+### Gate
+
+`make gates` **exit 0**, `== gates: GREEN -- check passed, test passed, smoke passed ==`, captured
+unpiped and `$?` read first — run in the clean worktree at `5cc18fb`.
+
+Run in the shared main working tree the same gate reports **exit 2 at check**, but that is not a
+property of `5cc18fb`: the tree carried uncommitted edits from a concurrent reviewer
+(`shaderbox/document.py` — a `set_canvas_size` docstring rewrite, `.claude/skills/shader-lab/SKILL.md`,
+and another reviewer's report), and the target's own retry logic correctly refused to re-run,
+printing `== gates: the hooks REWROTE files -- review and stage them, then re-run ==`. Pyright
+itself reported **`0 errors, 7 warnings`** — the seven pre-existing
+`reportMissingModuleSource` warnings on `imgui_bundle` stubs. The verdict below is the worktree's.
+
+### Verdict
+
+**PASS** — MAJOR-1, MINOR-1 and MINOR-2 are CLOSED with a mutation-verified test each, reproducing
+my original measurements exactly; MINOR-3 is fixed in code but pinned by nothing, recorded with
+the one assertion that would close it. Nothing the fix wave introduced is a defect, and the gate
+is green on a clean checkout of `5cc18fb`.

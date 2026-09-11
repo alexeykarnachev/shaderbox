@@ -340,3 +340,126 @@ conventions say. Two items to land before close-out: the missing `throttle_color
 (MAJOR 1 — demonstrated by mutation, the suite stays green while the bug F10 named is back in
 the tree) and the twice-declared `document:` span key (MAJOR 2), plus the two
 `conventions.md ## Known quirks` promotions above.
+
+---
+
+## Closure
+
+Re-review of `5cc18fb` on top of `f06d957`. Read-only; two mutations applied to a single file
+each, watched, and restored with `git diff --quiet` before anything else ran. Working tree clean
+at start and at end. `make gates` run unpiped with `$?` read first — **exit 0**,
+`== gates: GREEN -- check passed, test passed, smoke passed ==`.
+
+### Findings
+
+| # | Finding | Fix landed | Pinned by | Mutation re-applied | Status |
+|---|---|---|---|---|---|
+| MAJOR 1 | `throttle_color`'s bands ungated | unchanged function; four assertions added | `tests/test_theme.py:47-90` | body → `return load_color(share_ratio)` → **3 failed** (`test_throttle_color_reads_a_converged_document_as_healthy`, `test_a_missed_frame_reddens_a_document_inside_its_allowance`, `test_a_throttled_row_takes_the_throttle_bands_not_the_load_bands`); restored → **6 passed** | **CLOSED** |
+| MAJOR 2 | `document:` span key defined twice | one home + two helpers, `render_plan.py:35-52`; both local constants deleted | `tests/test_render_plan.py:272-286` | writer prefix → `"doc:"` → **1 failed** (`test_the_span_key_the_writer_makes_is_the_one_the_reader_parses`); restored → **20 passed** | **CLOSED** |
+| MINOR 1 | `Document.resolution` mirrors `UIDocumentState`'s, pairing unenforced | no code change (as I recommended); the conventions bullet does not state the pairing contract either | incidental only: `tests/test_document_graph.py::test_the_ui_resize_clamps_both_ends` | not re-run (unchanged since my first-round mutation) | **STILL OPEN** (see below) |
+| MINOR 2 | `Fixed` toggle's tooltip restated its label | tooltip deleted, `tabs/document.py` | n/a — the removal is the fix | n/a | **CLOSED** |
+
+Nothing regressed: `render_plan.py` still imports `math` and `dataclasses` alone and still
+imports in isolation; the only import `5cc18fb` adds anywhere in `shaderbox/` is
+`ui_primitives.py`'s `document_id_of_span` from the leaf below it.
+
+**MAJOR 1's fix went further than I asked, correctly.** Beyond the four unit assertions I
+proposed, `test_a_throttled_row_takes_the_throttle_bands_not_the_load_bands` drives the band
+through `profile_rows_plan` to the row a reader actually sees, with the share arithmetic
+(50 ms × 10 fps = 0.5 = the budget) landing on ratio 1.0 exactly. That is the falsifier applied at
+the consuming layer rather than at the pure function, which is the repo's mutate-the-wiring law.
+My own mutation reddens it, so the extra coverage is real rather than decorative.
+
+**MAJOR 2's fix is the shape I proposed**, including both helper names. `document_id_of_span` is
+also the DETECTOR (`ui_primitives.py:1489` asks it whether a child is a document row), so the
+second new test pinning that non-document names answer `None` is load-bearing, not padding.
+
+### MINOR 1 — why it stays open, and what would close it
+
+The duplication is unchanged: `ui_state.resolution*` and `document.resolution*` are still written
+as hand-paired lines at `ui_models.py:594-595`, `ui.py:389-390`, `tabs/document.py:52-53` and
+`95-96`, `copilot/backend.py:1255-1258`. I recommended no code change and still do — every repair
+inverts the layering. What I did propose was that the pairing be named as a contract in the
+`conventions.md` bullet, since that is the only available enforcement. The bullet
+(`conventions.md:753-776`) states the three consequences a change must not break (`canvas_size`'s
+single writer, every aspect reader, every export path) and does not state the fourth: that
+`resolution` and `resolution_mode` live in two places and a writer sets both. A sixth write site
+added later has nothing to read.
+
+This is a documentation gap on a MINOR, not a defect, and the closure commit did not claim to
+have addressed it. Concrete fix — one sentence appended to that bullet's consequence list:
+
+> **`resolution` and `resolution_mode` live twice** — on `UIDocumentState`, which is what
+>   persists, and on `Document`, so `render_media` needs no new parameter. Every writer sets
+>   BOTH; `UIDocument.save` dumps only the `ui_state` half, so a `Document`-only write is lost on
+>   quit and a `ui_state`-only write never reaches the renderer.
+
+### New finding — MINOR 3: the "render thread" rewording is incomplete inside the file it fixed
+
+The commit message says conventions gains *"the 'render thread' wording that meant the main
+thread now says so"*, and the thread-affinity bullet is indeed rewritten
+(`conventions.md:949-956`), with the reason the old phrase misled. But two other bullets in the
+same file still carry it, for the same concept:
+
+- `conventions.md:557` — *"that runs off the render thread (worker thread + own asyncio loop)"*.
+- `conventions.md:732` — *"render-thread methods may touch moderngl; worker-thread methods
+  (`prepare`, `export`, …) MUST NOT"*.
+
+Line 732 is the `Exporter` ABC's rule, which is the very split the rewritten bullet cites as its
+example (*"the `Exporter` ABC's main-thread vs worker-thread split"*) — so the file now names the
+same boundary two ways, two hundred lines apart, and the rewritten bullet's cross-reference
+points at prose using the phrase it just retired. `shaderbox/exporters/base.py:101-117`'s own
+thread-affinity docstring also still says "render thread only".
+
+Demonstrated by grep over the file as committed; no mutation applies (it is prose). **Fix:**
+replace "render thread" with "main thread" at `conventions.md:557` and `:732`, and in
+`exporters/base.py`'s affinity docstring. Feature-spec files under `ai_docs/features/0NN_*` keep
+the old phrase legitimately — they are historical records, and `conventions.md` says as much.
+
+Severity MINOR: no behavior, and the rewritten bullet now defines the term, so a reader who hits
+line 732 first can still resolve it. But a half-applied rename is the state most likely to be
+read as deliberate.
+
+### Fresh pass over `5cc18fb`'s hunks only
+
+- **Import direction: clean.** One import added across all of `shaderbox/`
+  (`ui_primitives.py` ← `render_plan`, downward). `render_plan.py` remains a leaf, verified by
+  running `import shaderbox.render_plan` in isolation.
+- **Duplication: reduced, none added.** The clamp now has one home —
+  `Document.clamped_size` wraps `_clamped_to_aspect`, and `set_canvas_size:436` calls it rather
+  than repeating the expression, so `ui.py:401`'s new caller and the funnel share one rule.
+  `App.forget_render_state` puts the five-dict teardown in one place instead of five pops at the
+  call site. `_CLOSED_DOCUMENT_ID_CHARS` is a named constant rather than a literal.
+- **Comments: state the now.** The narration greps over added lines return one hit — *"the title
+  map no longer carries its id"* (`ui_primitives.py:1453`) — which describes a live runtime
+  condition during the profile's two-frame lag, not development history. The pass-settings guard's
+  comment (`ui.py:509-512`) explains why the third read must agree with the other two, an
+  invariant, without saying the branch shipped wrong; the bug story stays in the commit message
+  and the spec, which is where the convention puts it. `clamped_size`'s docstring names the
+  failure mode as a standing property of comparing against a clamped value, not as an incident.
+- **Skill's UI rules: clean.** The only UI change is a deletion (`tabs/document.py`'s tooltip);
+  no new imgui call, no `push_style_color` at a call site, no `set_cursor_pos`, no new authored
+  string. `_CLOSED_DOCUMENT_ID_CHARS = 8` keeps the uuid fallback from clipping the 280-px panel,
+  which is the m3 constraint.
+- **The two `## Known quirks` promotions landed as proposed.** The `copy_framebuffer` quirk is
+  near-verbatim from my text, keeps the far-corner test instruction and the revisit trigger. The xdist sentence landed with a useful addition I did not propose —
+  the four modules carrying a mark today.
+- **The three `## Design decisions` bullets hold the section's shape.** Each is "we decided X"
+  followed by an explicit revisit trigger: a live size that is neither its own number nor its
+  display's (`:775`), a CPU throttle (`:794`), and a frame opening spans by the hundred
+  (`:810`). None is a current-state snapshot.
+- **The always-on measurement was re-derived rather than inherited, and disagrees with the
+  spec's.** `probes/always_on_queries.py` now exists (my first round noted the number came from a
+  scratchpad) and measures +0.150 ms p95 at twelve spans against the spec's stated ≤ 0.1 ms
+  threshold. The spec records the miss as a miss and restates the transferable figure per SPAN
+  (~0.01 ms), which is the quantity that generalizes; the conventions bullet carries the per-span
+  number and a revisit trigger keyed to span count. Reporting a threshold breach rather than
+  smoothing it is the right call, and I am not raising it as a finding.
+
+### Verdict
+
+**PASS.** Both MAJORs are closed and demonstrated red-then-green by re-applying the original
+mutations; MINOR 2 is closed by deletion; MINOR 1 stays open as a one-sentence documentation gap
+on a duplication I recommended keeping. One new MINOR: the "render thread" → "main thread"
+rewording reached one of the three bullets that carry the phrase. Neither open item blocks the
+feature.

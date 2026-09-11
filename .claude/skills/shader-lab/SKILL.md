@@ -138,19 +138,23 @@ uniforms). `SB_*` helpers resolve from the live shader lib automatically. The sm
 > `python -c "from pathlib import Path; import shaderbox; from shaderbox.shader_lib.seed import sync_shipped_lib; from shaderbox.paths import shader_lib_root; sync_shipped_lib(Path(shaderbox.__file__).parent/'resources'/'shader_lib', shader_lib_root())"`.
 
 ```json
-{ "canvas_size": [720, 1280],
-  "uniforms": {},
+{ "uniforms": { "main": {} },
   "ui_state": { "ui_name": "<effect> v01 (port)",
+                "resolution_mode": "fixed",
+                "resolution": [720, 1280],
                 "render_media_details": { "duration": 1.0 } } }
 ```
 
-- `uniforms` is **REQUIRED** — leave it `{}` for a fresh document (it holds SAVED tuned values; the engine
-  subscripts it, so a document missing the key is skipped). Defaults come from the shader's inline-default
-  uniforms, not here.
+- `uniforms` is **REQUIRED** and keyed by PASS name — leave each pass's block `{}` for a fresh document
+  (it holds SAVED tuned values; the engine subscripts it, so a document missing the key is skipped).
+  Defaults come from the shader's inline-default uniforms, not here.
 - **Do NOT copy `uniforms` / `ui_uniforms` from an unrelated document** — you'll drag its saved state in.
   Leave `ui_uniforms` out entirely; introspection rebuilds it on load (you never hand-author the keys).
-- `ui_name` = grid label; `canvas_size` = preview size + aspect; `ui_state.render_media_details.duration`
-  = render loop length. (JSON has no comments — keep the legend in your head, not in the file.)
+- `ui_name` = grid label; `resolution` = the one stored width x height, and `resolution_mode` says what
+  it means — `"fixed"` makes it the live canvas (what a lab step wants, so a render is the size you
+  asked for), `"auto"` makes it the EXPORT size while the live canvas follows the largest region
+  showing the document; `ui_state.render_media_details.duration` = render loop length. (JSON has no
+  comments — keep the legend in your head, not in the file.)
 - For a fuller real example to mirror, open any committed document, e.g.
   `projects/_lab/night_city/documents/<uuid>/document.json`.
 

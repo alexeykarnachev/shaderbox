@@ -417,3 +417,122 @@ and justified against the spec's own text; one (`test_persistence_completeness.p
 **Verdict: PASS-WITH-MINORS** — the spec is implemented end to end with every safety wired and
 mutation-caught; one render path (the pass-settings modal) reads no interval and must be gated,
 and two bookkeeping items want a line each.
+
+---
+
+## Closure
+
+**Artifact:** `5cc18fb`, on top of `f06d957`. Read-only; all mutation work in a detached
+worktree at `5cc18fb`, removed clean. `make gates` re-run **in that worktree** (the shared tree
+was dirty with another reviewer's in-progress `shaderbox/document.py`, which is what a run there
+fails on — not the commit): **exit 0, `== gates: GREEN -- check passed, test passed, smoke
+passed ==`**, captured unpiped, smoke RAN.
+
+### My three findings
+
+| Finding | Fix (code) | Test | Break re-applied | Status |
+|---|---|---|---|---|
+| **MAJOR-1** — the PASS_SETTINGS branch read no interval | `shaderbox/ui.py:513` — `and renders_this_frame(app, app.current_document_id)` added to the `elif`, with a comment naming it the THIRD read of the plan. The other two reads are now `ui.py:466` and `ui.py:503`, all three through the one helper | `tests/test_render_decoupling_loop.py:165` `test_a_throttled_document_behind_the_pass_settings_modal_is_gated_too` — asserts `interval == 12`, `drawn <= 3` over 24 frames, **and** that the render count and the `begin_frame` count agree within 1 (`:197-201`), which is the gate-disagreement half my finding named | **Yes.** Removed the guard → red at `AssertionError: a k = 12 document rendered 24 times in 24 frames behind the pass-settings modal -- that branch is not reading the plan / assert 24 <= 3` — the 24/24 is my own measured number. Restored (`git diff` empty) → **1 passed** | **CLOSED** |
+| **MINOR-1** — the always-on probe was neither landed nor recorded | `ai_docs/features/090_render_decoupling/probes/always_on_queries.py` (new, 135 lines), seeding its own throwaway project from the shipped examples and never touching `projects/dev/` | the probe is the artifact; the spec's *Pre-implementation measurements* (`01_spec.md:668-671`) now restates the threshold and the *Fix wave* records the re-measurement and its disagreement with the pre-review number rather than smoothing it | probe re-run, below | **CLOSED** (with NEW-1 on the probe's own stale threshold string) |
+| **MINOR-2** — two *Files touched* entries listed but untouched | no code change needed | — | — | **STILL OPEN** (downgraded; see below) |
+
+Nothing REGRESSED: the nine falsifiers I re-applied against `f06d957` all target code paths
+untouched or strengthened by this wave, and the worktree suite is green.
+
+### MINOR-2 — still open, as documentation only
+
+The *Fix wave* section answers MINOR-2 in prose (`01_spec.md`, the "spec-fidelity MINOR-2"
+bullet) and its reasoning is exactly right — `test_persistence_completeness.py` genuinely needs
+no edit, and V13's home genuinely had to move. But `## Files touched` itself is **byte-identical
+between `f06d957` and `5cc18fb`**: `git diff f06d957 5cc18fb -- 01_spec.md` touches that section
+not at all, so the list still names `test_persistence_completeness.py` and `test_document_ops.py`
+as edited when neither is.
+
+The coordinator asked me to confirm the list now matches `git show --stat f06d957 5cc18fb`. It
+does not. Against the union of both commits (excluding `reviews/`):
+
+- **Listed, never changed (2):** `test_persistence_completeness.py`, `test_document_ops.py`.
+- **Changed, never listed (7):** `tests/test_canvas_resample.py`, `tests/test_render_decoupling_loop.py`,
+  `tests/test_theme.py`, `tests/test_document_graph.py`, `tests/test_probe_clock_and_turn_end.py`,
+  `tests/test_radiance_cascades_example.py`, `tests/fixtures/bloom_chain/document.json`.
+
+Four of the seven are covered by *Implementation notes* deviation 5 and the *Fix wave*'s own
+"Files changed in this wave" line, so a reader who reads the whole document reaches the truth;
+`## Files touched` alone does not. Severity stays MINOR and is purely editorial — no behavior,
+no test, no gate. **Fix:** delete the two dead entries from `## Files touched` and add the five
+test files (the `bloom_chain` fixture is already covered by the "eleven tracked `document.json`"
+row). One edit, no code.
+
+### The spec's `## Implementation notes ## Fix wave`, walked against the diff
+
+| Listed change | Present in the diff? | Recorded break |
+|---|---|---|
+| PASS_SETTINGS gated through `renders_this_frame` | `ui.py:513` | **Re-applied — red at the recorded string, then green** |
+| `throttle_color` gains tests: bands at their edges, the missed-frame clause, the band reaching a row through the plan | `tests/test_theme.py:48`, `:59`, `:67` (three new cases) | **Re-applied:** body → `return load_color(share_ratio)` (correctness F10 verbatim) → **all three red**, the other three theme tests green — matching "all three red (was: 0 red)". Restored |
+| `DOCUMENT_SPAN_PREFIX` + `document_span_name` / `document_id_of_span` moved to `render_plan.py`; both local declarations deleted; all six sites routed through the helpers | `render_plan.py:35-52`; `_DOCUMENT_SPAN_PREFIX` gone from both `ui.py` and `ui_primitives.py`; six call sites converted (`ui.py:354`, `:467`, `:482`, `:504`, `:517`; `ui_primitives.py:1451`, `:1489`) | recorded (round-trip + detector tests at `test_render_plan.py:272`, `:281`); not re-applied |
+| the Auto request clamped through the new `Document.clamped_size` | `document.py:384-395` (the helper), `ui.py:398-400` (the call), `document.py:436` (`set_canvas_size` uses the same helper, so the two cannot drift) | **Re-applied:** dropped the clamp → both out-of-bounds cases red at `a stationary region produced 30 resizes over 30 frames` (past MAX and under MIN), the in-bounds case green — exactly the recorded number and shape. Restored |
+| `App.forget_render_state` drops the five per-document entries from `_on_document_deleted` | `app.py:759-775`; the five pops are `displayed_sizes`, `pending_resolution`, `auto_size_states`, `throttle_states`, `document_costs` | recorded; the test at `test_render_decoupling_loop.py:554` asserts all five by name. Not re-applied |
+| pruning inside `plan_render_set` rejected; the panel's uuid fallback shortened to 8 chars rather than removed | `ui_primitives.py:1436-1437` (`_CLOSED_DOCUMENT_ID_CHARS = 8`), `:1451-1455` | — |
+| the `Fixed` toggle's tooltip dropped | `tabs/document.py` — `grep "Fixed canvas size"` returns nothing | — |
+| `conventions.md`: three 090 Design decisions, two Known quirks (`copy_framebuffer`, the unenforced `xdist_group`), the "render thread" → main thread rewording | all present in the `conventions.md` diff | — |
+| "Files changed in this wave" list | matches `git show --stat 5cc18fb` exactly (6 source, 3 test, `conventions.md`, the probe, the spec) | — |
+
+Two breaks re-applied as asked (`throttle_color`, the damping clamp), plus the PASS_SETTINGS one.
+All three reddened on the exact assertion text the notes record, and all three restored green.
+
+### The probe, re-run once
+
+`uv run python ai_docs/features/090_render_decoupling/probes/always_on_queries.py` (its own
+defaults: 6 blocks × 50 frames = 300 frames per arm, six documents, render-all on, 12 GPU spans
+per frame):
+
+```
+300 frames/arm, 6 documents, render-all on, 12 GPU spans per frame
+  profiler OFF  median   9.935 ms   p95  12.380 ms
+  profiler ON   median  10.089 ms   p95  11.148 ms
+  DELTA         median  +0.154 ms   p95  -1.232 ms
+  per GPU span: -0.1027 ms p95
+```
+
+**Against the restated threshold — under 1 % of the frame period, 0.17 ms at 60 fps — this run
+passes**: the p95 delta is **−1.232 ms**, negative, i.e. the ON arm's p95 came out *lower* than
+the OFF arm's.
+
+Reported as measured, not smoothed: this run reproduces neither the pre-review +0.005 ms nor the
+fix wave's +0.150 ms. Its p95 is dominated by tail outliers on this box (a 12.4 ms p95 against a
+9.9 ms median is a 2.5 ms tail), so a single p95 delta here is noise in both directions rather
+than a contradicting measurement — which is the fix wave's own point about the median changing
+sign, arriving one level up. The median delta, **+0.154 ms over 12 spans ≈ 0.013 ms per span**,
+is within a third of the fix wave's ~0.01 ms/span, and that per-span figure is the number the
+probe's docstring says transfers. **I can demonstrate that this run clears the restated
+threshold; I cannot demonstrate the +0.150 ms p95 figure, and I did not re-run three times to
+try.** A second run I made before reading the argument convention (1800 frames/arm) gave a p95
+delta of −12.2 ms, which is only more evidence that this box's p95 tail swamps the signal at
+this sample size.
+
+### New finding
+
+**NEW-1 (MINOR) — the landed probe still prints the superseded threshold.** The spec restates it
+(`01_spec.md:668-670`: "restated after the fix wave: p95 delta under 1 % of the frame period
+(0.17 ms at 60 fps)"), but `probes/always_on_queries.py` carries the old number in two places:
+its docstring at `:22` ("Pass threshold: **p95 delta <= 0.1 ms**, which is 0.6 % of a 16.7 ms
+frame") and, more importantly, the PASS/FAIL it prints at `:130`
+(`f"  threshold: p95 delta <= 0.1 ms -> {'PASS' if p95_delta <= 0.1 else 'FAIL'}"`).
+
+So the probe judges itself against the threshold the fix wave replaced *because the probe's own
+measurement exceeded it* — the next reader runs it, reads "threshold: p95 delta <= 0.1 ms", and
+gets a verdict the spec no longer stands behind. Demonstrated: the run above printed
+`threshold: p95 delta <= 0.1 ms -> PASS`, quoting the dead figure. Evidence is the two lines
+themselves; no behavior is affected, and the spec's own text is correct.
+
+**Fix:** change both to the restated form — docstring "Pass threshold: p95 delta under 1 % of the
+frame period (0.17 ms at 60 fps); the transferable figure is ~0.01 ms per GPU span", and the
+print to compare against `0.01 * frame_period_ms`. Two lines, no logic change.
+
+### Closure verdict
+
+**PASS** — MAJOR-1 closed with a test that is strictly stronger than the finding asked (it pins
+the gate agreement as well as the render count) and whose falsifier I reddened and restored;
+MINOR-1 closed by a landed probe whose re-run clears the restated threshold; MINOR-2 answered in
+prose but the `## Files touched` list itself is still uncorrected, and NEW-1 is a two-line string
+in the probe. Both remaining items are editorial, neither touches code, a test or a gate.

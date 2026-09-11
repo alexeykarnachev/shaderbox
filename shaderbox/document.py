@@ -419,10 +419,9 @@ class Document:
     def set_canvas_size(self, size: tuple[int, int]) -> None:
         """Resize the document: its output target and every feedback history, now.
 
-        The single funnel, because `canvas_size` is what every other pass scales FROM. A caller
-        that resized `render_pass.canvas` directly — which is what the copilot's set_canvas_size
-        did — left this field stale, so the rest of the graph kept sizing off the old dimensions
-        and the output sampled mismatched targets.
+        The single funnel, because `canvas_size` is what every other pass scales FROM: resizing
+        `render_pass.canvas` directly leaves this field stale, so the rest of the graph sizes off
+        the old dimensions and the output samples mismatched targets.
 
         Both the live canvas and each history are RESAMPLED (090 D4): resampling the history
         alone loses the picture one frame later, since a blanked live canvas is what the next

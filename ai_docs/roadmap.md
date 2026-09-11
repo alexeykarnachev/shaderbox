@@ -26,29 +26,29 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-11, 090 is implemented and awaits its post-implementation review round. -->
-**Next: the post-implementation review of 090 (3 reviewers plus a spec-fidelity pass), then the
-sanitization sweep.** A document now renders at the size it is displayed at and one costing more
-than its share of the frame renders less often: a per-document Auto/Fixed resolution mode over a
-single stored size, an Auto resize that resamples the live canvas and every feedback history
-through a one-quad blit, and one shared GPU budget whose pure `plan_render_set` hands each
-displayed document an interval and a phase. Export resolves from the stored number on every path,
-so `RenderShape.NATIVE` stops meaning "whatever the panel is"; the profiler records always, since
-its GPU spans are the throttle's input. Still out of scope: tiling, the GL render thread, per-pass
-Auto sizing, a CPU throttle, and throttling exports or the probe.
+<!-- As of 2026-09-11, 090 is implemented, reviewed to closure, merged on dev, gates green; every item below awaits his eyes. -->
+**Next: nothing is claimed; the tenth walk is his.** 090 landed the document throttle and the
+Auto/Fixed resolution mode after the research refuted every alternative on his driver: nothing
+preempts a draw, so neither a render thread nor context priority buys the UI a frame, and tiling
+was rejected as too many moving parts. A document keeps one resolution pair whose role the mode
+decides; Auto renders at the largest region showing it and resamples every feedback history on a
+resize; a shared GPU budget schedules the current document first and previews at a common fps;
+GPU spans record always, keyed by document id.
 
-**Awaiting his eyes:** whether an Auto document reads as sharp at the viewer's size and a
-throttled one at k = 5 as iteration rather than lag (090); plus 089's formatted shape, the FPS
-bands, a feedback document surviving a restart, `Alt+O`, the lock chip.
+**Awaiting his eyes** (no WM here): whether Auto reads sharp at the viewer's size and a throttled
+document feels like iteration rather than stutter; the mode control, the compact panel row, the
+two settings. From 089: the formatted shape on his own file, the FPS bands, the sorted tree,
+`Ctrl+O` after a search, normal-mode `Tab`, `Alt+O`, the lock chip, blockwise `Ctrl+V`.
 
 **Open, unmeasured:** no brake watches cost or a frame going lit to flat (082); a multi-document
-mission.
+mission; the GL thread (`00_research.md`) if the throttle proves not enough.
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
 | 090 | render_decoupling | done | A document rendered at its full stored size every frame however small its tile, and one heavy document made the UI frame as long as its own GPU cost. Each document now carries a resolution MODE over one stored size: Fixed keeps today's behavior, Auto follows the largest region displaying it and the stored number becomes the export resolution -- which every export path resolves from, since `RenderShape.NATIVE` and `resolve_dims`'s FREE fall-through would otherwise mean whatever the panel happened to be. An Auto resize resamples the output canvas AND every feedback history through a one-quad blit (measured: `copy_framebuffer` copies 1:1 into a corner between differently-sized framebuffers, no GL error, wrong picture), and a picker commit inside the draw phase defers through `App.pending_resolution` rather than releasing textures imgui still holds. One shared GPU budget decides each document's interval in a pure `plan_render_set`, with phase offsets so same-interval previews land on different frames and a cap so ten of them cannot reach an interval of 143; the profiler records always, because its `document:<id>` spans are the cost input. Spec: `ai_docs/features/090_render_decoupling/01_spec.md`. |
+| 090 | render_decoupling | done | The maintainer's editor lagged behind a heavy document. Research on his box measured why and refuted the fixes in turn: one loop makes the UI frame equal the document's GPU cost, the NVIDIA driver preempts nothing inside a draw so a render thread, a second process and EGL context priority all leave the UI waiting the full draw, ibus's XIM bridge delivers one key per event pump, and tiling worked but was rejected as too many moving parts. What landed is the two levers he chose: a per-document `Auto | Fixed` resolution mode over one stored resolution pair (Auto renders at the largest region showing the document and resamples the output canvas and every feedback history on resize through a one-quad blit, since `copy_framebuffer` does not rescale; export and NATIVE resolve to the pair), and a document throttle behind a pure `plan_render_set` that gives the current document an interval from its measured GPU cost against a shared budget and every displayed preview a common fps from the remainder, with GPU spans recorded always and keyed by document id. Two pre-implementation and three post-implementation reviewers, each to closure. Spec: `ai_docs/features/090_render_decoupling/01_spec.md` + `00_research.md` + `02_throttle_and_resolution.md`. |
 | 089 | ninth_walk_findings | done | The maintainer's ninth walk, five findings over two repos: the shader formatter's bracket shape (clang-format 23's bracket-break options plus one host post-pass, since the member access after a block-closing bracket is a forced break no option buys back), the completion vocabulary re-sourced from the gl4 refpages with entries named from their prototypes (a family refname had silently dropped `noise1..4` and would have lost three pack names) and the fourteen fragment-stage variables as `SymbolKind.GLSL_VARIABLE`, a feedback pass's newest frame persisted as `feedback/<pass>.bin` and seeded into its history on load (the first-frame swap and the scaled-pass size were both found broken by the pre-implementation probes and fixed before a line landed), the FPS panel colored by budget share and sorted by cost behind a pure plan the wire test can spy, and the editor library's single-buffer jumplist re-vendored at `d1ef029` with the lexer's builtin set synced to the table's 171 names -- which moved the Projects modal to `Alt+O` when the keymap-disjointness gate refused two owners for `Ctrl+O`. Spec: `ai_docs/features/089_ninth_walk_findings/01_spec.md` + `00_findings.md`. |
 | 088 | frame_profiler | done | A frame-time breakdown behind the FPS chip, built as a general seam: a leaf `profiling.py` with CPU spans and GPU timer queries (a three-deep, path-keyed ring read two frames late, since a two-deep one measured a 22 ms stall under load and a name-keyed one lost the current document's second render), threaded into `Document.render` as a parameter so exports stay silent and a document rendered inside another nests by construction; recording followed the panel until 090 made it always-on, and the panel draws a path-keyed exponential average while the profile it reads stays what was measured. Spec: `ai_docs/features/088_frame_profiler/01_spec.md`. |
 | 087 | eighth_walk_findings | done | The maintainer's eighth walk, four findings across two repos: the pass strip's tiles at 168 on their own `SIZE.PASS_TILE` (the sampler rows keep `PASS_THUMB` at 112) with a boundary-correct `tiles_per_row`, the Uniforms tab's pass selector as a row of clickable names marked by color alone, GLSL `true`/`false` colored as keywords (lexer, upstream `760f8ea`), and search highlights that were drawn a screenful high or culled whenever the view was scrolled — the emitter subtracted the scroll twice, found by measurement here and fixed upstream at `c081110`; both landed in one re-vendor at `760f8ea`, pinned by two host tests born red against `410b7e7`. Spec: `ai_docs/features/087_eighth_walk_findings/01_spec.md`. |

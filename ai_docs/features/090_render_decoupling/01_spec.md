@@ -514,14 +514,9 @@ Both labels are inside the prose budget; neither takes a `help_marker`.
   aspect reads `resolution`; the working-set line reports the mode.
 - `shaderbox/exporters/youtube.py` — `_artifact_matches_shape` resolves against `resolution`.
 - The eleven tracked `document.json` files (table above).
-- `tests/test_render_plan.py` **(new)**, `tests/test_document_shapes.py` **(new gate, V12)**; edits
-  to `test_canvas_presets.py`, `test_graph_persistence.py`, `test_pass_hot_reload.py`,
-  `test_uniform_row_pruning.py`, `test_document_dir_sync.py`, `test_feedback_persistence.py`,
-  `test_canvas_fields.py`, `test_render_for.py`, `test_profiling.py`,
-  `test_persistence_completeness.py`, `test_document_ops.py`, `test_ui_prose_budget.py` (the
-  exemption rationale, m2), and **`test_youtube_exporter.py`** — its `_artifact_matches_shape` test
-  stubs a document exposing only `render_pass.canvas.texture.size`, so under D5's fix the stub needs
-  a `resolution` (blast, unlisted break).
+- Tests, as landed across `f06d957` and `5cc18fb` (the pre-implementation list named
+  `test_persistence_completeness.py` and `test_document_ops.py`, which needed no edit, and
+  V13 landed in `test_render_decoupling_loop.py`): `fixtures/bloom_chain/document.json`, `test_canvas_fields.py`, `test_canvas_presets.py`, `test_canvas_resample.py`, `test_document_dir_sync.py`, `test_document_graph.py`, `test_document_shapes.py`, `test_feedback_persistence.py`, `test_graph_persistence.py`, `test_pass_hot_reload.py`, `test_probe_clock_and_turn_end.py`, `test_profiling.py`, `test_radiance_cascades_example.py`, `test_render_decoupling_loop.py`, `test_render_for.py`, `test_render_plan.py`, `test_theme.py`, `test_ui_prose_budget.py`, `test_uniform_row_pruning.py`, `test_youtube_exporter.py`.
 - `ai_docs/dev_flow.md` module map — one line for `render_plan.py`.
 - `ai_docs/conventions.md` — the Auto/Fixed split, the always-on profiler, and a correction to the
   one-`update_and_draw`-per-process quirk: the mechanism is xdist GROUPS (`pytest.mark.xdist_group`

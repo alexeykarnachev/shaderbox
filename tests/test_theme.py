@@ -88,3 +88,20 @@ def test_a_throttled_row_takes_the_throttle_bands_not_the_load_bands() -> None:
     assert row.color is COLOR.STATE_OK, (
         f"a document exactly at its allowance drew {row.color}"
     )
+
+
+def test_a_closed_documents_row_falls_back_to_a_short_handle() -> None:
+    # The profile is two frames late, so a closed document's span outlives its title entry; the
+    # row shows a short handle rather than a 36-character uuid that clips the number.
+    root = Span("frame", cpu_ms=10.0)
+    root.children.append(
+        Span("document:77a84d27-2e5b-406d-8011-ee1cb1a9587c", cpu_ms=4.0, gpu_ms=4.0)
+    )
+    names = [
+        row.name
+        for row in profile_rows_plan(
+            FrameProfile(root, 0, complete=True), 60, 60, titles={}
+        )
+    ]
+    assert "77a84d27" in names
+    assert "77a84d27-2e5b-406d-8011-ee1cb1a9587c" not in names

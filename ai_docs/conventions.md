@@ -554,7 +554,7 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   feature 008 special-cased engine uniforms into a dim caption row, which left them out of the
   code↔panel hover/jump bridge until it was generalized. Revisit if a kind genuinely needs to
   opt OUT of a shared behavior (then gate the behavior, don't fork the row).
-- **No `async` except where python-telegram-bot forces it** — and that runs off the render thread
+- **No `async` except where python-telegram-bot forces it** — and that runs off the main thread
   (worker thread + own asyncio loop), never `run_until_complete` inside the imgui frame. A *synchronous*
   network client (YouTube's Google libs) uses the same worker-thread pattern but WITHOUT the asyncio
   loop — `_worker_main` calls the blocking client directly. Revisit if a new async-required dep doesn't
@@ -758,7 +758,10 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   the pair is the document's EXPORT resolution — what `RenderShape.NATIVE` and `resolve_dims`'s
   FREE fall-through resolve to. There is no second size field, and no derivation rule: the
   number a document has is the number it keeps.
-  Three consequences a change here must not break. **`Document.canvas_size` is the EFFECTIVE
+  Four consequences a change here must not break. **`resolution` and `resolution_mode` live in
+  two places, `UIDocumentState` (persisted) and `Document` (live), and a writer sets BOTH** —
+  nothing enforces the pairing but this sentence, so a new write site is not done until it has
+  the second line. **`Document.canvas_size` is the EFFECTIVE
   live size with one writer, `set_canvas_size`**, which resamples the output canvas and every
   feedback history into new-size replacements before releasing anything — resampling the
   history alone loses the picture one frame later, since `Canvas.set_size` blanks the live
@@ -806,7 +809,8 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   the writer and at the reader separately, a changed prefix leaves the panel silently treating
   every document row as an ordinary span. The always-on cost is measured rather than assumed, and
   it scales with the number of spans a frame opens: about **0.01 ms p95 per GPU span**
-  (`probes/always_on_queries.py`), so twelve spans cost ~0.15 ms of a 16.7 ms frame and a lighter
+  (`ai_docs/features/090_render_decoupling/probes/always_on_queries.py`), so twelve spans cost
+  ~0.15 ms of a 16.7 ms frame and a lighter
   session proportionally less. Revisit if a frame ever opens spans by the hundred, where that
   per-span figure stops being a rounding error.
 - **The generic exporter seam carries NO exporter-domain vocabulary.** `RenderControl` is pure render
@@ -949,9 +953,9 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
 - **Thread/GL affinity is enforced by METHOD ownership, not import boundaries; cross-thread reactions
   are injected callbacks.** GL objects live with the MAIN thread — the one that owns the glfw window,
   the GL context and the imgui frame, and the one every `Document.render` in the live loop runs on.
-  ("The render thread" is what this rule used to say, and 090's research found the phrase actively
-  misleading: it reads as a thread dedicated to rendering, which this app does not have and which
-  `00_research.md` measured as buying nothing on this driver.) A worker thread never touches
+  There is no thread dedicated to rendering, and "the render thread" is not a name for anything here
+  — a separate one was measured on this driver and bought nothing
+  (`ai_docs/features/090_render_decoupling/00_research.md`). A worker thread never touches
   moderngl — affinity is a property of WHICH method runs where (the `Exporter` ABC's main-thread vs
   worker-thread split), checked by review, not by what a module can import. Free lunches the repo
   reuses: the mtime watcher already marshals work to the main thread, so a worker that must touch GL
