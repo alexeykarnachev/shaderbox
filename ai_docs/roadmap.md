@@ -26,25 +26,23 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-09, 089 is implemented, merged on dev, gates green; every item below awaits his eyes. -->
-**Next: nothing is claimed; the tenth walk is his.** 089 landed the ninth walk's five findings:
-the shader formatter breaks after the open bracket and keeps `.rgb` on the close (clang-format's
-bracket options plus one host post-pass); completion knows every 4.60
-fragment builtin (`glsl_docs.py` regenerated from gl4, a `VARIABLES` table, `GLSL_VARIABLE`); a
-feedback pass's newest frame is saved as `feedback/<pass>.bin` and seeds its history on load; the
-FPS panel colors by budget share and sorts by cost behind a pure `profile_rows_plan`; and the
-editor gained vim's single-buffer jumplist, re-vendored at `d1ef029` with the lexer's builtins
-synced. That re-vendor moved the Projects modal to `Alt+O`: the keymap-disjointness gate refused
-a chord with two owners.
+<!-- As of 2026-09-11, 090's research phase is on disk and awaits the maintainer's discussion; no spec yet. -->
+**Next: discuss `ai_docs/features/090_render_decoupling/00_research.md`, then draft `01_spec.md`.**
+The editor lagged behind a heavy document. Measured: one loop makes the UI frame equal the
+document's GPU cost (104 ms with a 100 ms document, keys land a frame later); this NVIDIA driver
+preempts nothing inside a draw, so a render thread alone buys nothing, across contexts or even
+processes; ~6 ms scissor tiles let the UI hold 60 fps at a 25–35 % tax on the document; moderngl
+holds the GIL on every call and has no fence API, so the handoff goes through PyOpenGL; ibus's
+XIM bridge delivers one key per event pump, which is the cursor moving after release. Seven
+reports under `research/`, nine decisions open for him, high-blast-radius per `dev_flow.md`.
 
-**Awaiting his eyes** (no WM here): the formatted shape on his own file; the bands and
-whether 0.5 is the right knee (a parent without a GPU span can read cheaper than its child); the
-sorted tree; a feedback document surviving a restart; `Ctrl+O` after a search and
-normal-mode `Tab`; the modal from `Alt+O`. From before: the lock chip, the copilot under Read-only,
-blockwise `Ctrl+V`.
+**Awaiting his eyes** (from 089): the formatted shape on his own file (one parameter per line
+when the list overflows), the FPS bands and the 0.5 knee, the sorted tree, a feedback document
+surviving a restart, `Ctrl+O` after a search, normal-mode `Tab`, the modal from `Alt+O`, the lock
+chip, the copilot under Read-only, blockwise `Ctrl+V`.
 
-**Open, unmeasured:** no brake watches cost, or a frame going lit to flat (082's round-2
-report); a multi-document mission.
+**Open, unmeasured:** no brake watches cost or a frame going lit to flat (082); a multi-document
+mission.
 
 ## Features
 

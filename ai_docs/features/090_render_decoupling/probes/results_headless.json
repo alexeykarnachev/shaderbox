@@ -1,0 +1,722 @@
+[
+  {
+    "label": "trivial_render_all_off",
+    "render_all": false,
+    "n_frames": 300,
+    "period_median_ms": 6.935248999070609,
+    "period_p95_ms": 7.127689001208637,
+    "period_max_ms": 8.644531997560989,
+    "spans": {
+      "frame": {
+        "n_samples": 300,
+        "cpu_median": 6.908106999617303,
+        "cpu_p95": 7.097904999682214,
+        "cpu_max": 8.622829998785164,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/tick": {
+        "n_samples": 300,
+        "cpu_median": 1.2218880001455545,
+        "cpu_p95": 1.3307990011526272,
+        "cpu_max": 1.4449599984800443,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/tick/script": {
+        "n_samples": 300,
+        "cpu_median": 0.004150999302510172,
+        "cpu_p95": 0.005589998181676492,
+        "cpu_max": 0.008899998647393659,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/document:Trivial": {
+        "n_samples": 300,
+        "cpu_median": 0.050444999942556024,
+        "cpu_p95": 0.06527599907713011,
+        "cpu_max": 0.09098900045501068,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/document:Trivial/pass:main": {
+        "n_samples": 300,
+        "cpu_median": 0.026322999474359676,
+        "cpu_p95": 0.034543998481240124,
+        "cpu_max": 0.057135002862196416,
+        "gpu_median": 0.011264,
+        "gpu_p95": 0.047104,
+        "gpu_max": 0.059392,
+        "count_max": 1
+      },
+      "frame/ui": {
+        "n_samples": 300,
+        "cpu_median": 0.8641929998702835,
+        "cpu_p95": 0.9597419993951917,
+        "cpu_max": 1.1084969992225524,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/ui/editor": {
+        "n_samples": 300,
+        "cpu_median": 0.08106799941742793,
+        "cpu_p95": 0.09254799806512892,
+        "cpu_max": 0.11441099923104048,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/ui:draw": {
+        "n_samples": 300,
+        "cpu_median": 0.5668250014423393,
+        "cpu_p95": 0.6155800001579337,
+        "cpu_max": 0.7658639988221694,
+        "gpu_median": 0.046079999999999996,
+        "gpu_p95": 0.31232,
+        "gpu_max": 0.401408,
+        "count_max": 1
+      },
+      "frame/swap": {
+        "n_samples": 300,
+        "cpu_median": 4.059651000716258,
+        "cpu_p95": 4.292755002097692,
+        "cpu_max": 5.71210899943253,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      }
+    }
+  },
+  {
+    "label": "medium_render_all_off",
+    "render_all": false,
+    "n_frames": 300,
+    "period_median_ms": 13.878526999178575,
+    "period_p95_ms": 14.084316000662511,
+    "period_max_ms": 15.433127999131102,
+    "spans": {
+      "frame": {
+        "n_samples": 300,
+        "cpu_median": 13.850360999640543,
+        "cpu_p95": 14.060104000236606,
+        "cpu_max": 15.410454998345813,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/tick": {
+        "n_samples": 300,
+        "cpu_median": 1.2183370017737616,
+        "cpu_p95": 1.3387580002017785,
+        "cpu_max": 1.4295969995146152,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/tick/script": {
+        "n_samples": 300,
+        "cpu_median": 0.004069999704370275,
+        "cpu_p95": 0.0054010015446692705,
+        "cpu_max": 0.009051000233739614,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/document:Medium": {
+        "n_samples": 300,
+        "cpu_median": 0.049995000154012814,
+        "cpu_p95": 0.06625600144616328,
+        "cpu_max": 0.0818879998405464,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/document:Medium/pass:main": {
+        "n_samples": 300,
+        "cpu_median": 0.025782002921914682,
+        "cpu_p95": 0.034232998586958274,
+        "cpu_max": 0.04616399746737443,
+        "gpu_median": 7.30624,
+        "gpu_p95": 7.356415999999999,
+        "gpu_max": 7.358464,
+        "count_max": 1
+      },
+      "frame/ui": {
+        "n_samples": 300,
+        "cpu_median": 1.3114860012137797,
+        "cpu_p95": 1.4176459990267176,
+        "cpu_max": 1.6836720024002716,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/ui/editor": {
+        "n_samples": 300,
+        "cpu_median": 0.5198299986659549,
+        "cpu_p95": 0.5475520010804757,
+        "cpu_max": 0.6719850025547203,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/ui:draw": {
+        "n_samples": 300,
+        "cpu_median": 0.5653449989040382,
+        "cpu_p95": 0.6003880007483531,
+        "cpu_max": 0.75424200258567,
+        "gpu_median": 0.045056,
+        "gpu_p95": 0.073728,
+        "gpu_max": 0.22323199999999999,
+        "count_max": 1
+      },
+      "frame/swap": {
+        "n_samples": 300,
+        "cpu_median": 10.555234002822544,
+        "cpu_p95": 10.80017499771202,
+        "cpu_max": 12.217208997753914,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      }
+    }
+  },
+  {
+    "label": "heavy_render_all_off",
+    "render_all": false,
+    "n_frames": 300,
+    "period_median_ms": 104.15229000136605,
+    "period_p95_ms": 104.53402799976175,
+    "period_max_ms": 105.64017099750345,
+    "spans": {
+      "frame": {
+        "n_samples": 300,
+        "cpu_median": 104.09657999844057,
+        "cpu_p95": 104.471211998316,
+        "cpu_max": 105.58320600102888,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/tick": {
+        "n_samples": 300,
+        "cpu_median": 1.2539490016933996,
+        "cpu_p95": 1.422703000571346,
+        "cpu_max": 1.7298010025115218,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/tick/script": {
+        "n_samples": 300,
+        "cpu_median": 0.007270002242876217,
+        "cpu_p95": 0.008390998118557036,
+        "cpu_max": 0.015420999261550605,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/document:Heavy": {
+        "n_samples": 300,
+        "cpu_median": 0.10343900066800416,
+        "cpu_p95": 0.11270100003457628,
+        "cpu_max": 0.4410599976836238,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/document:Heavy/pass:main": {
+        "n_samples": 300,
+        "cpu_median": 0.0630350004939828,
+        "cpu_p95": 0.0701770004525315,
+        "cpu_max": 0.27568600125960074,
+        "gpu_median": 100.52608,
+        "gpu_p95": 101.58592,
+        "gpu_max": 101.924864,
+        "count_max": 1
+      },
+      "frame/ui": {
+        "n_samples": 300,
+        "cpu_median": 1.579146999574732,
+        "cpu_p95": 1.8059689973597415,
+        "cpu_max": 3.501850998873124,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/ui/editor": {
+        "n_samples": 300,
+        "cpu_median": 0.5472920020110905,
+        "cpu_p95": 0.6597510000574403,
+        "cpu_max": 0.8887849980965257,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/ui:draw": {
+        "n_samples": 300,
+        "cpu_median": 0.6446509978559334,
+        "cpu_p95": 0.6952350013307296,
+        "cpu_max": 1.0096320002048742,
+        "gpu_median": 0.047104,
+        "gpu_p95": 0.074752,
+        "gpu_max": 0.15872,
+        "count_max": 1
+      },
+      "frame/swap": {
+        "n_samples": 300,
+        "cpu_median": 100.29213600137155,
+        "cpu_p95": 101.0137550001673,
+        "cpu_max": 101.76609700283734,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      }
+    }
+  },
+  {
+    "label": "trivial_render_all_on",
+    "render_all": true,
+    "n_frames": 300,
+    "period_median_ms": 111.49381699942751,
+    "period_p95_ms": 118.3004369995615,
+    "period_max_ms": 119.77939600183163,
+    "spans": {
+      "frame": {
+        "n_samples": 300,
+        "cpu_median": 111.4167899977474,
+        "cpu_p95": 118.23055800050497,
+        "cpu_max": 119.69301800127141,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/tick": {
+        "n_samples": 300,
+        "cpu_median": 1.2462600025173742,
+        "cpu_p95": 1.5175439984886907,
+        "cpu_max": 2.131658999132924,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/tick/script": {
+        "n_samples": 300,
+        "cpu_median": 0.01036100002238527,
+        "cpu_p95": 0.012340999091975391,
+        "cpu_max": 0.018142000044463202,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/document:Trivial": {
+        "n_samples": 300,
+        "cpu_median": 0.10579000081634149,
+        "cpu_p95": 0.11378999988664873,
+        "cpu_max": 0.1394120008626487,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/document:Trivial/pass:main": {
+        "n_samples": 300,
+        "cpu_median": 0.06540599861182272,
+        "cpu_p95": 0.07178599844337441,
+        "cpu_max": 0.08647800132166594,
+        "gpu_median": 0.012288,
+        "gpu_p95": 0.012288,
+        "gpu_max": 0.032768,
+        "count_max": 1
+      },
+      "frame/document:Medium": {
+        "n_samples": 300,
+        "cpu_median": 0.04047299808007665,
+        "cpu_p95": 0.04860500121139921,
+        "cpu_max": 0.0915079981496092,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/document:Medium/pass:main": {
+        "n_samples": 300,
+        "cpu_median": 0.01975199847947806,
+        "cpu_p95": 0.02414199843769893,
+        "cpu_max": 0.034232998586958274,
+        "gpu_median": 7.8336,
+        "gpu_p95": 7.96672,
+        "gpu_max": 8.03328,
+        "count_max": 1
+      },
+      "frame/document:Heavy": {
+        "n_samples": 300,
+        "cpu_median": 0.034112999856006354,
+        "cpu_p95": 0.04169400199316442,
+        "cpu_max": 0.06354599827318452,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/document:Heavy/pass:main": {
+        "n_samples": 300,
+        "cpu_median": 0.015780999092385173,
+        "cpu_p95": 0.01871200220193714,
+        "cpu_max": 0.03165299858665094,
+        "gpu_median": 102.193152,
+        "gpu_p95": 103.556096,
+        "gpu_max": 104.723456,
+        "count_max": 1
+      },
+      "frame/ui": {
+        "n_samples": 300,
+        "cpu_median": 1.1517230013851076,
+        "cpu_p95": 1.2937639985466376,
+        "cpu_max": 1.701581000816077,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/ui/editor": {
+        "n_samples": 300,
+        "cpu_median": 0.09999900066759437,
+        "cpu_p95": 0.12405099914758466,
+        "cpu_max": 0.18263599849888124,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/ui:draw": {
+        "n_samples": 300,
+        "cpu_median": 0.6478380018961616,
+        "cpu_p95": 0.7316240007639863,
+        "cpu_max": 0.9751659999892581,
+        "gpu_median": 0.048128,
+        "gpu_p95": 0.07782399999999999,
+        "gpu_max": 0.181248,
+        "count_max": 1
+      },
+      "frame/swap": {
+        "n_samples": 300,
+        "cpu_median": 108.10533299809322,
+        "cpu_p95": 114.88826499771676,
+        "cpu_max": 115.46666899812408,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      }
+    }
+  },
+  {
+    "label": "medium_render_all_on",
+    "render_all": true,
+    "n_frames": 300,
+    "period_median_ms": 111.40964299920597,
+    "period_p95_ms": 118.48221000036574,
+    "period_max_ms": 124.8193879982864,
+    "spans": {
+      "frame": {
+        "n_samples": 300,
+        "cpu_median": 111.33094600154436,
+        "cpu_p95": 118.40926699733245,
+        "cpu_max": 124.7493230002874,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/tick": {
+        "n_samples": 300,
+        "cpu_median": 1.2563569980557077,
+        "cpu_p95": 1.6245500009972602,
+        "cpu_max": 2.3441399971488863,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/tick/script": {
+        "n_samples": 300,
+        "cpu_median": 0.010681000276235864,
+        "cpu_p95": 0.013150998711353168,
+        "cpu_max": 0.023753000277793035,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/document:Medium": {
+        "n_samples": 300,
+        "cpu_median": 0.10608899901853874,
+        "cpu_p95": 0.11871999959112145,
+        "cpu_max": 0.14835199908702634,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/document:Medium/pass:main": {
+        "n_samples": 300,
+        "cpu_median": 0.06546599979628809,
+        "cpu_p95": 0.07146600182750262,
+        "cpu_max": 0.08300700210384093,
+        "gpu_median": 7.8991359999999995,
+        "gpu_p95": 7.998463999999999,
+        "gpu_max": 8.539136,
+        "count_max": 1
+      },
+      "frame/document:Trivial": {
+        "n_samples": 300,
+        "cpu_median": 0.041093000618275255,
+        "cpu_p95": 0.05063400021754205,
+        "cpu_max": 0.0781659982749261,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/document:Trivial/pass:main": {
+        "n_samples": 300,
+        "cpu_median": 0.020380997739266604,
+        "cpu_p95": 0.024111999664455652,
+        "cpu_max": 0.02958300319733098,
+        "gpu_median": 0.009216,
+        "gpu_p95": 0.324608,
+        "gpu_max": 1.317888,
+        "count_max": 1
+      },
+      "frame/document:Heavy": {
+        "n_samples": 300,
+        "cpu_median": 0.034223001421196386,
+        "cpu_p95": 0.04266300311428495,
+        "cpu_max": 0.057644996559247375,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/document:Heavy/pass:main": {
+        "n_samples": 300,
+        "cpu_median": 0.01586199869052507,
+        "cpu_p95": 0.018511000234866515,
+        "cpu_max": 0.029372000426519662,
+        "gpu_median": 102.678528,
+        "gpu_p95": 103.945216,
+        "gpu_max": 110.729216,
+        "count_max": 1
+      },
+      "frame/ui": {
+        "n_samples": 300,
+        "cpu_median": 1.6080739987955894,
+        "cpu_p95": 2.0726069997181185,
+        "cpu_max": 3.057931000512326,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/ui/editor": {
+        "n_samples": 300,
+        "cpu_median": 0.5471769982250407,
+        "cpu_p95": 0.8214000008592848,
+        "cpu_max": 1.2863500014645979,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/ui:draw": {
+        "n_samples": 300,
+        "cpu_median": 0.6471239976235665,
+        "cpu_p95": 0.7817559999239165,
+        "cpu_max": 1.2050030018144753,
+        "gpu_median": 0.048128,
+        "gpu_p95": 0.078848,
+        "gpu_max": 0.21503999999999998,
+        "count_max": 1
+      },
+      "frame/swap": {
+        "n_samples": 300,
+        "cpu_median": 107.44945100304903,
+        "cpu_p95": 114.41725199983921,
+        "cpu_max": 120.56710899923928,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      }
+    }
+  },
+  {
+    "label": "heavy_render_all_on",
+    "render_all": true,
+    "n_frames": 300,
+    "period_median_ms": 112.19575200084364,
+    "period_p95_ms": 118.48307000036584,
+    "period_max_ms": 120.05208499977016,
+    "spans": {
+      "frame": {
+        "n_samples": 300,
+        "cpu_median": 112.12953699941863,
+        "cpu_p95": 118.40223399849492,
+        "cpu_max": 119.98625999694923,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/tick": {
+        "n_samples": 300,
+        "cpu_median": 1.2599410001712386,
+        "cpu_p95": 1.4850589977868367,
+        "cpu_max": 1.816200001485413,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/tick/script": {
+        "n_samples": 300,
+        "cpu_median": 0.010471001587575302,
+        "cpu_p95": 0.012321001122472808,
+        "cpu_max": 0.02131200017174706,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/document:Heavy": {
+        "n_samples": 300,
+        "cpu_median": 0.10612799815135077,
+        "cpu_p95": 0.11757900210795924,
+        "cpu_max": 0.12961999891558662,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/document:Heavy/pass:main": {
+        "n_samples": 300,
+        "cpu_median": 0.0657660020806361,
+        "cpu_p95": 0.07201599873951636,
+        "cpu_max": 0.08245600110967644,
+        "gpu_median": 102.791168,
+        "gpu_p95": 105.14227199999999,
+        "gpu_max": 107.72991999999999,
+        "count_max": 1
+      },
+      "frame/document:Trivial": {
+        "n_samples": 300,
+        "cpu_median": 0.041213999793399125,
+        "cpu_p95": 0.04927400004817173,
+        "cpu_max": 0.061505001212935895,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/document:Trivial/pass:main": {
+        "n_samples": 300,
+        "cpu_median": 0.020440998923731968,
+        "cpu_p95": 0.02350200156797655,
+        "cpu_max": 0.03359300171723589,
+        "gpu_median": 0.009216,
+        "gpu_p95": 1.323008,
+        "gpu_max": 1.503232,
+        "count_max": 1
+      },
+      "frame/document:Medium": {
+        "n_samples": 300,
+        "cpu_median": 0.033993001125054434,
+        "cpu_p95": 0.04152300243731588,
+        "cpu_max": 0.0607149995630607,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/document:Medium/pass:main": {
+        "n_samples": 300,
+        "cpu_median": 0.015631001588189974,
+        "cpu_p95": 0.01826200241339393,
+        "cpu_max": 0.03971399928559549,
+        "gpu_median": 7.9616,
+        "gpu_p95": 8.114176,
+        "gpu_max": 8.372224,
+        "count_max": 1
+      },
+      "frame/ui": {
+        "n_samples": 300,
+        "cpu_median": 1.6071119971456937,
+        "cpu_p95": 1.795948002836667,
+        "cpu_max": 2.6095829998666886,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/ui/editor": {
+        "n_samples": 300,
+        "cpu_median": 0.5468740018841345,
+        "cpu_p95": 0.6646340007137042,
+        "cpu_max": 1.0496869981579948,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      },
+      "frame/ui:draw": {
+        "n_samples": 300,
+        "cpu_median": 0.6486130005214363,
+        "cpu_p95": 0.7202689994301181,
+        "cpu_max": 0.8919430001697037,
+        "gpu_median": 0.048128,
+        "gpu_p95": 0.094208,
+        "gpu_max": 0.22425599999999998,
+        "count_max": 1
+      },
+      "frame/swap": {
+        "n_samples": 300,
+        "cpu_median": 108.17303400108358,
+        "cpu_p95": 114.33359900183859,
+        "cpu_max": 116.04093999994802,
+        "gpu_median": null,
+        "gpu_p95": null,
+        "gpu_max": null,
+        "count_max": 1
+      }
+    }
+  }
+]

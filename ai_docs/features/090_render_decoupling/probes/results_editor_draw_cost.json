@@ -1,0 +1,16 @@
+[
+  {
+    "document": "heavy",
+    "editor_layout_cpu_max_ms": 1.2245519974385388,
+    "editor_draw_gpu_samples": 38,
+    "editor_draw_gpu_max_ms": 1.5513599999999999,
+    "editor_draw_cpu_wrapper_max_ms": 0.2431659995636437
+  },
+  {
+    "document": "trivial",
+    "editor_layout_cpu_max_ms": 0.5438660009531304,
+    "editor_draw_gpu_samples": 38,
+    "editor_draw_gpu_max_ms": 0.010239999999999999,
+    "editor_draw_cpu_wrapper_max_ms": 0.20093399871257134
+  }
+]
