@@ -338,7 +338,7 @@ def _draw_error_strip(
     if imgui.begin_child("##shader_errors", size=(0.0, height)):
         n = len(errors)
         if n > 1:
-            imgui.text_colored(COLOR.FG_DIM, f"{n} errors  (F8: next)")
+            imgui.text_colored(COLOR.FG_DIM, f"{n} errors")
         shown = _visible_error_rows(app, n)
         for i, err in enumerate(errors[:shown]):
             label = (

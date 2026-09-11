@@ -530,7 +530,14 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   is not undoable. `format_glsl` then runs one host post-pass, `_attach_member_access`, joining
   a `.member` line onto the `)` above it: a member access after a block-closing bracket is a
   forced break in clang-format, not a penalty outcome, so no style option can buy it back (089
-  D1).
+  D1). Arguments and parameters are NOT bin-packed (`BinPackArguments: false`,
+  `BinPackParameters: OnePerLine`): a list that fits on the one continuation line after the
+  open bracket stays there, and one that overflows it goes one per line, in a column. Loop
+  conditions take the same break-after-open / break-before-close shape as calls
+  (`BreakAfterOpenBracketLoop` / `BreakBeforeCloseBracketLoop`); `if` conditions keep LLVM's
+  aligned continuation because `BreakAfterOpenBracketIf` is inert for a plain `if` in
+  clang-format 23.1.0 (measured; the documented example is `if constexpr`). Revisit the `if`
+  shape when the `clang-format` wheel is bumped.
 - **`InlineInput` dataclass for mutually-exclusive inline editors.** A picker / panel hosting
   multiple inline text-input affordances (rename / new-file / new-dir) uses one `InlineInput`
   instance per kind — `target: Path | None`, `buf: str`, `needs_focus: bool` with

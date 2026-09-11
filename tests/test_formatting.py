@@ -71,6 +71,82 @@ _CHAIN_FORMATTED = (
 )
 
 
+_HIS_DECLARATION = (
+    "vec4 collect_light(vec2 p, int n_rays, int max_n_steps, float band_offset, "
+    "float band_size, float asdfasdfsaf, float asdfasdf) {\n"
+    "    return vec4(0.0);\n"
+    "}\n"
+)
+_HIS_DECLARATION_FORMATTED = (
+    "vec4 collect_light(\n"
+    "    vec2 p,\n"
+    "    int n_rays,\n"
+    "    int max_n_steps,\n"
+    "    float band_offset,\n"
+    "    float band_size,\n"
+    "    float asdfasdfsaf,\n"
+    "    float asdfasdf\n"
+    ") {\n"
+    "    return vec4(0.0);\n"
+    "}\n"
+)
+_OVERFLOWING_CALL = (
+    "void main() {\n"
+    "    vec3 light = collect_light(vs_uv, u_n_rays, u_max_n_steps, band_offset, "
+    "band_size, u_another_long_name, u_yet_another).rgb;\n"
+    "}\n"
+)
+_OVERFLOWING_CALL_FORMATTED = (
+    "void main() {\n"
+    "    vec3 light = collect_light(\n"
+    "        vs_uv,\n"
+    "        u_n_rays,\n"
+    "        u_max_n_steps,\n"
+    "        band_offset,\n"
+    "        band_size,\n"
+    "        u_another_long_name,\n"
+    "        u_yet_another\n"
+    "    ).rgb;\n"
+    "}\n"
+)
+_LONG_LOOP = (
+    "void main() {\n"
+    "    while (aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa > "
+    "bbbbbbbbbbbbbbbbbbbbbbbbbb) {\n"
+    "        z = 4.0;\n"
+    "    }\n"
+    "}\n"
+)
+_LONG_LOOP_FORMATTED = (
+    "void main() {\n"
+    "    while (\n"
+    "        aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa >\n"
+    "        bbbbbbbbbbbbbbbbbbbbbbbbbb\n"
+    "    ) {\n"
+    "        z = 4.0;\n"
+    "    }\n"
+    "}\n"
+)
+
+
+def test_parameters_that_overflow_the_continuation_line_go_one_per_line() -> None:
+    result = format_glsl(_HIS_DECLARATION)
+    assert result.ok
+    assert result.text == _HIS_DECLARATION_FORMATTED
+
+
+def test_arguments_that_overflow_the_continuation_line_go_one_per_line() -> None:
+    result = format_glsl(_OVERFLOWING_CALL)
+    assert result.ok
+    assert result.text == _OVERFLOWING_CALL_FORMATTED
+
+
+def test_a_loop_condition_breaks_after_the_bracket_like_a_call() -> None:
+    result = format_glsl(_LONG_LOOP)
+    assert result.ok
+    assert result.text == _LONG_LOOP_FORMATTED
+
+
 def test_the_maintainers_line_breaks_after_the_bracket_and_keeps_the_member() -> None:
     result = format_glsl(_HIS_LINE)
     assert result.ok
@@ -150,7 +226,14 @@ def test_a_continued_expression_is_not_a_member_access() -> None:
 
 
 def test_the_member_access_join_is_a_fixed_point_of_format_glsl() -> None:
-    for source in (_HIS_LINE, _FITTING_CALL, _CHAIN):
+    for source in (
+        _HIS_LINE,
+        _FITTING_CALL,
+        _CHAIN,
+        _HIS_DECLARATION,
+        _OVERFLOWING_CALL,
+        _LONG_LOOP,
+    ):
         once = format_glsl(source)
         assert once.ok
         twice = format_glsl(once.text)

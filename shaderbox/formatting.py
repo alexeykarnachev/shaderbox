@@ -20,8 +20,9 @@ PYTHON_LINE_LENGTH = 88
 GLSL_STYLE = (
     "{BasedOnStyle: LLVM, IndentWidth: 4, TabWidth: 4, UseTab: Never, "
     "AlignAfterOpenBracket: false, BreakAfterOpenBracketFunction: true, "
-    "BreakBeforeCloseBracketFunction: true, BinPackArguments: true, "
-    "PenaltyBreakAssignment: 1000}"
+    "BreakBeforeCloseBracketFunction: true, BreakAfterOpenBracketLoop: true, "
+    "BreakBeforeCloseBracketLoop: true, BinPackArguments: false, "
+    "BinPackParameters: OnePerLine, PenaltyBreakAssignment: 1000}"
 )
 
 # A line beginning with `.` is only ever a member access in GLSL, and clang-format writes
