@@ -778,6 +778,13 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   output canvas and every history rather than one canvas. Revisit if a document needs a live
   size that is neither its own number nor its display's.
 
+- **A document's draw is never split into tiles, and the UI never waits on a smaller piece of it
+  (feature 090).** Tiling a fullscreen pass into ~6 ms scissor draws was measured to hold the UI
+  at 60 fps beside a 100 ms document at a 25–35 % document tax
+  (`ai_docs/features/090_render_decoupling/research/gpu_preemption.md`), and the maintainer
+  rejected it as too many moving parts. The levers are the throttle (how often a document
+  renders) and the Auto resolution (how much it renders); a hitch is as long as the document's
+  draw. Revisit if the hitch length itself, not its frequency, becomes the complaint.
 - **One shared GPU budget decides how often each displayed document renders (feature 090).**
   `render_plan.py` is the whole rule as a pure function: `plan_render_set` takes the per-document
   `CostRecord`s and answers an interval and a phase each. The CURRENT document draws on the
