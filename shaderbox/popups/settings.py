@@ -90,12 +90,13 @@ def _draw_body(app: App) -> bool:
     app.app_state.is_throttle_documents = imgui.checkbox(
         "Throttle documents", app.app_state.is_throttle_documents
     )[1]
-    label_row(app.font_12, "Document GPU budget", ctrl_w, label_w)
+    label_row(app.font_12, "GPU budget", ctrl_w, label_w)
     percent = imgui.drag_int(
         "##document_gpu_budget",
         round(app.app_state.document_gpu_budget * 100),
         v_min=10,
         v_max=100,
+        format="%d%%",
         flags=imgui.SliderFlags_.always_clamp,
     )[1]
     app.app_state.document_gpu_budget = percent / 100.0
