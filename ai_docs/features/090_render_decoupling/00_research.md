@@ -49,13 +49,58 @@ A correction to what was said in chat before the research: the browser analogy (
 tab does not freeze the browser") does not transfer. On this driver, isolation by context or by
 process gives no preemption inside one draw. Draw duration is the only lever.
 
+## Context priority: measured and refuted
+
+The maintainer asked why a terminal vim stays fine while a heavy document renders. The desktop
+runs gnome-shell with mutter, the driver exposes `EGL_IMG_context_priority`, and compositors
+request a high-priority context, so a fourth lever was tested: UI on a HIGH context, document on
+a LOW one. The driver grants all three levels distinctly (`eglQueryContext` confirms), and
+schedules nothing differently: a HIGH light context beside a single 100 ms LOW draw measured
+101.05 / 101.25 ms with 48/48 missed frames, against the equal-priority control's 101.47 ms;
+the same across two processes; and 16 tiles cost the document the same with or without
+priority. Priority decides what runs next, and on this driver "next" only comes at a draw
+boundary. glfw 3.4 has no priority hint and `glcontext`'s EGL attribs are a fixed literal, so
+the app could not adopt it without leaving glfw anyway. (`research/context_priority.md`)
+
+Mutter's high-priority request exists in `cogl-winsys-egl.c` but the X11 session routes through
+GLX and never reaches it. And a plain CPU-drawn X window (`XPutImage` + `XSync`) stalls to
+102 ms beside the probe too: on this driver Xorg draws it on the GPU. So the desktop is not
+smooth beside a real 100 ms draw either. The terminal feels fine for two reasons that are about
+the app, not the driver: the maintainer's real documents are lighter than the probe (the lag was
+"sometimes", which fits 30–60 ms), and **the terminal's event loop is not its render loop**: GTK
+pumps X events and the ibus round trip continuously, so every key is processed on arrival and
+the screen catches up whenever the GPU gives it a slot, with nothing accumulating. ShaderBox
+pumps once per frame and the frame is blocked inside `swap_buffers` for the document's duration.
+
+That splits the goal in two, and they have different fixes:
+
+- **Input latency** (the editor reacts to a key on time, nothing accumulates): the thread that
+  pumps events and runs the editor must never wait on the GPU. glfw allows `swap_buffers` from
+  any thread and imgui's sanctioned pattern is a draw-data snapshot uploaded elsewhere, so the
+  main thread can own events, imgui and the editor logic while a GL thread owns every draw, the
+  documents and the UI upload alike, and the swap. This alone gives the terminal's behavior:
+  keys land at once, the picture lags by whatever the GPU is doing.
+- **Display latency** (the editor's picture updates at 60 fps beside a heavy document): only
+  short draws interleave on this driver. That is tiling, with its tax.
+
+**An unresolved discrepancy on the tax.** The preemption experiment measured 16 scissor tiles at
+~1 ms over one fullscreen pass in isolation (102.5 vs 101.5 ms, moderngl probes), while the
+priority experiment's solo run measured the same split at 144 ms (raw PyOpenGL probes, its own
+tiling code). One of the two tiling implementations carries ~40 ms of overhead that the other
+does not, or measures a different thing. The spec must settle this with one probe before it
+states the document tax; until then the honest range is "from ~1 % to ~40 % depending on how the
+tiles are issued".
+
 ## The shape the evidence supports
 
 Not "move rendering to a thread" but **"move rendering to a thread AND bound every draw's
 duration"**. The thread is necessary (the UI thread must never issue or wait on document work);
 tiling is what makes the GPU interleave. Each part below has a measured reason.
 
-**A render thread owning a second GL context.** A hidden glfw window created on the main thread
+**A GL thread owning every draw, on a second GL context.** The main thread pumps events, runs
+imgui and the editor, and hands over an imgui draw-data snapshot; the GL thread uploads it,
+renders documents, and swaps, so the main thread never waits on the GPU (the terminal's
+property). The context itself is a hidden glfw window created on the main thread
 with `share=` the main window (glfw's documented offscreen pattern; window creation and the event
 pump are main-thread-only, `make_context_current` and `swap_buffers` are any-thread). The context
 is made current on the worker once and stays there for its life (moderngl's maintainer's own
@@ -136,6 +181,8 @@ spec-fidelity audit, swarm convergence, sanitization sweep.
    UI is idle (the document gets full throughput when nobody is typing; a mode switch to design);
    expose the target tile duration as a setting. The measured knee is 16–25 tiles for a 100 ms
    pass; 36+ degrade the document without helping the UI.
+   The tax itself is disputed between two probes (see above) and must be re-measured before
+   this decision is taken.
 2. **What the render thread owns beyond the live frame.** (a) Only per-frame document draws move;
    exports and copilot renders stay main-thread through the existing post-swap funnel. (b)
    Everything GL moves, and the funnel's "after swap" ordering becomes an explicit signal. The
@@ -168,6 +215,10 @@ spec-fidelity audit, swarm convergence, sanitization sweep.
 9. **The copilot's GL-free carve-out** (`document_tree`, `grep`, `read_lib` read `Document`
    fields from the copilot thread unguarded) must be re-justified once the render thread is a
    second writer, or routed through the same snapshot.
+10. **Whether the UI's own draw moves to the GL thread too** (the draw-data snapshot shape) or
+   the main thread keeps imgui's render and swap. The first decouples input latency from the
+   GPU completely; the second keeps today's imgui backend untouched but leaves the main thread
+   blocking in `swap_buffers` behind whatever tile is running.
 
 ## Verification the spec will carry
 
@@ -205,4 +256,5 @@ that could change swap behavior.
 | `research/gl_sites.md` | 47 per-frame + 23 lifecycle GL sites, the bridge, the out-of-place blit | — |
 | `research/decisions_audit.md` | Which locked decisions 090 honors, extends or reverses; sizing | high-blast-radius |
 | `research/prior_art.md` | glfw / moderngl / GL spec / driver facts with fetched quotes; what is folklore | — |
+| `research/context_priority.md` | EGL context priority is granted but changes no scheduling; mutter's path unused on X11; a CPU-drawn X window stalls too | REFUTES, both claims |
 | `research/input_method.md` | The ibus one-per-pump protocol and the in-process opt-out | — |
