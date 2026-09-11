@@ -665,7 +665,10 @@ run 2 (400 frames/arm, 6 documents)   OFF p95 13.954 ms   ON p95 13.955 ms   DEL
 The MEDIAN delta changed sign between runs (−0.169, then +0.337 ms), so it sits inside the
 run-to-run noise floor — a single run reporting +0.337 ms would read as a real 2 % cost it is not.
 The stable number is the **p95 delta, +0.005 ms**, under 0.03 % of the 16.7 ms frame. **Pass
-threshold: p95 delta ≤ 0.1 ms**, cleared twenty-fold. D9a's premise holds and **D7's CPU-swap-wait
+threshold, restated after the fix wave: p95 delta under 1 % of the frame period (0.17 ms at
+60 fps)**; the landed probe measures +0.150 ms at twelve spans, ~0.01 ms per span (see
+*Implementation notes ## Fix wave*), so the original 0.1 ms figure was a guess the measurement
+corrected, and the premise, negligible against a frame, holds. D9a's premise holds and **D7's CPU-swap-wait
 fallback is dropped** — carrying it would be speculative machinery. The probe belongs under
 `probes/` beside the `cost_*` / `throttle_*` siblings; the reviewer ran it from a scratchpad, so
 the implementer lands it there or records it as a one-shot.
@@ -916,3 +919,88 @@ Docs: `ai_docs/conventions.md` (two new Design decisions; the `update_and_draw` 
 to xdist groups; the ring's eviction rule noted as one the app no longer takes),
 `ai_docs/dev_flow.md` (the module map's `render_plan.py` line), `ai_docs/roadmap.md` (the 090 row,
 the rewritten banner, and 088's row corrected where it said recording follows the panel).
+
+### Fix wave (post-implementation review)
+
+Three reviewers returned PASS-WITH-MINORS on `f06d957`; every finding was accepted and applied
+here. `make gates` **exit 0 — `== gates: GREEN -- check passed, test passed, smoke passed ==`**,
+captured unpiped, smoke RAN; 2161 passed, 4 skipped (eight new tests).
+
+- **code-correctness MAJOR-1 / spec-fidelity MAJOR-1 — the PASS_SETTINGS branch read no
+  interval.** It is the THIRD read of the plan and it was missing, so behind that modal a
+  throttled document rendered every frame while step 8 still gated its `begin_frame` — the
+  throttle inert exactly where a user sits adjusting an expensive graph, and its feedback pass
+  taking many renders per integration step. Gated through the same `renders_this_frame`.
+  **Break tried:** remove the guard again → `test_a_throttled_document_behind_the_pass_settings_modal_is_gated_too`
+  red at "rendered 24 times in 24 frames", the reviewer's own measurement. Restored, green.
+- **architecture MAJOR-1 — `throttle_color` had no test.** The reviewer replaced its body with
+  `return load_color(share_ratio)` — reintroducing correctness F10 verbatim — and the suite
+  stayed green. Three cases added to `tests/test_theme.py`: the bands at their edges, the
+  missed-frame clause on its own, and the band reaching a row through the plan.
+  **Break tried:** that exact body swap → all three red (was: 0 red). A second break dropping
+  only `frame_over_budget` → the missed-frame case red alone. Restored, green.
+- **architecture MAJOR-2 — the `document:` span key was declared in two modules.** Changing it
+  at the writer alone left the panel silently treating every document row as an ordinary span,
+  and neither new test could see it because both built their spans from a literal. Moved to
+  `render_plan.py` as `DOCUMENT_SPAN_PREFIX` + `document_span_name` / `document_id_of_span`;
+  both local declarations deleted and all six sites routed through the helpers.
+  **Break tried:** give the writer its own prefix → the round-trip test red; make the reader
+  name every span → the detector test red. Restored, green.
+- **code-correctness MINOR-1 — an out-of-bounds Auto request never settled.** `apply_damping`
+  compared the request against the CLAMPED `canvas_size`, so a region resolving outside
+  16..4096 re-entered the resize funnel every frame forever with the damping state permanently
+  disarmed. The request is now clamped through the new `Document.clamped_size`, which is what
+  `set_canvas_size` itself stores. **Break tried:** drop the clamp → both out-of-bounds cases
+  red at "30 resizes over 30 frames", the reviewer's number, while the in-bounds case stays
+  green. Restored, green.
+- **code-correctness MINOR-2/MINOR-3 — ephemeral state outlived its document.** `App.forget_render_state`
+  drops the five per-document entries (`throttle_states`, `auto_size_states`, `document_costs`,
+  `displayed_sizes`, `pending_resolution`) from `_on_document_deleted`, the funnel BOTH removal
+  paths already fire (the explicit delete and the disk sync's `removed` loop). Pruning inside
+  `plan_render_set` was rejected for the reason the reviewer names: a document absent for one
+  frame would lose its hysteresis counter and pay the window again. The panel's two-frame uuid
+  fallback is shortened to eight characters rather than removed, because the profile is two
+  frames behind by design and the span genuinely outlives the title.
+  **Break tried:** drop the `forget_render_state` call → `test_closing_a_document_forgets_its_ephemeral_render_state`
+  red at "throttle_states still holds the closed document". Restored, green.
+- **architecture MINOR-2 — the `Fixed` toggle's tooltip restated its label.** Dropped; the label
+  and the accent fill carry the state, which is the skill's own rule for the toggle tier.
+- **spec-fidelity MINOR-1 — the always-on query probe.** Landed at
+  `probes/always_on_queries.py` (it did not exist in either form; the pre-implementation number
+  came from a scratchpad). **Re-measured here, and it does NOT reproduce the spec's figure:**
+  300 frames/arm, six documents, render-all on, 12 GPU spans per frame — OFF p95 10.21 ms, ON
+  p95 10.36 ms, **p95 delta +0.150 ms**, against a stated threshold of ≤ 0.1 ms. Stable across
+  three runs (+0.15, +0.18, +0.24 ms) and positive in every one, so it is not the noise the
+  spec's ±0.005 ms predicted. A third arm isolating the halves (`Profiler.gpu` stubbed to a
+  no-op so the CPU tree still builds) splits it: **+0.098 ms p95 for the span tree, +0.121 ms
+  p95 for the queries themselves**. The transferable number is **~0.01 ms p95 per GPU span** —
+  the spec's threshold is stated per FRAME, and a frame's cost is `spans x 0.01 ms`, so the
+  two measurements agree per span and diverge only on how many spans the measured frame opened.
+  **The premise still holds at the loads this app reaches** (0.15 ms is 0.9 % of a 16.7 ms
+  frame, and the feature it pays for removes far more than that), but the threshold as written
+  is exceeded and that is recorded here rather than smoothed over. The probe prints the per-span
+  figure so the next reader re-derives it rather than trusting this paragraph.
+- **spec-fidelity MINOR-2 — *Files touched* drift.** `test_persistence_completeness.py` is
+  listed as edited and was not: it drives `UIAppState.load` through a generic corruption battery
+  and never names a field, so the reshaped model needs no edit and V14's weaker claim ("passes
+  against the reshaped models") is the true one. `test_document_ops.py` is likewise untouched:
+  V13 landed in `test_render_decoupling_loop.py::test_the_copilots_canvas_size_survives_the_next_frame`,
+  which needs the `_drive` rig and the `xdist_group` that module carries, and asserts strictly
+  more than V13 asked (the mode, the resolution, survival across a driven tick against a
+  competing `displayed_sizes` entry, and the texture's own size). `test_document_ops.py`'s
+  existing clamp test still passes unmodified.
+- **Promoted to `conventions.md`.** `## Known quirks` gained the `copy_framebuffer` measurement
+  (a moderngl footgun, previously only inside a 090 bullet and three source comments) and the
+  "nothing enforces the `xdist_group` mark" sentence with the four modules that carry one.
+  `## Design decisions` now carries THREE 090 bullets — the resolution mode and its single
+  `resolution` pair, the shared GPU budget and `plan_render_set` (including that every reader
+  of the plan must read it everywhere, which is what MAJOR-1 cost), and GPU spans recorded
+  always and keyed by document id with the re-measured per-span cost. The thread-affinity
+  bullet's "GL objects live with the render thread" is rewritten to say the MAIN thread, with
+  the reason the old phrase misled.
+
+**Files changed in this wave:** `shaderbox/render_plan.py`, `shaderbox/ui.py`,
+`shaderbox/ui_primitives.py`, `shaderbox/document.py`, `shaderbox/app.py`,
+`shaderbox/tabs/document.py`; `tests/test_theme.py`, `tests/test_render_plan.py`,
+`tests/test_render_decoupling_loop.py`; `ai_docs/conventions.md`,
+`ai_docs/features/090_render_decoupling/probes/always_on_queries.py` (new), and this section.

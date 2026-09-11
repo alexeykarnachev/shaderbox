@@ -55,8 +55,6 @@ def _draw_resolution_mode(app: App, ui_document: UIDocument) -> None:
         # applies through the same deferred path the picker uses.
         if mode is ResolutionMode.FIXED:
             app.pending_resolution[ui_document.id] = ui_document.ui_state.resolution
-    if imgui.is_item_hovered():
-        imgui.set_tooltip("Fixed canvas size")
 
 
 def _draw_document_reset(app: App) -> None:

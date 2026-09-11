@@ -776,19 +776,39 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   size that is neither its own number nor its display's.
 
 - **One shared GPU budget decides how often each displayed document renders (feature 090).**
-  `render_plan.py` is the whole rule as a pure function — `plan_render_set` over a per-document
-  `CostRecord`, answering an interval and a phase per document, with `MAX_INTERVAL` binding
-  every interval and a four-frame hysteresis absorbing the cost input's own two-frame read lag.
-  The cost is written in ONE place, `_tick_frame_state`'s step 3, from the profiler's
-  `document:<id>` spans; the render sites open the span and write nothing. The span key is the
-  document ID, and a title reaches the FPS panel through an id -> title map — matching through
-  a title gives two same-titled documents one set of numbers. Same-interval documents take
-  different phases, or three previews at one interval land on one frame and leave 42 empty.
-  The profiler therefore records ALWAYS (the panel's open state decides only what is drawn):
-  measured, the always-on query cost is a +0.005 ms p95 delta, under 0.03 % of a frame.
-  A throttled feedback pass steps fewer times per wall second, so a trail is a coarser
-  integration under load — accepted, with the Settings checkbox as the escape. Revisit if a CPU
-  throttle is wanted: `CostRecord` already carries the field and no policy reads it.
+  `render_plan.py` is the whole rule as a pure function: `plan_render_set` takes the per-document
+  `CostRecord`s and answers an interval and a phase each. The CURRENT document draws on the
+  budget first (`k = ceil(cost / (budget x period))`); every other displayed document shares what
+  remains at ONE common fps, from which each takes its own interval — so one preview gets most of
+  the remainder and twenty get a little each, with no preview constant anywhere. `MAX_INTERVAL`
+  binds every interval, not merely the zero-fps case: ten 5 ms previews behind a 40 ms document
+  compute 143 uncapped, which is a tile refreshing once every 2.4 s. Same-interval documents take
+  different PHASES, or three previews at one interval land on one frame and leave 42 empty. A
+  four-frame hysteresis absorbs the cost input's own two-frame read lag (088 D2), so an interval
+  never moves on a number the ring has not finished reporting. With the throttle off every
+  interval is 1 and every phase 0 — today's set exactly, which is what makes the setting a
+  reversible one rather than a mode with its own behavior.
+  **Whatever reads the plan must read it EVERYWHERE.** There are three render sites and the
+  feedback advance, and each is an independent read; one left ungated leaves the throttle inert
+  on that path while the others honor it (the pass-settings modal shipped exactly that way and a
+  review caught it). A throttled feedback pass steps fewer times per wall second, so a trail is a
+  coarser integration under load — accepted, with the Settings checkbox as the escape. Revisit if
+  a CPU throttle is wanted: `CostRecord` already carries the field and no policy reads it.
+
+- **GPU spans record ALWAYS and are keyed by document ID (feature 090).** The profiler stopped
+  following the FPS panel when its spans became the throttle's cost input: `App` constructs
+  `Profiler(enabled=True)` and the panel's open state decides only what is DRAWN. The cost is
+  written in ONE place, `_tick_frame_state`'s step 3, from the profiler's `document:<id>` spans;
+  the render sites open the span and write nothing, so a cost has one home. The key is the
+  document ID and never its title — a title reaches the FPS panel through an id -> title map,
+  because two same-titled documents matched through a title get one set of numbers. Both ends of
+  that key live in `render_plan.py` (`document_span_name` / `document_id_of_span`): declared at
+  the writer and at the reader separately, a changed prefix leaves the panel silently treating
+  every document row as an ordinary span. The always-on cost is measured rather than assumed, and
+  it scales with the number of spans a frame opens: about **0.01 ms p95 per GPU span**
+  (`probes/always_on_queries.py`), so twelve spans cost ~0.15 ms of a 16.7 ms frame and a lighter
+  session proportionally less. Revisit if a frame ever opens spans by the hundred, where that
+  per-span figure stops being a rounding error.
 - **The generic exporter seam carries NO exporter-domain vocabulary.** `RenderControl` is pure render
   plumbing; `exporters/base.py`, `registry.py`, `tabs/share.py`, `popups/emoji_picker.py` name no
   Telegram/sticker/pack/emoji concept. A per-exporter UI need (e.g. Telegram's emoji affordances)
@@ -927,8 +947,12 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   `u_time/u_aspect/u_resolution` skip set — never re-list the three names. Revisit if uniform defaulting
   needs a value the GL default can't express.
 - **Thread/GL affinity is enforced by METHOD ownership, not import boundaries; cross-thread reactions
-  are injected callbacks.** GL objects live with the render thread; a worker thread never touches
-  moderngl — affinity is a property of WHICH method runs where (the `Exporter` ABC's render-thread vs
+  are injected callbacks.** GL objects live with the MAIN thread — the one that owns the glfw window,
+  the GL context and the imgui frame, and the one every `Document.render` in the live loop runs on.
+  ("The render thread" is what this rule used to say, and 090's research found the phrase actively
+  misleading: it reads as a thread dedicated to rendering, which this app does not have and which
+  `00_research.md` measured as buying nothing on this driver.) A worker thread never touches
+  moderngl — affinity is a property of WHICH method runs where (the `Exporter` ABC's main-thread vs
   worker-thread split), checked by review, not by what a module can import. Free lunches the repo
   reuses: the mtime watcher already marshals work to the main thread, so a worker that must touch GL
   after a file write rides the watcher rather than inventing a queue. A worker→main reaction returns
@@ -1082,8 +1106,22 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   pytest.mark.xdist_group("<its own name>")` and `make test` runs `--dist loadgroup`, so each
   such module gets a worker of its own. A module WITHOUT a group can still land beside
   another's, which is a latent version of the same crash rather than a safe default — add the
-  mark when you add the module. (`app`-fixture tests that never call `update_and_draw` are
-  unaffected — most of the suite.)
+  mark when you add the module. **Nothing enforces the mark**: a module that drives frames
+  without one is a latent crash that surfaces only when the scheduler happens to pair it with a
+  sibling, so the mark goes in with the module rather than after the first red run. The modules
+  carrying one today are `test_code_panel.py`, `test_project_management.py`, `test_profiling.py`
+  and `test_render_decoupling_loop.py`. (`app`-fixture tests that never call `update_and_draw`
+  are unaffected — most of the suite.)
+
+- **`moderngl`'s `copy_framebuffer` does not RESCALE — it copies 1:1 into a corner.** Between two
+  differently-sized framebuffers it returns `GL_NO_ERROR` and leaves a plausible picture that is
+  the wrong one: measured twice independently, a 64x64 source half white copied into 128x128 gives
+  a white fraction of 0.125 where a rescale gives 0.5, with the far corner black. There is no flag
+  — the call takes no filter and no rectangle. A resize that must PRESERVE content draws ONE QUAD
+  instead, sampling the source texture so the rescale is the sampler's own linear filter;
+  `channel_blit.py::CanvasResampler` is that mechanism and `Document.resample_canvas` its one
+  consumer. A mean-brightness assertion passes under the broken version, so a test for a rescale
+  asserts the FAR CORNER. Revisit if moderngl ever exposes `glBlitFramebuffer`'s filter argument.
 
 - **Read a render target through `media.texture_to_rgba8`, never `texture.read()[0]`.** A raw read
   returns the texture's OWN bytes, so on an `f2` target the first "pixel" is half of one float16

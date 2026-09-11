@@ -37,6 +37,8 @@ from shaderbox.render_plan import (
     CostRecord,
     apply_damping,
     auto_canvas_size,
+    document_id_of_span,
+    document_span_name,
     plan_render_set,
 )
 from shaderbox.render_shape import ResolutionMode
@@ -60,7 +62,6 @@ from shaderbox.watch import maybe_rebuild_lib_index, reload_document_if_changed
 from shaderbox.widgets import cheatsheet, copilot_chat
 from shaderbox.widgets.document_grid import draw_document_preview_grid
 
-_DOCUMENT_SPAN_PREFIX = "document:"
 _FONT_14_SIZE = 14.0
 _FONT_18_SIZE = 18.0
 _EDITOR_MIN_W = 320.0
@@ -350,9 +351,9 @@ def _refresh_document_costs(app: App) -> None:
     if profile is None:
         return
     for span in profile.children:
-        if not span.name.startswith(_DOCUMENT_SPAN_PREFIX):
+        document_id = document_id_of_span(span.name)
+        if document_id is None:
             continue
-        document_id = span.name[len(_DOCUMENT_SPAN_PREFIX) :]
         app.document_costs[document_id] = CostRecord(
             gpu_ms=gpu_total(span), cpu_ms=span.cpu_ms
         )
@@ -394,8 +395,11 @@ def _resolve_resolutions(
             continue
         width, height = document.resolution
         aspect = width / height if height else 1.0
-        requested = auto_canvas_size(
-            displayed.get(document_id), aspect, document.canvas_size
+        # Clamped to what the funnel will actually STORE, so the damping compares like with
+        # like: a region past the canvas bounds is a request `canvas_size` can never equal, and
+        # an unclamped comparison re-enters the resize funnel on every frame forever.
+        requested = document.clamped_size(
+            auto_canvas_size(displayed.get(document_id), aspect, document.canvas_size)
         )
         state = app.auto_size_states.setdefault(document_id, AutoSizeState())
         applied = apply_damping(state, requested, document.canvas_size)
@@ -460,7 +464,7 @@ def _update_and_draw(app: App) -> None:
             # throttled document's only measured cost.
             if ui_document is not None and renders_this_frame(app, document_id):
                 document = ui_document.document
-                with app.profiler.cpu(f"{_DOCUMENT_SPAN_PREFIX}{document_id}"):
+                with app.profiler.cpu(document_span_name(document_id)):
                     document.render(profiler=app.profiler)
                 # One never-drawn pass per document per frame draws its own chain, so a
                 # reopened document's off-chain tiles fill in instead of staying black. The
@@ -475,7 +479,7 @@ def _update_and_draw(app: App) -> None:
                     None,
                 )
                 if pending is not None:
-                    with app.profiler.cpu(f"{_DOCUMENT_SPAN_PREFIX}{document_id}"):
+                    with app.profiler.cpu(document_span_name(document_id)):
                         document.render(target=pending, profiler=app.profiler)
     elif app.popup_state == PopupState.EXAMPLES:
         # Same first-render budget as the document set above: one example compiles per frame,
@@ -497,14 +501,20 @@ def _update_and_draw(app: App) -> None:
             # documents take the same interval gate the normal set does.
             if not renders_this_frame(app, example_id):
                 continue
-            with app.profiler.cpu(f"{_DOCUMENT_SPAN_PREFIX}{example_id}"):
+            with app.profiler.cpu(document_span_name(example_id)):
                 ui_document.document.render(profiler=app.profiler)
     elif (
-        app.popup_state == PopupState.PASS_SETTINGS and current_ui_document is not None
+        app.popup_state == PopupState.PASS_SETTINGS
+        and current_ui_document is not None
+        # The THIRD read of the plan, and it must agree with the other two: step 8 gates this
+        # document's `begin_frame` whatever popup is open, so a render here that ignored the
+        # interval would submit the document's whole GPU cost every frame and hand its feedback
+        # pass many renders per integration step.
+        and renders_this_frame(app, app.current_document_id)
     ):
         # The pass-settings modal's whole point is watching a wiring/target change land — keep
         # the current document rendering behind it (other modals leave renders paused).
-        with app.profiler.cpu(f"{_DOCUMENT_SPAN_PREFIX}{app.current_document_id}"):
+        with app.profiler.cpu(document_span_name(app.current_document_id)):
             current_ui_document.document.render(profiler=app.profiler)
 
     # ----------------------------------------------------------------

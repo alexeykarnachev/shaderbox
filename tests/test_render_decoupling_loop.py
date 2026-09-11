@@ -162,6 +162,47 @@ def test_the_throttle_off_advances_every_document_every_frame(
     assert set(app.render_plan.intervals.values()) == {1}
 
 
+def test_a_throttled_document_behind_the_pass_settings_modal_is_gated_too(
+    app: Any, monkeypatch: Any
+) -> None:
+    # The THIRD render branch. The pass-settings modal keeps the current document rendering
+    # behind it, and that branch read no interval while step 8 gated the same document's
+    # `begin_frame` -- so the throttle was inert exactly where a user sits adjusting an
+    # expensive graph, and its feedback pass took many renders per integration step. Falsifier:
+    # remove the `renders_this_frame` guard from the PASS_SETTINGS branch and this counts 24.
+    from shaderbox.app import PopupState
+    from shaderbox.ui import update_and_draw
+
+    _freeze_costs(app, monkeypatch)
+    _plant_cost(app, app.current_document_id, 100.0)
+    for _ in range(8):
+        app.popup_state = PopupState.PASS_SETTINGS
+        update_and_draw(app)
+
+    renders = _count_renders(app, monkeypatch, app.ui_documents)
+    begins = _count_begin_frames(app, monkeypatch)
+    try:
+        for _ in range(24):
+            app.popup_state = PopupState.PASS_SETTINGS
+            update_and_draw(app)
+    finally:
+        app.popup_state = PopupState.CLOSED
+
+    assert app.render_plan is not None
+    interval = app.render_plan.intervals[app.current_document_id]
+    assert interval == 12
+    drawn = renders.get(app.current_document_id, 0)
+    assert drawn <= 3, (
+        f"a k = {interval} document rendered {drawn} times in 24 frames behind the "
+        "pass-settings modal -- that branch is not reading the plan"
+    )
+    # The two reads agree: the render gate and the feedback advance admit the same frames.
+    assert abs(drawn - begins.get(app.current_document_id, 0)) <= 1, (
+        f"{drawn} renders against {begins.get(app.current_document_id, 0)} feedback "
+        "advances -- the two gates disagree"
+    )
+
+
 # ---------------------------------------------------------------------------
 # V3a -- the loop applies the damping, not the raw request
 # ---------------------------------------------------------------------------
@@ -191,6 +232,43 @@ def test_the_loop_damps_a_drag_ramp_instead_of_resizing_every_frame(
     # One more than the pure ramp's bound: the document starts at its loaded 1280x960, so the
     # first request is a jump rather than a step.
     assert 0 < len(calls) <= 5, f"{len(calls)} resizes across the ramp: {calls}"
+
+
+@pytest.mark.parametrize(
+    ("region", "label"),
+    [
+        ((5000, 3750), "past MAX_CANVAS_PX"),
+        ((12, 9), "under MIN_CANVAS_PX"),
+        ((40, 30), "a small tile, in bounds"),
+    ],
+)
+def test_a_stationary_region_settles_whatever_the_canvas_bounds_do(
+    app: Any, monkeypatch: Any, region: tuple[int, int], label: str
+) -> None:
+    # The damping compares its request against `canvas_size`, which `set_canvas_size` CLAMPS.
+    # A region resolving outside 16..4096 is therefore a size the canvas can never equal, so
+    # every frame read as "past the dead band" and re-entered the resize funnel forever, with
+    # the damping state permanently disarmed. Falsifier: drop the `clamped_size` call in
+    # `_resolve_resolutions` and the two out-of-bounds cases report 30 calls instead of 1.
+    document_id = app.current_document_id
+    document = app.ui_documents[document_id].document
+    document.resolution_mode = ResolutionMode.AUTO
+    document.resolution = (800, 600)
+
+    calls: list[tuple[int, int]] = []
+    real = type(document).set_canvas_size
+
+    def counted(self: Any, size: tuple[int, int]) -> None:
+        calls.append(size)
+        real(self, size)
+
+    monkeypatch.setattr(type(document), "set_canvas_size", counted)
+    for _ in range(30):
+        app.displayed_sizes[document_id] = region
+        _drive(app, 1)
+    assert len(calls) == 1, (
+        f"{label}: a stationary region produced {len(calls)} resizes over 30 frames"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -471,6 +549,31 @@ def test_a_pickers_commit_applies_on_the_next_tick_not_inside_the_draw(
         "the next tick did not apply the parked commit"
     )
     assert app.pending_resolution == {}, "the commit was applied and not consumed"
+
+
+def test_closing_a_document_forgets_its_ephemeral_render_state(app: Any) -> None:
+    # Every per-document dict the feature keeps is keyed by id and would otherwise hold an
+    # entry for a document nothing can render, including a cost the plan would still read.
+    # Falsifier: drop the `forget_render_state` call from `_on_document_deleted` and the four
+    # entries survive the delete.
+    other = seed_extra_document(app, "closeme-0000-4000-8000-000000000003")
+    _drive(app, 6)
+    app.displayed_sizes[other] = (200, 150)
+    app.pending_resolution[other] = (200, 150)
+    _plant_cost(app, other, 4.0)
+    assert other in app.throttle_states
+    assert other in app.auto_size_states
+
+    app.delete_document(other)
+
+    for name, holder in (
+        ("throttle_states", app.throttle_states),
+        ("auto_size_states", app.auto_size_states),
+        ("document_costs", app.document_costs),
+        ("displayed_sizes", app.displayed_sizes),
+        ("pending_resolution", app.pending_resolution),
+    ):
+        assert other not in holder, f"{name} still holds the closed document"
 
 
 def test_the_starter_document_is_the_fixture_it_claims_to_be(app: Any) -> None:

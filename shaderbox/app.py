@@ -756,6 +756,22 @@ class App:
         self._reanchor_active_tab(active)
         if document_id == self.document_delete_armed:
             self.document_delete_armed = ""
+        self.forget_render_state(document_id)
+
+    def forget_render_state(self, document_id: str) -> None:
+        """Drop every ephemeral per-document entry the render decoupling keeps (090).
+
+        Called when a document GOES AWAY, never when it merely drops out of one frame's set:
+        an interval that lost its hysteresis counter for a frame would restart at 1 and pay the
+        window again, so absence from the plan is deliberately not the trigger. `document_costs`
+        goes with them, or a cost recorded two frames before the close would plan an id nothing
+        can render.
+        """
+        self.displayed_sizes.pop(document_id, None)
+        self.pending_resolution.pop(document_id, None)
+        self.auto_size_states.pop(document_id, None)
+        self.throttle_states.pop(document_id, None)
+        self.document_costs.pop(document_id, None)
 
     def recover_deleted_document(self, msg: Message) -> None:
         # MAIN THREAD (the chat's Recover button). Restore the document, flip the card's

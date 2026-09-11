@@ -32,6 +32,24 @@ AUTO_RESIZE_DEAD_BAND: float = 0.05
 # new size every frame, so the stability clause cannot fire mid-drag; ~130 ms at 60 fps.
 AUTO_RESIZE_STABLE_FRAMES: int = 8
 
+# The profiler span key that joins a measurement to a document (090 D7). One home for both ends
+# of the wire: the render sites write it, `_refresh_document_costs` and the FPS panel read it
+# back, and a prefix changed at one end alone would leave the panel silently treating every
+# document row as an ordinary span.
+DOCUMENT_SPAN_PREFIX: str = "document:"
+
+
+def document_span_name(document_id: str) -> str:
+    """The profiler span a render of `document_id` opens."""
+    return f"{DOCUMENT_SPAN_PREFIX}{document_id}"
+
+
+def document_id_of_span(name: str) -> str | None:
+    """The document a span measures, or None where the span measures something else."""
+    if not name.startswith(DOCUMENT_SPAN_PREFIX):
+        return None
+    return name[len(DOCUMENT_SPAN_PREFIX) :]
+
 
 @dataclass(frozen=True)
 class CostRecord:

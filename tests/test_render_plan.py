@@ -19,6 +19,8 @@ from shaderbox.render_plan import (
     ThrottleState,
     apply_damping,
     auto_canvas_size,
+    document_id_of_span,
+    document_span_name,
     plan_render_set,
 )
 
@@ -260,3 +262,25 @@ def test_the_auto_size_follows_the_region_on_its_constrained_axis() -> None:
     assert auto_canvas_size((400, 300), 4 / 3, (800, 600)) == (400, 300)
     assert auto_canvas_size((400, 400), 4 / 3, (800, 600)) == (400, 300)
     assert auto_canvas_size((400, 100), 4 / 3, (800, 600)) == (133, 100)
+
+
+# ---------------------------------------------------------------------------
+# The document span key -- one home for both ends of the wire
+# ---------------------------------------------------------------------------
+
+
+def test_the_span_key_the_writer_makes_is_the_one_the_reader_parses() -> None:
+    # The key joining a profiler span to a document was declared in TWO modules, the writer's
+    # and the reader's: changing one alone left the panel silently treating every document row
+    # as an ordinary span, and no test could see it because both constructed their spans from a
+    # literal. Falsifier: give either helper its own prefix and the round trip stops closing.
+    document_id = "77a84d27-2e5b-406d-8011-ee1cb1a9587c"
+    assert document_id_of_span(document_span_name(document_id)) == document_id
+
+
+def test_a_span_that_measures_something_else_names_no_document() -> None:
+    # The reader is also the DETECTOR: `_plan_tree` asks it whether a child is a document row.
+    # Falsifier: return the whole name instead of None and every `pass:` span becomes a
+    # document row carrying a plan lookup that can never hit.
+    for name in ("pass:blur", "ui:draw", "frame", "script", "documents"):
+        assert document_id_of_span(name) is None, name

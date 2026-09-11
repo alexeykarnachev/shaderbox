@@ -381,6 +381,18 @@ class Document:
             self._resampler.release()
             self._resampler = None
 
+    def clamped_size(self, size: tuple[int, int]) -> tuple[int, int]:
+        """What `set_canvas_size(size)` would actually store.
+
+        A caller that DECIDES a size has to be able to ask, or it compares its own request
+        against a stored value the clamp moved and never agrees: the Auto loop asked for a
+        region past `MAX_CANVAS_PX` every frame forever, because `canvas_size` could not reach
+        the number it kept requesting.
+        """
+        return _clamped_to_aspect(
+            as_canvas_size(size) or DEFAULT_CANVAS_SIZE, self.resolution
+        )
+
     def resample_canvas(self, old: Canvas, size: tuple[int, int]) -> Canvas:
         """`old`'s content at `size`, as a NEW canvas; `old` is released. Allocate, blit, release.
 
@@ -421,9 +433,7 @@ class Document:
         the constrained axis and re-derives the other from `resolution`'s aspect, so the Auto
         loop closes on the stored aspect instead of drifting a little further each frame.
         """
-        self.canvas_size = _clamped_to_aspect(
-            as_canvas_size(size) or DEFAULT_CANVAS_SIZE, self.resolution
-        )
+        self.canvas_size = self.clamped_size(size)
         output = self.graph.output_pass
         self.render_pass.canvas = self.resample_canvas(
             self.render_pass.canvas, self.canvas_size

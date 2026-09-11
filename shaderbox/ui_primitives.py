@@ -11,7 +11,7 @@ from imgui_bundle import imgui, imgui_ctx
 from loguru import logger
 
 from shaderbox.profiling import FrameProfile, Span, by_cost, headline_ms, other_ms
-from shaderbox.render_plan import RenderPlan
+from shaderbox.render_plan import RenderPlan, document_id_of_span
 from shaderbox.theme import (
     COLOR,
     OVERLAY_ALPHA,
@@ -1378,9 +1378,6 @@ class ProfileRow:
     tooltip: str = ""
 
 
-_DOCUMENT_SPAN_PREFIX = "document:"
-
-
 def profile_rows_plan(
     profile: FrameProfile | None,
     fps: int,
@@ -1436,6 +1433,11 @@ def _measured_row(
     return ProfileRow(depth, name, count, f"{ms:.2f} ms", load_color(ms / budget_ms))
 
 
+# How much of a closed document's uuid its row still shows, until the two-frame-late profile
+# stops carrying its span. Enough to tell two rows apart, short enough not to clip the number.
+_CLOSED_DOCUMENT_ID_CHARS: int = 8
+
+
 def _document_row(
     depth: int,
     span: Span,
@@ -1446,8 +1448,11 @@ def _document_row(
     budget: float,
 ) -> ProfileRow:
     """One `document:<id>` span's row: its title, and its plan numbers where it is throttled."""
-    document_id = span.name[len(_DOCUMENT_SPAN_PREFIX) :]
-    title = titles.get(document_id, document_id)
+    document_id = document_id_of_span(span.name) or span.name
+    # A profile is two frames behind (088 D2), so a document closed on frame N still has a span
+    # on N+1 and N+2 while the title map no longer carries its id. A 36-character uuid clips
+    # hard in a 280-px panel, so the fallback is a short handle rather than the whole id.
+    title = titles.get(document_id) or document_id[:_CLOSED_DOCUMENT_ID_CHARS]
     ms = headline_ms(span)
     interval = plan.intervals.get(document_id, 1) if plan is not None else 1
     if plan is None or interval <= 1:
@@ -1481,7 +1486,7 @@ def _plan_tree(
 ) -> None:
     names = titles or {}
     for child in by_cost(span.children):
-        if child.name.startswith(_DOCUMENT_SPAN_PREFIX):
+        if document_id_of_span(child.name) is not None:
             rows.append(
                 _document_row(
                     depth, child, budget_ms, plan, names, frame_over_budget, budget
