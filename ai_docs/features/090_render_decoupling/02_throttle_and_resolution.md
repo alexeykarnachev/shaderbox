@@ -120,6 +120,8 @@ pure function `plan_render_set(costs, current, displayed, budget, frame_period) 
 tested without GL, the shape 088's `profile_rows_plan` set. The intervals are ephemeral, never
 persisted. The measurement's optimism (a document-carrying frame is longer than the nominal
 period) is accepted: it errs toward rendering more often, never less.
+Intervals carry hysteresis: a document's `k` changes only when the recomputed value has differed
+for a few consecutive frames, so a cost hovering at a boundary does not flicker between rates.
 
 D7 *(proposed)* **The cost input is a per-document cost record with GPU and CPU fields**, the
 GPU field from 088's timer span, recorded always and read two frames late as today; the policy
@@ -133,14 +135,26 @@ D8 **The script ticks once per UI frame, as today.** A throttled document's scri
 running at the UI rate; its uniform values reach the render on the document's next frame. GPU
 cost is the bottleneck being addressed; CPU throttling is a later policy over D7's CPU field.
 
-D9 *(proposed)* **The FPS panel shows the plan**: a document's row carries its effective fps and
-`k`, and the budget coloring reads the share over wall time (cost × document fps), so a
-converged throttled document reads green, not red.
+D9 **The profiler and the FPS surfaces reflect the plan.** Three changes. (a) GPU spans record
+ALWAYS, not only while the panel is open: this is the throttle's input and the one change to
+the profiler's mechanism; its background cost is measured before the spec locks (088 measured
+the panel-open case only). (b) The FPS chip shows two numbers when the current document is
+throttled, the UI fps and the document's own fps ("60 | doc 10"). (c) The panel's document rows
+show cost, effective fps, the interval `k`, and the share over wall time (cost × document fps),
+colored by share of the budget, so a converged throttled document reads green. Interval changes
+are logged at debug level; the row IS the event.
 
 D10 **Render all keeps its meaning** (every open document renders), but under Auto each renders
 at its tile size and under D6 each is scheduled from the shared budget, so the sum that governs
 the frame today shrinks on both axes. Under Fixed a preview must render at its full resolution,
 and D6's remainder rule is what keeps it affordable: it renders rarely.
+
+D11 **Two settings, in the Settings popup, persisted in the app state beside the target fps**
+(a property of the machine, not the project): **Throttle documents**, a checkbox, default on,
+off meaning today's behavior (every displayed document every frame, for reading a document's
+real frame rate); and **Document GPU budget**, a slider 10–100 %, default 50, the fraction of
+wall time all documents together may occupy (D6's constant). Everything else stays a code
+constant: D3's damping numbers, D6's hysteresis, D5's default export size rule.
 
 ## Out of scope (with triggers)
 
@@ -157,7 +171,7 @@ and D6's remainder rule is what keeps it affordable: it renders rarely.
 `document.py` (mode field, resolve, feedback resample, export size source), `ui_models.py`
 (persisted mode + export size), `ui.py` (layout-driven size before the render set, the plan in
 the render set), a new pure module for `plan_render_set` (leaf, no GL), `render_preset.py` /
-`render_shape.py` (D5), `profiling.py` and the FPS panel (D7, D9), `tabs/` where the resolution
+`render_shape.py` (D5), `profiling.py`, the FPS chip and panel (D7, D9), `popups/settings.py` (D11), `tabs/` where the resolution
 is edited (the mode control beside the unchanged picker), `widgets/pass_list.py` and
 `document_grid.py` (report their displayed size), `help_content.py` (`u_resolution` under
 Auto), `projects/dev` documents hand-fixed to the new field, tests for D2, D3, D4, D5, D6.
@@ -184,5 +198,9 @@ Asked and answered 2026-09-11, kept so the spec does not re-open them:
    (D7, D8).
 6. Size: large, full review cycle (Sizing).
 
-Still open, small: D3's damping numbers, D6's budget constant, D9's panel shape. The
-implementer proposes them in the spec.
+7. Config: a throttle on/off checkbox and a GPU budget slider, both app-level (D11);
+   nothing else exposed.
+8. Profiler: GPU spans always on, a two-number FPS chip, plan columns on the panel rows (D9).
+
+Still open, small: D3's damping numbers and D6's hysteresis window. The implementer proposes
+them in the spec.
