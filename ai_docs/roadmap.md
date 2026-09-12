@@ -32,10 +32,10 @@ document's passes into the current one by copy, under a group whose name prefixe
 decision per entry point (a source pass reading no other), fed by a host pass whose readers are
 handed to the bundle's output, or kept. The group is one label on the pass entry, drawn as a
 flush outline on the strip; nothing folds. The post-implementation round found a loop the plan
-never checked and a torn import leaving orphan files, both fixed and pinned.
+never checked and a torn import leaving orphan files, both fixed.
 
 **Candidate:** the opt-in, hand-drawn graph view he reopened in the 091 design round (070 closed
-a graph view as the strip's replacement; this is a second view). Its own number and spec.
+a graph view as the strip's replacement; this is a second view).
 
 **Awaiting his eyes** (no WM here): the outline and label at 480 and 1040; the import dialog
 over the examples and his Bloom Chain; Radiance Cascades imported into a document painting its
