@@ -214,29 +214,47 @@ def test_a_wire_dropped_on_a_drawn_port_writes_that_port(app: Any) -> None:
     _frames(app, 1)
 
 
-def test_a_gesture_cannot_start_during_a_copilot_turn(app: Any) -> None:
-    # Round 2's regression: the turn's cancel ran, then the same frame's press re-armed the
-    # drag, and the release after the turn committed a position no gesture asked for.
+def test_a_press_that_spans_a_copilot_turn_never_becomes_a_gesture(app: Any) -> None:
+    # A wire grabbed BEFORE the turn: the turn cancels it, and when the turn ends the button
+    # is still down and the port's item still active, so the start branch would rebuild the
+    # gesture from a press nobody made after the turn. Falsifier: drop the `press_blocked`
+    # latch -- the release after the turn writes NoSource over the wire the press was on.
     document_id, document = _chain(app)
     app.app_state.passes_view = PassesView.GRAPH
     _frames(app, 4)
     view = app.graph_view_for(document_id)
     x0, y0, x1, y1 = view.port_rects[("b", "u_src")]
     io = imgui.get_io()
-    # The frame loop reconciles `copilot_turn_active` from the session each frame, so the
-    # turn is simulated where it lives.
-    app.copilot.state.in_flight = True
     io.add_mouse_pos_event((x0 + x1) / 2.0, (y0 + y1) / 2.0)
     _frames(app, 2)
     io.add_mouse_button_event(0, True)
     _frames(app, 2)
     io.add_mouse_pos_event(x1 + 60.0, y1 + 60.0)
     _frames(app, 3)
-    assert view.wire_drag is None and view.node_drag is None
+    assert view.wire_drag is not None, "the grab never started"
+    # The frame loop reconciles `copilot_turn_active` from the session each frame, so the
+    # turn is simulated where it lives.
+    app.copilot.state.in_flight = True
+    _frames(app, 3)
+    assert view.wire_drag is None and view.node_drag is None, "the turn did not cancel"
     app.copilot.state.in_flight = False
+    _frames(app, 3)  # the turn is over, the button is still down
+    assert view.wire_drag is None and view.node_drag is None, "the press re-armed"
+    io.add_mouse_pos_event(x1 + 120.0, y1 + 90.0)
+    _frames(app, 2)
     io.add_mouse_button_event(0, False)
     _frames(app, 2)
     assert document.passes["b"].uniform_values["u_src"] == PassSource("a")
     assert all(entry.position is None for entry in document.graph.passes.values())
+    # The latch clears with the button: the next press is a gesture again.
+    io.add_mouse_pos_event((x0 + x1) / 2.0, (y0 + y1) / 2.0)
+    _frames(app, 2)
+    io.add_mouse_button_event(0, True)
+    _frames(app, 2)
+    io.add_mouse_pos_event(x1 + 60.0, y1 + 60.0)
+    _frames(app, 3)
+    assert view.wire_drag is not None
+    io.add_mouse_button_event(0, False)
+    _frames(app, 2)
     app.app_state.passes_view = PassesView.STRIP
     _frames(app, 1)

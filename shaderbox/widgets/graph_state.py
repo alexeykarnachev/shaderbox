@@ -86,6 +86,9 @@ class GraphViewState:
     )
     # The canvas child's screen rect this frame, for the same reason.
     canvas_rect: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
+    # A press the copilot turn saw held down may not become a gesture even after the turn
+    # ends; the latch clears when the button comes up.
+    press_blocked: bool = False
 
 
 def revalidated_scope(scope: str, groups: Collection[str]) -> str:

@@ -837,15 +837,23 @@ def _draw_canvas(
     io = imgui.get_io()
     # A gesture whose release the canvas did not see (the view switched, a modal covered it,
     # a copilot turn began) is cancelled, never resumed: a stray later click must not write.
-    released_elsewhere = not imgui.is_mouse_down(
+    mouse_down = imgui.is_mouse_down(imgui.MouseButton_.left)
+    released_elsewhere = not mouse_down and not imgui.is_mouse_released(
         imgui.MouseButton_.left
-    ) and not imgui.is_mouse_released(imgui.MouseButton_.left)
+    )
     frozen = app.copilot_turn_active
+    if not mouse_down:
+        view.press_blocked = False
+    elif frozen:
+        # A press held across a turn stays no gesture after it: the item is still active
+        # when the turn ends, and the start branches would otherwise rebuild the drag.
+        view.press_blocked = True
     if released_elsewhere or frozen:
         view.node_drag = None
         view.wire_drag = None
         view.band_anchor = None
         view.guides = []
+    blocked = frozen or view.press_blocked
     view.port_rects = {}
     view.canvas_rect = (origin.x, origin.y, origin.x + avail.x, origin.y + avail.y)
     overrides = view.node_drag.current() if view.node_drag is not None else {}
@@ -933,7 +941,7 @@ def _draw_canvas(
         and not panning
         and imgui.is_mouse_dragging(imgui.MouseButton_.left)
         and view.band_anchor is None
-        and not frozen
+        and not blocked
     ):
         delta = imgui.get_mouse_drag_delta(imgui.MouseButton_.left)
         view.band_anchor = (io.mouse_pos.x - delta.x, io.mouse_pos.y - delta.y)
@@ -961,7 +969,7 @@ def _draw_canvas(
             and view.node_drag is None
             and view.wire_drag is None
             and node.kind != "ghost"
-            and not frozen
+            and not blocked
         ):
             names = _drag_names(view, node)
             view.node_drag = NodeDrag(
@@ -1001,7 +1009,7 @@ def _draw_canvas(
                 and imgui.is_mouse_dragging(imgui.MouseButton_.left)
                 and view.wire_drag is None
                 and view.node_drag is None
-                and not frozen
+                and not blocked
             )
             if pressed and port.kind == "wired" and port.source is not None:
                 view.wire_drag = WireDrag(
@@ -1034,7 +1042,7 @@ def _draw_canvas(
                 and imgui.is_mouse_dragging(imgui.MouseButton_.left)
                 and view.wire_drag is None
                 and view.node_drag is None
-                and not frozen
+                and not blocked
             ):
                 view.wire_drag = WireDrag(producer=member, start=_out_point(node, slot))
 

@@ -1,6 +1,6 @@
 # 092 — The graph view
 
-Status: **W1 and W2 landed; post-implementation rounds 1 and 2 folded in, round 3 pending.** Sketches: `00_mock.html` (round 3 is the
+Status: **W1 and W2 landed; post-implementation rounds 1 to 3 folded in, round 4 closure pending.** Sketches: `00_mock.html` (round 3 is the
 picture). Record of the design conversation: `01_brainstorm.md`. The review round that produced
 the constraints and decisions below: `02_triage.md` and `reviews/brainstorm_*.md`. Every
 "Fixed" item of the brainstorm and every default of the triage is locked here; nothing is
@@ -635,3 +635,18 @@ appends a numeric suffix until no group carries it (the three-name tuple could r
 `StopIteration`). Recorded false trails: the release-frame cancel order, the hit clamp at one
 port and at every zoom, output-dot spacing at eight outputs, the badge at zoom 0.25 and 2.5,
 ghost stacking for a feeder-and-reader, `_snap` with nothing still, a rename to itself.
+
+**Post-implementation round 3 (2026-09-12): two reviewers.** Reports:
+`reviews/post_code_correctness_r3.md` (FINDINGS), `reviews/post_architecture_conventions_r3.md`
+(PASS; the literal scan came back empty for the first time, and the per-frame port and canvas
+rects on the view state were judged transient UI state with a real consumer). The regression
+fix had moved the copilot-turn problem by one frame: a gesture cancelled by a turn was rebuilt
+on the first frame after it, since the button was still down and the item still active, and the
+release committed. Fixed with a latch: a press the turn sees held down blocks every gesture
+start until the button comes up (`GraphViewState.press_blocked`). The round also showed the
+freeze test pinned the three `begin_disabled` layers rather than the guards (it stayed green
+with all nine guards deleted); it is replaced by a test that grabs a wire before the turn,
+lets the turn cancel it, ends the turn with the button down and asserts nothing re-arms or
+writes, then that the next press is a gesture again; broken and restored (the latch removed:
+red; restored: green). New-risk checks came back clean: the drag-and-drop hover flag lets no
+port under a menu or under another node's body take a drop.
