@@ -123,6 +123,14 @@
   .flush .grp .hdr { z-index:1; position:absolute; top:-8px; left:10px; font-size:11px; color:var(--gc); background:var(--bg0h); padding:0 5px; line-height:14px; display:flex; gap:8px; }
   .flush .grp .hdr .ports { color:var(--fg4); }
 
+
+  .inrow { display:grid; grid-template-columns: 110px 22px 200px 1fr; align-items:center; gap:8px; margin:5px 0; font-size:13px; }
+  .inrow .who { color:var(--fg2); }
+  .inrow .arr { color:var(--fg4); text-align:center; }
+  .inrow .readers { color:var(--fg4); font-size:12px; }
+  .cards.compact .card { width:132px; }
+  .cards.compact .card .thumb { width:84px; height:84px; }
+
   /* ---- graph teaser ---- */
   svg text { font-family:inherit; }
   .sl { display:flex; gap:12px; align-items:center; margin:6px 0 12px; color:var(--fg4); font-size:12px; }
@@ -187,7 +195,7 @@
   <span class="btn">add pass</span><span class="btn">import…</span>
 </div>
 
-<h3>C3 · flush frame, label on the border <span class="verdict">frame = the tiles' own outline, no padding</span></h3>
+<h3>C3 · flush frame, label on the border <span class="verdict" style="background:var(--yellow);color:var(--bg0h)">chosen</span> <span class="verdict">frame = the tiles' own outline, no padding</span></h3>
 <div class="panel w flush" style="width:1040px">
   <div class="caption">Passes</div>
   <div class="strip" id="stripC3"></div>
@@ -288,6 +296,41 @@
   <div style="margin-top:10px"><span class="btn primary">Import 5 passes</span><span class="btn ghost">Cancel</span></div>
 </div>
 <p class="note">C ships nothing new in the engine but hands you three rewires and a delete on every import of a bundle that has a stand-in input, which the Bloom and Radiance Cascades examples both have. A does the same edits from one table.</p>
+
+
+<h2>2b · The import dialog, chosen shape <span class="verdict" style="background:var(--yellow);color:var(--bg0h)">chosen</span></h2>
+<p>One window. Pick a card, name the group (it also prefixes the passes), and decide each <b>entry point</b>: a pass of the bundle that reads no other pass of it. Each row feeds that entry point either with the bundle's own pass, copied as it is, or with one of your passes, in which case every child that read it now reads yours. Nothing else is asked.</p>
+
+<div class="modal">
+  <div class="title">Import passes</div>
+  <div class="tabs"><div class="tab on">This project</div><div class="tab">Examples</div></div>
+  <div class="cards compact">
+    <div class="card sel"><div class="thumb t-comp"></div><div class="n">Bloom Chain</div><div class="m">5 passes</div></div>
+    <div class="card"><div class="thumb t-jfa"></div><div class="n">Kaleido</div><div class="m">2 passes</div></div>
+    <div class="card"><div class="thumb t-trail"></div><div class="n">Old trail test</div><div class="m">3 passes</div></div>
+    <div class="card"><div class="thumb t-df"></div><div class="n">Grain + vignette</div><div class="m">2 passes</div></div>
+  </div>
+  <div class="note" style="margin:8px 0 0;max-width:560px">A five-pass document: a scene of orbiting blobs, a bright-pass and a blur that turn its highlights into bloom, a feedback pass that leaves motion trails, and a composite that adds them and tonemaps.</div>
+  <div class="sep">name</div>
+  <div class="row"><div class="lbl">group</div><div class="field small">bloom</div><span class="help">marks the tiles and prefixes the passes: bloom_bright, bloom_blur, …</span></div>
+  <div class="sep">entry points</div>
+  <div class="inrow"><span class="who">scene</span><span class="arr">←</span><div class="field"><span class="sub">scene (mine)</span><span class="arrow">▾</span></div><span class="readers">read by bright, trail, composite</span></div>
+  <div class="note" style="margin-top:8px;max-width:560px">output of the bundle: <code>bloom_composite</code></div>
+  <div style="margin-top:12px"><span class="btn primary">Import 4 passes</span><span class="btn ghost">Cancel</span></div>
+</div>
+
+<div class="modal" style="vertical-align:top">
+  <div class="title">the same section for other bundles</div>
+  <div class="sep">entry points · Radiance Cascades</div>
+  <div class="inrow"><span class="who">paint</span><span class="arr">←</span><div class="field">theirs (copy it)<span class="arrow">▾</span></div><span class="readers">read by seed, cascade, composite</span></div>
+  <div class="sep">entry points · a two-input compositor</div>
+  <div class="inrow"><span class="who">fg</span><span class="arr">←</span><div class="field"><span class="sub">scene (mine)</span><span class="arrow">▾</span></div><span class="readers">read by mix</span></div>
+  <div class="inrow"><span class="who">bg</span><span class="arr">←</span><div class="field"><span class="sub">vignette (mine)</span><span class="arrow">▾</span></div><span class="readers">read by mix</span></div>
+  <div class="sep">entry points · Fire (one pass)</div>
+  <div class="inrow"><span class="who">main</span><span class="arr">←</span><div class="field" style="opacity:.5">theirs (copy it)</div><span class="readers">it is the output too, so it stays</span></div>
+  <div class="sep">the dropdown</div>
+  <div class="dropdown" style="margin-left:0"><div>theirs (copy it)</div><div class="sel">scene (mine)</div><div>vignette (mine)</div><div>final (mine)</div></div>
+</div>
 
 <!-- ============================================================ -->
 <h2>3 · Assigning a group by hand</h2>
