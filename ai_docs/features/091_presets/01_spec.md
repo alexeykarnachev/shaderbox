@@ -80,8 +80,11 @@ Radiance Cascades, whose one entry point `paint` has no samplers.
 `graph.json` gains one key per grouped pass and nothing else. A group exists while at least one
 pass carries its name and is gone when the last member leaves; there is no group table, no
 member list, no group object (a second name-keyed structure would have to agree with the
-first — `conventions.md`, the lockstep-dicts bullet). The name obeys `_PASS_NAME_RE` (it is
-drawn on a border and prefixes filenames). The field rides `load_graph`'s per-entry salvage
+first — `conventions.md`, the lockstep-dicts bullet). The name obeys `PASS_NAME_RE` (it is
+drawn on a border and prefixes filenames). That regex moves from `project_session.py` to
+`pass_graph.py` and loses its underscore: `group_slug` (D2) and `plan_import` (D4) both validate
+against it and both sit at or below `pass_graph` in the import order, so it cannot stay private
+to a module that imports them. The field rides `load_graph`'s per-entry salvage
 unchanged, since the salvage enumerates the model's fields; every existing mutation
 (`_graph_renamed`, `_graph_without`, `with_target`, `set_pass_iterations`, `load_from_dir`'s
 fill) carries the entry object or goes through `model_copy`, so the group survives them with no
@@ -110,8 +113,9 @@ stops at the output's chain). This is not belt-and-braces: Radiance Cascades car
 explicit sampler rows at all, so before compiling its wiring is empty and every pass reads as a
 root. Compiling touches only `compile_unit` / `program` / `vbo` / `vao`; the source's
 `first_render_done`, `drawn_frame` and feedback are untouched (measured in review round 1). A
-source pass whose compile fails contributes its explicit rows only, and the import result
-names it (D5).
+source pass whose compile fails has an UNKNOWN wiring, not an empty one: it is not offered as an
+entry point (the dialog would otherwise grow a spurious row for it), it is copied as it is with
+its explicit rows, and the import result names it (D5).
 
 **D4 — a substituted entry point is not copied; its readers are re-pointed.** For each entry
 point the dialog holds a choice: `keep` or a host pass name. The import plan is a pure function
@@ -138,7 +142,7 @@ def plan_import(
 sampler)` pairs the dialog's checkboxes left on (D6).
 
 Returning `str` is the rejection (the message the dialog shows): a copied name already among
-the host's passes, a group name failing `_PASS_NAME_RE`, a substitution naming a pass that is
+the host's passes, a group name failing `PASS_NAME_RE`, a substitution naming a pass that is
 not an entry point or a host pass that does not exist, a handover naming a pair that does not
 read a fed pass in `host_wiring`, or a plan that copies nothing (a single-pass source whose one
 pass is substituted).
@@ -172,9 +176,10 @@ def import_passes(
 
 In order: compile the source's and the host's program-less passes (D3, D6); plan (D4; reject
 before touching anything); for each copied pass write its source text to `passes/<host
-name>.frag.glsl`, build a `Pass` from that path with the source entry's target and **compile it**
-(exactly as `add_pass` does; a never-compiled copy has no live uniforms, so `UIDocument.save`'s
-`ui_uniforms` prune would drop every merged row in the same save that wrote it); copy the entry
+name>.frag.glsl`, build a `Pass` from that path with the source entry's target and compile it
+(as `add_pass` does, so its uniforms are live for the panel on the next frame; `UIDocument.save`
+compiles a program-less pass itself before pruning, so the merged rows do not depend on this);
+copy the entry
 with `group` set; copy uniform values over the whole of `core.UniformValue` plus the three
 `SamplerSource` members, with no default branch: scalars and tuples by value; `PassSource` /
 `NoSource` / `AutoSource` by reference (frozen dataclasses, the reference is the value); a
@@ -239,7 +244,8 @@ genuinely untouched (one caller).
 
 Per run the parent draw list gets a rounded rect **inset by 1px** from the run's outer tile
 edges in the group's tint (`tiles_per_row` charges the last tile no trailing gap, so a full
-row's slack is as little as 4px at a 700px panel and an outside rect clips), and the group
+row's slack reaches exactly 0px whenever the panel lands on `n*168 + (n-1)*8` — 344, 520, 696,
+872, 1048 — and an outside rect clips), and the group
 name on the top border at the run's left, on a `BG_SURFACE` fill so it reads over the line and
 inside the first tile's top rather than above the strip. The rect is emitted BEFORE the run's
 tiles from the same positions `same_line` will place them at (the strip knows every tile's
@@ -249,25 +255,36 @@ emitted after the run. A run that wraps is two runs with the label on each.
 Member tiles draw with the group tint as `bg_color` at low alpha and no border of their own:
 `preview_cell` gains `bordered: bool = True`, which drops `ChildFlags_.borders` from the child's
 flags — the tile's border is imgui's own child border, and `border_color` only tints it, so a
-colour cannot turn it off. Dropping the flag also removes imgui's border inset, so an unbordered
-cell pads its content by the border size to keep the picture and footer on the same pixel as
-its bordered neighbours (the maintainer's locked answer: the cards keep their size). The strip
+colour cannot turn it off. `ChildFlags_.borders` also enables `WindowPadding` (imgui's own flag
+doc), so dropping it alone moves the cell's content from `(8, 8)` to `(0, 0)` and grows `avail`
+from 152x164 to 168x180 at a 168-wide tile: the picture, the footer and the chip row all shift.
+So `bordered=False` passes `ChildFlags_.always_use_window_padding` instead, the flag that exists
+for exactly this ("pad with style.WindowPadding even if no border are drawn") and measures
+byte-identical to `borders`. No hand-rolled pad: the cards keep their size (the maintainer's
+locked answer) because the padding is the same padding. The strip
 passes `bordered=border is not None`, so the accent output border and the red error border
 still win on a grouped tile.
 
-**D8 — group tints are theme tokens, picked by a stable hash.** `COLOR.GROUP_TINTS`, five hues
-from the palette that no accent preset and no state color uses: `purple_b`, `green_n`,
-`aqua_n`, `orange_n`, `blue_n` (`blue_b` is the blue accent's primary and `COLOR.TAG`, so it is
-out). `group_tint(name) -> color` indexes by `zlib.crc32(name.encode()) % len(...)`, never by
-`hash()`, which is salted per process. An import-time assert beside the `SELECT` invariant
-pins that no tint equals an accent primary or a state hue as the belt; the GATE is a pure test
+**D8 — group tints are theme tokens, picked by a stable hash.** `COLOR.GROUP_TINTS`, four hues:
+`purple_n`, `green_b`, `yellow_n`, `aqua_n`. Four and not five because the palette has no fifth
+that is both free and far enough away: `purple_b` is `COLOR.SELECT` and a group outline is the
+same nested-outline context `SELECT`'s own invariant protects; `blue_n` is `COLOR.STATE_INFO`;
+`blue_b` is the blue accent's primary and `COLOR.TAG`; `green_n` sits 2 degrees of hue from
+`green_b`; `red_n` reads as the red error border these tiles can also carry. `aqua_n` is the
+aqua accent's ACTIVE colour, not its primary — allowed, and the reason the assert below names
+actives explicitly rather than trusting the existing `_accent_primaries` set, which enumerates
+element [0] of each preset only. `group_tint(name) -> color` indexes by
+`zlib.crc32(name.encode()) % len(...)`, never by `hash()`, which is salted per process. An
+import-time assert beside the `SELECT` invariant pins that no tint equals an accent primary, an
+accent ACTIVE, any `STATE_*` hue, `COLOR.SELECT`, `COLOR.TAG` or `COLOR.FAVS` as the belt; the
+GATE is a pure test
 over the tuple (verification 7), because an import-time assert cannot be tripped from a test
 without rewriting `theme.py` on disk.
 
 **D9 — the group is editable by hand in the pass settings modal and by the copilot.** The
 modal gains a `group` row under `name` (mock 3): an input with a combo of the document's
 existing groups; committing writes `session.set_pass_group(document_id, name, group)` (a
-seventh verb, validated by `_PASS_NAME_RE` or empty, saved like the others). In create mode
+seventh verb, validated by `PASS_NAME_RE` or empty, saved like the others). In create mode
 the row edits `draft.entry.group` and `create_pass_from_draft` applies it through
 `set_pass_group` after `add_pass`, the way the draft's target and runs are applied. The tile
 context menu gains `Leave group` on a grouped tile. The copilot's `set_pass` gains `group: str
@@ -281,7 +298,8 @@ to a grouped row's format string.
 early-return guard, imported and called in `ui.py`'s popup chain (which
 `tests/test_project_management.py::test_every_popup_state_has_a_draw_call` already gates by
 AST), opened from an `import…` button beside `add pass` and from a palette command
-`IMPORT_PASSES` (a `COMMAND_SPECS` row AND an `app.command_callbacks` handler, both gated by
+`IMPORT_PASSES` (chordless, palette only; a `COMMAND_SPECS` row AND an `app.command_callbacks`
+handler, both gated by
 `test_command_registry_coverage.py`). `open_import_passes` refuses while
 `app.copilot_turn_active`, through `_copilot_busy_blocked`, since the palette route does not
 pass through the strip's `begin_disabled`. Escape reaches `close_import_passes` through its
@@ -300,7 +318,10 @@ source's description; the `group` field; one row per entry point, `<name> ← [c
 it in the 12px face, and under a row fed by a host pass the D6 checkbox line; a note naming
 the bundle's output and whether it becomes the document's; a note that the source's script is
 not imported; `Import N passes` (disabled with the rejection in red while `plan_import`
-rejects) and `Cancel`. Selecting a source compiles its program-less passes and the host's
+rejects) and `Cancel`. No field takes keyboard focus on open or on selection (an `input_text`
+that was given focus writes its own buffer back over an external write on the next frame, which
+would defeat verification 17 and any programmatic prefill); the group field is focused by a
+click. Selecting a source compiles its program-less passes and the host's
 (D3, D6), resets the group buffer to D2's slug, the substitutions to `keep` and the handovers
 to empty; picking a host pass in a combo resets that entry point's handovers to all of that
 pass's readers. The plan is recomputed each frame the dialog draws (never cached on
@@ -308,15 +329,22 @@ selection), which is how the button's enabled state and the message stay honest 
 types.
 
 **D11 — while the dialog is open, the planned render set is the open tab's documents plus the
-current document.** The predicate `_tick_frame_state` computes as `examples_open` becomes "the
-Examples popup, or the import dialog with its Examples tab active", and `planned` /
-`planned_documents` / `current_planned` follow it unchanged (090 D10). The render chain gets NO
-new branch: `ui.py`'s `elif EXAMPLES:` block takes that same predicate, so the
-one-example-per-frame first-render election, the `renders_this_frame` gate and the profiler
-span keep one home — `ui.py` already carries two copies of that budget rule and the funnel
-bullet names the second sibling as the trigger, so a third copy is out. With the project tab
-active the dialog renders the ordinary set, which is what the `if not any_popup_open():` branch
-does once it takes the predicate's negation.
+current document.** Two predicates, not one and its negation: `examples_planned` is "the
+Examples popup, or the import dialog with its Examples tab active" and `import_project_tab` is
+"the import dialog with its project tab active". `_tick_frame_state`'s `examples_open` becomes
+`examples_planned`, and `planned` / `planned_documents` / `current_planned` follow it unchanged
+(090 D10). The render chain gets NO new branch: `ui.py`'s `elif EXAMPLES:` block takes
+`examples_planned`, so the one-example-per-frame first-render election, the
+`renders_this_frame` gate and the profiler span keep one home — `ui.py` already carries two
+copies of that budget rule and the funnel bullet names the second sibling as the trigger, so a
+third copy is out. The `if not any_popup_open():` branch takes `or import_project_tab`, never
+`not examples_planned`: that negation is true for PASS_SETTINGS, SETTINGS, HELP and PROJECTS
+too, so it would fire the full-set render behind every modal and leave the `elif
+PASS_SETTINGS` branch unreachable. The same `or import_project_tab` goes on
+`_tick_frame_state`'s own `if not any_popup_open():` gate, which is where `tick_documents` is
+BUILT: without it the set stays `[current]`, and the project tab's card grid, which blits each
+document's live canvas, shows black for every document whose first render has not happened,
+with no pending-first election to fix it.
 
 ---
 
@@ -338,7 +366,8 @@ loads the rest, so the field is additive in both directions). No other file chan
 ## Files touched
 
 - `shaderbox/pass_graph.py` — `PassEntry.group`, `PassGraph.with_group(name, group)`,
-  `entry_points(wiring)`, `group_slug(name)`, `group_runs(order, groups)`.
+  `entry_points(wiring)`, `group_slug(name)`, `group_runs(order, groups)`, and `PASS_NAME_RE`
+  moved down from `project_session.py` (its two uses there import it back).
 - `shaderbox/pass_import.py` — new leaf: `ImportPlan`, `plan_import`. Imports `pass_graph`
   only.
 - `shaderbox/project_session.py` — `ImportResult`, `import_passes`, `set_pass_group`.
@@ -353,8 +382,8 @@ loads the rest, so the field is additive in both directions). No other file chan
 - `shaderbox/widgets/pass_list.py` — the `import…` button, the group outline (D7), `Leave
   group` in the context menu, `bordered=border is not None` on member tiles.
 - `shaderbox/ui_primitives.py` — `preview_cell(bordered=...)` with the inset compensation.
-- `shaderbox/ui.py` — the modal's draw call in the popup chain; the planned-set predicate
-  (D11).
+- `shaderbox/ui.py` — the modal's draw call in the popup chain; the two planned-set
+  predicates, on the render chain AND on `_tick_frame_state`'s `tick_documents` gate (D11).
 - `shaderbox/theme.py` — `GROUP_TINTS`, `group_tint`, the invariant (D8).
 - `shaderbox/copilot/backend.py`, `capabilities.py`, `tools/passes.py` — `group` appended to
   `set_pass`, the table suffix (D9).
@@ -384,7 +413,7 @@ fixture items build a real headless App; item 4 uses `test_document_graph.py`'s 
    be its own wiring: in both real shapes every self-reader also reads a sibling, so the bug is
    invisible there.
 2. **`group_slug`** (`tests/test_pass_graph.py`, pure): the four inputs of D2. Falsifier: a
-   document named `2D SDF` yields `2d`, which fails `_PASS_NAME_RE` and makes every import from
+   document named `2D SDF` yields `2d`, which fails `PASS_NAME_RE` and makes every import from
    it reject over a name the user never typed.
 3. **`plan_import`** (`tests/test_pass_import.py`, new, pure): (a) every wired sampler of a
    copied pass is explicit under host names, including the self-read written as
@@ -417,32 +446,45 @@ fixture items build a real headless App; item 4 uses `test_document_graph.py`'s 
    makes `grade` the output; imports with `main` fed and `grade.u_main` handed over: after
    reload `grade.u_main == {"pass": "bloom_composite"}` and the output is still `grade`, since
    the fed pass was not the output. Falsifiers: (i) compute `host_wiring`
-   without compiling the host and the reader is never offered; (ii) leave `grade` program-less
-   at save time and `UIDocument.save` carries its disk rows forward, dropping the handover.
+   without compiling the host and the reader is never offered (`grade` reaches the import with
+   no program only if nothing compiled it: every verb saves and every save compiles, so the
+   test must build `grade` without a save in between, or the scenario proves nothing); (ii) a
+   host pass whose shader is BROKEN named in a handover is rejected with a message naming it
+   (D6), rather than silently dropped by the save's carry-forward of its disk rows.
 6. **The source stays untouched** (`tests/test_pass_verbs.py`): import from a shipped example
    and assert its directory is byte-identical afterwards (content of `graph.json`,
    `document.json` and every `passes/*.glsl`). Falsifier: call `save_ui_document` on the
    source `UIDocument` and the shipped example is rewritten in the working tree.
 7. **A merged row survives the save** (`tests/test_pass_verbs.py`): give the source a uniform
    with a non-default input type in its `ui_state.ui_uniforms`, import, reload, and assert the
-   row is present on the host with that input type. Falsifier: skip `compile()` on the copied
-   passes and the prune drops every merged row in the same save that wrote it.
+   row is present on the host with that input type. Falsifier: re-key the merged row by the
+   new pass name (a hash nothing computes) and the prune drops it; `get_uniform_hash` is
+   name-and-shape only, so the row must be copied under its own key. (Skipping the copies'
+   compile is NOT a falsifier: `UIDocument.save` compiles a program-less pass itself before it
+   prunes, measured in review round 2.)
 8. **A source pass that does not compile** (`tests/test_pass_verbs.py`): a source dir one of
-   whose pass files does not compile still imports its other passes, and `ImportResult.notes`
-   names the broken pass. Falsifier: swallow the compile failure and the user gets a bundle
-   with a silently black member.
-9. **The group survives every existing verb** (`tests/test_graph_persistence.py`): rename
-   keeps it, delete drops it, a reload reads it, a `graph.json` without the key loads as `""`.
-   Falsifier: `_graph_renamed` rebuilt from a fresh `PassEntry()`.
+   whose pass files does not compile still imports its other passes, `ImportResult.notes`
+   names the broken pass, and the broken pass is NOT among the entry points offered (D3).
+   Falsifiers: swallow the compile failure and the user gets a bundle with a silently black
+   member; treat its empty wiring as a root and `entry_points` answers `["blur", "scene"]`
+   for a bloom whose `blur` is broken, growing the dialog a spurious row.
+9. **The group survives every existing verb**: rename keeps it and delete drops it through
+   the session verbs (`tests/test_pass_verbs.py`, the `app` fixture); a reload reads it and a
+   `graph.json` without the key loads as `""` (`tests/test_graph_persistence.py`, which has no
+   `app` fixture and drives the loader directly). Falsifier: `_graph_renamed` rebuilt from a
+   fresh `PassEntry()`.
 10. **`group_runs`** (`tests/test_pass_strip_layout.py`, pure): consecutive members form a run,
     an outside pass between members splits it into two, an ungrouped pass is its own run of
     one. Falsifier: grouping by name instead of by adjacency merges the split.
 11. **Group tints** (`tests/test_theme.py`, pure): (a) `group_tint` is pinned by VALUE at
-    three names' crc32 indices written into the test as literals (`zlib.crc32(b"bloom") % 5`
-    is the same every run; `hash("bloom") % 5` differs per process, so the pin is red on
+    three names' crc32 indices written into the test as literals (`zlib.crc32(b"bloom") % 4`
+    is the same every run; `hash("bloom") % 4` differs per process, so the pin is red on
     essentially every run under `hash()`); (b) `set(GROUP_TINTS)` is disjoint from the accent
-    primaries and every `STATE_*` hue, and has no duplicate. Falsifier for (b): put `yellow_b`
-    in the tuple.
+    primaries, the accent actives, every `STATE_*` hue, `SELECT`, `TAG` and `FAVS`, and has no
+    duplicate. The set is the tile-and-outline context on purpose: the editor's syntax
+    tokens (`green_b` is `SYN_BUILTIN`) never share a surface with the strip, so they are not
+    in it. Falsifier for (b): put `purple_b` (`COLOR.SELECT`) in the tuple, which a check over
+    accent primaries and state hues alone lets through.
 12. **The copilot table and `set_pass(group=)`** (`tests/test_copilot_pass_tools.py`): a set
     with `group="fx"` shows `group fx` in the echoed table; `group=""` clears it; an invalid
     group name is an error, not a silent no-op.
@@ -456,7 +498,10 @@ fixture items build a real headless App; item 4 uses `test_document_graph.py`'s 
     source, set handovers, select a second source: `handovers` is empty and the group buffer
     is the second slug; re-pick a host pass: `handovers` is that pass's readers; Cancel and
     reopen: the initial state; `app.close_import_passes()` (the Escape funnel) resets it
-    too. Falsifier: rely on the `hotkeys.py` fallthrough and the draft survives Escape.
+    too, AND `hotkeys.py`'s Escape dispatch names `close_import_passes` (a substring assert on
+    the source, the shape `test_escape_is_owned_by_an_open_name_input_at_the_dispatch` uses,
+    since a second frame-driving App in one process hits the torn-down font atlas).
+    Falsifier: rely on the `hotkeys.py` fallthrough; the funnel test passes either way.
 16. **The busy guard** (`tests/test_pass_draft.py`): with `app.copilot_turn_active = True`,
     `app.open_import_passes()` leaves `popup_state` CLOSED and pushes the busy notification.
     Falsifier: delete the guard; the strip button's `begin_disabled` passes the suite either
@@ -464,17 +509,31 @@ fixture items build a real headless App; item 4 uses `test_document_graph.py`'s 
 17. **The plan is recomputed per frame** (`tests/test_pass_settings_layout.py`'s pumped-frame
     shape): open the dialog with group `2bad`, pump a frame, `draft.rejection` names the
     group; set the buffer to `ok` without changing the source, pump one frame,
-    `draft.rejection` is empty. Falsifier: compute the plan on selection only.
+    `draft.rejection` is empty. Falsifier: compute the plan on selection only. This holds only
+    because the group field is not auto-focused (D10): a focused `input_text` writes its own
+    buffer back over the external write on the next frame, measured, and the test would then
+    green a stale-rejection implementation.
 18. **The unbordered tile does not move its contents** (`tests/test_pass_settings_layout.py`'s
     measured shape): a `preview_cell` drawn with `bordered=False` places its image at the same
-    screen position as one drawn bordered. Falsifier: drop `ChildFlags_.borders` with no
-    compensating pad and grouped pictures sit 1px off their neighbours.
-19. **Smoke** (`scripts/smoke.py`): beside the frame-42 multi-pass strip, stamp a group onto
-    two NON-adjacent members in `strip_order` (`session.set_pass_group`) and keep them for
-    the rest of the loop, so the outline, its label, the split-run path and the unbordered
-    member tiles all execute on the parent draw list under the real frame loop. Falsifier:
+    screen position as one drawn bordered. Falsifier: drop `ChildFlags_.borders` without
+    `always_use_window_padding` and grouped pictures sit 8px off their neighbours with 16px
+    more room (measured: content `(8, 8)` / 152x164 bordered, `(0, 0)` / 168x180 plain).
+19. **Smoke** (`scripts/smoke.py`): at frame 42, beside the multi-pass strip pick, stamp a
+    group onto `paint` and `df` BY NAME (`session.set_pass_group`), two passes that are
+    non-adjacent in Radiance Cascades' `strip_order` whether or not it has compiled (the order
+    is name-sorted before and topological after, and the frame-48 switch away from the
+    document closes the window), so the outline, its label, the split-run path and the
+    unbordered member tiles all execute on the parent draw list under the real frame loop.
+    Falsifier:
     `add_rect` inside a tile's child window; today no smoke document carries a group, so the
     path runs zero times.
+
+20. **The planned set under the dialog** (`tests/test_render_decoupling_loop.py`'s shape,
+    which sets `popup_state` directly and counts renders): with `IMPORT_PASSES` open on the
+    Examples tab, the examples render and the project's non-current documents do not; on the
+    project tab, `tick_documents` holds the render-all documents and the pending-first
+    election runs. Falsifier: leave `_tick_frame_state`'s gate untouched and the project-tab
+    case renders only the current document, so a never-rendered card stays black.
 
 Manual, the maintainer's walk: the outline and label on the real strip at 480 and 1040; the
 dialog over the six examples and his own Bloom Chain; importing Radiance Cascades into a
@@ -521,6 +580,19 @@ have in its anchors. The bullet is rewritten to say exactly that, and 070 gets i
 when that feature lands rather than now. The same reviewer's suggestion to materialize every
 undecided sampler of a copied pass to black was declined: the name rule is what the maintainer
 authors against, and D4 now says why.
+
+**Round 2 (2026-09-12): both PARTIAL, folded in.** Reports: `reviews/pre_correctness_design_r2.md`,
+`reviews/pre_verification_blast_r2.md`. Round 1 closed item by item by both. Applied:
+`PASS_NAME_RE` moves down to `pass_graph.py` (unreachable from the leaf modules otherwise);
+D7's compensation is the `always_use_window_padding` flag, since `borders` is what enables
+`WindowPadding` and the real shift was 8px, and the row slack floor is 0px; D8 down to four
+tints over `purple_b == SELECT` and `blue_n == STATE_INFO`, with the invariant widened to
+accent actives, `SELECT`, `TAG`, `FAVS`; D11 as two positive predicates on both the render
+chain and `_tick_frame_state`'s gate; D5's compile parenthetical corrected (`UIDocument.save`
+compiles program-less passes before pruning, so items 5(ii) and 7 were dead gates and are
+rewritten); D3 excludes a broken source pass from the entry points; D10 forbids auto-focus and
+makes the command chordless; item 9's home split by fixture; items 15, 17, 18, 19 rewritten;
+item 20 added for D11.
 
 False trails recorded by the reviewers, not to be re-checked: D3's compile loop disturbs no
 source state (measured); `UIDocument.save`'s prune and asset sweep keep merged rows and copied
