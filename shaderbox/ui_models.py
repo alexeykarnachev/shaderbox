@@ -635,6 +635,24 @@ def load_documents_from_dir(root_dir: Path) -> dict[str, UIDocument]:
 
 
 @dataclass
+class ImportDraft:
+    """The import dialog's transient state (091 D10): which source is picked, the group name
+    being typed, and the entry-point decisions. `rejection` is the plan's message as of the
+    last drawn frame, empty while the plan is valid, so the Import button and a test read the
+    same thing."""
+
+    examples_tab: bool = False
+    # One-shot: the tab bar selects the draft's tab on its next draw (imgui owns the selection
+    # and ignores a model-side change, /imgui-ui §8); the read-back waits until it has.
+    tab_select_pending: bool = True
+    source_id: str = ""
+    group_buf: str = ""
+    substitutions: dict[str, str] = field(default_factory=dict)
+    handovers: set[tuple[str, str]] = field(default_factory=set)
+    rejection: str = ""
+
+
+@dataclass
 class PassDraft:
     """A pass being made in the settings modal (078 D5): its name and entry live here until
     `Create` turns them into a pass; dropping the draft makes nothing."""

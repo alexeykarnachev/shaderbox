@@ -14,12 +14,12 @@ current on the constructing thread before any document load (Document/Canvas do
 """
 
 import contextlib
-import re
 import shutil
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Collection, Iterator, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Any
 
 import moderngl
 from loguru import logger
@@ -33,17 +33,21 @@ from shaderbox.copilot.persistence import archive_conversation
 from shaderbox.copilot.revert import RevertExecutor
 from shaderbox.copilot.session import CopilotSession
 from shaderbox.core import ENGINE_DRIVEN_UNIFORMS, Pass
-from shaderbox.document import Document
+from shaderbox.document import Document, document_dir_of
 from shaderbox.exporters.registry import ExporterRegistry
 from shaderbox.integrations import IntegrationsStore
+from shaderbox.media import Image, MediaWithTexture, media_class_for
 from shaderbox.pass_graph import (
     MAX_ITERATIONS,
+    PASS_NAME_RE,
     PassEntry,
     PassGraph,
     PassSource,
     SamplerSource,
     TargetConfig,
+    entry_points,
 )
+from shaderbox.pass_import import plan_import
 from shaderbox.paths import (
     DOCUMENT_JSON_BASENAME,
     DOCUMENT_SCRIPT_BASENAME,
@@ -120,12 +124,9 @@ void main() {
 }
 """
 
-# A pass name is a FILENAME and a graph key, so it stays to the characters both accept.
-_PASS_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-
 
 def _pass_name_error(name: str, existing: dict[str, Pass]) -> str:
-    if not _PASS_NAME_RE.match(name):
+    if not PASS_NAME_RE.match(name):
         return (
             "a pass name starts with a letter and holds letters, digits and underscores"
         )
@@ -138,6 +139,64 @@ def _graph_without(graph: PassGraph, removed: str, kept: dict[str, Pass]) -> Pas
     entries = {name: entry for name, entry in graph.passes.items() if name != removed}
     output = graph.output if graph.output != removed else next(iter(kept), "")
     return graph.with_passes(entries, output=output)
+
+
+@dataclass(frozen=True)
+class ImportResult:
+    """What `import_passes` did: the rejection in `error` (empty on success), and in `notes`
+    what landed degraded -- a source pass that did not compile."""
+
+    error: str = ""
+    notes: tuple[str, ...] = ()
+
+
+def compile_pending_passes(document: Document) -> list[str]:
+    """Compile every pass of `document` that has never been attempted; the names whose compile
+    has FAILED, before or now. A never-compiled pass answers its wiring with explicit rows
+    only (066 D1), so a plan over it would take every pass for a root."""
+    for render_pass in document.passes.values():
+        if render_pass.program is None and not render_pass.compile_unit.errors:
+            render_pass.compile()
+    return sorted(
+        name
+        for name, render_pass in document.passes.items()
+        if render_pass.program is None
+    )
+
+
+def offered_entry_points(document: Document) -> list[str]:
+    """The entry points the import dialog offers for `document` (091 D3): the roots of its
+    wiring minus every pass whose compile failed -- such a pass has an UNKNOWN wiring, not an
+    empty one, so it is copied as it is rather than offered as an input."""
+    broken = {
+        name
+        for name, render_pass in document.passes.items()
+        if render_pass.program is None
+    }
+    return [
+        name for name in entry_points(document.effective_wiring()) if name not in broken
+    ]
+
+
+def _copied_uniform_value(gl: moderngl.Context, value: Any) -> Any:
+    # A copy the new pass OWNS: `Pass.release` frees every value it holds, so a shared object
+    # would be freed under the source. Media is re-opened from its file so it keeps its path
+    # and size; a source object is a frozen value; a scalar or tuple is its own copy.
+    if isinstance(value, MediaWithTexture):
+        path = value.details.file_details.path
+        if path:
+            return media_class_for(Path(path).suffix)(Path(path))
+        return Image(value.texture)
+    if isinstance(value, moderngl.Texture):
+        return gl.texture(
+            size=value.size,
+            components=value.components,
+            data=value.read(),
+            dtype=value.dtype,
+        )
+    if isinstance(value, moderngl.Buffer):
+        return gl.buffer(value.read())
+    return value
 
 
 def _graph_renamed(graph: PassGraph, old: str, new: str) -> PassGraph:
@@ -360,6 +419,7 @@ class ProjectSession:
             pass_set_output=self.set_output_pass,
             pass_set_target=self.set_pass_target,
             pass_set_iterations=self.set_pass_iterations,
+            pass_set_group=self.set_pass_group,
         )
         self.revert_executor = RevertExecutor(
             get_documents_dir=lambda: self.paths.documents_dir,
@@ -1023,6 +1083,109 @@ class ProjectSession:
         document.passes[name].set_target(target)
         self.save_ui_document(ui_document)
         return ""
+
+    def set_pass_group(self, document_id: str, name: str, group: str) -> str:
+        """Put `name` in `group`, or take it out of every group with `""` (091 D9)."""
+        ui_document = self.ui_documents.get(document_id)
+        if ui_document is None:
+            return f"no such document '{document_id}'"
+        document = ui_document.document
+        if name not in document.passes:
+            return f"no such pass '{name}'"
+        if group and not PASS_NAME_RE.match(group):
+            return "a group name starts with a letter and holds letters, digits and underscores"
+        document.graph = document.graph.with_group(name, group)
+        self.save_ui_document(ui_document)
+        return ""
+
+    def import_passes(
+        self,
+        document_id: str,
+        source: UIDocument,
+        group: str,
+        substitutions: Mapping[str, str],
+        handovers: Collection[tuple[str, str]],
+    ) -> ImportResult:
+        """Copy `source`'s passes into `document_id` under `group` (091 D5).
+
+        `substitutions` feeds an entry point of the source from a host pass instead of copying
+        it; `handovers` are the host's `(pass, sampler)` pairs that then read the bundle's
+        output. The plan is decided in full before anything is written, and the one save at
+        the end is the host's: the source may be a shipped example in the read-only resources
+        directory, and it is never written.
+        """
+        ui_document = self.ui_documents.get(document_id)
+        if ui_document is None:
+            return ImportResult(error=f"no such document '{document_id}'")
+        host = ui_document.document
+        source_document = source.document
+        broken_source = compile_pending_passes(source_document)
+        broken_host = compile_pending_passes(host)
+        for host_pass, uniform in handovers:
+            if host_pass in broken_host:
+                return ImportResult(
+                    error=f"'{host_pass}' does not compile, so '{host_pass}.{uniform}' "
+                    f"cannot be handed over"
+                )
+        source_wiring = source_document.effective_wiring()
+        plan = plan_import(
+            source_wiring,
+            source_document.graph.output_pass or "",
+            group,
+            substitutions,
+            handovers,
+            host.effective_wiring(),
+            host.graph.output,
+        )
+        if isinstance(plan, str):
+            return ImportResult(error=plan)
+
+        entries: dict[str, PassEntry] = {}
+        for source_name, host_name in plan.renames.items():
+            source_pass = source_document.passes[source_name]
+            path = self.paths.pass_shader_for(document_id, host_name)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(source_pass.source.text, encoding="utf-8")
+            entry = source_document.graph.passes.get(
+                source_name, PassEntry()
+            ).model_copy(update={"group": group})
+            render_pass = Pass(
+                gl=host.gl,
+                source=ShaderSource.load(path),
+                canvas_size=host.canvas_size,
+                target=entry.target,
+            )
+            render_pass.compile()
+            for uniform, value in source_pass.uniform_values.items():
+                render_pass.uniform_values[uniform] = _copied_uniform_value(
+                    host.gl, value
+                )
+            for uniform, read in plan.sources.get(host_name, {}).items():
+                try_to_release(render_pass.uniform_values.get(uniform))
+                render_pass.uniform_values[uniform] = PassSource(read)
+            host.passes[host_name] = render_pass
+            entries[host_name] = entry
+        host.graph = host.graph.with_passes(
+            {**host.graph.passes, **entries},
+            output=plan.output if plan.becomes_output else None,
+        )
+        for host_pass, rows in plan.handovers.items():
+            values = host.passes[host_pass].uniform_values
+            for uniform, read in rows.items():
+                try_to_release(values.get(uniform))
+                values[uniform] = PassSource(read)
+        for key, row in source.ui_state.ui_uniforms.items():
+            ui_document.ui_state.ui_uniforms.setdefault(key, row.model_copy())
+        self.save_ui_document(ui_document)
+        logger.info(
+            f"Imported {len(plan.renames)} pass(es) from {document_dir_of(source_document).name} "
+            f"into {document_id} as group '{group}'"
+        )
+        return ImportResult(
+            notes=tuple(
+                f"'{name}' does not compile; imported as is" for name in broken_source
+            )
+        )
 
     def set_pass_iterations(self, document_id: str, name: str, iterations: int) -> str:
         """How many times `name` draws per frame (068). Rejects an out-of-range count rather

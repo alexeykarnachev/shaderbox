@@ -16,8 +16,14 @@ from imgui_bundle import imgui
 
 from shaderbox.app import App
 from shaderbox.core import Pass
-from shaderbox.pass_graph import Wiring, evaluation_order, strip_order
-from shaderbox.theme import COLOR, SIZE, SPACE
+from shaderbox.pass_graph import (
+    PassEntry,
+    Wiring,
+    evaluation_order,
+    group_runs,
+    strip_order,
+)
+from shaderbox.theme import COLOR, SIZE, SPACE, group_tint
 from shaderbox.ui_primitives import (
     context_menu_style,
     preview_cell,
@@ -27,6 +33,11 @@ from shaderbox.ui_primitives import (
 )
 
 FEEDBACK_CHIP = "prev"
+# The group outline sits this far inside the run's tiles: a full row can end flush with the
+# panel's edge, so a rect outside the tiles would clip.
+_GROUP_INSET = 1.0
+_GROUP_ROUNDING = 6.0
+_GROUP_LABEL_PAD = 4.0
 
 
 def tiles_per_row(avail: float, tile: float, gap: float) -> int:
@@ -65,6 +76,12 @@ def _draw_context_menu(app: App, document_id: str, name: str) -> None:
             deletable = len(document.passes) > 1
             if imgui.menu_item_simple("Delete", enabled=deletable) and deletable:
                 _delete_pass(app, document_id, name)
+            if document.graph.passes.get(
+                name, PassEntry()
+            ).group and imgui.menu_item_simple("Leave group"):
+                error = app.session.set_pass_group(document_id, name, "")
+                if error:
+                    app.notifications.push(error)
             imgui.end_popup()
 
 
@@ -94,6 +111,7 @@ def _draw_pass_tile(
     render_pass: Pass,
     stale: bool,
     reads: Sequence[str],
+    group: str,
 ) -> None:
     # The pass's OWN live target, scaled down by imgui — not a second render at thumbnail size.
     # Every pass already draws once per frame into that texture, so the tile costs nothing but the
@@ -107,6 +125,10 @@ def _draw_pass_tile(
     border = (
         COLOR.STATE_ERROR if errors else COLOR.ACCENT_PRIMARY if is_output else None
     )
+    # A grouped tile sits inside the run's outline (091 D7): its own border goes, the group's
+    # tint fills it faintly, and the accent or error border still wins when it has one.
+    tint = group_tint(group) if group else None
+    bg = (*tint[:3], COLOR.GROUP_FILL_ALPHA) if tint is not None else None
 
     def _settings_overlay(side: float) -> None:
         if tune_icon_button(f"settings_{name}", side):
@@ -122,6 +144,8 @@ def _draw_pass_tile(
         selected=is_output,
         armed=app.pass_delete_armed == name,
         border_color=border,
+        bg_color=bg,
+        bordered=tint is None or border is not None,
         footer=name,
         footer_font=None if stale else app.font_14_bold,
         footer_color=COLOR.FG_DORMANT if stale else COLOR.FG_TITLE,
@@ -174,19 +198,80 @@ def draw(app: App, document_id: str) -> None:
     avail = imgui.get_content_region_avail().x
     per_row = tiles_per_row(avail, float(SIZE.PASS_TILE), float(SPACE.MD))
     order = strip_order(document.passes, wiring)
-    for i, name in enumerate(order):
-        if i % per_row:
-            imgui.same_line(spacing=float(SPACE.MD))
-        _draw_pass_tile(
-            app,
-            document_id,
-            name,
-            document.passes[name],
-            name not in live,
-            _reads(name, wiring, order),
-        )
+    groups = {
+        name: document.graph.passes.get(name, PassEntry()).group for name in order
+    }
+    # A run is a group's consecutive tiles; one that wraps is outlined per row segment.
+    segments: list[tuple[str, imgui.ImVec2, imgui.ImVec2]] = []
+    open_segment: tuple[str, imgui.ImVec2, imgui.ImVec2] | None = None
+    i = 0
+    for run in group_runs(order, groups):
+        for name in run:
+            if i % per_row:
+                imgui.same_line(spacing=float(SPACE.MD))
+            elif open_segment is not None:
+                segments.append(open_segment)
+                open_segment = None
+            _draw_pass_tile(
+                app,
+                document_id,
+                name,
+                document.passes[name],
+                name not in live,
+                _reads(name, wiring, order),
+                groups[name],
+            )
+            if groups[name]:
+                lo, hi = imgui.get_item_rect_min(), imgui.get_item_rect_max()
+                open_segment = (
+                    (groups[name], lo, hi)
+                    if open_segment is None
+                    else (open_segment[0], open_segment[1], hi)
+                )
+            i += 1
+        if open_segment is not None:
+            segments.append(open_segment)
+            open_segment = None
+    for group, lo, hi in segments:
+        _draw_group_outline(app, group, lo, hi)
 
     imgui.dummy((0, float(SPACE.SM)))
     if standard_button("add pass"):
         app.open_add_pass()
+    imgui.same_line()
+    if standard_button("import..."):
+        app.open_import_passes()
     imgui.end_disabled()
+
+
+def _draw_group_outline(
+    app: App, group: str, lo: imgui.ImVec2, hi: imgui.ImVec2
+) -> None:
+    """One run's outline and label (091 D7). The tiles are child windows, which paint over
+    their parent, so both go on the foreground list, clipped to the strip's own window; the
+    faint fill behind the tiles goes on the parent's list, where the gaps show it."""
+    tint = group_tint(group)
+    fill = imgui.color_convert_float4_to_u32((*tint[:3], COLOR.GROUP_FILL_ALPHA))
+    line = imgui.color_convert_float4_to_u32(tint)
+    parent = imgui.get_window_draw_list()
+    parent.add_rect_filled((lo.x, lo.y), (hi.x, hi.y), fill, _GROUP_ROUNDING)
+    fg = imgui.get_foreground_draw_list()
+    fg.push_clip_rect(parent.get_clip_rect_min(), parent.get_clip_rect_max(), True)
+    fg.add_rect(
+        (lo.x + _GROUP_INSET, lo.y + _GROUP_INSET),
+        (hi.x - _GROUP_INSET, hi.y - _GROUP_INSET),
+        line,
+        _GROUP_ROUNDING,
+    )
+    imgui.push_font(app.font_12, app.font_12.legacy_size)
+    text_size = imgui.calc_text_size(group)
+    x = lo.x + 2.0 * _GROUP_LABEL_PAD + _GROUP_ROUNDING
+    y = lo.y - text_size.y / 2.0
+    fg.add_rect_filled(
+        (x - _GROUP_LABEL_PAD, y),
+        (x + text_size.x + _GROUP_LABEL_PAD, y + text_size.y),
+        imgui.color_convert_float4_to_u32(COLOR.BG_SURFACE),
+    )
+    fg.add_text((x, y), line, group)
+    imgui.pop_font()
+    fg.pop_clip_rect()

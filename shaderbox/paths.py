@@ -15,6 +15,7 @@ PASSES_DIR_NAME = "passes"
 DOCUMENTS_DIR_NAME = "documents"
 PASS_SHADER_SUFFIX = ".frag.glsl"
 # The document's CPU behavior script, under documents/<id>/scripts/ (feature 048: one per document).
+SCRIPTS_DIR_NAME = "scripts"
 DOCUMENT_SCRIPT_BASENAME = "script.py"
 # The pass graph: which passes exist, what fills each input, each target's configuration, and
 # which pass is the output. App-written derived state, exactly as document.json is.
@@ -137,4 +138,4 @@ class ProjectPaths:
     def scripts_dir_for(self, document_id: str) -> Path:
         # The CPU-script engine's per-document behavior scripts (feature 040): documents/<id>/scripts/.
         # LAZY — globbed-if-exists at load, created on first write (041/043). Not eagerly mkdir'd.
-        return self.documents_dir / document_id / "scripts"
+        return self.documents_dir / document_id / SCRIPTS_DIR_NAME

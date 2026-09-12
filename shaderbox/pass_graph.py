@@ -29,6 +29,7 @@ Two rules the rest of the engine leans on:
   `evaluation_order` runs it on the path that actually draws.
 """
 
+import re
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Literal
@@ -48,6 +49,11 @@ DEFAULT_WRAP = False
 DEFAULT_SCALE = 1.0
 
 GRAPH_JSON_VERSION = 2
+
+# A pass name is a FILENAME and a graph key, so it stays to the characters both accept. A group
+# name is a pass-name prefix and a border label, so it obeys the same rule.
+PASS_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_GROUP_PATTERN = r"^([A-Za-z_][A-Za-z0-9_]*)?$"
 
 # 64 doublings covers a 2^64 canvas, so this bounds the frame cost without bounding any real
 # effect: JFA needs ceil(log2(max_dim)) and a cascade stack ceil(log4(diagonal)) + 1.
@@ -115,6 +121,9 @@ class PassEntry(BaseModel):
     # assuming one warns falsely on the other. The shader's author knows its base; the engine
     # only knows the number.
     iterations: int = Field(default=1, ge=1, le=MAX_ITERATIONS)
+    # The group this pass belongs to, or "" (091). A label and nothing more: a group exists
+    # while a pass carries its name, so there is no member list to keep in step with this.
+    group: str = Field(default="", pattern=_GROUP_PATTERN)
 
 
 class PassGraph(BaseModel):
@@ -168,6 +177,12 @@ class PassGraph(BaseModel):
 
     def with_output(self, name: str) -> "PassGraph":
         return self.with_passes(self.passes, output=name)
+
+    def with_group(self, name: str, group: str) -> "PassGraph":
+        entry = self.passes.get(name, PassEntry())
+        return self.with_passes(
+            {**self.passes, name: entry.model_copy(update={"group": group})}
+        )
 
     @property
     def output_pass(self) -> str | None:
@@ -439,6 +454,45 @@ def strip_order(names: Iterable[str], wiring: Wiring) -> list[str]:
     known = set(names)
     order = [n for n in plan_passes(wiring)[0].order if n in known]
     return order + sorted(known - set(order))
+
+
+def entry_points(wiring: Wiring) -> list[str]:
+    """The passes of `wiring` that read no OTHER pass: a bundle's inputs (091 D3).
+
+    A self-read is feedback, not an input, so a pass reading only its own previous frame is a
+    root. Sorted by name, like everything the planner answers.
+    """
+    return sorted(
+        name
+        for name, reads in wiring.items()
+        if all(source == name for source in reads.values())
+    )
+
+
+def group_slug(name: str) -> str:
+    """A group name prefilled from a document's display name (091 D2): the first word,
+    lowercased, made legal as a pass-name prefix."""
+    words = name.split()
+    word = re.sub(r"[^A-Za-z0-9_]", "_", words[0].lower()) if words else ""
+    if not word:
+        return "preset"
+    if not re.match(r"^[A-Za-z_]", word):
+        word = f"g_{word}"
+    return word
+
+
+def group_runs(order: Sequence[str], groups: Mapping[str, str]) -> list[list[str]]:
+    """`order` cut into runs of consecutive passes sharing one non-empty group; an ungrouped
+    pass is a run of one. By ADJACENCY, never by name: a group an outside pass interrupts is
+    two runs, which is what the strip draws (091 D7)."""
+    runs: list[list[str]] = []
+    for name in order:
+        group = groups.get(name, "")
+        if runs and group and groups.get(runs[-1][-1], "") == group:
+            runs[-1].append(name)
+        else:
+            runs.append([name])
+    return runs
 
 
 def step_in_order(order: Sequence[str], current: str, step: int) -> str | None:

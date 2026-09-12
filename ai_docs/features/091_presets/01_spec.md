@@ -610,3 +610,47 @@ assets once the copies are compiled; `load_graph` rides the new field; every `Pa
 mutation site carries the entry; `PopupState` is enumerated in one test only;
 `test_button_tiers.py` scans directory-wide; `test_persistence_completeness.py` is not tripped
 by a new field; the shipped examples never receive a write from D5's sequence.
+
+---
+
+## Implementation notes
+
+Landed 2026-09-12; `make gates` green (check, test, smoke), exit code read unpiped.
+
+### Deviations from the spec
+
+- **`import_passes` takes the source as a `UIDocument`, not a `Document`.** The merged
+  `ui_uniforms` rows (D5) live on `UIDocument.ui_state`, which a bare `Document` does not carry.
+  A presets folder loads through `load_document_from_dir` and yields the same type, so the
+  generalizability claim holds unchanged.
+- **The dialog's entry points come from `project_session.offered_entry_points(document)`**, the
+  roots minus every pass whose compile failed (D3), so verification 8 can assert the exclusion
+  without driving the dialog.
+- **Verification 4 lives in `tests/test_pass_verbs.py`** through the `app` fixture rather than
+  `test_document_graph.py`'s `gl_ctx`: `import_passes` is a session verb and needs the session.
+  The source is a two-pass document written into `tmp_path` (a constant `scene`, a `halve`
+  reading it); the imported output reads a quarter of full red.
+- **The tab bar needs a one-shot `set_selected`** (`ImportDraft.tab_select_pending`): imgui's
+  read-back wrote the default tab straight back over a programmatic `examples_tab`, which reset
+  the source every frame (found by verification 17 and 20 going red on the first run).
+- **`SCRIPTS_DIR_NAME` was added to `paths.py`** so the dialog's "script not imported" line and
+  `ProjectPaths.scripts_dir_for` spell the directory once.
+- **Verification 19's stamp is by name** (`paint`, `df`) as the round-3 review asked.
+
+### The falsifier tried per verification item
+
+Each break was applied to the working tree, the named test run, and the original restored and
+compared byte for byte:
+
+| Break | Red test |
+|---|---|
+| `plan_import` never fills `sources` (no materialization) | `test_pass_import.py` (3 tests) and `test_a_rendered_import_reads_its_bundle` (output reads black) |
+| `preview_cell(bordered=False)` passes `ChildFlags_.none` | `test_an_unbordered_tile_keeps_its_padding` (origin `(0, 0)`) |
+| `_tick_frame_state`'s gate without `or import_project_tab` | `test_the_import_dialog_plans_the_open_tabs_documents` |
+| `group_tint` by `hash()` | `test_group_tints_are_stable_and_collide_with_nothing` |
+| `offered_entry_points` keeps a broken pass | `test_a_broken_source_pass_is_imported_as_is_and_named` |
+| `import_passes` does not compile the host | `test_import_hands_the_fed_passs_readers_to_the_bundle` |
+
+Items 1, 2, 3, 9, 10, 12, 13, 14, 15, 16, 18 have their falsifiers written into the tests'
+comments; 13 and 14 are the existing registry and popup gates, which went red during
+implementation until the command binding and the draw call landed.

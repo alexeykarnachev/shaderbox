@@ -311,3 +311,39 @@ def test_graph_edits_preserve_fields_they_do_not_name() -> None:
     assert retargeted.passes["jfa"].iterations == 9
     assert retargeted.passes["jfa"].target.dtype == "f1"
     assert graph.with_output("jfa").passes["jfa"].iterations == 9
+
+
+# ---------------------------------------------------------------------------
+# 091 -- entry points, the group slug
+# ---------------------------------------------------------------------------
+
+
+def test_entry_points_are_the_passes_reading_no_other_pass() -> None:
+    bloom = {
+        "scene": {},
+        "bright": {"u_scene": "scene"},
+        "trail": {"u_scene": "scene", "u_prev": "trail"},
+    }
+    assert pass_graph.entry_points(bloom) == ["scene"]
+    # A self-read is feedback, not an input: its OWN wiring, since in every real shape the
+    # self-reader also reads a sibling and the bug is invisible there. Falsifier: counting the
+    # self-read as an input answers [].
+    assert pass_graph.entry_points({"acc": {"u_prev": "acc"}}) == ["acc"]
+    assert pass_graph.entry_points(
+        {"fg": {}, "bg": {}, "mix": {"u_fg": "fg", "u_bg": "bg"}}
+    ) == [
+        "bg",
+        "fg",
+    ]
+    assert pass_graph.entry_points({"lone": {}}) == ["lone"]
+
+
+def test_group_slug_is_the_first_word_made_legal() -> None:
+    # Falsifier: `2D SDF` -> `2d`, which fails PASS_NAME_RE and rejects every import from it
+    # over a name the user never typed.
+    assert pass_graph.group_slug("Bloom Chain") == "bloom"
+    assert pass_graph.group_slug("Radiance Cascades") == "radiance"
+    assert pass_graph.group_slug("2D SDF") == "g_2d"
+    assert pass_graph.group_slug("") == "preset"
+    for name in ("Bloom Chain", "2D SDF", "", "a-b c"):
+        assert pass_graph.PASS_NAME_RE.match(pass_graph.group_slug(name))

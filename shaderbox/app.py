@@ -69,12 +69,13 @@ from shaderbox.intel.worker import (
     PythonWorker,
 )
 from shaderbox.notifications import Notifications
-from shaderbox.pass_graph import PassEntry, step_in_order, strip_order
+from shaderbox.pass_graph import PassEntry, group_slug, step_in_order, strip_order
 from shaderbox.paths import ProjectPaths, app_data_dir, pass_name_of, shader_lib_root
 from shaderbox.profiling import FrameProfile, Profiler, ProfileSmoother
 from shaderbox.project_session import (
     ProjectInfo,
     ProjectSession,
+    compile_pending_passes,
     create_project,
     list_projects,
     trash_project,
@@ -100,6 +101,7 @@ from shaderbox.tabs import share_state
 from shaderbox.theme import COLOR, SETTINGS_MARK_S, apply_theme, editor_palette
 from shaderbox.ui_models import (
     EditorSettings,
+    ImportDraft,
     PassDraft,
     UIAppState,
     UIDocument,
@@ -121,6 +123,7 @@ class PopupState(Enum):
     HELP = "help"
     SETTINGS = "settings"
     PASS_SETTINGS = "pass_settings"
+    IMPORT_PASSES = "import_passes"
     EMOJI_PICKER = "emoji_picker"
     SHADER_LIB_PICKER = "shader_lib_picker"
     PROJECTS = "projects"
@@ -395,6 +398,9 @@ class App:
         # and the modal's rename buffer (seeded on open, committed on Enter).
         self.pass_settings_name: str = ""
         self.pass_settings_name_buf: str = ""
+        self.pass_settings_group_buf: str = ""
+        # The import dialog's state (091 D10), None while it is closed.
+        self.import_draft: ImportDraft | None = None
         # The pass whose tile has its delete-✕ armed (the in-cell "Delete?" wash), or "".
         self.pass_delete_armed: str = ""
 
@@ -653,6 +659,7 @@ class App:
             CommandId.CLOSE_CODE_TAB: self.close_active_tab,
             CommandId.OPEN_PASS_SETTINGS: self.open_pass_settings_for_panel_pass,
             CommandId.ADD_PASS: self.open_add_pass,
+            CommandId.IMPORT_PASSES: self.open_import_passes,
             CommandId.RESET_DOCUMENT: self.reset_current_document,
             CommandId.CYCLE_CHANNEL_VIEW: self.cycle_channel_view,
             CommandId.NEXT_PASS: lambda: self.step_output_pass(1),
@@ -1026,7 +1033,30 @@ class App:
     def open_pass_settings(self, name: str) -> None:
         self.pass_settings_name = name
         self.pass_settings_name_buf = name
+        ui_document = self.ui_documents.get(self.current_document_id)
+        self.pass_settings_group_buf = (
+            ui_document.document.graph.passes[name].group
+            if ui_document is not None and name in ui_document.document.graph.passes
+            else ""
+        )
         self._open_popup(PopupState.PASS_SETTINGS)
+
+    def commit_pass_group(self) -> None:
+        """Write the gear's group buffer to the open pass (091 D9); a refusal toasts and
+        restores the buffer."""
+        document_id = self.current_document_id
+        name = self.pass_settings_name
+        ui_document = self.ui_documents.get(document_id)
+        if ui_document is None or name not in ui_document.document.graph.passes:
+            return
+        current = ui_document.document.graph.passes[name].group
+        wanted = self.pass_settings_group_buf.strip()
+        if wanted == current:
+            return
+        error = self.session.set_pass_group(document_id, name, wanted)
+        if error:
+            self.notifications.push(error)
+            self.pass_settings_group_buf = current
 
     def close_pass_settings(self) -> None:
         """Close the gear, committing a pending rename first.
@@ -1051,9 +1081,12 @@ class App:
             error = self.session.rename_pass(document_id, name, buf)
             if error:
                 self.notifications.push(error)
+        if self.pass_draft is None:
+            self.commit_pass_group()
         self.popup_state = PopupState.CLOSED
         self.pass_settings_name = ""
         self.pass_settings_name_buf = ""
+        self.pass_settings_group_buf = ""
         self.pass_draft = None
 
     def open_pass_settings_for_panel_pass(self) -> None:
@@ -1095,10 +1128,120 @@ class App:
             )
             if error:
                 self.notifications.push(error)
+        if entry.group:
+            error = self.session.set_pass_group(document_id, name, entry.group)
+            if error:
+                self.notifications.push(error)
         self.pass_draft = None
         # A new pass is what the document shows: the editor tab, the viewer and the gear all
         # follow it.
         self.pick_pass(document_id, name, focus_editor=False)
+        return True
+
+    # ---- the import dialog (091 D10) ----
+
+    def open_import_passes(self) -> None:
+        if self._copilot_busy_blocked("Importing passes"):
+            return
+        if self.current_document_id not in self.ui_documents:
+            return
+        self.import_draft = ImportDraft()
+        self._open_popup(PopupState.IMPORT_PASSES)
+
+    def close_import_passes(self) -> None:
+        self.popup_state = PopupState.CLOSED
+        self.import_draft = None
+
+    def import_sources(self, examples_tab: bool) -> dict[str, UIDocument]:
+        """The documents one tab of the import dialog offers: the shipped examples, or the
+        project's documents other than the current one."""
+        if examples_tab:
+            return dict(self.ui_document_examples)
+        return {
+            document_id: ui_document
+            for document_id, ui_document in self.ui_documents.items()
+            if document_id != self.current_document_id
+        }
+
+    def import_source(self) -> UIDocument | None:
+        draft = self.import_draft
+        if draft is None:
+            return None
+        return self.import_sources(draft.examples_tab).get(draft.source_id)
+
+    def select_import_source(self, source_id: str, examples_tab: bool) -> None:
+        """Pick the document to import from: the group name reseeds from its name and every
+        entry-point decision goes back to `keep`. Both the source and the host compile their
+        pending passes here, so the entry points and the readers are the real wiring."""
+        draft = self.import_draft
+        if draft is None:
+            return
+        if draft.examples_tab != examples_tab:
+            draft.tab_select_pending = True
+        draft.examples_tab = examples_tab
+        draft.source_id = source_id
+        draft.substitutions = {}
+        draft.handovers = set()
+        source = self.import_source()
+        if source is None:
+            draft.group_buf = ""
+            return
+        draft.group_buf = group_slug(source.ui_state.ui_name)
+        compile_pending_passes(source.document)
+        host = self.ui_documents.get(self.current_document_id)
+        if host is not None:
+            compile_pending_passes(host.document)
+
+    def host_readers_of(self, fed: str) -> set[tuple[str, str]]:
+        """The host's `(pass, sampler)` pairs that read `fed`: the default handovers (D6)."""
+        ui_document = self.ui_documents.get(self.current_document_id)
+        if ui_document is None:
+            return set()
+        return {
+            (name, uniform)
+            for name, reads in ui_document.document.effective_wiring().items()
+            for uniform, read in reads.items()
+            if read == fed
+        }
+
+    def set_import_substitution(self, entry: str, host_pass: str) -> None:
+        """Feed entry point `entry` from `host_pass`, or keep the source's own with `""`.
+        The handovers for the previously fed pass go, and the new pass's readers come in, all
+        on; the other entry points' handovers stay as the user left them."""
+        draft = self.import_draft
+        if draft is None:
+            return
+        previous = draft.substitutions.get(entry, "")
+        if previous and previous not in {
+            fed for name, fed in draft.substitutions.items() if name != entry
+        }:
+            draft.handovers -= self.host_readers_of(previous)
+        if host_pass:
+            draft.substitutions[entry] = host_pass
+            draft.handovers |= self.host_readers_of(host_pass)
+        else:
+            draft.substitutions.pop(entry, None)
+
+    def import_passes_from_draft(self) -> bool:
+        """Run the import the dialog describes; True when it landed (the dialog closes on
+        it). A refusal toasts and keeps the dialog, so the user corrects it in place."""
+        draft = self.import_draft
+        source = self.import_source()
+        if draft is None or source is None:
+            return False
+        result = self.session.import_passes(
+            self.current_document_id,
+            source,
+            draft.group_buf.strip(),
+            dict(draft.substitutions),
+            set(draft.handovers),
+        )
+        if result.error:
+            self.notifications.push(result.error)
+            return False
+        for note in result.notes:
+            self.notifications.push(note)
+        self.notifications.push(f"Imported {source.ui_state.ui_name}")
         return True
 
     def open_emoji_picker(self, target: Callable[[str], None] | None = None) -> None:

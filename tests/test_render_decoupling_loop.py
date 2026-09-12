@@ -651,3 +651,41 @@ def test_the_starter_document_is_the_fixture_it_claims_to_be(app: Any) -> None:
     assert document.resolution == (1280, 720)
     assert document.aspect == (16, 9)
     assert document.resolution_mode is ResolutionMode.AUTO
+
+
+# ---------------------------------------------------------------------------
+# 091 D11 -- the planned set under the import dialog
+# ---------------------------------------------------------------------------
+
+
+def test_the_import_dialog_plans_the_open_tabs_documents(
+    app: Any, monkeypatch: Any
+) -> None:
+    # Falsifier: leave `_tick_frame_state`'s gate untouched and the project tab renders only
+    # the current document, so a never-rendered card stays black; or leave the render chain's
+    # `elif EXAMPLES` untouched and the Examples tab renders nothing at all.
+    other = seed_extra_document(app, "other-0000-4000-8000-000000000002")
+    app.app_state.is_render_all_documents = True
+    _freeze_costs(app, monkeypatch)
+    app.open_import_passes()
+    assert app.import_draft is not None
+    app.import_draft.examples_tab = True
+    renders = _count_renders(
+        app, monkeypatch, {**app.ui_documents, **app.ui_document_examples}
+    )
+    for _ in range(8):
+        app.popup_state = PopupState.IMPORT_PASSES
+        update_and_draw(app)
+    assert sum(renders.get(e, 0) for e in app.ui_document_examples) > 0
+    assert renders.get(other, 0) == 0, (
+        "a project document rendered behind the Examples tab"
+    )
+
+    app.import_draft.examples_tab = False
+    for _ in range(8):
+        app.popup_state = PopupState.IMPORT_PASSES
+        update_and_draw(app)
+    assert renders.get(other, 0) > 0, (
+        "the project tab did not render the other document"
+    )
+    app.close_import_passes()

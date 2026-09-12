@@ -5,6 +5,7 @@ rather than a drawing detail: `preview_cell` is a child window exactly one tile 
 tile that fits the count fits the pixels.
 """
 
+from shaderbox.pass_graph import group_runs
 from shaderbox.theme import SIZE, SPACE
 from shaderbox.widgets.pass_list import tiles_per_row
 
@@ -27,3 +28,16 @@ def test_no_width_in_the_panel_range_overflows() -> None:
         n = tiles_per_row(float(avail), _TILE, _GAP)
         row = n * _TILE + (n - 1) * _GAP
         assert row <= avail or n == 1, f"{n} tiles span {row} in {avail}"
+
+
+def test_group_runs_cut_by_adjacency_not_by_name() -> None:
+    # 091 D7. Falsifier: a `defaultdict(list)` keyed by group name merges the split run.
+    groups = {"a": "", "b": "g", "c": "g", "d": "", "e": "g"}
+    assert group_runs(["a", "b", "c", "d", "e"], groups) == [
+        ["a"],
+        ["b", "c"],
+        ["d"],
+        ["e"],
+    ]
+    assert group_runs(["b", "c"], groups) == [["b", "c"]]
+    assert group_runs(["a", "d"], groups) == [["a"], ["d"]]

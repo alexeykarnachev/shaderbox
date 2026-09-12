@@ -11,6 +11,8 @@ choice and the open editor tab move together. D3 makes a half-done rename SILENT
 pointing at the old name just reads black.
 """
 
+import json
+import shutil
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -19,6 +21,8 @@ import pytest
 from imgui_bundle import imgui
 
 from shaderbox.app import PopupState
+from shaderbox.core import Pass
+from shaderbox.media import texture_to_rgba8
 from shaderbox.pass_graph import (
     DTYPES,
     MAX_ITERATIONS,
@@ -32,7 +36,10 @@ from shaderbox.pass_graph import (
 from shaderbox.paths import PASSES_DIR_NAME, pass_shader_name
 from shaderbox.popups import pass_settings
 from shaderbox.popups.pass_settings import _FORMAT_CODES, _FORMATS
-from shaderbox.ui_models import load_document_from_dir
+from shaderbox.project_session import compile_pending_passes, offered_entry_points
+from shaderbox.shader_source import ShaderSource
+from shaderbox.ui_models import UIUniform, load_document_from_dir
+from shaderbox.util import get_uniform_hash
 from shaderbox.widgets import pass_list
 
 _SAMPLER_ON = """#version 460 core
@@ -585,9 +592,10 @@ def test_an_auto_wired_ancestor_is_not_washed_stale(app: Any, monkeypatch: Any) 
         render_pass: Any,
         stale: bool,
         reads: Any,
+        group: str = "",
     ) -> None:
         stale_by_name[name] = stale
-        real(app_, document_id_, name, render_pass, stale, reads)
+        real(app_, document_id_, name, render_pass, stale, reads, group)
 
     monkeypatch.setattr(pass_list, "_draw_pass_tile", spy)
     _imgui_frame(lambda: pass_list.draw(app, document_id))
@@ -612,3 +620,238 @@ def test_the_strip_orders_a_name_wired_document_topologically(app: Any) -> None:
         "alpha",
         "mid",
     ]
+
+
+# ---------------------------------------------------------------------------
+# 091 -- import another document's passes as a group
+# ---------------------------------------------------------------------------
+
+_BLOOM_FIXTURE = Path(__file__).parent / "fixtures" / "bloom_chain"
+
+_CONST_HALF = """#version 460 core
+in vec2 vs_uv;
+out vec4 fs_color;
+void main() { fs_color = vec4(0.5, 0.0, 0.0, 1.0); }
+"""
+
+_HALVE_SCENE = """#version 460 core
+in vec2 vs_uv;
+uniform sampler2D u_scene;
+out vec4 fs_color;
+void main() { fs_color = vec4(texture(u_scene, vs_uv).r * 0.5, 0.0, 0.0, 1.0); }
+"""
+
+
+def _load_bloom(tmp_path: Path) -> Any:
+    document_dir = tmp_path / "bloom_source"
+    shutil.copytree(_BLOOM_FIXTURE, document_dir)
+    return load_document_from_dir(document_dir)
+
+
+def _rows(app: Any, document_id: str) -> dict[str, dict[str, Any]]:
+    document_json = app.session.paths.documents_dir / document_id / "document.json"
+    return json.loads(document_json.read_text())["uniforms"]
+
+
+def test_import_copies_the_bundle_under_the_group_and_feeds_it(
+    app: Any, tmp_path: Path
+) -> None:
+    # Verification 5, the append case: the starter's only pass is fed AND is the output, so
+    # the bundle's output becomes the document's.
+    document_id = _document_id(app)
+    source = _load_bloom(tmp_path)
+    result = app.session.import_passes(
+        document_id, source, "bloom", {"scene": "main"}, set()
+    )
+    assert result.error == "", result.error
+    document = app.ui_documents[document_id].document
+    assert set(document.passes) == {
+        "main",
+        "bloom_bright",
+        "bloom_blur",
+        "bloom_trail",
+        "bloom_composite",
+    }
+    passes_dir = app.session.paths.passes_dir_for(document_id)
+    assert {p.name for p in passes_dir.glob("*.frag.glsl")} == {
+        pass_shader_name(n) for n in document.passes
+    }
+    for name in ("bloom_bright", "bloom_blur", "bloom_trail", "bloom_composite"):
+        assert document.graph.passes[name].group == "bloom"
+    assert document.graph.output == "bloom_composite"
+
+    reloaded = _reload(app, document_id).document
+    rows = _rows(app, document_id)
+    assert rows["bloom_bright"]["u_scene"] == {"pass": "main"}
+    assert rows["bloom_composite"]["u_blur"] == {"pass": "bloom_blur"}
+    assert rows["bloom_trail"]["u_prev"] == {"pass": "bloom_trail"}
+    assert reloaded.graph.passes["bloom_blur"].group == "bloom"
+    assert reloaded.graph.output == "bloom_composite"
+
+
+def test_import_hands_the_fed_passs_readers_to_the_bundle(
+    app: Any, tmp_path: Path
+) -> None:
+    # Verification 5, the insertion case. `grade` is built as a bare Pass with no save in
+    # between, so it reaches the import with no program: the reader is only visible once the
+    # host compiles, which is the import's job (D6). Falsifier: compute the host wiring
+    # without compiling and `grade.u_main` is never a reader, so the handover is rejected.
+    document_id = _document_id(app)
+    document = app.ui_documents[document_id].document
+    path = app.session.paths.pass_shader_for(document_id, "grade")
+    path.write_text(_sampler_on("main"), encoding="utf-8")
+    document.passes["grade"] = Pass(
+        gl=document.gl, source=ShaderSource.load(path), canvas_size=document.canvas_size
+    )
+    document.graph = document.graph.with_passes(
+        {**document.graph.passes, "grade": PassEntry()}, output="grade"
+    )
+    assert document.passes["grade"].program is None
+    assert app.host_readers_of("main") == set(), "an uncompiled reader is invisible"
+
+    source = _load_bloom(tmp_path)
+    result = app.session.import_passes(
+        document_id, source, "bloom", {"scene": "main"}, {("grade", "u_main")}
+    )
+    assert result.error == "", result.error
+    assert document.graph.output == "grade", "the fed pass was not the output"
+    reloaded = _reload(app, document_id).document
+    assert reloaded.passes["grade"].uniform_values["u_main"] == PassSource(
+        "bloom_composite"
+    )
+    assert reloaded.graph.output == "grade"
+
+
+def test_a_handover_on_a_broken_host_pass_is_rejected_by_name(
+    app: Any, tmp_path: Path
+) -> None:
+    # Verification 5(ii). A pass whose shader does not compile keeps its disk rows through the
+    # save, so a handover written on it would be dropped without a word.
+    document_id = _document_id(app)
+    document = app.ui_documents[document_id].document
+    app.session.add_pass(document_id, "grade")
+    document.passes["grade"].release_program("this is not glsl")
+    document.passes["grade"].uniform_values["u_main"] = PassSource("main")
+    result = app.session.import_passes(
+        document_id,
+        _load_bloom(tmp_path),
+        "bloom",
+        {"scene": "main"},
+        {("grade", "u_main")},
+    )
+    assert "grade" in result.error and "compile" in result.error
+
+
+def test_a_rendered_import_reads_its_bundle(app: Any, tmp_path: Path) -> None:
+    # Verification 4, through the app fixture's context: the host's `main` renders 0.5 red, a
+    # two-pass source halves its entry point, and the imported output reads 0.25 red. Falsifier:
+    # drop the materialization and `fx_halve.u_scene` reads black, so the output is 0.
+    document_id = _document_id(app)
+    document = app.ui_documents[document_id].document
+    document.passes["main"].release_program(_CONST_HALF)
+    document.passes["main"].compile()
+    source_dir = tmp_path / "halver"
+    (source_dir / PASSES_DIR_NAME).mkdir(parents=True)
+    (source_dir / PASSES_DIR_NAME / "scene.frag.glsl").write_text(_CONST_HALF)
+    (source_dir / PASSES_DIR_NAME / "halve.frag.glsl").write_text(_HALVE_SCENE)
+    (source_dir / "graph.json").write_text(
+        json.dumps({"version": 2, "output": "halve", "passes": {}})
+    )
+    (source_dir / "document.json").write_text(
+        json.dumps({"uniforms": {}, "ui_state": {}})
+    )
+    source = load_document_from_dir(source_dir)
+    result = app.session.import_passes(
+        document_id, source, "fx", {"scene": "main"}, set()
+    )
+    assert result.error == "", result.error
+    assert document.graph.output == "fx_halve"
+    document.begin_frame()
+    document.render()
+    red = int(texture_to_rgba8(document.render_pass.canvas.texture)[0][0][0])
+    assert 60 <= red <= 68, (
+        f"the bundle's output reads {red}, not a quarter of full red"
+    )
+
+
+def test_import_leaves_the_shipped_example_byte_identical(app: Any) -> None:
+    # Verification 6. Falsifier: save the SOURCE's UIDocument too and the resources dir is
+    # rewritten in the working tree.
+    example_id = next(
+        i for i, u in app.ui_document_examples.items() if len(u.document.passes) > 1
+    )
+    example_dir = app.document_examples_dir / example_id
+    before = {
+        p.relative_to(example_dir): p.read_bytes()
+        for p in example_dir.rglob("*")
+        if p.is_file()
+    }
+    result = app.session.import_passes(
+        _document_id(app), app.ui_document_examples[example_id], "rc", {}, set()
+    )
+    assert result.error == "", result.error
+    after = {
+        p.relative_to(example_dir): p.read_bytes()
+        for p in example_dir.rglob("*")
+        if p.is_file()
+    }
+    assert after == before
+
+
+def test_a_merged_ui_row_survives_the_save(app: Any, tmp_path: Path) -> None:
+    # Verification 7. Falsifier: re-key the merged row by the new pass name (a hash nothing
+    # computes) and the prune drops it; `get_uniform_hash` is name-and-shape only.
+    document_id = _document_id(app)
+    source = _load_bloom(tmp_path)
+    source.document.passes["bright"].compile()
+    threshold = next(
+        u
+        for u in source.document.passes["bright"].get_active_uniforms()
+        if u.name == "u_threshold"
+    )
+    key = get_uniform_hash(threshold)
+    row = UIUniform.from_uniform(threshold)
+    row.input_type = "text"
+    source.ui_state.ui_uniforms[key] = row
+    result = app.session.import_passes(
+        document_id, source, "bloom", {"scene": "main"}, set()
+    )
+    assert result.error == "", result.error
+    reloaded = _reload(app, document_id)
+    assert reloaded.ui_state.ui_uniforms[key].input_type == "text"
+
+
+def test_a_broken_source_pass_is_imported_as_is_and_named(
+    app: Any, tmp_path: Path
+) -> None:
+    # Verification 8. Falsifiers: swallow the compile failure and the user gets a bundle with a
+    # silently black member; treat its empty wiring as a root and the dialog grows a row.
+    document_dir = tmp_path / "broken_bloom"
+    shutil.copytree(_BLOOM_FIXTURE, document_dir)
+    (document_dir / PASSES_DIR_NAME / "blur.frag.glsl").write_text("not glsl at all")
+    source = load_document_from_dir(document_dir)
+    compile_pending_passes(source.document)
+    assert offered_entry_points(source.document) == ["scene"]
+    result = app.session.import_passes(
+        _document_id(app), source, "bloom", {"scene": "main"}, set()
+    )
+    assert result.error == ""
+    assert any("blur" in note for note in result.notes), result.notes
+    document = app.ui_documents[_document_id(app)].document
+    assert "bloom_blur" in document.passes and "bloom_composite" in document.passes
+
+
+def test_the_group_survives_rename_and_goes_with_delete(app: Any) -> None:
+    # Verification 9, the verbs' half. Falsifier: `_graph_renamed` rebuilt from PassEntry().
+    document_id = _document_id(app)
+    app.session.add_pass(document_id, "glow")
+    assert app.session.set_pass_group(document_id, "glow", "fx") == ""
+    assert app.session.set_pass_group(document_id, "glow", "2bad") != ""
+    assert app.session.rename_pass(document_id, "glow", "shine") == ""
+    document = app.ui_documents[document_id].document
+    assert document.graph.passes["shine"].group == "fx"
+    assert _reload(app, document_id).document.graph.passes["shine"].group == "fx"
+    assert app.session.set_pass_group(document_id, "shine", "") == ""
+    assert document.graph.passes["shine"].group == ""
+    assert app.session.delete_pass(document_id, "shine") == ""
+    assert "shine" not in document.graph.passes

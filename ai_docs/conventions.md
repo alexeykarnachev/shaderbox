@@ -819,6 +819,33 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   ~0.15 ms of a 16.7 ms frame and a lighter
   session proportionally less. Revisit if a frame ever opens spans by the hundred, where that
   per-span figure stops being a rounding error.
+- **A pass GROUP is a label on the pass entry, and nothing folds (feature 091).** `PassEntry.group`
+  is the whole data model: a group exists while a pass carries its name, there is no group table
+  or member list to keep in step with it, and every existing entry mutation carries it because
+  they all go through `model_copy` or carry the entry object. The strip draws a group's
+  consecutive tiles inside one flush outline (`group_runs`, cut by ADJACENCY, so an outside pass
+  wired into the middle of a group simply splits it into two runs). Folding a group into one
+  tile was rejected: a folded group must be convex in the DAG, and that rule set had no UI the
+  maintainer would carry. Revisit if a group-level fact appears that no member can hold (an
+  exposed parameter set, a description) -- then it becomes an entity.
+- **Import is by COPY, decided as a pure plan over two wirings, with entry-point substitution and
+  insertion (feature 091).** `pass_import.plan_import` takes the source's and the host's
+  `effective_wiring()` -- both AFTER every pass has compiled, since a never-compiled pass answers
+  its explicit rows only and every pass then reads as a root -- and returns every write or the
+  rejection. An ENTRY POINT is a source pass reading no other source pass; the one the host feeds
+  is not copied, its readers point at the host pass, and the host's readers of that pass are
+  handed to the bundle's output (its output role too, when the fed pass was the output). Every
+  wired sampler of a copied pass is written as an explicit `PassSource` under the new names,
+  because the name rule does not survive the group prefix. Values are COPIED, never shared:
+  `Pass.release` frees what it holds. The source is never saved: a shipped example lives in the
+  resources dir. Revisit if a second document-shaped source (a presets folder) needs anything the
+  verb's `UIDocument` parameter does not carry.
+- **Group tints are theme tokens picked by a stable hash (feature 091).** `group_tint` indexes
+  `COLOR.GROUP_TINTS` by `zlib.crc32`, never `hash()` (salted per process). Four hues, because
+  the palette has no fifth clear of every outline and chip the strip's tiles carry; the
+  import-time assert beside the SELECT invariant excludes accent primaries, state hues, SELECT,
+  TAG and FAVS, and the pure test in `tests/test_theme.py` is the gate (an import-time assert
+  cannot be tripped from a test). Revisit if a fifth palette hue appears.
 - **The generic exporter seam carries NO exporter-domain vocabulary.** `RenderControl` is pure render
   plumbing; `exporters/base.py`, `registry.py`, `tabs/share.py`, `popups/emoji_picker.py` name no
   Telegram/sticker/pack/emoji concept. A per-exporter UI need (e.g. Telegram's emoji affordances)

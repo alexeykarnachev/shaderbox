@@ -187,3 +187,20 @@ def test_the_render_tools_refuse_a_pass_address_by_name(app: Any) -> None:
         assert not result.ok
         assert "whole document" in (result.error or "")
         assert "probe_render" in (result.error or "")
+
+
+def test_set_pass_group_lands_and_echoes(app: Any) -> None:
+    # 091 D9. Falsifier: drop the group from the table's format string, or accept an illegal
+    # name silently.
+    document_id = app.current_document_id
+    backend = app.copilot_backend
+    assert backend.add_pass("", "glow", None, None, None, None, None, False).ok
+    res = backend.set_pass("", "glow", None, None, None, None, None, False, "", "fx")
+    assert res.ok, res.error
+    assert "glow: runs 1, target f2 x1, linear, group fx" in res.table
+    assert _graph(app, document_id)["passes"]["glow"]["group"] == "fx"
+    res = backend.set_pass("", "glow", None, None, None, None, None, False, "", "")
+    assert res.ok and "group" not in res.table.split("glow")[1].split("\n")[0]
+    assert _graph(app, document_id)["passes"]["glow"]["group"] == ""
+    bad = backend.set_pass("", "glow", None, None, None, None, None, False, "", "2bad")
+    assert not bad.ok and "group name" in bad.error

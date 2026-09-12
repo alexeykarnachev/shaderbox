@@ -1226,6 +1226,7 @@ def preview_cell(
     stale: bool = False,
     chips: Sequence[str] | None = None,
     chip_font: imgui.ImFont | None = None,
+    bordered: bool = True,
 ) -> PreviewCellResult:
     """A bordered preview tile: a `cell_w`-wide square image + whole-cell click
     target + selection border + a top-right delete-✕ arming an in-cell `Delete?` wash.
@@ -1245,6 +1246,9 @@ def preview_cell(
     small chip, centered as a row. The line is reserved whenever `chips` is given (an empty
     row keeps every cell in a strip the same height); the chips that do not fit the width
     collapse into a `+N` count, so the row never clips.
+
+    `bordered=False` drops the child's own border and keeps its padding: `ChildFlags_.borders`
+    is what enables `WindowPadding`, so the plain flag would shift the picture by the padding.
     """
     line_h: float = imgui.get_text_line_height_with_spacing()
     footer_h: float = line_h if footer else 0.0
@@ -1265,7 +1269,9 @@ def preview_cell(
     with imgui_ctx.begin_child(
         f"##preview_cell_{id_}",
         size=imgui.ImVec2(cell_w, cell_h),
-        child_flags=imgui.ChildFlags_.borders,
+        child_flags=imgui.ChildFlags_.borders
+        if bordered
+        else imgui.ChildFlags_.always_use_window_padding,
         window_flags=imgui.WindowFlags_.no_scrollbar
         | imgui.WindowFlags_.no_scroll_with_mouse,
     ):

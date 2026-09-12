@@ -26,26 +26,29 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-11, 090 is implemented, reviewed to closure, merged on dev, gates green; every item below awaits his eyes. -->
-**Next: nothing is claimed; the tenth walk is his.** 090 landed the document throttle and the
-Auto/Fixed resolution mode after the research refuted every alternative on his driver: nothing
-preempts a draw, so a render thread and context priority buy nothing, and tiling was rejected.
-Under Auto a document stores only an aspect and renders at the viewer's size fitted to it; under
-Fixed it stores the pair. A resize resamples every feedback history; a shared GPU budget schedules
-the current document first and previews at a common fps; GPU spans record always. His first try opened a new document 64×64 square; revision 1 fixed it with the tab layout he picked.
+<!-- As of 2026-09-12, 091 is implemented and gates green; its post-implementation review is the open step. -->
+**Next: close 091's post-implementation review, then the graph view he reopened.** 091 imports
+another document's passes into the current one by copy, under a group whose name prefixes them:
+one decision per entry point (a source pass reading no other), fed by a host pass whose readers
+are handed to the bundle's output, or kept. The group is one label on the pass entry, drawn as
+a flush outline on the strip; nothing folds. He chose the copy, the insertion picker and the C3
+outline from `00_mock.html`.
 
-**Awaiting his eyes** (no WM here): a new document opening 16:9 at the viewer's size; the
-`Auto | Fixed` control, the chips and the two readouts; a throttled document's feel; the panel row; the
-settings. From 089: the formatted shape on his file, the FPS bands, `Ctrl+O` after a search,
-normal-mode `Tab`, `Alt+O`, the lock chip, blockwise `Ctrl+V`.
+**After 091:** the opt-in, hand-drawn graph view he reopened in the design round (070 closed a
+graph view as the strip's replacement; this is a second view). Its own number and spec.
 
-**Open, unmeasured:** no brake watches cost or a frame going lit to flat (082); a multi-document
-mission; the GL thread (`00_research.md`) if the throttle proves not enough.
+**Awaiting his eyes** (no WM here): the outline and label at 480 and 1040; the import dialog
+over the examples and his Bloom Chain; Radiance Cascades imported into a document painting its
+own `paint`. From 090: the `Auto | Fixed` control.
+
+**Open, unmeasured:** no brake watches cost or a frame going lit to flat (082); the GL thread
+if the throttle proves not enough.
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 091 | presets | in progress | Another document's passes copied into the current one as a GROUP: one combo per entry point of the source (a pass reading no other), fed by a host pass -- whose own readers are handed to the bundle's output, with its output role when it had it -- or kept; a pure `plan_import` over the two compiled wirings materializes every wired sampler under the prefixed names, since the name rule does not survive the prefix, and rejects before anything is written. The group is one label on the pass entry, editable in the settings modal and by the copilot, drawn on the strip as a flush outline around each run of consecutive members with the name on the border; folding was rejected (a folded group must be convex in the DAG). Spec: `ai_docs/features/091_presets/01_spec.md` + `00_mock.html`. |
 | 090 | render_decoupling | done | The editor lagged behind a heavy document because one loop made the UI frame equal the document's GPU cost, and research on the maintainer's box refuted every alternative (nothing preempts a draw on his driver, so a render thread, a second process and context priority buy nothing; tiling worked but was rejected). Each document now carries a resolution mode -- Auto stores only an aspect and renders at the viewer's size fitted to it, resampling the output canvas and every feedback history on resize through a one-quad blit since `copy_framebuffer` does not rescale; Fixed stores the pair; export resolves through one seam -- and a document throttle behind a pure `plan_render_set` schedules the current document from its measured GPU cost against a shared budget and every displayed preview at a common fps, with GPU spans recorded always. The first landing kept a stored pair under Auto and opened a new document 64×64 square; revision 1 replaced it with the tab layout the maintainer picked. Spec: `ai_docs/features/090_render_decoupling/01_spec.md` + `00_research.md` + `02_throttle_and_resolution.md`. |
 | 089 | ninth_walk_findings | done | The maintainer's ninth walk, five findings over two repos: the shader formatter's bracket shape (clang-format 23's bracket-break options plus one host post-pass, since the member access after a block-closing bracket is a forced break no option buys back), the completion vocabulary re-sourced from the gl4 refpages with entries named from their prototypes (a family refname had silently dropped `noise1..4` and would have lost three pack names) and the fourteen fragment-stage variables as `SymbolKind.GLSL_VARIABLE`, a feedback pass's newest frame persisted as `feedback/<pass>.bin` and seeded into its history on load (the first-frame swap and the scaled-pass size were both found broken by the pre-implementation probes and fixed before a line landed), the FPS panel colored by budget share and sorted by cost behind a pure plan the wire test can spy, and the editor library's single-buffer jumplist re-vendored at `d1ef029` with the lexer's builtin set synced to the table's 171 names -- which moved the Projects modal to `Alt+O` when the keymap-disjointness gate refused two owners for `Ctrl+O`. Spec: `ai_docs/features/089_ninth_walk_findings/01_spec.md` + `00_findings.md`. |
 | 088 | frame_profiler | done | A frame-time breakdown behind the FPS chip, built as a general seam: a leaf `profiling.py` with CPU spans and GPU timer queries (a three-deep, path-keyed ring read two frames late, since a two-deep one measured a 22 ms stall under load and a name-keyed one lost the current document's second render), threaded into `Document.render` as a parameter so exports stay silent and a document rendered inside another nests by construction; recording followed the panel until 090 made it always-on, and the panel draws a path-keyed exponential average while the profile it reads stays what was measured. Spec: `ai_docs/features/088_frame_profiler/01_spec.md`. |

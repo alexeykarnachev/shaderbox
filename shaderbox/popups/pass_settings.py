@@ -12,7 +12,7 @@ panel (072).
 from imgui_bundle import imgui
 
 from shaderbox.app import App, PopupState
-from shaderbox.pass_graph import MAX_ITERATIONS, PassEntry
+from shaderbox.pass_graph import MAX_ITERATIONS, PassEntry, PassGraph
 from shaderbox.theme import SIZE, SPACE
 from shaderbox.ui_primitives import (
     help_marker,
@@ -86,6 +86,11 @@ def _draw_draft(app: App) -> bool:
     )
     imgui.same_line()
     help_marker("names its shader file and its wires")
+    group, _ = _draw_group(
+        app, "draft", draft.entry.group, _existing_groups(ui_document.document.graph)
+    )
+    if group != draft.entry.group:
+        draft.entry = draft.entry.model_copy(update={"group": group})
 
     imgui.dummy((0.0, float(SPACE.MD)))
     draft.entry = _draw_target(
@@ -112,6 +117,11 @@ def _draw_body(app: App) -> bool:
     if not renamed:
         document = ui_document.document
         entry = document.graph.passes.get(name, PassEntry())
+        app.pass_settings_group_buf, committed = _draw_group(
+            app, name, app.pass_settings_group_buf, _existing_groups(document.graph)
+        )
+        if committed:
+            app.commit_pass_group()
         imgui.dummy((0.0, float(SPACE.MD)))
         new_entry = _draw_target(
             app,
@@ -160,6 +170,35 @@ def _draw_name(app: App, document_id: str, name: str) -> bool:
     imgui.same_line()
     help_marker("names its shader file and its wires")
     return renamed
+
+
+def _existing_groups(graph: PassGraph) -> list[str]:
+    return sorted({entry.group for entry in graph.passes.values() if entry.group})
+
+
+def _draw_group(
+    app: App, id_: str, group: str, existing: list[str]
+) -> tuple[str, bool]:
+    """The group row (091 D9): a field beside a picker of the document's groups. Returns the
+    buffer as the row left it and whether it was committed this frame (Enter, leaving the
+    field, or a pick)."""
+    label_row(app.font_12, "group", _CTRL_W, _ROW_LABEL_W)
+    entered, group = imgui.input_text(
+        f"##group_{id_}", group, flags=imgui.InputTextFlags_.enter_returns_true
+    )
+    deactivated = imgui.is_item_deactivated_after_edit()
+    picked = False
+    imgui.same_line()
+    if imgui.begin_combo(f"##group_pick_{id_}", "", imgui.ComboFlags_.no_preview):
+        for name in existing:
+            if imgui.selectable(name, name == group)[0]:
+                group, picked = name, True
+        if imgui.selectable("none", group == "")[0]:
+            group, picked = "", True
+        imgui.end_combo()
+    imgui.same_line()
+    help_marker("the tile's group label")
+    return group, entered or deactivated or picked
 
 
 def _commit_pass_name(app: App, document_id: str, name: str) -> bool:

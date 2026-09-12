@@ -474,6 +474,7 @@ class CopilotBackend:
         pass_set_output: Callable[[str, str], str],
         pass_set_target: Callable[[str, str, TargetConfig], str],
         pass_set_iterations: Callable[[str, str, int], str],
+        pass_set_group: Callable[[str, str, str], str],
     ) -> None:
         self._get_bridge = get_bridge
         self._get_gate = get_gate
@@ -533,6 +534,7 @@ class CopilotBackend:
         self._pass_set_output = pass_set_output
         self._pass_set_target = pass_set_target
         self._pass_set_iterations = pass_set_iterations
+        self._pass_set_group = pass_set_group
 
     def batch_begin(self) -> None:
         self._batch_mutated.clear()
@@ -1289,6 +1291,7 @@ class CopilotBackend:
             rows.append(
                 f"- {name}{mark}: runs {entry.iterations}, target {t.dtype} x{t.scale:g}"
                 f"{', linear' if t.filter_linear else ''}{', wrap' if t.wrap else ''}"
+                f"{f', group {entry.group}' if entry.group else ''}"
             )
         short = self._copilot_short_ids().get(
             document_id, document_id[:DOCUMENT_SHORT_ID_LEN]
@@ -1322,6 +1325,7 @@ class CopilotBackend:
         filter_linear: bool | None,
         wrap: bool | None,
         output: bool,
+        group: str | None = None,
     ) -> str:
         # Apply every given knob; the first error wins (the verbs validate and save one at a time).
         # An empty dtype is "leave it" -- a model sends "" for a field it is not setting.
@@ -1351,6 +1355,10 @@ class CopilotBackend:
                 return error
         if output:
             error = self._pass_set_output(document_id, name)
+            if error:
+                return error
+        if group is not None:
+            error = self._pass_set_group(document_id, name, group)
             if error:
                 return error
         return ""
@@ -1393,6 +1401,7 @@ class CopilotBackend:
         wrap: bool | None,
         output: bool,
         new_name: str,
+        group: str | None = None,
     ) -> PassOpResult:
         def _on_main() -> PassOpResult:
             document_id = self._resolve_pass_document(document)
@@ -1406,7 +1415,15 @@ class CopilotBackend:
                 )
             self._capture_document(document_id)
             error = self._configure_pass(
-                document_id, name, runs, dtype, scale, filter_linear, wrap, output
+                document_id,
+                name,
+                runs,
+                dtype,
+                scale,
+                filter_linear,
+                wrap,
+                output,
+                group,
             )
             final_name = name
             if not error and new_name and new_name != name:

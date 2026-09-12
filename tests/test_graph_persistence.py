@@ -17,6 +17,7 @@ import moderngl
 import numpy as np
 import pytest
 from PIL import Image as PILImage
+from pydantic import ValidationError
 
 from shaderbox.constants import DEFAULT_FS_FILE_PATH
 from shaderbox.document import DEFAULT_PASS_NAME, Document, load_graph
@@ -406,3 +407,17 @@ def test_a_corrupt_document_json_costs_its_metadata_not_the_document(
     assert document.passes, "the shader files survive a broken document.json"
     assert metadata == {}
     document.release()
+
+
+def test_a_group_round_trips_and_an_absent_key_reads_empty(tmp_path: Path) -> None:
+    # 091 D1. Falsifier: rebuild the entry from a fresh `PassEntry()` on load.
+    grouped = PassGraph(
+        output="a", passes={"a": PassEntry(group="fx"), "b": PassEntry()}
+    )
+    assert PassGraph(**grouped.model_dump()).passes["a"].group == "fx"
+    path = tmp_path / "graph.json"
+    path.write_text(json.dumps(grouped.model_dump()))
+    assert load_graph(path).passes["a"].group == "fx"
+    assert load_graph(path).passes["b"].group == ""
+    with pytest.raises(ValidationError):
+        PassEntry(group="2bad")

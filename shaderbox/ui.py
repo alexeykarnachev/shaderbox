@@ -26,6 +26,7 @@ from shaderbox.paths import log_dir
 from shaderbox.popups.emoji_picker import draw_emoji_picker
 from shaderbox.popups.examples import draw_examples
 from shaderbox.popups.help import draw_help
+from shaderbox.popups.import_passes import draw_import_passes
 from shaderbox.popups.lib_picker import draw_lib_picker
 from shaderbox.popups.pass_settings import draw_pass_settings
 from shaderbox.popups.projects import draw_projects
@@ -163,6 +164,20 @@ def run(app: App) -> None:
     app.shutdown()
 
 
+def planned_set_mode(app: App) -> tuple[bool, bool]:
+    """Which set this frame plans and renders while a popup is open (090 D10, 091 D11):
+    `(examples_planned, import_project_tab)`. The Examples popup, or the import dialog on its
+    Examples tab, plans the examples; the import dialog on its project tab plans the ordinary
+    set, since its cards blit the project documents' live canvases. Every other popup
+    pauses the set to the current document alone."""
+    importing = app.popup_state == PopupState.IMPORT_PASSES
+    draft = app.import_draft
+    examples_planned = app.popup_state == PopupState.EXAMPLES or (
+        importing and draft is not None and draft.examples_tab
+    )
+    return examples_planned, importing and not examples_planned
+
+
 def _tick_frame_state(app: App) -> list[str] | None:
     """Everything that happens BEFORE any drawing: reconcile disk, advance the clocks, tick
     the script engine, and decide which documents this frame renders.
@@ -247,7 +262,8 @@ def _tick_frame_state(app: App) -> list[str] | None:
     tick_documents = (
         [app.current_document_id] if app.current_document_id in app.ui_documents else []
     )
-    if not app.any_popup_open():
+    examples_planned, import_project_tab = planned_set_mode(app)
+    if not app.any_popup_open() or import_project_tab:
         if app.app_state.is_render_all_documents:
             tick_documents += [
                 document_id
@@ -272,16 +288,15 @@ def _tick_frame_state(app: App) -> list[str] | None:
     # normal set — `ui.py`'s render block is `if not any_popup_open(): ... elif EXAMPLES: ...`,
     # so no `tick_documents` document renders behind it, and an interval computed for a
     # document nothing draws would be read by nothing.
-    examples_open: bool = app.popup_state == PopupState.EXAMPLES
     planned_documents: list[str] = (
-        list(app.ui_document_examples) if examples_open else tick_documents
+        list(app.ui_document_examples) if examples_planned else tick_documents
     )
     planned: dict[str, UIDocument] = (
-        app.ui_document_examples if examples_open else app.ui_documents
+        app.ui_document_examples if examples_planned else app.ui_documents
     )
     current_planned: str | None = (
         app.app_state.selected_example_id
-        if examples_open and app.app_state.selected_example_id in planned
+        if examples_planned and app.app_state.selected_example_id in planned
         else (app.current_document_id if app.current_document_id in planned else None)
     )
 
@@ -452,7 +467,8 @@ def _update_and_draw(app: App) -> None:
     # ----------------------------------------------------------------
     # Render documents
     current_ui_document = app.ui_documents.get(app.current_document_id)
-    if not app.any_popup_open():
+    examples_planned, import_project_tab = planned_set_mode(app)
+    if not app.any_popup_open() or import_project_tab:
         for document_id in tick_documents:
             ui_document = app.ui_documents.get(document_id)
             # The plan's gate covers the OUTPUT render and the pending-pass sweep together:
@@ -477,7 +493,7 @@ def _update_and_draw(app: App) -> None:
                 if pending is not None:
                     with app.profiler.cpu(document_span_name(document_id)):
                         document.render(target=pending, profiler=app.profiler)
-    elif app.popup_state == PopupState.EXAMPLES:
+    elif examples_planned:
         # Same first-render budget as the document set above: one example compiles per frame,
         # so opening the popup never stalls on compiling the whole library at once.
         pending_example = next(
@@ -615,6 +631,7 @@ def _update_and_draw(app: App) -> None:
             draw_help(app)
             draw_settings(app)
             draw_pass_settings(app)
+            draw_import_passes(app)
             draw_emoji_picker(app)
             draw_lib_picker(app)
             draw_projects(app)

@@ -41,6 +41,7 @@ class CommandId(StrEnum):
     CLOSE_CODE_TAB = auto()
     OPEN_PASS_SETTINGS = auto()
     ADD_PASS = auto()
+    IMPORT_PASSES = auto()
     CYCLE_CHANNEL_VIEW = auto()
     NEXT_PASS = auto()
     PREV_PASS = auto()
@@ -222,6 +223,7 @@ COMMAND_SPECS: list[CommandSpec] = [
         C.TOOLS,
     ),
     CommandSpec(CommandId.ADD_PASS, "Add pass", _chord(K.a, K.mod_alt), C.TOOLS),
+    CommandSpec(CommandId.IMPORT_PASSES, "Import passes", 0, C.TOOLS),
     CommandSpec(CommandId.EXAMPLES, "Examples", _chord(K.e, K.mod_alt), C.TOOLS),
     CommandSpec(CommandId.HELP, "Help", _chord(K.f1), C.TOOLS),
     CommandSpec(

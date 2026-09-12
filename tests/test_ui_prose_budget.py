@@ -122,6 +122,10 @@ _CLAUSE_JOINERS: tuple[str, ...] = (";", " — ", " -- ")
 # forwarding a caller's text -- the CALLERS are the measured sites.
 _UNMEASURABLE: dict[tuple[str, str], str] = {
     (
+        "shaderbox/popups/import_passes.py",
+        "_draw_description",
+    ): "the source document's own description, authored per document rather than here",
+    (
         "shaderbox/popups/projects.py",
         "_draw_row",
     ): "a project's parent directory, a filesystem path rather than authored copy",

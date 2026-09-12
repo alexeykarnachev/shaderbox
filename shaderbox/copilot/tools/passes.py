@@ -46,6 +46,10 @@ class _SetPassArgs(ToolArgs):
     wrap: bool | None = Field(default=None, description=_WRAP_DESC)
     output: bool = Field(default=False, description=_OUTPUT_DESC)
     new_name: str = Field(default="", description="rename the pass (empty = keep)")
+    group: str | None = Field(
+        default=None,
+        description="the group the pass belongs to (a label on the strip); '' leaves the group",
+    )
 
 
 class _DeletePassArgs(ToolArgs):
@@ -84,6 +88,7 @@ def pass_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             args["wrap"],
             args["output"],
             args["new_name"],
+            args["group"],
         )
         if not res.ok:
             return False, f"error: {res.error}", None
@@ -121,8 +126,9 @@ def pass_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             label_done="Configured pass",
             description=(
                 "Configure an existing pass: runs per frame (an iterated pass — a jump flood, a "
-                "cascade stack), the target's dtype/scale/filter/wrap, make it the output, or "
-                "rename it (every sampler naming it follows). Only the given fields change."
+                "cascade stack), the target's dtype/scale/filter/wrap, make it the output, "
+                "rename it (every sampler naming it follows), or set its group. Only the given "
+                "fields change."
             ),
             args_model=_SetPassArgs,
             handler=set_pass,

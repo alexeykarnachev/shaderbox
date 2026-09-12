@@ -207,11 +207,25 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   hand the strip sorted-name order. A tile is a picture, a name, and a row of chips naming the
   passes it reads (070); the source itself is chosen on the sampler's row of the uniforms panel
   (072). The six verbs of D15 are reachable from the strip (gear overlay / context menu); holds no
-  state of its own -- `add pass` opens the settings modal on `App.pass_draft` (078).
+  state of its own -- `add pass` opens the settings modal on `App.pass_draft` (078), `import...`
+  opens the import dialog on `App.import_draft` (091). A group's consecutive tiles draw inside
+  one flush outline with the name on its border (091): the fill on the parent draw list, the
+  outline and label on the foreground list clipped to the strip, since the tiles are child
+  windows that paint over their parent; member tiles keep their padding through
+  `preview_cell(bordered=False)`.
 - **`popups/pass_settings.py`** — the pass-settings modal (feature 065), in the `PopupState`
-  mutex: one pass's name, run count and target controls. Opens from a tile's gear, its context
-  menu, or automatically on `add pass` — set-up-once choices live here, off the strip. What a
-  pass reads is not here since 072: that is each sampler's own row.
+  mutex: one pass's name, group (091), run count and target controls. Opens from a tile's gear,
+  its context menu, or automatically on `add pass` — set-up-once choices live here, off the
+  strip. What a pass reads is not here since 072: that is each sampler's own row.
+- **`popups/import_passes.py`** — the import dialog (feature 091), in the `PopupState` mutex: a
+  source picked from two tabs (the project's other documents, the shipped examples), the group
+  name that also prefixes the passes, one combo per ENTRY POINT of the source (kept, or fed by a
+  host pass) with the host's readers of that pass as handover checkboxes. The plan is recomputed
+  every frame (`pass_import.plan_import`) and its rejection stored on the draft; no field is
+  auto-focused. Executes through `ProjectSession.import_passes`.
+- **`pass_import.py`** — leaf, GL-free (feature 091): `ImportPlan` and `plan_import`, every
+  write an import makes or the message that rejects it, decided over the source's and the
+  host's wiring. Imports `pass_graph` only.
 - **`popups/projects.py`** — the Projects modal (feature 084, Alt+O), in the `PopupState` mutex:
   every project verb in one surface — a row per project (name, document count, path), New,
   Duplicate, Delete, and the folder picker demoted to `Open other...`. Requests a switch rather

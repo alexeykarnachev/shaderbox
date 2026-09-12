@@ -11,7 +11,7 @@ exists: `load_color` is red at 1.0, and 1.0 is where a converged throttled docum
 
 from shaderbox.profiling import FrameProfile, Span
 from shaderbox.render_plan import RenderPlan
-from shaderbox.theme import COLOR, load_color, throttle_color
+from shaderbox.theme import _ACCENTS, COLOR, group_tint, load_color, throttle_color
 from shaderbox.ui_primitives import profile_rows_plan
 
 
@@ -105,3 +105,25 @@ def test_a_closed_documents_row_falls_back_to_a_short_handle() -> None:
     ]
     assert "77a84d27" in names
     assert "77a84d27-2e5b-406d-8011-ee1cb1a9587c" not in names
+
+
+def test_group_tints_are_stable_and_collide_with_nothing() -> None:
+    # 091 D8. (a) pinned by VALUE at crc32 indices: `hash()` is salted per process, so under
+    # it the pin is red on essentially every run rather than flaky green.
+    assert group_tint("bloom") is COLOR.GROUP_TINTS[3]
+    assert group_tint("radiance") is COLOR.GROUP_TINTS[2]
+    assert group_tint("fx") is COLOR.GROUP_TINTS[0]
+    # (b) disjoint from every outline and chip these tiles carry, and no duplicate. Falsifier:
+    # put `purple_b` (COLOR.SELECT) in the tuple -- a check over accent primaries and state
+    # hues alone lets it through.
+    excluded = {primary for primary, _active, _alpha in _ACCENTS.values()} | {
+        COLOR.STATE_OK,
+        COLOR.STATE_WARN,
+        COLOR.STATE_ERROR,
+        COLOR.STATE_INFO,
+        COLOR.SELECT,
+        COLOR.TAG,
+        COLOR.FAVS,
+    }
+    assert not set(COLOR.GROUP_TINTS) & excluded
+    assert len(set(COLOR.GROUP_TINTS)) == len(COLOR.GROUP_TINTS)

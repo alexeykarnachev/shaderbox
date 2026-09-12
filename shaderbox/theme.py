@@ -25,6 +25,7 @@ Color framework (portable to a future non-gruvbox theme):
   validates the SELECT assignment at import.
 """
 
+import zlib
 from typing import Literal
 
 from imgui_bundle import imgui
@@ -172,6 +173,17 @@ class _ColorBag:
     TAG: tuple[float, float, float, float] = _P["blue_b"]
     FAVS: tuple[float, float, float, float] = _P["yellow_b"]
 
+    # A pass group's outline on the strip (091 D8), one hue per group by `group_tint`. Four
+    # because the palette has no fifth hue clear of every outline and chip these tiles carry;
+    # aqua_n is an accent's pressed shade, which never draws as an outline.
+    GROUP_TINTS: tuple[tuple[float, float, float, float], ...] = (
+        _P["purple_n"],
+        _P["green_b"],
+        _P["yellow_n"],
+        _P["aqua_n"],
+    )
+    GROUP_FILL_ALPHA: float = 0.10
+
     # Syntax tokens for the inline editor, applied via editor_palette() below
     # (the Color->SYNTAX_* slot mapping).
     SYN_KEYWORD: tuple[float, float, float, float] = _P["red_b"]
@@ -208,6 +220,30 @@ assert COLOR.SELECT not in _accent_primaries, (
     f"primary — pick a hue no accent uses, or the selection outline merges with the "
     f"accent chrome around the panel it sits in."
 )
+_GROUP_TINT_EXCLUSIONS: set[tuple[float, float, float, float]] = _accent_primaries | {
+    COLOR.STATE_OK,
+    COLOR.STATE_WARN,
+    COLOR.STATE_ERROR,
+    COLOR.STATE_INFO,
+    COLOR.SELECT,
+    COLOR.TAG,
+    COLOR.FAVS,
+}
+assert not set(COLOR.GROUP_TINTS) & _GROUP_TINT_EXCLUSIONS, (
+    "theme invariant: a group tint collides with an accent primary, a state hue, SELECT, TAG "
+    "or FAVS — it outlines the same tiles they mark, so the two cues would merge."
+)
+assert len(set(COLOR.GROUP_TINTS)) == len(COLOR.GROUP_TINTS), (
+    "theme invariant: two group tints are the same hue, so two groups would look alike."
+)
+
+
+def group_tint(name: str) -> tuple[float, float, float, float]:
+    """The hue a pass group draws in: stable across processes and documents, so a group keeps
+    its color. `zlib.crc32`, never `hash()`, which is salted per process."""
+    return COLOR.GROUP_TINTS[zlib.crc32(name.encode()) % len(COLOR.GROUP_TINTS)]
+
+
 assert COLOR.SELECT not in {
     COLOR.STATE_OK,
     COLOR.STATE_WARN,
