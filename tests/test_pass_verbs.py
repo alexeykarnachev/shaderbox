@@ -11,6 +11,7 @@ choice and the open editor tab move together. D3 makes a half-done rename SILENT
 pointing at the old name just reads black.
 """
 
+import inspect
 import json
 import shutil
 from collections.abc import Callable
@@ -37,7 +38,7 @@ from shaderbox.pass_graph import (
 from shaderbox.paths import PASSES_DIR_NAME, pass_shader_name
 from shaderbox.popups import pass_settings
 from shaderbox.popups.pass_settings import _FORMAT_CODES, _FORMATS
-from shaderbox.project_session import compile_pending_passes
+from shaderbox.project_session import ProjectSession, compile_pending_passes
 from shaderbox.shader_source import ShaderSource
 from shaderbox.ui_models import UIUniform, load_document_from_dir
 from shaderbox.util import get_uniform_hash
@@ -891,3 +892,90 @@ def test_the_group_survives_rename_and_goes_with_delete(app: Any) -> None:
     assert document.graph.passes["shine"].group == ""
     assert app.session.delete_pass(document_id, "shine") == ""
     assert "shine" not in document.graph.passes
+
+
+# ----------------------------------------------------------------
+# Positions on the graph canvas (092 D6): one writer, one save per gesture, stripped on import.
+
+
+def _count_saves(app: Any, monkeypatch: Any) -> list[int]:
+    saves = [0]
+    real = app.session.save_ui_document
+
+    def counted(ui_document: Any) -> None:
+        saves[0] += 1
+        real(ui_document)
+
+    monkeypatch.setattr(app.session, "save_ui_document", counted)
+    return saves
+
+
+def test_set_pass_positions_saves_once_for_the_whole_set(
+    app: Any, monkeypatch: Any
+) -> None:
+    document_id = app.current_document_id
+    for name in ("p1", "p2", "p3"):
+        assert app.session.add_pass(document_id, name) == ""
+    saves = _count_saves(app, monkeypatch)
+    # Falsifier: loop a single-position verb -- the count becomes three.
+    assert (
+        app.session.set_pass_positions(
+            document_id, {"p1": (0.0, 0.0), "p2": (100.0, 0.0), "p3": None}
+        )
+        == ""
+    )
+    assert saves[0] == 1
+    reloaded = _reload(app, document_id).document.graph
+    assert reloaded.passes["p1"].position == (0.0, 0.0)
+    assert reloaded.passes["p2"].position == (100.0, 0.0)
+    assert reloaded.passes["p3"].position is None
+    assert app.session.set_pass_positions(document_id, {"nope": (0.0, 0.0)})
+    assert app.session.set_pass_positions(document_id, {"p1": (1e30, 0.0)})
+    assert app.ui_documents[document_id].document.graph.passes["p1"].position == (
+        0.0,
+        0.0,
+    )
+
+
+def test_a_position_survives_every_other_pass_verb(app: Any) -> None:
+    document_id = app.current_document_id
+    assert app.session.add_pass(document_id, "p") == ""
+    assert app.session.set_pass_positions(document_id, {"p": (7.0, 9.0)}) == ""
+    document = app.ui_documents[document_id].document
+    # Falsifier: rebuild the entry from `PassEntry()` in any verb (the `with_target` bug
+    # `test_graph_edits_preserve_fields_they_do_not_name` was written for).
+    assert app.session.set_pass_target(document_id, "p", TargetConfig(dtype="f4")) == ""
+    assert app.session.set_pass_iterations(document_id, "p", 2) == ""
+    assert app.session.set_pass_group(document_id, "p", "g") == ""
+    assert app.session.set_output_pass(document_id, "p") == ""
+    for _ in range(4):
+        assert document.graph.passes["p"].position == (7.0, 9.0)
+    assert app.session.rename_pass(document_id, "p", "q") == ""
+    assert document.graph.passes["q"].position == (7.0, 9.0)
+
+
+def test_import_passes_leaves_every_position_none(app: Any, tmp_path: Path) -> None:
+    # Falsifier: the entry copy that carried the source's coordinates verbatim.
+    document_id = app.current_document_id
+    bloom = _load_bloom(tmp_path)
+    bloom.document.graph = bloom.document.graph.with_positions(
+        dict.fromkeys(bloom.document.passes, (50.0, 50.0))
+    )
+    result = app.session.import_passes(document_id, bloom, "bloom", {}, [])
+    assert result.error == "", result.error
+    entries = app.ui_documents[document_id].document.graph.passes
+    copied = [name for name in entries if name.startswith("bloom_")]
+    assert copied
+    assert all(entries[name].position is None for name in copied)
+
+
+def test_no_session_verb_but_one_accepts_a_position() -> None:
+    # 092 D19's structural form: the copilot cannot be handed a coordinate it would have to
+    # synthesize, because no entry point but the placement verb names one.
+    accepting = [
+        name
+        for name, member in inspect.getmembers(ProjectSession, inspect.isfunction)
+        if not name.startswith("_")
+        and any("position" in p for p in inspect.signature(member).parameters)
+    ]
+    assert accepting == ["set_pass_positions"]

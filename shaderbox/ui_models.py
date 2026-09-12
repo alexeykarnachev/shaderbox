@@ -36,7 +36,7 @@ from shaderbox.paths import (
 )
 from shaderbox.render_shape import DEFAULT_ASPECT, ResolutionMode, fit_to_aspect
 from shaderbox.scripting.keys import StoppedKey
-from shaderbox.ui_regions import ChannelView, DocumentTab
+from shaderbox.ui_regions import ChannelView, DocumentTab, PassesView
 from shaderbox.util import get_uniform_hash
 
 # The region an Auto document is fitted to before any frame has drawn: a typical viewer at a
@@ -270,6 +270,7 @@ class UIAppState(BaseModel):
     # NOT copilot_focused — that one is transient-by-design.
     active_document_tab: DocumentTab = DocumentTab.DOCUMENT
     channel_view: ChannelView = ChannelView.COLOR
+    passes_view: PassesView = PassesView.STRIP
     is_copilot_open: bool = False
     copilot_layout: CopilotLayout = CopilotLayout.CORNER
     # What the copilot does with a source edit (086). Per PROJECT and persisted, which is what

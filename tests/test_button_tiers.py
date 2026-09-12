@@ -36,6 +36,10 @@ _NOT_A_VERB: dict[tuple[str, str], str] = {
         "invisible_button",
     ): "the chat's resize handle",
     (
+        "widgets/pass_graph.py",
+        "invisible_button",
+    ): "the canvas, node and port hit rects: a hit rect, no label",
+    (
         "popups/emoji_picker.py",
         "button",
     ): "one emoji cell in the glyph grid; the label IS the glyph",

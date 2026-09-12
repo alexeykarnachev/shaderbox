@@ -184,6 +184,12 @@ class _ColorBag:
     )
     GROUP_FILL_ALPHA: float = 0.10
 
+    # The graph canvas (092): a wire's stroke, and how far a ghost node fades. GRAPH_EDGE is
+    # a fixed role drawn against box borders and beside STATE_ERROR wires, so it is excluded
+    # from the group tints below.
+    GRAPH_EDGE: tuple[float, float, float, float] = _P["gray"]
+    GRAPH_GHOST_ALPHA: float = 0.45
+
     # Syntax tokens for the inline editor, applied via editor_palette() below
     # (the Color->SYNTAX_* slot mapping).
     SYN_KEYWORD: tuple[float, float, float, float] = _P["red_b"]
@@ -228,6 +234,7 @@ _GROUP_TINT_EXCLUSIONS: set[tuple[float, float, float, float]] = _accent_primari
     COLOR.SELECT,
     COLOR.TAG,
     COLOR.FAVS,
+    COLOR.GRAPH_EDGE,
 }
 assert not set(COLOR.GROUP_TINTS) & _GROUP_TINT_EXCLUSIONS, (
     "theme invariant: a group tint collides with an accent primary, a state hue, SELECT, TAG "
@@ -295,6 +302,26 @@ class SIZE:
     PASS_TILE: int = 168
 
     PANEL_CTRL_MINH: int = 600
+
+    # The graph canvas (092 D7): a compact node, its picture, one port row, the dot and the
+    # screen-pixel floor its hit box keeps under zoom; the layout's gaps; the bus one extra
+    # rank of span drops a wire by; the child's least height; the snap distance; the zoom
+    # clamp.
+    GRAPH_NODE_W: int = 108
+    GRAPH_BOX_EXTRA_W: int = 40
+    GRAPH_THUMB: int = 80
+    GRAPH_PAD: int = 6
+    GRAPH_NAME_H: int = 18
+    GRAPH_PORT_ROW: int = 16
+    GRAPH_PORT_R: int = 4
+    GRAPH_HIT_MIN: int = 7
+    GRAPH_GAP_X: int = 64
+    GRAPH_GAP_Y: int = 20
+    GRAPH_BUS_STEP: int = 12
+    GRAPH_MIN_H: int = 320
+    GRAPH_SNAP_PX: int = 6
+    GRAPH_ZOOM_MIN: float = 0.25
+    GRAPH_ZOOM_MAX: float = 2.5
 
     # One square of the viewer's alpha checkerboard. At 8 the pattern is busy behind a small
     # preview; at 24 a narrow preview shows two cells and reads as a diagonal split.

@@ -23,6 +23,7 @@ from typing import Any
 
 import moderngl
 from loguru import logger
+from pydantic import ValidationError
 
 from shaderbox.copilot.backend import CopilotBackend
 from shaderbox.copilot.capabilities import CopilotCapabilities
@@ -939,7 +940,7 @@ class ProjectSession:
         self.copilot.reset_conversation()
         self.copilot.save_conversation(self.paths.copilot_conversation_path)
 
-    # ---- the pass graph's six verbs (D15) -------------------------------------------------
+    # ---- the pass graph's verbs (D15; 091 and 092 added theirs) --------------------------
     # Every one mutates the live document AND saves, so `passes/` and `graph.json` never
     # disagree with what is on screen. Each returns an error string, or "" on success.
 
@@ -1069,6 +1070,28 @@ class ProjectSession:
         self.save_ui_document(ui_document)
         return ""
 
+    def set_pass_positions(
+        self,
+        document_id: str,
+        positions: Mapping[str, tuple[float, float] | None],
+    ) -> str:
+        """Place passes on the graph canvas (092 D6): the one writer of `position`, called
+        once per gesture with every pass the gesture moved, so a drag or an Arrange is one
+        save. `None` un-places a pass (the canvas lays it out by rank again)."""
+        ui_document = self.ui_documents.get(document_id)
+        if ui_document is None:
+            return f"no such document '{document_id}'"
+        document = ui_document.document
+        for name in positions:
+            if name not in document.passes:
+                return f"no such pass '{name}'"
+        try:
+            document.graph = document.graph.with_positions(positions)
+        except ValidationError as e:
+            return f"a position is out of range: {e.error_count()} value(s) rejected"
+        self.save_ui_document(ui_document)
+        return ""
+
     def set_pass_group(self, document_id: str, name: str, group: str) -> str:
         """Put `name` in `group`, or take it out of every group with `""` (091 D9)."""
         ui_document = self.ui_documents.get(document_id)
@@ -1154,7 +1177,7 @@ class ProjectSession:
                 written.append(path)
                 entry = source_document.graph.passes.get(
                     source_name, PassEntry()
-                ).model_copy(update={"group": group})
+                ).model_copy(update={"group": group, "position": None})
                 render_pass = Pass(
                     gl=host.gl,
                     source=ShaderSource.load(path),

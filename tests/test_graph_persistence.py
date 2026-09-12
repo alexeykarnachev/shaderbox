@@ -96,12 +96,39 @@ def test_a_graph_round_trips_every_field(tmp_path: Path) -> None:
         passes={
             "scene": PassEntry(target=TargetConfig(dtype="f4", scale=0.5, wrap=True)),
             "trail": PassEntry(iterations=3, target=TargetConfig(filter_linear=False)),
-            "composite": PassEntry(),
+            "composite": PassEntry(position=(120.0, -8.5)),
         },
     )
     path = tmp_path / GRAPH_JSON_BASENAME
     path.write_text(json.dumps(graph.model_dump()))
     assert load_graph(path) == graph
+    assert load_graph(path).passes["composite"].position == (120.0, -8.5)
+
+
+def test_a_corrupt_position_costs_that_position_and_nothing_else(
+    tmp_path: Path,
+) -> None:
+    # 092 D6. Through `load_graph`, never `load_model` (a pass NAME reads as an unknown key
+    # to the generic walker). Falsifier: validate the entry whole -- `iterations` goes too.
+    path = tmp_path / GRAPH_JSON_BASENAME
+    path.write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "output": "a",
+                "passes": {
+                    "a": {"iterations": 4, "group": "g", "position": [1e30, 0.0]},
+                    "b": {"iterations": 2, "position": "garbage"},
+                    "c": {"position": [3.0, 4.0]},
+                },
+            }
+        )
+    )
+    graph = load_graph(path)
+    assert graph.passes["a"].position is None
+    assert graph.passes["a"].iterations == 4 and graph.passes["a"].group == "g"
+    assert graph.passes["b"].position is None and graph.passes["b"].iterations == 2
+    assert graph.passes["c"].position == (3.0, 4.0)
 
 
 def test_a_document_round_trips_its_graph_and_passes(

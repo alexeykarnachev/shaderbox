@@ -20,12 +20,22 @@ from shaderbox.pass_graph import (
     PassGraph,
     PassPlan,
     PassSource,
+    Port,
     TargetConfig,
     Wiring,
     assert_plan_invariants,
+    bundle_output,
+    cycle_edges,
     evaluation_order,
+    graph_ranks,
+    group_boundary,
+    group_name_error,
+    node_ports,
     plan_passes,
+    rank_layout,
+    refuse_drop,
     wired_pass,
+    wiring_with,
 )
 
 
@@ -347,3 +357,254 @@ def test_group_slug_is_the_first_word_made_legal() -> None:
     assert pass_graph.group_slug("") == "preset"
     for name in ("Bloom Chain", "2D SDF", "", "a-b c"):
         assert pass_graph.PASS_NAME_RE.match(pass_graph.group_slug(name))
+
+
+# ---- the graph canvas's pure half (092) ----------------------------------------------------
+
+# The bloom fixture as a host sees it: scene feeds the bundle, final reads its output.
+_BLOOM: dict[str, dict[str, str]] = {
+    "scene": {},
+    "b_bright": {"u_scene": "scene"},
+    "b_trail": {"u_scene": "scene", "u_prev": "b_trail"},
+    "b_blur": {"u_bright": "b_bright"},
+    "b_comp": {"u_scene": "scene", "u_blur": "b_blur", "u_trail": "b_trail"},
+    "final": {"u_b_comp": "b_comp"},
+}
+_BLOOM_MEMBERS = ["b_bright", "b_trail", "b_blur", "b_comp"]
+_BLOOM_GROUPS = dict.fromkeys(_BLOOM_MEMBERS, "bloom")
+_SIZE = dict.fromkeys(_BLOOM, (100.0, 120.0))
+
+
+def _ports_of(wiring: dict[str, dict[str, str]]) -> dict[str, list[Port]]:
+    # Every declared sampler is the wiring's sampler, valued AutoSource (the default).
+    return {name: node_ports(list(row), {}, row, name) for name, row in wiring.items()}
+
+
+def test_rank_layout_puts_producers_left_of_consumers() -> None:
+    # Falsifier: rank by insertion order -- `final` sits before `b_comp` in a shuffled dict.
+    shuffled = dict(reversed(list(_BLOOM.items())))
+    laid = rank_layout(shuffled, list(_BLOOM), _BLOOM_GROUPS, _SIZE, {}, 40.0, 10.0)
+    for consumer, row in _BLOOM.items():
+        for producer in row.values():
+            if producer != consumer:
+                assert laid[producer][0] < laid[consumer][0], (producer, consumer)
+
+
+def test_rank_layout_is_deterministic_over_dict_order() -> None:
+    a = rank_layout(_BLOOM, list(_BLOOM), _BLOOM_GROUPS, _SIZE, {}, 40.0, 10.0)
+    shuffled = dict(reversed(list(_BLOOM.items())))
+    b = rank_layout(shuffled, list(_BLOOM), _BLOOM_GROUPS, _SIZE, {}, 40.0, 10.0)
+    assert a == b
+
+
+def test_rank_layout_places_only_the_names_asked_for() -> None:
+    # Falsifier: return a position for every name, which would overwrite a drag.
+    placed = {"scene": (5.0, 5.0), "final": (900.0, 5.0)}
+    laid = rank_layout(
+        _BLOOM, ["b_bright", "b_blur"], _BLOOM_GROUPS, _SIZE, placed, 40.0, 10.0
+    )
+    assert set(laid) == {"b_bright", "b_blur"}
+
+
+def test_rank_layout_keeps_cycle_members() -> None:
+    # Falsifier: lay out `plan.order` alone -- the two members vanish from the picture.
+    wiring = {"a": {"u_b": "b"}, "b": {"u_a": "a"}, "c": {}}
+    laid = rank_layout(
+        wiring,
+        ["a", "b", "c"],
+        {},
+        _SIZE | {"a": (1, 1), "b": (1, 1), "c": (1, 1)},
+        {},
+        4.0,
+        4.0,
+    )
+    assert set(laid) == {"a", "b", "c"}
+    assert graph_ranks(wiring) == {"a": 0, "b": 0, "c": 0}
+
+
+def test_rank_layout_keeps_group_members_adjacent() -> None:
+    # Rank 1 holds b_bright, b_trail (bloom) and an ungrouped `side`; the two members are
+    # contiguous whatever strip order says. Falsifier: sort a column by strip order alone.
+    wiring = dict(_BLOOM) | {"side": {"u_scene": "scene"}}
+    sizes = _SIZE | {"side": (100.0, 120.0)}
+    laid = rank_layout(wiring, list(wiring), _BLOOM_GROUPS, sizes, {}, 40.0, 10.0)
+    column = sorted(
+        (name for name in ("b_bright", "b_trail", "side")), key=lambda n: laid[n][1]
+    )
+    members = [column.index("b_bright"), column.index("b_trail")]
+    assert abs(members[0] - members[1]) == 1
+
+
+def test_node_ports_come_from_the_program_never_the_stored_rows() -> None:
+    # Falsifier: build the list from `values` keys -- the dead `u_gone` row grows a port.
+    values: dict[str, object] = {"u_gone": PassSource("scene"), "u_src": AutoSource()}
+    ports = node_ports(["u_src"], values, {"u_src": "scene"}, "cons")
+    assert [p.sampler for p in ports] == ["u_src"]
+
+
+def test_node_ports_classify_every_state_and_put_feedback_last() -> None:
+    values: dict[str, object] = {
+        "u_prev": AutoSource(),
+        "u_none": NoSource(),
+        "u_tex": object(),  # a bound texture is any value that is no source kind
+        "u_lost": PassSource("vanished"),
+    }
+    row = {"u_prev": "trail", "u_src": "scene"}
+    ports = node_ports(
+        ["u_prev", "u_src", "u_none", "u_tex", "u_lost"], values, row, "trail"
+    )
+    assert [(p.sampler, p.kind) for p in ports] == [
+        ("u_src", "wired"),
+        ("u_none", "none"),
+        ("u_tex", "media"),
+        ("u_lost", "unfilled"),
+        ("u_prev", "prev"),
+    ]
+    assert ports[0].source == "scene" and ports[-1].source == "trail"
+
+
+def test_group_boundary_over_the_bloom_shape() -> None:
+    boundary = group_boundary(_BLOOM_MEMBERS, _ports_of(_BLOOM), _BLOOM, "final")
+    assert [(b.member, b.label) for b in boundary.inputs] == [
+        ("b_bright", "b_bright.u_scene"),
+        ("b_trail", "b_trail.u_scene"),
+        ("b_comp", "b_comp.u_scene"),
+    ]
+    assert boundary.outputs == ["b_comp"] and boundary.bundle == "b_comp"
+
+
+def test_group_boundary_over_the_non_convex_shape() -> None:
+    wiring = {
+        "a": {},
+        "g1": {"u_a": "a"},
+        "mid": {"u_g1": "g1"},
+        "g2": {"u_mid": "mid"},
+        "out": {"u_g2": "g2"},
+    }
+    boundary = group_boundary(["g1", "g2"], _ports_of(wiring), wiring, "out")
+    assert [(b.member, b.port.sampler) for b in boundary.inputs] == [
+        ("g1", "u_a"),
+        ("g2", "u_mid"),
+    ]
+    assert boundary.outputs == ["g1", "g2"]
+
+
+def test_group_boundary_over_a_generator_box() -> None:
+    wiring = {"gen": {}, "gen2": {"u_gen": "gen"}, "final": {"u_gen2": "gen2"}}
+    boundary = group_boundary(["gen", "gen2"], _ports_of(wiring), wiring, "final")
+    assert boundary.inputs == [] and boundary.outputs == ["gen2"]
+
+
+def test_group_boundary_over_a_one_member_group() -> None:
+    boundary = group_boundary(["b_comp"], _ports_of(_BLOOM), _BLOOM, "final")
+    assert [b.label for b in boundary.inputs] == ["u_scene", "u_blur", "u_trail"]
+    assert boundary.outputs == ["b_comp"]
+
+
+def test_group_boundary_over_a_split_group() -> None:
+    wiring = {"x": {}, "m": {"u_x": "x"}, "y": {"u_m": "m"}, "out": {"u_y": "y"}}
+    boundary = group_boundary(["x", "y"], _ports_of(wiring), wiring, "out")
+    assert boundary.outputs == ["x", "y"] and boundary.bundle == "x"
+
+
+def test_group_boundary_over_a_member_whose_sampler_reads_nothing() -> None:
+    # The severed chain (mutations case 1): b_comp's u_blur resolves to nothing after b_blur
+    # goes. Falsifier: drop the "or unfilled" clause -- the port disappears from the box.
+    wiring = {k: v for k, v in _BLOOM.items() if k != "b_blur"}
+    wiring["b_comp"] = {"u_scene": "scene", "u_trail": "b_trail"}
+    ports = _ports_of(wiring)
+    ports["b_comp"] = node_ports(
+        ["u_scene", "u_blur", "u_trail"], {}, wiring["b_comp"], "b_comp"
+    )
+    members = ["b_bright", "b_trail", "b_comp"]
+    boundary = group_boundary(members, ports, wiring, "final")
+    assert ("b_comp", "u_blur") in [(b.member, b.port.sampler) for b in boundary.inputs]
+
+
+def test_a_terminal_box_still_has_its_bundle_output_port() -> None:
+    # Nothing outside reads any member. Falsifier: make the bundle output conditional on an
+    # outside reader -- the mutations review's case 2, a box with a picture and no dot.
+    wiring = {k: v for k, v in _BLOOM.items() if k != "final"}
+    boundary = group_boundary(_BLOOM_MEMBERS, _ports_of(wiring), wiring, "scene")
+    assert boundary.outputs == ["b_comp"] and boundary.bundle == "b_comp"
+
+
+def test_bundle_output_follows_its_four_branches_in_order() -> None:
+    members = ["b_bright", "b_trail", "b_blur", "b_comp"]
+    assert bundle_output(members, _BLOOM, "b_trail") == "b_trail"  # the document output
+    assert bundle_output(members, _BLOOM, "final") == "b_comp"  # read from outside
+    unread = {k: v for k, v in _BLOOM.items() if k != "final"}
+    assert bundle_output(members, unread, "scene") == "b_comp"  # last unread by members
+    looped = {"m1": {"u_m2": "m2"}, "m2": {"u_m1": "m1"}}
+    assert bundle_output(["m1", "m2"], looped, "") == "m2"  # last member
+    for wiring, output in ((_BLOOM, "final"), (unread, "scene"), (looped, "")):
+        names = members if wiring is not looped else ["m1", "m2"]
+        assert bundle_output(names, wiring, output) in names
+
+
+def test_refuse_drop_refuses_every_cycle_and_allows_every_legal_drop() -> None:
+    chain = {"a": {}, "b": {"u_a": "a"}, "c": {"u_b": "b"}, "loner": {}}
+    refused = refuse_drop(chain, "a", "u_c", "c")
+    assert "passes form a cycle" in refused and "a -> c -> b -> a" in refused
+    assert refuse_drop(chain, "c", "u_a2", "a") == ""  # the diamond
+    assert refuse_drop(chain, "a", "u_l", "loner") == ""  # unrelated
+    assert refuse_drop(chain, "b", "u_prev", "b") == ""  # feedback
+    # Falsifier: refuse only when the culprit is an endpoint. The planner names `a` as the
+    # culprit for a drop whose endpoints are `c` and `a`, and would name a third pass on a
+    # longer loop; the whole-list check is what makes every case refuse.
+    longer = wiring_with(chain, "loner", "u_c", "c")
+    assert refuse_drop(longer, "a", "u_loner", "loner")
+
+
+def test_cycle_edges_are_the_pairs_of_the_culprit_message() -> None:
+    wiring = {
+        "paint": {"u_comp": "composite"},
+        "seed": {"u_paint": "paint"},
+        "composite": {"u_seed": "seed"},
+        "df": {"u_paint": "paint"},
+    }
+    errors = plan_passes(wiring)[1]
+    culprits = [e for e in errors if e.message.startswith("passes form a cycle")]
+    assert len(culprits) == 1, "one message per cycle, the rest are victims"
+    assert cycle_edges(errors) == {
+        ("composite", "paint"),
+        ("seed", "composite"),
+        ("paint", "seed"),
+    }
+    assert cycle_edges([]) == set()
+
+
+def test_group_name_error_covers_the_pattern_and_the_namespace() -> None:
+    assert group_name_error("", {"a"}) == ""
+    assert "group name" in group_name_error("2bad", {"a"})
+    assert group_name_error("a", {"a", "b"}) == "a pass and a group cannot share a name"
+    assert group_name_error("c", {"a", "b"}) == ""
+
+
+@pytest.mark.parametrize(
+    "position",
+    [
+        (float("nan"), 0.0),
+        (float("inf"), 0.0),
+        (0.0, float("-inf")),
+        (1e30, 1e30),
+        (-1e30, 0.0),
+    ],
+)
+def test_a_position_is_bounded_on_the_model(position: tuple[float, float]) -> None:
+    # Falsifier: a bare `tuple[float, float]`, which the persistence review measured accepting
+    # NaN and 1e30.
+    with pytest.raises(ValidationError):
+        PassEntry(position=position)
+
+
+def test_a_legal_position_is_accepted_and_carried_by_the_funnel() -> None:
+    graph = PassGraph(passes={"a": PassEntry(iterations=3), "b": PassEntry()})
+    placed = graph.with_positions({"a": (12.0, -34.5), "c": (1.0, 1.0)})
+    assert placed.passes["a"].position == (12.0, -34.5)
+    assert placed.passes["a"].iterations == 3
+    assert placed.passes["c"].position == (1.0, 1.0)
+    assert placed.with_group("a", "g").passes["a"].position == (12.0, -34.5)
+    # Falsifier: `model_copy(update=...)`, which skips the field's bounds.
+    with pytest.raises(ValidationError):
+        graph.with_positions({"a": (1e30, 0.0)})

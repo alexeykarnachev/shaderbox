@@ -27,8 +27,6 @@ from shaderbox.theme import COLOR, SIZE, SPACE, group_tint
 from shaderbox.ui_primitives import (
     context_menu_style,
     preview_cell,
-    small_caption,
-    standard_button,
     tune_icon_button,
 )
 
@@ -65,23 +63,31 @@ def _reads(name: str, wiring: Wiring, order: Sequence[str]) -> list[str]:
     return chips
 
 
-def _draw_context_menu(app: App, document_id: str, name: str) -> None:
+def pass_menu_items(app: App, document_id: str, name: str) -> None:
+    """The items of one pass's context menu, shared by the strip's tile and the graph's node
+    (092 D10) so the two surfaces cannot drift. The caller owns the popup itself: the strip
+    anchors it with an explicit id (safe there, each tile is its own window), the canvas with
+    the previous item."""
     document = app.ui_documents[document_id].document
+    if imgui.menu_item_simple("Settings"):
+        app.open_pass_settings(name)
+    # Gated in Python, not by `enabled=`: menu_item_simple can still register a click
+    # while disabled on this imgui-bundle build (/imgui-ui §7.4).
+    deletable = len(document.passes) > 1
+    if imgui.menu_item_simple("Delete", enabled=deletable) and deletable:
+        _delete_pass(app, document_id, name)
+    if document.graph.passes.get(name, PassEntry()).group and imgui.menu_item_simple(
+        "Leave group"
+    ):
+        error = app.session.set_pass_group(document_id, name, "")
+        if error:
+            app.notifications.push(error)
+
+
+def _draw_context_menu(app: App, document_id: str, name: str) -> None:
     with context_menu_style():
         if imgui.begin_popup_context_item(f"##pass_menu_{name}"):
-            if imgui.menu_item_simple("Settings"):
-                app.open_pass_settings(name)
-            # Gated in Python, not by `enabled=`: menu_item_simple can still register a click
-            # while disabled on this imgui-bundle build (/imgui-ui §7.4).
-            deletable = len(document.passes) > 1
-            if imgui.menu_item_simple("Delete", enabled=deletable) and deletable:
-                _delete_pass(app, document_id, name)
-            if document.graph.passes.get(
-                name, PassEntry()
-            ).group and imgui.menu_item_simple("Leave group"):
-                error = app.session.set_pass_group(document_id, name, "")
-                if error:
-                    app.notifications.push(error)
+            pass_menu_items(app, document_id, name)
             imgui.end_popup()
 
 
@@ -170,14 +176,14 @@ def _draw_pass_tile(
 
 
 def draw(app: App, document_id: str) -> None:
-    """The pass strip for one document."""
+    """The pass strip for one document: the tiles alone. The caption, the view toggle and
+    the add / import row are the Document tab's (092 D2), shared with the graph view."""
     ui_document = app.ui_documents.get(document_id)
     if ui_document is None:
         return
     document = ui_document.document
 
     imgui.begin_disabled(app.copilot_turn_active)
-    small_caption(app.font_12, "Passes")
 
     # Horizontal, wrapping at the panel edge: a document's passes are a handful, and a column of
     # full-width rows spent the panel's vertical budget on a list that reads better as a strip.
@@ -234,13 +240,6 @@ def draw(app: App, document_id: str) -> None:
             open_segment = None
     for group, lo, hi in segments:
         _draw_group_outline(app, group, lo, hi)
-
-    imgui.dummy((0, float(SPACE.SM)))
-    if standard_button("add pass"):
-        app.open_add_pass()
-    imgui.same_line()
-    if standard_button("import..."):
-        app.open_import_passes()
     imgui.end_disabled()
 
 

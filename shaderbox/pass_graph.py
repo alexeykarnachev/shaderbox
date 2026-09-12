@@ -32,7 +32,8 @@ Two rules the rest of the engine leans on:
 import re
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Literal
+from itertools import pairwise
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -58,6 +59,14 @@ _GROUP_PATTERN = r"^([A-Za-z_][A-Za-z0-9_]*)?$"
 # 64 doublings covers a 2^64 canvas, so this bounds the frame cost without bounding any real
 # effect: JFA needs ceil(log2(max_dim)) and a cascade stack ceil(log4(diagonal)) + 1.
 MAX_ITERATIONS = 64
+
+# A node's stored place on the graph canvas (092 D6), in canvas units at zoom 1. Bounded on the
+# model because `graph.json` type-checks nothing: a NaN would poison every bounding box the
+# canvas computes and 1e30 would put a node past any reachable pan.
+MAX_GRAPH_COORD = 100_000.0
+GraphCoord = Annotated[
+    float, Field(allow_inf_nan=False, ge=-MAX_GRAPH_COORD, le=MAX_GRAPH_COORD)
+]
 
 # A canvas dimension the render path can actually allocate. Both entry points -- the Document
 # tab's W x H fields and the copilot's set_canvas_size -- clamp through here.
@@ -124,6 +133,9 @@ class PassEntry(BaseModel):
     # The group this pass belongs to, or "" (091). A label and nothing more: a group exists
     # while a pass carries its name, so there is no member list to keep in step with this.
     group: str = Field(default="", pattern=_GROUP_PATTERN)
+    # Where the graph canvas draws this pass (092 D6): None means never placed, and the canvas
+    # lays such a pass out by rank every frame. Written only by a drag or by Arrange.
+    position: tuple[GraphCoord, GraphCoord] | None = None
 
 
 class PassGraph(BaseModel):
@@ -183,6 +195,21 @@ class PassGraph(BaseModel):
         return self.with_passes(
             {**self.passes, name: entry.model_copy(update={"group": group})}
         )
+
+    def with_positions(
+        self, positions: Mapping[str, tuple[float, float] | None]
+    ) -> "PassGraph":
+        """A copy with every named pass's `position` replaced; names without an entry get
+        a default one, so a placement never depends on a target row having been written."""
+        entries = dict(self.passes)
+        for name, position in positions.items():
+            entry = entries.get(name, PassEntry())
+            # Validated, not `model_copy`-ed: a copy skips the field's bounds, and a position
+            # is the one entry field a gesture writes with a number the user did not type.
+            entries[name] = PassEntry.model_validate(
+                {**entry.model_dump(), "position": position}
+            )
+        return self.with_passes(entries)
 
     @property
     def output_pass(self) -> str | None:
@@ -287,10 +314,13 @@ class GraphError:
     message: str
 
 
+_CYCLE_PREFIX = "passes form a cycle: "
+
+
 def _cycle_message(trail: list[str], name: str) -> str:
     cycle = " -> ".join([*trail[trail.index(name) :], name])
     return (
-        f"passes form a cycle: {cycle}. A pass may read ITSELF (that is its previous "
+        f"{_CYCLE_PREFIX}{cycle}. A pass may read ITSELF (that is its previous "
         f"frame), but a loop between passes has no order."
     )
 
@@ -514,3 +544,272 @@ def step_in_order(order: Sequence[str], current: str, step: int) -> str | None:
     if current not in order:
         return order[0]
     return order[(order.index(current) + step) % len(order)]
+
+
+# ---- the graph canvas's pure half (092) ----------------------------------------------------
+# Everything the canvas decides that is not a pixel: where an unplaced pass goes, which ports
+# a node has and in what state, what a group's box exposes, whether a drop may land, and
+# which edges a cycle message names. Pure over names, sampler values and a wiring, so a test
+# asserts each without a window.
+
+
+def group_name_error(group: str, pass_names: Collection[str]) -> str:
+    """Why `group` may not be written, or `""` when it may (092 D17): the pattern first, then
+    the one namespace passes and groups share -- the canvas keys nodes and boxes by name."""
+    if not group:
+        return ""
+    if not PASS_NAME_RE.match(group):
+        return "a group name starts with a letter and holds letters, digits and underscores"
+    if group in pass_names:
+        return "a pass and a group cannot share a name"
+    return ""
+
+
+def graph_ranks(wiring: Wiring) -> dict[str, int]:
+    """Each pass's column: the longest path from a root over the non-self edges. A pass the
+    planner leaves unordered (on a cycle, or downstream of one) sits at rank 0."""
+    plan = plan_passes(wiring)[0]
+    ranks: dict[str, int] = {}
+    for name in plan.order:
+        deps = [ranks[d] for d in plan.reads[name] if d in ranks]
+        ranks[name] = 1 + max(deps) if deps else 0
+    for name in wiring:
+        ranks.setdefault(name, 0)
+    return ranks
+
+
+def rank_layout(
+    wiring: Wiring,
+    names: Collection[str],
+    groups: Mapping[str, str],
+    sizes: Mapping[str, tuple[float, float]],
+    placed: Mapping[str, tuple[float, float]],
+    gap_x: float,
+    gap_y: float,
+) -> dict[str, tuple[float, float]]:
+    """Where each of `names` goes (092 D6): columns by `graph_ranks`, left to right at `gap_x`;
+    within a column, group members adjacent, then by the mean y of the pass's predecessors
+    (a placed predecessor contributes its stored y), then strip order; rows at `gap_y`, each
+    column centred on the tallest. Every pass of `wiring` is laid out so the picture is the
+    same whichever subset is asked for; only `names` are returned, so a caller placing the
+    unplaced passes never overwrites a stored one.
+    """
+    order = strip_order(wiring, wiring)
+    strip_index = {name: i for i, name in enumerate(order)}
+    ranks = graph_ranks(wiring)
+    columns: dict[int, list[str]] = {}
+    for name in order:
+        columns.setdefault(ranks[name], []).append(name)
+    group_anchor: dict[str, int] = {}
+    for name in order:
+        group = groups.get(name, "")
+        if group:
+            group_anchor.setdefault(group, strip_index[name])
+    laid: dict[str, tuple[float, float]] = {}
+    x = 0.0
+    for rank in sorted(columns):
+        column = columns[rank]
+
+        def sort_key(name: str) -> tuple[int, float, int]:
+            group = groups.get(name, "")
+            anchor = group_anchor[group] if group else strip_index[name]
+            preds = [
+                s
+                for s in wiring[name].values()
+                if s != name and (s in laid or s in placed)
+            ]
+            ys = [(placed.get(s) or laid[s])[1] for s in preds]
+            bary = sum(ys) / len(ys) if ys else float(strip_index[name])
+            return (anchor, bary, strip_index[name])
+
+        column.sort(key=sort_key)
+        heights = [sizes.get(name, (0.0, 0.0))[1] for name in column]
+        extent = sum(heights) + gap_y * (len(column) - 1)
+        widest = max(sizes.get(name, (0.0, 0.0))[0] for name in column)
+        y = 0.0
+        for name, height in zip(column, heights, strict=True):
+            laid[name] = (x, y)
+            y += height + gap_y
+        # Centre the column once its extent is known: the tallest column is not known until
+        # every column is measured, so the vertical centring is applied in a second pass.
+        columns[rank] = column
+        x += widest + gap_x
+    tallest = max(
+        (
+            sum(sizes.get(n, (0.0, 0.0))[1] for n in col) + gap_y * (len(col) - 1)
+            for col in columns.values()
+        ),
+        default=0.0,
+    )
+    for column in columns.values():
+        extent = sum(sizes.get(n, (0.0, 0.0))[1] for n in column) + gap_y * (
+            len(column) - 1
+        )
+        shift = (tallest - extent) / 2.0
+        for name in column:
+            px, py = laid[name]
+            laid[name] = (px, py + shift)
+    return {name: laid[name] for name in names if name in laid}
+
+
+PortKind = Literal["wired", "unfilled", "none", "prev", "media"]
+
+
+@dataclass(frozen=True)
+class Port:
+    """One input of a node (092 D1): the sampler, what it reads, and how that reads on the
+    dot -- a pass, nothing yet, black by decision, its own previous frame, or a bound
+    texture."""
+
+    sampler: str
+    kind: PortKind
+    source: str | None = None
+
+
+def node_ports(
+    declared: Sequence[str],
+    values: Mapping[str, object],
+    wiring_row: Mapping[str, str],
+    name: str,
+) -> list[Port]:
+    """A node's input ports, one per sampler the COMPILED program declares, in the program's
+    order with every self-read moved last. The state comes from the sampler's VALUE, the way
+    the uniforms panel's row decides it: a value that is no source kind is a bound texture.
+    A stored row for a sampler the program no longer declares is no port, which is what keeps
+    a drop from writing a row nothing reads."""
+    ports: list[Port] = []
+    feedback: list[Port] = []
+    for sampler in declared:
+        value = values.get(sampler, AutoSource())
+        source = wiring_row.get(sampler)
+        if source == name:
+            feedback.append(Port(sampler, "prev", source))
+        elif source is not None:
+            ports.append(Port(sampler, "wired", source))
+        elif isinstance(value, NoSource):
+            ports.append(Port(sampler, "none"))
+        elif isinstance(value, PassSource | AutoSource):
+            ports.append(Port(sampler, "unfilled"))
+        else:
+            ports.append(Port(sampler, "media"))
+    return ports + feedback
+
+
+@dataclass(frozen=True)
+class BoxPort:
+    member: str
+    port: Port
+    label: str
+
+
+@dataclass(frozen=True)
+class Boundary:
+    """What a group's box exposes at the root (092 D5): every member slot that reads outside
+    the group or nothing, every member read from outside plus the bundle output, and the
+    member whose picture the box shows."""
+
+    inputs: list[BoxPort]
+    outputs: list[str]
+    bundle: str
+
+
+def bundle_output(members: Sequence[str], wiring: Wiring, output: str) -> str:
+    """The member a box stands for (092 D5): the document output when it is a member; else the
+    first member (strip order) an outside pass reads; else the last member no member reads;
+    else the last member. Total: a box always has a picture."""
+    if output in members:
+        return output
+    inside = set(members)
+    read_outside = {
+        source
+        for reader, row in wiring.items()
+        if reader not in inside
+        for source in row.values()
+        if source in inside
+    }
+    for member in members:
+        if member in read_outside:
+            return member
+    read_inside = {
+        source
+        for member in members
+        for source in wiring.get(member, {}).values()
+        if source in inside and source != member
+    }
+    unread = [m for m in members if m not in read_inside]
+    return (unread or list(members))[-1]
+
+
+def group_boundary(
+    members: Sequence[str],
+    ports: Mapping[str, Sequence[Port]],
+    wiring: Wiring,
+    output: str,
+) -> Boundary:
+    """`members` in strip order; `ports` each member's `node_ports`."""
+    inside = set(members)
+    slots: list[tuple[str, Port]] = []
+    for member in members:
+        for port in ports.get(member, ()):
+            if port.kind == "wired" and port.source in inside:
+                continue
+            if port.kind == "prev":
+                continue
+            slots.append((member, port))
+    counts: dict[str, int] = {}
+    for _, port in slots:
+        counts[port.sampler] = counts.get(port.sampler, 0) + 1
+    inputs = [
+        BoxPort(
+            member,
+            port,
+            port.sampler if counts[port.sampler] == 1 else f"{member}.{port.sampler}",
+        )
+        for member, port in slots
+    ]
+    read_outside = {
+        source
+        for reader, row in wiring.items()
+        if reader not in inside
+        for source in row.values()
+        if source in inside
+    }
+    bundle = bundle_output(members, wiring, output)
+    outputs = [m for m in members if m in read_outside or m == bundle]
+    return Boundary(inputs=inputs, outputs=outputs, bundle=bundle)
+
+
+def wiring_with(
+    wiring: Wiring, consumer: str, sampler: str, producer: str
+) -> dict[str, dict[str, str]]:
+    """`wiring` with one more read: what the document would bind after a drop."""
+    hypothetical = {name: dict(row) for name, row in wiring.items()}
+    hypothetical.setdefault(consumer, {})[sampler] = producer
+    return hypothetical
+
+
+def refuse_drop(wiring: Wiring, consumer: str, sampler: str, producer: str) -> str:
+    """Why a wire from `producer` into `consumer.sampler` may not land, or `""` (092 D12):
+    the hypothetical wiring is planned and ANY error refuses, since the culprit the planner
+    names need not be either endpoint. A self-read is feedback and passes."""
+    errors = plan_passes(wiring_with(wiring, consumer, sampler, producer))[1]
+    if not errors:
+        return ""
+    culprit = next(
+        (e for e in errors if e.message.startswith(_CYCLE_PREFIX)), errors[0]
+    )
+    return culprit.message
+
+
+def cycle_edges(errors: Sequence[GraphError]) -> set[tuple[str, str]]:
+    """The `(producer, consumer)` pairs on every cycle the planner reported (092 D11). One
+    pass per cycle carries the trail (`a -> b -> a` reads: `a` reads `b`, `b` reads `a`); the
+    victims' messages name no edge."""
+    edges: set[tuple[str, str]] = set()
+    for error in errors:
+        if not error.message.startswith(_CYCLE_PREFIX):
+            continue
+        trail = error.message[len(_CYCLE_PREFIX) :].split(".")[0].split(" -> ")
+        for consumer, producer in pairwise(trail):
+            edges.add((producer, consumer))
+    return edges

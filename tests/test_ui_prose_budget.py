@@ -112,6 +112,9 @@ _IMGUI_ROWS: list[tuple[str, str, int | None, int]] = [
     ("set_tooltip", "text", 0, 5),
     ("separator_text", "label", 0, 2),
     ("text_colored", "text", 1, 4),
+    # A menu item is an action phrase like a button, and may carry a qualifier the button
+    # column has no room for ("Reveal in file manager"): four words (092).
+    ("menu_item_simple", "label", 0, 4),
 ]
 
 _SCORED: list[tuple[str, str, int | None, int]] = _IMGUI_ROWS + _derived_rows()

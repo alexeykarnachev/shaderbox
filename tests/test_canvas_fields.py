@@ -151,7 +151,8 @@ def _draw_tab_once(app: Any) -> None:
 def _captions(app: Any, monkeypatch: Any) -> list[str]:
     """Every `small_caption` string the tab drew, in order.
 
-    The readout is the LAST one: the row above it is the caption row's two labels. Captured
+    The readout follows the caption row's two labels and precedes the Passes caption (092
+    moved that one into this tab). Captured
     rather than asserted against the pixels, because what this pins is the string the mode
     decides -- a layout swap must be free, which is why the control lives in one function.
     """
@@ -178,7 +179,7 @@ def test_an_auto_documents_readout_is_its_live_size(app: Any, monkeypatch: Any) 
     document.set_canvas_size((1214, 683))
 
     captions = _captions(app, monkeypatch)
-    assert captions[-1] == "1214x683", captions
+    assert captions[-2] == "1214x683", captions
     assert "Aspect" in captions, "the caption row does not name the aspect under Auto"
 
 
@@ -192,7 +193,7 @@ def test_a_fixed_documents_readout_is_the_aspect_of_its_pair(
     document.resolution = (1280, 720)
 
     captions = _captions(app, monkeypatch)
-    assert captions[-1] == "16:9", captions
+    assert captions[-2] == "16:9", captions
     assert "Canvas" in captions, "the caption row does not name the canvas under Fixed"
 
 

@@ -44,3 +44,16 @@ CHANNEL_VIEW_LABELS: dict[ChannelView, str] = {
     ChannelView.ALPHA: "Alpha",
     ChannelView.RGB: "RGB",
 }
+
+
+class PassesView(StrEnum):
+    # The Document tab's two views of the same passes (092 D2): the wrapping strip of
+    # tiles, or the node canvas. An app-level preference, like the channel view.
+    STRIP = auto()
+    GRAPH = auto()
+
+
+PASSES_VIEW_LABELS: dict[PassesView, str] = {
+    PassesView.STRIP: "strip",
+    PassesView.GRAPH: "graph",
+}

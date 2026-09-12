@@ -124,6 +124,10 @@ def test_group_tints_are_stable_and_collide_with_nothing() -> None:
         COLOR.SELECT,
         COLOR.TAG,
         COLOR.FAVS,
+        # 092: a wire is drawn against a box border and beside a STATE_ERROR wire.
+        # Falsifier: `GRAPH_EDGE = COLOR.GROUP_TINTS[2]` imported clean before it joined.
+        COLOR.GRAPH_EDGE,
     }
     assert not set(COLOR.GROUP_TINTS) & excluded
     assert len(set(COLOR.GROUP_TINTS)) == len(COLOR.GROUP_TINTS)
+    assert COLOR.GRAPH_EDGE != COLOR.STATE_ERROR

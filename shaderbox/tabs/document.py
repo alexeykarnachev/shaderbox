@@ -27,8 +27,9 @@ from shaderbox.ui_primitives import (
     small_caption,
     standard_button,
 )
+from shaderbox.ui_regions import PASSES_VIEW_LABELS, PassesView
 from shaderbox.util import get_resolution_str
-from shaderbox.widgets import pass_list
+from shaderbox.widgets import pass_graph, pass_list
 
 _SQUARE_PRESETS: tuple[int, ...] = (256, 512, 1024, 2048)
 
@@ -441,4 +442,33 @@ def _draw_entry_points(app: App) -> None:
     imgui.end_disabled()
 
     imgui.dummy((0, float(SPACE.MD)))
-    pass_list.draw(app, document_id)
+    _draw_passes(app, document_id)
+
+
+def _draw_passes(app: App, document_id: str) -> None:
+    # The two views of the same passes (092 D2): the caption row carries the choice, the
+    # body is the strip's tiles or the graph canvas, and the add / import row sits under
+    # both -- inside its own copilot-turn bracket, since the strip's used to carry it.
+    imgui.begin_disabled(app.copilot_turn_active)
+    small_caption(app.font_12, "Passes")
+    imgui.same_line(spacing=float(SPACE.LG))
+    views = list(PassesView)
+    current = views.index(app.app_state.passes_view)
+    chosen = segmented_choice(
+        "##passes_view", [PASSES_VIEW_LABELS[v] for v in views], current
+    )
+    if chosen != current:
+        app.app_state.passes_view = views[chosen]
+    imgui.end_disabled()
+    if app.app_state.passes_view is PassesView.GRAPH:
+        pass_graph.draw(app, document_id)
+    else:
+        pass_list.draw(app, document_id)
+    imgui.begin_disabled(app.copilot_turn_active)
+    imgui.dummy((0, float(SPACE.SM)))
+    if standard_button("add pass"):
+        app.open_add_pass()
+    imgui.same_line()
+    if standard_button("import..."):
+        app.open_import_passes()
+    imgui.end_disabled()

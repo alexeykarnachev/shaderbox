@@ -19,6 +19,7 @@ import shutil
 import sys
 import tempfile
 from pathlib import Path
+from unittest import mock
 
 import glfw
 from imgui_bundle import imgui
@@ -33,7 +34,7 @@ from shaderbox.logging_setup import configure_logging
 from shaderbox.pass_graph import PassEntry, PassGraph
 from shaderbox.paths import PASSES_DIR_NAME, pass_shader_name
 from shaderbox.ui import update_and_draw
-from shaderbox.ui_regions import DocumentTab
+from shaderbox.ui_regions import DocumentTab, PassesView
 
 N_FRAMES: int = 200
 
@@ -222,6 +223,10 @@ def main() -> int:
             ), "nav_enable_keyboard is set; D4 removed app-wide nav"
             feedback_document = _arm_feedback_canary(app)
             canary_id = app.current_document_id
+            # The multi-pass document the strip and graph stretches draw (bound at frame 42),
+            # and the graph's pre-draw snapshot (bound at frame 43).
+            multi = ""
+            graph_before = ""
             for frame_idx in range(N_FRAMES):
                 update_and_draw(app)
                 _check_invariants(app, frame_idx)
@@ -273,10 +278,68 @@ def main() -> int:
                     app.open_pass_settings(
                         sorted(app.ui_documents[multi].document.passes)[0]
                     )
-                if frame_idx == 48:
-                    # Back to the feedback canary's document, whose accumulation the tail asserts.
+                # The graph canvas (092): the second view of the same passes, drawn on the
+                # multi-pass document selected at frame 42 so it has nodes, a box
+                # (`smoke_group`), wires and a group tab to draw. None of it can be screenshotted
+                # here, so the frame loop executing every branch IS the check, plus the state
+                # asserts a draw-time write or a lost scope would break silently.
+                if frame_idx == 43:
                     app.popup_state = PopupState.CLOSED
                     app.pass_settings_name = ""
+                    app.app_state.passes_view = PassesView.GRAPH
+                    # 092 D6: opening the view must WRITE NOTHING. Falsifier: a canvas that
+                    # stores the rank layout on first sight.
+                    graph_before = json.dumps(
+                        app.ui_documents[multi].document.graph.model_dump(),
+                        sort_keys=True,
+                    )
+                if frame_idx == 45:
+                    view = app.graph_view_for(multi)
+                    assert view.fitted, (
+                        "frame 45: the graph view never fitted -- the first-draw fit is gated "
+                        "on a size the child never reports"
+                    )
+                    view.scope = "smoke_group"
+                if frame_idx == 46:
+                    view = app.graph_view_for(multi)
+                    assert view.scope == "smoke_group", (
+                        "frame 46: the group scope did not survive a frame -- the revalidation "
+                        "dropped a live label"
+                    )
+                    view.scope = "no_such_group"
+                if frame_idx == 47:
+                    view = app.graph_view_for(multi)
+                    assert view.scope == "", (
+                        "frame 47: a scope no pass carries survived -- the tab must close "
+                        "itself when its last member leaves"
+                    )
+                    graph_after = json.dumps(
+                        app.ui_documents[multi].document.graph.model_dump(),
+                        sort_keys=True,
+                    )
+                    assert graph_after == graph_before, (
+                        "frame 47: drawing the canvas WROTE the graph (092 D6) -- a position is "
+                        "written by a placement, never by a draw"
+                    )
+                    with mock.patch.object(
+                        app.session,
+                        "save_ui_document",
+                        wraps=app.session.save_ui_document,
+                    ) as saves:
+                        app.arrange_graph(multi)
+                    assert saves.call_count == 1, (
+                        f"frame 47: Arrange saved {saves.call_count} times -- 092 D6 writes "
+                        "every position through one set_pass_positions call"
+                    )
+                    assert all(
+                        entry.position is not None
+                        for entry in app.ui_documents[
+                            multi
+                        ].document.graph.passes.values()
+                    ), "frame 47: Arrange left a pass unplaced"
+                    app.app_state.passes_view = PassesView.STRIP
+                if frame_idx == 48:
+                    # Back to the feedback canary's document, whose accumulation the tail asserts.
                     app.set_current_document_id(canary_id)
                 # Every settings tab is focused and then CHECKED two frames on (083). imgui owns
                 # the tab selection and honors `set_selected` the frame AFTER the request, so a

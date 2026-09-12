@@ -219,6 +219,8 @@ def _draw_entry_points(
         imgui.text_colored(COLOR.STATE_WARN, f"{name} does not compile; copied as is")
     if _has_script(source):
         caption_text("script not imported")
+    if any(entry.group for entry in source.document.graph.passes.values()):
+        caption_text("groups flattened")
 
 
 def _draw_handovers(

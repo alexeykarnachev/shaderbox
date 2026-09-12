@@ -36,6 +36,7 @@ from shaderbox.copilot.revert import RevertExecutor
 from shaderbox.copilot.session import CopilotSession
 from shaderbox.copilot.state import CopilotLayout, Message
 from shaderbox.core import Pass
+from shaderbox.document import sampler_names
 from shaderbox.editor.ffi import (
     ChromeFlag,
     CursorPos,
@@ -72,6 +73,8 @@ from shaderbox.notifications import Notifications
 from shaderbox.pass_graph import (
     PassEntry,
     group_slug,
+    node_ports,
+    rank_layout,
     readers_of,
     step_in_order,
     strip_order,
@@ -104,7 +107,7 @@ from shaderbox.shader_lib.seed import sync_shipped_lib
 from shaderbox.shader_lib.tags import ShaderLibTagsStore
 from shaderbox.shader_source import ShaderSource
 from shaderbox.tabs import share_state
-from shaderbox.theme import COLOR, SETTINGS_MARK_S, apply_theme, editor_palette
+from shaderbox.theme import COLOR, SETTINGS_MARK_S, SIZE, apply_theme, editor_palette
 from shaderbox.ui_models import (
     EditorSettings,
     ImportDraft,
@@ -119,6 +122,7 @@ from shaderbox.util import (
     open_in_file_manager,
     pfd_block,
 )
+from shaderbox.widgets.graph_state import GraphViewState, node_size
 
 
 class PopupState(Enum):
@@ -409,6 +413,9 @@ class App:
         self.import_draft: ImportDraft | None = None
         # The pass whose tile has its delete-✕ armed (the in-cell "Delete?" wash), or "".
         self.pass_delete_armed: str = ""
+        # The graph canvas's per-document view state (092 D2), created on first use and
+        # dropped with the document in forget_render_state.
+        self.graph_views: dict[str, GraphViewState] = {}
 
         # copilot_focus_pending: one-shot driving window + input focus, consumed at the input draw.
         self.is_copilot_open: bool = False
@@ -792,6 +799,7 @@ class App:
         self.auto_size_states.pop(document_id, None)
         self.throttle_states.pop(document_id, None)
         self.document_costs.pop(document_id, None)
+        self.graph_views.pop(document_id, None)
 
     def recover_deleted_document(self, msg: Message) -> None:
         # MAIN THREAD (the chat's Recover button). Restore the document, flip the card's
@@ -1880,6 +1888,54 @@ class App:
         error = self.session.set_output_pass(document_id, name)
         if error:
             self.notifications.push(error)
+
+    def graph_view_for(self, document_id: str) -> GraphViewState:
+        view = self.graph_views.get(document_id)
+        if view is None:
+            view = GraphViewState()
+            self.graph_views[document_id] = view
+        return view
+
+    def arrange_graph(self, document_id: str) -> None:
+        """Lay every pass of the document out by rank and store it (092 D9): one placement,
+        one save, then the current scope fits once more."""
+        ui_document = self.ui_documents.get(document_id)
+        if ui_document is None:
+            return
+        document = ui_document.document
+        compile_pending_passes(document)
+        wiring = document.effective_wiring()
+        entries = document.graph.passes
+        groups = {
+            name: entries.get(name, PassEntry()).group for name in document.passes
+        }
+        sizes = {
+            name: node_size(
+                len(
+                    node_ports(
+                        sampler_names(render_pass),
+                        render_pass.uniform_values,
+                        wiring.get(name, {}),
+                        name,
+                    )
+                ),
+                False,
+            )
+            for name, render_pass in document.passes.items()
+        }
+        laid = rank_layout(
+            wiring,
+            list(document.passes),
+            groups,
+            sizes,
+            {},
+            float(SIZE.GRAPH_GAP_X),
+            float(SIZE.GRAPH_GAP_Y),
+        )
+        error = self.session.set_pass_positions(document_id, laid)
+        if error:
+            self.notifications.push(error)
+        self.graph_view_for(document_id).fitted = False
 
     def step_output_pass(self, step: int) -> None:
         # Next / previous pass walk the strip's drawn order and wrap. The editor keeps focus
