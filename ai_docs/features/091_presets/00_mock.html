@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>091 presets · UI sketches</title>
+<style>
+  :root {
+    --bg0h:#1d2021; --bg0:#282828; --bg0s:#32302f; --bg1:#3c3836; --bg2:#504945; --bg3:#665c54; --bg4:#7c6f64;
+    --gray:#928374; --fg4:#a89984; --fg3:#bdae93; --fg2:#d5c4a1; --fg1:#ebdbb2; --fg0:#fbf1c7;
+    --red:#fb4934; --green:#b8bb26; --yellow:#fabd2f; --blue:#83a598; --purple:#d3869b; --aqua:#8ec07c; --orange:#fe8019;
+    --tile:168px; --thumb:112px; --gap:8px;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg0); color:var(--fg1); font:14px/1.45 "Anonymous Pro","JetBrains Mono","DejaVu Sans Mono",monospace; padding:24px 32px 80px; }
+  h1 { font-size:20px; margin:0 0 4px; color:var(--fg0); font-weight:normal; }
+  h2 { font-size:16px; margin:48px 0 8px; color:var(--yellow); font-weight:normal; border-bottom:1px solid var(--bg2); padding-bottom:4px; }
+  h3 { font-size:14px; margin:28px 0 8px; color:var(--fg2); font-weight:normal; }
+  p, li { color:var(--fg3); max-width:90ch; }
+  .note { color:var(--fg4); font-size:13px; }
+  code { background:var(--bg1); padding:0 4px; border-radius:3px; color:var(--fg2); }
+  .verdict { display:inline-block; font-size:12px; padding:1px 8px; border-radius:8px; background:var(--bg2); color:var(--fg3); margin-left:8px; vertical-align:middle; }
+
+  /* ---- panel + strip, matching the app ---- */
+  .panel { background:var(--bg0h); border:1px solid var(--bg2); border-radius:6px; padding:12px; margin:8px 0 16px; overflow-x:auto; resize:horizontal; min-width:420px; max-width:100%; }
+  .caption { font-size:12px; color:var(--fg4); margin-bottom:6px; }
+  .strip { display:flex; flex-wrap:wrap; gap:var(--gap); align-items:flex-start; }
+  .tile { width:var(--tile); background:var(--bg0); border:1px solid var(--bg2); border-radius:6px; padding:8px 8px 8px; position:relative; display:flex; flex-direction:column; align-items:center; gap:6px; }
+  .tile.output { border-color:var(--yellow); }
+  .tile.stale { opacity:.45; }
+  .thumb { width:var(--thumb); height:var(--thumb); border-radius:2px; background:#000; }
+  .name { font-size:15px; color:var(--fg2); }
+  .chips { display:flex; gap:4px; flex-wrap:nowrap; justify-content:center; height:18px; max-width:100%; overflow:hidden; }
+  .chip { font-size:12px; background:var(--bg3); color:var(--fg3); padding:0 6px; border-radius:8px; line-height:18px; white-space:nowrap; }
+  .chip.g { background:transparent; border:1px solid var(--gc); color:var(--gc); }
+  .btn { display:inline-block; background:var(--bg1); border:1px solid var(--bg2); color:var(--fg2); padding:4px 12px; border-radius:4px; font-size:13px; margin-top:8px; margin-right:6px; }
+  .btn.primary { background:var(--yellow); color:var(--bg0h); border-color:var(--yellow); }
+  .btn.ghost { background:transparent; color:var(--fg4); }
+
+  /* thumbnails (fake pictures) */
+  .t-scene { background:radial-gradient(circle at 30% 40%, #f7d774 0 6px, #e66 7px 9px, #000 10px), radial-gradient(circle at 70% 60%, #6cf 0 5px, #000 6px); background-blend-mode:screen; }
+  .t-bright { background:radial-gradient(circle at 30% 40%, #fff 0 4px, #000 5px), radial-gradient(circle at 70% 60%, #cff 0 3px, #000 4px); background-blend-mode:screen; }
+  .t-blur { background:radial-gradient(circle at 30% 40%, rgba(255,240,180,.9) 0, rgba(255,240,180,0) 40%), radial-gradient(circle at 70% 60%, rgba(160,230,255,.9) 0, rgba(160,230,255,0) 35%), #000; }
+  .t-trail { background:linear-gradient(120deg, rgba(247,215,116,.5), transparent 40%), radial-gradient(circle at 34% 44%, #f7d774 0 6px, transparent 7px), radial-gradient(circle at 60% 55%, rgba(247,215,116,.35) 0 8px, transparent 9px), #050505; }
+  .t-comp { background:radial-gradient(circle at 30% 40%, #fff3c4 0 6px, rgba(255,230,150,.6) 12px, transparent 40%), radial-gradient(circle at 70% 60%, #cff 0 5px, rgba(120,220,255,.6) 10px, transparent 35%), #0b0b10; }
+  .t-final { background:radial-gradient(circle at 30% 40%, #fff3c4 0 6px, rgba(255,230,150,.6) 12px, transparent 40%), radial-gradient(circle at 70% 60%, #cff 0 5px, rgba(120,220,255,.6) 10px, transparent 35%), linear-gradient(#20242c, #0b0b10); }
+  .t-paint { background:radial-gradient(circle at 25% 30%, #fff 0 4px, transparent 5px), radial-gradient(circle at 78% 28%, #6cf 0 4px, transparent 5px), radial-gradient(circle at 22% 78%, #000 0 6px, #111 7px), linear-gradient(90deg, transparent 47%, #000 47% 53%, transparent 53%), #0a0a0a; }
+  .t-jfa { background:conic-gradient(from 20deg at 45% 55%, #7a2 0 120deg, #cc3 120deg 240deg, #4a4 240deg); }
+  .t-df { background:radial-gradient(circle at 30% 35%, #000 0 12px, #bbb 45px, #333 60px), #777; }
+  .t-casc { background:radial-gradient(circle at 25% 30%, #f7d774 0 8px, rgba(247,215,116,.35) 25px, transparent 45px), radial-gradient(circle at 78% 28%, #6cf 0 6px, rgba(100,200,255,.35) 22px, transparent 40px), #0e1016; }
+
+  /* ---- modals ---- */
+  .modal { background:var(--bg0s); border:1px solid var(--bg3); border-radius:6px; padding:14px 16px 14px; display:inline-block; vertical-align:top; margin:8px 24px 8px 0; box-shadow:0 8px 30px rgba(0,0,0,.5); }
+  .modal .title { color:var(--fg0); font-size:15px; margin-bottom:8px; }
+  .sep { color:var(--fg4); font-size:12px; margin:12px 0 6px; display:flex; align-items:center; gap:8px; }
+  .sep::after { content:""; flex:1; height:1px; background:var(--bg2); }
+  .row { display:flex; align-items:center; gap:8px; margin:5px 0; }
+  .lbl { width:76px; color:var(--fg4); font-size:12px; text-align:right; }
+  .field { background:var(--bg1); border:1px solid var(--bg2); border-radius:3px; padding:3px 8px; min-width:180px; color:var(--fg1); font-size:13px; display:inline-flex; justify-content:space-between; align-items:center; }
+  .field.small { min-width:120px; }
+  .field .arrow { color:var(--fg4); margin-left:8px; }
+  .field.err { border-color:var(--red); }
+  .help { color:var(--fg4); font-size:12px; }
+  .dropdown { background:var(--bg1); border:1px solid var(--bg3); border-radius:3px; margin-left:84px; width:196px; font-size:13px; }
+  .dropdown div { padding:3px 8px; }
+  .dropdown div.sel { background:var(--bg2); color:var(--fg0); }
+  .dropdown div.new { color:var(--fg4); font-style:italic; }
+  .split { display:flex; gap:16px; }
+  .list { background:var(--bg1); border:1px solid var(--bg2); border-radius:3px; width:220px; font-size:13px; padding:4px 0; }
+  .list .hdr { color:var(--fg4); font-size:11px; padding:4px 8px 2px; letter-spacing:.5px; }
+  .list .item { padding:3px 8px; color:var(--fg2); display:flex; justify-content:space-between; }
+  .list .item.sel { background:var(--bg2); color:var(--fg0); }
+  .list .item span { color:var(--fg4); }
+  table.ptable { border-collapse:collapse; font-size:13px; }
+  table.ptable th { color:var(--fg4); font-weight:normal; text-align:left; padding:2px 10px 4px 0; font-size:12px; }
+  table.ptable td { padding:3px 10px 3px 0; color:var(--fg2); vertical-align:middle; }
+  table.ptable td .field { min-width:150px; }
+  .sub { color:var(--aqua); }
+  .warn { color:var(--orange); font-size:12px; margin-top:8px; }
+  .tabs { display:flex; gap:2px; margin-bottom:6px; }
+  .tab { padding:3px 10px; background:var(--bg1); color:var(--fg4); border-radius:3px 3px 0 0; font-size:12px; }
+  .tab.on { background:var(--bg2); color:var(--fg0); }
+  .cards { display:flex; gap:10px; flex-wrap:wrap; }
+  .card { width:150px; background:var(--bg1); border:1px solid var(--bg2); border-radius:6px; padding:8px; display:flex; flex-direction:column; align-items:center; gap:4px; }
+  .card.sel { border-color:var(--yellow); }
+  .card .thumb { width:96px; height:96px; }
+  .card .n { font-size:13px; color:var(--fg2); }
+  .card .m { font-size:11px; color:var(--fg4); }
+  .mini { display:flex; gap:4px; align-items:center; flex-wrap:wrap; font-size:12px; color:var(--fg3); }
+  .mini .chip { background:var(--bg2); }
+
+  /* ---- group variants ---- */
+  .band .tile[data-g] .name { background:color-mix(in srgb, var(--gc) 28%, var(--bg0)); color:var(--fg1); padding:0 10px; border-radius:3px; }
+  .bracket .grp { display:flex; flex-direction:column; gap:4px; }
+  .bracket .grp .hdr { font-size:12px; color:var(--gc); border-top:2px solid var(--gc); padding:2px 4px 0; display:flex; gap:8px; align-items:center; }
+  .bracket .grp .hdr .ports { color:var(--fg4); }
+  .region .grp { background:color-mix(in srgb, var(--gc) 10%, var(--bg0h)); border:1px solid color-mix(in srgb, var(--gc) 45%, var(--bg0h)); border-radius:8px; padding:20px 8px 8px; position:relative; }
+  .region .grp .hdr { position:absolute; top:3px; left:10px; font-size:12px; color:var(--gc); display:flex; gap:10px; }
+  .region .grp .hdr .ports { color:var(--fg4); }
+  .border .tile[data-g] { border-color:var(--gc); }
+  .bracket .grp .strip, .region .grp .strip { display:flex; gap:var(--gap); flex-wrap:wrap; }
+
+  /* ---- graph teaser ---- */
+  svg text { font-family:inherit; }
+  .sl { display:flex; gap:12px; align-items:center; margin:6px 0 12px; color:var(--fg4); font-size:12px; }
+  input[type=range] { width:260px; }
+</style>
+</head>
+<body>
+
+<h1>091 · presets — UI sketches</h1>
+<p class="note">Local mock, nothing here is wired. Colours and sizes follow <code>theme.py</code> (tile 168, thumb 112, chips under the name = what the pass reads). The panels are resizable from their bottom-right corner, so wrapping can be judged at 480 and up. Example document: a five-pass <b>Bloom Chain</b> imported as group <span style="color:var(--aqua)">bloom</span> with prefix <code>fx_</code>, its <code>scene</code> pass substituted with the host's own <code>scene</code>, and a host pass <code>final</code> reading the bundle's output.</p>
+
+<!-- ============================================================ -->
+<h2>1 · How a group shows on the strip</h2>
+<p>Same wiring in all four; only the group marking differs. The strip stays a topological order in every variant, nothing folds. The host has three passes of its own (<code>scene</code>, <code>final</code>, and an ungrouped <code>vignette</code>) so an unmarked tile can be compared next to marked ones.</p>
+
+<div class="sl">strip width <input type="range" min="480" max="1100" value="1040" oninput="document.querySelectorAll('.panel.w').forEach(p=>p.style.width=this.value+'px');document.getElementById('wv').textContent=this.value"> <span id="wv">1040</span>px</div>
+
+<h3>A · tinted title band <span class="verdict">cheapest: one tint on the name row</span></h3>
+<div class="panel w band" style="width:1040px">
+  <div class="caption">Passes</div>
+  <div class="strip" id="stripA"></div>
+  <span class="btn">add pass</span><span class="btn">import…</span>
+</div>
+
+<h3>B · bracket above the members <span class="verdict">name + ports once, tiles untouched</span></h3>
+<div class="panel w bracket" style="width:1040px">
+  <div class="caption">Passes</div>
+  <div class="strip" id="stripB"></div>
+  <span class="btn">add pass</span><span class="btn">import…</span>
+</div>
+
+<h3>C · tinted region behind the members <span class="verdict">same drawing the graph view would use</span></h3>
+<div class="panel w region" style="width:1040px">
+  <div class="caption">Passes</div>
+  <div class="strip" id="stripC"></div>
+  <span class="btn">add pass</span><span class="btn">import…</span>
+</div>
+
+<h3>D · coloured tile border + group chip <span class="verdict">puts the group in the chips row</span></h3>
+<div class="panel w border" style="width:1040px">
+  <div class="caption">Passes</div>
+  <div class="strip" id="stripD"></div>
+  <span class="btn">add pass</span><span class="btn">import…</span>
+</div>
+<p class="note">B and C need the group's members to be contiguous in the strip order to draw as one block. They are contiguous right after an import and stay so unless you wire an outside pass into the middle of the group; when that happens the block splits into two blocks with the same header. A and D have no such dependence.</p>
+
+<!-- ============================================================ -->
+<h2>2 · The import dialog</h2>
+<p>Three shapes for the same operation: pick a source document, choose a prefix and a group name, and say for each of its passes whether it is copied or substituted with a host pass. Substitution is how an input is bound: every sampler that read the substituted pass is written to read the host pass instead.</p>
+
+<h3>A · one modal, source list beside the pass table <span class="verdict">recommended</span></h3>
+<div class="modal">
+  <div class="title">Import passes</div>
+  <div class="split">
+    <div>
+      <div class="list">
+        <div class="hdr">THIS PROJECT</div>
+        <div class="item sel">Bloom Chain <span>5</span></div>
+        <div class="item">Kaleido <span>2</span></div>
+        <div class="item">Old trail test <span>3</span></div>
+        <div class="hdr">EXAMPLES</div>
+        <div class="item">Radiance Cascades <span>6</span></div>
+        <div class="item">Fire <span>1</span></div>
+        <div class="item">Text Rendering <span>1</span></div>
+      </div>
+      <div class="note" style="width:220px;margin-top:6px">A five-pass document: a scene of orbiting blobs, a bright-pass and a blur that turn its highlights into bloom, a feedback pass…</div>
+    </div>
+    <div>
+      <div class="row"><div class="lbl">prefix</div><div class="field small">fx_</div><span class="help">keeps names apart from yours</span></div>
+      <div class="row"><div class="lbl">group</div><div class="field small">bloom <span class="arrow">▾</span></div><span class="help">marks the tiles; empty = none</span></div>
+      <div class="sep">passes</div>
+      <table class="ptable">
+        <tr><th>source</th><th>becomes</th><th>reads</th></tr>
+        <tr><td>scene</td><td><div class="field"><span class="sub">replace with: scene</span><span class="arrow">▾</span></div></td><td class="help">—</td></tr>
+        <tr><td>bright</td><td><div class="field">copy as fx_bright<span class="arrow">▾</span></div></td><td class="help">u_src ← <span class="sub">scene</span></td></tr>
+        <tr><td>blur</td><td><div class="field">copy as fx_blur<span class="arrow">▾</span></div></td><td class="help">u_src ← fx_bright</td></tr>
+        <tr><td>trail</td><td><div class="field">copy as fx_trail<span class="arrow">▾</span></div></td><td class="help">u_src ← <span class="sub">scene</span>, prev</td></tr>
+        <tr><td>composite</td><td><div class="field">copy as fx_composite<span class="arrow">▾</span></div></td><td class="help">u_lit ← <span class="sub">scene</span>, u_glow ← fx_blur, u_trail ← fx_trail</td></tr>
+      </table>
+      <div class="note" style="margin-top:8px">output of the bundle: <code>fx_composite</code> · your pass <code>final</code> can read it as <code>u_fx_composite</code> or from its sampler row</div>
+      <div class="warn">script of the source is not imported (a document has one script)</div>
+      <div style="margin-top:10px"><span class="btn primary">Import 4 passes</span><span class="btn ghost">Cancel</span></div>
+    </div>
+  </div>
+</div>
+
+<h3>A' · the same modal with a collision <span class="verdict">what the reject looks like</span></h3>
+<div class="modal">
+  <div class="title">Import passes</div>
+  <div class="row"><div class="lbl">prefix</div><div class="field small err"></div><span class="help" style="color:var(--red)">'blur' and 'composite' already exist</span></div>
+  <div class="row"><div class="lbl">group</div><div class="field small">bloom <span class="arrow">▾</span></div></div>
+  <div class="sep">passes</div>
+  <table class="ptable">
+    <tr><th>source</th><th>becomes</th></tr>
+    <tr><td>scene</td><td><div class="field"><span class="sub">replace with: scene</span><span class="arrow">▾</span></div></td></tr>
+    <tr><td>bright</td><td><div class="field">copy as bright<span class="arrow">▾</span></div></td></tr>
+    <tr><td>blur</td><td><div class="field err">copy as blur<span class="arrow">▾</span></div></td></tr>
+    <tr><td>trail</td><td><div class="field">copy as trail<span class="arrow">▾</span></div></td></tr>
+    <tr><td>composite</td><td><div class="field err">copy as composite<span class="arrow">▾</span></div></td></tr>
+  </table>
+  <div style="margin-top:10px"><span class="btn" style="opacity:.4">Import</span><span class="btn ghost">Cancel</span></div>
+</div>
+
+<h3>B · two steps: pick a source card, then configure <span class="verdict">more clicks, prettier picking</span></h3>
+<div class="modal">
+  <div class="title">Import passes · 1/2 · choose a document</div>
+  <div class="tabs"><div class="tab on">This project</div><div class="tab">Examples</div></div>
+  <div class="cards">
+    <div class="card sel"><div class="thumb t-comp"></div><div class="n">Bloom Chain</div><div class="m">5 passes · 1 feedback</div></div>
+    <div class="card"><div class="thumb t-jfa"></div><div class="n">Kaleido</div><div class="m">2 passes</div></div>
+    <div class="card"><div class="thumb t-trail"></div><div class="n">Old trail test</div><div class="m">3 passes · 1 feedback</div></div>
+  </div>
+  <div style="margin-top:10px"><span class="btn primary">Next</span><span class="btn ghost">Cancel</span></div>
+</div>
+<div class="modal">
+  <div class="title">Import passes · 2/2 · Bloom Chain</div>
+  <div class="row"><div class="lbl">prefix</div><div class="field small">fx_</div></div>
+  <div class="row"><div class="lbl">group</div><div class="field small">bloom <span class="arrow">▾</span></div></div>
+  <div class="sep">passes</div>
+  <table class="ptable">
+    <tr><td>scene</td><td><div class="field"><span class="sub">replace with: scene</span><span class="arrow">▾</span></div></td></tr>
+    <tr><td>bright</td><td><div class="field">copy as fx_bright<span class="arrow">▾</span></div></td></tr>
+    <tr><td>blur</td><td><div class="field">copy as fx_blur<span class="arrow">▾</span></div></td></tr>
+    <tr><td>trail</td><td><div class="field">copy as fx_trail<span class="arrow">▾</span></div></td></tr>
+    <tr><td>composite</td><td><div class="field">copy as fx_composite<span class="arrow">▾</span></div></td></tr>
+  </table>
+  <div style="margin-top:10px"><span class="btn primary">Import 4 passes</span><span class="btn ghost">Back</span></div>
+</div>
+
+<h3>C · minimal: source + prefix, wire afterwards <span class="verdict">the boring option</span></h3>
+<div class="modal">
+  <div class="title">Import passes</div>
+  <div class="row"><div class="lbl">from</div><div class="field">Bloom Chain <span class="arrow">▾</span></div></div>
+  <div class="row"><div class="lbl">prefix</div><div class="field small">fx_</div></div>
+  <div class="row"><div class="lbl">group</div><div class="field small">bloom</div></div>
+  <div class="note" style="margin-top:8px;width:360px">Copies all 5 passes. Afterwards, delete <code>fx_scene</code> and point <code>u_src</code> / <code>u_lit</code> on three tiles at your own scene from their sampler rows.</div>
+  <div style="margin-top:10px"><span class="btn primary">Import 5 passes</span><span class="btn ghost">Cancel</span></div>
+</div>
+<p class="note">C ships nothing new in the engine but hands you three rewires and a delete on every import of a bundle that has a stand-in input, which the Bloom and Radiance Cascades examples both have. A does the same edits from one table.</p>
+
+<!-- ============================================================ -->
+<h2>3 · Assigning a group by hand</h2>
+<p>The pass settings modal (a tile's gear) with one added row. The dropdown lists the groups the document already has plus the typed text as a new one. Clearing the field leaves the group.</p>
+
+<div class="modal">
+  <div class="title">Pass settings</div>
+  <div class="sep">Pass</div>
+  <div class="row"><div class="lbl">name</div><div class="field">vignette</div><span class="help">names its shader file and its wires</span></div>
+  <div class="row"><div class="lbl">group</div><div class="field">bloom <span class="arrow">▾</span></div><span class="help">a label on the strip; empty = none</span></div>
+  <div class="dropdown"><div class="sel">bloom</div><div>grade</div><div class="new">(none)</div></div>
+  <div class="sep">Draws into</div>
+  <div class="row"><div class="lbl">format</div><div class="field">16-bit float <span class="arrow">▾</span></div></div>
+  <div class="row"><div class="lbl">size</div><div class="field">100% · 1280x720</div></div>
+  <div class="row"><div class="lbl">sampling</div><div class="help">☑ smooth</div></div>
+  <div class="row"><div class="lbl">edges</div><div class="help">☐ repeat</div></div>
+  <div class="sep">Runs</div>
+  <div class="row"><div class="lbl">runs</div><div class="field">1</div></div>
+  <div style="margin-top:12px"><span class="btn">Close</span></div>
+</div>
+
+<div class="modal" style="vertical-align:top">
+  <div class="title">Tile context menu</div>
+  <div class="list" style="width:180px">
+    <div class="item">Settings</div>
+    <div class="item">Delete</div>
+    <div class="hdr" style="border-top:1px solid var(--bg2);margin-top:4px">GROUP · bloom</div>
+    <div class="item">Leave group</div>
+    <div class="item">Save group as document…</div>
+  </div>
+  <div class="note" style="width:200px;margin-top:8px">The group verbs live on the member tiles; there is no group object to click. "Save group as document" is the export half of import, and is what a cross-project presets folder would later feed on.</div>
+</div>
+
+<!-- ============================================================ -->
+<h2>4 · Where the group goes next (092 teaser, not part of 091)</h2>
+<p>The graph view drawn by hand on the draw list: ranks by longest path, the strip's own tiles as nodes, an edge per sampler, a group as a tinted region. Non-convex groups are merely an odd-shaped region here; nothing needs to be contracted.</p>
+<div class="panel" style="padding:0;overflow:hidden">
+<svg width="1040" height="360" viewBox="0 0 1040 360">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#928374"/></marker>
+  </defs>
+  <rect x="0" y="0" width="1040" height="360" fill="#1d2021"/>
+  <rect x="250" y="14" width="560" height="326" rx="10" fill="rgba(142,192,124,0.08)" stroke="rgba(142,192,124,0.45)"/>
+  <text x="264" y="34" fill="#8ec07c" font-size="12">bloom</text>
+  <text x="318" y="34" fill="#7c6f64" font-size="12">in: scene · out: fx_composite</text>
+  <g fill="none" stroke="#928374" stroke-width="1.5" marker-end="url(#ar)">
+    <path d="M142,170 C200,170 220,110 274,110"/>
+    <path d="M142,170 C200,170 220,260 274,260"/>
+    <path d="M142,172 C240,190 560,190 640,178"/>
+    <path d="M382,110 C420,110 430,110 460,110"/>
+    <path d="M568,110 C600,110 610,160 640,164"/>
+    <path d="M382,260 C500,260 560,200 640,190"/>
+    <path d="M748,180 C800,180 810,170 846,170"/>
+    <path d="M372,204 C392,176 414,196 388,210"/>
+  </g>
+  <g id="nodes"></g>
+  <g fill="#7c6f64" font-size="11">
+    <text x="236" y="132">u_src</text>
+    <text x="236" y="236">u_src</text>
+    <text x="410" y="104">u_src</text>
+    <text x="470" y="182">u_lit</text>
+    <text x="582" y="184">u_glow</text>
+    <text x="536" y="238">u_trail</text>
+    <text x="404" y="186">prev</text>
+    <text x="752" y="164">u_fx_composite</text>
+  </g>
+</svg>
+</div>
+
+<script>
+  // ---- strip data: host passes + the imported bloom group ----
+  const G = { bloom: 'var(--aqua)', grade: 'var(--purple)' };
+  const passes = [
+    { n:'scene',        t:'t-scene',  reads:[] },
+    { n:'fx_bright',    t:'t-bright', reads:['scene'], g:'bloom' },
+    { n:'fx_trail',     t:'t-trail',  reads:['scene','prev'], g:'bloom' },
+    { n:'fx_blur',      t:'t-blur',   reads:['fx_bright'], g:'bloom' },
+    { n:'fx_composite', t:'t-comp',   reads:['scene','fx_blur','fx_trail'], g:'bloom' },
+    { n:'vignette',     t:'t-df',     reads:['scene'], stale:true },
+    { n:'final',        t:'t-final',  reads:['fx_composite'], out:true },
+  ];
+  function tile(p, variant) {
+    const d = document.createElement('div');
+    d.className = 'tile' + (p.out ? ' output' : '') + (p.stale ? ' stale' : '');
+    if (p.g) { d.dataset.g = p.g; d.style.setProperty('--gc', G[p.g]); }
+    // collapse like the app: chips that do not fit fold into a +N count
+    const words = p.reads.slice();
+    const gw = (variant === 'D' && p.g) ? (p.g.length * 7.2 + 14) : 0;
+    const budget = 150 - gw;
+    const wOf = w => w.length * 7.2 + 16;
+    let shown = [], used = 0;
+    for (let k = 0; k < words.length; k++) {
+      const rest = words.length - k - 1;
+      const need = wOf(words[k]) + (rest > 0 ? wOf('+' + rest) : 0);
+      if (used + wOf(words[k]) <= budget && (rest === 0 || used + need <= budget || k === 0)) { shown.push(words[k]); used += wOf(words[k]); }
+      else break;
+    }
+    let chips = shown.map(r => `<span class="chip">${r}</span>`).join('');
+    if (shown.length < words.length) chips += `<span class="chip">+${words.length - shown.length}</span>`;
+    if (gw) chips += `<span class="chip g">${p.g}</span>`;
+    d.innerHTML = `<div class="thumb ${p.t}"></div><div class="name">${p.n}</div><div class="chips">${chips}</div>`;
+    return d;
+  }
+  function fill(id, variant) {
+    const s = document.getElementById(id);
+    if (variant === 'A' || variant === 'D') { passes.forEach(p => s.appendChild(tile(p, variant))); return; }
+    // B and C: wrap contiguous members of one group in a block
+    let i = 0;
+    while (i < passes.length) {
+      const p = passes[i];
+      if (!p.g) { s.appendChild(tile(p, variant)); i++; continue; }
+      const grp = document.createElement('div'); grp.className = 'grp'; grp.style.setProperty('--gc', G[p.g]);
+      const hdr = document.createElement('div'); hdr.className = 'hdr';
+      hdr.innerHTML = `<span>${p.g}</span><span class="ports">in: scene · out: fx_composite</span>`;
+      grp.appendChild(hdr);
+      const inner = document.createElement('div'); inner.className = 'strip';
+      while (i < passes.length && passes[i].g === p.g) { inner.appendChild(tile(passes[i], variant)); i++; }
+      if (variant === 'B') { grp.appendChild(inner); } else { grp.appendChild(inner); }
+      s.appendChild(grp);
+    }
+  }
+  fill('stripA','A'); fill('stripB','B'); fill('stripC','C'); fill('stripD','D');
+
+  // ---- graph nodes ----
+  const nodes = [
+    {x:88,  y:170, n:'scene',        t:'#3a2f2a'},
+    {x:328, y:110, n:'fx_bright',    t:'#2a2a2a'},
+    {x:328, y:260, n:'fx_trail',     t:'#2f2a1e'},
+    {x:514, y:110, n:'fx_blur',      t:'#2a2f33'},
+    {x:694, y:180, n:'fx_composite', t:'#2b2c36'},
+    {x:900, y:170, n:'final',        t:'#2b2c36', out:true},
+  ];
+  const g = document.getElementById('nodes');
+  nodes.forEach(nd => {
+    const w=108,h=112;
+    g.insertAdjacentHTML('beforeend',
+      `<g transform="translate(${nd.x-w/2},${nd.y-h/2})">
+        <rect width="${w}" height="${h}" rx="6" fill="#282828" stroke="${nd.out?'#fabd2f':'#504945'}"/>
+        <rect x="14" y="10" width="80" height="62" rx="2" fill="${nd.t}"/>
+        <text x="${w/2}" y="96" text-anchor="middle" fill="#d5c4a1" font-size="13">${nd.n}</text>
+      </g>`);
+  });
+</script>
+</body>
+</html>
