@@ -1,6 +1,6 @@
 # 091 — Presets: import another document's passes as a group
 
-Status: **draft, awaiting plan-lock.** The design was settled in chat on 2026-09-11/12 and
+Status: **locked 2026-09-12** (D1–D11 are fixed premises; the three open questions are resolved below). The design was settled in chat on 2026-09-11/12 and
 sketched in `00_mock.html` (sections 1·C3, 2b and 3 are the chosen shapes; the rest is the
 brainstorm record). This file restates those decisions as the implementation contract.
 
@@ -73,7 +73,9 @@ unchanged, since the salvage enumerates the model's fields.
 group. The dialog prefills the name from the source document's display name: its first word,
 lowercased, characters outside `[A-Za-z0-9_]` replaced by `_`, and `g_` prepended when the
 result does not start with a letter or underscore (`Bloom Chain` → `bloom`, `Radiance Cascades`
-→ `radiance`, `2D SDF` → `g_2d`). A pure function `group_slug(name: str) -> str` in
+→ `radiance`, `2D SDF` → `g_2d`). The first word and not the whole name because a tile
+is 168px and the 14px face fits about 21 characters: `bloom_composite` fits,
+`radiance_cascades_composite` clips. A pure function `group_slug(name: str) -> str` in
 `pass_graph.py`, pinned by a test over those three inputs.
 
 **D3 — entry points are the roots of the source's effective wiring.** `entry_points(wiring)` in
@@ -95,17 +97,23 @@ class ImportPlan:
     renames: dict[str, str]          # source name -> host name, for every COPIED pass
     sources: dict[str, dict[str, str]]  # host name -> sampler -> host pass it reads
     output: str                      # the bundle's output under its host name
+    handovers: dict[str, dict[str, str]]  # HOST pass -> sampler -> `output` (D6)
+    becomes_output: bool             # the document output moves to `output` (D6)
 
 def plan_import(
     source_wiring: Wiring, source_output: str, group: str,
-    substitutions: Mapping[str, str], host_passes: Collection[str],
+    substitutions: Mapping[str, str], handovers: Collection[tuple[str, str]],
+    host_wiring: Wiring, host_output: str,
 ) -> ImportPlan | str
 ```
 
+`host_wiring` is the host's `effective_wiring()` and `host_passes` is its key set; `handovers`
+is the set of `(host pass, sampler)` pairs the dialog's checkboxes left on (D6).
+
 Returning `str` is the rejection (the message the dialog shows): a copied name already in
 `host_passes`, a group name failing `_PASS_NAME_RE`, a substitution naming a pass that is not
-an entry point or a host pass that does not exist, or a plan that copies nothing (a single-pass
-source whose one pass is substituted). Every sampler of a copied pass that the source wiring
+an entry point or a host pass that does not exist, a handover naming a pair that does not read a fed pass, or a plan that copies nothing (a
+single-pass source whose one pass is substituted). Every sampler of a copied pass that the source wiring
 filled becomes an explicit `PassSource` in `sources`: to the renamed pass, or to the host pass
 when the source was substituted; a self-read points at the renamed self. Name-rule wiring
 does not survive the prefix (`u_blur` no longer names `bloom_blur`), so materializing is not
@@ -135,10 +143,27 @@ is what keeps `Pass.release` (which releases every value it holds) from freeing 
 source still uses. `ui_uniforms` rows are merged from the source's `ui_state` for hashes the
 host does not have, so a sampler's `texture` input type and a drag's range come along.
 
-**D6 — the import makes the bundle's output the document's output.** A bundle is imported to
-be seen; leaving the host output where it was would wash every new tile grey (065's stale
-tint) and the user would click the bundle's last tile anyway. The previous output is one tile
-click away. *(Open question 1.)*
+**D6 — the bundle's output takes over the role of the pass that feeds it.** Feeding an entry
+point with host pass `scene` is an INSERTION: every host sampler that read `scene` now reads the
+bundle's output, and if `scene` was the document's output, the bundle's output becomes the
+output. Both shapes fall out of one rule:
+
+```
+scene → grade → final        grade.u_src read scene, now reads bloom_composite; final stays output
+scene (output)               scene had no readers; bloom_composite becomes the output
+```
+
+The takeover is explicit and per reader, because one reader can legitimately want the raw
+pass (a `mask` cutting a shape from the unbloomed scene). Under an entry-point row whose combo
+names a host pass, the dialog lists that pass's host readers as `(pass, sampler)` checkboxes,
+all on by default: `then read bloom_composite instead of scene: ☑ grade.u_src ☐ mask.u_src`.
+With no readers and the fed pass being the output the line reads `bloom_composite becomes the
+output`. Nothing is shown for `keep`. Two fed entry points each get their own line; both hand
+over to the same bundle output. The plan carries the result as `handovers` and
+`becomes_output` (D4), and `import_passes` writes the handover rows as explicit `PassSource`s
+on the HOST passes and moves the output when the flag is set. The default readers are
+computed from `host_wiring` at the moment a host pass is picked, so a checkbox set survives
+until the source or the combo changes.
 
 **D7 — the strip draws a group as one flush outline (mock 1·C3).** In `pass_list.draw`, tiles
 keep their order (`strip_order`) and their gaps; consecutive tiles of one group on one row form
@@ -168,14 +193,16 @@ seventh verb, validated by `_PASS_NAME_RE` or empty, saved like the others). `se
 `PopupState.IMPORT_PASSES`, drawn by a new `popups/import_passes.py`, opened from an `import…`
 button beside `add pass` and from a palette command `IMPORT_PASSES`. Its transient state is an
 `ImportDraft` dataclass on `App` (`ui_models.py`, beside `PassDraft`): the active tab, the
-selected source id, the group buffer, and `substitutions: dict[str, str]` keyed by entry
-point. The body: a tab row `This project | Examples`; a card grid of that tab's documents
+selected source id, the group buffer, `substitutions: dict[str, str]` keyed by entry point, and `handovers: set[tuple[str, str]]`
+(D6). The body: a tab row `This project | Examples`; a card grid of that tab's documents
 through `draw_document_preview_button` (the Examples modal's own grid); the selected source's
 description; the `group` field; one row per entry point, `<name> ← [combo]` with `theirs (copy
 it)` first and the host's passes after, the entry point's readers listed beside it in the
-12px face; a note naming the bundle's output; `Import N passes` (disabled with the rejection
+12px face, and under a row fed by a host pass the D6 checkbox line; a note naming the
+bundle's output and whether it becomes the document's; `Import N passes` (disabled with the rejection
 in red while `plan_import` rejects) and `Cancel`. Changing the source resets the group buffer to
-D2's slug and the substitutions to `keep`. The current document is excluded from the project
+D2's slug, the substitutions to `keep` and the handovers to empty; picking a host pass in a
+combo resets that entry point's handovers to all of its readers. The current document is excluded from the project
 tab. The plan is recomputed each frame the dialog draws, which is how the button's enabled
 state and the message stay honest; the source's passes are compiled on selection (D3), one
 frame's cost.
@@ -246,7 +273,9 @@ Each item names the falsifier that makes it red.
    copied pass is explicit under host names, including `u_prev`; (b) a substituted entry point
    is absent from `renames` and its readers point at the host pass; (c) a copied name colliding
    with a host pass rejects and names it; (d) substituting the only pass rejects with "nothing
-   to import"; (e) an empty group copies under bare names. Falsifier for (a): drop the
+   to import"; (e) an empty group copies under bare names; (f) a handover pair rewires that host sampler
+   to the bundle output and an unchecked one is untouched; (g) `becomes_output` is true only
+   when a fed pass is the host output. Falsifier for (a): drop the
    materialization and `bloom_composite.u_blur` reads black in a rendered host.
 3. **`import_passes` end to end** (`tests/test_pass_verbs.py`): the Bloom Chain example
    imported into the starter document with `scene` substituted by `main`; reload from disk;
@@ -286,9 +315,10 @@ dialog over the six examples; importing Radiance Cascades into a document that p
 
 ## Open questions for the user
 
-1. **D6** — should the import set the output to the bundle's output (proposed), or leave the
-   host's output alone?
-2. **D2** — the slug is the display name's first word. Whole name with underscores instead
-   (`bloom_chain_bright`)?
-3. **D7** — member tiles lose their own border inside the outline (the mock's C3). Keep their
-   border and draw the outline only?
+Resolved at plan-lock (2026-09-12):
+
+1. **D6** — the maintainer asked for the insertion: the bundle's output takes over the fed
+   pass's readers and its output role, shown as a per-reader picker, explicit and concise.
+2. **D2** — first word.
+3. **D7** — member tiles lose their own border inside the outline; the outline is the same
+   weight as a tile border and the cards keep their size.
