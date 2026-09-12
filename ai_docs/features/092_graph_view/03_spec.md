@@ -428,11 +428,11 @@ None. The maintainer took the triage's defaults for all eleven decisions.
 
 ## Manual verification (the maintainer's, no window manager here)
 
-Preamble: items marked (bloom) need the bloom chain, which is a TEST FIXTURE and not a
-shipped example. Copy `tests/fixtures/bloom_chain/` into a new
-`projects/dev/documents/<uuid>/` and open it once; every (bloom) item then runs against
-it. Items 7 and 10 need document throttling OFF (Settings > Throttle documents), because
-a throttled document does not re-plan and the cycle cue would lag.
+Preamble: the items about a box, a ghost or a group tab need a document of the maintainer's
+own with a group in it (an imported bundle, or passes grouped by hand); the names in those
+items are the shipped example's and stand for whatever his document calls them. Items 7 and
+10 need document throttling OFF (Settings > Throttle documents), because a throttled document
+does not re-plan and the cycle cue would lag.
 
 **W1 -- the read-only canvas**
 
@@ -464,23 +464,23 @@ a throttled document does not re-plan and the cycle cue would lag.
 17. Unwire it: both wires return to normal.
 18. `strip | graph` on Fire (single pass): one node, no input ports.
 19. `strip | graph` on Media Input: one node with two square media ports and no wires.
-20. (bloom) The root shows the `bloom` box with the badge `4 passes`.
-21. (bloom) The box's input ports are three, one per member sampler reading `scene`, each
+20. The root shows the `bloom` box with the badge `4 passes`.
+21. The box's input ports are three, one per member sampler reading `scene`, each
     labelled `member.u_scene`.
-22. (bloom) The box has exactly one output port, into `final`.
-23. (bloom) Double-click the box: the bloom tab draws its four members as solid nodes.
-24. (bloom) In the bloom tab: `scene` is a dashed dim ghost on the LEFT and `final` a
+22. The box has exactly one output port, into `final`.
+23. Double-click the box: the bloom tab draws its four members as solid nodes.
+24. In the bloom tab: `scene` is a dashed dim ghost on the LEFT and `final` a
     dashed dim ghost on the RIGHT.
-25. (bloom) Click the `scene` ghost: the scope returns to the root and `scene` is
+25. Click the `scene` ghost: the scope returns to the root and `scene` is
     selected.
-26. (bloom) The root tab is labelled with the document's own name.
-27. (bloom) From the bloom tab's node menu, `Leave group` on all four members: the tab
+26. The root tab is labelled with the document's own name.
+27. From the bloom tab's node menu, `Leave group` on all four members: the tab
     closes itself and the root shows four plain nodes.
-28. (bloom) Group three of them again, then delete the member the box's picture comes
+28. Group three of them again, then delete the member the box's picture comes
     from: the box keeps exactly one output port, drawn hollow, and its picture changes to
     another member rather than going blank. (mutations case 2 -- the one case the review
     called a rule break.)
-29. (bloom) Put a group label on a pass that reads nothing and is read by nothing: the
+29. Put a group label on a pass that reads nothing and is read by nothing: the
     badge counts it, no port appears for it, and the group tab shows it as a lone node.
     (mutations case 4.)
 30. Group a single pass: the box draws, it has that pass's own ports, and its tab holds
@@ -517,7 +517,7 @@ a throttled document does not re-plan and the cycle cue would lag.
 43. `git diff projects/dev` after 42: one `graph.json`, every entry carrying a position.
 44. Drag from `paint`'s output dot onto `composite`'s `u_cascade` port: the wire moves and
     `composite`'s picture changes.
-45. (bloom) Drag from a downstream pass's output onto an upstream pass's port so the drop
+45. Drag from a downstream pass's output onto an upstream pass's port so the drop
     would close a loop: a notification carries the planner's cycle message.
 46. After 45: `git diff projects/dev` is empty -- the refusal wrote nothing.
 47. Press `cascade`'s `u_df` port and release on empty canvas: the port goes hollow with a
@@ -536,12 +536,12 @@ a throttled document does not re-plan and the cycle cue would lag.
     group cannot share a name", and nothing is written.
 55. From the gear, rename a pass to an existing group's name: refused with the same
     message, and the pass's file is not renamed on disk.
-56. (bloom) Rename a pass so the name rule closes a loop -- with `fx_bright` reading
+56. Rename a pass so the name rule closes a loop -- with `fx_bright` reading
     `u_bright2` by the name rule, rename `blur` to `bright2`: refused with the planner's
     cycle message, and `ls projects/dev/documents/<id>/passes/` still shows `blur`.
-57. (bloom) In the bloom tab, drag a member's output onto a GHOST's port: the write lands
+57. In the bloom tab, drag a member's output onto a GHOST's port: the write lands
     on a pass the tab does not contain. Confirm this reads as intended. (mutations 14.)
-58. (bloom) Rename a pass that a member reads BY THE NAME RULE: the edge disappears and
+58. Rename a pass that a member reads BY THE NAME RULE: the edge disappears and
     the box gains an input port, with no other change. (mutations 8.)
 59. Escape while the scope is a group tab: nothing happens (out of scope by design); the
     root tab is the way up.
@@ -568,8 +568,7 @@ gesture routed through one App verb so its refusal is testable headlessly (`drop
 triage S15 (the dialog's flatten line) restored; the prose-budget line made true
 (`menu_item_simple` enters the gate, the toggle's labels are listed unmeasurable); the test
 list rewritten with a falsifier per invariant; the smoke stretch specified; the manual list
-rewritten so each item fails for one reason, with the bloom preamble (the fixture is not a
-shipped example) and the twelve cases the brainstorm reviews implied. The D11 stale-mark
+rewritten so each item fails for one reason, with a preamble on the document the group items need and the twelve cases the brainstorm reviews implied. The D11 stale-mark
 sentence was corrected by the implementer: `preview_cell`'s docstring names a corner tick its
 code never draws. Rejected: nothing. False trails both reviewers recorded stand.
 

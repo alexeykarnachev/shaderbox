@@ -34,8 +34,8 @@ a wave becomes its own feature. The ledger and the spec stub are in place; nothi
 the draw list, with a box per group at the root and a tab per group, positions written only by
 a placement, every gesture through an App verb whose refusal is tested headless.
 
-**Awaiting his eyes** (no WM here): the spec's manual list over both waves, with the bloom
-fixture copied into a project document for the (bloom) items. Still unseen from before: 091's
+**Awaiting his eyes** (no WM here): the spec's manual list over both waves, on documents of
+his own making (the items about a box need a group). Still unseen from before: 091's
 outline and label, the import dialog, Radiance Cascades imported into a document painting its
 own `paint`, the group row in the gear; 090's `Auto | Fixed` control.
 
