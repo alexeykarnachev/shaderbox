@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>092 graph view · sketches</title>
+<style>
+  :root {
+    --bg0h:#1d2021; --bg0:#282828; --bg0s:#32302f; --bg1:#3c3836; --bg2:#504945; --bg3:#665c54; --bg4:#7c6f64;
+    --gray:#928374; --fg4:#a89984; --fg3:#bdae93; --fg2:#d5c4a1; --fg1:#ebdbb2; --fg0:#fbf1c7;
+    --red:#fb4934; --green:#b8bb26; --yellow:#fabd2f; --blue:#83a598; --purple:#d3869b; --aqua:#8ec07c; --orange:#fe8019;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg0); color:var(--fg1); font:14px/1.45 "Anonymous Pro","JetBrains Mono","DejaVu Sans Mono",monospace; padding:24px 32px 80px; }
+  h1 { font-size:20px; margin:0 0 4px; color:var(--fg0); font-weight:normal; }
+  h2 { font-size:16px; margin:48px 0 8px; color:var(--yellow); font-weight:normal; border-bottom:1px solid var(--bg2); padding-bottom:4px; }
+  h3 { font-size:14px; margin:28px 0 8px; color:var(--fg2); font-weight:normal; }
+  p, li { color:var(--fg3); max-width:100ch; }
+  .note { color:var(--fg4); font-size:13px; }
+  code { background:var(--bg1); padding:0 4px; border-radius:3px; color:var(--fg2); }
+  .verdict { display:inline-block; font-size:12px; padding:1px 8px; border-radius:8px; background:var(--bg2); color:var(--fg3); margin-left:8px; vertical-align:middle; }
+  .panel { background:var(--bg0h); border:1px solid var(--bg2); border-radius:6px; padding:12px; margin:8px 0 16px; overflow:auto; resize:horizontal; min-width:420px; max-width:100%; position:relative; }
+  .caption { font-size:12px; color:var(--fg4); margin-bottom:6px; display:flex; gap:12px; align-items:center; }
+  .caption .chip { font-size:12px; background:var(--bg3); color:var(--fg3); padding:0 8px; border-radius:8px; line-height:18px; }
+  .caption .chip.on { background:var(--yellow); color:var(--bg0h); }
+  .readout { margin-left:auto; font-size:11px; color:var(--fg4); }
+  .ctl { display:flex; gap:18px; align-items:center; margin:6px 0 12px; color:var(--fg4); font-size:12px; flex-wrap:wrap; }
+  .ctl label { display:flex; gap:6px; align-items:center; }
+  input[type=range] { width:260px; }
+  svg text { font-family:inherit; }
+  svg { display:block; }
+  /* fake pictures, same as the 091 mock */
+  .thumb { width:100%; height:100%; border-radius:2px; background:#000; }
+  .t-scene { background:radial-gradient(circle at 30% 40%, #f7d774 0 6px, #e66 7px 9px, #000 10px), radial-gradient(circle at 70% 60%, #6cf 0 5px, #000 6px); background-blend-mode:screen; }
+  .t-bright { background:radial-gradient(circle at 30% 40%, #fff 0 4px, #000 5px), radial-gradient(circle at 70% 60%, #cff 0 3px, #000 4px); background-blend-mode:screen; }
+  .t-blur { background:radial-gradient(circle at 30% 40%, rgba(255,240,180,.9) 0, rgba(255,240,180,0) 40%), radial-gradient(circle at 70% 60%, rgba(160,230,255,.9) 0, rgba(160,230,255,0) 35%), #000; }
+  .t-trail { background:linear-gradient(120deg, rgba(247,215,116,.5), transparent 40%), radial-gradient(circle at 34% 44%, #f7d774 0 6px, transparent 7px), radial-gradient(circle at 60% 55%, rgba(247,215,116,.35) 0 8px, transparent 9px), #050505; }
+  .t-comp { background:radial-gradient(circle at 30% 40%, #fff3c4 0 6px, rgba(255,230,150,.6) 12px, transparent 40%), radial-gradient(circle at 70% 60%, #cff 0 5px, rgba(120,220,255,.6) 10px, transparent 35%), #0b0b10; }
+  .t-final { background:radial-gradient(circle at 30% 40%, #fff3c4 0 6px, rgba(255,230,150,.6) 12px, transparent 40%), radial-gradient(circle at 70% 60%, #cff 0 5px, rgba(120,220,255,.6) 10px, transparent 35%), linear-gradient(#20242c, #0b0b10); }
+  .t-paint { background:radial-gradient(circle at 25% 30%, #fff 0 4px, transparent 5px), radial-gradient(circle at 78% 28%, #6cf 0 4px, transparent 5px), radial-gradient(circle at 22% 78%, #000 0 6px, #111 7px), linear-gradient(90deg, transparent 47%, #000 47% 53%, transparent 53%), #0a0a0a; }
+  .t-seed { background:radial-gradient(circle at 25% 30%, #f00 0 4px, transparent 5px), radial-gradient(circle at 78% 28%, #0f0 0 4px, transparent 5px), linear-gradient(90deg, transparent 47%, #00f 47% 53%, transparent 53%), #000; }
+  .t-jfa { background:conic-gradient(from 20deg at 45% 55%, #7a2 0 120deg, #cc3 120deg 240deg, #4a4 240deg); }
+  .t-df { background:radial-gradient(circle at 30% 35%, #000 0 12px, #bbb 45px, #333 60px), #777; }
+  .t-casc { background:radial-gradient(circle at 25% 30%, #f7d774 0 8px, rgba(247,215,116,.35) 25px, transparent 45px), radial-gradient(circle at 78% 28%, #6cf 0 6px, rgba(100,200,255,.35) 22px, transparent 40px), #0e1016; }
+  .t-vig { background:radial-gradient(circle at 50% 50%, transparent 0 40%, #000 80%), radial-gradient(circle at 30% 40%, #f7d774 0 6px, #e66 7px 9px, #000 10px); }
+  /* node states */
+  .node { cursor:pointer; }
+  .node .frame { fill:var(--bg0); stroke:var(--bg2); }
+  .node.output .frame { stroke:var(--yellow); }
+  .node.error .frame { stroke:var(--red); }
+  .node.stale { opacity:.45; }
+  .node:hover .frame { stroke:var(--fg3); }
+  .edge { fill:none; stroke:var(--gray); stroke-width:1.5; }
+  .edge.stale { opacity:.35; }
+  .edge.lit { stroke:var(--fg1); stroke-width:2; }
+  .edge.dim { opacity:.18; }
+  .head { fill:var(--gray); }
+  .head.lit { fill:var(--fg1); }
+  .head.dim { opacity:.18; }
+  .head.stale { opacity:.35; }
+  .elabel { font-size:11px; fill:var(--fg4); }
+  .elabel.lit { fill:var(--fg1); }
+  .elabel.dim { opacity:.18; }
+  .elabelbg { fill:var(--bg0h); }
+  .name { font-size:13px; fill:var(--fg2); }
+  .node.output .name { fill:var(--fg0); }
+  .port { fill:var(--bg0h); stroke:var(--fg4); stroke-width:1.2; }
+  .portlbl { font-size:11px; fill:var(--fg4); }
+  .badge { font-size:10px; fill:var(--fg4); }
+  .badgebg { fill:var(--bg1); }
+  .region { fill:rgba(142,192,124,.08); stroke:rgba(142,192,124,.55); }
+  .regionlbl { font-size:11px; fill:var(--aqua); }
+  .regionlblbg { fill:var(--bg0h); }
+  .lane { fill:none; stroke:var(--gray); stroke-width:1.5; }
+  table.cmp { border-collapse:collapse; font-size:13px; margin-top:8px; }
+  table.cmp th, table.cmp td { text-align:left; padding:3px 14px 3px 0; vertical-align:top; color:var(--fg3); }
+  table.cmp th { color:var(--fg4); font-weight:normal; font-size:12px; }
+  table.cmp td:first-child { color:var(--fg2); }
+</style>
+</head>
+<body>
+
+<h1>092 · graph view — sketches</h1>
+<p class="note">Local mock, nothing here is wired. One layout engine (rank = longest path from a root, group members adjacent inside a rank, ports fanned per sampler) renders every variant, so what differs between panels is only the drawing. Two real documents: the six-pass <b>Radiance Cascades</b> example (a chain six ranks deep, two long edges from <code>paint</code>, two feedback passes, run counts 12 and 6) and the <b>Bloom Chain</b> fixture imported as group <span style="color:var(--aqua)">bloom</span> into a host with <code>scene</code>, a stale <code>vignette</code>, and <code>final</code>. Hover a node to light its edges. Panels resize from the bottom-right corner; the slider sets them all.</p>
+
+<div class="ctl">
+  panel width <input type="range" id="w" min="420" max="1400" value="700"> <span id="wv">700</span>px
+  <label><input type="checkbox" id="fit" checked> fit to width (zoom out, never in)</label>
+  <label><input type="checkbox" id="runs" checked> run-count badge</label>
+  <label><input type="checkbox" id="doc2" checked> show the bloom host too</label>
+</div>
+
+<h2>1 · Ranks left to right, the strip's own tile <span class="verdict">the 091 teaser, honest about width</span></h2>
+<p>Node = the strip tile at 168 (thumb 112, name under it). Edges leave the source's right edge and enter the consumer's left edge at one port per sampler, the sampler's name at the head. An edge spanning more than one rank bows under the row so it does not cross the nodes between. Feedback is the loop on the top-right corner. Without fit this is the natural size; with fit the whole picture scales into the panel and the names shrink with it.</p>
+<div class="panel w" data-v="lr" data-size="full"></div>
+
+<h2>2 · Same, compact node <span class="verdict">108 wide, 80 thumb</span></h2>
+<p>The same layout with a node that is a picture and a name and nothing else. The question is whether the picture still reads at 80 and at 80 times the fit zoom.</p>
+<div class="panel w" data-v="lr" data-size="compact"></div>
+
+<h2>3 · Ranks top to bottom <span class="verdict">depth becomes height, which the panel has</span></h2>
+<p>The chain runs down instead of across. The Document tab is narrower than it is tall and it scrolls, so a deep chain costs scrolling rather than zoom. Long edges bow to the right.</p>
+<div class="panel w" data-v="tb" data-size="compact"></div>
+
+<h2>4 · Lanes <span class="verdict">the git-log shape 070 liked, with the tiles</span></h2>
+<p>One column of nodes in strip order, every edge a lane on the left: it leaves the source's left edge, drops down its lane, and turns into the consumer's port with the sampler's name on the turn. Nothing crosses a node, nothing bows, the width is the tile plus the lane gutter, so it fits at 420 without zoom. Feedback stays a corner loop.</p>
+<div class="panel w" data-v="lanes" data-size="compact"></div>
+
+<h2>5 · Port-list nodes <span class="verdict">the sampler names live on the node, edges end at a dot</span></h2>
+<p>A node lists its samplers as input ports under the picture; the edge ends at the port's dot and carries no label of its own. Longer nodes, but every name has a fixed home and two edges into one node cannot collide. Left to right, compact.</p>
+<div class="panel w" data-v="ports" data-size="compact"></div>
+
+<h2>6 · Orthogonal edges <span class="verdict">variant 2 with elbows instead of beziers</span></h2>
+<p>Same as 2, edges as rounded elbows routed through the gap between ranks. Reads more like a circuit, less like a drawing; the long edges take the gutter under the row.</p>
+<div class="panel w" data-v="lr" data-size="compact" data-edges="ortho"></div>
+
+<h2>What the two documents say about the layout</h2>
+<table class="cmp">
+  <tr><th>document</th><th>ranks</th><th>widest rank</th><th>long edges (span &gt; 1)</th><th>feedback</th><th>natural width LR full / compact</th><th>natural height TB compact</th></tr>
+  <tbody id="stats"></tbody>
+</table>
+<p class="note" style="margin-top:12px">The sixes are the same number by coincidence: cascades is six passes in six ranks (one per rank), bloom is seven passes in five ranks (three in the widest). A left-to-right picture is sized by ranks, a top-to-bottom one by the same number turned on its side, lanes by the pass count alone.</p>
+
+<script>
+// ---------------- data: the two real documents ----------------
+const RC = {
+  name: 'Radiance Cascades', output: 'composite',
+  passes: [
+    { n:'paint',     t:'t-paint', reads:{} },
+    { n:'seed',      t:'t-seed',  reads:{u_paint:'paint'} },
+    { n:'jfa',       t:'t-jfa',   reads:{u_seed:'seed', u_prev:'jfa'}, runs:12 },
+    { n:'df',        t:'t-df',    reads:{u_jfa:'jfa'} },
+    { n:'cascade',   t:'t-casc',  reads:{u_paint:'paint', u_df:'df', u_prev:'cascade'}, runs:6 },
+    { n:'composite', t:'t-comp',  reads:{u_cascade:'cascade', u_paint:'paint'} },
+  ],
+};
+const BLOOM = {
+  name: 'bloom host', output: 'final',
+  passes: [
+    { n:'scene',        t:'t-scene',  reads:{} },
+    { n:'fx_bright',    t:'t-bright', reads:{u_scene:'scene'}, g:'bloom' },
+    { n:'fx_trail',     t:'t-trail',  reads:{u_scene:'scene', u_prev:'fx_trail'}, g:'bloom' },
+    { n:'fx_blur',      t:'t-blur',   reads:{u_bright:'fx_bright'}, g:'bloom' },
+    { n:'fx_composite', t:'t-comp',   reads:{u_scene:'scene', u_blur:'fx_blur', u_trail:'fx_trail'}, g:'bloom' },
+    { n:'vignette',     t:'t-vig',    reads:{u_scene:'scene'}, stale:true },
+    { n:'final',        t:'t-final',  reads:{u_fx_composite:'fx_composite'} },
+  ],
+};
+
+// ---------------- layout engine (what would port to pass_graph / a leaf module) ----------------
+const SIZES = {
+  full:    { w:168, thumb:112, pad:8,  nameH:22, gapX:72, gapY:24, font:13 },
+  compact: { w:108, thumb:80,  pad:6,  nameH:18, gapX:64, gapY:20, font:12 },
+};
+function edgesOf(doc) {
+  const out = [];
+  for (const p of doc.passes) for (const [u, src] of Object.entries(p.reads)) out.push({ src, dst:p.n, u, self: src === p.n });
+  return out;
+}
+function ranks(doc) {
+  const byName = Object.fromEntries(doc.passes.map(p => [p.n, p]));
+  const memo = {};
+  const rank = n => {
+    if (n in memo) return memo[n];
+    const preds = Object.values(byName[n].reads).filter(s => s !== n);
+    memo[n] = preds.length ? 1 + Math.max(...preds.map(rank)) : 0;
+    return memo[n];
+  };
+  doc.passes.forEach(p => rank(p.n));
+  return memo;
+}
+// columns: rank -> ordered names. Group members adjacent, then by barycenter of predecessors, then strip order.
+function columns(doc) {
+  const r = ranks(doc);
+  const cols = [];
+  doc.passes.forEach(p => { (cols[r[p.n]] ||= []).push(p.n); });
+  const pos = {};
+  cols.forEach((col, i) => {
+    if (i > 0) {
+      const bary = n => {
+        const preds = Object.values(doc.passes.find(p => p.n === n).reads).filter(s => s !== n && s in pos);
+        return preds.length ? preds.reduce((a, s) => a + pos[s], 0) / preds.length : 1e9;
+      };
+      const g = n => doc.passes.find(p => p.n === n).g || '~';
+      col.sort((a, b) => (g(a) < g(b) ? -1 : g(a) > g(b) ? 1 : bary(a) - bary(b)));
+    }
+    col.forEach((n, j) => pos[n] = j);
+  });
+  return cols;
+}
+// inputs of a node in a stable order: by the source's strip position, then sampler name; prev last
+function inputs(doc, name) {
+  const order = doc.passes.map(p => p.n);
+  const p = doc.passes.find(q => q.n === name);
+  return Object.entries(p.reads).map(([u, src]) => ({ u, src, self: src === name }))
+    .sort((a, b) => (a.self - b.self) || (order.indexOf(a.src) - order.indexOf(b.src)) || a.u.localeCompare(b.u));
+}
+function nodeHeight(S, doc, name, v) {
+  const nIn = v === 'ports' ? inputs(doc, name).length : 0;
+  return S.pad + S.thumb + S.nameH + S.pad + (nIn ? 4 + nIn * 16 : 0);
+}
+function layoutRanked(doc, S, v, dir) {
+  const cols = columns(doc);
+  const nodes = {};
+  // primary axis = rank, secondary = position inside the rank
+  const colExtent = cols.map(col => col.reduce((a, n) => a + nodeHeight(S, doc, n, v), 0) + (col.length - 1) * S.gapY);
+  const maxExtent = Math.max(...colExtent);
+  let along = 0;
+  cols.forEach((col, i) => {
+    let across = (maxExtent - colExtent[i]) / 2;
+    col.forEach(n => {
+      const h = nodeHeight(S, doc, n, v);
+      nodes[n] = dir === 'lr' ? { x: along, y: across, w: S.w, h } : { x: across, y: along, w: S.w, h };
+      across += h + S.gapY;
+    });
+    along += (dir === 'lr' ? S.w : Math.max(...col.map(n => nodeHeight(S, doc, n, v)))) + S.gapX;
+  });
+  const W = dir === 'lr' ? along - S.gapX : maxExtent;
+  const H = dir === 'lr' ? maxExtent : along - S.gapX;
+  return { nodes, W, H, cols };
+}
+function layoutLanes(doc, S) {
+  // one column in strip order; each non-self edge takes the lowest lane free over [src,dst]
+  const order = doc.passes.map(p => p.n);
+  const es = edgesOf(doc).filter(e => !e.self).map(e => ({ ...e, a: order.indexOf(e.src), b: order.indexOf(e.dst) }));
+  es.sort((p, q) => (q.b - q.a) - (p.b - p.a) || p.a - q.a);   // longest first, so short edges hug the nodes
+  const lanes = [];
+  for (const e of es) {
+    let l = 0;
+    while (lanes[l] && lanes[l].some(o => !(e.b <= o.a || e.a >= o.b))) l++;
+    (lanes[l] ||= []).push(e); e.lane = l;
+  }
+  const laneW = 26, gutter = 14 + lanes.length * laneW;
+  const nodes = {}; let y = 0;
+  order.forEach(n => { const h = nodeHeight(S, doc, n, 'lanes'); nodes[n] = { x: gutter, y, w: S.w, h }; y += h + S.gapY; });
+  return { nodes, W: gutter + S.w, H: y - S.gapY, edges: es, laneW, nLanes: lanes.length };
+}
+
+// ---------------- drawing ----------------
+const NS = 'http://www.w3.org/2000/svg';
+function el(tag, attrs, parent) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
+function tangentHead(x, y, dx, dy, cls) {
+  const L = Math.hypot(dx, dy) || 1; dx /= L; dy /= L;
+  const s = 7, px = -dy, py = dx;
+  return el('polygon', { points: `${x},${y} ${x - s * dx + px * s * .5},${y - s * dy + py * s * .5} ${x - s * dx - px * s * .5},${y - s * dy - py * s * .5}`, class: 'head ' + cls });
+}
+function labelAt(svg, x, y, text, anchor, cls) {
+  const g = el('g', { class: 'elabelg' }, svg);
+  const w = text.length * 6.6 + 6;
+  const x0 = anchor === 'end' ? x - w : anchor === 'middle' ? x - w / 2 : x;
+  el('rect', { x: x0, y: y - 7, width: w, height: 14, rx: 2, class: 'elabelbg' }, g);
+  const t = el('text', { x: anchor === 'end' ? x - 3 : anchor === 'middle' ? x : x + 3, y: y + 4, 'text-anchor': anchor, class: 'elabel ' + cls }, g);
+  t.textContent = text;
+  return g;
+}
+function portY(node, doc, name, v, S, i, k) {
+  if (v === 'ports') return node.y + S.pad + S.thumb + S.nameH + S.pad + 4 + i * 16 + 8;
+  return node.y + node.h * (i + 1) / (k + 1);
+}
+function portX(node, doc, name, v, S, i, k) { return node.x + node.w * (i + 1) / (k + 1); }
+
+function drawNode(svg, doc, p, node, S, v, opts) {
+  const g = el('g', { class: 'node' + (p.n === doc.output ? ' output' : '') + (p.stale ? ' stale' : ''), 'data-n': p.n }, svg);
+  el('rect', { x: node.x, y: node.y, width: node.w, height: node.h, rx: 6, class: 'frame' }, g);
+  const fo = el('foreignObject', { x: node.x + (node.w - S.thumb) / 2, y: node.y + S.pad, width: S.thumb, height: S.thumb }, g);
+  const d = document.createElement('div'); d.className = 'thumb ' + p.t; fo.appendChild(d);
+  const t = el('text', { x: node.x + node.w / 2, y: node.y + S.pad + S.thumb + S.nameH - 5, 'text-anchor': 'middle', class: 'name', 'font-size': S.font }, g);
+  t.textContent = p.n;
+  if (opts.runs && p.runs) {
+    const bx = node.x + node.w - 30, by = node.y + 4;
+    el('rect', { x: bx, y: by, width: 26, height: 13, rx: 3, class: 'badgebg' }, g);
+    const b = el('text', { x: bx + 13, y: by + 10, 'text-anchor': 'middle', class: 'badge' }, g); b.textContent = '×' + p.runs;
+  }
+  if (v === 'ports') {
+    inputs(doc, p.n).forEach((inp, i) => {
+      const y = node.y + S.pad + S.thumb + S.nameH + S.pad + 4 + i * 16 + 8;
+      el('circle', { cx: node.x, cy: y, r: 3.5, class: 'port' }, g);
+      const l = el('text', { x: node.x + 8, y: y + 4, class: 'portlbl' }, g); const full = inp.self ? 'prev' : inp.u; const maxc = Math.floor((node.w - 12) / 6.6); l.textContent = full.length > maxc ? full.slice(0, maxc - 1) + '…' : full;
+    });
+    el('circle', { cx: node.x + node.w, cy: node.y + S.pad + S.thumb / 2, r: 3.5, class: 'port' }, g);
+  }
+}
+function drawSelfLoop(svg, node, cls, label) {
+  const x = node.x + node.w - 10, y = node.y;
+  const p = el('path', { d: `M${x - 6},${y} C${x - 6},${y - 22} ${x + 22},${y - 22} ${x + 22},${y + 6}`, class: 'edge ' + cls, 'data-e': label }, svg);
+  const h = tangentHead(x + 22, y + 6, 0, 1, cls); h.setAttribute('data-e', label); svg.appendChild(h);
+  labelAt(svg, x + 8, y - 22, 'prev', 'middle', cls).setAttribute('data-e', label);
+}
+function drawGroups(svg, doc, L, S) {
+  const groups = {};
+  doc.passes.forEach(p => { if (p.g) (groups[p.g] ||= []).push(L.nodes[p.n]); });
+  for (const [g, ns] of Object.entries(groups)) {
+    const x0 = Math.min(...ns.map(n => n.x)) - 10, y0 = Math.min(...ns.map(n => n.y)) - 14;
+    const x1 = Math.max(...ns.map(n => n.x + n.w)) + 10, y1 = Math.max(...ns.map(n => n.y + n.h)) + 10;
+    el('rect', { x: x0, y: y0, width: x1 - x0, height: y1 - y0, rx: 10, class: 'region' }, svg);
+    el('rect', { x: x0 + 12, y: y0 - 7, width: g.length * 6.6 + 8, height: 14, class: 'regionlblbg' }, svg);
+    const t = el('text', { x: x0 + 16, y: y0 + 4, class: 'regionlbl' }, svg); t.textContent = g;
+  }
+}
+function render(panel, doc, opts) {
+  const v = panel.dataset.v, S = SIZES[panel.dataset.size], ortho = panel.dataset.edges === 'ortho';
+  const L = v === 'lanes' ? layoutLanes(doc, S) : layoutRanked(doc, S, v, v === 'tb' ? 'tb' : 'lr');
+  const M = 44;
+  const svg = el('svg', { viewBox: `${-M} ${-M} ${L.W + 2 * M} ${L.H + 2 * M}` });
+  const natural = L.W + 2 * M;
+  const avail = panel.clientWidth - 26;
+  const zoom = opts.fit ? Math.min(1, avail / natural) : 1;
+  svg.setAttribute('width', natural * zoom); svg.setAttribute('height', (L.H + 2 * M) * zoom);
+  const stale = n => doc.passes.find(p => p.n === n).stale;
+  drawGroups(svg, doc, L, S);
+  // edges first, nodes over them (channel 1 under channel 2)
+  if (v === 'lanes') {
+    for (const e of L.edges) {
+      const a = L.nodes[e.src], b = L.nodes[e.dst];
+      const ins = inputs(doc, e.dst); const i = ins.findIndex(q => q.u === e.u);
+      const py = portY(b, doc, e.dst, v, S, i, ins.length);
+      const lx = 14 + e.lane * L.laneW + L.laneW / 2 - L.laneW * L.nLanes / 2 + (L.nLanes - 1) * L.laneW / 2;
+      const ax = a.x, ay = a.y + a.h / 2 + 4 * (e.lane % 3 - 1);
+      const cls = (stale(e.src) || stale(e.dst)) ? 'stale' : '';
+      const id = e.src + '>' + e.dst;
+      const r = 8;
+      const d = `M${ax},${ay} H${lx + r} Q${lx},${ay} ${lx},${ay + r} V${py - r} Q${lx},${py} ${lx + r},${py} H${b.x - 4}`;
+      el('path', { d, class: 'edge ' + cls, 'data-e': id, 'data-a': e.src, 'data-b': e.dst }, svg);
+      const h = tangentHead(b.x - 1, py, 1, 0, cls); h.setAttribute('data-e', id); svg.appendChild(h);
+      labelAt(svg, b.x - 8, py - 9, e.u, 'end', cls).setAttribute('data-e', id);
+    }
+    for (const e of edgesOf(doc).filter(e => e.self)) drawSelfLoop(svg, L.nodes[e.dst], stale(e.dst) ? 'stale' : '', e.dst + '>' + e.dst);
+  } else {
+    const r = ranks(doc);
+    for (const e of edgesOf(doc)) {
+      const id = e.src + '>' + e.dst;
+      const cls = (stale(e.src) || stale(e.dst)) ? 'stale' : '';
+      if (e.self) { drawSelfLoop(svg, L.nodes[e.dst], cls, id); continue; }
+      const a = L.nodes[e.src], b = L.nodes[e.dst];
+      const ins = inputs(doc, e.dst); const i = ins.findIndex(q => q.u === e.u);
+      const span = r[e.dst] - r[e.src];
+      let d, hx, hy, hdx, hdy, lx, ly, anchor;
+      if (v === 'tb') {
+        const x0 = a.x + a.w / 2, y0 = a.y + a.h, x1 = portX(b, doc, e.dst, v, S, i, ins.length), y1 = b.y;
+        const busX = span > 1 ? L.W + 16 + 12 * (span - 2) : 0;
+        const gy = S.gapX / 2;
+        if (ortho) {
+          d = busX
+            ? `M${x0},${y0} V${y0 + gy} H${busX} V${y1 - gy} H${x1} V${y1 - 4}`
+            : `M${x0},${y0} V${(y0 + y1) / 2} H${x1} V${y1 - 4}`;
+        } else if (busX) {
+          d = `M${x0},${y0} C${x0},${y0 + gy} ${busX},${y0 + gy} ${busX},${y0 + gy + 24} V${y1 - gy - 24} C${busX},${y1 - gy} ${x1},${y1 - gy} ${x1},${y1 - 2}`;
+        } else {
+          const c = Math.max(24, (y1 - y0) * .45);
+          d = `M${x0},${y0} C${x0},${y0 + c} ${x1},${y1 - c} ${x1},${y1 - 2}`;
+        }
+        // labels stagger by port so neighbours never overlap
+        hx = x1; hy = y1 - 1; hdx = 0; hdy = 1; lx = x1 + 5; ly = y1 - 12 - (i % 2) * 13; anchor = 'start';
+      } else {
+        const x0 = a.x + a.w, y0 = a.y + a.h / 2, x1 = b.x, y1 = v === 'ports' ? portY(b, doc, e.dst, v, S, i, ins.length) : portY(b, doc, e.dst, v, S, i, ins.length);
+        const busY = span > 1 ? L.H + 16 + 12 * (span - 2) : 0;
+        const gx = S.gapX / 2;
+        if (ortho) {
+          d = busY
+            ? `M${x0},${y0} H${x0 + gx} V${busY} H${x1 - gx} V${y1} H${x1 - 4}`
+            : `M${x0},${y0} H${(x0 + x1) / 2} V${y1} H${x1 - 4}`;
+        } else if (busY) {
+          d = `M${x0},${y0} C${x0 + gx},${y0} ${x0 + gx},${busY} ${x0 + gx + 24},${busY} H${x1 - gx - 24} C${x1 - gx},${busY} ${x1 - gx},${y1} ${x1 - 2},${y1}`;
+        } else {
+          const c = Math.max(30, (x1 - x0) * .45);
+          d = `M${x0},${y0} C${x0 + c},${y0} ${x1 - c},${y1} ${x1 - 2},${y1}`;
+        }
+        hx = x1 - 1; hy = y1; hdx = 1; hdy = 0; lx = x1 - 8; ly = y1 - 9; anchor = 'end';
+      }
+      el('path', { d, class: 'edge ' + cls, 'data-e': id, 'data-a': e.src, 'data-b': e.dst }, svg);
+      const h = tangentHead(hx, hy, hdx, hdy, cls); h.setAttribute('data-e', id); svg.appendChild(h);
+      if (v !== 'ports') labelAt(svg, lx, ly, e.u, anchor, cls).setAttribute('data-e', id);
+    }
+  }
+  doc.passes.forEach(p => drawNode(svg, doc, p, L.nodes[p.n], S, v, opts));
+  // hover: light a node's edges, dim the rest
+  svg.querySelectorAll('.node').forEach(n => {
+    n.addEventListener('mouseenter', () => {
+      const name = n.dataset.n;
+      svg.querySelectorAll('[data-e]').forEach(x => {
+        const [a, b] = x.dataset.e.split('>');
+        x.classList.add(a === name || b === name ? 'lit' : 'dim');
+      });
+    });
+    n.addEventListener('mouseleave', () => svg.querySelectorAll('[data-e]').forEach(x => x.classList.remove('lit', 'dim')));
+  });
+  return { svg, natural, zoom };
+}
+function renderAll() {
+  const opts = { fit: document.getElementById('fit').checked, runs: document.getElementById('runs').checked };
+  const two = document.getElementById('doc2').checked;
+  document.querySelectorAll('.panel').forEach(panel => {
+    panel.innerHTML = '';
+    const cap = document.createElement('div'); cap.className = 'caption';
+    cap.innerHTML = `Passes <span class="chip">strip</span><span class="chip on">graph</span>`;
+    panel.appendChild(cap);
+    const docs = two ? [RC, BLOOM] : [RC];
+    const outs = docs.map(doc => { const o = render(panel, doc, opts); panel.appendChild(o.svg); return o; });
+    const ro = document.createElement('span'); ro.className = 'readout';
+    ro.textContent = outs.map((o, i) => `${docs[i].name}: natural ${Math.round(o.natural)}px · zoom ${o.zoom.toFixed(2)}`).join('   ·   ');
+    cap.appendChild(ro);
+  });
+}
+function stats() {
+  const tb = document.getElementById('stats');
+  for (const doc of [RC, BLOOM]) {
+    const r = ranks(doc), cols = columns(doc), es = edgesOf(doc);
+    const long = es.filter(e => !e.self && r[e.dst] - r[e.src] > 1).map(e => `${e.src}→${e.dst} (${r[e.dst] - r[e.src]})`);
+    const fb = es.filter(e => e.self).map(e => e.dst);
+    const lrF = layoutRanked(doc, SIZES.full, 'lr', 'lr').W, lrC = layoutRanked(doc, SIZES.compact, 'lr', 'lr').W, tbC = layoutRanked(doc, SIZES.compact, 'tb', 'tb').H;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${doc.name}</td><td>${cols.length}</td><td>${Math.max(...cols.map(c => c.length))}</td><td>${long.join(', ') || '—'}</td><td>${fb.join(', ')}</td><td>${lrF} / ${lrC}</td><td>${tbC}</td>`;
+    tb.appendChild(tr);
+  }
+}
+const slider = document.getElementById('w');
+function setWidth() { document.querySelectorAll('.panel.w').forEach(p => p.style.width = slider.value + 'px'); document.getElementById('wv').textContent = slider.value; renderAll(); }
+slider.addEventListener('input', setWidth);
+['fit', 'runs', 'doc2'].forEach(id => document.getElementById(id).addEventListener('change', renderAll));
+const seen = new WeakMap();
+const ro = new ResizeObserver(entries => {
+  let changed = false;
+  for (const e of entries) { const w = e.contentRect.width; if (seen.get(e.target) !== w) { seen.set(e.target, w); changed = true; } }
+  if (changed) renderAll();
+});
+document.querySelectorAll('.panel').forEach(p => ro.observe(p));
+stats(); setWidth();
+</script>
+</body>
+</html>
