@@ -45,7 +45,6 @@ from shaderbox.pass_graph import (
     PassSource,
     SamplerSource,
     TargetConfig,
-    entry_points,
 )
 from shaderbox.pass_import import plan_import
 from shaderbox.paths import (
@@ -162,20 +161,6 @@ def compile_pending_passes(document: Document) -> list[str]:
         for name, render_pass in document.passes.items()
         if render_pass.program is None
     )
-
-
-def offered_entry_points(document: Document) -> list[str]:
-    """The entry points the import dialog offers for `document` (091 D3): the roots of its
-    wiring minus every pass whose compile failed -- such a pass has an UNKNOWN wiring, not an
-    empty one, so it is copied as it is rather than offered as an input."""
-    broken = {
-        name
-        for name, render_pass in document.passes.items()
-        if render_pass.program is None
-    }
-    return [
-        name for name in entry_points(document.effective_wiring()) if name not in broken
-    ]
 
 
 def _copied_uniform_value(gl: moderngl.Context, value: Any) -> Any:
@@ -1140,31 +1125,60 @@ class ProjectSession:
         if isinstance(plan, str):
             return ImportResult(error=plan)
 
+        # Every value is copied before the first write, so a bound asset whose file is gone
+        # rejects the import with nothing on disk; the write loop unwinds its own files.
+        copies: dict[str, dict[str, Any]] = {}
+        try:
+            for source_name in plan.renames:
+                copies[source_name] = {
+                    uniform: _copied_uniform_value(host.gl, value)
+                    for uniform, value in source_document.passes[
+                        source_name
+                    ].uniform_values.items()
+                }
+        except Exception as e:
+            for values in copies.values():
+                for value in values.values():
+                    try_to_release(value)
+            return ImportResult(error=f"could not copy a bound asset: {e}")
+
         entries: dict[str, PassEntry] = {}
-        for source_name, host_name in plan.renames.items():
-            source_pass = source_document.passes[source_name]
-            path = self.paths.pass_shader_for(document_id, host_name)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(source_pass.source.text, encoding="utf-8")
-            entry = source_document.graph.passes.get(
-                source_name, PassEntry()
-            ).model_copy(update={"group": group})
-            render_pass = Pass(
-                gl=host.gl,
-                source=ShaderSource.load(path),
-                canvas_size=host.canvas_size,
-                target=entry.target,
-            )
-            render_pass.compile()
-            for uniform, value in source_pass.uniform_values.items():
-                render_pass.uniform_values[uniform] = _copied_uniform_value(
-                    host.gl, value
+        built: dict[str, Pass] = {}
+        written: list[Path] = []
+        try:
+            for source_name, host_name in plan.renames.items():
+                source_pass = source_document.passes[source_name]
+                path = self.paths.pass_shader_for(document_id, host_name)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(source_pass.source.text, encoding="utf-8")
+                written.append(path)
+                entry = source_document.graph.passes.get(
+                    source_name, PassEntry()
+                ).model_copy(update={"group": group})
+                render_pass = Pass(
+                    gl=host.gl,
+                    source=ShaderSource.load(path),
+                    canvas_size=host.canvas_size,
+                    target=entry.target,
                 )
-            for uniform, read in plan.sources.get(host_name, {}).items():
-                try_to_release(render_pass.uniform_values.get(uniform))
-                render_pass.uniform_values[uniform] = PassSource(read)
-            host.passes[host_name] = render_pass
-            entries[host_name] = entry
+                render_pass.uniform_values = copies.pop(source_name)
+                render_pass.compile()
+                # A wired sampler holds a source value, never a texture, so the overwrite
+                # frees nothing.
+                for uniform, read in plan.sources.get(host_name, {}).items():
+                    render_pass.uniform_values[uniform] = PassSource(read)
+                built[host_name] = render_pass
+                entries[host_name] = entry
+        except OSError as e:
+            for render_pass in built.values():
+                render_pass.release()
+            for values in copies.values():
+                for value in values.values():
+                    try_to_release(value)
+            for path in written:
+                path.unlink(missing_ok=True)
+            return ImportResult(error=f"could not write a pass file: {e}")
+        host.passes.update(built)
         host.graph = host.graph.with_passes(
             {**host.graph.passes, **entries},
             output=plan.output if plan.becomes_output else None,
@@ -1172,7 +1186,6 @@ class ProjectSession:
         for host_pass, rows in plan.handovers.items():
             values = host.passes[host_pass].uniform_values
             for uniform, read in rows.items():
-                try_to_release(values.get(uniform))
                 values[uniform] = PassSource(read)
         for key, row in source.ui_state.ui_uniforms.items():
             ui_document.ui_state.ui_uniforms.setdefault(key, row.model_copy())

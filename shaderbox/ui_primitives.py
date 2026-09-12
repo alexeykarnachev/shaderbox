@@ -1249,6 +1249,7 @@ def preview_cell(
 
     `bordered=False` drops the child's own border and keeps its padding: `ChildFlags_.borders`
     is what enables `WindowPadding`, so the plain flag would shift the picture by the padding.
+    An explicit `border_color` still draws its border either way.
     """
     line_h: float = imgui.get_text_line_height_with_spacing()
     footer_h: float = line_h if footer else 0.0
@@ -1270,7 +1271,7 @@ def preview_cell(
         f"##preview_cell_{id_}",
         size=imgui.ImVec2(cell_w, cell_h),
         child_flags=imgui.ChildFlags_.borders
-        if bordered
+        if bordered or border_color is not None
         else imgui.ChildFlags_.always_use_window_padding,
         window_flags=imgui.WindowFlags_.no_scrollbar
         | imgui.WindowFlags_.no_scroll_with_mouse,

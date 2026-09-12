@@ -469,6 +469,17 @@ def entry_points(wiring: Wiring) -> list[str]:
     )
 
 
+def readers_of(wiring: Wiring, fed: str) -> set[tuple[str, str]]:
+    """The `(pass, sampler)` pairs of `wiring` that read `fed`: an import's default handovers
+    (091 D6)."""
+    return {
+        (name, uniform)
+        for name, reads in wiring.items()
+        for uniform, read in reads.items()
+        if read == fed
+    }
+
+
 def group_slug(name: str) -> str:
     """A group name prefilled from a document's display name (091 D2): the first word,
     lowercased, made legal as a pass-name prefix."""

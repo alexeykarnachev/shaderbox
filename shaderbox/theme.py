@@ -238,12 +238,6 @@ assert len(set(COLOR.GROUP_TINTS)) == len(COLOR.GROUP_TINTS), (
 )
 
 
-def group_tint(name: str) -> tuple[float, float, float, float]:
-    """The hue a pass group draws in: stable across processes and documents, so a group keeps
-    its color. `zlib.crc32`, never `hash()`, which is salted per process."""
-    return COLOR.GROUP_TINTS[zlib.crc32(name.encode()) % len(COLOR.GROUP_TINTS)]
-
-
 assert COLOR.SELECT not in {
     COLOR.STATE_OK,
     COLOR.STATE_WARN,
@@ -413,6 +407,12 @@ CHEATSHEET_ALPHA: float = 0.45
 # ============================================================================
 # apply_theme
 # ============================================================================
+
+
+def group_tint(name: str) -> tuple[float, float, float, float]:
+    """The hue a pass group draws in: stable across processes and documents, so a group keeps
+    its color. `zlib.crc32`, never `hash()`, which is salted per process."""
+    return COLOR.GROUP_TINTS[zlib.crc32(name.encode()) % len(COLOR.GROUP_TINTS)]
 
 
 def apply_theme(

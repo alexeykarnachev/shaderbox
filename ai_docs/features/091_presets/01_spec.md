@@ -144,8 +144,9 @@ sampler)` pairs the dialog's checkboxes left on (D6).
 Returning `str` is the rejection (the message the dialog shows): a copied name already among
 the host's passes, a group name failing `PASS_NAME_RE`, a substitution naming a pass that is
 not an entry point or a host pass that does not exist, a handover naming a pair that does not
-read a fed pass in `host_wiring`, or a plan that copies nothing (a single-pass source whose one
-pass is substituted).
+read a fed pass in `host_wiring`, or a substitution of the source's OUTPUT pass ("is the
+output and stays"), which is what a single-pass source's one pass is; the dialog disables that
+combo, so the rejection is the verb's own guard.
 
 `sources` carries only the WIRED subset: every sampler of a copied pass that the source wiring
 filled becomes an explicit `PassSource` there — to the renamed pass, to the host pass when the
@@ -229,10 +230,13 @@ host pass whose compile fails cannot take a handover (its rows would be carried 
 disk by `UIDocument.save`'s `program is None` branch and the handover silently dropped), so a
 handover naming such a pass is rejected with a message naming it.
 
-A handover row overwrites a host sampler whose old value may be a bound `Image` / `Video` /
-`Texture`, so `import_passes` releases it first (`try_to_release`, the same call
-`set_sampler_source` makes) and writes `uniform_values` directly, saving once at the end
-rather than calling `set_sampler_source` per row, which saves per call.
+A handover row overwrites a host sampler that READS the fed pass, so its value is a source
+(`PassSource` or `AutoSource`), never a bound texture: nothing is released there, and
+`import_passes` writes `uniform_values` directly, saving once at the end rather than calling
+`set_sampler_source` per row, which saves per call. The plan also checks the wiring the import
+would leave: a handover onto a host pass that itself feeds the bundle closes a loop, and the
+plan rejects it ("a loop through '<pass>': uncheck a handover") rather than letting the
+renderer's cycle fallback draw a plausible wrong picture.
 
 **D7 — the strip draws a group as one flush outline (mock 1·C3).** In `pass_list.draw`, tiles
 keep their order (`strip_order`) and their `SPACE.MD` gap; consecutive tiles of one group on
@@ -584,6 +588,20 @@ when that feature lands rather than now. The same reviewer's suggestion to mater
 undecided sampler of a copied pass to black was declined: the name rule is what the maintainer
 authors against, and D4 now says why.
 
+**Post-implementation (2026-09-12): three reviewers, FINDINGS each, folded in.** Reports:
+`reviews/post_code_correctness.md`, `reviews/post_architecture_conventions.md`,
+`reviews/post_spec_fidelity.md`. Real: the implementation commit was not formatted (all
+three; `make check` was red at `4dc1423` while the notes claimed green); a handover onto a host
+pass that feeds the bundle closed a loop the plan never checked; a torn import left orphan
+pass files; a `# type: ignore` in a test helper; `ImportDraft.rejection` read by no production
+code; `offered_entry_points` and the readers query housed above their layer; a D4 rejection
+unreachable behind the output guard; the smoke stamp never drawing a two-tile run; `group_tint`
+splitting the SELECT assert; the protocol default; the explicit border under `bordered=False`;
+the group picker with nothing to pick. Recorded as false trails by the reviewers: the
+`##` id tail does not collapse widget ids on this build; the handover release was dead code
+(now removed); `_copied_uniform_value` is independent on every branch; the merge and the prune
+do not fight.
+
 **Round 3 (2026-09-12): correctness PASS; verification PARTIAL on one item already closed.**
 Reports: `reviews/pre_correctness_design_r3.md`, `reviews/pre_verification_blast_r3.md`. Round 2
 closed item by item by both. The one open finding was D8's `aqua_n` (an accent active) against
@@ -615,7 +633,10 @@ by a new field; the shipped examples never receive a write from D5's sequence.
 
 ## Implementation notes
 
-Landed 2026-09-12; `make gates` green (check, test, smoke), exit code read unpiped.
+Landed 2026-09-12. The implementation commit (`4dc1423`) was committed with two files the
+formatter had not yet rewritten and one unsorted import block, so `make check` was red at that
+commit while the note here claimed green; the post-implementation review caught it and the fix
+commit that follows is the one the gate is green at, exit code read unpiped.
 
 ### Deviations from the spec
 
@@ -623,7 +644,7 @@ Landed 2026-09-12; `make gates` green (check, test, smoke), exit code read unpip
   `ui_uniforms` rows (D5) live on `UIDocument.ui_state`, which a bare `Document` does not carry.
   A presets folder loads through `load_document_from_dir` and yields the same type, so the
   generalizability claim holds unchanged.
-- **The dialog's entry points come from `project_session.offered_entry_points(document)`**, the
+- **The dialog's entry points come from `document.offered_entry_points(document)`**, the
   roots minus every pass whose compile failed (D3), so verification 8 can assert the exclusion
   without driving the dialog.
 - **Verification 4 lives in `tests/test_pass_verbs.py`** through the `app` fixture rather than
@@ -635,7 +656,23 @@ Landed 2026-09-12; `make gates` green (check, test, smoke), exit code read unpip
   the source every frame (found by verification 17 and 20 going red on the first run).
 - **`SCRIPTS_DIR_NAME` was added to `paths.py`** so the dialog's "script not imported" line and
   `ProjectPaths.scripts_dir_for` spell the directory once.
-- **Verification 19's stamp is by name** (`paint`, `df`) as the round-3 review asked.
+- **Verification 19's stamp is by name** (`paint`, `seed`, `df`): `paint` and `seed` are
+  adjacent in both of Radiance Cascades' strip orders and `df` is apart from them, so one
+  frame draws a two-tile run and a split run.
+- **D7's outline mechanics as landed:** the 1px inset belongs to the OUTLINE on the foreground
+  draw list; the faint fill on the parent list covers the run's full bounds (the gaps are
+  where it shows); both are emitted after the run's tiles, since a child window paints over
+  its parent whatever the order; and the strip passes `bordered=tint is None or border is not
+  None`, so an ungrouped tile keeps its border and a grouped one keeps only an accent or
+  error border.
+- **Items 15 to 18 live in `tests/test_import_dialog.py`**, one file for the dialog's state and
+  frames, rather than the files the spec named.
+- **After the post-implementation review:** the plan rejects a loop (D6); every value is
+  copied before the first write and the write loop unwinds its own files, so a torn import
+  leaves nothing; the handover site releases nothing, since a reader holds a source value;
+  `preview_cell` draws an explicit `border_color` whatever `bordered` says, so the strip passes
+  `bordered=tint is None`; the settings modal's group picker is disabled with no group to pick;
+  the copilot capability's protocol carries the `group` default.
 
 ### The falsifier tried per verification item
 
@@ -644,7 +681,7 @@ compared byte for byte:
 
 | Break | Red test |
 |---|---|
-| `plan_import` never fills `sources` (no materialization) | `test_pass_import.py` (3 tests) and `test_a_rendered_import_reads_its_bundle` (output reads black) |
+| `plan_import` never fills `sources` (no materialization) | `test_pass_import.py` (2 tests) and `test_a_rendered_import_reads_its_bundle` (output reads black) |
 | `preview_cell(bordered=False)` passes `ChildFlags_.none` | `test_an_unbordered_tile_keeps_its_padding` (origin `(0, 0)`) |
 | `_tick_frame_state`'s gate without `or import_project_tab` | `test_the_import_dialog_plans_the_open_tabs_documents` |
 | `group_tint` by `hash()` | `test_group_tints_are_stable_and_collide_with_nothing` |

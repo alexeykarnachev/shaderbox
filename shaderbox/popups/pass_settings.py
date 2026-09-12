@@ -189,6 +189,7 @@ def _draw_group(
     deactivated = imgui.is_item_deactivated_after_edit()
     picked = False
     imgui.same_line()
+    imgui.begin_disabled(not existing)
     if imgui.begin_combo(f"##group_pick_{id_}", "", imgui.ComboFlags_.no_preview):
         for name in existing:
             if imgui.selectable(name, name == group)[0]:
@@ -196,6 +197,7 @@ def _draw_group(
         if imgui.selectable("none", group == "")[0]:
             group, picked = "", True
         imgui.end_combo()
+    imgui.end_disabled()
     imgui.same_line()
     help_marker("the tile's group label")
     return group, entered or deactivated or picked

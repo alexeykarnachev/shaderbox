@@ -267,7 +267,7 @@ def main() -> int:
                     app.set_current_document_id(multi)
                     # Two non-adjacent passes in one group, so the strip draws its outline,
                     # the label and the split-run path on the parent draw list (091 D7).
-                    for grouped in ("paint", "df"):
+                    for grouped in ("paint", "seed", "df"):
                         if grouped in app.ui_documents[multi].document.passes:
                             app.session.set_pass_group(multi, grouped, "smoke_group")
                     app.open_pass_settings(

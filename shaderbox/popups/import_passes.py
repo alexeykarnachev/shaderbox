@@ -15,9 +15,8 @@ prefill.
 from imgui_bundle import imgui
 
 from shaderbox.app import App, PopupState
+from shaderbox.document import document_dir_of, offered_entry_points
 from shaderbox.pass_import import ImportPlan, plan_import
-from shaderbox.project_session import offered_entry_points
-from shaderbox.document import document_dir_of
 from shaderbox.paths import DOCUMENT_SCRIPT_BASENAME, SCRIPTS_DIR_NAME
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_models import ImportDraft, UIDocument
@@ -81,7 +80,7 @@ def _draw_body(app: App) -> bool:
 
     imgui.dummy((0.0, float(SPACE.MD)))
     keep_open = True
-    imgui.begin_disabled(isinstance(plan, str))
+    imgui.begin_disabled(bool(draft.rejection))
     label = (
         f"Import {len(plan.renames)} passes"
         if isinstance(plan, ImportPlan)
@@ -93,9 +92,9 @@ def _draw_body(app: App) -> bool:
     imgui.same_line()
     if standard_button("Cancel"):
         keep_open = False
-    if isinstance(plan, str) and source is not None:
+    if draft.rejection and source is not None:
         imgui.same_line()
-        imgui.text_colored(COLOR.STATE_ERROR, plan)
+        imgui.text_colored(COLOR.STATE_ERROR, draft.rejection)
     return keep_open
 
 

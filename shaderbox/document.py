@@ -51,6 +51,7 @@ from shaderbox.pass_graph import (
     PassGraph,
     PassSource,
     clamp_canvas_size,
+    entry_points,
     plan_for_output,
     plan_passes,
     wired_pass,
@@ -1087,6 +1088,20 @@ class Document:
             return self._render_video(details, canvas)
         else:
             return self._render_image(details, canvas)
+
+
+def offered_entry_points(document: Document) -> list[str]:
+    """The entry points an import offers for `document` (091 D3): the roots of its wiring
+    minus every pass whose compile failed -- such a pass has an UNKNOWN wiring, not an empty
+    one, so it is copied as it is rather than offered as an input."""
+    broken = {
+        name
+        for name, render_pass in document.passes.items()
+        if render_pass.program is None
+    }
+    return [
+        name for name in entry_points(document.effective_wiring()) if name not in broken
+    ]
 
 
 def document_dir_of(document: Document) -> Path:

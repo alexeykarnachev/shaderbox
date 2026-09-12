@@ -221,8 +221,10 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   source picked from two tabs (the project's other documents, the shipped examples), the group
   name that also prefixes the passes, one combo per ENTRY POINT of the source (kept, or fed by a
   host pass) with the host's readers of that pass as handover checkboxes. The plan is recomputed
-  every frame (`pass_import.plan_import`) and its rejection stored on the draft; no field is
-  auto-focused. Executes through `ProjectSession.import_passes`.
+  every frame (`pass_import.plan_import`) and its rejection stored on the draft, which is what
+  the Import button reads; no field is auto-focused. The entry points offered are
+  `document.offered_entry_points` (the roots minus every pass whose compile failed) and the
+  default handovers `pass_graph.readers_of`. Executes through `ProjectSession.import_passes`.
 - **`pass_import.py`** — leaf, GL-free (feature 091): `ImportPlan` and `plan_import`, every
   write an import makes or the message that rejects it, decided over the source's and the
   host's wiring. Imports `pass_graph` only.

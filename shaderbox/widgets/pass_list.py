@@ -125,8 +125,8 @@ def _draw_pass_tile(
     border = (
         COLOR.STATE_ERROR if errors else COLOR.ACCENT_PRIMARY if is_output else None
     )
-    # A grouped tile sits inside the run's outline (091 D7): its own border goes, the group's
-    # tint fills it faintly, and the accent or error border still wins when it has one.
+    # A grouped tile sits inside the run's outline (091 D7): its own border goes and the
+    # group's tint fills it faintly; an accent or error border still draws.
     tint = group_tint(group) if group else None
     bg = (*tint[:3], COLOR.GROUP_FILL_ALPHA) if tint is not None else None
 
@@ -145,7 +145,7 @@ def _draw_pass_tile(
         armed=app.pass_delete_armed == name,
         border_color=border,
         bg_color=bg,
-        bordered=tint is None or border is not None,
+        bordered=tint is None,
         footer=name,
         footer_font=None if stale else app.font_14_bold,
         footer_color=COLOR.FG_DORMANT if stale else COLOR.FG_TITLE,

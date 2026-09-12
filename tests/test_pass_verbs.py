@@ -22,7 +22,8 @@ from imgui_bundle import imgui
 
 from shaderbox.app import PopupState
 from shaderbox.core import Pass
-from shaderbox.media import texture_to_rgba8
+from shaderbox.document import offered_entry_points
+from shaderbox.media import MediaWithTexture, texture_to_rgba8
 from shaderbox.pass_graph import (
     DTYPES,
     MAX_ITERATIONS,
@@ -36,7 +37,7 @@ from shaderbox.pass_graph import (
 from shaderbox.paths import PASSES_DIR_NAME, pass_shader_name
 from shaderbox.popups import pass_settings
 from shaderbox.popups.pass_settings import _FORMAT_CODES, _FORMATS
-from shaderbox.project_session import compile_pending_passes, offered_entry_points
+from shaderbox.project_session import compile_pending_passes
 from shaderbox.shader_source import ShaderSource
 from shaderbox.ui_models import UIUniform, load_document_from_dir
 from shaderbox.util import get_uniform_hash
@@ -839,6 +840,41 @@ def test_a_broken_source_pass_is_imported_as_is_and_named(
     assert any("blur" in note for note in result.notes), result.notes
     document = app.ui_documents[_document_id(app)].document
     assert "bloom_blur" in document.passes and "bloom_composite" in document.passes
+
+
+def test_a_torn_import_writes_nothing(app: Any) -> None:
+    # A bound asset whose file is gone cannot be copied. Falsifier: copy values inside the
+    # write loop and the passes written before the failure stay on disk, come back on the next
+    # load as ungrouped passes, and the exception escapes into the frame loop.
+    document_id = _document_id(app)
+    media_id = next(
+        i
+        for i, u in app.ui_document_examples.items()
+        if any(
+            isinstance(v, MediaWithTexture)
+            for p in u.document.passes.values()
+            for v in p.uniform_values.values()
+        )
+    )
+    source = app.ui_document_examples[media_id]
+    bound = next(
+        v
+        for p in source.document.passes.values()
+        for v in p.uniform_values.values()
+        if isinstance(v, MediaWithTexture)
+    )
+    path = Path(bound.details.file_details.path)
+    moved = path.with_name(f"moved_{path.name}")
+    path.rename(moved)
+    try:
+        result = app.session.import_passes(document_id, source, "media", {}, set())
+    finally:
+        moved.rename(path)
+    assert result.error and "copy" in result.error, result
+    document = app.ui_documents[document_id].document
+    assert not [n for n in document.passes if n.startswith("media_")]
+    passes_dir = app.session.paths.passes_dir_for(document_id)
+    assert not list(passes_dir.glob("media_*"))
 
 
 def test_the_group_survives_rename_and_goes_with_delete(app: Any) -> None:

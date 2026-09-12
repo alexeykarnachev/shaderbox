@@ -69,7 +69,13 @@ from shaderbox.intel.worker import (
     PythonWorker,
 )
 from shaderbox.notifications import Notifications
-from shaderbox.pass_graph import PassEntry, group_slug, step_in_order, strip_order
+from shaderbox.pass_graph import (
+    PassEntry,
+    group_slug,
+    readers_of,
+    step_in_order,
+    strip_order,
+)
 from shaderbox.paths import ProjectPaths, app_data_dir, pass_name_of, shader_lib_root
 from shaderbox.profiling import FrameProfile, Profiler, ProfileSmoother
 from shaderbox.project_session import (
@@ -1197,12 +1203,7 @@ class App:
         ui_document = self.ui_documents.get(self.current_document_id)
         if ui_document is None:
             return set()
-        return {
-            (name, uniform)
-            for name, reads in ui_document.document.effective_wiring().items()
-            for uniform, read in reads.items()
-            if read == fed
-        }
+        return readers_of(ui_document.document.effective_wiring(), fed)
 
     def set_import_substitution(self, entry: str, host_pass: str) -> None:
         """Feed entry point `entry` from `host_pass`, or keep the source's own with `""`.

@@ -466,7 +466,7 @@ class CopilotCapabilities(Protocol):
         wrap: bool | None,
         output: bool,
         new_name: str,
-        group: str | None,
+        group: str | None = None,
         /,
     ) -> PassOpResult: ...
     def delete_pass(self, document: str, name: str, /) -> PassOpResult: ...

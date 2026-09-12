@@ -13,7 +13,7 @@ readers of that pass are handed to the bundle's output (D6).
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field
 
-from shaderbox.pass_graph import PASS_NAME_RE, Wiring, entry_points
+from shaderbox.pass_graph import PASS_NAME_RE, Wiring, entry_points, plan_passes
 
 
 @dataclass(frozen=True)
@@ -67,8 +67,10 @@ def plan_import(
     renames = {name: f"{prefix}{name}" for name in copied}
     taken = sorted(new for new in renames.values() if new in host_names)
     if taken:
-        return f"{', '.join(repr(n) for n in taken)} already exist" if len(taken) > 1 else (
-            f"'{taken[0]}' already exists"
+        return (
+            f"{', '.join(repr(n) for n in taken)} already exist"
+            if len(taken) > 1
+            else (f"'{taken[0]}' already exists")
         )
     output = renames.get(source_output, renames[copied[0]])
 
@@ -89,6 +91,19 @@ def plan_import(
         if host_wiring.get(host_pass, {}).get(uniform) not in fed:
             return f"'{host_pass}.{uniform}' does not read a replaced pass"
         handed.setdefault(host_pass, {})[uniform] = output
+
+    # The wiring the import would leave: a handover onto a host pass that itself feeds the
+    # bundle closes a loop, and nothing downstream reports one loudly.
+    merged: dict[str, dict[str, str]] = {
+        name: dict(reads) for name, reads in host_wiring.items()
+    }
+    for host_pass, rows in handed.items():
+        merged[host_pass].update(rows)
+    for name in copied:
+        merged[renames[name]] = dict(sources.get(renames[name], {}))
+    _, errors = plan_passes(merged)
+    if errors:
+        return f"a loop through '{errors[0].pass_name}': uncheck a handover"
 
     return ImportPlan(
         renames=renames,

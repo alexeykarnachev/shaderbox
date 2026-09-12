@@ -38,7 +38,9 @@ def test_the_draft_resets_on_source_change_and_on_close(app: Any) -> None:
     )
     assert draft.substitutions == {} and draft.handovers == set()
     root = next(
-        n for n in ("paint", "scene") if n in app.ui_document_examples[example_id].document.passes
+        n
+        for n in ("paint", "scene")
+        if n in app.ui_document_examples[example_id].document.passes
     )
     app.set_import_substitution(root, "main")
     assert draft.substitutions == {root: "main"}
@@ -47,7 +49,9 @@ def test_the_draft_resets_on_source_change_and_on_close(app: Any) -> None:
     other = next(i for i in app.ui_document_examples if i != example_id)
     app.select_import_source(other, True)
     assert draft.handovers == set() and draft.substitutions == {}
-    assert draft.group_buf == group_slug(app.ui_document_examples[other].ui_state.ui_name)
+    assert draft.group_buf == group_slug(
+        app.ui_document_examples[other].ui_state.ui_name
+    )
     app.close_import_passes()
     assert app.import_draft is None and app.popup_state == PopupState.CLOSED
     app.open_import_passes()
@@ -66,7 +70,9 @@ def test_the_busy_guard_refuses_the_palette_route(app: Any, monkeypatch: Any) ->
     # Verification 16. Falsifier: delete the guard; the strip button's `begin_disabled`
     # passes the suite either way.
     pushed: list[str] = []
-    monkeypatch.setattr(app.notifications, "push", lambda text, *a, **k: pushed.append(text))
+    monkeypatch.setattr(
+        app.notifications, "push", lambda text, *a, **k: pushed.append(text)
+    )
     app.copilot_turn_active = True
     app.open_import_passes()
     assert app.popup_state == PopupState.CLOSED and app.import_draft is None
@@ -115,9 +121,7 @@ def test_an_unbordered_tile_keeps_its_padding(app: Any, monkeypatch: Any) -> Non
     imgui.new_frame()
     imgui.begin("rig")
     preview_cell("bordered", 168.0, None, (0, 0), False, False, footer="a")
-    preview_cell(
-        "plain", 168.0, None, (0, 0), False, False, footer="b", bordered=False
-    )
+    preview_cell("plain", 168.0, None, (0, 0), False, False, footer="b", bordered=False)
     imgui.end()
     imgui.end_frame()
     # One read per cell: the origin `preview_cell` lays its image out from.

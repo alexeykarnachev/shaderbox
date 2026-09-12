@@ -6,6 +6,9 @@ would write -- above all skipping the materialization, which leaves a bundle who
 inter-pass edge is gone while only its feedback survives, silently.
 """
 
+from collections.abc import Collection, Mapping
+
+from shaderbox.pass_graph import Wiring
 from shaderbox.pass_import import ImportPlan, plan_import
 
 # The bloom-chain fixture's wiring, as `effective_wiring` answers it once compiled.
@@ -19,18 +22,24 @@ _BLOOM = {
 _HOST = {"main": {}, "grade": {"u_main": "main"}, "final": {"u_grade": "grade"}}
 
 
-def _plan(**overrides: object) -> ImportPlan | str:
-    args: dict[str, object] = {
-        "source_wiring": _BLOOM,
-        "source_output": "composite",
-        "group": "bloom",
-        "substitutions": {"scene": "main"},
-        "handovers": set(),
-        "host_wiring": _HOST,
-        "host_output": "final",
-    }
-    args.update(overrides)
-    return plan_import(**args)  # type: ignore[arg-type]
+def _plan(
+    source_wiring: Wiring = _BLOOM,
+    source_output: str = "composite",
+    group: str = "bloom",
+    substitutions: Mapping[str, str] | None = None,
+    handovers: Collection[tuple[str, str]] = (),
+    host_wiring: Wiring = _HOST,
+    host_output: str = "final",
+) -> ImportPlan | str:
+    return plan_import(
+        source_wiring,
+        source_output,
+        group,
+        {"scene": "main"} if substitutions is None else substitutions,
+        handovers,
+        host_wiring,
+        host_output,
+    )
 
 
 def test_every_wired_sampler_is_explicit_under_the_new_names() -> None:
@@ -111,6 +120,32 @@ def test_a_source_pass_with_no_edges_still_plans() -> None:
     plan = _plan(source_wiring=wiring)
     assert isinstance(plan, ImportPlan)
     assert "blur" in plan.renames and "bloom_blur" not in plan.sources
+
+
+def test_a_handover_onto_a_feeding_pass_is_a_loop_and_rejects() -> None:
+    # Two entry points fed by two host passes where one reads the other: the default handover
+    # would make `b` read the bundle that reads `b`. Falsifier: skip the post-import plan and
+    # the loop lands silently (the renderer falls back to drawing the output alone).
+    compositor = {"fg": {}, "bg": {}, "mix": {"u_fg": "fg", "u_bg": "bg"}}
+    host = {"a": {}, "b": {"u_a": "a"}}
+    looped = _plan(
+        source_wiring=compositor,
+        source_output="mix",
+        substitutions={"fg": "a", "bg": "b"},
+        handovers={("b", "u_a")},
+        host_wiring=host,
+        host_output="b",
+    )
+    assert isinstance(looped, str) and "loop" in looped, looped
+    unchecked = _plan(
+        source_wiring=compositor,
+        source_output="mix",
+        substitutions={"fg": "a", "bg": "b"},
+        handovers=set(),
+        host_wiring=host,
+        host_output="b",
+    )
+    assert isinstance(unchecked, ImportPlan)
 
 
 def test_rejections_name_what_was_wrong() -> None:
