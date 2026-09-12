@@ -39,9 +39,11 @@ class NodeDrag:
 @dataclass
 class WireDrag:
     """A wire in flight: from a node's output dot (`producer`), or grabbed off a filled input
-    port (`grabbed` = the consumer and its sampler, whose current source the wire carries)."""
+    port (`grabbed` = the consumer and its sampler, whose current source the wire carries).
+    `start` is the canvas point the wire is drawn from."""
 
     producer: str
+    start: Position
     grabbed: tuple[str, str] | None = None
 
 
@@ -59,6 +61,13 @@ class GraphViewState:
     compiled: bool = False
     node_drag: NodeDrag | None = None
     wire_drag: WireDrag | None = None
+    # The snap guides the current drag aligned to, in canvas units: ("v", x) or ("h", y).
+    guides: list[tuple[str, float]] = field(default_factory=list)
+    # The Group... name prompt: open, and its buffer.
+    group_prompt: bool = False
+    group_name: str = ""
+    # The rubber band's press point, in screen space, while one is being dragged.
+    band_anchor: Position | None = None
 
 
 def revalidated_scope(scope: str, groups: Collection[str]) -> str:

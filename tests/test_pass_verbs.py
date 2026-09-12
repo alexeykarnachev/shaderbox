@@ -17,6 +17,7 @@ import shutil
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 import pytest
 from imgui_bundle import imgui
@@ -35,6 +36,7 @@ from shaderbox.pass_graph import (
     TargetConfig,
     strip_order,
 )
+from shaderbox.pass_import import plan_import
 from shaderbox.paths import PASSES_DIR_NAME, pass_shader_name
 from shaderbox.popups import pass_settings
 from shaderbox.popups.pass_settings import _FORMAT_CODES, _FORMATS
@@ -979,3 +981,105 @@ def test_no_session_verb_but_one_accepts_a_position() -> None:
         and any("position" in p for p in inspect.signature(member).parameters)
     ]
     assert accepting == ["set_pass_positions"]
+
+
+# ----------------------------------------------------------------
+# One namespace for passes and groups, and the rename guard (092 D17, D18).
+
+
+def test_set_pass_groups_saves_once_and_refuses_a_pass_name(
+    app: Any, monkeypatch: Any
+) -> None:
+    document_id = app.current_document_id
+    for name in ("p1", "p2", "p3"):
+        assert app.session.add_pass(document_id, name) == ""
+    saves = _count_saves(app, monkeypatch)
+    assert app.session.set_pass_groups(document_id, ["p1", "p2", "p3"], "trio") == ""
+    assert saves[0] == 1
+    entries = app.ui_documents[document_id].document.graph.passes
+    assert {entries[n].group for n in ("p1", "p2", "p3")} == {"trio"}
+    # Falsifier: validate per pass inside the loop, leaving a partial write behind.
+    assert (
+        app.session.set_pass_groups(document_id, ["p1", "p2"], "p3")
+        == "a pass and a group cannot share a name"
+    )
+    assert {entries[n].group for n in ("p1", "p2", "p3")} == {"trio"}
+    assert "group name" in app.session.set_pass_groups(document_id, ["p1"], "2bad")
+    assert app.session.set_pass_groups(document_id, ["nope"], "x")
+
+
+def test_add_pass_and_rename_refuse_a_name_a_group_carries(app: Any) -> None:
+    document_id = app.current_document_id
+    assert app.session.add_pass(document_id, "member") == ""
+    assert app.session.set_pass_group(document_id, "member", "bloom") == ""
+    assert (
+        app.session.add_pass(document_id, "bloom")
+        == "a pass and a group cannot share a name"
+    )
+    assert (
+        app.session.rename_pass(document_id, "member", "bloom")
+        == "a pass and a group cannot share a name"
+    )
+    assert "member" in app.ui_documents[document_id].document.passes
+
+
+def test_every_group_writing_entry_point_shares_one_validator(app: Any) -> None:
+    # 092 D17: the domain is every entry point that writes a group, enumerated here.
+    # Falsifier: the check on `set_pass_groups` alone -- `plan_import` then imports a bundle
+    # under a group name a pass carries, and the root draws two entities with one name.
+    document_id = app.current_document_id
+    assert app.session.add_pass(document_id, "taken") == ""
+    collision = "a pass and a group cannot share a name"
+    assert app.session.set_pass_groups(document_id, ["taken"], "taken") == collision
+    assert app.session.set_pass_group(document_id, "taken", "taken") == collision
+    host = app.ui_documents[document_id].document.effective_wiring()
+    assert plan_import({"src": {}}, "src", "taken", {}, [], host, "") == collision
+
+
+def test_rename_pass_refuses_the_cycle_it_would_create(app: Any) -> None:
+    # Mutations case 9: `bright.u_final` resolves by the name rule once some pass is named
+    # `final`; renaming `comp` to `final` closes bright -> final -> bright.
+    document_id = _document_id(app)
+    for name in ("scene", "bright", "comp"):
+        assert app.session.add_pass(document_id, name) == ""
+    document = app.ui_documents[document_id].document
+    document.passes["bright"].release_program(_sampler_on("final"))
+    document.passes["bright"].compile()
+    document.passes["comp"].release_program(_sampler_on("bright"))
+    document.passes["comp"].compile()
+    old_path = document.passes["comp"].source.path
+    refusal = app.session.rename_pass(document_id, "comp", "final")
+    # Falsifier: delete the guard -- the rename succeeds and the plan reports the cycle.
+    assert "passes form a cycle" in refusal, refusal
+    assert old_path.exists(), "a refused rename moved the file"
+    assert not app.session.paths.pass_shader_for(document_id, "final").exists()
+    assert "comp" in document.passes and "final" not in document.passes
+
+
+def test_wiring_if_renamed_leaves_the_document_as_it_found_it(app: Any) -> None:
+    document_id = _document_id(app)
+    for name in ("src", "sink"):
+        assert app.session.add_pass(document_id, name) == ""
+    document = app.ui_documents[document_id].document
+    document.passes["sink"].release_program(_SAMPLER)
+    document.passes["sink"].compile()
+    assert (
+        app.session.set_sampler_source(document_id, "sink", "u_src", PassSource("src"))
+        == ""
+    )
+    keys_before = list(document.passes)
+    value_before = document.passes["sink"].uniform_values["u_src"]
+    wiring = document.wiring_if_renamed("src", "src2")
+    assert wiring["sink"] == {"u_src": "src2"}, "the explicit row follows the rename"
+    assert list(document.passes) == keys_before
+    assert document.passes["sink"].uniform_values["u_src"] == value_before
+    # Falsifier: drop the restore. Also after a read that raises.
+    with (
+        pytest.raises(RuntimeError),
+        mock.patch.object(
+            document, "effective_wiring", side_effect=RuntimeError("boom")
+        ),
+    ):
+        document.wiring_if_renamed("src", "src2")
+    assert list(document.passes) == keys_before
+    assert document.passes["sink"].uniform_values["u_src"] == value_before

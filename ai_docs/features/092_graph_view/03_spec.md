@@ -1,6 +1,6 @@
 # 092 — The graph view
 
-Status: **spec locked after pre-implementation round 1; implementing W1.** Sketches: `00_mock.html` (round 3 is the
+Status: **W1 and W2 landed; post-implementation review pending.** Sketches: `00_mock.html` (round 3 is the
 picture). Record of the design conversation: `01_brainstorm.md`. The review round that produced
 the constraints and decisions below: `02_triage.md` and `reviews/brainstorm_*.md`. Every
 "Fixed" item of the brainstorm and every default of the triage is locked here; nothing is
@@ -396,10 +396,10 @@ the new one (triage S15; 091 drops inner labels silently today).
   site.
 - `tests/test_ui_prose_budget.py`: `menu_item_simple` joins `_IMGUI_ROWS` at the button-label
   budget (a menu item is an action phrase like a button), so the canvas menus and the strip's
-  Settings / Delete / Leave group enter the gate; the `strip | graph` toggle reads its labels
-  from `PASSES_VIEW_LABELS`, which the walk cannot resolve, so the caption function in
-  `tabs/document.py` joins `_UNMEASURABLE` with that reason (the `ui.py` entry for
-  `CHANNEL_VIEW_LABELS` is the precedent). `ImDrawList.add_text` stays outside the gate.
+  Settings / Delete / Leave group enter the gate, at four words since a menu item may carry
+  a qualifier ("Reveal in file manager"); the `strip | graph` toggle passes its labels to
+  `segmented_choice`'s `options`, a parameter outside the gate's budget set, so no entry is
+  needed. `ImDrawList.add_text` stays outside the gate.
 - `tests/test_copilot_pass_tools.py`: re-run; `set_pass_group` as a wrapper must return the
   same "group name" string for a bad pattern. `tests/test_default_wiring.py`: re-run; its two
   renames run through the name-rule fixture the D18 guard plans over.

@@ -13,7 +13,12 @@ readers of that pass are handed to the bundle's output (D6).
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field
 
-from shaderbox.pass_graph import PASS_NAME_RE, Wiring, entry_points, plan_passes
+from shaderbox.pass_graph import (
+    Wiring,
+    entry_points,
+    group_name_error,
+    plan_passes,
+)
 
 
 @dataclass(frozen=True)
@@ -48,9 +53,10 @@ def plan_import(
     instead of the pass they read now. Every name is checked against the two wirings, so a
     plan that comes back can be executed without a further question.
     """
-    if group and not PASS_NAME_RE.match(group):
-        return "a group name starts with a letter and holds letters, digits and underscores"
     host_names = set(host_wiring)
+    group_error = group_name_error(group, host_names)
+    if group_error:
+        return group_error
     roots = set(entry_points(source_wiring))
     for entry, host in substitutions.items():
         if entry not in roots:

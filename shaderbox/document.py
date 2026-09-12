@@ -752,6 +752,31 @@ class Document:
                 if isinstance(value, PassSource) and value.name == old:
                     render_pass.uniform_values[uniform] = PassSource(new)
 
+    def wiring_if_renamed(self, old: str, new: str) -> dict[str, dict[str, str]]:
+        """The wiring this document would have after `rename_pass(old, new)` (092 D18): the
+        pass re-keyed under `new` AND every explicit `PassSource(old)` renamed, since the real
+        rename does both -- a key swap alone drops those rows. Both are undone in a `finally`,
+        so a compile raising inside the read cannot leave the document re-keyed.
+        """
+        # Re-keyed IN PLACE and in the same order: the dict's insertion order is what the
+        # strip order and the output fallback read, and other holders keep the dict itself.
+        original = list(self.passes.items())
+        self.passes.clear()
+        self.passes.update({(new if name == old else name): p for name, p in original})
+        rewritten: list[tuple[Pass, str]] = []
+        try:
+            for other in self.passes.values():
+                for uniform, value in list(other.uniform_values.items()):
+                    if isinstance(value, PassSource) and value.name == old:
+                        other.uniform_values[uniform] = PassSource(new)
+                        rewritten.append((other, uniform))
+            return self.effective_wiring()
+        finally:
+            for other, uniform in rewritten:
+                other.uniform_values[uniform] = PassSource(old)
+            self.passes.clear()
+            self.passes.update(dict(original))
+
     def render(
         self,
         u_time: float | None = None,

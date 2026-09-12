@@ -46,6 +46,8 @@ from shaderbox.pass_graph import (
     PassSource,
     SamplerSource,
     TargetConfig,
+    group_name_error,
+    plan_passes,
 )
 from shaderbox.pass_import import plan_import
 from shaderbox.paths import (
@@ -125,13 +127,16 @@ void main() {
 """
 
 
-def _pass_name_error(name: str, existing: dict[str, Pass]) -> str:
+def _pass_name_error(name: str, existing: dict[str, Pass], graph: PassGraph) -> str:
     if not PASS_NAME_RE.match(name):
         return (
             "a pass name starts with a letter and holds letters, digits and underscores"
         )
     if name in existing:
         return f"'{name}' already exists"
+    # One namespace for passes and groups (092 D17): the graph canvas keys both by name.
+    if any(entry.group == name for entry in graph.passes.values()):
+        return "a pass and a group cannot share a name"
     return ""
 
 
@@ -948,7 +953,9 @@ class ProjectSession:
         ui_document = self.ui_documents.get(document_id)
         if ui_document is None:
             return f"no such document '{document_id}'"
-        error = _pass_name_error(name, ui_document.document.passes)
+        error = _pass_name_error(
+            name, ui_document.document.passes, ui_document.document.graph
+        )
         if error:
             return error
         document = ui_document.document
@@ -999,9 +1006,22 @@ class ProjectSession:
             return f"no such pass '{old}'"
         if new == old:
             return ""
-        error = _pass_name_error(new, document.passes)
+        error = _pass_name_error(new, document.passes, document.graph)
         if error:
             return error
+        # A rename can CREATE a read: a sibling's `u_<new>` resolves by the name rule where it
+        # resolved to nothing before, and that read can close a loop (092 D18). Planned before
+        # the file moves, refused with the planner's message, the same guard a wire drop has.
+        loop = plan_passes(document.wiring_if_renamed(old, new))[1]
+        if loop:
+            return next(
+                (
+                    e.message
+                    for e in loop
+                    if e.message.startswith("passes form a cycle")
+                ),
+                loop[0].message,
+            )
         # Transactional (D15): the file, every sampler that names it, the output choice, and the
         # open editor tab move together. Any one of them left behind fails SILENTLY -- a source
         # naming a pass that no longer exists just reads black.
@@ -1094,15 +1114,28 @@ class ProjectSession:
 
     def set_pass_group(self, document_id: str, name: str, group: str) -> str:
         """Put `name` in `group`, or take it out of every group with `""` (091 D9)."""
+        return self.set_pass_groups(document_id, [name], group)
+
+    def set_pass_groups(
+        self, document_id: str, names: Collection[str], group: str
+    ) -> str:
+        """Put every pass of `names` in `group` (`""` = in no group), validated once through
+        `group_name_error` and saved once (092 D14): a Group or a Dissolve on the canvas is
+        one write, and a refusal writes nothing."""
         ui_document = self.ui_documents.get(document_id)
         if ui_document is None:
             return f"no such document '{document_id}'"
         document = ui_document.document
-        if name not in document.passes:
-            return f"no such pass '{name}'"
-        if group and not PASS_NAME_RE.match(group):
-            return "a group name starts with a letter and holds letters, digits and underscores"
-        document.graph = document.graph.with_group(name, group)
+        for name in names:
+            if name not in document.passes:
+                return f"no such pass '{name}'"
+        error = group_name_error(group, document.passes)
+        if error:
+            return error
+        graph = document.graph
+        for name in names:
+            graph = graph.with_group(name, group)
+        document.graph = graph
         self.save_ui_document(ui_document)
         return ""
 

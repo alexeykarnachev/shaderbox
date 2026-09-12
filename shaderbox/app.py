@@ -71,11 +71,15 @@ from shaderbox.intel.worker import (
 )
 from shaderbox.notifications import Notifications
 from shaderbox.pass_graph import (
+    NoSource,
     PassEntry,
+    PassSource,
+    SamplerSource,
     group_slug,
     node_ports,
     rank_layout,
     readers_of,
+    refuse_drop,
     step_in_order,
     strip_order,
 )
@@ -1936,6 +1940,80 @@ class App:
         if error:
             self.notifications.push(error)
         self.graph_view_for(document_id).fitted = False
+
+    def drop_wire(
+        self, document_id: str, producer: str, consumer: str, sampler: str
+    ) -> str:
+        """A wire dropped from `producer`'s output onto `consumer.sampler` (092 D12): the one
+        write path the canvas has for a read. Refused before anything is written when the
+        read would close a loop (the pure planner over the hypothetical wiring) or when the
+        sampler holds a bound texture (the write would release it). Returns the refusal, or
+        `""`; the caller toasts it."""
+        ui_document = self.ui_documents.get(document_id)
+        if ui_document is None:
+            return f"no such document '{document_id}'"
+        document = ui_document.document
+        if consumer not in document.passes or producer not in document.passes:
+            return "no such pass"
+        value = document.passes[consumer].uniform_values.get(sampler)
+        if value is not None and not isinstance(value, SamplerSource):
+            return "bound to media; unbind on the Uniforms tab"
+        refusal = refuse_drop(document.effective_wiring(), consumer, sampler, producer)
+        if refusal:
+            return refusal
+        return self.session.set_sampler_source(
+            document_id, consumer, sampler, PassSource(producer)
+        )
+
+    def unwire(self, document_id: str, consumer: str, sampler: str) -> str:
+        """A wire grabbed off `consumer.sampler` and dropped on empty canvas (092 D12): the
+        sampler reads black by decision."""
+        return self.session.set_sampler_source(
+            document_id, consumer, sampler, NoSource()
+        )
+
+    def commit_node_drag(self, document_id: str) -> None:
+        """The release of a node drag (092 D13): the positions the drag machine commits,
+        written once."""
+        view = self.graph_view_for(document_id)
+        drag = view.node_drag
+        view.node_drag = None
+        view.guides = []
+        if drag is None:
+            return
+        ui_document = self.ui_documents.get(document_id)
+        if ui_document is None:
+            return
+        moved = {
+            name: position
+            for name, position in drag.commit().items()
+            if name in ui_document.document.passes
+        }
+        if not moved:
+            return
+        error = self.session.set_pass_positions(document_id, moved)
+        if error:
+            self.notifications.push(error)
+
+    def group_selection(self, document_id: str, group: str) -> str:
+        """Put the canvas's selected passes in `group` (092 D14): one validated write."""
+        view = self.graph_view_for(document_id)
+        error = self.session.set_pass_groups(document_id, sorted(view.selection), group)
+        if error:
+            self.notifications.push(error)
+        return error
+
+    def dissolve_group(self, document_id: str, group: str) -> str:
+        """Clear `group` off every member (092 D16), one write; the inverse of Group."""
+        ui_document = self.ui_documents.get(document_id)
+        if ui_document is None:
+            return f"no such document '{document_id}'"
+        entries = ui_document.document.graph.passes
+        members = [name for name, entry in entries.items() if entry.group == group]
+        error = self.session.set_pass_groups(document_id, members, "")
+        if error:
+            self.notifications.push(error)
+        return error
 
     def step_output_pass(self, step: int) -> None:
         # Next / previous pass walk the strip's drawn order and wrap. The editor keeps focus

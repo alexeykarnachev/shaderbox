@@ -15,8 +15,9 @@ child fires on a right-click anywhere in it. Every write a gesture makes goes th
 `App` verb, never a session call from here, so each refusal is testable without a window.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from itertools import pairwise
 from typing import Literal
 
 from imgui_bundle import imgui
@@ -39,9 +40,16 @@ from shaderbox.pass_graph import (
 )
 from shaderbox.project_session import compile_pending_passes
 from shaderbox.theme import COLOR, SIZE, SPACE, fade, group_tint
-from shaderbox.ui_primitives import context_menu_style, text_tab_row
+from shaderbox.ui_primitives import (
+    context_menu_style,
+    primary_button,
+    standard_button,
+    text_tab_row,
+)
 from shaderbox.widgets.graph_state import (
     GraphViewState,
+    NodeDrag,
+    WireDrag,
     group_names_in_order,
     node_size,
     revalidated_scope,
@@ -69,6 +77,8 @@ class _Node:
     # Output dots, top to bottom: a pass has one (its name); a box one per member the outside
     # reads plus the bundle output, the hollow ones being unread.
     outputs: tuple[tuple[str, bool], ...]
+    # The pass each input slot belongs to: the node itself, or a box's member.
+    owners: tuple[str, ...]
     texture_glo: int | None
     texture_size: tuple[int, int]
     group: str = ""
@@ -95,6 +105,7 @@ class _Edge:
 class _View:
     nodes: dict[str, _Node] = field(default_factory=dict)
     edges: list[_Edge] = field(default_factory=list)
+    positions: dict[str, tuple[float, float]] = field(default_factory=dict)
 
 
 # ---- the derived picture ------------------------------------------------------------------
@@ -105,9 +116,10 @@ def _positions(
     wiring: Wiring,
     groups: dict[str, str],
     sizes: dict[str, tuple[float, float]],
+    overrides: Mapping[str, tuple[float, float]],
 ) -> dict[str, tuple[float, float]]:
     """Every pass's canvas position: the stored one, or the rank layout's for a pass never
-    placed (092 D6). Nothing is written."""
+    placed (092 D6), under `overrides` for a drag in flight. Nothing is written."""
     entries = document.graph.passes
     placed = {
         name: entries[name].position
@@ -129,7 +141,7 @@ def _positions(
         float(SIZE.GRAPH_GAP_X),
         float(SIZE.GRAPH_GAP_Y),
     )
-    return {**stored, **laid}
+    return {**stored, **laid, **overrides}
 
 
 def _pass_node(
@@ -151,6 +163,7 @@ def _pass_node(
         ports=tuple(ports),
         labels=tuple("prev" if p.kind == "prev" else p.sampler for p in ports),
         outputs=((name, False),),
+        owners=tuple(name for _ in ports),
         texture_glo=render_pass.canvas.texture.glo,
         texture_size=render_pass.canvas.texture.size,
         group=entry.group,
@@ -161,7 +174,9 @@ def _pass_node(
     )
 
 
-def _build_view(document: Document, scope: str) -> _View:
+def _build_view(
+    document: Document, scope: str, overrides: Mapping[str, tuple[float, float]]
+) -> _View:
     """The nodes and edges to draw for `scope` ("" = the root), from the flat document."""
     wiring = document.effective_wiring()
     order = strip_order(document.passes, wiring)
@@ -177,7 +192,7 @@ def _build_view(document: Document, scope: str) -> _View:
         for name, render_pass in document.passes.items()
     }
     sizes = {name: node_size(len(ports[name]), False) for name in order}
-    positions = _positions(document, wiring, groups, sizes)
+    positions = _positions(document, wiring, groups, sizes, overrides)
     output = document.graph.output
     live = (
         set(evaluation_order(wiring, output)) or {output}
@@ -188,7 +203,7 @@ def _build_view(document: Document, scope: str) -> _View:
     cycle_pairs = cycle_edges(errors)
     culprits = {e.pass_name for e in errors if e.message.startswith(_CYCLE_PREFIX)}
     ranks = graph_ranks(wiring)
-    view = _View()
+    view = _View(positions=positions)
 
     def pass_key(name: str) -> str:
         return f"p:{name}"
@@ -339,6 +354,7 @@ def _build_view(document: Document, scope: str) -> _View:
             ports=box_ports,
             labels=tuple(bp.label for bp in boundary.inputs),
             outputs=outputs,
+            owners=tuple(bp.member for bp in boundary.inputs),
             texture_glo=render_pass.canvas.texture.glo,
             texture_size=render_pass.canvas.texture.size,
             group=group,
@@ -477,7 +493,7 @@ def _dashed_rect(
     thickness: float,
 ) -> None:
     corners = [p0, (p1[0], p0[1]), p1, (p0[0], p1[1]), p0]
-    for a, b in zip(corners, corners[1:], strict=False):
+    for a, b in pairwise(corners):
         length = abs(b[0] - a[0]) + abs(b[1] - a[1])
         if length <= 0:
             continue
@@ -769,16 +785,17 @@ def _draw_canvas(
 ) -> None:
     origin = imgui.get_cursor_screen_pos()
     avail = imgui.get_content_region_avail()
-    picture = _build_view(document, view.scope)
+    overrides = view.node_drag.current() if view.node_drag is not None else {}
+    picture = _build_view(document, view.scope, overrides)
     nodes = list(picture.nodes.values())
     if not view.fitted:
         _fit(view, nodes, avail)
     xf = _Xf(origin, view.pan, view.zoom)
     dl = imgui.get_window_draw_list()
     output = document.graph.output
+    io = imgui.get_io()
 
     # ---- wheel zoom about the cursor, read before the transform is used ----
-    io = imgui.get_io()
     hovered = imgui.is_window_hovered(imgui.HoveredFlags_.child_windows)
     if hovered and io.mouse_wheel != 0.0:
         mouse = (io.mouse_pos.x, io.mouse_pos.y)
@@ -793,7 +810,7 @@ def _draw_canvas(
         xf = _Xf(origin, view.pan, view.zoom)
 
     # ---- the picture: wires under nodes ----
-    dl.channels_split(3)
+    dl.channels_split(2)
     dl.channels_set_current(0)
     edge_col = _u32(COLOR.GRAPH_EDGE)
     dim_col = _u32(fade(COLOR.GRAPH_EDGE, 0.35))
@@ -817,7 +834,6 @@ def _draw_canvas(
         for slot, port in enumerate(node.ports):
             if port.kind == "prev":
                 _draw_self_loop(dl, xf, node, slot, dim_col if node.stale else edge_col)
-
     dl.channels_set_current(1)
     for node in nodes:
         is_output = (
@@ -827,7 +843,6 @@ def _draw_canvas(
             node.kind == "box" and bool(set(node.members) & view.selection)
         )
         _draw_node(app, dl, xf, node, is_output, selected)
-    dl.channels_set_current(2)
     dl.channels_merge()
 
     # ---- hit testing: the background first, every node after, each allowing overlap ----
@@ -839,17 +854,29 @@ def _draw_canvas(
         imgui.ButtonFlags_.mouse_button_left | imgui.ButtonFlags_.mouse_button_middle,
     )
     bg_hovered = imgui.is_item_hovered()
-    if imgui.is_item_active() and (
+    bg_active = imgui.is_item_active()
+    panning = bg_active and (
         imgui.is_mouse_down(imgui.MouseButton_.middle) or io.key_alt
-    ):
+    )
+    if panning:
         view.pan = (
             view.pan[0] - io.mouse_delta.x / view.zoom,
             view.pan[1] - io.mouse_delta.y / view.zoom,
         )
     if imgui.is_item_clicked(imgui.MouseButton_.left) and not io.key_shift:
         view.selection.clear()
+    # The rubber band: a left-drag on empty canvas that is not a pan (092 D14).
+    if (
+        bg_active
+        and not panning
+        and imgui.is_mouse_dragging(imgui.MouseButton_.left)
+        and view.band_anchor is None
+    ):
+        delta = imgui.get_mouse_drag_delta(imgui.MouseButton_.left)
+        view.band_anchor = (io.mouse_pos.x - delta.x, io.mouse_pos.y - delta.y)
 
     node_hovered = False
+    drop_target: tuple[str, str, str] | None = None  # (owner, sampler, kind)
     for node in nodes:
         p0 = xf.to_screen(node.pos)
         p1 = xf.to_screen((node.pos[0] + node.size[0], node.pos[1] + node.size[1]))
@@ -864,8 +891,119 @@ def _draw_canvas(
             if imgui.is_mouse_double_clicked(imgui.MouseButton_.left):
                 _double_click(app, document_id, view, node)
             elif imgui.is_item_clicked(imgui.MouseButton_.left):
-                _click(app, document_id, view, node)
+                _click(app, document_id, view, node, io.key_shift)
+        if (
+            imgui.is_item_active()
+            and imgui.is_mouse_dragging(imgui.MouseButton_.left)
+            and view.node_drag is None
+            and view.wire_drag is None
+            and node.kind != "ghost"
+        ):
+            names = _drag_names(view, node)
+            view.node_drag = NodeDrag(
+                origin={
+                    n: picture.positions[n] for n in names if n in picture.positions
+                }
+            )
         _node_menu(app, document_id, view, node)
+        # Ports: the dots are drag sources, the input dots drop targets too.
+        hit = max(SIZE.GRAPH_PORT_R * view.zoom, float(SIZE.GRAPH_HIT_MIN))
+        for slot, port in enumerate(node.ports):
+            center = xf.to_screen(_port_point(node, slot))
+            imgui.set_cursor_screen_pos((center[0] - hit, center[1] - hit))
+            imgui.invisible_button(
+                f"##gport_{node.key}_{slot}", imgui.ImVec2(2 * hit, 2 * hit)
+            )
+            owner = node.owners[slot]
+            if imgui.is_item_hovered() and view.wire_drag is not None:
+                drop_target = (owner, port.sampler, port.kind)
+            if (
+                imgui.is_item_active()
+                and imgui.is_mouse_dragging(imgui.MouseButton_.left)
+                and view.wire_drag is None
+                and view.node_drag is None
+                and port.kind == "wired"
+                and port.source is not None
+            ):
+                view.wire_drag = WireDrag(
+                    producer=port.source,
+                    start=_port_point(node, slot),
+                    grabbed=(owner, port.sampler),
+                )
+        for slot, (member, _hollow) in enumerate(node.outputs):
+            if node.kind == "ghost":
+                continue
+            center = xf.to_screen(_out_point(node, slot))
+            imgui.set_cursor_screen_pos((center[0] - hit, center[1] - hit))
+            imgui.invisible_button(
+                f"##gout_{node.key}_{slot}", imgui.ImVec2(2 * hit, 2 * hit)
+            )
+            if (
+                imgui.is_item_active()
+                and imgui.is_mouse_dragging(imgui.MouseButton_.left)
+                and view.wire_drag is None
+                and view.node_drag is None
+            ):
+                view.wire_drag = WireDrag(producer=member, start=_out_point(node, slot))
+
+    # ---- the drag in flight: move, snap, and commit on release ----
+    if view.node_drag is not None:
+        view.node_drag.update(
+            io.mouse_delta.x / view.zoom, io.mouse_delta.y / view.zoom
+        )
+        view.guides = _snap(view, picture, nodes)
+        if imgui.is_mouse_released(imgui.MouseButton_.left):
+            app.commit_node_drag(document_id)
+    if view.wire_drag is not None:
+        wire = view.wire_drag
+        start = xf.to_screen(wire.start)
+        end = (io.mouse_pos.x, io.mouse_pos.y)
+        c = max(30.0 * view.zoom, abs(end[0] - start[0]) * 0.45)
+        dl.add_bezier_cubic(
+            start,
+            (start[0] + c, start[1]),
+            (end[0] - c, end[1]),
+            end,
+            _u32(COLOR.ACCENT_PRIMARY),
+            max(1.0, 1.5 * view.zoom),
+        )
+        if imgui.is_mouse_released(imgui.MouseButton_.left):
+            _drop(app, document_id, wire, drop_target)
+            view.wire_drag = None
+    if view.band_anchor is not None:
+        a = view.band_anchor
+        b = (io.mouse_pos.x, io.mouse_pos.y)
+        lo = (min(a[0], b[0]), min(a[1], b[1]))
+        hi = (max(a[0], b[0]), max(a[1], b[1]))
+        dl.add_rect_filled(lo, hi, _u32(fade(COLOR.SELECT, 0.12)))
+        dl.add_rect(lo, hi, _u32(fade(COLOR.SELECT, 0.8)), 0.0, 1.0)
+        if imgui.is_mouse_released(imgui.MouseButton_.left):
+            picked: set[str] = set()
+            for node in nodes:
+                n0 = xf.to_screen(node.pos)
+                n1 = xf.to_screen(
+                    (node.pos[0] + node.size[0], node.pos[1] + node.size[1])
+                )
+                if (
+                    n1[0] >= lo[0]
+                    and n0[0] <= hi[0]
+                    and n1[1] >= lo[1]
+                    and n0[1] <= hi[1]
+                ):
+                    picked |= set(node.members) if node.kind == "box" else {node.name}
+            view.selection = (view.selection | picked) if io.key_shift else picked
+            view.band_anchor = None
+    for kind, value in view.guides:
+        if kind == "v":
+            x = xf.to_screen((value, 0.0))[0]
+            dl.add_line(
+                (x, origin.y), (x, origin.y + avail.y), _u32(fade(COLOR.SELECT, 0.7))
+            )
+        else:
+            y = xf.to_screen((0.0, value))[1]
+            dl.add_line(
+                (origin.x, y), (origin.x + avail.x, y), _u32(fade(COLOR.SELECT, 0.7))
+            )
 
     if (
         bg_hovered
@@ -874,20 +1012,89 @@ def _draw_canvas(
     ):
         imgui.open_popup("##graph_canvas_menu")
     _canvas_menu(app, document_id, view)
+    _group_prompt(app, document_id, view)
 
 
-def _click(app: App, document_id: str, view: GraphViewState, node: _Node) -> None:
+def _drag_names(view: GraphViewState, node: _Node) -> list[str]:
+    if node.kind == "box":
+        return list(node.members)
+    if node.name in view.selection:
+        return sorted(view.selection)
+    return [node.name]
+
+
+def _snap(
+    view: GraphViewState, picture: _View, nodes: Sequence[_Node]
+) -> list[tuple[str, float]]:
+    """Align the dragged node's left or top edge to a still node's within the snap distance,
+    by adjusting the drag's delta (092 D13). Returns the guides to draw."""
+    drag = view.node_drag
+    if drag is None:
+        return []
+    moving = set(drag.origin)
+    threshold = SIZE.GRAPH_SNAP_PX / view.zoom
+    primary = next(iter(drag.origin))
+    current = drag.current().get(primary)
+    if current is None:
+        return []
+    guides: list[tuple[str, float]] = []
+    still = [n for n in nodes if n.kind != "box" and n.name not in moving] + [
+        n for n in nodes if n.kind == "box" and not (set(n.members) & moving)
+    ]
+    best_x = min(((abs(n.pos[0] - current[0]), n.pos[0]) for n in still), default=None)
+    if best_x is not None and best_x[0] <= threshold:
+        drag.delta = (drag.delta[0] + (best_x[1] - current[0]), drag.delta[1])
+        guides.append(("v", best_x[1]))
+    best_y = min(((abs(n.pos[1] - current[1]), n.pos[1]) for n in still), default=None)
+    if best_y is not None and best_y[0] <= threshold:
+        drag.delta = (drag.delta[0], drag.delta[1] + (best_y[1] - current[1]))
+        guides.append(("h", best_y[1]))
+    return guides
+
+
+def _drop(
+    app: App,
+    document_id: str,
+    wire: WireDrag,
+    target: tuple[str, str, str] | None,
+) -> None:
+    if target is not None:
+        owner, sampler, _kind = target
+        if wire.grabbed == (owner, sampler):
+            return  # put back where it was grabbed
+        error = app.drop_wire(document_id, wire.producer, owner, sampler)
+        if error:
+            app.notifications.push(error)
+            return
+        if wire.grabbed is not None:
+            error = app.unwire(document_id, *wire.grabbed)
+            if error:
+                app.notifications.push(error)
+        return
+    if wire.grabbed is not None:
+        error = app.unwire(document_id, *wire.grabbed)
+        if error:
+            app.notifications.push(error)
+
+
+def _click(
+    app: App, document_id: str, view: GraphViewState, node: _Node, extend: bool
+) -> None:
     if node.kind == "ghost":
         view.scope = ""
         view.fitted = False
         view.selection = {node.name}
         return
-    if node.kind == "box":
-        view.selection = set(node.members)
-        app.pick_pass(document_id, node.bundle, focus_editor=False)
+    names = set(node.members) if node.kind == "box" else {node.name}
+    if extend:
+        view.selection ^= names
         return
-    view.selection = {node.name}
-    app.pick_pass(document_id, node.name, focus_editor=False)
+    view.selection = names
+    app.pick_pass(
+        document_id,
+        node.bundle if node.kind == "box" else node.name,
+        focus_editor=False,
+    )
 
 
 def _double_click(
@@ -899,7 +1106,7 @@ def _double_click(
         view.selection = set(node.members)
         return
     if node.kind == "ghost":
-        _click(app, document_id, view, node)
+        _click(app, document_id, view, node, False)
         return
     app.pick_pass(document_id, node.name, focus_editor=True)
 
@@ -913,6 +1120,38 @@ def _node_menu(app: App, document_id: str, view: GraphViewState, node: _Node) ->
                 if imgui.menu_item_simple("Open"):
                     view.scope = node.group
                     view.fitted = False
+                if imgui.menu_item_simple("Dissolve"):
+                    app.dissolve_group(document_id, node.group)
             else:
                 pass_menu_items(app, document_id, node.name)
+                if node.kind == "pass" and imgui.menu_item_simple("Group..."):
+                    if node.name not in view.selection:
+                        view.selection = {node.name}
+                    view.group_prompt = True
+                    view.group_name = ""
             imgui.end_popup()
+
+
+def _group_prompt(app: App, document_id: str, view: GraphViewState) -> None:
+    """The name a Group... asks for (092 D14): a small popup, Enter or Create commits."""
+    if view.group_prompt:
+        imgui.open_popup("##graph_group")
+        view.group_prompt = False
+    if not imgui.begin_popup("##graph_group"):
+        return
+    if imgui.is_window_appearing():
+        imgui.set_keyboard_focus_here()
+    imgui.set_next_item_width(float(SIZE.NAME_INPUT_W))
+    entered, view.group_name = imgui.input_text(
+        "##graph_group_name",
+        view.group_name,
+        imgui.InputTextFlags_.enter_returns_true,
+    )
+    imgui.same_line()
+    committed = primary_button("Create") or entered
+    if committed and app.group_selection(document_id, view.group_name.strip()) == "":
+        imgui.close_current_popup()
+    imgui.same_line()
+    if standard_button("Cancel"):
+        imgui.close_current_popup()
+    imgui.end_popup()
