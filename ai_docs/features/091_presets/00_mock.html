@@ -99,6 +99,30 @@
   .border .tile[data-g] { border-color:var(--gc); }
   .bracket .grp .strip, .region .grp .strip { display:flex; gap:var(--gap); flex-wrap:wrap; }
 
+
+  /* ---- C refinements: the frame must not make the block taller than a plain tile ---- */
+  .rowgrp .strip { display:block; }
+  .rowgrp .line { display:flex; gap:var(--gap); flex-wrap:wrap; margin-bottom:var(--gap); }
+  .rowgrp .grp { width:100%; background:color-mix(in srgb, var(--gc) 10%, var(--bg0h)); border:1px solid color-mix(in srgb, var(--gc) 45%, var(--bg0h)); border-radius:8px; padding:8px 8px 8px; position:relative; margin-bottom:var(--gap); }
+  .rowgrp .grp .hdr { font-size:12px; color:var(--gc); display:flex; gap:10px; margin:0 2px 6px; }
+  .rowgrp .grp .hdr .ports { color:var(--fg4); }
+  .rowgrp .grp .strip { display:flex; gap:var(--gap); flex-wrap:wrap; }
+
+  .small .grp { background:color-mix(in srgb, var(--gc) 10%, var(--bg0h)); border:1px solid color-mix(in srgb, var(--gc) 45%, var(--bg0h)); border-radius:8px; padding:18px 6px 6px; position:relative; }
+  .small .grp .hdr { position:absolute; top:2px; left:8px; font-size:12px; color:var(--gc); display:flex; gap:10px; }
+  .small .grp .hdr .ports { color:var(--fg4); }
+  .small .grp .strip { display:flex; gap:6px; flex-wrap:wrap; }
+  .small .grp .tile { width:140px; padding:6px 6px 6px; gap:4px; }
+  .small .grp .thumb { width:88px; height:88px; }
+  .small .grp .name { font-size:14px; }
+
+  .flush .grp { border:1px solid var(--gc); border-radius:7px; position:relative; margin-top:0; }
+  .flush > .strip { padding-top:10px; }
+  .flush .grp .strip { display:flex; gap:4px; flex-wrap:wrap; padding-top:0; }
+  .flush .grp .tile { border-color:transparent; background:color-mix(in srgb, var(--gc) 8%, var(--bg0)); }
+  .flush .grp .hdr { z-index:1; position:absolute; top:-8px; left:10px; font-size:11px; color:var(--gc); background:var(--bg0h); padding:0 5px; line-height:14px; display:flex; gap:8px; }
+  .flush .grp .hdr .ports { color:var(--fg4); }
+
   /* ---- graph teaser ---- */
   svg text { font-family:inherit; }
   .sl { display:flex; gap:12px; align-items:center; margin:6px 0 12px; color:var(--fg4); font-size:12px; }
@@ -144,6 +168,32 @@
   <span class="btn">add pass</span><span class="btn">import…</span>
 </div>
 <p class="note">B and C need the group's members to be contiguous in the strip order to draw as one block. They are contiguous right after an import and stay so unless you wire an outside pass into the middle of the group; when that happens the block splits into two blocks with the same header. A and D have no such dependence.</p>
+
+
+<h2>1b · C refined: the frame must not outgrow a plain tile</h2>
+<p>Three ways to keep the framed block the same height as an unframed tile. The width slider above applies here too.</p>
+
+<h3>C1 · the group on its own line(s) <span class="verdict">full-width region, header inside</span></h3>
+<div class="panel w rowgrp" style="width:1040px">
+  <div class="caption">Passes</div>
+  <div class="strip" id="stripC1"></div>
+  <span class="btn">add pass</span><span class="btn">import…</span>
+</div>
+
+<h3>C2 · smaller cards inside a same-height frame <span class="verdict">thumb 88, frame outer = tile outer</span></h3>
+<div class="panel w small" style="width:1040px">
+  <div class="caption">Passes</div>
+  <div class="strip" id="stripC2"></div>
+  <span class="btn">add pass</span><span class="btn">import…</span>
+</div>
+
+<h3>C3 · flush frame, label on the border <span class="verdict">frame = the tiles' own outline, no padding</span></h3>
+<div class="panel w flush" style="width:1040px">
+  <div class="caption">Passes</div>
+  <div class="strip" id="stripC3"></div>
+  <span class="btn">add pass</span><span class="btn">import…</span>
+</div>
+<p class="note">C1 spends vertical space on a document with several small groups (each takes a line) but never fights the wrap. C2 keeps everything on one flow and pays with a second tile size, which the theme would need a token for (`PASS_TILE_GROUPED`). C3 adds no height at all; the members lose their own borders and sit 4px apart so the outline reads as one thing, and the label rides the border.</p>
 
 <!-- ============================================================ -->
 <h2>2 · The import dialog</h2>
@@ -326,7 +376,7 @@
     // collapse like the app: chips that do not fit fold into a +N count
     const words = p.reads.slice();
     const gw = (variant === 'D' && p.g) ? (p.g.length * 7.2 + 14) : 0;
-    const budget = 150 - gw;
+    const budget = (variant === 'C2' ? 124 : 150) - gw;
     const wOf = w => w.length * 7.2 + 16;
     let shown = [], used = 0;
     for (let k = 0; k < words.length; k++) {
@@ -344,6 +394,7 @@
   function fill(id, variant) {
     const s = document.getElementById(id);
     if (variant === 'A' || variant === 'D') { passes.forEach(p => s.appendChild(tile(p, variant))); return; }
+    const v = variant === 'C2' ? 'C2' : variant;
     // B and C: wrap contiguous members of one group in a block
     let i = 0;
     while (i < passes.length) {
@@ -354,12 +405,32 @@
       hdr.innerHTML = `<span>${p.g}</span><span class="ports">in: scene · out: fx_composite</span>`;
       grp.appendChild(hdr);
       const inner = document.createElement('div'); inner.className = 'strip';
-      while (i < passes.length && passes[i].g === p.g) { inner.appendChild(tile(passes[i], variant)); i++; }
-      if (variant === 'B') { grp.appendChild(inner); } else { grp.appendChild(inner); }
+      while (i < passes.length && passes[i].g === p.g) { inner.appendChild(tile(passes[i], v)); i++; }
+      grp.appendChild(inner);
       s.appendChild(grp);
     }
   }
   fill('stripA','A'); fill('stripB','B'); fill('stripC','C'); fill('stripD','D');
+  function fillRows(id) {
+    // C1: each group takes its own line(s); ungrouped runs share a line
+    const s = document.getElementById(id);
+    let i = 0, line = null;
+    while (i < passes.length) {
+      const p = passes[i];
+      if (!p.g) {
+        if (!line) { line = document.createElement('div'); line.className = 'line'; s.appendChild(line); }
+        line.appendChild(tile(p, 'C')); i++; continue;
+      }
+      line = null;
+      const grp = document.createElement('div'); grp.className = 'grp'; grp.style.setProperty('--gc', G[p.g]);
+      grp.innerHTML = `<div class="hdr"><span>${p.g}</span><span class="ports">in: scene · out: fx_composite</span></div>`;
+      const inner = document.createElement('div'); inner.className = 'strip';
+      while (i < passes.length && passes[i].g === p.g) { inner.appendChild(tile(passes[i], 'C')); i++; }
+      grp.appendChild(inner); s.appendChild(grp);
+    }
+  }
+  fillRows('stripC1'); fill('stripC2','C2'); fill('stripC3','C');
+
 
   // ---- graph nodes ----
   const nodes = [
