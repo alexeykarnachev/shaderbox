@@ -81,7 +81,30 @@
   .node.output .hdr { fill:color-mix(in srgb, var(--yellow) 22%, var(--bg1)); }
   .hdrname { font-size:12px; fill:var(--fg2); }
   .outport { fill:var(--bg0h); stroke:var(--fg3); stroke-width:1.4; }
-  .ghost { stroke:var(--bg2); stroke-dasharray:3 3; }
+  .node.ghost { opacity:.5; }
+  .node.ghost .frame { stroke-dasharray:4 3; }
+  .node.box .frame { stroke:var(--aqua); fill:color-mix(in srgb, var(--aqua) 8%, var(--bg0)); }
+  .node.box .name { fill:var(--aqua); }
+  .boxcount { font-size:10px; fill:var(--fg4); }
+  .node.fresh .frame { stroke-dasharray:4 3; stroke:var(--fg3); }
+  .node.selected .frame { stroke:var(--purple); stroke-width:1.5; }
+  .drag { fill:none; stroke:var(--yellow); stroke-width:1.5; stroke-dasharray:5 4; }
+  .guide { stroke:var(--purple); stroke-width:1; stroke-dasharray:2 3; opacity:.7; }
+  .cursor { fill:var(--fg0); stroke:var(--bg0h); stroke-width:1; }
+  .gtabs { display:flex; gap:2px; margin:0 0 8px; align-items:flex-end; }
+  .gtab { padding:2px 10px; background:var(--bg1); color:var(--fg4); border-radius:3px 3px 0 0; font-size:12px; border:1px solid var(--bg2); border-bottom:none; }
+  .gtab.on { background:var(--bg0); color:var(--fg0); }
+  .gtab.grp { color:var(--aqua); }
+  .gtab.on.grp { color:var(--aqua); }
+  .gtabs .up { margin-left:auto; color:var(--fg4); font-size:12px; }
+  .menu { position:absolute; background:var(--bg0s); border:1px solid var(--yellow); border-radius:3px; font-size:12px; padding:3px 0; min-width:150px; box-shadow:0 6px 20px rgba(0,0,0,.5); z-index:2; }
+  .menu div { padding:2px 10px; color:var(--fg2); }
+  .menu div.hdr { color:var(--fg4); font-size:10px; letter-spacing:.5px; padding-top:4px; }
+  .menu div.dim { color:var(--bg4); }
+  .menu div.hi { background:color-mix(in srgb, var(--yellow) 25%, var(--bg0s)); }
+  .side2 { display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start; }
+  .side2 .panel { margin:8px 0; }
+  .callout { font-size:12px; color:var(--fg4); margin:-8px 0 12px; }
 </style>
 </head>
 <body>
@@ -97,7 +120,41 @@
   <label><input type="checkbox" id="region" checked> group region</label>
 </div>
 
-<h2>Round 2 · port-list nodes <span class="verdict">the chosen shape, six ways</span></h2>
+<h2>Round 3 · tabs instead of folding <span class="verdict">a group is a box at the root and a tab of its own</span></h2>
+<p>No fold flag, no convexity rule, no group region. The root tab shows every ungrouped pass as a node and every group as one <b>box</b> whose ports are its boundary edges: a member sampler that reads an outside pass (or nothing) is an input port, a member read from outside (plus the bundle's own output) is an output port. The box's picture is the bundle output's live texture. A group's tab shows its members as ordinary nodes and the outside passes they touch as dimmed <b>ghosts</b> at the border. Depth is two by 091's no-nesting rule, so the tab row is also the breadcrumb.</p>
+
+<h3>A · the root tab, one port per sampler slot <span class="verdict">every wire is a real sampler</span></h3>
+<p>Both bloom members that read <code>scene</code> get their own port, named <code>member.sampler</code> because the sampler name alone is not unique. Honest, and three wires from the same source into one box is what it looks like.</p>
+<div class="panel w" data-v="lr" data-style="under" data-size="compact" data-view="root" data-doc="bloom" data-merge="slots"></div>
+
+<h3>B · the root tab, ports merged by what feeds them <span class="verdict">the black-box interface</span></h3>
+<p>Slots fed by the same outside pass fold into one port that says how many slots it carries; unfilled slots fold by sampler name. A wire dropped on a merged port rewrites every slot behind it. The box now reads as a filter with one <code>scene</code> input, which is what a user who never opens it wants.</p>
+<div class="panel w" data-v="lr" data-style="under" data-size="compact" data-view="root" data-doc="bloom" data-merge="source"></div>
+
+<h3>C · the bloom tab <span class="verdict">members as nodes, the outside as ghosts</span></h3>
+<p>What you see after clicking the tab or double-clicking the box. <code>scene</code> and <code>final</code> are ghosts: dimmed, dashed, not editable, ports kept so a wire can still be dragged across the boundary; clicking one jumps back to the root with that node selected.</p>
+<div class="panel w" data-v="lr" data-style="under" data-size="compact" data-view="group" data-doc="bloom" data-group="bloom"></div>
+
+<h3>D · a non-convex group <span class="verdict">the case folding could not carry</span></h3>
+<p>A hand-made document: the host's <code>grade</code> reads <code>fx_bright</code> and feeds <code>fx_blur</code>, so a path between two members leaves the group. At the root the box has an output wired into <code>grade</code> and an input wired back from it, drawn as a back edge on the bus; in the group tab <code>grade</code> is a ghost on both sides. Nothing is refused.</p>
+<div class="side2">
+  <div class="panel w2" data-v="lr" data-style="under" data-size="compact" data-view="root" data-doc="nonconvex" data-merge="source" style="width:560px"></div>
+  <div class="panel w2" data-v="lr" data-style="under" data-size="compact" data-view="group" data-doc="nonconvex" data-group="bloom" style="width:560px"></div>
+</div>
+
+<h3>E · a generator box <span class="verdict">Radiance Cascades imported whole, no inputs</span></h3>
+<p>The cascades' entry point <code>paint</code> has no sampler at all, so imported with <code>paint</code> kept the box has an output and nothing else: a source you drop into a chain. Imported with <code>paint</code> substituted by the host's own <code>paint</code>, the three members that read it fold into one merged input port carrying three slots.</p>
+<div class="side2">
+  <div class="panel w2" data-v="lr" data-style="under" data-size="compact" data-view="root" data-doc="rc_kept" data-merge="source" style="width:560px"></div>
+  <div class="panel w2" data-v="lr" data-style="under" data-size="compact" data-view="root" data-doc="rc_sub" data-merge="source" style="width:560px"></div>
+</div>
+
+<h3>F · free placement, a wire being dragged, the menus <span class="verdict">positions are the pass's; arrange is a verb</span></h3>
+<p>Every node sits where it was put (the first sight of a document runs the rank layout once and stores it). A freshly added pass lands under the cursor, unconnected, dashed until it compiles. A wire is being dragged from <code>scene</code>'s output dot toward the new pass's <code>u_src</code> port; the drop writes that sampler's source. The dotted guides are the snap during drag: the node aligns to a neighbour's column or row. The two menus are the node's and the canvas's.</p>
+<div class="panel w" data-view="free" data-doc="bloom" style="min-height:420px"></div>
+
+<details open><summary>Round 2 (the chosen node shape): port-list nodes six ways</summary>
+<h3>Round 2 · port-list nodes <span class="verdict">the chosen shape, six ways</span></h3>
 <p>A node lists its samplers as ports; an edge ends at the port's dot and carries no label. What varies: where the list sits on the node, which way the ranks run, and whether the lanes shape from round 1 is folded in. The output port is the dot on the right of the picture in every variant.</p>
 
 <h3>A · ports under the picture, left to right <span class="verdict">round 1's #5, the bus clipping fixed</span></h3>
@@ -123,6 +180,7 @@
 <p>One column in strip order, every edge a lane on the left ending in the port dot. The narrowest picture of all, and the only one where the ports and the lanes are the same idea: a lane is a wire, a port is where it lands.</p>
 <div class="panel w" data-v="lanes" data-style="under" data-size="compact"></div>
 
+</details>
 <h2>What the two documents say about the layout</h2>
 <table class="cmp">
   <tr><th>document</th><th>ranks</th><th>widest rank</th><th>long edges (span &gt; 1)</th><th>feedback</th><th>natural width LR compact, ports under / beside</th><th>natural height TB</th><th>natural height lanes</th></tr>
@@ -169,6 +227,109 @@ const BLOOM = {
   ],
 };
 
+const NONCONVEX = {
+  name: 'graded host', output: 'final',
+  passes: [
+    { n:'scene',        t:'t-scene',  reads:{} },
+    { n:'fx_bright',    t:'t-bright', reads:{u_scene:'scene'}, g:'bloom' },
+    { n:'grade',        t:'t-vig',    reads:{u_src:'fx_bright'} },
+    { n:'fx_blur',      t:'t-blur',   reads:{u_bright:'grade'}, g:'bloom' },
+    { n:'fx_composite', t:'t-comp',   reads:{u_scene:'scene', u_blur:'fx_blur'}, g:'bloom' },
+    { n:'final',        t:'t-final',  reads:{u_fx_composite:'fx_composite'} },
+  ],
+};
+const RC_KEPT = {
+  name: 'cascades host', output: 'final',
+  passes: [
+    { n:'rc_paint',     t:'t-paint', reads:{}, g:'cascades' },
+    { n:'rc_seed',      t:'t-seed',  reads:{u_paint:'rc_paint'}, g:'cascades' },
+    { n:'rc_jfa',       t:'t-jfa',   reads:{u_seed:'rc_seed', u_prev:'rc_jfa'}, runs:12, g:'cascades' },
+    { n:'rc_df',        t:'t-df',    reads:{u_jfa:'rc_jfa'}, g:'cascades' },
+    { n:'rc_cascade',   t:'t-casc',  reads:{u_paint:'rc_paint', u_df:'rc_df', u_prev:'rc_cascade'}, runs:6, g:'cascades' },
+    { n:'rc_composite', t:'t-comp',  reads:{u_cascade:'rc_cascade', u_paint:'rc_paint'}, g:'cascades' },
+    { n:'final',        t:'t-final', reads:{u_rc_composite:'rc_composite'} },
+  ],
+};
+const RC_SUB = {
+  name: 'cascades host', output: 'final',
+  passes: [
+    { n:'paint',        t:'t-paint', reads:{} },
+    { n:'rc_seed',      t:'t-seed',  reads:{u_paint:'paint'}, g:'cascades' },
+    { n:'rc_jfa',       t:'t-jfa',   reads:{u_seed:'rc_seed', u_prev:'rc_jfa'}, runs:12, g:'cascades' },
+    { n:'rc_df',        t:'t-df',    reads:{u_jfa:'rc_jfa'}, g:'cascades' },
+    { n:'rc_cascade',   t:'t-casc',  reads:{u_paint:'paint', u_df:'rc_df', u_prev:'rc_cascade'}, runs:6, g:'cascades' },
+    { n:'rc_composite', t:'t-comp',  reads:{u_cascade:'rc_cascade', u_paint:'paint'}, g:'cascades' },
+    { n:'final',        t:'t-final', reads:{u_rc_composite:'rc_composite'} },
+  ],
+};
+const DOCS = { bloom: BLOOM, rc: RC, nonconvex: NONCONVEX, rc_kept: RC_KEPT, rc_sub: RC_SUB };
+
+// ---------------- views: the root tab and a group tab, derived from the flat document ----------------
+function bundleOutput(doc, members) {
+  const inside = new Set(members.map(p => p.n));
+  const readInside = new Set(); members.forEach(p => Object.values(p.reads).forEach(s => { if (s !== p.n) readInside.add(s); }));
+  const unread = members.filter(p => !readInside.has(p.n));
+  if (unread.some(p => p.n === doc.output)) return doc.output;
+  const readOutside = unread.filter(p => doc.passes.some(q => !inside.has(q.n) && Object.values(q.reads).includes(p.n)));
+  return (readOutside[0] || unread[unread.length - 1] || members[members.length - 1]).n;
+}
+function rootView(doc, merge) {
+  const groups = {}; doc.passes.forEach(p => { if (p.g) (groups[p.g] ||= []).push(p); });
+  const passes = [], slotsOf = {};
+  const boxOf = n => byName(doc, n).g || null;
+  for (const p of doc.passes) {
+    if (p.g) continue;
+    const reads = {}; for (const [u, src] of Object.entries(p.reads)) reads[u] = boxOf(src) || src;
+    passes.push({ ...p, reads });
+  }
+  for (const [g, members] of Object.entries(groups)) {
+    const inside = new Set(members.map(p => p.n));
+    const reads = {}, slots = {};
+    for (const p of members) for (const [u, src] of Object.entries(p.reads)) {
+      if (inside.has(src)) continue;
+      const outside = boxOf(src) || src;
+      const key = merge === 'source' ? (outside === src ? src : outside) : `${p.n}.${u}`;
+      reads[key] = outside; (slots[key] ||= []).push(`${p.n}.${u}`);
+    }
+    if (merge === 'slots') {   // a sampler name unique across members keeps its bare name
+      const bare = {}; Object.keys(reads).forEach(k => { const u = k.split('.')[1]; (bare[u] ||= []).push(k); });
+      for (const [u, ks] of Object.entries(bare)) if (ks.length === 1) { reads[u] = reads[ks[0]]; slots[u] = slots[ks[0]]; delete reads[ks[0]]; delete slots[ks[0]]; }
+    }
+    const out = bundleOutput(doc, members);
+    passes.push({ n: g, t: byName(doc, out).t, reads, box: true, count: members.length, members: members.map(p => p.n) });
+    slotsOf[g] = slots;
+  }
+  // ranks over the flat document; a box takes its members' first rank
+  const r = ranks(doc); const rankOverride = {};
+  passes.forEach(p => rankOverride[p.n] = p.box ? Math.min(...p.members.map(m => r[m])) : r[p.n]);
+  return { name: doc.name, output: boxOf(doc.output) || doc.output, passes, slotsOf, rankOverride, tabs: Object.keys(groups) };
+}
+function groupView(doc, g) {
+  const members = doc.passes.filter(p => p.g === g), inside = new Set(members.map(p => p.n));
+  const ghosts = new Map();
+  const passes = members.map(p => ({ ...p }));
+  for (const p of members) for (const src of Object.values(p.reads)) if (!inside.has(src) && !ghosts.has(src)) ghosts.set(src, { ...byName(doc, src), reads: {}, ghost: true, g: undefined });
+  for (const q of doc.passes) if (!inside.has(q.n)) {
+    const reads = {}; for (const [u, src] of Object.entries(q.reads)) if (inside.has(src)) reads[u] = src;
+    if (Object.keys(reads).length) { const gh = ghosts.get(q.n) || { ...q, reads: {}, ghost: true, g: undefined }; gh.reads = { ...gh.reads, ...reads }; ghosts.set(q.n, gh); }
+  }
+  // a ghost that both feeds and reads the group appears twice: once as a source, once as a reader
+  const out = [];
+  for (const gh of ghosts.values()) {
+    const feeds = members.some(p => Object.values(p.reads).includes(gh.n));
+    if (feeds && Object.keys(gh.reads).length) {
+      out.push({ ...gh, reads: {}, n: gh.n });
+      const twin = { ...gh, n: gh.n + '·', label: gh.n };
+      passes.forEach(p => {}); out.push(twin);
+    } else out.push(gh);
+  }
+  const r = ranks(doc); const rankOverride = {};
+  passes.forEach(p => rankOverride[p.n] = r[p.n]);
+  const first = Math.min(...members.map(m => r[m.n])), last = Math.max(...members.map(m => r[m.n]));
+  out.forEach(gh => rankOverride[gh.n] = (gh.n.endsWith('·') || Object.keys(gh.reads).length) ? last + 1 : first - 1);
+  return { name: doc.name, output: doc.output, passes: [...passes, ...out], rankOverride, tabs: [...new Set(doc.passes.filter(p => p.g).map(p => p.g))], active: g };
+}
+
 // ---------------- layout engine ----------------
 const SIZES = {
   full:    { w:168, thumb:112, pad:8, nameH:22, gapX:72, gapY:24, font:13, portH:16, portColW:84, hdrH:20 },
@@ -181,6 +342,7 @@ function edgesOf(doc) {
   return out;
 }
 function ranks(doc) {
+  if (doc.rankOverride) return { ...doc.rankOverride };
   const memo = {};
   const rank = n => {
     if (n in memo) return memo[n];
@@ -193,8 +355,10 @@ function ranks(doc) {
 }
 function columns(doc) {
   const r = ranks(doc);
-  const cols = [];
-  doc.passes.forEach(p => { (cols[r[p.n]] ||= []).push(p.n); });
+  const lo = Math.min(...Object.values(r));
+  const sparse = [];
+  doc.passes.forEach(p => { (sparse[r[p.n] - lo] ||= []).push(p.n); });
+  const cols = sparse.filter(c => c && c.length);   // derived views leave holes and negatives
   const pos = {};
   cols.forEach((col, i) => {
     if (i > 0) {
@@ -217,6 +381,8 @@ function inputs(doc, name) {
 // node geometry per style: 'plain' (round 1), 'under', 'header', 'side'
 function nodeSize(S, doc, name, style) {
   const k = style === 'plain' ? 0 : inputs(doc, name).length;
+  const p = byName(doc, name);
+  if (p && p.box) return { w: S.w + 40, h: S.pad + S.thumb + S.nameH + S.pad + (k ? 4 + k * S.portH : 0) };
   if (style === 'side') return { w: S.w + S.portColW, h: S.pad + Math.max(S.thumb, k * S.portH) + S.nameH + S.pad };
   const hdr = style === 'header' ? S.hdrH : 0;
   return { w: S.w, h: hdr + S.pad + S.thumb + (style === 'header' ? 0 : S.nameH) + S.pad + (k ? 4 + k * S.portH : 0) };
@@ -295,20 +461,27 @@ function ellipsize(text, maxW) { const maxc = Math.floor(maxW / 6.6); return tex
 
 function drawNode(svg, doc, p, node, S, style, opts) {
   const ins = inputs(doc, p.n);
-  const g = el('g', { class: 'node' + (p.n === doc.output ? ' output' : '') + (p.stale ? ' stale' : ''), 'data-n': p.n }, svg);
+  const cls = 'node' + (p.n === doc.output ? ' output' : '') + (p.stale ? ' stale' : '') + (p.box ? ' box' : '') + (p.ghost ? ' ghost' : '') + (p.fresh ? ' fresh' : '') + (p.selected ? ' selected' : '');
+  const g = el('g', { class: cls, 'data-n': p.n }, svg);
   const G = geom(S, node, style, ins.length, opts.outLeft);
+  const shown = p.label || p.n;
   el('rect', { x: node.x, y: node.y, width: node.w, height: node.h, rx: 6, class: 'frame' }, g);
   if (G.header) {
     const tint = p.g ? 'color-mix(in srgb, var(--aqua) 22%, var(--bg1))' : null;
     const r = el('path', { d: `M${node.x},${node.y + 6} a6,6 0 0 1 6,-6 h${node.w - 12} a6,6 0 0 1 6,6 v${G.header.h - 6} h${-node.w} z`, class: 'hdr' }, g);
     if (tint && p.n !== doc.output) r.style.fill = tint;
-    const t = el('text', { x: G.name.x, y: G.name.y, 'text-anchor': 'middle', class: 'hdrname' }, g); t.textContent = p.n;
+    const t = el('text', { x: G.name.x, y: G.name.y, 'text-anchor': 'middle', class: 'hdrname' }, g); t.textContent = shown;
   } else {
-    const t = el('text', { x: G.name.x, y: G.name.y, 'text-anchor': 'middle', class: 'name', 'font-size': S.font }, g); t.textContent = p.n;
+    const t = el('text', { x: G.name.x, y: G.name.y, 'text-anchor': 'middle', class: 'name', 'font-size': S.font }, g); t.textContent = shown;
+  }
+  if (p.box) {
+    const label = p.count + ' passes', bw = label.length * 6 + 8, bx = G.thumb.x + 2, by = G.thumb.y + 2;
+    el('rect', { x: bx, y: by, width: bw, height: 13, rx: 3, class: 'badgebg' }, g);
+    const c = el('text', { x: bx + bw / 2, y: by + 10, 'text-anchor': 'middle', class: 'boxcount' }, g); c.textContent = label;
   }
   const fo = el('foreignObject', { x: G.thumb.x, y: G.thumb.y, width: G.thumb.s, height: G.thumb.s }, g);
   const d = document.createElement('div'); d.className = 'thumb ' + p.t; fo.appendChild(d);
-  if (opts.runs && p.runs) {
+  if (opts.runs && p.runs && !p.ghost) {
     const bx = G.thumb.x + G.thumb.s - 26, by = G.thumb.y + 2;
     el('rect', { x: bx, y: by, width: 24, height: 13, rx: 3, class: 'badgebg' }, g);
     const b = el('text', { x: bx + 12, y: by + 10, 'text-anchor': 'middle', class: 'badge' }, g); b.textContent = '×' + p.runs;
@@ -318,7 +491,9 @@ function drawNode(svg, doc, p, node, S, style, opts) {
     ins.forEach((inp, i) => {
       const P = G.ports[i];
       el('circle', { cx: P.x, cy: P.y, r: 3.5, class: 'port' }, g);
-      const l = el('text', { x: P.x + 8, y: P.y + 4, class: 'portlbl' }, g); l.textContent = ellipsize(inp.self ? 'prev' : inp.u, maxW);
+      const slots = doc.slotsOf && doc.slotsOf[p.n] && doc.slotsOf[p.n][inp.u];
+      const text = (inp.self ? 'prev' : inp.u) + (slots && slots.length > 1 ? ` ×${slots.length}` : '');
+      const l = el('text', { x: P.x + 8, y: P.y + 4, class: 'portlbl' }, g); l.textContent = ellipsize(text, maxW);
     });
     el('circle', { cx: G.out.x, cy: G.out.y, r: 3.5, class: 'outport' }, g);
   }
@@ -349,8 +524,17 @@ function drawGroups(svg, doc, L) {
     const t = el('text', { x: x0 + 16, y: y0 + 4, class: 'regionlbl' }, svg); t.textContent = g;
   }
 }
+function tabRow(view, docName) {
+  const row = document.createElement('div'); row.className = 'gtabs';
+  const root = document.createElement('span'); root.className = 'gtab' + (view.active ? '' : ' on'); root.textContent = docName; row.appendChild(root);
+  for (const g of view.tabs || []) { const t = document.createElement('span'); t.className = 'gtab grp' + (view.active === g ? ' on' : ''); t.textContent = g; row.appendChild(t); }
+  const up = document.createElement('span'); up.className = 'up'; up.textContent = view.active ? 'Esc: back to ' + docName : 'double-click a box to open it'; row.appendChild(up);
+  return row;
+}
 function render(panel, doc, opts) {
   const v = panel.dataset.v, style = panel.dataset.style, S = SIZES[panel.dataset.size], ortho = panel.dataset.edges === 'ortho';
+  if (panel.dataset.view === 'root') doc = rootView(doc, panel.dataset.merge);
+  else if (panel.dataset.view === 'group') doc = groupView(doc, panel.dataset.group);
   const L = v === 'lanes' ? layoutLanes(doc, S, style) : layoutRanked(doc, S, style, v);
   const r = ranks(doc);
   const maxSpan = Math.max(1, ...edgesOf(doc).filter(e => !e.self).map(e => r[e.dst] - r[e.src]));
@@ -374,7 +558,8 @@ function render(panel, doc, opts) {
   };
   const exit = src => { const n = L.nodes[src]; return v === 'tb' ? { x: n.x + n.w / 2, y: n.y + n.h } : style === 'plain' ? { x: n.x + n.w, y: n.y + n.h / 2 } : G[src].out; };
 
-  if (opts.region) drawGroups(svg, doc, L);
+  const colOf = {}; (L.cols || []).forEach((col, i) => col.forEach(n => colOf[n] = i));
+  if (opts.region && !panel.dataset.view) drawGroups(svg, doc, L);
   if (v === 'lanes') {
     const laneX = l => 12 + (L.nLanes - 1 - l) * L.laneW + L.laneW / 2;
     for (const e of L.edges) {
@@ -394,7 +579,7 @@ function render(panel, doc, opts) {
       const id = e.src + '>' + e.dst;
       const cls = (stale(e.src) || stale(e.dst)) ? 'stale' : '';
       const A = exit(e.src), P = entry(e.dst, e.u);
-      const span = r[e.dst] - r[e.src];
+      const span = v === 'lanes' ? 1 : colOf[e.dst] - colOf[e.src];
       let d;
       if (v === 'tb') {
         // drop from the source, run to the left of the consumer, turn into the port (or, plain: onto the top edge)
@@ -417,9 +602,12 @@ function render(panel, doc, opts) {
         el('path', { d, class: 'edge ' + cls, 'data-e': id }, svg);
         const h = head(P.x - 1, P.y, 1, 0, cls); h.setAttribute('data-e', id); svg.appendChild(h);
       } else {
-        const busY = span > 1 ? L.H + 16 + 12 * (span - 2) : 0;
+        const backward = P.x < A.x;
+        const busY = (span > 1 || backward) ? L.H + 16 + 12 * Math.max(0, span - 2) + (backward ? 12 : 0) : 0;
         const gx = S.gapX / 2;
-        if (ortho) {
+        if (backward) {
+          d = `M${A.x},${A.y} C${A.x + gx},${A.y} ${A.x + gx},${busY} ${A.x + gx - 24},${busY} H${P.x - gx + 24} C${P.x - gx},${busY} ${P.x - gx},${P.y} ${P.x - 2},${P.y}`;
+        } else if (ortho) {
           d = busY
             ? `M${A.x},${A.y} H${A.x + gx} V${busY} H${P.x - gx} V${P.y} H${P.x - 4}`
             : `M${A.x},${A.y} H${(A.x + P.x) / 2} V${P.y} H${P.x - 4}`;
@@ -450,6 +638,48 @@ function render(panel, doc, opts) {
   });
   return { svg, natural, zoom };
 }
+function renderFree(panel, cap) {
+  const doc = BLOOM, S = SIZES.compact, style = 'under';
+  const view = rootView(doc, 'source');
+  view.passes.push({ n: 'new_pass', t: '', reads: { u_src: null }, fresh: true });
+  view.rankOverride.new_pass = 0;
+  panel.appendChild(tabRow(view, doc.name));
+  const nodes = {};
+  const pos = { scene: [40, 120], bloom: [230, 40], vignette: [250, 250], final: [470, 110], new_pass: [430, 300] };
+  view.passes.forEach(p => { const { w, h } = nodeSize(S, view, p.n, style); nodes[p.n] = { x: pos[p.n][0], y: pos[p.n][1], w, h }; });
+  const W = 640, H = 430;
+  const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, width: Math.min(W, panel.clientWidth - 26), height: H * Math.min(1, (panel.clientWidth - 26) / W) });
+  const G = {}; view.passes.forEach(p => G[p.n] = geom(S, nodes[p.n], style, inputs(view, p.n).length, false));
+  // snap guides: the fresh node's left edge aligned to final's column, its port row to vignette's row
+  el('line', { x1: nodes.final.x, y1: 0, x2: nodes.final.x, y2: H, class: 'guide' }, svg);
+  el('line', { x1: 0, y1: nodes.vignette.y, x2: W, y2: nodes.vignette.y, class: 'guide' }, svg);
+  nodes.new_pass.x = nodes.final.x;
+  G.new_pass = geom(S, nodes.new_pass, style, 1, false);
+  // real edges
+  for (const p of view.passes) for (const [u, src] of Object.entries(p.reads)) {
+    if (!src) continue;
+    const A = G[src].out, ins = inputs(view, p.n), P = G[p.n].ports[ins.findIndex(q => q.u === u)];
+    const c = Math.max(30, Math.abs(P.x - A.x) * .45);
+    const cls = (p.stale ? 'stale' : '');
+    el('path', { d: `M${A.x},${A.y} C${A.x + c},${A.y} ${P.x - c},${P.y} ${P.x - 2},${P.y}`, class: 'edge ' + cls }, svg);
+    svg.appendChild(head(P.x - 1, P.y, 1, 0, cls));
+  }
+  // the wire being dragged: from scene's out dot to the cursor, hovering new_pass's u_src port
+  const A = G.scene.out, P = G.new_pass.ports[0], cx = P.x - 10, cy = P.y + 6;
+  el('path', { d: `M${A.x},${A.y} C${A.x + 60},${A.y} ${cx - 60},${cy} ${cx},${cy}`, class: 'drag' }, svg);
+  view.passes.forEach(p => drawNode(svg, view, p, nodes[p.n], S, style, { runs: true }));
+  el('circle', { cx: P.x, cy: P.y, r: 5.5, fill: 'none', stroke: 'var(--yellow)', 'stroke-width': 1.5 }, svg);
+  el('path', { d: `M${cx},${cy} l0,14 l4,-3 l3,6 l3,-1.5 l-3,-6 l5,-1 z`, class: 'cursor' }, svg);
+  panel.appendChild(svg);
+  // menus, as html over the panel
+  const m1 = document.createElement('div'); m1.className = 'menu'; m1.style.left = '300px'; m1.style.top = '150px';
+  m1.innerHTML = '<div class="hdr">bloom</div><div>Open</div><div class="hi">Settings</div><div>Delete</div><div>Leave group</div><div class="hdr">4 passes</div><div>Save as document…</div>';
+  const m2 = document.createElement('div'); m2.className = 'menu'; m2.style.left = '560px'; m2.style.top = '300px';
+  m2.innerHTML = '<div>Add pass</div><div>Import…</div><div class="hdr">view</div><div>Arrange</div><div>Fit</div><div class="dim">Snap to grid ✓</div>';
+  panel.appendChild(m1); panel.appendChild(m2);
+  const note = document.createElement('div'); note.className = 'callout'; note.textContent = 'left menu: right-click on the bloom box · right menu: right-click on empty canvas';
+  panel.appendChild(note);
+}
 function renderAll() {
   const opts = { fit: fitBox.checked, runs: runsBox.checked, loop: loopBox.checked, region: regionBox.checked };
   const two = doc2Box.checked;
@@ -458,7 +688,12 @@ function renderAll() {
     const cap = document.createElement('div'); cap.className = 'caption';
     cap.innerHTML = `Passes <span class="chip">strip</span><span class="chip on">graph</span>`;
     panel.appendChild(cap);
-    const docs = two ? [RC, BLOOM] : [RC];
+    if (panel.dataset.view === 'free') { renderFree(panel, cap); return; }
+    const docs = panel.dataset.doc ? [DOCS[panel.dataset.doc]] : two ? [RC, BLOOM] : [RC];
+    if (panel.dataset.view) {
+      const view = panel.dataset.view === 'root' ? rootView(docs[0], panel.dataset.merge) : groupView(docs[0], panel.dataset.group);
+      panel.appendChild(tabRow(view, docs[0].name));
+    }
     const outs = docs.map(doc => { const o = render(panel, doc, opts); panel.appendChild(o.svg); return o; });
     const ro = document.createElement('span'); ro.className = 'readout';
     ro.textContent = outs.map((o, i) => `${docs[i].name}: natural ${Math.round(o.natural)}px · zoom ${o.zoom.toFixed(2)}`).join('   ·   ');
