@@ -26,23 +26,23 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-12, 091 is implemented, reviewed to closure, merged on dev, gates green; the strip and the dialog await his eyes. -->
-**Next: nothing is claimed; the graph view he reopened is the candidate.** 091 imports another
-document's passes into the current one by copy, under a group whose name prefixes them: one
-decision per entry point (a source pass reading no other), fed by a host pass whose readers are
-handed to the bundle's output, or kept. The group is one label on the pass entry, drawn as a
-flush outline on the strip; nothing folds. The post-implementation round found a loop the plan
-never checked and a torn import leaving orphan files, both fixed.
+<!-- As of 2026-09-12, 092 is implemented in two waves, post-implementation round 2 in flight, gates green with the smoke run; the whole canvas awaits his eyes. -->
+**Next: nothing is claimed.** 092 is the graph view: a second, opt-in view of a document's
+passes beside the strip, hand-drawn on the imgui draw list. A node is the pass's live picture
+with one port per sampler its compiled program declares; a wire is a read from the effective
+wiring; a group is one box at the root whose ports are its boundary edges, opening into its own
+tab with the outside passes as ghosts. Positions are written only by a drag's release or by
+Arrange; every gesture lands through an App verb whose refusal (a loop, a media-bound port) is
+tested headless.
 
-**Candidate:** the opt-in, hand-drawn graph view he reopened in the 091 design round (070 closed
-a graph view as the strip's replacement; this is a second view).
+**Awaiting his eyes** (no WM here): the spec's manual list over both waves, with the bloom
+fixture copied into a project document for the (bloom) items. Still unseen from before: 091's
+outline and label, the import dialog, Radiance Cascades imported into a document painting its
+own `paint`, the group row in the gear; 090's `Auto | Fixed` control.
 
-**Awaiting his eyes** (no WM here): the outline and label at 480 and 1040; the import dialog
-over the examples and his Bloom Chain; Radiance Cascades imported into a document painting its
-own `paint`; the group row in the gear. From 090: the `Auto | Fixed` control.
-
-**Open, unmeasured:** no brake watches cost or a frame going lit to flat (082); the GL thread
-if the throttle proves not enough.
+**Open, unmeasured:** the canvas past twenty passes (the largest real document is six); no
+brake watches copilot cost or a frame going lit to flat (082); the GL thread if the throttle
+proves not enough.
 
 ## Features
 

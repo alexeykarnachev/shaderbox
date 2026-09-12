@@ -79,6 +79,13 @@ class GraphViewState:
     group_name: str = ""
     # The rubber band's press point, in screen space, while one is being dragged.
     band_anchor: Position | None = None
+    # Where each input port's hit rect landed on screen this frame, keyed by (pass, sampler):
+    # rebuilt every draw, so a headless test can aim a drop where a user would.
+    port_rects: dict[tuple[str, str], tuple[float, float, float, float]] = field(
+        default_factory=dict
+    )
+    # The canvas child's screen rect this frame, for the same reason.
+    canvas_rect: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
 
 
 def revalidated_scope(scope: str, groups: Collection[str]) -> str:

@@ -9,9 +9,13 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
+from imgui_bundle import imgui
+
 from shaderbox.pass_graph import NoSource, PassSource
+from shaderbox.ui import update_and_draw
+from shaderbox.ui_regions import PassesView
 from shaderbox.widgets import pass_graph, pass_list
-from shaderbox.widgets.graph_state import NodeDrag
+from shaderbox.widgets.graph_state import NodeDrag, WireDrag
 
 _SAMPLER = """#version 460 core
 in vec2 vs_uv;
@@ -167,3 +171,72 @@ def test_the_widget_makes_no_session_write_of_its_own() -> None:
             "set_pass_group(",
         ):
             assert forbidden not in source, (module.__name__, forbidden)
+
+
+# ----------------------------------------------------------------
+# The one gesture the verbs cannot cover: a drop lands where the port is DRAWN. Driven through
+# the real frame loop with synthetic mouse input, so the gate sees the hover that feeds `_drop`.
+
+
+def _frames(app: Any, n: int) -> None:
+    for _ in range(n):
+        update_and_draw(app)
+
+
+def test_a_wire_dropped_on_a_drawn_port_writes_that_port(app: Any) -> None:
+    # Falsifier: `set_next_item_allow_overlap()` on the port rects (round 2's regression) --
+    # the flag costs the LAST rung its own hover, `drop_target` never sets, and the drop
+    # writes nothing at any zoom.
+    document_id, document = _chain(app)
+    app.app_state.passes_view = PassesView.GRAPH
+    _frames(app, 4)
+    view = app.graph_view_for(document_id)
+    assert ("c", "u_src") in view.port_rects, sorted(view.port_rects)
+    x0, y0, x1, y1 = view.port_rects[("c", "u_src")]
+    io = imgui.get_io()
+    # Press on empty canvas (its bottom-right corner, inside the child: a press outside any
+    # window is owned by the application and imgui reports no hover for the rest of the drag),
+    # then carry a wire from `a` over the port.
+    cx1, cy1 = view.canvas_rect[2], view.canvas_rect[3]
+    io.add_mouse_pos_event(cx1 - 6.0, cy1 - 6.0)
+    _frames(app, 2)
+    io.add_mouse_button_event(0, True)
+    _frames(app, 2)
+    view.wire_drag = WireDrag(producer="a", start=(0.0, 0.0))
+    io.add_mouse_pos_event((x0 + x1) / 2.0, (y0 + y1) / 2.0)
+    _frames(app, 3)
+    assert view.wire_drag is not None, "the wire in flight was cancelled mid-drag"
+    io.add_mouse_button_event(0, False)
+    _frames(app, 2)
+    assert document.passes["c"].uniform_values["u_src"] == PassSource("a")
+    assert view.wire_drag is None
+    app.app_state.passes_view = PassesView.STRIP
+    _frames(app, 1)
+
+
+def test_a_gesture_cannot_start_during_a_copilot_turn(app: Any) -> None:
+    # Round 2's regression: the turn's cancel ran, then the same frame's press re-armed the
+    # drag, and the release after the turn committed a position no gesture asked for.
+    document_id, document = _chain(app)
+    app.app_state.passes_view = PassesView.GRAPH
+    _frames(app, 4)
+    view = app.graph_view_for(document_id)
+    x0, y0, x1, y1 = view.port_rects[("b", "u_src")]
+    io = imgui.get_io()
+    # The frame loop reconciles `copilot_turn_active` from the session each frame, so the
+    # turn is simulated where it lives.
+    app.copilot.state.in_flight = True
+    io.add_mouse_pos_event((x0 + x1) / 2.0, (y0 + y1) / 2.0)
+    _frames(app, 2)
+    io.add_mouse_button_event(0, True)
+    _frames(app, 2)
+    io.add_mouse_pos_event(x1 + 60.0, y1 + 60.0)
+    _frames(app, 3)
+    assert view.wire_drag is None and view.node_drag is None
+    app.copilot.state.in_flight = False
+    io.add_mouse_button_event(0, False)
+    _frames(app, 2)
+    assert document.passes["b"].uniform_values["u_src"] == PassSource("a")
+    assert all(entry.position is None for entry in document.graph.passes.values())
+    app.app_state.passes_view = PassesView.STRIP
+    _frames(app, 1)

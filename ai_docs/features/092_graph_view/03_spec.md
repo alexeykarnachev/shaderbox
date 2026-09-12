@@ -1,6 +1,6 @@
 # 092 — The graph view
 
-Status: **W1 and W2 landed; post-implementation round 1 folded in, round 2 pending.** Sketches: `00_mock.html` (round 3 is the
+Status: **W1 and W2 landed; post-implementation rounds 1 and 2 folded in, round 3 pending.** Sketches: `00_mock.html` (round 3 is the
 picture). Record of the design conversation: `01_brainstorm.md`. The review round that produced
 the constraints and decisions below: `02_triage.md` and `reviews/brainstorm_*.md`. Every
 "Fixed" item of the brainstorm and every default of the triage is locked here; nothing is
@@ -94,8 +94,9 @@ Double-click on a box enters it; the root tab is the way up (no Escape, out of s
 change refits the view once. `text_tab_row` keys and returns by NAME, so the root cannot be the
 empty string there: the row is built as `[root_label, *group_names]` where `root_label` is the
 document's `ui_name` or `document` when it is empty (the Document tab's input can be cleared),
-and a click is mapped back to a scope by INDEX, never by the returned string, since a document
-named like a group would otherwise be ambiguous.
+and the root label is made distinct from every group's before the row is drawn (`document`, with a
+numeric suffix appended until no group carries the label), so the click maps back by name
+without the ambiguity a document named like a group would otherwise create.
 
 **D4. What each scope shows.** Root: every ungrouped pass as a node and one box per group.
 Group `g`: every member as a node, plus one **ghost** per outside pass that feeds a member or
@@ -159,7 +160,9 @@ state hues, so a wire can never be drawn in a group's tint.
 submitted first with `set_next_item_allow_overlap()`; then one `invisible_button` per node body,
 each with `set_next_item_allow_overlap()`; then (W2) one per port. The chain is what lets the
 later item win; a missed level makes the canvas inert. A port's hit box is
-`max(GRAPH_PORT_R * zoom, GRAPH_HIT_MIN)` in screen pixels while the drawn dot keeps scaling.
+`max(GRAPH_PORT_R * zoom, GRAPH_HIT_MIN)` in screen pixels, capped at half the row pitch
+(`GRAPH_PORT_ROW * zoom / 2`) so two rows can never share a press, while the drawn dot keeps
+scaling.
 Every context menu on the canvas opens with `begin_popup_context_item(None)` (the previous
 item), never an explicit id, which on one shared child fires on a right-click anywhere. The
 canvas menu opens by hand: right-click released over the background with no node hovered.
@@ -182,7 +185,10 @@ two surfaces cannot drift (Settings, Delete, Leave group); the strip keeps its o
 `begin_popup_context_item` with its explicit id, which is safe there because each tile is its
 own window. Right-click a box: Open, and Dissolve (W2). Right-click empty canvas: Add pass,
 Import..., Fit, Arrange. `pass_menu_items` keeps the strip's two gates (Delete only while
-`len(document.passes) > 1`; Leave group only while the entry carries one). A ghost's right-click
+`len(document.passes) > 1`; Leave group only while the entry carries one), and `Leave group`
+writes through `App.leave_group`, so the shared menu makes no session write of its own from
+either surface (the no-write gate walks `widgets/pass_graph.py` and `widgets/pass_list.py`
+alike). A Dissolve of a group with no members writes nothing. A ghost's right-click
 offers the same item set, since a ghost is a real pass and the verbs name the pass, not the
 scope. A box's menu is its own (Open; Dissolve in W2) and never `pass_menu_items`, since a box is
 not a pass. The whole canvas sits under `begin_disabled(app.copilot_turn_active)` like the strip;
@@ -224,7 +230,10 @@ media-bound port is refused ("bound to media; unbind on the Uniforms tab", D15).
 port wired by the name rule materializes an explicit `PassSource`, since the drop writes one
 anyway. A ghost's ports are drop targets and drag sources like any other, since a ghost is a
 real pass drawn dimmed (the write names the pass, the tab is only a viewport). The wire in flight
-is a bezier from the source to the cursor on channel 2.
+is a bezier from the source to the cursor, drawn after the channels merge. A gesture whose
+release the canvas never saw is cancelled at the top of the frame, never resumed: the left
+button neither down nor released this frame, or a copilot turn in progress, which
+`begin_disabled` does not cover for raw `io` reads. A ghost's output dot is not a drag source.
 
 **D13. Drag (W2).** Press on a node body and move: the node follows `io.mouse_delta / zoom`;
 release writes its position through `set_pass_positions`, one save. The drag is a pure state
@@ -233,15 +242,19 @@ machine in `widgets/graph_state.py` (`NodeDrag.begin(names, positions)`, `.updat
 thing that does, so "one save per gesture" is asserted on the machine, and
 `App.commit_node_drag(document_id)` is the one caller of `set_pass_positions` from a drag. A box drags every member
 by the same delta. A drag moves every selected node together when the pressed node is selected.
-During a drag, snapping aligns the moving node's left edge or top edge to any other visible
-node's within `GRAPH_SNAP_PX` screen pixels, and draws the guide line on channel 2.
+During a drag, snapping aligns the first dragged node's left or top edge to any other visible
+node's within `GRAPH_SNAP_PX` screen pixels, as a separate offset (`NodeDrag.snap`) recomputed
+from the un-corrected delta every frame, so a node leaves a guide as soon as the cursor does,
+and draws the guide line. A press that drags from a port with no wire to grab moves the node,
+so no part of a node's surface is a dead press.
 
 **D14. Selection and Group (W2).** `GraphViewState.selection: set[str]` of pass names (a box
 selects its members). Left-drag on empty canvas draws the rubber band from
 `io.mouse_pos - get_mouse_drag_delta` and selects every node whose rect intersects it on
 release; shift-click toggles one; click on empty clears. Right-click with a selection adds
-`Group...` to the node menu: a popup with a name input (Enter or Create commits, Cancel or Esc
-cancels, per imgui-ui 7.5) that writes `set_pass_groups(document_id, names, group)` through `App.group_selection`, a new
+`Group...` to the node menu: a popup with a name input (Enter or Create commits, Cancel closes; a
+blank name or an empty selection is not committable, since the blank would mean "no group" to
+the verb, which is Dissolve, not Create) that writes `set_pass_groups(document_id, names, group)` through `App.group_selection`, a new
 session verb that validates once (the group pattern, and D17's collision) and saves once, and
 writes nothing on a refusal.
 Selecting a box and grouping it with others rewrites its members to the new label (flat
@@ -264,12 +277,15 @@ whatever its name.
 gets no Delete verb; a member is deleted from its own node menu with the strip's two-click arm
 (`delete_pass` + `close_editor_for_path`, exactly `pass_list._delete_pass`).
 
-**D17. One namespace for passes and groups.** One function decides a group name,
-`pass_graph.group_name_error(group, pass_names) -> str` (the pattern, then the collision), and
-every entry point that writes a group calls it: `set_pass_groups` (hence `set_pass_group`, the
-modal and the copilot), and `pass_import.plan_import` (a bundle imported under a name a host
-pass carries would otherwise draw two root entities with one name). `_pass_name_error` gains
-the mirror check, so `add_pass` and `rename_pass` reject a pass named like an existing group.
+**D17. One namespace for passes and groups.** One predicate decides the shared namespace,
+`pass_graph.namespace_error(candidate, pass_names, group_names) -> str`, and both directions
+call it: `group_name_error(group, pass_names)` checks the pattern then delegates, and
+`_pass_name_error` delegates for the mirror, so `add_pass` and `rename_pass` reject a pass named
+like an existing group. Every entry point that writes a group calls `group_name_error`:
+`set_pass_groups` (hence `set_pass_group`, the modal and the copilot) and
+`pass_import.plan_import`, which also calls `namespace_error` per copied pass so a bundle cannot
+land a pass named like a host group (either way the root would draw two entities with one
+name).
 The root keys nodes and boxes by name. Messages: the existing "a group name starts with a
 letter ..." for the pattern (tests pin it), and "a pass and a group cannot share a name" for
 the collision.
@@ -590,10 +606,32 @@ toasting the refusal they return; D5's box is a fixed-size node at its members' 
 border ladder has `SELECT` and the group tint between the accent and the plain border, and a box
 reddens for a cycle culprit among its members; a ghost's output dot is not a drag source;
 `NodeDrag` is constructed directly (no `begin`); `wiring_if_renamed` rewrites in place and
-restores; D16's confirm step lives on the strip's tile ✕, not on the shared menu's Delete, so
+restores; `rank_layout` takes `gap_x` / `gap_y` as parameters (the module stays free of
+`theme`); the smoke counts saves with `mock.patch.object` rather than a helper; D16's confirm
+step lives on the strip's tile ✕, not on the shared menu's Delete, so
 the canvas matches the strip. Recorded as the maintainer's default on the one design fork
 (architecture 11): the uniforms combo keeps releasing a bound texture on a pick while the canvas
 refuses the drop, and `set_sampler_source`'s docstring plus the conventions entry say why.
 False trails the reviewers recorded stand, including `wiring_if_renamed`'s restore on every
 path, the wheel-zoom invariance, the `_drop` / `unwire` order (brute-forced over every acyclic
 4-pass graph), and the allow-overlap chain.
+
+**Post-implementation round 2 (2026-09-12): three reviewers.** Reports:
+`reviews/post_code_correctness_r2.md`, `reviews/post_architecture_conventions_r2.md`,
+`reviews/post_spec_fidelity_r2.md`. Round 1 closed item by item; fidelity PASS on the code with
+the D-clauses of D3, D8, D10, D12, D13, D14 and D17 rewritten to say what shipped (the code was
+right in every case). Two regressions round 1's fixes had introduced, both fixed: the
+allow-overlap I had added on the port rects cost the last rung its own hover, so no wire could
+be dropped at any zoom (removed; the port hover now reads with imgui's drag-and-drop flag,
+since the dot the wire left or the background is the active item while it flies); and the
+copilot-turn cancel cleared a gesture that the same frame's press re-armed (no gesture starts
+while frozen). The gate had been green with wire-dropping dead, so a frame-driven test now
+carries a wire over a drawn port through the real loop and asserts the write, and another
+presses during a turn and asserts nothing starts; the drop test was broken and restored
+(the overlap call re-added: red; removed: green). The widget records each frame's port rects
+and the canvas rect on the view state for exactly that aim. Also: the last literal strokes read
+their tokens, the feedback loop's rise and reach are tokens, and the root label's fallback
+appends a numeric suffix until no group carries it (the three-name tuple could raise
+`StopIteration`). Recorded false trails: the release-frame cancel order, the hit clamp at one
+port and at every zoom, output-dot spacing at eight outputs, the badge at zoom 0.25 and 2.5,
+ghost stacking for a feeder-and-reader, `_snap` with nothing still, a rename to itself.

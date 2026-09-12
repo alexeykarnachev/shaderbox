@@ -336,6 +336,9 @@ class SIZE:
     GRAPH_WIRE_W: float = 1.5
     GRAPH_PORT_RING_W: float = 1.2
     GRAPH_BUS_CLEAR: int = 16
+    # A feedback loop's rise above the node and its horizontal control reach.
+    GRAPH_LOOP_RISE: int = 12
+    GRAPH_LOOP_REACH: int = 28
 
     # One square of the viewer's alpha checkerboard. At 8 the pattern is busy behind a small
     # preview; at 24 a narrow preview shows two cells and reads as a diagonal split.

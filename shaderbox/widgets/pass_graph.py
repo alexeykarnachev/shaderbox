@@ -8,8 +8,10 @@ they touch as GHOSTS. Nothing here is a second source of truth: positions are th
 (or the rank layout's, for a pass never placed), edges are the wiring, ports are the program.
 
 Drawn on one `ImDrawList` inside one child, hit-tested with `invisible_button`s: the canvas
-background first, then every node, each level declaring `set_next_item_allow_overlap()` so the
-later item wins (imgui gives an overlapping hit to the EARLIEST item unless it allows it). A
+background first, then every node, each declaring `set_next_item_allow_overlap()` so the later
+item wins (imgui gives an overlapping hit to the EARLIEST item unless it allows it), then the
+ports, which are last and declare nothing: the flag makes an item overlappable by a LATER one
+and costs it its own hover, so on the last rung it only forfeits the drop target. A
 context menu anchors with `begin_popup_context_item(None)` -- an explicit id on one shared
 child fires on a right-click anywhere in it. Every write a gesture makes goes through an
 `App` verb, never a session call from here, so each refusal is testable without a window.
@@ -60,8 +62,9 @@ from shaderbox.widgets.pass_list import pass_menu_items
 NodeKind = Literal["pass", "box", "ghost"]
 
 _CYCLE_PREFIX = "passes form a cycle"
-# The root tab's label when the document's name is empty or collides with a group's.
-_ROOT_LABELS = ("document", "root", "all")
+# The root tab's label when the document's name is empty or collides with a group's; a
+# numeric suffix is appended until no group carries it, so the label is always distinct.
+_ROOT_LABEL = "document"
 _FIT_MARGIN = float(SPACE.LG)
 _ZOOM_STEP = 1.1
 # A consumer at least this far right of its producer (canvas units) gets a plain curve;
@@ -562,11 +565,11 @@ def _draw_self_loop(
     z = xf.zoom
     out = xf.to_screen(_out_point(node, 0))
     port = xf.to_screen(_port_point(node, slot))
-    top = xf.to_screen(node.pos)[1] - 12 * z
+    top = xf.to_screen(node.pos)[1] - SIZE.GRAPH_LOOP_RISE * z
     dl.add_bezier_cubic(
         out,
-        (out[0] + 28 * z, top),
-        (port[0] - 28 * z, top),
+        (out[0] + SIZE.GRAPH_LOOP_REACH * z, top),
+        (port[0] - SIZE.GRAPH_LOOP_REACH * z, top),
         port,
         col,
         max(1.0, SIZE.GRAPH_WIRE_W * z),
@@ -656,7 +659,7 @@ def _draw_node(
     else:
         border = COLOR.BORDER
     border_col = _u32(fade(border, alpha))
-    thickness = 1.5 if (node.error or is_output or selected) else 1.0
+    thickness = SIZE.GRAPH_WIRE_W if (node.error or is_output or selected) else 1.0
     if node.kind == "ghost" or node.uncompiled:
         _dashed_rect(dl, p0, p1, border_col, SIZE.GRAPH_DASH * z, thickness)
     else:
@@ -735,7 +738,7 @@ def _draw_node(
     for slot, (_member, hollow) in enumerate(node.outputs):
         center = xf.to_screen(_out_point(node, slot))
         if hollow:
-            dl.add_circle(center, r, out_col, 0, 1.2)
+            dl.add_circle(center, r, out_col, 0, SIZE.GRAPH_PORT_RING_W)
         else:
             dl.add_circle_filled(center, r, out_col)
     imgui.pop_font()
@@ -752,7 +755,11 @@ def _tab_row(
     # group's before it is drawn; the click then maps back without ambiguity.
     root_label = ui_document.ui_state.ui_name.strip()
     if not root_label or root_label in groups:
-        root_label = next(label for label in _ROOT_LABELS if label not in groups)
+        root_label = _ROOT_LABEL
+        n = 1
+        while root_label in groups:
+            root_label = f"{_ROOT_LABEL}_{n}"
+            n += 1
     labels = [root_label, *groups]
     scopes = ["", *groups]
     active = labels[scopes.index(view.scope)] if view.scope in scopes else root_label
@@ -833,11 +840,14 @@ def _draw_canvas(
     released_elsewhere = not imgui.is_mouse_down(
         imgui.MouseButton_.left
     ) and not imgui.is_mouse_released(imgui.MouseButton_.left)
-    if released_elsewhere or app.copilot_turn_active:
+    frozen = app.copilot_turn_active
+    if released_elsewhere or frozen:
         view.node_drag = None
         view.wire_drag = None
         view.band_anchor = None
         view.guides = []
+    view.port_rects = {}
+    view.canvas_rect = (origin.x, origin.y, origin.x + avail.x, origin.y + avail.y)
     overrides = view.node_drag.current() if view.node_drag is not None else {}
     picture = _build_view(document, view.scope, overrides)
     nodes = list(picture.nodes.values())
@@ -923,6 +933,7 @@ def _draw_canvas(
         and not panning
         and imgui.is_mouse_dragging(imgui.MouseButton_.left)
         and view.band_anchor is None
+        and not frozen
     ):
         delta = imgui.get_mouse_drag_delta(imgui.MouseButton_.left)
         view.band_anchor = (io.mouse_pos.x - delta.x, io.mouse_pos.y - delta.y)
@@ -950,6 +961,7 @@ def _draw_canvas(
             and view.node_drag is None
             and view.wire_drag is None
             and node.kind != "ghost"
+            and not frozen
         ):
             names = _drag_names(view, node)
             view.node_drag = NodeDrag(
@@ -968,18 +980,28 @@ def _draw_canvas(
         for slot, port in enumerate(node.ports):
             center = xf.to_screen(_port_point(node, slot))
             imgui.set_cursor_screen_pos((center[0] - hit, center[1] - hit))
-            imgui.set_next_item_allow_overlap()
             imgui.invisible_button(
                 f"##gport_{node.key}_{slot}", imgui.ImVec2(2 * hit, 2 * hit)
             )
             owner = node.owners[slot]
-            if imgui.is_item_hovered() and view.wire_drag is not None:
+            view.port_rects[(owner, port.sampler)] = (
+                center[0] - hit,
+                center[1] - hit,
+                center[0] + hit,
+                center[1] + hit,
+            )
+            # While a wire is in flight another item (the dot it left, the background) is
+            # ACTIVE, which blocks plain hover; the drag-and-drop flag is what sees through it.
+            if view.wire_drag is not None and imgui.is_item_hovered(
+                imgui.HoveredFlags_.allow_when_blocked_by_active_item
+            ):
                 drop_target = (owner, port.sampler, port.kind)
             pressed = (
                 imgui.is_item_active()
                 and imgui.is_mouse_dragging(imgui.MouseButton_.left)
                 and view.wire_drag is None
                 and view.node_drag is None
+                and not frozen
             )
             if pressed and port.kind == "wired" and port.source is not None:
                 view.wire_drag = WireDrag(
@@ -1004,7 +1026,6 @@ def _draw_canvas(
                 continue
             center = xf.to_screen(_out_point(node, slot))
             imgui.set_cursor_screen_pos((center[0] - out_hit, center[1] - out_hit))
-            imgui.set_next_item_allow_overlap()
             imgui.invisible_button(
                 f"##gout_{node.key}_{slot}", imgui.ImVec2(2 * out_hit, 2 * out_hit)
             )
@@ -1013,6 +1034,7 @@ def _draw_canvas(
                 and imgui.is_mouse_dragging(imgui.MouseButton_.left)
                 and view.wire_drag is None
                 and view.node_drag is None
+                and not frozen
             ):
                 view.wire_drag = WireDrag(producer=member, start=_out_point(node, slot))
 
@@ -1035,7 +1057,7 @@ def _draw_canvas(
             (end[0] - c, end[1]),
             end,
             _u32(COLOR.ACCENT_PRIMARY),
-            max(1.0, 1.5 * view.zoom),
+            max(1.0, SIZE.GRAPH_WIRE_W * view.zoom),
         )
         if imgui.is_mouse_released(imgui.MouseButton_.left):
             _drop(app, document_id, wire, drop_target)
