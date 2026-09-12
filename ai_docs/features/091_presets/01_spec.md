@@ -271,12 +271,13 @@ that is both free and far enough away: `purple_b` is `COLOR.SELECT` and a group 
 same nested-outline context `SELECT`'s own invariant protects; `blue_n` is `COLOR.STATE_INFO`;
 `blue_b` is the blue accent's primary and `COLOR.TAG`; `green_n` sits 2 degrees of hue from
 `green_b`; `red_n` reads as the red error border these tiles can also carry. `aqua_n` is the
-aqua accent's ACTIVE colour, not its primary — allowed, and the reason the assert below names
-actives explicitly rather than trusting the existing `_accent_primaries` set, which enumerates
-element [0] of each preset only. `group_tint(name) -> color` indexes by
+aqua accent's ACTIVE colour, the pressed shade of a button under that accent, never an outline
+on the strip — allowed, so accent actives are deliberately outside the assert's set, while
+`SELECT`, `TAG` and `FAVS` are inside it because they are outlines and chips on the same
+tiles. `group_tint(name) -> color` indexes by
 `zlib.crc32(name.encode()) % len(...)`, never by `hash()`, which is salted per process. An
-import-time assert beside the `SELECT` invariant pins that no tint equals an accent primary, an
-accent ACTIVE, any `STATE_*` hue, `COLOR.SELECT`, `COLOR.TAG` or `COLOR.FAVS` as the belt; the
+import-time assert beside the `SELECT` invariant pins that no tint equals an accent primary,
+any `STATE_*` hue, `COLOR.SELECT`, `COLOR.TAG` or `COLOR.FAVS` as the belt; the
 GATE is a pure test
 over the tuple (verification 7), because an import-time assert cannot be tripped from a test
 without rewriting `theme.py` on disk.
@@ -448,7 +449,9 @@ fixture items build a real headless App; item 4 uses `test_document_graph.py`'s 
    the fed pass was not the output. Falsifiers: (i) compute `host_wiring`
    without compiling the host and the reader is never offered (`grade` reaches the import with
    no program only if nothing compiled it: every verb saves and every save compiles, so the
-   test must build `grade` without a save in between, or the scenario proves nothing); (ii) a
+   test builds `grade` as a bare `Pass(gl=..., source=ShaderSource.load(path), ...)` written
+   into `document.passes` plus `graph.with_passes`, never through `add_pass`, or the scenario
+   proves nothing); (ii) a
    host pass whose shader is BROKEN named in a handover is rejected with a message naming it
    (D6), rather than silently dropped by the save's carry-forward of its disk rows.
 6. **The source stays untouched** (`tests/test_pass_verbs.py`): import from a shipped example
@@ -480,10 +483,10 @@ fixture items build a real headless App; item 4 uses `test_document_graph.py`'s 
     three names' crc32 indices written into the test as literals (`zlib.crc32(b"bloom") % 4`
     is the same every run; `hash("bloom") % 4` differs per process, so the pin is red on
     essentially every run under `hash()`); (b) `set(GROUP_TINTS)` is disjoint from the accent
-    primaries, the accent actives, every `STATE_*` hue, `SELECT`, `TAG` and `FAVS`, and has no
-    duplicate. The set is the tile-and-outline context on purpose: the editor's syntax
-    tokens (`green_b` is `SYN_BUILTIN`) never share a surface with the strip, so they are not
-    in it. Falsifier for (b): put `purple_b` (`COLOR.SELECT`) in the tuple, which a check over
+    primaries, every `STATE_*` hue, `SELECT`, `TAG` and `FAVS`, and has no duplicate. The set
+    is the tile-and-outline context on purpose: the editor's syntax tokens (`green_b` is
+    `SYN_BUILTIN`) and the accents' pressed shades (`aqua_n`) never share a surface with the
+    strip's outlines, so they are not in it. Falsifier for (b): put `purple_b` (`COLOR.SELECT`) in the tuple, which a check over
     accent primaries and state hues alone lets through.
 12. **The copilot table and `set_pass(group=)`** (`tests/test_copilot_pass_tools.py`): a set
     with `group="fx"` shows `group fx` in the echoed table; `group=""` clears it; an invalid
@@ -580,6 +583,13 @@ have in its anchors. The bullet is rewritten to say exactly that, and 070 gets i
 when that feature lands rather than now. The same reviewer's suggestion to materialize every
 undecided sampler of a copied pass to black was declined: the name rule is what the maintainer
 authors against, and D4 now says why.
+
+**Round 3 (2026-09-12): correctness PASS; verification PARTIAL on one item already closed.**
+Reports: `reviews/pre_correctness_design_r3.md`, `reviews/pre_verification_blast_r3.md`. Round 2
+closed item by item by both. The one open finding was D8's `aqua_n` (an accent active) against
+item 11(b)'s disjointness from accent actives; resolved by keeping four tints and taking
+actives out of the assert's set, since an active is a pressed fill and a tint is an outline.
+Item 5(i) names the bare-`Pass` route that leaves a host pass program-less. The loop is closed.
 
 **Round 2 (2026-09-12): both PARTIAL, folded in.** Reports: `reviews/pre_correctness_design_r2.md`,
 `reviews/pre_verification_blast_r2.md`. Round 1 closed item by item by both. Applied:
