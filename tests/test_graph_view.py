@@ -10,7 +10,7 @@ from typing import Any
 from unittest import mock
 
 from shaderbox.pass_graph import NoSource, PassSource
-from shaderbox.widgets import pass_graph
+from shaderbox.widgets import pass_graph, pass_list
 from shaderbox.widgets.graph_state import NodeDrag
 
 _SAMPLER = """#version 460 core
@@ -131,8 +131,39 @@ def test_group_selection_and_dissolve_are_one_write_each(app: Any) -> None:
     assert all(document.graph.passes[n].group == "" for n in ("a", "b", "c"))
 
 
+def test_arrange_graph_saves_once_and_leaves_no_pass_unplaced(app: Any) -> None:
+    document_id, document = _chain(app)
+    with mock.patch.object(
+        app.session, "save_ui_document", wraps=app.session.save_ui_document
+    ) as saves:
+        app.arrange_graph(document_id)
+    assert saves.call_count == 1
+    assert all(entry.position is not None for entry in document.graph.passes.values())
+    assert app.graph_view_for(document_id).fitted is False
+
+
+def test_dissolve_of_nothing_and_leave_group_write_as_they_should(app: Any) -> None:
+    document_id, document = _chain(app)
+    with mock.patch.object(
+        app.session, "save_ui_document", wraps=app.session.save_ui_document
+    ) as saves:
+        assert app.dissolve_group(document_id, "") == ""
+        assert app.dissolve_group(document_id, "nope") == ""
+    assert saves.call_count == 0, "a dissolve of nothing saved"
+    assert app.session.set_pass_group(document_id, "a", "g") == ""
+    assert app.leave_group(document_id, "a") == ""
+    assert document.graph.passes["a"].group == ""
+
+
 def test_the_widget_makes_no_session_write_of_its_own() -> None:
-    # 092 D12: every write goes through an App verb, so its refusal is testable here.
-    source = Path(pass_graph.__file__).read_text(encoding="utf-8")
-    for forbidden in ("set_sampler_source", "set_pass_positions", "set_pass_groups"):
-        assert forbidden not in source, forbidden
+    # 092 D12: every write goes through an App verb, so its refusal is testable here. The
+    # strip's menu is shared with the canvas, so it is held to the same rule.
+    for module in (pass_graph, pass_list):
+        source = Path(module.__file__).read_text(encoding="utf-8")
+        for forbidden in (
+            "set_sampler_source",
+            "set_pass_positions",
+            "set_pass_groups",
+            "set_pass_group(",
+        ):
+            assert forbidden not in source, (module.__name__, forbidden)

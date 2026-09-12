@@ -20,6 +20,20 @@ def test_a_drag_writes_nothing_until_commit_and_then_every_moved_name_once() -> 
     assert list(committed) == ["a", "b"]
 
 
+def test_the_snap_offset_rides_on_top_of_the_raw_delta_and_never_corrects_it() -> None:
+    # Falsifier: fold the snap into `delta` -- a node held at a guide then absorbs every
+    # later mouse move and never leaves it (the post-implementation review's blocker).
+    drag = NodeDrag(origin={"a": (0.0, 0.0)})
+    drag.update(10.0, 0.0)
+    drag.snap = (-3.0, 0.0)
+    assert drag.raw()["a"] == (10.0, 0.0)
+    assert drag.current()["a"] == (7.0, 0.0)
+    assert drag.commit()["a"] == (7.0, 0.0)
+    drag.update(10.0, 0.0)
+    drag.snap = (0.0, 0.0)
+    assert drag.current()["a"] == (20.0, 0.0)
+
+
 def test_the_moving_picture_reads_the_same_positions_the_commit_writes() -> None:
     drag = NodeDrag(origin={"a": (2.0, 2.0)})
     drag.update(-2.0, 0.5)

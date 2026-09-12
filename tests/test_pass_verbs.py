@@ -1033,7 +1033,16 @@ def test_every_group_writing_entry_point_shares_one_validator(app: Any) -> None:
     assert app.session.set_pass_groups(document_id, ["taken"], "taken") == collision
     assert app.session.set_pass_group(document_id, "taken", "taken") == collision
     host = app.ui_documents[document_id].document.effective_wiring()
-    assert plan_import({"src": {}}, "src", "taken", {}, [], host, "") == collision
+    assert (
+        plan_import({"src": {}}, "src", "taken", {}, [], host, "", set()) == collision
+    )
+    # And the mirror: a copied pass may not land on a host GROUP's name.
+    assert app.session.set_pass_group(document_id, "taken", "bloom") == ""
+    assert (
+        plan_import({"bloom": {}}, "bloom", "", {}, [], host, "", {"bloom"})
+        == collision
+    )
+    assert plan_import({"bloom": {}}, "bloom", "", {}, [], host, "", set()) != collision
 
 
 def test_rename_pass_refuses_the_cycle_it_would_create(app: Any) -> None:

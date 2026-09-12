@@ -1,6 +1,6 @@
 # 092 — The graph view
 
-Status: **W1 and W2 landed; post-implementation review pending.** Sketches: `00_mock.html` (round 3 is the
+Status: **W1 and W2 landed; post-implementation round 1 folded in, round 2 pending.** Sketches: `00_mock.html` (round 3 is the
 picture). Record of the design conversation: `01_brainstorm.md`. The review round that produced
 the constraints and decisions below: `02_triage.md` and `reviews/brainstorm_*.md`. Every
 "Fixed" item of the brainstorm and every default of the triage is locked here; nothing is
@@ -443,7 +443,8 @@ a throttled document does not re-plan and the cycle cue would lag.
     stale mark.
 15. Fix `jfa`: the border returns to normal within a second.
 16. On the Uniforms tab, point `paint`'s sampler at `composite`: on the canvas, the two
-    wires of the loop turn red and no NODE turns red.
+    wires of the loop turn red and no root-level NODE turns red; a box whose member is the
+    planner's culprit does turn red.
 17. Unwire it: both wires return to normal.
 18. `strip | graph` on Fire (single pass): one node, no input ports.
 19. `strip | graph` on Media Input: one node with two square media ports and no wires.
@@ -472,8 +473,8 @@ a throttled document does not re-plan and the cycle cue would lag.
     root-level node chosen by insertion order, not by the graph. Confirm the jump is
     tolerable. (mutations case 3.)
 32. Label two passes on opposite sides of the chain with the same group name: ONE box
-    draws at their bounding box and encloses non-members visually; Arrange pulls the
-    members together. (mutations case 5 / triage D9.)
+    draws at its members' top-left corner; Arrange pulls the members together. (mutations
+    case 5 / triage D9.)
 33. Right-click a node: the menu carries Settings, Delete and (when grouped) Leave group,
     and nothing else.
 34. Right-click empty canvas: the menu carries Add pass, Import..., Fit, Arrange -- NOT
@@ -555,3 +556,44 @@ rewritten so each item fails for one reason, with the bloom preamble (the fixtur
 shipped example) and the twelve cases the brainstorm reviews implied. The D11 stale-mark
 sentence was corrected by the implementer: `preview_cell`'s docstring names a corner tick its
 code never draws. Rejected: nothing. False trails both reviewers recorded stand.
+
+**Post-implementation round 1 (2026-09-12): three reviewers, FINDINGS each, folded in.**
+Reports: `reviews/post_code_correctness.md`, `reviews/post_architecture_conventions.md`,
+`reviews/post_spec_fidelity.md`. Real, and fixed: the snap folded its correction into the
+drag's delta, so a node held at a guide never left it (now a separate offset recomputed from
+the raw drag each frame, `NodeDrag.snap`); a gesture whose release the canvas did not see
+survived and a later stray click committed it, once writing `NoSource` over an untouched wire
+(now cancelled at the top of the canvas frame, also under a copilot turn, which `begin_disabled`
+does not cover for raw `io` reads); a port's screen-pixel hit floor overlapped the row pitch
+below zoom 0.875 so a drop landed on the wrong sampler (the hit box is now clamped to half the
+pitch, and the port rects declare allow-overlap); `Create` with a blank name dissolved the
+selection's group (blank and empty-selection are not committable); the tab row mapped a click
+by name (the root label is now made distinct from every group's before drawing); `plan_import`
+checked only the group's half of the namespace (it now rejects a copied pass named like a host
+group, through one `namespace_error` both directions call); a self-read inside a group tab drew
+a second stray wire to the bus; a press on an unfilled port was dead (it starts a node drag);
+two ghosts could share a rect (each ghost column stacks from the members' top);
+`dissolve_group` of nothing saved; `Leave group` was a session write reached from the canvas
+(now `App.leave_group`, and the no-write gate also reads the strip's module); the magic numbers
+of the widget became theme tokens (`GRAPH_PORT_TOP` read by both the node's height and the
+port's row, `GRAPH_ROUNDING`, `GRAPH_DASH`, `GRAPH_WIRE_W`, `GRAPH_PORT_RING_W`,
+`GRAPH_THUMB_ROUNDING`, `GRAPH_BUS_CLEAR`, five alphas) or named locals (`_MIN_DIRECT_DX` in
+canvas units at both sites, `_BEZIER_BOW`, the dot fractions); the badge is one helper; the
+picture tint is `COLOR.WHITE`; `sampler_names`'s docstring no longer claims the sweep is the only
+thing compiling; the dead `compiled` field and the dead fill branch went; `ports_of` /
+`node_sizes` are shared by Arrange and the picture; the widget takes its height from the tab.
+
+Deviations recorded, so the spec describes what shipped: the compile seam runs every frame (a
+no-op once every pass is attempted) rather than once; D7 splits two channels and draws the
+foreground after the merge; D12 is two verbs, `App.drop_wire` and `App.unwire`, the widget
+toasting the refusal they return; D5's box is a fixed-size node at its members' top-left; D11's
+border ladder has `SELECT` and the group tint between the accent and the plain border, and a box
+reddens for a cycle culprit among its members; a ghost's output dot is not a drag source;
+`NodeDrag` is constructed directly (no `begin`); `wiring_if_renamed` rewrites in place and
+restores; D16's confirm step lives on the strip's tile ✕, not on the shared menu's Delete, so
+the canvas matches the strip. Recorded as the maintainer's default on the one design fork
+(architecture 11): the uniforms combo keeps releasing a bound texture on a pick while the canvas
+refuses the drop, and `set_sampler_source`'s docstring plus the conventions entry say why.
+False trails the reviewers recorded stand, including `wiring_if_renamed`'s restore on every
+path, the wheel-zoom invariance, the `_drop` / `unwire` order (brute-forced over every acyclic
+4-pass graph), and the allow-overlap chain.

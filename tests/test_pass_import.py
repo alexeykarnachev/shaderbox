@@ -30,6 +30,7 @@ def _plan(
     handovers: Collection[tuple[str, str]] = (),
     host_wiring: Wiring = _HOST,
     host_output: str = "final",
+    host_groups: Collection[str] = (),
 ) -> ImportPlan | str:
     return plan_import(
         source_wiring,
@@ -39,6 +40,7 @@ def _plan(
         handovers,
         host_wiring,
         host_output,
+        host_groups,
     )
 
 

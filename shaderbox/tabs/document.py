@@ -461,7 +461,13 @@ def _draw_passes(app: App, document_id: str) -> None:
         app.app_state.passes_view = views[chosen]
     imgui.end_disabled()
     if app.app_state.passes_view is PassesView.GRAPH:
-        pass_graph.draw(app, document_id)
+        # The canvas fills what is left of the tab above the add / import row, which this
+        # function reserves: the widget positions no sibling and measures none.
+        reserve = imgui.get_frame_height() + 2 * float(SPACE.SM)
+        height = max(
+            float(SIZE.GRAPH_MIN_H), imgui.get_content_region_avail().y - reserve
+        )
+        pass_graph.draw(app, document_id, height)
     else:
         pass_list.draw(app, document_id)
     imgui.begin_disabled(app.copilot_turn_active)

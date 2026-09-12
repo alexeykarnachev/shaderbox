@@ -13,6 +13,7 @@ from shaderbox.pass_graph import (
     DEFAULT_DTYPE,
     DTYPES,
     MAX_ITERATIONS,
+    NAMESPACE_COLLISION,
     AutoSource,
     GraphError,
     NoSource,
@@ -30,6 +31,7 @@ from shaderbox.pass_graph import (
     graph_ranks,
     group_boundary,
     group_name_error,
+    namespace_error,
     node_ports,
     plan_passes,
     rank_layout,
@@ -579,6 +581,10 @@ def test_group_name_error_covers_the_pattern_and_the_namespace() -> None:
     assert "group name" in group_name_error("2bad", {"a"})
     assert group_name_error("a", {"a", "b"}) == "a pass and a group cannot share a name"
     assert group_name_error("c", {"a", "b"}) == ""
+    # Both directions answer through one predicate with one message.
+    assert namespace_error("g", {"a"}, {"g"}) == namespace_error("a", {"a"}, {"g"})
+    assert namespace_error("g", {"a"}, {"g"}) == NAMESPACE_COLLISION
+    assert namespace_error("z", {"a"}, {"g"}) == ""
 
 
 @pytest.mark.parametrize(

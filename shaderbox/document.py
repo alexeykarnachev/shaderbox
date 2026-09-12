@@ -267,8 +267,10 @@ def sampler_names(render_pass: Pass) -> list[str]:
     """The `sampler2D` uniforms a COMPILED pass declares; empty while its program is None.
 
     Reads the program rather than `get_active_uniforms()`, which COMPILES a never-attempted pass
-    (066 D1) -- asking that here would compile the whole document on frame one. The live loop's
-    first-render sweep is what brings each pass online, one per frame.
+    (066 D1) -- asking that here would compile the whole document on frame one. The render
+    path brings passes online incrementally through its first-render sweep; a consumer that
+    needs every program at once (the import dialog, the graph canvas) calls
+    `compile_pending_passes` first.
     """
     program = render_pass.program
     if program is None:

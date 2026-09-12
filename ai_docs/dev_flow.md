@@ -206,13 +206,26 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   wired only by its uniform's name has no stored row, and the rows would wash live ancestors and
   hand the strip sorted-name order. A tile is a picture, a name, and a row of chips naming the
   passes it reads (070); the source itself is chosen on the sampler's row of the uniforms panel
-  (072). The six verbs of D15 are reachable from the strip (gear overlay / context menu); holds no
-  state of its own -- `add pass` opens the settings modal on `App.pass_draft` (078), `import...`
-  opens the import dialog on `App.import_draft` (091). A group's consecutive tiles draw inside
+  (072). The pass verbs are reachable from the strip (gear overlay / context menu, the item set
+  shared with the graph's node menu as `pass_menu_items`); holds no state of its own. Since 092
+  the caption, the `strip | graph` toggle and the `add pass` / `import...` row are the Document
+  tab's (`tabs/document.py::_draw_passes`), drawn over whichever view is on. A group's consecutive tiles draw inside
   one flush outline with the name on its border (091): the fill on the parent draw list, the
   outline and label on the foreground list clipped to the strip, since the tiles are child
   windows that paint over their parent; member tiles keep their padding through
   `preview_cell(bordered=False)`.
+- **`widgets/pass_graph.py`** — the graph canvas (feature 092), the Document tab's second view of
+  the same passes: nodes with one port per sampler the compiled program declares, wires from the
+  effective wiring, a box per group at the root (its ports the group's boundary edges) and a tab
+  per group with the outside passes as ghosts. One `begin_child`, one draw list, hit-tested with
+  `invisible_button`s in the allow-overlap chain (background, node, ports). Pan, wheel zoom, fit,
+  arrange, drag with snap, wire drag, rubber band, Group / Dissolve; every write goes through an
+  `App` verb. The pure half (`rank_layout`, `node_ports`, `group_boundary`, `bundle_output`,
+  `refuse_drop`, `cycle_edges`, `group_name_error`) lives in `pass_graph.py`.
+- **`widgets/graph_state.py`** — the canvas's per-document transient state (`GraphViewState`:
+  pan, zoom, scope, selection, the drag machines) held in `App.graph_views` and dropped in
+  `forget_render_state`; `NodeDrag` is the pure drag whose `update` writes nothing and whose
+  `commit` is the only writer; `node_size` and `revalidated_scope` beside it.
 - **`popups/pass_settings.py`** — the pass-settings modal (feature 065), in the `PopupState`
   mutex: one pass's name, group (091), run count and target controls. Opens from a tile's gear,
   its context menu, or automatically on `add pass` — set-up-once choices live here, off the
@@ -242,7 +255,10 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   `plan_passes` (topological order, cycle detection per pass, feedback marking),
   `evaluation_order` (the passes one output actually needs; `plan_for_output` returns that order
   AND the errors, so a renderer plans once per frame) and `assert_plan_invariants` (the draw-once
-  guard both run on every plan). Also the canvas-dimension bounds `MIN_CANVAS_PX` /
+  guard both run on every plan). Since 092 also the graph canvas's pure half: `PassEntry.position`
+  (bounded, validated through `with_positions`), `rank_layout`, `node_ports`, `group_boundary`,
+  `bundle_output`, `refuse_drop`, `cycle_edges`, and the one namespace passes and groups share
+  (`namespace_error` behind `group_name_error` and the session's pass-name check). Also the canvas-dimension bounds `MIN_CANVAS_PX` /
   `MAX_CANVAS_PX` and the `clamp_canvas_size` both entry points funnel through (the Document
   tab's fields and the copilot's `set_canvas_size`). Pure
   data: no GL, no imgui, importable anywhere.

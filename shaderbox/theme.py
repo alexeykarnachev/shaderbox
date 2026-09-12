@@ -189,6 +189,11 @@ class _ColorBag:
     # from the group tints below.
     GRAPH_EDGE: tuple[float, float, float, float] = _P["gray"]
     GRAPH_GHOST_ALPHA: float = 0.45
+    GRAPH_STALE_ALPHA: float = 0.5
+    GRAPH_DIM_ALPHA: float = 0.35
+    GRAPH_BAND_FILL_ALPHA: float = 0.12
+    GRAPH_BAND_EDGE_ALPHA: float = 0.8
+    GRAPH_GUIDE_ALPHA: float = 0.7
 
     # Syntax tokens for the inline editor, applied via editor_palette() below
     # (the Color->SYNTAX_* slot mapping).
@@ -312,6 +317,9 @@ class SIZE:
     GRAPH_THUMB: int = 80
     GRAPH_PAD: int = 6
     GRAPH_NAME_H: int = 18
+    # The gap between the name and the first port row; one owner, read by the node's height
+    # (`node_size`) and by where the dots go (`_port_point`).
+    GRAPH_PORT_TOP: int = 4
     GRAPH_PORT_ROW: int = 16
     GRAPH_PORT_R: int = 4
     GRAPH_HIT_MIN: int = 7
@@ -322,6 +330,12 @@ class SIZE:
     GRAPH_SNAP_PX: int = 6
     GRAPH_ZOOM_MIN: float = 0.25
     GRAPH_ZOOM_MAX: float = 2.5
+    GRAPH_ROUNDING: int = 6
+    GRAPH_THUMB_ROUNDING: int = 2
+    GRAPH_DASH: int = 4
+    GRAPH_WIRE_W: float = 1.5
+    GRAPH_PORT_RING_W: float = 1.2
+    GRAPH_BUS_CLEAR: int = 16
 
     # One square of the viewer's alpha checkerboard. At 8 the pattern is busy behind a small
     # preview; at 24 a narrow preview shows two cells and reads as a diagonal split.

@@ -598,6 +598,18 @@ Library footguns specific to the imgui-bundle Python build (currently
   paper/text review — it's frame-timing + draw-order behavior; only running the app (or an agent that
   executes the imgui frame) catches it. (ShaderBox: `App.tab_select_pending` consumed in
   `tabs/code.py::_draw_tab_row`, mirroring the older `ui.py` document-settings bar that already did this.)
+- **`set_next_item_allow_overlap()` goes on the item submitted FIRST, not the one on top.** imgui
+  gives an overlapping hit to the EARLIEST submitted item unless that item declares it may be
+  overlapped, so a canvas of stacked `invisible_button`s is a chain: the full-canvas background
+  declares it, then each node body declares it, then the ports and overlay buttons come last and
+  win. Put the call on the node instead and every node is dead: each drag pans the canvas, which
+  reads like a coordinate bug and is not. Measured on this build (ShaderBox
+  `widgets/pass_graph.py::_draw_canvas`).
+- **`begin_popup_context_item(str_id)` with an explicit id fires on a right-click ANYWHERE in the
+  window.** The binding's own docstring: pass `None` to associate the popup with the previous
+  item. The strip's tiles get away with an explicit id because each tile is its own child window;
+  on one shared canvas child, a per-node menu must anchor with `None`, and the canvas's own menu
+  is opened by hand (`open_popup` on a right-release over the background with no node hovered).
 
 ---
 

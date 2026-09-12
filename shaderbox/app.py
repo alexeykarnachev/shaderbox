@@ -36,7 +36,6 @@ from shaderbox.copilot.revert import RevertExecutor
 from shaderbox.copilot.session import CopilotSession
 from shaderbox.copilot.state import CopilotLayout, Message
 from shaderbox.core import Pass
-from shaderbox.document import sampler_names
 from shaderbox.editor.ffi import (
     ChromeFlag,
     CursorPos,
@@ -76,7 +75,6 @@ from shaderbox.pass_graph import (
     PassSource,
     SamplerSource,
     group_slug,
-    node_ports,
     rank_layout,
     readers_of,
     refuse_drop,
@@ -126,7 +124,7 @@ from shaderbox.util import (
     open_in_file_manager,
     pfd_block,
 )
-from shaderbox.widgets.graph_state import GraphViewState, node_size
+from shaderbox.widgets.graph_state import GraphViewState, node_sizes, ports_of
 
 
 class PopupState(Enum):
@@ -1913,20 +1911,7 @@ class App:
         groups = {
             name: entries.get(name, PassEntry()).group for name in document.passes
         }
-        sizes = {
-            name: node_size(
-                len(
-                    node_ports(
-                        sampler_names(render_pass),
-                        render_pass.uniform_values,
-                        wiring.get(name, {}),
-                        name,
-                    )
-                ),
-                False,
-            )
-            for name, render_pass in document.passes.items()
-        }
+        sizes = node_sizes(ports_of(document, wiring))
         laid = rank_layout(
             wiring,
             list(document.passes),
@@ -2010,7 +1995,17 @@ class App:
             return f"no such document '{document_id}'"
         entries = ui_document.document.graph.passes
         members = [name for name, entry in entries.items() if entry.group == group]
+        if not group or not members:
+            return ""
         error = self.session.set_pass_groups(document_id, members, "")
+        if error:
+            self.notifications.push(error)
+        return error
+
+    def leave_group(self, document_id: str, name: str) -> str:
+        """Take one pass out of its group (091 D9), the strip's and the canvas's shared menu
+        item, routed here so every canvas write is an App verb."""
+        error = self.session.set_pass_group(document_id, name, "")
         if error:
             self.notifications.push(error)
         return error

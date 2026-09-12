@@ -6,9 +6,11 @@ drag's state machine below is what makes "one save per gesture" a fact a test ca
 `update` returns nothing to write, `commit` is the only thing that does.
 """
 
-from collections.abc import Collection, Iterable
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 
+from shaderbox.document import Document, sampler_names
+from shaderbox.pass_graph import Port, Wiring, node_ports
 from shaderbox.theme import SIZE
 
 Position = tuple[float, float]
@@ -16,20 +18,31 @@ Position = tuple[float, float]
 
 @dataclass
 class NodeDrag:
-    """A press-and-move over one or more nodes: the names, where each started, and the
-    accumulated canvas-space delta. The moving picture reads `current()`; the release writes
-    `commit()`."""
+    """A press-and-move over one or more nodes: the names, where each started, the raw
+    canvas-space delta the mouse accumulated, and the snap offset the guides add on top.
+
+    `delta` is never corrected, so a node leaves a guide as soon as the cursor does; `snap`
+    is recomputed from `raw()` every frame. The moving picture reads `current()`; the release
+    writes `commit()`.
+    """
 
     origin: dict[str, Position]
     delta: Position = (0.0, 0.0)
+    snap: Position = (0.0, 0.0)
 
     def update(self, dx: float, dy: float) -> None:
         self.delta = (self.delta[0] + dx, self.delta[1] + dy)
 
-    def current(self) -> dict[str, Position]:
+    def raw(self) -> dict[str, Position]:
         return {
             name: (x + self.delta[0], y + self.delta[1])
             for name, (x, y) in self.origin.items()
+        }
+
+    def current(self) -> dict[str, Position]:
+        return {
+            name: (x + self.snap[0], y + self.snap[1])
+            for name, (x, y) in self.raw().items()
         }
 
     def commit(self) -> dict[str, Position]:
@@ -57,8 +70,6 @@ class GraphViewState:
     # One-shot: the first canvas frame at a nonzero size fits the view; a scope change
     # clears it so the new scope fits once too.
     fitted: bool = False
-    # The compile seam ran for this document (092 D1): every pass has ports thereafter.
-    compiled: bool = False
     node_drag: NodeDrag | None = None
     wire_drag: WireDrag | None = None
     # The snap guides the current drag aligned to, in canvas units: ("v", x) or ("h", y).
@@ -83,8 +94,26 @@ def node_size(port_count: int, box: bool) -> tuple[float, float]:
         SIZE.GRAPH_PAD + SIZE.GRAPH_THUMB + SIZE.GRAPH_NAME_H + SIZE.GRAPH_PAD
     )
     if port_count:
-        height += 4.0 + port_count * SIZE.GRAPH_PORT_ROW
+        height += SIZE.GRAPH_PORT_TOP + port_count * SIZE.GRAPH_PORT_ROW
     return width, height
+
+
+def ports_of(document: Document, wiring: Wiring) -> dict[str, list[Port]]:
+    """Every pass's input ports (092 D1), from its compiled program and its wiring row."""
+    return {
+        name: node_ports(
+            sampler_names(render_pass),
+            render_pass.uniform_values,
+            wiring.get(name, {}),
+            name,
+        )
+        for name, render_pass in document.passes.items()
+    }
+
+
+def node_sizes(ports: Mapping[str, Sequence[Port]]) -> dict[str, tuple[float, float]]:
+    """Every pass's node size, one place for the layout and Arrange to agree on."""
+    return {name: node_size(len(port_list), False) for name, port_list in ports.items()}
 
 
 def group_names_in_order(order: Iterable[str], groups: dict[str, str]) -> list[str]:

@@ -47,6 +47,7 @@ from shaderbox.pass_graph import (
     SamplerSource,
     TargetConfig,
     group_name_error,
+    namespace_error,
     plan_passes,
 )
 from shaderbox.pass_import import plan_import
@@ -135,9 +136,9 @@ def _pass_name_error(name: str, existing: dict[str, Pass], graph: PassGraph) -> 
     if name in existing:
         return f"'{name}' already exists"
     # One namespace for passes and groups (092 D17): the graph canvas keys both by name.
-    if any(entry.group == name for entry in graph.passes.values()):
-        return "a pass and a group cannot share a name"
-    return ""
+    return namespace_error(
+        name, (), {entry.group for entry in graph.passes.values() if entry.group}
+    )
 
 
 def _graph_without(graph: PassGraph, removed: str, kept: dict[str, Pass]) -> PassGraph:
@@ -1062,7 +1063,10 @@ class ProjectSession:
         DECISION -- "this sampler reads black" -- and it survives a reload, so the name rule
         (069 D9) does not re-wire it; an `AutoSource` returns the sampler to undecided. A texture
         the user bound is written by its own pickers (the panel, the copilot's `bind_media`)
-        into the same slot, so choosing a source here replaces it.
+        into the same slot, so choosing a source here replaces it -- and releases it. That is
+        deliberate for the panel's combo, a per-sampler pick the user is looking at; the graph
+        canvas refuses a wire dropped on a media-bound port before reaching here (092 D15),
+        because a drag is a coarser gesture than a pick. The asymmetry is by design.
         """
         ui_document = self.ui_documents.get(document_id)
         if ui_document is None:
@@ -1177,6 +1181,7 @@ class ProjectSession:
             handovers,
             host.effective_wiring(),
             host.graph.output,
+            {entry.group for entry in host.graph.passes.values() if entry.group},
         )
         if isinstance(plan, str):
             return ImportResult(error=plan)

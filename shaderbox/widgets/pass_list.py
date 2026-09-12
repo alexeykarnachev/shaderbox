@@ -79,9 +79,7 @@ def pass_menu_items(app: App, document_id: str, name: str) -> None:
     if document.graph.passes.get(name, PassEntry()).group and imgui.menu_item_simple(
         "Leave group"
     ):
-        error = app.session.set_pass_group(document_id, name, "")
-        if error:
-            app.notifications.push(error)
+        app.leave_group(document_id, name)
 
 
 def _draw_context_menu(app: App, document_id: str, name: str) -> None:

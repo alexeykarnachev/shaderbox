@@ -826,8 +826,35 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   consecutive tiles inside one flush outline (`group_runs`, cut by ADJACENCY, so an outside pass
   wired into the middle of a group simply splits it into two runs). Folding a group into one
   tile was rejected: a folded group must be convex in the DAG, and that rule set had no UI the
-  maintainer would carry. Revisit if a group-level fact appears that no member can hold (an
-  exposed parameter set, a description) -- then it becomes an entity.
+  maintainer would carry. That no-folding half is about the STRIP: the graph view (092)
+  contracts a group to a box whose ports are its boundary edges, and since the box is never a
+  node the planner orders, convexity is not a rule there either. Revisit if a group-level fact
+  appears that no member can hold (an exposed parameter set, a description) -- then it becomes
+  an entity.
+- **The graph view is a second picture of the same wiring, and it stores one thing (feature
+  092).** `widgets/pass_graph.py` draws a document's passes as nodes on one imgui draw list,
+  beside the strip and never instead of it. Ports come from the COMPILED program
+  (`sampler_names`, through `pass_graph.node_ports`) and edges from `effective_wiring()`, two
+  sources of truth on purpose: the wiring drops an unfilled sampler, so a port list built from
+  it would have no dot to drop on, and a port list built from stored rows would draw a sampler
+  the program no longer declares. A group at the root is one box whose ports are the group's
+  boundary edges (`group_boundary`) and whose picture is `bundle_output`'s; a group's own tab
+  shows its members with the outside passes they touch as ghosts. The one persisted addition is
+  `PassEntry.position`, bounded on the model and validated through `PassGraph.with_positions`
+  (a `model_copy` skips the bounds); `None` means never placed and the rank layout decides every
+  frame. **A position is written only by a placement -- a drag's release or Arrange -- through
+  `ProjectSession.set_pass_positions`, never by a draw**, so opening the view writes nothing and
+  a headless caller sees no partial state. Every canvas gesture lands through one `App` verb
+  (`drop_wire`, `unwire`, `commit_node_drag`, `group_selection`, `dissolve_group`,
+  `arrange_graph`) so its refusal is testable without a window; the widget makes no session
+  write of its own, pinned by `tests/test_graph_view.py`. Passes and groups share one namespace
+  (`group_name_error`, called by every group-writing entry point including `plan_import`,
+  mirrored in `_pass_name_error`), and a rename plans the post-rename wiring before the file
+  moves (`Document.wiring_if_renamed`). One asymmetry is deliberate: the uniforms panel's combo
+  replaces (and so releases) a bound texture on a pick, while the canvas refuses a wire dropped
+  on a media-bound port before the write -- a pick is a per-sampler choice the user is looking
+  at, a drag is a coarser gesture. Revisit the canvas's home when the editor pane can host it
+  (the planned pane swap): the widget fills whatever child it is handed.
 - **Import is by COPY, decided as a pure plan over two wirings, with entry-point substitution and
   insertion (feature 091).** `pass_import.plan_import` takes the source's and the host's
   `effective_wiring()` -- both AFTER every pass has compiled, since a never-compiled pass answers

@@ -24,7 +24,7 @@ from imgui_bundle import imgui
 
 from shaderbox.app import App
 from shaderbox.core import Pass
-from shaderbox.document import Document, sampler_names
+from shaderbox.document import Document
 from shaderbox.pass_graph import (
     PassEntry,
     Port,
@@ -33,7 +33,6 @@ from shaderbox.pass_graph import (
     evaluation_order,
     graph_ranks,
     group_boundary,
-    node_ports,
     plan_passes,
     rank_layout,
     strip_order,
@@ -52,6 +51,8 @@ from shaderbox.widgets.graph_state import (
     WireDrag,
     group_names_in_order,
     node_size,
+    node_sizes,
+    ports_of,
     revalidated_scope,
 )
 from shaderbox.widgets.pass_list import pass_menu_items
@@ -59,10 +60,20 @@ from shaderbox.widgets.pass_list import pass_menu_items
 NodeKind = Literal["pass", "box", "ghost"]
 
 _CYCLE_PREFIX = "passes form a cycle"
-_ROOT_FALLBACK_LABEL = "document"
+# The root tab's label when the document's name is empty or collides with a group's.
+_ROOT_LABELS = ("document", "root", "all")
 _FIT_MARGIN = float(SPACE.LG)
 _ZOOM_STEP = 1.1
-_ROUNDING = 6.0
+# A consumer at least this far right of its producer (canvas units) gets a plain curve;
+# closer or leftward, the wire rides the bus. One constant, read in one coordinate space.
+_MIN_DIRECT_DX = 24.0
+# The bezier's horizontal control offset, as a fraction of the run.
+_BEZIER_BOW = 0.45
+# The port dot's inner shapes, as fractions of its radius: the NoSource centre, the prev
+# inner ring, the media square's half side.
+_NONE_CORE = 0.45
+_PREV_INNER = 0.5
+_MEDIA_HALF = 0.8
 
 
 @dataclass(frozen=True)
@@ -118,8 +129,11 @@ def _positions(
     sizes: dict[str, tuple[float, float]],
     overrides: Mapping[str, tuple[float, float]],
 ) -> dict[str, tuple[float, float]]:
-    """Every pass's canvas position: the stored one, or the rank layout's for a pass never
-    placed (092 D6), under `overrides` for a drag in flight. Nothing is written."""
+    """Place every pass on the canvas without writing anything.
+
+    A stored position wins; a pass never placed takes the rank layout's (092 D6); a drag in
+    flight overrides both through `overrides`.
+    """
     entries = document.graph.passes
     placed = {
         name: entries[name].position
@@ -182,16 +196,8 @@ def _build_view(
     order = strip_order(document.passes, wiring)
     entries = document.graph.passes
     groups = {name: entries.get(name, PassEntry()).group for name in order}
-    ports = {
-        name: node_ports(
-            sampler_names(render_pass),
-            render_pass.uniform_values,
-            wiring.get(name, {}),
-            name,
-        )
-        for name, render_pass in document.passes.items()
-    }
-    sizes = {name: node_size(len(ports[name]), False) for name in order}
+    ports = ports_of(document, wiring)
+    sizes = node_sizes(ports)
     positions = _positions(document, wiring, groups, sizes, overrides)
     output = document.graph.output
     live = (
@@ -244,6 +250,10 @@ def _build_view(
             },
             key=order.index,
         )
+        # Each ghost column is stacked from the members' top, so two ghosts cannot share a
+        # rect whatever their own positions are.
+        top = min((positions[m][1] for m in members), default=0.0)
+        y = top
         for name in feeders:
             key = f"g:in:{name}"
             x = left - sizes[name][0] - float(SIZE.GRAPH_GAP_X)
@@ -253,10 +263,12 @@ def _build_view(
                 "ghost",
                 document.passes[name],
                 entries.get(name, PassEntry()),
-                (x, positions[name][1]),
+                (x, y),
                 ports[name],
                 name not in live,
             )
+            y += sizes[name][1] + float(SIZE.GRAPH_GAP_Y)
+        y = top
         for name in readers:
             key = f"g:out:{name}"
             x = right + float(SIZE.GRAPH_GAP_X)
@@ -266,16 +278,17 @@ def _build_view(
                 "ghost",
                 document.passes[name],
                 entries.get(name, PassEntry()),
-                (x, positions[name][1]),
+                (x, y),
                 ports[name],
                 name not in live,
             )
+            y += sizes[name][1] + float(SIZE.GRAPH_GAP_Y)
         # Edges: into members from members or feeder ghosts; out of members into reader ghosts.
         for name in members:
             for slot, port in enumerate(ports[name]):
                 source = port.source
-                if source is None:
-                    continue
+                if source is None or source == name:
+                    continue  # a self-read is the loop drawn on the node
                 src_key = pass_key(source) if source in inside else f"g:in:{source}"
                 view.edges.append(
                     _Edge(
@@ -440,9 +453,13 @@ def _port_point(node: _Node, slot: int) -> tuple[float, float]:
         + SIZE.GRAPH_NAME_H
         + SIZE.GRAPH_PAD
     )
-    return node.pos[
-        0
-    ], y0 + 4.0 + slot * SIZE.GRAPH_PORT_ROW + SIZE.GRAPH_PORT_ROW / 2.0
+    return (
+        node.pos[0],
+        y0
+        + SIZE.GRAPH_PORT_TOP
+        + slot * SIZE.GRAPH_PORT_ROW
+        + SIZE.GRAPH_PORT_ROW / 2.0,
+    )
 
 
 def _out_point(node: _Node, slot: int) -> tuple[float, float]:
@@ -522,18 +539,18 @@ def _draw_wire(
     z = xf.zoom
     p0 = xf.to_screen(a)
     p3 = xf.to_screen(b)
-    thickness = max(1.0, 1.5 * z)
+    thickness = max(1.0, SIZE.GRAPH_WIRE_W * z)
     dx = p3[0] - p0[0]
-    if dx >= 24 * z and bus_y <= 0:
-        c = max(30.0 * z, dx * 0.45)
+    if dx >= _MIN_DIRECT_DX * z and bus_y <= 0:
+        c = max(_MIN_DIRECT_DX * z, dx * _BEZIER_BOW)
         dl.add_bezier_cubic(
             p0, (p0[0] + c, p0[1]), (p3[0] - c, p3[1]), p3, col, thickness
         )
         return
     gx = SIZE.GRAPH_GAP_X / 2.0 * z
     by = xf.to_screen((0.0, bus_y))[1]
-    m0 = (p0[0] + gx + 24 * z, by)
-    m1 = (p3[0] - gx - 24 * z, by)
+    m0 = (p0[0] + gx + _MIN_DIRECT_DX * z, by)
+    m1 = (p3[0] - gx - _MIN_DIRECT_DX * z, by)
     dl.add_bezier_cubic(p0, (p0[0] + gx, p0[1]), (p0[0] + gx, by), m0, col, thickness)
     dl.add_line(m0, m1, col, thickness)
     dl.add_bezier_cubic(m1, (p3[0] - gx, by), (p3[0] - gx, p3[1]), p3, col, thickness)
@@ -552,29 +569,61 @@ def _draw_self_loop(
         (port[0] - 28 * z, top),
         port,
         col,
-        max(1.0, 1.5 * z),
+        max(1.0, SIZE.GRAPH_WIRE_W * z),
     )
 
 
 def _draw_port_dot(
     dl: imgui.ImDrawList, center: tuple[float, float], kind: str, r: float, col: int
 ) -> None:
+    ring = SIZE.GRAPH_PORT_RING_W
     if kind == "wired":
         dl.add_circle_filled(center, r, col)
     elif kind == "none":
-        dl.add_circle(center, r, col, 0, 1.2)
-        dl.add_circle_filled(center, r * 0.45, col)
+        dl.add_circle(center, r, col, 0, ring)
+        dl.add_circle_filled(center, r * _NONE_CORE, col)
     elif kind == "prev":
-        dl.add_circle(center, r, col, 0, 1.2)
-        dl.add_circle(center, r * 0.5, col, 0, 1.2)
+        dl.add_circle(center, r, col, 0, ring)
+        dl.add_circle(center, r * _PREV_INNER, col, 0, ring)
     elif kind == "media":
+        half = r * _MEDIA_HALF
         dl.add_rect_filled(
-            (center[0] - r * 0.8, center[1] - r * 0.8),
-            (center[0] + r * 0.8, center[1] + r * 0.8),
+            (center[0] - half, center[1] - half),
+            (center[0] + half, center[1] + half),
             col,
         )
     else:
-        dl.add_circle(center, r, col, 0, 1.2)
+        dl.add_circle(center, r, col, 0, ring)
+
+
+_BADGE_PAD = 3.0
+_BADGE_H = 12.0
+_BADGE_INSET = 2.0
+
+
+def _draw_badge(
+    dl: imgui.ImDrawList,
+    corner: tuple[float, float],
+    right_aligned: bool,
+    label: str,
+    z: float,
+    bg: int,
+    fg: int,
+) -> None:
+    """A small pill with a word on it at a picture's corner, in the current font."""
+    w = imgui.calc_text_size(label).x + 2 * _BADGE_PAD * z
+    x0 = (
+        corner[0] - _BADGE_INSET * z - w
+        if right_aligned
+        else corner[0] + _BADGE_INSET * z
+    )
+    y0 = corner[1] + _BADGE_INSET * z
+    dl.add_rect_filled((x0, y0), (x0 + w, y0 + _BADGE_H * z), bg, _BADGE_PAD * z)
+    dl.add_text(
+        (x0 + _BADGE_PAD * z, y0 + (_BADGE_H * z - imgui.get_font_size()) / 2),
+        fg,
+        label,
+    )
 
 
 def _draw_node(
@@ -590,14 +639,12 @@ def _draw_node(
     p1 = xf.to_screen((node.pos[0] + node.size[0], node.pos[1] + node.size[1]))
     alpha = COLOR.GRAPH_GHOST_ALPHA if node.kind == "ghost" else 1.0
     tint = group_tint(node.group) if node.kind == "box" else None
-    fill = (
-        (*tint[:3], COLOR.GROUP_FILL_ALPHA * alpha)
-        if tint is not None
-        else fade(COLOR.BG_SURFACE, alpha)
-    )
-    dl.add_rect_filled(p0, p1, _u32(fade(COLOR.BG_SURFACE, alpha)), _ROUNDING * z)
+    rounding = SIZE.GRAPH_ROUNDING * z
+    dl.add_rect_filled(p0, p1, _u32(fade(COLOR.BG_SURFACE, alpha)), rounding)
     if tint is not None:
-        dl.add_rect_filled(p0, p1, _u32(fill), _ROUNDING * z)
+        dl.add_rect_filled(
+            p0, p1, _u32((*tint[:3], COLOR.GROUP_FILL_ALPHA * alpha)), rounding
+        )
     if node.error:
         border = COLOR.STATE_ERROR
     elif is_output:
@@ -611,15 +658,17 @@ def _draw_node(
     border_col = _u32(fade(border, alpha))
     thickness = 1.5 if (node.error or is_output or selected) else 1.0
     if node.kind == "ghost" or node.uncompiled:
-        _dashed_rect(dl, p0, p1, border_col, 4.0 * z, thickness)
+        _dashed_rect(dl, p0, p1, border_col, SIZE.GRAPH_DASH * z, thickness)
     else:
-        dl.add_rect(p0, p1, border_col, _ROUNDING * z, thickness)
+        dl.add_rect(p0, p1, border_col, rounding, thickness)
 
     # The picture: the pass's own live target, scaled by imgui -- no second render.
     tx0, ty0, tx1, ty1 = _thumb_rect(node)
     s0 = xf.to_screen((tx0, ty0))
     s1 = xf.to_screen((tx1, ty1))
-    picture_alpha = alpha * (0.5 if node.error or node.stale else 1.0)
+    picture_alpha = alpha * (
+        COLOR.GRAPH_STALE_ALPHA if node.error or node.stale else 1.0
+    )
     if node.texture_glo is not None and min(node.texture_size) > 0:
         tw, th = node.texture_size
         scale = min((s1[0] - s0[0]) / tw, (s1[1] - s0[1]) / th)
@@ -632,8 +681,8 @@ def _draw_node(
             (ix + dw, iy + dh),
             (0, 1),
             (1, 0),
-            _u32((1.0, 1.0, 1.0, picture_alpha)),
-            2.0 * z,
+            _u32(fade(COLOR.WHITE, picture_alpha)),
+            SIZE.GRAPH_THUMB_ROUNDING * z,
         )
 
     # The name, centred under the picture.
@@ -656,25 +705,17 @@ def _draw_node(
     badge_bg = _u32(fade(COLOR.BG_FRAME, alpha))
     badge_fg = _u32(fade(COLOR.FG_MUTED, alpha))
     if node.runs > 1 and node.kind != "ghost":
-        label = f"x{node.runs}"
-        w = imgui.calc_text_size(label).x + 6 * z
-        dl.add_rect_filled(
-            (s1[0] - w - 2 * z, s0[1] + 2 * z),
-            (s1[0] - 2 * z, s0[1] + 14 * z),
-            badge_bg,
-            3 * z,
-        )
-        dl.add_text((s1[0] - w + z, s0[1] + 3 * z), badge_fg, label)
+        _draw_badge(dl, (s1[0], s0[1]), True, f"x{node.runs}", z, badge_bg, badge_fg)
     if node.kind == "box":
-        label = f"{len(node.members)} passes"
-        w = imgui.calc_text_size(label).x + 6 * z
-        dl.add_rect_filled(
-            (s0[0] + 2 * z, s0[1] + 2 * z),
-            (s0[0] + 2 * z + w, s0[1] + 14 * z),
+        _draw_badge(
+            dl,
+            (s0[0], s0[1]),
+            False,
+            f"{len(node.members)} passes",
+            z,
             badge_bg,
-            3 * z,
+            badge_fg,
         )
-        dl.add_text((s0[0] + 5 * z, s0[1] + 3 * z), badge_fg, label)
 
     # Ports: a dot on the left edge and the label beside it, one row each.
     r = SIZE.GRAPH_PORT_R * z
@@ -707,13 +748,16 @@ def _tab_row(
     app: App, document_id: str, view: GraphViewState, groups: list[str]
 ) -> None:
     ui_document = app.ui_documents[document_id]
-    root_label = ui_document.ui_state.ui_name.strip() or _ROOT_FALLBACK_LABEL
+    # The row keys and answers by NAME, so the root's label is made distinct from every
+    # group's before it is drawn; the click then maps back without ambiguity.
+    root_label = ui_document.ui_state.ui_name.strip()
+    if not root_label or root_label in groups:
+        root_label = next(label for label in _ROOT_LABELS if label not in groups)
     labels = [root_label, *groups]
     scopes = ["", *groups]
     active = labels[scopes.index(view.scope)] if view.scope in scopes else root_label
     clicked = text_tab_row("graph_scope", labels, active)
     if clicked is not None:
-        # Mapped back by INDEX: a document named like a group would make the name ambiguous.
         index = labels.index(clicked)
         if scopes[index] != view.scope:
             view.scope = scopes[index]
@@ -735,8 +779,9 @@ def _canvas_menu(app: App, document_id: str, view: GraphViewState) -> None:
             imgui.end_popup()
 
 
-def draw(app: App, document_id: str) -> None:
-    """The graph canvas for one document: the tab row, then the child with the picture."""
+def draw(app: App, document_id: str, height: float) -> None:
+    """The graph canvas for one document: the tab row, then a child `height` tall with the
+    picture. The caller sizes it; the widget measures no sibling."""
     ui_document = app.ui_documents.get(document_id)
     if ui_document is None:
         return
@@ -757,9 +802,6 @@ def draw(app: App, document_id: str) -> None:
     imgui.begin_disabled(app.copilot_turn_active)
     _tab_row(app, document_id, view, group_names)
 
-    avail = imgui.get_content_region_avail()
-    reserve = imgui.get_frame_height() + 2 * float(SPACE.SM)
-    height = max(float(SIZE.GRAPH_MIN_H), avail.y - reserve)
     imgui.push_style_color(imgui.Col_.child_bg, COLOR.BG_APP)
     child_open = imgui.begin_child(
         "##pass_graph",
@@ -785,6 +827,17 @@ def _draw_canvas(
 ) -> None:
     origin = imgui.get_cursor_screen_pos()
     avail = imgui.get_content_region_avail()
+    io = imgui.get_io()
+    # A gesture whose release the canvas did not see (the view switched, a modal covered it,
+    # a copilot turn began) is cancelled, never resumed: a stray later click must not write.
+    released_elsewhere = not imgui.is_mouse_down(
+        imgui.MouseButton_.left
+    ) and not imgui.is_mouse_released(imgui.MouseButton_.left)
+    if released_elsewhere or app.copilot_turn_active:
+        view.node_drag = None
+        view.wire_drag = None
+        view.band_anchor = None
+        view.guides = []
     overrides = view.node_drag.current() if view.node_drag is not None else {}
     picture = _build_view(document, view.scope, overrides)
     nodes = list(picture.nodes.values())
@@ -793,7 +846,6 @@ def _draw_canvas(
     xf = _Xf(origin, view.pan, view.zoom)
     dl = imgui.get_window_draw_list()
     output = document.graph.output
-    io = imgui.get_io()
 
     # ---- wheel zoom about the cursor, read before the transform is used ----
     hovered = imgui.is_window_hovered(imgui.HoveredFlags_.child_windows)
@@ -813,7 +865,7 @@ def _draw_canvas(
     dl.channels_split(2)
     dl.channels_set_current(0)
     edge_col = _u32(COLOR.GRAPH_EDGE)
-    dim_col = _u32(fade(COLOR.GRAPH_EDGE, 0.35))
+    dim_col = _u32(fade(COLOR.GRAPH_EDGE, COLOR.GRAPH_DIM_ALPHA))
     err_col = _u32(COLOR.STATE_ERROR)
     bottom = max((n.pos[1] + n.size[1] for n in nodes), default=0.0)
     for edge in picture.edges:
@@ -822,10 +874,10 @@ def _draw_canvas(
         a = _out_point(src, edge.src_slot)
         b = _port_point(dst, edge.dst_slot)
         col = err_col if edge.on_cycle else dim_col if edge.dim else edge_col
-        backward = b[0] < a[0] + 24
+        backward = b[0] < a[0] + _MIN_DIRECT_DX
         bus = (
             bottom
-            + 16.0
+            + SIZE.GRAPH_BUS_CLEAR
             + max(0, edge.span - 2) * SIZE.GRAPH_BUS_STEP
             + (SIZE.GRAPH_BUS_STEP if backward else 0)
         )
@@ -906,37 +958,55 @@ def _draw_canvas(
                 }
             )
         _node_menu(app, document_id, view, node)
-        # Ports: the dots are drag sources, the input dots drop targets too.
-        hit = max(SIZE.GRAPH_PORT_R * view.zoom, float(SIZE.GRAPH_HIT_MIN))
+        # Ports: the dots are drag sources, the input dots drop targets too. The hit box has
+        # a screen-pixel floor for a human's aim but never exceeds half the row pitch, so two
+        # rows cannot share a press; the same box answers the press and the hover.
+        hit = min(
+            max(SIZE.GRAPH_PORT_R * view.zoom, float(SIZE.GRAPH_HIT_MIN)),
+            SIZE.GRAPH_PORT_ROW * view.zoom / 2.0,
+        )
         for slot, port in enumerate(node.ports):
             center = xf.to_screen(_port_point(node, slot))
             imgui.set_cursor_screen_pos((center[0] - hit, center[1] - hit))
+            imgui.set_next_item_allow_overlap()
             imgui.invisible_button(
                 f"##gport_{node.key}_{slot}", imgui.ImVec2(2 * hit, 2 * hit)
             )
             owner = node.owners[slot]
             if imgui.is_item_hovered() and view.wire_drag is not None:
                 drop_target = (owner, port.sampler, port.kind)
-            if (
+            pressed = (
                 imgui.is_item_active()
                 and imgui.is_mouse_dragging(imgui.MouseButton_.left)
                 and view.wire_drag is None
                 and view.node_drag is None
-                and port.kind == "wired"
-                and port.source is not None
-            ):
+            )
+            if pressed and port.kind == "wired" and port.source is not None:
                 view.wire_drag = WireDrag(
                     producer=port.source,
                     start=_port_point(node, slot),
                     grabbed=(owner, port.sampler),
                 )
+            elif pressed and node.kind != "ghost":
+                # An unfilled port is not a wire to grab: the press moves the node.
+                names = _drag_names(view, node)
+                view.node_drag = NodeDrag(
+                    origin={
+                        n: picture.positions[n] for n in names if n in picture.positions
+                    }
+                )
+        out_hit = hit
+        if len(node.outputs) > 1:
+            step = SIZE.GRAPH_THUMB * view.zoom / (len(node.outputs) + 1)
+            out_hit = min(hit, step / 2.0)
         for slot, (member, _hollow) in enumerate(node.outputs):
             if node.kind == "ghost":
                 continue
             center = xf.to_screen(_out_point(node, slot))
-            imgui.set_cursor_screen_pos((center[0] - hit, center[1] - hit))
+            imgui.set_cursor_screen_pos((center[0] - out_hit, center[1] - out_hit))
+            imgui.set_next_item_allow_overlap()
             imgui.invisible_button(
-                f"##gout_{node.key}_{slot}", imgui.ImVec2(2 * hit, 2 * hit)
+                f"##gout_{node.key}_{slot}", imgui.ImVec2(2 * out_hit, 2 * out_hit)
             )
             if (
                 imgui.is_item_active()
@@ -958,7 +1028,7 @@ def _draw_canvas(
         wire = view.wire_drag
         start = xf.to_screen(wire.start)
         end = (io.mouse_pos.x, io.mouse_pos.y)
-        c = max(30.0 * view.zoom, abs(end[0] - start[0]) * 0.45)
+        c = max(_MIN_DIRECT_DX * view.zoom, abs(end[0] - start[0]) * _BEZIER_BOW)
         dl.add_bezier_cubic(
             start,
             (start[0] + c, start[1]),
@@ -975,8 +1045,12 @@ def _draw_canvas(
         b = (io.mouse_pos.x, io.mouse_pos.y)
         lo = (min(a[0], b[0]), min(a[1], b[1]))
         hi = (max(a[0], b[0]), max(a[1], b[1]))
-        dl.add_rect_filled(lo, hi, _u32(fade(COLOR.SELECT, 0.12)))
-        dl.add_rect(lo, hi, _u32(fade(COLOR.SELECT, 0.8)), 0.0, 1.0)
+        dl.add_rect_filled(
+            lo, hi, _u32(fade(COLOR.SELECT, COLOR.GRAPH_BAND_FILL_ALPHA))
+        )
+        dl.add_rect(
+            lo, hi, _u32(fade(COLOR.SELECT, COLOR.GRAPH_BAND_EDGE_ALPHA)), 0.0, 1.0
+        )
         if imgui.is_mouse_released(imgui.MouseButton_.left):
             picked: set[str] = set()
             for node in nodes:
@@ -997,12 +1071,16 @@ def _draw_canvas(
         if kind == "v":
             x = xf.to_screen((value, 0.0))[0]
             dl.add_line(
-                (x, origin.y), (x, origin.y + avail.y), _u32(fade(COLOR.SELECT, 0.7))
+                (x, origin.y),
+                (x, origin.y + avail.y),
+                _u32(fade(COLOR.SELECT, COLOR.GRAPH_GUIDE_ALPHA)),
             )
         else:
             y = xf.to_screen((0.0, value))[1]
             dl.add_line(
-                (origin.x, y), (origin.x + avail.x, y), _u32(fade(COLOR.SELECT, 0.7))
+                (origin.x, y),
+                (origin.x + avail.x, y),
+                _u32(fade(COLOR.SELECT, COLOR.GRAPH_GUIDE_ALPHA)),
             )
 
     if (
@@ -1026,29 +1104,37 @@ def _drag_names(view: GraphViewState, node: _Node) -> list[str]:
 def _snap(
     view: GraphViewState, picture: _View, nodes: Sequence[_Node]
 ) -> list[tuple[str, float]]:
-    """Align the dragged node's left or top edge to a still node's within the snap distance,
-    by adjusting the drag's delta (092 D13). Returns the guides to draw."""
+    """Set the drag's snap offset and return the guides to draw (092 D13).
+
+    The offset aligns the first dragged node's left or top edge to a still node's when within
+    the snap distance, computed fresh from the raw drag each frame; the raw delta is never
+    corrected, so the node leaves the guide as soon as the cursor does.
+    """
     drag = view.node_drag
     if drag is None:
         return []
+    drag.snap = (0.0, 0.0)
     moving = set(drag.origin)
     threshold = SIZE.GRAPH_SNAP_PX / view.zoom
     primary = next(iter(drag.origin))
-    current = drag.current().get(primary)
-    if current is None:
+    raw = drag.raw().get(primary)
+    if raw is None:
         return []
-    guides: list[tuple[str, float]] = []
     still = [n for n in nodes if n.kind != "box" and n.name not in moving] + [
         n for n in nodes if n.kind == "box" and not (set(n.members) & moving)
     ]
-    best_x = min(((abs(n.pos[0] - current[0]), n.pos[0]) for n in still), default=None)
+    guides: list[tuple[str, float]] = []
+    snap_x = 0.0
+    snap_y = 0.0
+    best_x = min(((abs(n.pos[0] - raw[0]), n.pos[0]) for n in still), default=None)
     if best_x is not None and best_x[0] <= threshold:
-        drag.delta = (drag.delta[0] + (best_x[1] - current[0]), drag.delta[1])
+        snap_x = best_x[1] - raw[0]
         guides.append(("v", best_x[1]))
-    best_y = min(((abs(n.pos[1] - current[1]), n.pos[1]) for n in still), default=None)
+    best_y = min(((abs(n.pos[1] - raw[1]), n.pos[1]) for n in still), default=None)
     if best_y is not None and best_y[0] <= threshold:
-        drag.delta = (drag.delta[0], drag.delta[1] + (best_y[1] - current[1]))
+        snap_y = best_y[1] - raw[1]
         guides.append(("h", best_y[1]))
+    drag.snap = (snap_x, snap_y)
     return guides
 
 
@@ -1149,7 +1235,14 @@ def _group_prompt(app: App, document_id: str, view: GraphViewState) -> None:
     )
     imgui.same_line()
     committed = primary_button("Create") or entered
-    if committed and app.group_selection(document_id, view.group_name.strip()) == "":
+    name = view.group_name.strip()
+    # A blank name would mean "no group" to the verb, which is Dissolve, not Create.
+    if (
+        committed
+        and name
+        and view.selection
+        and app.group_selection(document_id, name) == ""
+    ):
         imgui.close_current_popup()
     imgui.same_line()
     if standard_button("Cancel"):

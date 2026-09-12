@@ -17,6 +17,7 @@ from shaderbox.pass_graph import (
     Wiring,
     entry_points,
     group_name_error,
+    namespace_error,
     plan_passes,
 )
 
@@ -45,6 +46,7 @@ def plan_import(
     handovers: Collection[tuple[str, str]],
     host_wiring: Wiring,
     host_output: str,
+    host_groups: Collection[str],
 ) -> ImportPlan | str:
     """The plan, or the message that rejects it.
 
@@ -78,6 +80,10 @@ def plan_import(
             if len(taken) > 1
             else (f"'{taken[0]}' already exists")
         )
+    for new in sorted(renames.values()):
+        collision = namespace_error(new, (), host_groups)
+        if collision:
+            return collision
     output = renames.get(source_output, renames[copied[0]])
 
     sources: dict[str, dict[str, str]] = {}

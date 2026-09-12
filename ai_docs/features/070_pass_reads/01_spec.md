@@ -2,7 +2,9 @@
 
 Status: **done**. Opened as "the graph view of the pass strip" (069 #19 option A); closed as a
 row of chips under each tile, after a brainstorm that rejected the graph view. This file records
-the decision and what shipped.
+the decision and what shipped. The graph view returned in 092 as an opt-in SECOND view beside
+the strip, not as its replacement (`ai_docs/features/092_graph_view/03_spec.md`); the decision
+below stands for the strip.
 
 ## Goal
 

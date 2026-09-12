@@ -553,16 +553,28 @@ def step_in_order(order: Sequence[str], current: str, step: int) -> str | None:
 # asserts each without a window.
 
 
+NAMESPACE_COLLISION = "a pass and a group cannot share a name"
+
+
+def namespace_error(
+    candidate: str, pass_names: Collection[str], group_names: Collection[str]
+) -> str:
+    """The one namespace passes and groups share (092 D17): `candidate`, about to become a
+    pass name or a group name, may not already be the other kind. Both directions call this,
+    so the predicate and its message exist once."""
+    if candidate in pass_names or candidate in group_names:
+        return NAMESPACE_COLLISION
+    return ""
+
+
 def group_name_error(group: str, pass_names: Collection[str]) -> str:
     """Why `group` may not be written, or `""` when it may (092 D17): the pattern first, then
-    the one namespace passes and groups share -- the canvas keys nodes and boxes by name."""
+    the namespace -- the canvas keys nodes and boxes by name."""
     if not group:
         return ""
     if not PASS_NAME_RE.match(group):
         return "a group name starts with a letter and holds letters, digits and underscores"
-    if group in pass_names:
-        return "a pass and a group cannot share a name"
-    return ""
+    return namespace_error(group, pass_names, ())
 
 
 def graph_ranks(wiring: Wiring) -> dict[str, int]:

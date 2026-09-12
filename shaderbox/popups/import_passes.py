@@ -163,6 +163,7 @@ def _plan(draft: ImportDraft, source: UIDocument, host: UIDocument) -> ImportPla
         draft.handovers,
         host.document.effective_wiring(),
         host.document.graph.output,
+        {entry.group for entry in host.document.graph.passes.values() if entry.group},
     )
 
 
