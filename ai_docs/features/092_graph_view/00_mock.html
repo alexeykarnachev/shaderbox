@@ -75,50 +75,73 @@
   table.cmp th, table.cmp td { text-align:left; padding:3px 14px 3px 0; vertical-align:top; color:var(--fg3); }
   table.cmp th { color:var(--fg4); font-weight:normal; font-size:12px; }
   table.cmp td:first-child { color:var(--fg2); }
+  details { margin-top:40px; }
+  summary { color:var(--fg4); cursor:pointer; font-size:14px; }
+  .hdr { fill:var(--bg1); }
+  .node.output .hdr { fill:color-mix(in srgb, var(--yellow) 22%, var(--bg1)); }
+  .hdrname { font-size:12px; fill:var(--fg2); }
+  .outport { fill:var(--bg0h); stroke:var(--fg3); stroke-width:1.4; }
+  .ghost { stroke:var(--bg2); stroke-dasharray:3 3; }
 </style>
 </head>
 <body>
-
 <h1>092 · graph view — sketches</h1>
-<p class="note">Local mock, nothing here is wired. One layout engine (rank = longest path from a root, group members adjacent inside a rank, ports fanned per sampler) renders every variant, so what differs between panels is only the drawing. Two real documents: the six-pass <b>Radiance Cascades</b> example (a chain six ranks deep, two long edges from <code>paint</code>, two feedback passes, run counts 12 and 6) and the <b>Bloom Chain</b> fixture imported as group <span style="color:var(--aqua)">bloom</span> into a host with <code>scene</code>, a stale <code>vignette</code>, and <code>final</code>. Hover a node to light its edges. Panels resize from the bottom-right corner; the slider sets them all.</p>
+<p class="note">Local mock, nothing here is wired. One layout engine (rank = longest path from a root, group members adjacent inside a rank, one port per sampler, an edge spanning more than one rank routed on a bus that crosses no node) renders every variant. Two real documents: the six-pass <b>Radiance Cascades</b> example (a chain six ranks deep, two long edges from <code>paint</code>, two feedback passes, run counts 12 and 6) and the <b>Bloom Chain</b> fixture imported as group <span style="color:var(--aqua)">bloom</span> into a host with <code>scene</code>, a stale <code>vignette</code>, and <code>final</code>. Hover a node to light its edges. Panels resize from the bottom-right corner; the slider sets them all.</p>
 
 <div class="ctl">
   panel width <input type="range" id="w" min="420" max="1400" value="700"> <span id="wv">700</span>px
   <label><input type="checkbox" id="fit" checked> fit to width (zoom out, never in)</label>
   <label><input type="checkbox" id="runs" checked> run-count badge</label>
   <label><input type="checkbox" id="doc2" checked> show the bloom host too</label>
+  <label><input type="checkbox" id="loop"> feedback as a wire from the output port to <code>prev</code></label>
+  <label><input type="checkbox" id="region" checked> group region</label>
 </div>
 
-<h2>1 · Ranks left to right, the strip's own tile <span class="verdict">the 091 teaser, honest about width</span></h2>
-<p>Node = the strip tile at 168 (thumb 112, name under it). Edges leave the source's right edge and enter the consumer's left edge at one port per sampler, the sampler's name at the head. An edge spanning more than one rank bows under the row so it does not cross the nodes between. Feedback is the loop on the top-right corner. Without fit this is the natural size; with fit the whole picture scales into the panel and the names shrink with it.</p>
-<div class="panel w" data-v="lr" data-size="full"></div>
+<h2>Round 2 · port-list nodes <span class="verdict">the chosen shape, six ways</span></h2>
+<p>A node lists its samplers as ports; an edge ends at the port's dot and carries no label. What varies: where the list sits on the node, which way the ranks run, and whether the lanes shape from round 1 is folded in. The output port is the dot on the right of the picture in every variant.</p>
 
-<h2>2 · Same, compact node <span class="verdict">108 wide, 80 thumb</span></h2>
-<p>The same layout with a node that is a picture and a name and nothing else. The question is whether the picture still reads at 80 and at 80 times the fit zoom.</p>
-<div class="panel w" data-v="lr" data-size="compact"></div>
+<h3>A · ports under the picture, left to right <span class="verdict">round 1's #5, the bus clipping fixed</span></h3>
+<div class="panel w" data-v="lr" data-style="under" data-size="compact"></div>
 
-<h2>3 · Ranks top to bottom <span class="verdict">depth becomes height, which the panel has</span></h2>
-<p>The chain runs down instead of across. The Document tab is narrower than it is tall and it scrolls, so a deep chain costs scrolling rather than zoom. Long edges bow to the right.</p>
-<div class="panel w" data-v="tb" data-size="compact"></div>
+<h3>B · the same at the strip's own tile <span class="verdict">168 wide, 112 thumb</span></h3>
+<p>Same drawing, the node the strip already has plus the port rows. Judge whether the compact node loses anything the strip tile keeps.</p>
+<div class="panel w" data-v="lr" data-style="under" data-size="full"></div>
 
-<h2>4 · Lanes <span class="verdict">the git-log shape 070 liked, with the tiles</span></h2>
-<p>One column of nodes in strip order, every edge a lane on the left: it leaves the source's left edge, drops down its lane, and turns into the consumer's port with the sampler's name on the turn. Nothing crosses a node, nothing bows, the width is the tile plus the lane gutter, so it fits at 420 without zoom. Feedback stays a corner loop.</p>
-<div class="panel w" data-v="lanes" data-size="compact"></div>
+<h3>C · name as a header bar <span class="verdict">the node-editor look; the group tints the bar</span></h3>
+<p>The name moves to a bar on top of the node, the picture under it, the ports under that. The output pass gets an accent-tinted bar. With the region toggle off, the bar's tint alone says which group a node is in.</p>
+<div class="panel w" data-v="lr" data-style="header" data-size="compact"></div>
 
-<h2>5 · Port-list nodes <span class="verdict">the sampler names live on the node, edges end at a dot</span></h2>
-<p>A node lists its samplers as input ports under the picture; the edge ends at the port's dot and carries no label of its own. Longer nodes, but every name has a fixed home and two edges into one node cannot collide. Left to right, compact.</p>
-<div class="panel w" data-v="ports" data-size="compact"></div>
+<h3>D · ports beside the picture <span class="verdict">the node stays the tile's height</span></h3>
+<p>The port column sits left of the picture, so a node with three samplers is no taller than one with none; the node is wider instead. Edges arrive at the same height band as the picture, which keeps the rows straight.</p>
+<div class="panel w" data-v="lr" data-style="side" data-size="compact"></div>
 
-<h2>6 · Orthogonal edges <span class="verdict">variant 2 with elbows instead of beziers</span></h2>
-<p>Same as 2, edges as rounded elbows routed through the gap between ranks. Reads more like a circuit, less like a drawing; the long edges take the gutter under the row.</p>
-<div class="panel w" data-v="lr" data-size="compact" data-edges="ortho"></div>
+<h3>E · ranks top to bottom, ports on the left <span class="verdict">edges drop, then turn into the port</span></h3>
+<p>The chain runs down. Every edge leaves the source's bottom, drops to the gap under it, runs to the left of the consumer and turns into the port dot; a long edge does the same, further left. Nothing needs a label and nothing bows.</p>
+<div class="panel w" data-v="tb" data-style="under" data-size="compact"></div>
+
+<h3>F · lanes with port-list nodes <span class="verdict">round 1's #4 and #5 together</span></h3>
+<p>One column in strip order, every edge a lane on the left ending in the port dot. The narrowest picture of all, and the only one where the ports and the lanes are the same idea: a lane is a wire, a port is where it lands.</p>
+<div class="panel w" data-v="lanes" data-style="under" data-size="compact"></div>
 
 <h2>What the two documents say about the layout</h2>
 <table class="cmp">
-  <tr><th>document</th><th>ranks</th><th>widest rank</th><th>long edges (span &gt; 1)</th><th>feedback</th><th>natural width LR full / compact</th><th>natural height TB compact</th></tr>
+  <tr><th>document</th><th>ranks</th><th>widest rank</th><th>long edges (span &gt; 1)</th><th>feedback</th><th>natural width LR compact, ports under / beside</th><th>natural height TB</th><th>natural height lanes</th></tr>
   <tbody id="stats"></tbody>
 </table>
-<p class="note" style="margin-top:12px">The sixes are the same number by coincidence: cascades is six passes in six ranks (one per rank), bloom is seven passes in five ranks (three in the widest). A left-to-right picture is sized by ranks, a top-to-bottom one by the same number turned on its side, lanes by the pass count alone.</p>
+
+<details>
+<summary>Round 1 (kept for reference): tile nodes with labelled edges</summary>
+<h3>1 · Ranks left to right, the strip's own tile</h3>
+<div class="panel w" data-v="lr" data-style="plain" data-size="full"></div>
+<h3>2 · Same, compact node</h3>
+<div class="panel w" data-v="lr" data-style="plain" data-size="compact"></div>
+<h3>3 · Ranks top to bottom</h3>
+<div class="panel w" data-v="tb" data-style="plain" data-size="compact"></div>
+<h3>4 · Lanes</h3>
+<div class="panel w" data-v="lanes" data-style="plain" data-size="compact"></div>
+<h3>6 · Orthogonal edges</h3>
+<div class="panel w" data-v="lr" data-style="plain" data-size="compact" data-edges="ortho"></div>
+</details>
 
 <script>
 // ---------------- data: the two real documents ----------------
@@ -146,29 +169,28 @@ const BLOOM = {
   ],
 };
 
-// ---------------- layout engine (what would port to pass_graph / a leaf module) ----------------
+// ---------------- layout engine ----------------
 const SIZES = {
-  full:    { w:168, thumb:112, pad:8,  nameH:22, gapX:72, gapY:24, font:13 },
-  compact: { w:108, thumb:80,  pad:6,  nameH:18, gapX:64, gapY:20, font:12 },
+  full:    { w:168, thumb:112, pad:8, nameH:22, gapX:72, gapY:24, font:13, portH:16, portColW:84, hdrH:20 },
+  compact: { w:108, thumb:80,  pad:6, nameH:18, gapX:64, gapY:20, font:12, portH:16, portColW:76, hdrH:18 },
 };
+const byName = (doc, n) => doc.passes.find(p => p.n === n);
 function edgesOf(doc) {
   const out = [];
   for (const p of doc.passes) for (const [u, src] of Object.entries(p.reads)) out.push({ src, dst:p.n, u, self: src === p.n });
   return out;
 }
 function ranks(doc) {
-  const byName = Object.fromEntries(doc.passes.map(p => [p.n, p]));
   const memo = {};
   const rank = n => {
     if (n in memo) return memo[n];
-    const preds = Object.values(byName[n].reads).filter(s => s !== n);
+    const preds = Object.values(byName(doc, n).reads).filter(s => s !== n);
     memo[n] = preds.length ? 1 + Math.max(...preds.map(rank)) : 0;
     return memo[n];
   };
   doc.passes.forEach(p => rank(p.n));
   return memo;
 }
-// columns: rank -> ordered names. Group members adjacent, then by barycenter of predecessors, then strip order.
 function columns(doc) {
   const r = ranks(doc);
   const cols = [];
@@ -177,74 +199,91 @@ function columns(doc) {
   cols.forEach((col, i) => {
     if (i > 0) {
       const bary = n => {
-        const preds = Object.values(doc.passes.find(p => p.n === n).reads).filter(s => s !== n && s in pos);
+        const preds = Object.values(byName(doc, n).reads).filter(s => s !== n && s in pos);
         return preds.length ? preds.reduce((a, s) => a + pos[s], 0) / preds.length : 1e9;
       };
-      const g = n => doc.passes.find(p => p.n === n).g || '~';
+      const g = n => byName(doc, n).g || '~';
       col.sort((a, b) => (g(a) < g(b) ? -1 : g(a) > g(b) ? 1 : bary(a) - bary(b)));
     }
     col.forEach((n, j) => pos[n] = j);
   });
   return cols;
 }
-// inputs of a node in a stable order: by the source's strip position, then sampler name; prev last
 function inputs(doc, name) {
   const order = doc.passes.map(p => p.n);
-  const p = doc.passes.find(q => q.n === name);
-  return Object.entries(p.reads).map(([u, src]) => ({ u, src, self: src === name }))
+  return Object.entries(byName(doc, name).reads).map(([u, src]) => ({ u, src, self: src === name }))
     .sort((a, b) => (a.self - b.self) || (order.indexOf(a.src) - order.indexOf(b.src)) || a.u.localeCompare(b.u));
 }
-function nodeHeight(S, doc, name, v) {
-  const nIn = v === 'ports' ? inputs(doc, name).length : 0;
-  return S.pad + S.thumb + S.nameH + S.pad + (nIn ? 4 + nIn * 16 : 0);
+// node geometry per style: 'plain' (round 1), 'under', 'header', 'side'
+function nodeSize(S, doc, name, style) {
+  const k = style === 'plain' ? 0 : inputs(doc, name).length;
+  if (style === 'side') return { w: S.w + S.portColW, h: S.pad + Math.max(S.thumb, k * S.portH) + S.nameH + S.pad };
+  const hdr = style === 'header' ? S.hdrH : 0;
+  return { w: S.w, h: hdr + S.pad + S.thumb + (style === 'header' ? 0 : S.nameH) + S.pad + (k ? 4 + k * S.portH : 0) };
 }
-function layoutRanked(doc, S, v, dir) {
+function geom(S, node, style, k, outLeft) {
+  // where the picture, the name, the ports and the output dot sit inside `node`
+  const g = {};
+  if (style === 'side') {
+    g.thumb = { x: node.x + S.portColW, y: node.y + S.pad, s: S.thumb };
+    g.name = { x: g.thumb.x + S.thumb / 2, y: node.y + node.h - S.pad - 5 };
+    g.ports = Array.from({ length: k }, (_, i) => ({ x: node.x, y: node.y + S.pad + 8 + i * S.portH }));
+  } else {
+    const hdr = style === 'header' ? S.hdrH : 0;
+    g.header = hdr ? { x: node.x, y: node.y, w: node.w, h: hdr } : null;
+    g.thumb = { x: node.x + (node.w - S.thumb) / 2, y: node.y + hdr + S.pad, s: S.thumb };
+    g.name = hdr ? { x: node.x + node.w / 2, y: node.y + hdr - 5 } : { x: node.x + node.w / 2, y: g.thumb.y + S.thumb + S.nameH - 5 };
+    const p0 = g.thumb.y + S.thumb + (hdr ? 0 : S.nameH) + S.pad + 4 + 8;
+    g.ports = Array.from({ length: k }, (_, i) => ({ x: node.x, y: p0 + i * S.portH }));
+  }
+  g.out = { x: outLeft ? node.x : node.x + node.w, y: g.thumb.y + S.thumb / 2 };
+  return g;
+}
+function layoutRanked(doc, S, style, dir) {
   const cols = columns(doc);
   const nodes = {};
-  // primary axis = rank, secondary = position inside the rank
-  const colExtent = cols.map(col => col.reduce((a, n) => a + nodeHeight(S, doc, n, v), 0) + (col.length - 1) * S.gapY);
+  const size = n => nodeSize(S, doc, n, style);
+  const colExtent = cols.map(col => col.reduce((a, n) => a + size(n).h, 0) + (col.length - 1) * S.gapY);
+  const colWidth = cols.map(col => Math.max(...col.map(n => size(n).w)));
   const maxExtent = Math.max(...colExtent);
   let along = 0;
   cols.forEach((col, i) => {
     let across = (maxExtent - colExtent[i]) / 2;
     col.forEach(n => {
-      const h = nodeHeight(S, doc, n, v);
-      nodes[n] = dir === 'lr' ? { x: along, y: across, w: S.w, h } : { x: across, y: along, w: S.w, h };
+      const { w, h } = size(n);
+      nodes[n] = dir === 'lr' ? { x: along, y: across, w, h } : { x: across, y: along, w, h };
       across += h + S.gapY;
     });
-    along += (dir === 'lr' ? S.w : Math.max(...col.map(n => nodeHeight(S, doc, n, v)))) + S.gapX;
+    along += (dir === 'lr' ? colWidth[i] : Math.max(...col.map(n => size(n).h))) + S.gapX;
   });
-  const W = dir === 'lr' ? along - S.gapX : maxExtent;
-  const H = dir === 'lr' ? maxExtent : along - S.gapX;
-  return { nodes, W, H, cols };
+  return { nodes, W: dir === 'lr' ? along - S.gapX : maxExtent, H: dir === 'lr' ? maxExtent : along - S.gapX, cols };
 }
-function layoutLanes(doc, S) {
-  // one column in strip order; each non-self edge takes the lowest lane free over [src,dst]
+function layoutLanes(doc, S, style) {
   const order = doc.passes.map(p => p.n);
   const es = edgesOf(doc).filter(e => !e.self).map(e => ({ ...e, a: order.indexOf(e.src), b: order.indexOf(e.dst) }));
-  es.sort((p, q) => (q.b - q.a) - (p.b - p.a) || p.a - q.a);   // longest first, so short edges hug the nodes
+  es.sort((p, q) => (q.b - q.a) - (p.b - p.a) || p.a - q.a);
   const lanes = [];
   for (const e of es) {
     let l = 0;
     while (lanes[l] && lanes[l].some(o => !(e.b <= o.a || e.a >= o.b))) l++;
     (lanes[l] ||= []).push(e); e.lane = l;
   }
-  const laneW = 26, gutter = 14 + lanes.length * laneW;
+  const laneW = 22, gutter = 12 + lanes.length * laneW;
   const nodes = {}; let y = 0;
-  order.forEach(n => { const h = nodeHeight(S, doc, n, 'lanes'); nodes[n] = { x: gutter, y, w: S.w, h }; y += h + S.gapY; });
-  return { nodes, W: gutter + S.w, H: y - S.gapY, edges: es, laneW, nLanes: lanes.length };
+  order.forEach(n => { const { w, h } = nodeSize(S, doc, n, style); nodes[n] = { x: gutter, y, w, h }; y += h + S.gapY; });
+  return { nodes, W: gutter + Math.max(...order.map(n => nodeSize(S, doc, n, style).w)), H: y - S.gapY, edges: es, laneW, nLanes: lanes.length };
 }
 
 // ---------------- drawing ----------------
 const NS = 'http://www.w3.org/2000/svg';
 function el(tag, attrs, parent) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
-function tangentHead(x, y, dx, dy, cls) {
+function head(x, y, dx, dy, cls) {
   const L = Math.hypot(dx, dy) || 1; dx /= L; dy /= L;
   const s = 7, px = -dy, py = dx;
   return el('polygon', { points: `${x},${y} ${x - s * dx + px * s * .5},${y - s * dy + py * s * .5} ${x - s * dx - px * s * .5},${y - s * dy - py * s * .5}`, class: 'head ' + cls });
 }
 function labelAt(svg, x, y, text, anchor, cls) {
-  const g = el('g', { class: 'elabelg' }, svg);
+  const g = el('g', {}, svg);
   const w = text.length * 6.6 + 6;
   const x0 = anchor === 'end' ? x - w : anchor === 'middle' ? x - w / 2 : x;
   el('rect', { x: x0, y: y - 7, width: w, height: 14, rx: 2, class: 'elabelbg' }, g);
@@ -252,40 +291,54 @@ function labelAt(svg, x, y, text, anchor, cls) {
   t.textContent = text;
   return g;
 }
-function portY(node, doc, name, v, S, i, k) {
-  if (v === 'ports') return node.y + S.pad + S.thumb + S.nameH + S.pad + 4 + i * 16 + 8;
-  return node.y + node.h * (i + 1) / (k + 1);
-}
-function portX(node, doc, name, v, S, i, k) { return node.x + node.w * (i + 1) / (k + 1); }
+function ellipsize(text, maxW) { const maxc = Math.floor(maxW / 6.6); return text.length > maxc ? text.slice(0, maxc - 1) + '…' : text; }
 
-function drawNode(svg, doc, p, node, S, v, opts) {
+function drawNode(svg, doc, p, node, S, style, opts) {
+  const ins = inputs(doc, p.n);
   const g = el('g', { class: 'node' + (p.n === doc.output ? ' output' : '') + (p.stale ? ' stale' : ''), 'data-n': p.n }, svg);
+  const G = geom(S, node, style, ins.length, opts.outLeft);
   el('rect', { x: node.x, y: node.y, width: node.w, height: node.h, rx: 6, class: 'frame' }, g);
-  const fo = el('foreignObject', { x: node.x + (node.w - S.thumb) / 2, y: node.y + S.pad, width: S.thumb, height: S.thumb }, g);
+  if (G.header) {
+    const tint = p.g ? 'color-mix(in srgb, var(--aqua) 22%, var(--bg1))' : null;
+    const r = el('path', { d: `M${node.x},${node.y + 6} a6,6 0 0 1 6,-6 h${node.w - 12} a6,6 0 0 1 6,6 v${G.header.h - 6} h${-node.w} z`, class: 'hdr' }, g);
+    if (tint && p.n !== doc.output) r.style.fill = tint;
+    const t = el('text', { x: G.name.x, y: G.name.y, 'text-anchor': 'middle', class: 'hdrname' }, g); t.textContent = p.n;
+  } else {
+    const t = el('text', { x: G.name.x, y: G.name.y, 'text-anchor': 'middle', class: 'name', 'font-size': S.font }, g); t.textContent = p.n;
+  }
+  const fo = el('foreignObject', { x: G.thumb.x, y: G.thumb.y, width: G.thumb.s, height: G.thumb.s }, g);
   const d = document.createElement('div'); d.className = 'thumb ' + p.t; fo.appendChild(d);
-  const t = el('text', { x: node.x + node.w / 2, y: node.y + S.pad + S.thumb + S.nameH - 5, 'text-anchor': 'middle', class: 'name', 'font-size': S.font }, g);
-  t.textContent = p.n;
   if (opts.runs && p.runs) {
-    const bx = node.x + node.w - 30, by = node.y + 4;
-    el('rect', { x: bx, y: by, width: 26, height: 13, rx: 3, class: 'badgebg' }, g);
-    const b = el('text', { x: bx + 13, y: by + 10, 'text-anchor': 'middle', class: 'badge' }, g); b.textContent = '×' + p.runs;
+    const bx = G.thumb.x + G.thumb.s - 26, by = G.thumb.y + 2;
+    el('rect', { x: bx, y: by, width: 24, height: 13, rx: 3, class: 'badgebg' }, g);
+    const b = el('text', { x: bx + 12, y: by + 10, 'text-anchor': 'middle', class: 'badge' }, g); b.textContent = '×' + p.runs;
   }
-  if (v === 'ports') {
-    inputs(doc, p.n).forEach((inp, i) => {
-      const y = node.y + S.pad + S.thumb + S.nameH + S.pad + 4 + i * 16 + 8;
-      el('circle', { cx: node.x, cy: y, r: 3.5, class: 'port' }, g);
-      const l = el('text', { x: node.x + 8, y: y + 4, class: 'portlbl' }, g); const full = inp.self ? 'prev' : inp.u; const maxc = Math.floor((node.w - 12) / 6.6); l.textContent = full.length > maxc ? full.slice(0, maxc - 1) + '…' : full;
+  if (style !== 'plain') {
+    const maxW = style === 'side' ? S.portColW - 12 : node.w - 12;
+    ins.forEach((inp, i) => {
+      const P = G.ports[i];
+      el('circle', { cx: P.x, cy: P.y, r: 3.5, class: 'port' }, g);
+      const l = el('text', { x: P.x + 8, y: P.y + 4, class: 'portlbl' }, g); l.textContent = ellipsize(inp.self ? 'prev' : inp.u, maxW);
     });
-    el('circle', { cx: node.x + node.w, cy: node.y + S.pad + S.thumb / 2, r: 3.5, class: 'port' }, g);
+    el('circle', { cx: G.out.x, cy: G.out.y, r: 3.5, class: 'outport' }, g);
   }
 }
-function drawSelfLoop(svg, node, cls, label) {
+function drawCornerLoop(svg, node, cls, id) {
   const x = node.x + node.w - 10, y = node.y;
-  const p = el('path', { d: `M${x - 6},${y} C${x - 6},${y - 22} ${x + 22},${y - 22} ${x + 22},${y + 6}`, class: 'edge ' + cls, 'data-e': label }, svg);
-  const h = tangentHead(x + 22, y + 6, 0, 1, cls); h.setAttribute('data-e', label); svg.appendChild(h);
-  labelAt(svg, x + 8, y - 22, 'prev', 'middle', cls).setAttribute('data-e', label);
+  el('path', { d: `M${x - 6},${y} C${x - 6},${y - 22} ${x + 22},${y - 22} ${x + 22},${y + 6}`, class: 'edge ' + cls, 'data-e': id }, svg);
+  const h = head(x + 22, y + 6, 0, 1, cls); h.setAttribute('data-e', id); svg.appendChild(h);
+  labelAt(svg, x + 8, y - 22, 'prev', 'middle', cls).setAttribute('data-e', id);
 }
-function drawGroups(svg, doc, L, S) {
+function drawPortLoop(svg, node, G, i, cls, id) {
+  // out dot -> right -> over the top -> down the left -> into the prev port
+  const o = G.out, P = G.ports[i], r = 8, top = node.y - 12, left = node.x - 12;
+  const d = o.x <= node.x
+    ? `M${o.x},${o.y} H${left + r} Q${left},${o.y} ${left},${o.y + r} V${P.y - r} Q${left},${P.y} ${left + r},${P.y} H${P.x - 4}`
+    : `M${o.x},${o.y} H${o.x + 12 - r} Q${o.x + 12},${o.y} ${o.x + 12},${o.y - r} V${top + r} Q${o.x + 12},${top} ${o.x + 12 - r},${top} H${left + r} Q${left},${top} ${left},${top + r} V${P.y - r} Q${left},${P.y} ${left + r},${P.y} H${P.x - 4}`;
+  el('path', { d, class: 'edge ' + cls, 'data-e': id }, svg);
+  const h = head(P.x - 1, P.y, 1, 0, cls); h.setAttribute('data-e', id); svg.appendChild(h);
+}
+function drawGroups(svg, doc, L) {
   const groups = {};
   doc.passes.forEach(p => { if (p.g) (groups[p.g] ||= []).push(L.nodes[p.n]); });
   for (const [g, ns] of Object.entries(groups)) {
@@ -297,97 +350,109 @@ function drawGroups(svg, doc, L, S) {
   }
 }
 function render(panel, doc, opts) {
-  const v = panel.dataset.v, S = SIZES[panel.dataset.size], ortho = panel.dataset.edges === 'ortho';
-  const L = v === 'lanes' ? layoutLanes(doc, S) : layoutRanked(doc, S, v, v === 'tb' ? 'tb' : 'lr');
-  const M = 44;
-  const svg = el('svg', { viewBox: `${-M} ${-M} ${L.W + 2 * M} ${L.H + 2 * M}` });
-  const natural = L.W + 2 * M;
+  const v = panel.dataset.v, style = panel.dataset.style, S = SIZES[panel.dataset.size], ortho = panel.dataset.edges === 'ortho';
+  const L = v === 'lanes' ? layoutLanes(doc, S, style) : layoutRanked(doc, S, style, v);
+  const r = ranks(doc);
+  const maxSpan = Math.max(1, ...edgesOf(doc).filter(e => !e.self).map(e => r[e.dst] - r[e.src]));
+  // the margin covers the outermost bus (and the corner loop above the top row)
+  const busFar = 16 + 12 * (maxSpan - 2) + 16;
+  const M = { l: v === 'tb' ? busFar + 8 : 36, r: 36, t: 40, b: v === 'lr' ? busFar + 8 : 36 };
+  if (v === 'lanes') { M.l = 24; M.b = 24; }
+  const svg = el('svg', { viewBox: `${-M.l} ${-M.t} ${L.W + M.l + M.r} ${L.H + M.t + M.b}` });
+  const natural = L.W + M.l + M.r, naturalH = L.H + M.t + M.b;
   const avail = panel.clientWidth - 26;
   const zoom = opts.fit ? Math.min(1, avail / natural) : 1;
-  svg.setAttribute('width', natural * zoom); svg.setAttribute('height', (L.H + 2 * M) * zoom);
-  const stale = n => doc.passes.find(p => p.n === n).stale;
-  drawGroups(svg, doc, L, S);
-  // edges first, nodes over them (channel 1 under channel 2)
+  svg.setAttribute('width', natural * zoom); svg.setAttribute('height', naturalH * zoom);
+  const stale = n => byName(doc, n).stale;
+  const outLeft = v === 'lanes' && style !== 'plain';
+  const G = {}; doc.passes.forEach(p => G[p.n] = geom(S, L.nodes[p.n], style, inputs(doc, p.n).length, outLeft));
+  const portOf = (dst, u) => { const ins = inputs(doc, dst); const i = ins.findIndex(q => q.u === u); return { i, k: ins.length }; };
+  const entry = (dst, u) => {   // where an edge into `dst`'s sampler `u` lands
+    const { i, k } = portOf(dst, u), n = L.nodes[dst];
+    if (style === 'plain') return v === 'tb' ? { x: n.x + n.w * (i + 1) / (k + 1), y: n.y, i } : { x: n.x, y: n.y + n.h * (i + 1) / (k + 1), i };
+    return { ...G[dst].ports[i], i };
+  };
+  const exit = src => { const n = L.nodes[src]; return v === 'tb' ? { x: n.x + n.w / 2, y: n.y + n.h } : style === 'plain' ? { x: n.x + n.w, y: n.y + n.h / 2 } : G[src].out; };
+
+  if (opts.region) drawGroups(svg, doc, L);
   if (v === 'lanes') {
+    const laneX = l => 12 + (L.nLanes - 1 - l) * L.laneW + L.laneW / 2;
     for (const e of L.edges) {
       const a = L.nodes[e.src], b = L.nodes[e.dst];
-      const ins = inputs(doc, e.dst); const i = ins.findIndex(q => q.u === e.u);
-      const py = portY(b, doc, e.dst, v, S, i, ins.length);
-      const lx = 14 + e.lane * L.laneW + L.laneW / 2 - L.laneW * L.nLanes / 2 + (L.nLanes - 1) * L.laneW / 2;
-      const ax = a.x, ay = a.y + a.h / 2 + 4 * (e.lane % 3 - 1);
+      const P = entry(e.dst, e.u);
+      const lx = laneX(e.lane);
+      const ax = a.x, ay = style === 'plain' ? a.y + a.h / 2 + 4 * (e.lane % 3 - 1) : G[e.src].out.y;
       const cls = (stale(e.src) || stale(e.dst)) ? 'stale' : '';
-      const id = e.src + '>' + e.dst;
-      const r = 8;
-      const d = `M${ax},${ay} H${lx + r} Q${lx},${ay} ${lx},${ay + r} V${py - r} Q${lx},${py} ${lx + r},${py} H${b.x - 4}`;
-      el('path', { d, class: 'edge ' + cls, 'data-e': id, 'data-a': e.src, 'data-b': e.dst }, svg);
-      const h = tangentHead(b.x - 1, py, 1, 0, cls); h.setAttribute('data-e', id); svg.appendChild(h);
-      labelAt(svg, b.x - 8, py - 9, e.u, 'end', cls).setAttribute('data-e', id);
+      const id = e.src + '>' + e.dst, rr = 8;
+      const d = `M${ax},${ay} H${lx + rr} Q${lx},${ay} ${lx},${ay + rr} V${P.y - rr} Q${lx},${P.y} ${lx + rr},${P.y} H${P.x - 4}`;
+      el('path', { d, class: 'edge ' + cls, 'data-e': id }, svg);
+      const h = head(P.x - 1, P.y, 1, 0, cls); h.setAttribute('data-e', id); svg.appendChild(h);
+      if (style === 'plain') labelAt(svg, P.x - 8, P.y - 9, e.u, 'end', cls).setAttribute('data-e', id);
     }
-    for (const e of edgesOf(doc).filter(e => e.self)) drawSelfLoop(svg, L.nodes[e.dst], stale(e.dst) ? 'stale' : '', e.dst + '>' + e.dst);
   } else {
-    const r = ranks(doc);
-    for (const e of edgesOf(doc)) {
+    for (const e of edgesOf(doc).filter(e => !e.self)) {
       const id = e.src + '>' + e.dst;
       const cls = (stale(e.src) || stale(e.dst)) ? 'stale' : '';
-      if (e.self) { drawSelfLoop(svg, L.nodes[e.dst], cls, id); continue; }
-      const a = L.nodes[e.src], b = L.nodes[e.dst];
-      const ins = inputs(doc, e.dst); const i = ins.findIndex(q => q.u === e.u);
+      const A = exit(e.src), P = entry(e.dst, e.u);
       const span = r[e.dst] - r[e.src];
-      let d, hx, hy, hdx, hdy, lx, ly, anchor;
+      let d;
       if (v === 'tb') {
-        const x0 = a.x + a.w / 2, y0 = a.y + a.h, x1 = portX(b, doc, e.dst, v, S, i, ins.length), y1 = b.y;
-        const busX = span > 1 ? L.W + 16 + 12 * (span - 2) : 0;
-        const gy = S.gapX / 2;
-        if (ortho) {
-          d = busX
-            ? `M${x0},${y0} V${y0 + gy} H${busX} V${y1 - gy} H${x1} V${y1 - 4}`
-            : `M${x0},${y0} V${(y0 + y1) / 2} H${x1} V${y1 - 4}`;
-        } else if (busX) {
-          d = `M${x0},${y0} C${x0},${y0 + gy} ${busX},${y0 + gy} ${busX},${y0 + gy + 24} V${y1 - gy - 24} C${busX},${y1 - gy} ${x1},${y1 - gy} ${x1},${y1 - 2}`;
-        } else {
-          const c = Math.max(24, (y1 - y0) * .45);
-          d = `M${x0},${y0} C${x0},${y0 + c} ${x1},${y1 - c} ${x1},${y1 - 2}`;
+        // drop from the source, run to the left of the consumer, turn into the port (or, plain: onto the top edge)
+        const gy = A.y + S.gapX / 2 - 6 + 6 * (P.i % 3);
+        const busX = span > 1 ? -(16 + 12 * (span - 2)) : null;
+        const rr = 8;
+        if (style === 'plain') {
+          const busXp = span > 1 ? L.W + 16 + 12 * (span - 2) : 0;
+          d = busXp
+            ? `M${A.x},${A.y} C${A.x},${A.y + 30} ${busXp},${A.y + 30} ${busXp},${A.y + 54} V${P.y - 54} C${busXp},${P.y - 30} ${P.x},${P.y - 30} ${P.x},${P.y - 2}`
+            : `M${A.x},${A.y} C${A.x},${A.y + 30} ${P.x},${P.y - 30} ${P.x},${P.y - 2}`;
+          el('path', { d, class: 'edge ' + cls, 'data-e': id }, svg);
+          const h = head(P.x, P.y - 1, 0, 1, cls); h.setAttribute('data-e', id); svg.appendChild(h);
+          labelAt(svg, P.x + 5, P.y - 12 - (P.i % 2) * 13, e.u, 'start', cls).setAttribute('data-e', id);
+          continue;
         }
-        // labels stagger by port so neighbours never overlap
-        hx = x1; hy = y1 - 1; hdx = 0; hdy = 1; lx = x1 + 5; ly = y1 - 12 - (i % 2) * 13; anchor = 'start';
+        const sideX = busX !== null ? busX : P.x - 14 - P.i * 8;
+        const dirx = sideX < A.x ? -1 : 1;
+        d = `M${A.x},${A.y} V${gy - rr} Q${A.x},${gy} ${A.x + dirx * rr},${gy} H${sideX - dirx * rr} Q${sideX},${gy} ${sideX},${gy + rr} V${P.y - rr} Q${sideX},${P.y} ${sideX + rr},${P.y} H${P.x - 4}`;
+        el('path', { d, class: 'edge ' + cls, 'data-e': id }, svg);
+        const h = head(P.x - 1, P.y, 1, 0, cls); h.setAttribute('data-e', id); svg.appendChild(h);
       } else {
-        const x0 = a.x + a.w, y0 = a.y + a.h / 2, x1 = b.x, y1 = v === 'ports' ? portY(b, doc, e.dst, v, S, i, ins.length) : portY(b, doc, e.dst, v, S, i, ins.length);
         const busY = span > 1 ? L.H + 16 + 12 * (span - 2) : 0;
         const gx = S.gapX / 2;
         if (ortho) {
           d = busY
-            ? `M${x0},${y0} H${x0 + gx} V${busY} H${x1 - gx} V${y1} H${x1 - 4}`
-            : `M${x0},${y0} H${(x0 + x1) / 2} V${y1} H${x1 - 4}`;
+            ? `M${A.x},${A.y} H${A.x + gx} V${busY} H${P.x - gx} V${P.y} H${P.x - 4}`
+            : `M${A.x},${A.y} H${(A.x + P.x) / 2} V${P.y} H${P.x - 4}`;
         } else if (busY) {
-          d = `M${x0},${y0} C${x0 + gx},${y0} ${x0 + gx},${busY} ${x0 + gx + 24},${busY} H${x1 - gx - 24} C${x1 - gx},${busY} ${x1 - gx},${y1} ${x1 - 2},${y1}`;
+          d = `M${A.x},${A.y} C${A.x + gx},${A.y} ${A.x + gx},${busY} ${A.x + gx + 24},${busY} H${P.x - gx - 24} C${P.x - gx},${busY} ${P.x - gx},${P.y} ${P.x - 2},${P.y}`;
         } else {
-          const c = Math.max(30, (x1 - x0) * .45);
-          d = `M${x0},${y0} C${x0 + c},${y0} ${x1 - c},${y1} ${x1 - 2},${y1}`;
+          const c = Math.max(30, (P.x - A.x) * .45);
+          d = `M${A.x},${A.y} C${A.x + c},${A.y} ${P.x - c},${P.y} ${P.x - 2},${P.y}`;
         }
-        hx = x1 - 1; hy = y1; hdx = 1; hdy = 0; lx = x1 - 8; ly = y1 - 9; anchor = 'end';
+        el('path', { d, class: 'edge ' + cls, 'data-e': id }, svg);
+        const h = head(P.x - 1, P.y, 1, 0, cls); h.setAttribute('data-e', id); svg.appendChild(h);
+        if (style === 'plain') labelAt(svg, P.x - 8, P.y - 9, e.u, 'end', cls).setAttribute('data-e', id);
       }
-      el('path', { d, class: 'edge ' + cls, 'data-e': id, 'data-a': e.src, 'data-b': e.dst }, svg);
-      const h = tangentHead(hx, hy, hdx, hdy, cls); h.setAttribute('data-e', id); svg.appendChild(h);
-      if (v !== 'ports') labelAt(svg, lx, ly, e.u, anchor, cls).setAttribute('data-e', id);
     }
   }
-  doc.passes.forEach(p => drawNode(svg, doc, p, L.nodes[p.n], S, v, opts));
-  // hover: light a node's edges, dim the rest
+  for (const e of edgesOf(doc).filter(e => e.self)) {
+    const cls = stale(e.dst) ? 'stale' : '', id = e.dst + '>' + e.dst;
+    if (style !== 'plain' && opts.loop) drawPortLoop(svg, L.nodes[e.dst], G[e.dst], portOf(e.dst, e.u).i, cls, id);
+    else drawCornerLoop(svg, L.nodes[e.dst], cls, id);
+  }
+  doc.passes.forEach(p => drawNode(svg, doc, p, L.nodes[p.n], S, style, { ...opts, outLeft }));
   svg.querySelectorAll('.node').forEach(n => {
     n.addEventListener('mouseenter', () => {
       const name = n.dataset.n;
-      svg.querySelectorAll('[data-e]').forEach(x => {
-        const [a, b] = x.dataset.e.split('>');
-        x.classList.add(a === name || b === name ? 'lit' : 'dim');
-      });
+      svg.querySelectorAll('[data-e]').forEach(x => { const [a, b] = x.dataset.e.split('>'); x.classList.add(a === name || b === name ? 'lit' : 'dim'); });
     });
     n.addEventListener('mouseleave', () => svg.querySelectorAll('[data-e]').forEach(x => x.classList.remove('lit', 'dim')));
   });
   return { svg, natural, zoom };
 }
 function renderAll() {
-  const opts = { fit: document.getElementById('fit').checked, runs: document.getElementById('runs').checked };
-  const two = document.getElementById('doc2').checked;
+  const opts = { fit: fitBox.checked, runs: runsBox.checked, loop: loopBox.checked, region: regionBox.checked };
+  const two = doc2Box.checked;
   document.querySelectorAll('.panel').forEach(panel => {
     panel.innerHTML = '';
     const cap = document.createElement('div'); cap.className = 'caption';
@@ -406,16 +471,18 @@ function stats() {
     const r = ranks(doc), cols = columns(doc), es = edgesOf(doc);
     const long = es.filter(e => !e.self && r[e.dst] - r[e.src] > 1).map(e => `${e.src}→${e.dst} (${r[e.dst] - r[e.src]})`);
     const fb = es.filter(e => e.self).map(e => e.dst);
-    const lrF = layoutRanked(doc, SIZES.full, 'lr', 'lr').W, lrC = layoutRanked(doc, SIZES.compact, 'lr', 'lr').W, tbC = layoutRanked(doc, SIZES.compact, 'tb', 'tb').H;
+    const S = SIZES.compact;
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${doc.name}</td><td>${cols.length}</td><td>${Math.max(...cols.map(c => c.length))}</td><td>${long.join(', ') || '—'}</td><td>${fb.join(', ')}</td><td>${lrF} / ${lrC}</td><td>${tbC}</td>`;
+    tr.innerHTML = `<td>${doc.name}</td><td>${cols.length}</td><td>${Math.max(...cols.map(c => c.length))}</td><td>${long.join(', ') || '—'}</td><td>${fb.join(', ')}</td>
+      <td>${layoutRanked(doc, S, 'under', 'lr').W} / ${layoutRanked(doc, S, 'side', 'lr').W}</td><td>${layoutRanked(doc, S, 'under', 'tb').H}</td><td>${layoutLanes(doc, S, 'under').H}</td>`;
     tb.appendChild(tr);
   }
 }
-const slider = document.getElementById('w');
+const slider = document.getElementById('w'), fitBox = document.getElementById('fit'), runsBox = document.getElementById('runs'),
+      doc2Box = document.getElementById('doc2'), loopBox = document.getElementById('loop'), regionBox = document.getElementById('region');
 function setWidth() { document.querySelectorAll('.panel.w').forEach(p => p.style.width = slider.value + 'px'); document.getElementById('wv').textContent = slider.value; renderAll(); }
 slider.addEventListener('input', setWidth);
-['fit', 'runs', 'doc2'].forEach(id => document.getElementById(id).addEventListener('change', renderAll));
+[fitBox, runsBox, doc2Box, loopBox, regionBox].forEach(b => b.addEventListener('change', renderAll));
 const seen = new WeakMap();
 const ro = new ResizeObserver(entries => {
   let changed = false;
