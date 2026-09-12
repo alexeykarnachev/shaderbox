@@ -265,8 +265,8 @@ def main() -> int:
                     )
                     assert multi, "smoke: no multi-pass document to draw the strip with"
                     app.set_current_document_id(multi)
-                    # Two non-adjacent passes in one group, so the strip draws its outline,
-                    # the label and the split-run path on the parent draw list (091 D7).
+                    # Two adjacent passes and one apart in one group, so the strip draws a
+                    # two-tile run, its label and the split-run path (091 D7).
                     for grouped in ("paint", "seed", "df"):
                         if grouped in app.ui_documents[multi].document.passes:
                             app.session.set_pass_group(multi, grouped, "smoke_group")

@@ -832,7 +832,9 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   insertion (feature 091).** `pass_import.plan_import` takes the source's and the host's
   `effective_wiring()` -- both AFTER every pass has compiled, since a never-compiled pass answers
   its explicit rows only and every pass then reads as a root -- and returns every write or the
-  rejection. An ENTRY POINT is a source pass reading no other source pass; the one the host feeds
+  rejection, which includes a loop the import would leave (a handover onto a host pass that
+  itself feeds the bundle), since the renderer's cycle fallback draws a plausible wrong picture
+  rather than failing. An ENTRY POINT is a source pass reading no other source pass; the one the host feeds
   is not copied, its readers point at the host pass, and the host's readers of that pass are
   handed to the bundle's output (its output role too, when the fed pass was the output). Every
   wired sampler of a copied pass is written as an explicit `PassSource` under the new names,

@@ -1,7 +1,7 @@
 # 091 — Presets: import another document's passes as a group
 
-Status: **locked 2026-09-12**, revised after pre-implementation review round 1 (D1–D11 are
-fixed premises; the review's edits are folded in below and listed in *Review history*). The
+Status: **done 2026-09-12** (implemented at `4dc1423`, reviewed to closure at `7ac0b30`; D1–D11
+were the fixed premises, the review edits are folded in below and listed in *Review history*). The
 design was settled in chat on 2026-09-11/12 and sketched in `00_mock.html` (sections 1·C3, 2b
 and 3 are the chosen shapes; the rest is the brainstorm record). This file is the
 implementation contract.
