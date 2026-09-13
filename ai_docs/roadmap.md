@@ -27,12 +27,11 @@ feature; brief points at the superseder).
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
 <!-- As of 2026-09-12, 092 is done and reviewed to closure; 093, the tenth walk, is opened as an empty ledger awaiting his first batch of graph-view findings. -->
-**Next: 093, the tenth walk.** He dogfoods the graph view and reports findings in batches; each
-batch is one wave (research, fix, gates, one commit, ledger updated), and a finding too big for
-a wave becomes its own feature. The ledger and the spec stub are in place; nothing is filed yet.
-092 landed the graph view: a second, opt-in view of the passes beside the strip, hand-drawn on
-the draw list, with a box per group at the root and a tab per group, positions written only by
-a placement, every gesture through an App verb whose refusal is tested headless.
+**Next: 093, the tenth walk.** He dogfoods the graph view and reports findings in batches;
+everything lands in one run. Five findings filed; the graph moves into the editor pane as a tab
+kind, one per document keyed by `graph.json` (his pick over the panel mock, researched in
+`01_research_graph_tab.md`). 092 landed the graph view beside the strip: a box per group at the
+root, a tab per group, positions written only by a placement, every gesture through an App verb.
 
 **Awaiting his eyes** (no WM here): the spec's manual list over both waves, on documents of
 his own making (the items about a box need a group). Still unseen from before: 091's
