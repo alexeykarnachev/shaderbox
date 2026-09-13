@@ -1,9 +1,10 @@
 # 093 — Tenth walk findings
 
-Status: **pending.** Opens with the maintainer's first batch of findings from dogfooding the
-graph view (092); the raw ledger is `00_findings.md`.
+Status: **pending, first batch filed.** Four findings from the maintainer's `../TODO` on
+2026-09-13 plus one of mine from his screenshot; the raw ledger is `00_findings.md`.
 
-Source: the maintainer's messages, verbatim in the ledger.
+Source: `../TODO` (2026-09-13) and the screenshot of the control panel he took with it, verbatim
+in the ledger.
 
 ## How this walk runs
 
