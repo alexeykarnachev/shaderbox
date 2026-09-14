@@ -70,11 +70,20 @@ def test_group_names_follow_their_first_members_order() -> None:
 
 
 def test_a_node_grows_one_row_per_port_and_a_box_is_wider() -> None:
+    # A card with ports pays BOTH pads (093 W2-6): the gap above the first row and the one
+    # under the last, so its label clears the border by what its left inset gives it.
+    # Falsifier: drop `GRAPH_PORT_BOTTOM` from `node_size` and the last label sits ~3px off it.
     w0, h0 = node_size(0, False)
     w2, h2 = node_size(2, False)
     assert w0 == w2 == float(SIZE.GRAPH_NODE_W)
-    assert h2 == h0 + 4.0 + 2 * SIZE.GRAPH_PORT_ROW
+    assert h2 == h0 + SIZE.GRAPH_PORT_TOP + 2 * SIZE.GRAPH_PORT_ROW + (
+        SIZE.GRAPH_PORT_BOTTOM
+    )
     assert node_size(0, True)[0] == w0 + SIZE.GRAPH_BOX_EXTRA_W
+    # A card with NO ports pays neither.
+    assert h0 == float(
+        SIZE.GRAPH_PAD + SIZE.GRAPH_THUMB + SIZE.GRAPH_NAME_H + SIZE.GRAPH_PAD
+    )
 
 
 # ---- the wire (093) -------------------------------------------------------------------------

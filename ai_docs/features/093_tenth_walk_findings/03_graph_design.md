@@ -431,6 +431,12 @@ highlights for the same message while adding X11 flicker risk for no information
 
 ### G8. We decide the feedback loop becomes a glyph beside the run-count badge
 
+**REVERSED by wave 2 (finding 8), on the maintainer's verdict after seeing it rendered: "the
+icon ... is ugly, remove it. Let's for now keep only this \"xN\" tooltip."** The glyph and its
+two tokens are deleted; the `prev` port's own double ring (092 D11) stays, since that is a port
+rather than a mark. The half of this decision that holds is the deletion of `_draw_self_loop`,
+which is what he objected to first.
+
 **Rule.** `_draw_self_loop` and its call site are deleted, along with `SIZE.GRAPH_LOOP_RISE` and
 `SIZE.GRAPH_LOOP_REACH`, which stop being read. In their place, in `_draw_node`, a node with any
 port whose `kind == "prev"` draws a double-ring mark in the badge row at the picture's top-right:
@@ -684,6 +690,13 @@ says so in a source comment.
 **Tokens.** `SIZE.GRAPH_DRAG_LOCK_PX: float = 4.0` (new).
 
 ### G14. We decide the pan/zoom/select bindings are kept, and only Delete is added
+
+**The "Re-plug" row is REVERSED by wave 2 (finding 9).** An input pin is not a drag source: its
+press moves the node, and a wire is removed by its ✕ or Delete and replaced by a drop from an
+output. This goes against the convergent schema recorded below -- every reference detaches by
+dragging the wire off its input -- because his objection is to the ghost, which does not say
+that releasing removes the read. Trigger to revisit: he asks for drag-to-detach after living
+with the ✕. Every other row here stands.
 
 **Kept, unchanged:**
 

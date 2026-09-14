@@ -57,13 +57,14 @@ class NodeDrag:
 
 @dataclass
 class WireDrag:
-    """A wire in flight: from a node's output dot (`producer`), or grabbed off a filled input
-    port (`grabbed` = the consumer and its sampler, whose current source the wire carries).
-    `start` is the canvas point the wire is drawn from."""
+    """A wire in flight from a node's output dot. `start` is the canvas point it is drawn from.
+
+    An OUTPUT dot is the only source (093 W2-4): a press on an input port moves the node, so a
+    wire is never carried away from the end it terminates at.
+    """
 
     producer: str
     start: Position
-    grabbed: tuple[str, str] | None = None
 
 
 @dataclass
@@ -88,6 +89,12 @@ class GraphViewState:
     # Where each input port's hit rect landed on screen this frame, keyed by (pass, sampler):
     # rebuilt every draw, so a headless test can aim a drop where a user would.
     port_rects: dict[tuple[str, str], tuple[float, float, float, float]] = field(
+        default_factory=dict
+    )
+    # And where each OUTPUT dot's hit rect landed, keyed by (node key, slot) -- the output is
+    # the only end a wire can be dragged FROM (093 W2-4), so this is where a headless test
+    # starts one.
+    out_rects: dict[tuple[str, int], tuple[float, float, float, float]] = field(
         default_factory=dict
     )
     # The canvas child's screen rect this frame, for the same reason.
@@ -129,7 +136,11 @@ def node_size(port_count: int, box: bool) -> tuple[float, float]:
         SIZE.GRAPH_PAD + SIZE.GRAPH_THUMB + SIZE.GRAPH_NAME_H + SIZE.GRAPH_PAD
     )
     if port_count:
-        height += SIZE.GRAPH_PORT_TOP + port_count * SIZE.GRAPH_PORT_ROW
+        height += (
+            SIZE.GRAPH_PORT_TOP
+            + port_count * SIZE.GRAPH_PORT_ROW
+            + SIZE.GRAPH_PORT_BOTTOM
+        )
     return width, height
 
 

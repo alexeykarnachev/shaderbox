@@ -225,8 +225,9 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   chain (background, node, ports) -- except a wire, which has no rect and gets a distance pass over
   its flattened cubic, and the selected wire's unwire badge, hand-tested on the press. Pan, wheel
   zoom, fit (framing the sampled curves, not only the cards), arrange, drag with snap past a named
-  lock, wire drag, rubber band, wire select + Delete, Group / Dissolve; every write goes through an
-  `App` verb. The pure half (`rank_layout`, `node_ports`, `group_boundary`, `bundle_output`,
+  lock, wire drag FROM AN OUTPUT DOT ONLY (an input pin's press moves the node -- a wire is removed
+  by its mid-curve ✕ or Delete and replaced by a drop onto the port), rubber band, wire select +
+  Delete, Group / Dissolve; every write goes through an `App` verb. The pure half (`rank_layout`, `node_ports`, `group_boundary`, `bundle_output`,
   `refuse_drop`, `cycle_edges`, `group_name_error`) lives in `pass_graph.py`.
 - **`widgets/graph_state.py`** — the canvas's per-document transient state (`GraphViewState`:
   pan, zoom, scope, selection, the exclusive hover, the wire selection, the drag machines) held in
@@ -387,8 +388,9 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   `code.py` (inline GLSL editor — main-window LEFT split), `document.py`, `uniforms.py`,
   `render.py`, `share.py` — the last four are the settings-panel tabs, in `_NODE_TABS` order.
   `uniforms.py` owns the uniform rows and the pass selector that picks whose uniforms they are;
-  `document.py` keeps the pass strip, since a pass is CHOSEN there and TUNED next door, and its
-  two entry-point rows (Script, Passes) each carry an `open` that summons a tab. `code.py` is the
+  `document.py` keeps the pass strip, since a pass is CHOSEN there and TUNED next door, and ONE
+  entry-point row carries both summoners side by side (Script, then Graph), with the strip under
+  a plain `Passes` caption. `code.py` is the
   editor pane's whole dispatch: its tab row, the text body, and -- since 093 -- a branch above the
   session fetch that hands a `graph` tab to `pass_graph.draw` and does the pane's focus bookkeeping
   for it, since that kind has no session to fetch.

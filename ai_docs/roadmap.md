@@ -26,19 +26,18 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-14, 093 wave 1 landed and passed review; his hands-on pass is the next input. -->
-**Next: his hands-on pass of 093 wave 1** (`make run`, open a multi-pass document, `Alt+G` or
-the Passes row's `open`); its findings open wave 2 in `00_findings.md`. Wave 1 rebuilt the
-canvas he judged "very cheap" and moved it into the editor pane as a graph tab per document:
-one cusp-proof bezier per wire, a wire selected by click and removed by its ✕ or Delete,
-exclusive hover with halos, a feedback glyph, a 136-wide card that ellipsizes, a click that
-chooses the output, a 4px drag lock. Findings 1, 2, 3 and 5 closed; finding 4, the control
-panel's composition, is its own feature next.
+<!-- As of 2026-09-14, 093 wave 2 has landed and awaits his eyes. -->
+**Next: his hands-on pass over 093 wave 2**, his own first batch fed back (findings 6-11). The
+graph's `open` moved beside the script's on one entry-point row; the open tabs survive a restart
+(`UIAppState.editor_tabs`, restored before the shader-tab fallback, a record dropped when its
+file or document is gone); the feedback glyph is gone; an input pin is no longer a drag source,
+so a wire leaves by its ✕ or Delete and is replaced by a drop from an output; the picture grew
+into half its margin; the last port row gained a bottom pad. Two of those reverse wave-1 rules
+on his verdict and one reverses 092's re-plug -- against every reference the research read, on
+his objection to the ghost wire.
 
-**Awaiting his eyes** (no WM here): the four tuning forks, each one token -- card width,
-hover hue, drag lock, no wire menu entry -- plus the halos at both zoom extremes, the feedback
-glyph, the Passes row's tick. Still unseen: 091's outline, the import dialog, the gear's group
-row; 090's `Auto | Fixed` control.
+**Awaiting his eyes** (no WM here): all six of wave 2, plus wave 1's four tuning forks, each one
+token -- card width, hover hue, drag lock, a wire menu entry.
 
 **Open, unmeasured:** the canvas past twenty passes (the largest real document is six); no
 brake watches copilot cost or a frame going lit to flat (082); the GL thread if the throttle

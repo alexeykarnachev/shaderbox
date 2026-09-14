@@ -410,21 +410,23 @@ def _entry_row_label(active: bool, label: str) -> None:
 
 
 def _draw_entry_points(app: App) -> None:
-    # The document's two entry-points (049): SHADER (GPU) and SCRIPT (CPU script), each with an `open`
-    # action that summons its tab into the editor (the document panel is "about this document"; the tab bar is
-    # the editor's own state — `open` is a summoner, not a duplicate). The whole-document PLAY/STOP toggle
-    # lives on the Script row (its true owner — it freezes/resumes the script's driven uniforms; the
-    # script keeps ticking). An accent tick marks whichever entry-point is the editor's active tab.
-    # Frozen mid-copilot-turn (a write races the reload).
+    # The document's entry-points (049, 093 W2-1): SCRIPT (CPU script) and the pass GRAPH, each
+    # with an `open` that summons its tab into the editor (the document panel is "about this
+    # document"; the tab bar is the editor's own state — `open` is a summoner, not a duplicate).
+    # Both sit on ONE row, so the two summoners are side by side. The whole-document PLAY/STOP
+    # toggle lives with the script (its true owner — it freezes/resumes the script's driven
+    # uniforms; the script keeps ticking). An accent tick marks whichever entry-point is the
+    # editor's active tab. Frozen mid-copilot-turn (a write races the reload).
     document_id = app.current_document_id
     present = app.session.has_script(document_id)
     error = present and app.session.script_has_error(document_id)
     script_active = _entry_tab_active(app, document_id, "script")
+    graph_active = _entry_tab_active(app, document_id, "graph")
 
     imgui.begin_disabled(app.copilot_turn_active)
 
-    # ONE row, no section caption: a document has exactly one script (048), so a heading over a
-    # single control said the word twice and cost a line the panel could not spare.
+    # No section caption: a document has exactly one script (048) and one graph, so a heading
+    # over them said the word twice and cost a line the panel could not spare.
     _entry_row_label(script_active, "Script")
     open_tooltip = (
         "Open the document script" if present else "Create the document script"
@@ -443,6 +445,13 @@ def _draw_entry_points(app: App) -> None:
             tooltip="Stop the whole script" if playing else "Resume the whole script",
         ):
             app.set_document_all_stopped(document_id, playing)
+
+    imgui.same_line(spacing=float(SPACE.LG))
+    _entry_row_label(graph_active, "Graph")
+    if standard_button("open##entry_graph"):
+        app.open_graph_for(document_id, focus_editor=True)
+    if imgui.is_item_hovered():
+        imgui.set_tooltip("Open the pass graph")
     imgui.end_disabled()
 
     imgui.dummy((0, float(SPACE.MD)))
@@ -450,16 +459,11 @@ def _draw_entry_points(app: App) -> None:
 
 
 def _draw_passes(app: App, document_id: str) -> None:
-    # The Passes row is a third entry point (093 T5): its own `open` summons the graph into the
-    # editor pane, exactly as the Script row's summons the script, and the accent tick marks a
-    # graph tab of THIS document as the editor's active tab. The strip stays below it; the
-    # add / import row sits under both, inside its own copilot-turn bracket.
+    # A plain caption over the strip: the graph's summoner lives on the entry-point row beside
+    # the script's (093 W2-1), so this row names the tiles and nothing else. The add / import
+    # row sits under them, inside its own copilot-turn bracket.
     imgui.begin_disabled(app.copilot_turn_active)
-    _entry_row_label(_entry_tab_active(app, document_id, "graph"), "Passes")
-    if standard_button("open##entry_graph"):
-        app.open_graph_for(document_id, focus_editor=True)
-    if imgui.is_item_hovered():
-        imgui.set_tooltip("Open the pass graph")
+    small_caption(app.font_12, "Passes")
     imgui.end_disabled()
     pass_list.draw(app, document_id)
     imgui.begin_disabled(app.copilot_turn_active)

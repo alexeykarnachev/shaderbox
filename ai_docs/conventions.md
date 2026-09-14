@@ -483,10 +483,16 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   acts on the ACTIVE tab: `flush_current_editor()` flushes its dirty editor before any save; the mtime
   watcher re-syncs every open session from disk on external change (disk wins). A document's editors close
   with the document (lib tabs survive); a renamed file re-keys its session in place. The vendored
-  binary + rebuild procedure live in `## Known quirks`. Revisit if a tab needs durable per-tab state
-  beyond its open files (e.g. persisting the open-tab set across restart) or a 4th EDITABLE `kind`
-  lands -- a non-editable kind does not fire it, since it brings no session and so no dirty state,
-  no formatter and no flush (the graph is the first).
+  binary + rebuild procedure live in `## Known quirks`. **The open-tab SET persists (093 W2-2):
+  `UIAppState.editor_tabs: list[TabRecord]` plus `active_tab_index`, mirrored by `App.save` and
+  restored in `_init` through two pure functions in `editor_types.py` (`tab_records`,
+  `tabs_from_records`) before the shader-tab fallback, which then runs only when nothing was
+  restored.** A record is DROPPED rather than repaired when its file is gone or its document is
+  not loaded -- a tab at a deleted pass would eat its own edits -- and sessions are not restored,
+  since the draw creates one lazily for any tab. Revisit if a tab needs durable state beyond
+  which files were open (a per-tab scroll or caret), or if a 4th EDITABLE `kind` lands -- a
+  non-editable kind does not fire that, since it brings no session and so no dirty state, no
+  formatter and no flush (the graph is the first).
 - **What the editor knows about a buffer lives in `shaderbox/intel/` and is read three ways**
   (feature 078 W-A): `symbols.py` is the one vocabulary (`SymbolKind`, `Symbol`); `glsl.py`
   reads a shader buffer as TEXT (a declared uniform the body never reads is still declared —
@@ -850,7 +856,13 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   picture must be drawn before the rects the ports' positions come from. A wire is the one
   thing hit-tested outside imgui's item system (a curve has no rect), and the selected wire's
   unwire badge likewise, hand-tested on the press: an earlier item that declares no overlap
-  beats a later one, and the ports must keep declaring nothing or the drop target dies. A
+  beats a later one, and the ports must keep declaring nothing or the drop target dies. An
+  INPUT PIN is not a drag source at all: its press moves the node, filled or not, so a wire
+  leaves only by that badge or the Delete key and is replaced by dropping a new one from an
+  output onto the port (`drop_wire` overwrites). That goes against every reference the research
+  read -- all of them detach by dragging the wire off its input -- and is the maintainer's call
+  on the ghost wire, which does not say that releasing removes the read; revisit if he asks for
+  drag-to-detach after living with the badge. A
   single CLICK on a node chooses the output and nothing else (`App.choose_output`); only a
   double-click opens its shader tab, because inside the pane the old `pick_pass` click evicted
   the graph tab it was made on. Ports come from the COMPILED program

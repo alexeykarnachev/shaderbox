@@ -53,6 +53,8 @@ from shaderbox.editor_types import (
     InlineInput,
     JumpRequest,
     LookupPopup,
+    tab_records,
+    tabs_from_records,
 )
 from shaderbox.exporters.registry import ExporterRegistry
 from shaderbox.exporters.telegram import TelegramExporter
@@ -1469,16 +1471,37 @@ class App:
         if first_run and not self.ui_documents:
             self.session.seed_starter_document(self.set_current_document_id)
 
+        # The tabs the last session had open (093 W2-2), before the fallback below: a record
+        # whose file is gone or whose document this project does not hold is dropped, so the
+        # fallback still runs when nothing survives. No session is restored — the draw creates
+        # one lazily, as it does for a tab opened by hand.
+        self.editor_tabs = tabs_from_records(
+            self.app_state.editor_tabs,
+            frozenset(self.ui_documents),
+            lambda path: path.exists(),
+        )
+        if self.editor_tabs:
+            self.active_tab_index = max(
+                0, min(self.app_state.active_tab_index, len(self.editor_tabs) - 1)
+            )
+            self.tab_select_pending = True
+
         # load() restores current_document_id by direct field assignment (not set_current_document_id), so
         # _on_current_document_changed never fires for the restored document and its shader tab is never
-        # opened — the editor stays blank until a document switch. Open it here. A stale pointer at a
-        # deleted document reselects a live one (else a permanent blank with no recovery).
-        if self.current_document_id and self.current_document_id in self.ui_documents:
-            self.ensure_shader_tab(self.current_document_id)
-        elif self.ui_documents:
-            # No (or a stale) current document, but the project has documents: select one so the editor
-            # opens its shader tab instead of staying blank (set_current_document_id fires the tab open).
-            self.set_current_document_id(next(iter(self.ui_documents)))
+        # opened — the editor stays blank until a document switch. Open it here, unless the restore
+        # above already put tabs back. A stale pointer at a deleted document reselects a live one
+        # (else a permanent blank with no recovery).
+        if not self.editor_tabs:
+            if (
+                self.current_document_id
+                and self.current_document_id in self.ui_documents
+            ):
+                self.ensure_shader_tab(self.current_document_id)
+            elif self.ui_documents:
+                # No (or a stale) current document, but the project has documents: select one so the
+                # editor opens its shader tab instead of staying blank (set_current_document_id fires
+                # the tab open).
+                self.set_current_document_id(next(iter(self.ui_documents)))
 
         # app_state was just replaced, so the effective binding map is recomputed per project.
         self._merge_effective_bindings()
@@ -1983,8 +2006,8 @@ class App:
         )
 
     def unwire(self, document_id: str, consumer: str, sampler: str) -> str:
-        """A wire grabbed off `consumer.sampler` and dropped on empty canvas (092 D12): the
-        sampler reads black by decision."""
+        """The wire into `consumer.sampler` removed, by its mid-curve ✕ or the Delete key
+        (093 W2-4): the sampler reads black by decision."""
         return self.session.set_sampler_source(
             document_id, consumer, sampler, NoSource()
         )
@@ -2165,6 +2188,8 @@ class App:
         self.app_state.active_document_tab = self.active_document_tab
         self.app_state.is_copilot_open = self.is_copilot_open
         self.app_state.copilot_layout = self.copilot_layout
+        self.app_state.editor_tabs = tab_records(self.editor_tabs)
+        self.app_state.active_tab_index = self.active_tab_index
 
         self.integrations_store.save()
         self.app_state.save(self.paths.app_state_file)

@@ -224,7 +224,12 @@ dtype / scale / filter / wrap. A compile-erroring pass's picture is its last goo
 node dims it (`preview_cell`'s docstring names a corner tick that its code never draws, so
 there is no mark to reuse).
 
-**D12. Wires (W2).** Press on an output dot and release over an input port writes
+**D12. Wires (W2).** REVERSED in part by 093 W2-4: an input pin is no longer a drag source at
+all (its press moves the node), so the re-grab half below is gone -- a wire is removed by its
+mid-curve ✕ or the Delete key and replaced by dropping a new wire from an output onto the port.
+The output-dot half stands. What follows describes the shipped 092 shape.
+
+Press on an output dot and release over an input port writes
 `set_sampler_source(document_id, consumer, sampler, PassSource(producer))`; release over empty
 canvas writes nothing (the drag came from an output). Press on a **filled** input port grabs its
 wire: release over another input port moves it (`PassSource` there, `NoSource` on the original),

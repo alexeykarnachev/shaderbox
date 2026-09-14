@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 from imgui_bundle import imgui
 
+from shaderbox.app import App
 from shaderbox.commands import CommandId
 from shaderbox.formatting import formatter_for
 from shaderbox.pass_graph import PassSource
@@ -314,3 +315,56 @@ def test_a_wires_canvas_points_are_its_screen_points_divided_by_the_zoom(
         for got, want in zip(scaled, plain, strict=True):
             assert math.isclose(got[0], want[0] * zoom, abs_tol=1e-9), (zoom, got, want)
             assert math.isclose(got[1], want[1] * zoom, abs_tol=1e-9), (zoom, got, want)
+
+
+def test_the_saved_tabs_reopen_on_a_fresh_app(app: Any, tmp_path: Any) -> None:
+    """W2-2: the restore is what finding 7 asked for -- the graph tab (and every other) is
+    still there after a restart.
+
+    Driven the way a restart drives it: the live tabs are mirrored by `App.save`, and a SECOND
+    `App` over the same project dir reads them back in `_init`. The records are checked against
+    what the project still holds, so the assertion is about files that genuinely exist.
+
+    Falsifier: skip the restore block and the fresh app opens only the current document's
+    shader tab, the pre-W2-2 behavior.
+    """
+    document_id, document = _chain(app)
+    app.open_script_for(document_id)
+    app.open_graph_for(document_id)
+    shader_path = document.passes["b"].source.path
+    app.ensure_shader_tab(document_id, "b")
+    saved_paths = [t.path for t in app.editor_tabs]
+    saved_kinds = [t.kind for t in app.editor_tabs]
+    assert "graph" in saved_kinds and "script" in saved_kinds, saved_kinds
+    app.save()
+    records = app.app_state.editor_tabs
+    assert [r.path for r in records] == [str(p) for p in saved_paths]
+    assert app.app_state.active_tab_index == app.active_tab_index
+
+    project_dir = app.project_dir
+    app.shutdown()
+    fresh = App(project_dir=project_dir)
+    try:
+        assert [t.path for t in fresh.editor_tabs] == saved_paths, fresh.editor_tabs
+        assert [t.kind for t in fresh.editor_tabs] == saved_kinds
+        assert fresh.active_tab is not None
+        assert fresh.active_tab.path == shader_path
+        assert fresh.tab_select_pending is True
+    finally:
+        fresh.shutdown()
+
+
+def test_a_project_with_no_saved_tabs_still_opens_its_shader(app: Any) -> None:
+    # The fallback the restore must not eat: with no records, `_init` opens the current
+    # document's shader tab as it always did. Falsifier: run the fallback unconditionally and a
+    # restored session gains a tab it did not have; skip it and an empty state opens blank.
+    project_dir = app.project_dir
+    app.app_state.editor_tabs = []
+    app.save()
+    app.shutdown()
+    fresh = App(project_dir=project_dir)
+    try:
+        assert len(fresh.editor_tabs) == 1, fresh.editor_tabs
+        assert fresh.editor_tabs[0].kind == "shader"
+    finally:
+        fresh.shutdown()

@@ -26,7 +26,6 @@ right-click anywhere in it. Every write a gesture makes goes through an `App` ve
 session call from here, so each refusal is testable without a window.
 """
 
-import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from itertools import pairwise
@@ -680,9 +679,8 @@ def _draw_badge(
     z: float,
     bg: int,
     fg: int,
-) -> float:
-    """A small pill with a word on it at a picture's corner, in the current font. Returns the
-    pill's width, so the feedback glyph can sit left of it."""
+) -> None:
+    """A small pill with a word on it at a picture's corner, in the current font."""
     w = imgui.calc_text_size(label).x + 2 * _BADGE_PAD * z
     x0 = (
         corner[0] - _BADGE_INSET * z - w
@@ -696,38 +694,6 @@ def _draw_badge(
         fg,
         label,
     )
-    return w
-
-
-# The feedback glyph's two rings, as fractions of its square, and the gap each arc leaves
-# facing the other (radians).
-_FB_RING_R = 0.25
-_FB_GAP_ARC = 0.6
-_FB_ARC_SEGS = 20
-
-
-def _draw_feedback_glyph(
-    dl: imgui.ImDrawList, right: float, top: float, z: float, col: int
-) -> None:
-    """A pass that reads its own previous frame, marked in the badge row (093 G8).
-
-    Two open rings, the same double-ring the feedback PORT dot draws (092 D11), so the mark
-    and the dot share one visual language. Drawn with the draw list at 12px, where a font
-    character's centring and presence are neither verifiable nor crisp.
-    """
-    size = SIZE.GRAPH_FB_SIZE * z
-    r = size * _FB_RING_R
-    cy = top + size / 2.0
-    thickness = max(1.0, SIZE.GRAPH_WIRE_W * z)
-    for cx, a_min in (
-        (right - size + r, _FB_GAP_ARC),
-        (right - r, math.pi + _FB_GAP_ARC),
-    ):
-        dl.path_clear()
-        dl.path_arc_to(
-            (cx, cy), r, a_min, a_min + 2.0 * math.pi - 2.0 * _FB_GAP_ARC, _FB_ARC_SEGS
-        )
-        dl.path_stroke(col, thickness)
 
 
 def _draw_node(
@@ -833,20 +799,8 @@ def _draw_node(
     # Badges on the picture: the run count top-right, a box's member count top-left.
     badge_bg = _u32(fade(COLOR.BG_FRAME, alpha))
     badge_fg = _u32(fade(COLOR.FG_MUTED, alpha))
-    badge_w = 0.0
     if node.runs > 1 and node.kind != "ghost":
-        badge_w = _draw_badge(
-            dl, (s1[0], s0[1]), True, f"x{node.runs}", z, badge_bg, badge_fg
-        )
-    # Flush at the picture's top-right, or left of an `xN` badge when one is drawn this frame.
-    if node.kind != "ghost" and any(port.kind == "prev" for port in node.ports):
-        _draw_feedback_glyph(
-            dl,
-            s1[0] - (badge_w + SIZE.GRAPH_FB_GAP * z if badge_w else 0.0),
-            s0[1],
-            z,
-            badge_fg,
-        )
+        _draw_badge(dl, (s1[0], s0[1]), True, f"x{node.runs}", z, badge_bg, badge_fg)
     if node.kind == "box":
         _draw_badge(
             dl,
@@ -1019,6 +973,7 @@ def _draw_canvas(
         view.press_blocked = True
     blocked = frozen or view.press_blocked
     view.port_rects = {}
+    view.out_rects = {}
     view.canvas_rect = (origin.x, origin.y, origin.x + avail.x, origin.y + avail.y)
     overrides = view.node_drag.current() if view.node_drag is not None else {}
     picture = _build_view(document, view.scope, overrides)
@@ -1239,14 +1194,9 @@ def _draw_canvas(
                 and view.node_drag is None
                 and not blocked
             )
-            if pressed and port.kind == "wired" and port.source is not None:
-                view.wire_drag = WireDrag(
-                    producer=port.source,
-                    start=_port_point(node, slot),
-                    grabbed=(owner, port.sampler),
-                )
-            elif pressed and node.kind != "ghost":
-                # An unfilled port is not a wire to grab: the press moves the node.
+            if pressed and node.kind != "ghost":
+                # An input port is not a drag source at all (093 W2-4): its press moves the
+                # node, filled or not. A wire leaves only by its own ✕ or the Delete key.
                 names = _drag_names(view, node)
                 view.node_drag = NodeDrag(
                     origin={
@@ -1264,6 +1214,12 @@ def _draw_canvas(
             imgui.set_cursor_screen_pos((center[0] - out_hit, center[1] - out_hit))
             imgui.invisible_button(
                 f"##gout_{node.key}_{slot}", imgui.ImVec2(2 * out_hit, 2 * out_hit)
+            )
+            view.out_rects[(node.key, slot)] = (
+                center[0] - out_hit,
+                center[1] - out_hit,
+                center[0] + out_hit,
+                center[1] + out_hit,
             )
             if imgui.is_item_hovered():
                 out_hovered = (node.key, slot)
@@ -1477,23 +1433,17 @@ def _drop(
     wire: WireDrag,
     target: tuple[str, str, str] | None,
 ) -> None:
-    if target is not None:
-        owner, sampler, _kind = target
-        if wire.grabbed == (owner, sampler):
-            return  # put back where it was grabbed
-        error = app.drop_wire(document_id, wire.producer, owner, sampler)
-        if error:
-            app.notifications.push(error)
-            return
-        if wire.grabbed is not None:
-            error = app.unwire(document_id, *wire.grabbed)
-            if error:
-                app.notifications.push(error)
+    """A wire released from an output dot: onto a port it is a read, onto empty canvas nothing.
+
+    A drop onto a FILLED port overwrites its source -- `drop_wire` is the one write -- which is
+    how a wire is replaced now that an input pin is not a drag source (093 W2-4).
+    """
+    if target is None:
         return
-    if wire.grabbed is not None:
-        error = app.unwire(document_id, *wire.grabbed)
-        if error:
-            app.notifications.push(error)
+    owner, sampler, _kind = target
+    error = app.drop_wire(document_id, wire.producer, owner, sampler)
+    if error:
+        app.notifications.push(error)
 
 
 def _click(

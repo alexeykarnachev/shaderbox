@@ -21,6 +21,7 @@ from shaderbox.copilot.gate import SourceLock
 from shaderbox.copilot.state import CopilotLayout
 from shaderbox.core import ENGINE_DRIVEN_UNIFORMS
 from shaderbox.document import Document, load_document_metadata
+from shaderbox.editor_types import TabRecord
 from shaderbox.glyph_tables import TABLE_UNIFORMS
 from shaderbox.media import MediaDetails, MediaWithTexture
 from shaderbox.model_salvage import drop_invalid, load_model
@@ -265,6 +266,12 @@ class UIAppState(BaseModel):
     # Chat input height in px, set by the feed/input splitter (the input keeps this height on
     # window resize; the feed above flexes). Clamped at draw.
     copilot_input_h: float = Field(default=48.0, ge=0.0)
+
+    # The editor's open tabs and which was active (093 W2-2), mirrored from the live list by
+    # `App.save` and restored on launch. An absent key is an empty list, which falls back to
+    # the current document's shader tab exactly as before the key existed.
+    editor_tabs: list[TabRecord] = []
+    active_tab_index: int = 0
 
     # Persisted UI layout prefs (the App holds the live copies; synced at load/save).
     # NOT copilot_focused — that one is transient-by-design.

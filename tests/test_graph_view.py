@@ -225,15 +225,16 @@ def test_a_wire_dropped_on_a_drawn_port_writes_that_port(app: Any) -> None:
 
 
 def test_a_press_that_spans_a_copilot_turn_never_becomes_a_gesture(app: Any) -> None:
-    # A wire grabbed BEFORE the turn: the turn cancels it, and when the turn ends the button
-    # is still down and the port's item still active, so the start branch would rebuild the
+    # A wire started BEFORE the turn: the turn cancels it, and when the turn ends the button
+    # is still down and the dot's item still active, so the start branch would rebuild the
     # gesture from a press nobody made after the turn. Falsifier: drop the `press_blocked`
-    # latch -- the release after the turn writes NoSource over the wire the press was on.
+    # latch -- the release after the turn drops the wire on whatever is under the cursor.
+    # The wire starts at an OUTPUT dot: an input pin is not a drag source (093 W2-4).
     document_id, document = _chain(app)
     app.open_graph_for(document_id)
     _frames(app, 4)
     view = app.graph_view_for(document_id)
-    x0, y0, x1, y1 = view.port_rects[("b", "u_src")]
+    x0, y0, x1, y1 = view.out_rects[("p:a", 0)]
     io = imgui.get_io()
     io.add_mouse_pos_event((x0 + x1) / 2.0, (y0 + y1) / 2.0)
     _frames(app, 2)
@@ -256,6 +257,7 @@ def test_a_press_that_spans_a_copilot_turn_never_becomes_a_gesture(app: Any) -> 
     _frames(app, 2)
     assert document.passes["b"].uniform_values["u_src"] == PassSource("a")
     assert all(entry.position is None for entry in document.graph.passes.values())
+    _let_the_double_click_lapse(app)
     # The latch clears with the button: the next press is a gesture again.
     io.add_mouse_pos_event((x0 + x1) / 2.0, (y0 + y1) / 2.0)
     _frames(app, 2)
@@ -808,18 +810,69 @@ def test_the_cursor_follows_the_gesture(app: Any) -> None:
     assert view.canvas_rect != (0.0, 0.0, 0.0, 0.0)
     assert app.cur_cursor is None, "the cursor survived the gesture"
 
-    # A wire in flight asks for the crosshair instead, driven as a user drives it: a press on
-    # a filled input port re-grabs the wire at its producer's end. A `wire_drag` merely
+    # A wire in flight asks for the crosshair instead, driven as a user drives it: a drag off
+    # an OUTPUT dot, the only end a wire can leave from (093 W2-4). A `wire_drag` merely
     # ASSIGNED would be cancelled at the top of the next frame, which is the guard that keeps
     # a gesture whose press the canvas never saw from writing.
-    x0, y0, x1, y1 = view.port_rects[("c", "u_src")]
+    x0, y0, x1, y1 = view.out_rects[("p:a", 0)]
     _park(app, ((x0 + x1) / 2.0, (y0 + y1) / 2.0))
     io.add_mouse_button_event(0, True)
     _frames(app, 2)
     _park(app, ((x0 + x1) / 2.0 + 60.0, (y0 + y1) / 2.0 + 40.0), frames=2)
-    assert view.wire_drag is not None, "the grab never started"
+    assert view.wire_drag is not None, "the drag never started"
     assert app.cur_cursor is app.crosshair_cursor
     io.add_mouse_button_event(0, False)
     _frames(app, 3)
     assert app.cur_cursor is None
+    _close_graph(app, document_id)
+
+
+def test_an_input_pin_moves_the_node_and_never_carries_its_wire(app: Any) -> None:
+    """W2-4: a press on a FILLED input port is a node drag, not a wire grab.
+
+    The gesture the references converge on -- drag the wire off its input, a ghost following
+    the cursor, release to detach -- is the one the maintainer rejected: the ghost does not say
+    that letting go removes the read. So the pin is not a drag source at all, and a wire leaves
+    only by its own ✕ or the Delete key.
+
+    Falsifier: restore the `port.kind == "wired"` branch -- `wire_drag` is set instead of
+    `node_drag`, and the release on empty canvas unwires `c.u_src`.
+    """
+    document_id, document = _chain(app)
+    view = _open_graph(app, document_id)
+    x0, y0, x1, y1 = view.port_rects[("c", "u_src")]
+    start = ((x0 + x1) / 2.0, (y0 + y1) / 2.0)
+    with mock.patch.object(
+        app.session, "set_sampler_source", wraps=app.session.set_sampler_source
+    ) as write:
+        _park(app, start)
+        imgui.get_io().add_mouse_button_event(0, True)
+        _frames(app, 2)
+        _park(app, (start[0] + 6.0, start[1] + 6.0))
+        assert view.node_drag is not None, "the press did not move the node"
+        assert view.wire_drag is None, "the input pin carried its wire away"
+        imgui.get_io().add_mouse_button_event(0, False)
+        _frames(app, 3)
+    assert write.call_count == 0, [c.args for c in write.call_args_list]
+    assert document.passes["c"].uniform_values["u_src"] == PassSource("b")
+    _close_graph(app, document_id)
+
+
+def test_a_wire_dropped_on_a_filled_port_overwrites_its_source(app: Any) -> None:
+    # W2-4: with the pin no longer a drag source, replacing a read is a drop from an output
+    # onto the filled port -- `drop_wire` is the one write and it overwrites. Falsifier: refuse
+    # a drop on a filled port and a wire could only ever be replaced by unwiring it first.
+    document_id, document = _chain(app)
+    view = _open_graph(app, document_id)
+    assert document.passes["c"].uniform_values["u_src"] == PassSource("b")
+    x0, y0, x1, y1 = view.out_rects[("p:a", 0)]
+    _park(app, ((x0 + x1) / 2.0, (y0 + y1) / 2.0))
+    imgui.get_io().add_mouse_button_event(0, True)
+    _frames(app, 2)
+    px0, py0, px1, py1 = view.port_rects[("c", "u_src")]
+    _park(app, ((px0 + px1) / 2.0, (py0 + py1) / 2.0))
+    assert view.wire_drag is not None, "the drag never started"
+    imgui.get_io().add_mouse_button_event(0, False)
+    _frames(app, 3)
+    assert document.passes["c"].uniform_values["u_src"] == PassSource("a")
     _close_graph(app, document_id)

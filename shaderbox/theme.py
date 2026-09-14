@@ -334,12 +334,14 @@ class SIZE:
     # the zoom clamp.
     GRAPH_NODE_W: int = 136
     GRAPH_BOX_EXTRA_W: int = 40
-    GRAPH_THUMB: int = 96
-    GRAPH_PAD: int = 8
+    GRAPH_THUMB: int = 116
+    GRAPH_PAD: int = 4
     GRAPH_NAME_H: int = 20
-    # The gap between the name and the first port row; one owner, read by the node's height
-    # (`node_size`) and by where the dots go (`_port_point`).
+    # The gap between the name and the first port row, and the one under the LAST port row so
+    # its label clears the border by what its left inset gives it; one owner each, read by the
+    # node's height (`node_size`) and by where the dots go (`_port_point`).
     GRAPH_PORT_TOP: int = 4
+    GRAPH_PORT_BOTTOM: int = 7
     GRAPH_PORT_ROW: int = 18
     GRAPH_PORT_R: int = 4
     GRAPH_HIT_MIN: int = 7
@@ -365,9 +367,6 @@ class SIZE:
     GRAPH_WIRE_HIT_SEGS: int = 24
     # The selected wire's mid-curve unwire badge, in canvas units.
     GRAPH_WIRE_X_R: int = 7
-    # The feedback glyph in the badge row: its square, and its gap from an `xN` badge.
-    GRAPH_FB_SIZE: int = 12
-    GRAPH_FB_GAP: int = 2
     # How far the mouse travels, in SCREEN pixels, before a press becomes a drag rather than a
     # click. Not zoom-scaled; imgui's own 6px default is tuned for buttons.
     GRAPH_DRAG_LOCK_PX: float = 4.0
