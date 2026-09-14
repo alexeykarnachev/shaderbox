@@ -1,6 +1,6 @@
 # 093 — Tenth walk findings
 
-Status: **in progress; wave 1 spec revised after pre-implementation rounds 1 and 2, round 3 next.**
+Status: **in progress; wave 1 spec converged (pre-implementation rounds 1-3), implementation next.**
 Five findings filed (`00_findings.md`). The maintainer's verdict on the shipped canvas ("feels
 very cheap") sent the walk into research first: `02_research_brief.md` is the brief, `research/`
 holds six area reports against primary sources, `03_graph_design.md` is the design record
@@ -234,11 +234,13 @@ is already False, so a Delete typed into it is refused by `hovered` before `is_a
 is consulted; and while a press is HELD on the canvas `hovered` is likewise already False
 (measured: dropping `is_any_item_active` alone still refuses the held case). The one reachable
 state where `not is_any_item_active()` is the clause doing the work is a text input ACTIVE in
-another window while the mouse rests over the canvas -- the copilot chat's input, or the
-Document tab's name field -- and its falsifier is built through the chat: `app.is_copilot_open =
-True; app.focus_copilot()` puts the chat input in focus through `copilot_focus_pending`, the
-mouse moves over the canvas, Delete is sent, and no write may follow; dropping the clause
-writes. Both key names are present on this build's `imgui.Key` (verified).
+another window while the mouse rests over the canvas -- the Document tab's name field, the
+chat's input. Neither is reachable headlessly (the `app` fixture has no OpenRouter key, so the
+chat draws its connect gate and no input; measured), so the gate is a pure predicate,
+`graph_state.delete_allowed(pressed, hovered, any_item_active, blocked, has_wire) -> bool`,
+tested over its whole domain, and `_draw_canvas` feeds it the five live reads in one line; the
+live scenario (type Delete into the name field with the mouse over the canvas: nothing happens)
+is the maintainer's check. Both key names are present on this build's `imgui.Key` (verified).
 
 **S6. The ✕ lives on the top channel and is hit-tested by hand on the press.** Submission order
 cannot make it win: an item without `allow_overlap` submitted earlier beats a later overlapper
@@ -298,7 +300,7 @@ functions beside `NodeDrag` and `node_size`:
 - `class WireState(StrEnum)`: `ERROR`, `SELECTED`, `HOVERED`, `DIM`, `NORMAL`, and
   `wire_state(on_cycle, selected, hovered, dim) -> WireState` in G18's precedence (error first).
   The widget maps a state to its stroke color and halo; the precedence is the pure part.
-- `revalidated_wire(selected, edges)` (S2).
+- `revalidated_wire(selected, edges)` (S2), `delete_allowed(...)` (S5).
 `_draw_wire(dl, points, col, halo_col)` in the widget draws the halo (`GRAPH_WIRE_W * 3.0 * z`
 at the state's halo alpha, channel 0) when `halo_col` is not `None`, then the crisp stroke
 (channel 1) -- a hovered stroke is `GRAPH_WIRE_W * 1.4 * z` per G6, a selected or normal one
@@ -468,9 +470,9 @@ outside a frame `calc_text_size` segfaults the process (measured).
 | S8: the fit frames every wire | build `a -> b -> c` plus a backward read (`a` reading `c` through `app.session.set_sampler_source`, so a cycle wire is present), `_fit` with `avail = (520, 200)` -- small enough that the 1.0 clamp does not centre slack around the content (at 800x600 the break below stays green, measured); the fitted window in canvas space is `(pan.x, pan.y, pan.x + 520 / zoom, pan.y + 200 / zoom)`, and every wire's 25 sampled canvas-space curve points lie inside it. Break to try: fit the nodes alone -- 8 of 75 points land outside (measured) | app fixture, no frames |
 | `_fit`'s clamp (regression check, not a width pin) | six chained passes, `_fit` with `avail = (1225, 600)`: `view.zoom == 1.0`; with `(740, 600)`: `0.6 < view.zoom < 1.0`. Green at 108 and 136 alike; the width is pinned by the ellipsis row | app fixture, no frames |
 | G5: select a wire and Delete it | open the graph tab, frames, click `view.wire_mids[("c", "u_src")]`, assert `selected_wire == ("c", "u_src")` and `selection == set()`, release, frames, send `Key.delete`, frames, assert exactly one `set_sampler_source(..., "c", "u_src", NoSource())` and nothing else | frame-driven |
-| G5: the ✕ unwires, and the press is nothing else | select the wire as above, press at the centre of `view.x_rect`, hold two frames, release, frames: exactly the one unwire write; `band_anchor is None` and `node_drag is None` throughout; `set_output_pass` was never called and `view.selection` is unchanged. Then place a node (through `app.session.set_pass_positions`) so its body covers the selected wire's midpoint and repeat: the same single write and still no `set_output_pass` -- the release-frame node click is refused because the latch clears at the end of the frame. Break to try: clear the latch at the top of the frame as today -- the covered case chooses the output | frame-driven |
+| G5: the ✕ unwires, and the press is nothing else | select the wire as above, press at the centre of `view.x_rect`, hold two frames, release, frames: exactly the one unwire write; `band_anchor is None` and `node_drag is None` throughout; `set_output_pass` was never called and `view.selection` is unchanged. Then place a node (through `app.session.set_pass_positions`) so its body covers the selected wire's midpoint but not the port the wire ends at -- centred on the midpoint the body also covers the port at 136, so shift it 50px or more toward the producer (measured) -- and repeat: the same single write and still no `set_output_pass` -- the release-frame node click is refused because the latch clears at the end of the frame. Break to try: clear the latch at the top of the frame as today -- the covered case chooses the output | frame-driven |
 | S5: Delete is refused while a press is held on the canvas | select a wire, press and hold on empty canvas, send `Key.delete`, frames: no write; release, frames, send `Key.delete`: the write. A behavior pin; the clause it exercises is `hovered` (measured: `is_window_hovered` is False for the whole held press) | frame-driven |
-| S5: Delete typed into another window's text input is refused | select a wire, `app.is_copilot_open = True; app.focus_copilot()`, frames until the chat input is active (`imgui.is_any_item_active()` read on the frame after, through a probe frame), move the mouse over the canvas, send `Key.delete`, frames: no write. Break to try: drop `not is_any_item_active()` -- the write happens. If the chat input does not take focus headlessly, the row is replaced by a direct call of `_draw_canvas`'s gate predicate with `any_item_active=True` and the mechanism is the maintainer's check; the implementation commit says which | frame-driven |
+| S5: the Delete gate over its whole domain | `delete_allowed` over all 32 combinations of its five booleans: True exactly when `pressed and hovered and not any_item_active and not blocked and has_wire`. The `any_item_active` clause's live scenario (a text input active in another window) is the maintainer's check | pure |
 | S5: Delete typed into the group prompt is refused | select a wire, set `view.group_prompt = True` (a one-shot the first frame consumes; do not re-assert it), frames, send `Key.delete`, frames: no write. Behaviour pin; the clause it exercises is `hovered` | frame-driven |
 | S5: Delete is refused during a copilot turn | select a wire, `app.copilot.state.in_flight = True`, frames, send `Key.delete`: no write (the `not blocked` clause) | frame-driven |
 | G6: exclusive hover, one rung per sequence, no click in any | (a) park on `port_rects[("c", "u_src")]`'s centre: `hovered_port` set, the other three `None`; (b) park on a node body away from any port and wire: `hovered_node` set, others `None`; (c) park on `wire_mids[("b", "u_src")]` in open canvas: `hovered_wire` set, others `None`; (d) place `c` (through `app.session.set_pass_positions`) so its body covers `wire_mids[("b", "u_src")]`, park there: `hovered_node` set and `hovered_wire is None`; (e) off the canvas: all `None`. Breaks to try: swap the port and node rungs (a flips); swap the node and wire rungs (d flips) | frame-driven |
@@ -542,3 +544,12 @@ input active in another window, built through the chat's focus (S5). The fit row
 green at 800x600 (the clamp centres slack) and bites at 520x200. `_locate_uniform_declaration`
 runs only on a hover or click, so its row calls it directly. `graph_active` becomes the callable
 `_entry_tab_active`, shared with the Script row (T5).
+
+**Pre-implementation round 3 (2026-09-14): both reviewers PASS.** Every round-2 item confirmed
+CLOSED by quoted text; S6's two orderings traced against `_draw_canvas` (the same-frame
+background press and the release-frame node click both refused, the copilot-turn test's last
+stanza intact); the 136 width recomputed against the record's own G11 table (1.049 / 0.634,
+unchanged). One demonstrated residual folded: the chat input cannot be focused in the fixture
+(no OpenRouter key, so no input is drawn), so the Delete gate is now the pure `delete_allowed`
+tested over its 32 combinations and the live text-input scenario is the maintainer's check; the
+✕-over-a-card row names the 50px offset that covers the midpoint without covering the port.

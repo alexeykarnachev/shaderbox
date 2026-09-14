@@ -698,3 +698,60 @@ geometry) both behave as specified.
 **VERDICT: PARTIAL** — land after setting `GRAPH_NODE_W` from the measured advances (N1),
 restating S5's held-press falsifier and T1's session-creation falsifier so each can only pass
 for its own reason (N2, N3), and naming the tick predicate as an extracted function (N4).
+
+---
+
+# Round 3
+
+Re-read `01_spec.md` at `ad428cc`. One new finding, demonstrated.
+
+## N1-N4 closure
+
+| # | Closing sentence | Status |
+|---|---|---|
+| **N1** width | S1: "the advance is 7.0px at 12px and 8.0px at 14px bold, so `u_distance_field` is 112px ... is met by **`GRAPH_NODE_W = 136`** (budgets 118 and 120), C's original recommendation, which the fit-clamp check survives (1168px fitted width: 1.049 at 1225px, 0.634 at 740px)." | **CLOSED** — the number, the reason and the knock-on all match my measurements. Re-verified at 136: `distance_field` 112.0 against a 120 name budget (**8.0px slack**), `u_distance_field` 112.0 against a 118 port budget (**6.0px slack**); both clear the row's "at least 4px". |
+| **N2** falsifier | S5: "while a press is HELD on the canvas `hovered` is likewise already False (measured: dropping `is_any_item_active` alone still refuses the held case). The one reachable state where `not is_any_item_active()` is the clause doing the work is a text input ACTIVE in another window". The held row now says "A behavior pin; the clause it exercises is `hovered`". | **CLOSED as an attribution** — the held row no longer claims a falsifier it lacks. The replacement row it hands the falsifier to is **N5**. |
+| **N3** session creation | Row: "call `widgets.uniform._locate_uniform_declaration(app, "u_src")` directly (it runs only on a hover or click of a uniform's name, which four frames of the focused tab never inject -- measured), then assert `app.paths.graph_json_for(document_id) not in app.editor_sessions`. Break to try: the creating `get_current_session()`". | **CLOSED** — a direct call, which is the cheaper falsifier I proposed. |
+| **N4** tick predicate | T5: "`graph_active = _entry_tab_active(app, document_id, "graph")` -- a new free predicate over `app.active_tab` (kind and document match) that the Script row's inline `script_active` also [uses]". | **CLOSED** — extracted and callable; the row now names three cases including the cross-kind one. |
+
+## The probe S5's new row depends on
+
+**N5. The chat-input case cannot be built through the chat; the row's own fallback is the one to take, and its stated form needs one correction.** Probed (`test_r3.py`): graph canvas drawn, mouse parked over it, `app.is_copilot_open = True; app.focus_copilot()`, read at S5's pinned position.
+
+```
+BASELINE (mouse over canvas, no chat): {'any_active': False, 'hovered': True, 'copilot_focused': False}
+CHAT_F1: {'any_active': False, 'hovered': True, 'copilot_focused': False}
+CHAT_F2: {'any_active': False, 'hovered': True, 'copilot_focused': True}
+CHAT_F3: {'any_active': False, 'hovered': True, 'copilot_focused': True}
+CHAT+MOUSE_OVER_CANVAS: {'any_active': False, 'hovered': True, 'copilot_focused': True}
+CHAT+DELETE: {'any_active': False, 'hovered': True, 'copilot_focused': True}
+GATE WOULD FIRE (hovered and not any_active): True
+```
+
+The window takes focus (`copilot_focused: True` from frame 2) but **no item ever becomes active**, so the gate would fire and the row's "no write may follow" assertion is red on a correct implementation. The cause is one branch (`copilot_chat.py:157-166`): with no OpenRouter key the chat draws `unconnected_gate` and **no input box at all**. The `app` fixture has no key — probed `openrouter key set? False` — and it must not: seeding one would point a test at a real credential path. So this is a property of the fixture, not a timing bug, and no number of frames fixes it.
+
+The row already anticipates this ("If the chat input does not take focus headlessly, the row is replaced by..."), so the fallback is the sanctioned path. One correction to its stated form: it says "a direct call of `_draw_canvas`'s gate predicate with `any_item_active=True`", which presumes the gate is extracted as a predicate taking that flag — nothing in S5 says it is, and S5 describes the four clauses as read inline. Either say in S5 that the gate is an extracted free function (the shape N4 just gave the tick), or use the stronger option the probe shows is available: a rig `input_text` **does** go active from its second frame (`test_r3c.py`):
+
+```
+rig frame 0: is_any_item_active = False
+rig frame 1: is_any_item_active = True
+rig frame 2: is_any_item_active = True
+```
+
+so the state itself is reachable headlessly — just not via the chat. Whichever is chosen, the commit says which, as the row already requires.
+
+## The three rewritten rows re-verified
+
+- **The ✕ row's covered midpoint, at `GRAPH_NODE_W = 136`.** Satisfiable, with a shift. The selected `a -> b` wire (key `("b", "u_src")`) runs `(136.0, 56.0) -> (200.0, 145.0)`, midpoint **(168.0, 100.5)**; the port it terminates at is `(200.0, 145.0)` with a 7px box `x[193,207] y[138,152]`. Centring `c`'s 136×154 body on the midpoint covers **both** (`covers mid: True, overlaps b.u_src hit box: True`). Shifting `c` left clears the port while still covering the midpoint: `shift(-50,0) -> covers_mid=True overlaps_port=False`, likewise `-64` and `(-60,-20)`. So the row is runnable; it should name the offset rather than "centre it", or the obvious placement fails.
+- **The fit row at `avail = (520, 200)`.** Confirmed exactly. On the `a -> b -> c` chain plus the backward read at 136, the node bbox is `[0, 0, 536, 154]` and the union with the sampled curves is `[-31, 0, 567, 154]`; **10 of 75** sampled points fall outside the node bbox. Fitted: nodes-only at `(520,200)` gives zoom 0.9155 and leaves **8 points outside** the fitted window — the spec says 8; union gives 0.8255 and **0 outside**. And the row's reason for moving off 800×600 holds: there, nodes-only also leaves **0 outside**, so the break is inert at the old size. Both numbers in the row are right.
+- **The ellipsis row's budgets at 136.** 118 and 120 as stated, with 6.0px and 8.0px of slack against the measured 112.0px strings. Red at 128 still holds (112 against 110 and 112).
+
+## Verdict
+
+N1-N4 are closed by quoted text, and all three rewritten rows check out numerically against
+their own stated numbers. N5 is not a design defect: the row already carries the fallback, the
+probe simply settles which branch to take and shows the fallback's stated form presumes an
+extraction the spec does not yet name. That is one sentence in S5 and a line in the commit
+body, decidable without another round.
+
+**VERDICT: PASS**

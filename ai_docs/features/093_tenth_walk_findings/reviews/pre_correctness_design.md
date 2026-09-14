@@ -694,3 +694,78 @@ result reproduced here.
   `calc_text_size`).
 
 VERDICT: PARTIAL
+
+---
+
+# Round 3
+
+Re-read `01_spec.md` at `ad428cc`. Baseline: `tests/test_graph_view.py tests/test_theme.py` → 18 passed.
+
+## Closure
+
+**12 (S15) — CLOSED.** "`choose_output` also clears the Uniforms tab's explicit pick
+(`set_panel_pass(document_id, "")`), which `ensure_shader_tab` did for today's click and 083
+states as the rule ('a pick retires an older explicit one'); without it a persisted pin would
+keep the panel on another pass after a canvas click (measured)."
+
+**13 (S6) — CLOSED, both halves.** "First, the check runs at the TOP of `_draw_canvas`, inside
+the press bookkeeping and BEFORE `blocked = frozen or view.press_blocked` is computed … so the
+same frame's `blocked` already carries the latch and the background button's `is_item_clicked` on
+that frame is ignored by S4's `not blocked` gate. Second, the latch's clear (`if not mouse_down:
+view.press_blocked = False`, today at the top of the frame) moves to the END of `_draw_canvas`,
+so on the RELEASE frame `blocked` is still True and the release-time node click of S4 is refused."
+
+Traced against `_draw_canvas` as it exists:
+
+- *Same-frame background press.* The ✕ check lands above `:856`, so `blocked` is True for the
+  whole frame. S4 already moved the selection clear off `:938` into a deferred block "acted on
+  AFTER the node loop and the wire pass, gated on `not blocked`", so that block is refused. The
+  `is_item_clicked` at `:938` itself is retired by S4, not merely ignored — refused.
+- *Release-frame node click.* With the clear moved to the end, frame R computes
+  `blocked = frozen or view.press_blocked` → True at `:856`, and S4's node-click gate carries
+  `not blocked` → refused. The end-of-frame `if not mouse_down` then clears it; frame R+1 is
+  clean. Refused.
+- *The copilot-turn test's last stanza* ("the latch clears with the button: the next press is a
+  gesture again", `tests/test_graph_view.py:249-256`) is unaffected. The stanza is
+  `add_mouse_button_event(0, False)` → `_frames(app, 2)` → reposition → `_frames(app, 2)` →
+  press. Both post-release frames run the end-clear (`mouse_down` False in each), so
+  `press_blocked` is False well before the press on a later frame, and `view.wire_drag is not
+  None` still holds. More generally the clear runs at the end of *every* frame where the button
+  is up, i.e. every frame between a release and the next press — so no new press can ever see a
+  stale latch.
+
+**14 (S8) — CLOSED.** "`_fit` with `avail = (520, 200)` -- small enough that the 1.0 clamp does
+not centre slack around the content (at 800x600 the break below stays green, measured) … Break
+to try: fit the nodes alone -- 8 of 75 points land outside (measured)." Re-measured at the new
+`GRAPH_NODE_W = 136`: correct → zoom 0.826, 0/75 outside; broken → zoom 0.915, **8/75** outside.
+The stated count reproduces at the new width.
+
+## S1's new width (136)
+
+SOUND; nothing the record's arithmetic or the box width contradicts. Recomputed from the
+measured 7.0px / 8.0px advances:
+
+```
+W=136  name budget 120  port-label budget 118
+  distance_field   14b: 112.0 <= 120  fits
+  u_distance_field 12 : 112.0 <= 118  fits
+W=128  budgets 112 / 110 -> u_distance_field at 112 EXCEEDS 110 (ellipsizes); distance_field has zero slack
+fitted width 6*136+5*64+2*16 = 1168   z@1225 = 1.049   z@740 = 0.634
+```
+
+Both figures match the record's own G11 table row for 136 exactly, so the fit arithmetic is not
+contradicted — it is the row the record already published and rejected only on taste. The
+record's stated bound ("150 is the point where the wide pane drops below 1.0, so it is out on its
+own numbers") still holds and 136 sits inside it: 1225/1168 = 1.049 > 1.0. The `_fit`-clamp
+verification row passes at 136 (`avail=(1225,600)` → zoom exactly 1.0; `(740,600)` → 0.6336,
+inside `0.6 < z < 1.0`), and its own text already says "Green at 108 and 136 alike".
+
+The box at 176 (`GRAPH_BOX_EXTRA_W` stays 40) contradicts nothing: it is named in Out of scope
+("a box is 176 wide around a 96 picture. The maintainer's eyes; a token if he objects"), it keeps
+the box wider than a pass card as the boundary-port labels and the "N passes" badge need, and it
+is not read by the fit rows (both use pass nodes). The side margin grows 20 → 40px around the
+thumb on a box, which is a look, not a correctness matter — already routed to his eyes.
+
+No new finding: nothing here could be demonstrated as wrong.
+
+VERDICT: PASS
