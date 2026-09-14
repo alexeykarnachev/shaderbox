@@ -323,8 +323,9 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   keyboard control (feature 018). `CommandId`/`CommandScope` StrEnums, the frozen `CommandSpec` + the
   `COMMAND_SPECS` default table, `chord_to_str` (display), `route_flag`/`popup_suppresses`/
   `capture_chord`/`chord_needs_modifier`, and `command_label(id)` — the ONE spelling every button
-  that opens a command's surface takes. `CommandSpec.in_menu` / `.separator_before` are what the
-  menu bar renders from. The id->callback wiring lives on `App` (closes over self),
+  that opens a command's surface takes. The table's ORDER is the UI's (bar, palette, cheatsheet,
+  rebinder, Help); `.separator_before` opens a group, `.confirm_label` makes a confirm submenu;
+  the designed map is `features/093_refinement/06_command_system.md`. The id->callback wiring lives on `App` (closes over self),
   not here, so this stays cycle-free.
 - **`menus.py`** — the `App`-facing menu primitives (093/17): `draw_menu_bar(app)` (a render of
   `COMMAND_SPECS`, one menu per `CommandCategory`, plus the right-aligned project name),

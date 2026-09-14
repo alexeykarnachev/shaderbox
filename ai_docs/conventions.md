@@ -579,17 +579,23 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   card row with a visible primary click gets none — two affordances for one thing is the slop
   signal the rulebook names. Revisit if a menu walk finds one undiscovered.
 
-- **The menu bar is a RENDER of `COMMAND_SPECS` (093).** One top-level menu per
-  `CommandCategory` in `CATEGORY_ORDER`, one item per spec carrying `in_menu`, in table order,
+- **The command table IS the command system, and every surface renders it (093).** One
+  category per OBJECT a verb acts on (File, Document, Pass, Editor, View, Help), in the order
+  a desktop bar reads; within a category, groups opened by `separator_before`, most-used
+  first; a label names its object so it reads the same in a menu, the palette and the
+  cheatsheet; a destructive verb carries `confirm_label`. The map with its reasoning is
+  `ai_docs/features/093_refinement/06_command_system.md`; the bar, the palette, the
+  cheatsheet, the rebinder and the Help panel all read the table in ITS order, so a verb is
+  filed once. The menu bar is a RENDER of it: one top-level menu per `CommandCategory` in
+  `CATEGORY_ORDER`, one item per spec, in table order,
   the label the spec's and the hint `chord_to_str(app.effective_bindings[id])`. `menus.py`
   holds the `App`-facing primitives (`draw_menu_bar`, `command_menu_item`, `menu_enabled`) —
   `ui_primitives.py` is `App`-free by the three-layer rule and cannot host them; the pure
   `commands.command_label(id)` is the one spelling every BUTTON that opens a command's surface
   takes, so `add pass` and `Add pass` cannot both exist. `menu_enabled` gates per ITEM, never
   per category: a `begin_menu` under `begin_disabled` does not open at all, so a greyed
-  category would hide what is in it. `in_menu=False` on the four Focus-tab verbs and Cycle
-  code tab, whose item would duplicate the tab bar under it. Revisit if a menu needs an item
-  that is not a command.
+  category would hide what is in it. Every command has a menu home; a verb that exists only
+  as a button or a chord is the defect. Revisit if a menu needs an item that is not a command.
 - **One shared row primitive per row-KIND, not per-kind special-case rows.** A list/grid whose
   items come in kinds (regular uniforms vs engine/`auto` uniforms) draws every kind through ONE
   row helper (`uniform_name_label`) with style overrides, never a separate hand-rolled row per

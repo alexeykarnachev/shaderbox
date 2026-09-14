@@ -1,7 +1,7 @@
 """The menu bar and the one primitive every command-bearing menu item goes through (093/17).
 
 The bar is a RENDER of `COMMAND_SPECS`: one top-level menu per `CommandCategory` in
-`CATEGORY_ORDER`, one item per spec carrying `in_menu`, in table order, its label the spec's
+`CATEGORY_ORDER`, one item per spec in table order, its label the spec's
 and its hint the chord currently bound. Nothing here authors a label, so the bar, the palette
 and the cheatsheet cannot drift.
 
@@ -65,19 +65,13 @@ def command_menu_item(app: App, command_id: CommandId) -> bool:
 
 
 def draw_menu_bar(app: App) -> None:
-    """The main menu bar: every `in_menu` command under its category, then the open project's
+    """The main menu bar: every command under its category, then the open project's
     name right-aligned."""
     with imgui_ctx.begin_menu_bar() as bar:
         if not bar:
             return
         for category in CATEGORY_ORDER:
-            specs = [
-                spec
-                for spec in COMMAND_SPECS
-                if spec.category is category and spec.in_menu
-            ]
-            if not specs:
-                continue
+            specs = [spec for spec in COMMAND_SPECS if spec.category is category]
             with imgui_ctx.begin_menu(category.value) as menu:
                 if not menu:
                     continue

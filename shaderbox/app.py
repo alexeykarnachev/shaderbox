@@ -638,6 +638,7 @@ class App:
         self.command_callbacks = {
             CommandId.OPEN_PROJECTS: self.open_projects,
             CommandId.SAVE: self.save,
+            CommandId.OPEN_DOCUMENT_DIR: self.open_current_document_dir,
             CommandId.NEW_DOCUMENT: lambda: self.create_document_from_example(
                 STARTER_EXAMPLE_ID
             ),

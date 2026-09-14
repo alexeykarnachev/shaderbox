@@ -14,57 +14,62 @@ from imgui_bundle import imgui
 
 
 class CommandId(StrEnum):
-    OPEN_PROJECTS = auto()
-    SAVE = auto()
+    # File
     NEW_DOCUMENT = auto()
-    EXAMPLES = auto()
-    HELP = auto()
-    DELETE_DOCUMENT = auto()
+    SAVE = auto()
+    OPEN_PROJECTS = auto()
+    OPEN_SETTINGS = auto()
+    QUIT = auto()
+    # Document
+    OPEN_SCRIPT = auto()
+    OPEN_GRAPH = auto()
+    OPEN_DOCUMENT_DIR = auto()
     TOGGLE_DOCUMENT_PLAY = auto()
     RESET_DOCUMENT = auto()
-    OPEN_SETTINGS = auto()
-    OPEN_LIB_PICKER = auto()
-    OPEN_PALETTE = auto()
-    QUIT = auto()
-    JUMP_NEXT_ERROR = auto()
+    DELETE_DOCUMENT = auto()
+    # Pass
+    ADD_PASS = auto()
+    IMPORT_PASSES = auto()
+    OPEN_SHADER = auto()
+    OPEN_PASS_SETTINGS = auto()
+    NEXT_PASS = auto()
+    PREV_PASS = auto()
+    # Editor
     FORMAT_BUFFER = auto()
-    TOGGLE_CHEATSHEET = auto()
+    JUMP_NEXT_ERROR = auto()
+    CYCLE_CODE_TAB = auto()
+    CLOSE_CODE_TAB = auto()
+    OPEN_LIB_PICKER = auto()
+    # View
     FOCUS_TAB_DOCUMENT = auto()
     FOCUS_TAB_UNIFORMS = auto()
     FOCUS_TAB_RENDER = auto()
     FOCUS_TAB_SHARE = auto()
+    CYCLE_CHANNEL_VIEW = auto()
     TOGGLE_COPILOT = auto()
     CYCLE_COPILOT_LAYOUT = auto()
-    OPEN_SHADER = auto()
-    OPEN_SCRIPT = auto()
-    OPEN_GRAPH = auto()
-    CYCLE_CODE_TAB = auto()
-    CLOSE_CODE_TAB = auto()
-    OPEN_PASS_SETTINGS = auto()
-    ADD_PASS = auto()
-    IMPORT_PASSES = auto()
-    CYCLE_CHANNEL_VIEW = auto()
-    NEXT_PASS = auto()
-    PREV_PASS = auto()
+    OPEN_PALETTE = auto()
+    # Help
+    HELP = auto()
+    TOGGLE_CHEATSHEET = auto()
+    EXAMPLES = auto()
 
 
 class CommandCategory(StrEnum):
-    # Cheatsheet + rebinder grouping; rendered in CATEGORY_ORDER, not enum order.
+    """The menu a command lives under. One per OBJECT the verb acts on, in the order a
+    desktop app's bar reads: the app's files and its settings, the open document, its
+    passes, the code editor, what is shown, and help. The same grouping is the cheatsheet's,
+    the rebinder's and the Help panel's (`ai_docs/features/093_refinement/06_command_system.md`)."""
+
     FILE = "File"
     DOCUMENT = "Document"
+    PASS = "Pass"
     EDITOR = "Editor"
     VIEW = "View"
-    TOOLS = "Tools"
+    HELP = "Help"
 
 
-# The order categories appear in the cheatsheet + rebinder.
-CATEGORY_ORDER: list["CommandCategory"] = [
-    CommandCategory.FILE,
-    CommandCategory.DOCUMENT,
-    CommandCategory.EDITOR,
-    CommandCategory.VIEW,
-    CommandCategory.TOOLS,
-]
+CATEGORY_ORDER: list["CommandCategory"] = list(CommandCategory)
 
 
 class CommandScope(StrEnum):
@@ -90,10 +95,7 @@ class CommandSpec:
     in_palette: bool = True
     # Excluded from the rebinder UI (e.g. arrow nav with a fixed key).
     rebindable: bool = True
-    # Excluded from the menu bar: a view-focus verb whose item would duplicate the tab bar
-    # under it.
-    in_menu: bool = True
-    # Draws a separator above this spec's menu item.
+    # Draws a separator above this spec's menu item: the first item of a group within the menu.
     separator_before: bool = False
     # A destructive verb's confirm text: non-empty makes the menu item a confirm submenu
     # holding this one label, so the bar cannot fire the verb on a single click.
@@ -111,70 +113,95 @@ K = imgui.Key
 
 C = CommandCategory
 
-# Static default table. Each chord lives in exactly ONE scope so a single press
-# never dispatches twice.
+# The command system, in the order it renders: category by category, group by group
+# (`separator_before` opens a group), most-used first within a group. A label names its
+# object so it reads the same in a menu, the palette and the cheatsheet. Each chord lives in
+# exactly ONE scope so a single press never dispatches twice.
 COMMAND_SPECS: list[CommandSpec] = [
-    CommandSpec(CommandId.OPEN_PROJECTS, "Projects", _chord(K.o, K.mod_alt), C.FILE),
-    CommandSpec(CommandId.SAVE, "Save", _chord(K.s, K.mod_ctrl), C.FILE),
-    CommandSpec(
-        CommandId.QUIT,
-        "Quit",
-        _chord(K.q, K.mod_ctrl),
-        C.FILE,
-        separator_before=True,
-    ),
+    # -- File: the app's files and its settings ------------------------------------------
     CommandSpec(
         CommandId.NEW_DOCUMENT,
         "New document",
         _chord(K.n, K.mod_ctrl, K.mod_shift),
-        C.DOCUMENT,
+        C.FILE,
     ),
+    CommandSpec(CommandId.SAVE, "Save", _chord(K.s, K.mod_ctrl), C.FILE),
+    CommandSpec(
+        CommandId.OPEN_PROJECTS,
+        "Projects",
+        _chord(K.o, K.mod_alt),
+        C.FILE,
+        separator_before=True,
+    ),
+    CommandSpec(CommandId.OPEN_SETTINGS, "Settings", _chord(K.s, K.mod_alt), C.FILE),
+    CommandSpec(
+        CommandId.QUIT, "Quit", _chord(K.q, K.mod_ctrl), C.FILE, separator_before=True
+    ),
+    # -- Document: the open document -----------------------------------------------------
+    CommandSpec(
+        CommandId.OPEN_SCRIPT, "Open script", _chord(K.r, K.mod_alt), C.DOCUMENT
+    ),
+    CommandSpec(CommandId.OPEN_GRAPH, "Open graph", _chord(K.g, K.mod_alt), C.DOCUMENT),
+    CommandSpec(CommandId.OPEN_DOCUMENT_DIR, "Open folder", 0, C.DOCUMENT),
+    CommandSpec(
+        CommandId.TOGGLE_DOCUMENT_PLAY,
+        "Play/stop script",
+        _chord(K.f5),
+        C.DOCUMENT,
+        separator_before=True,
+    ),
+    CommandSpec(CommandId.RESET_DOCUMENT, "Reset document", _chord(K.f6), C.DOCUMENT),
     CommandSpec(
         CommandId.DELETE_DOCUMENT,
         "Delete document",
         _chord(K.d, K.mod_alt),
         C.DOCUMENT,
+        separator_before=True,
         confirm_label="Move to trash",
     ),
+    # -- Pass: the document's passes -----------------------------------------------------
+    CommandSpec(CommandId.ADD_PASS, "Add pass", _chord(K.a, K.mod_alt), C.PASS),
+    CommandSpec(CommandId.IMPORT_PASSES, "Import passes", 0, C.PASS),
     CommandSpec(
-        CommandId.TOGGLE_DOCUMENT_PLAY,
-        "Play/stop document script",
-        _chord(K.f5),
-        C.DOCUMENT,
+        CommandId.OPEN_SHADER,
+        "Open shader",
+        _chord(K.c, K.mod_alt),
+        C.PASS,
+        separator_before=True,
     ),
     CommandSpec(
-        CommandId.RESET_DOCUMENT,
-        "Reset document",
-        _chord(K.f6),
-        C.DOCUMENT,
+        CommandId.OPEN_PASS_SETTINGS, "Pass settings", _chord(K.p, K.mod_alt), C.PASS
     ),
     CommandSpec(
         CommandId.NEXT_PASS,
         "Next pass",
         _chord(K.right_arrow, K.mod_alt),
-        C.DOCUMENT,
+        C.PASS,
+        separator_before=True,
     ),
     CommandSpec(
-        CommandId.PREV_PASS,
-        "Previous pass",
-        _chord(K.left_arrow, K.mod_alt),
-        C.DOCUMENT,
+        CommandId.PREV_PASS, "Previous pass", _chord(K.left_arrow, K.mod_alt), C.PASS
     ),
-    CommandSpec(CommandId.OPEN_SHADER, "Open shader", _chord(K.c, K.mod_alt), C.EDITOR),
-    CommandSpec(CommandId.OPEN_SCRIPT, "Open script", _chord(K.r, K.mod_alt), C.EDITOR),
-    CommandSpec(CommandId.OPEN_GRAPH, "Open graph", _chord(K.g, K.mod_alt), C.EDITOR),
+    # -- Editor: the code editor ---------------------------------------------------------
+    CommandSpec(
+        CommandId.FORMAT_BUFFER,
+        "Format code",
+        _chord(K.i, K.mod_ctrl, K.mod_shift),
+        C.EDITOR,
+        scope=CommandScope.EDITOR,
+    ),
+    CommandSpec(CommandId.JUMP_NEXT_ERROR, "Next error", _chord(K.f8), C.EDITOR),
     # Ctrl+Tab is ours: imgui's built-in window-cycle needs nav_enable_keyboard, which is
     # off app-wide (069 W-E D4). WindowFlags_.no_nav_focus on the main window and the chat
     # keeps it that way if nav is ever turned back on. Scope GLOBAL on purpose (071 D8): the
-    # handler focuses an unfocused editor first and cycles only while focused. C.EDITOR is
-    # the cheatsheet CATEGORY, not the scope.
+    # handler focuses an unfocused editor first and cycles only while focused.
     CommandSpec(
         CommandId.CYCLE_CODE_TAB,
-        "Cycle code tab",
+        "Next code tab",
         _chord(K.tab, K.mod_ctrl),
         C.EDITOR,
         scope=CommandScope.GLOBAL,
-        in_menu=False,
+        separator_before=True,
     ),
     CommandSpec(
         CommandId.CLOSE_CODE_TAB,
@@ -184,86 +211,69 @@ COMMAND_SPECS: list[CommandSpec] = [
         scope=CommandScope.EDITOR,
     ),
     CommandSpec(
-        CommandId.JUMP_NEXT_ERROR, "Jump to next error", _chord(K.f8), C.EDITOR
-    ),
-    CommandSpec(
-        CommandId.FORMAT_BUFFER,
-        "Format",
-        _chord(K.i, K.mod_ctrl, K.mod_shift),
+        CommandId.OPEN_LIB_PICKER,
+        "Shader library",
+        _chord(K.l, K.mod_alt),
         C.EDITOR,
-        scope=CommandScope.EDITOR,
+        separator_before=True,
+    ),
+    # -- View: what is shown -------------------------------------------------------------
+    CommandSpec(
+        CommandId.FOCUS_TAB_DOCUMENT, "Document panel", _chord(K._1, K.mod_ctrl), C.VIEW
     ),
     CommandSpec(
-        CommandId.FOCUS_TAB_DOCUMENT,
-        "Document tab",
-        _chord(K._1, K.mod_ctrl),
-        C.VIEW,
-        in_menu=False,
+        CommandId.FOCUS_TAB_UNIFORMS, "Uniforms panel", _chord(K._2, K.mod_ctrl), C.VIEW
     ),
     CommandSpec(
-        CommandId.FOCUS_TAB_UNIFORMS,
-        "Uniforms tab",
-        _chord(K._2, K.mod_ctrl),
-        C.VIEW,
-        in_menu=False,
+        CommandId.FOCUS_TAB_RENDER, "Render panel", _chord(K._3, K.mod_ctrl), C.VIEW
     ),
     CommandSpec(
-        CommandId.FOCUS_TAB_RENDER,
-        "Render tab",
-        _chord(K._3, K.mod_ctrl),
-        C.VIEW,
-        in_menu=False,
-    ),
-    CommandSpec(
-        CommandId.FOCUS_TAB_SHARE,
-        "Share tab",
-        _chord(K._4, K.mod_ctrl),
-        C.VIEW,
-        in_menu=False,
+        CommandId.FOCUS_TAB_SHARE, "Share panel", _chord(K._4, K.mod_ctrl), C.VIEW
     ),
     CommandSpec(
         CommandId.CYCLE_CHANNEL_VIEW,
-        "Cycle channel view",
+        "Next channel view",
         _chord(K.v, K.mod_alt),
         C.VIEW,
+        separator_before=True,
     ),
     CommandSpec(
-        CommandId.TOGGLE_COPILOT, "Toggle copilot", _chord(K.j, K.mod_alt), C.VIEW
+        CommandId.TOGGLE_COPILOT,
+        "Toggle copilot",
+        _chord(K.j, K.mod_alt),
+        C.VIEW,
+        separator_before=True,
     ),
     CommandSpec(
         CommandId.CYCLE_COPILOT_LAYOUT,
-        "Cycle copilot layout",
+        "Next copilot layout",
         _chord(K.h, K.mod_ctrl),
         C.VIEW,
         scope=CommandScope.COPILOT,
     ),
     CommandSpec(
-        CommandId.OPEN_LIB_PICKER, "Shader library", _chord(K.l, K.mod_alt), C.TOOLS
-    ),
-    CommandSpec(
         CommandId.OPEN_PALETTE,
         "Command palette",
         _chord(K.p, K.mod_ctrl, K.mod_shift),
-        C.TOOLS,
+        C.VIEW,
+        separator_before=True,
     ),
-    CommandSpec(CommandId.OPEN_SETTINGS, "Settings", _chord(K.s, K.mod_alt), C.TOOLS),
-    CommandSpec(
-        CommandId.OPEN_PASS_SETTINGS,
-        "Pass settings",
-        _chord(K.p, K.mod_alt),
-        C.TOOLS,
-    ),
-    CommandSpec(CommandId.ADD_PASS, "Add pass", _chord(K.a, K.mod_alt), C.TOOLS),
-    CommandSpec(CommandId.IMPORT_PASSES, "Import passes", 0, C.TOOLS),
-    CommandSpec(CommandId.EXAMPLES, "Examples", _chord(K.e, K.mod_alt), C.TOOLS),
-    CommandSpec(CommandId.HELP, "Help", _chord(K.f1), C.TOOLS),
+    # -- Help ----------------------------------------------------------------------------
+    CommandSpec(CommandId.HELP, "Help", _chord(K.f1), C.HELP),
     CommandSpec(
         CommandId.TOGGLE_CHEATSHEET,
-        "Toggle keyboard cheatsheet",
+        "Keyboard cheatsheet",
         # Alt+/ predates the custom editor (the old widget owned Ctrl+/); kept —
         # rebinding a shipped default costs muscle memory for nothing.
         _chord(K.slash, K.mod_alt),
-        C.TOOLS,
+        C.HELP,
+    ),
+    CommandSpec(
+        CommandId.EXAMPLES,
+        "Examples",
+        _chord(K.e, K.mod_alt),
+        C.HELP,
+        separator_before=True,
     ),
 ]
 

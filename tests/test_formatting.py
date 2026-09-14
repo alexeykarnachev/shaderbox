@@ -268,7 +268,7 @@ def test_every_tab_kind_has_a_formatter() -> None:
 
 def test_the_chord_is_registered_on_the_editor_scope() -> None:
     spec = SPEC_BY_ID[CommandId.FORMAT_BUFFER]
-    assert spec.label == "Format"
+    assert spec.label == "Format code"
 
 
 def test_format_command_is_one_undo_step_and_keeps_the_caret_line(app: Any) -> None:

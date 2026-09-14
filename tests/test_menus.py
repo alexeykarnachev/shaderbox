@@ -24,6 +24,7 @@ from shaderbox.commands import (
     CATEGORY_ORDER,
     COMMAND_SPECS,
     SPEC_BY_ID,
+    CommandCategory,
     CommandId,
     CommandScope,
     command_label,
@@ -36,16 +37,6 @@ pytestmark = pytest.mark.xdist_group("gl_frames_menus")
 _PKG = Path(__file__).resolve().parent.parent / "shaderbox"
 _RIG_POS = (0.0, 0.0)
 _RIG_SIZE = (900.0, 700.0)
-
-_MENU_IN_MENU_OFF: frozenset[CommandId] = frozenset(
-    {
-        CommandId.FOCUS_TAB_DOCUMENT,
-        CommandId.FOCUS_TAB_UNIFORMS,
-        CommandId.FOCUS_TAB_RENDER,
-        CommandId.FOCUS_TAB_SHARE,
-        CommandId.CYCLE_CODE_TAB,
-    }
-)
 
 
 # ---------------------------------------------------------------------------
@@ -152,13 +143,11 @@ def _open_every_menu(app: Any, spy: _ItemSpy) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def test_the_bar_draws_exactly_the_tables_in_menu_specs(
-    app: Any, spy: _ItemSpy
-) -> None:
+def test_the_bar_draws_exactly_the_tables_specs(app: Any, spy: _ItemSpy) -> None:
     """Falsifier: hand-add one `imgui.menu_item` to `menus.draw_menu_bar` -- the label set
     gains one the table does not carry."""
     drawn = set(_open_every_menu(app, spy))
-    expected = {spec.label for spec in COMMAND_SPECS if spec.in_menu}
+    expected = {spec.label for spec in COMMAND_SPECS}
     assert drawn == expected, (
         f"drawn but not in the table: {sorted(drawn - expected)}; "
         f"in the table but not drawn: {sorted(expected - drawn)}"
@@ -174,7 +163,7 @@ def test_every_item_sits_under_its_own_category(app: Any, spy: _ItemSpy) -> None
         imgui.begin_menu_bar()
         if imgui.begin_menu(category):
             for spec in COMMAND_SPECS:
-                if spec.category.value == category and spec.in_menu:
+                if spec.category.value == category:
                     menus.command_menu_item(app, spec.id)
             imgui.end_menu()
         imgui.end_menu_bar()
@@ -186,8 +175,6 @@ def test_every_item_sits_under_its_own_category(app: Any, spy: _ItemSpy) -> None
         per_category[category.value] = list(spy.labels)
 
     for spec in COMMAND_SPECS:
-        if not spec.in_menu:
-            continue
         others = [
             label
             for category, labels in per_category.items()
@@ -199,24 +186,50 @@ def test_every_item_sits_under_its_own_category(app: Any, spy: _ItemSpy) -> None
         )
 
 
-def test_the_view_focus_verbs_are_the_ones_out_of_the_menu() -> None:
-    """M1: the four Focus-tab chords and Cycle code tab -- a menu item for each would
-    duplicate the tab bar under it. Every other spec is in."""
-    off = {spec.id for spec in COMMAND_SPECS if not spec.in_menu}
-    assert off == _MENU_IN_MENU_OFF
-
-
-def test_no_item_is_drawn_for_an_out_of_menu_spec(app: Any, spy: _ItemSpy) -> None:
-    drawn = set(_open_every_menu(app, spy))
-    for command_id in _MENU_IN_MENU_OFF:
-        assert SPEC_BY_ID[command_id].label not in drawn, (
-            f"{command_id} carries in_menu=False and still drew an item"
+def test_every_category_is_a_menu_and_every_spec_has_one() -> None:
+    """The bar's structure IS the table's: one menu per category in enum order, each with
+    at least one item, every spec under exactly one of them. Falsifier: a category with no
+    spec -- an empty menu the bar would still draw."""
+    assert list(CommandCategory) == CATEGORY_ORDER
+    for category in CATEGORY_ORDER:
+        assert any(spec.category is category for spec in COMMAND_SPECS), (
+            f"{category.value} has no command"
         )
 
 
-def test_quit_is_the_one_spec_behind_a_separator() -> None:
+def test_the_groups_are_the_designed_ones() -> None:
+    """`06_command_system.md`'s map, pinned: the first item of every group within a menu
+    carries the separator, and nothing else does. Falsifier: move `separator_before` onto
+    Save -- File splits after New document."""
     behind = {spec.id for spec in COMMAND_SPECS if spec.separator_before}
-    assert behind == {CommandId.QUIT}
+    assert behind == {
+        CommandId.OPEN_PROJECTS,
+        CommandId.QUIT,
+        CommandId.TOGGLE_DOCUMENT_PLAY,
+        CommandId.DELETE_DOCUMENT,
+        CommandId.OPEN_SHADER,
+        CommandId.NEXT_PASS,
+        CommandId.CYCLE_CODE_TAB,
+        CommandId.OPEN_LIB_PICKER,
+        CommandId.CYCLE_CHANNEL_VIEW,
+        CommandId.TOGGLE_COPILOT,
+        CommandId.OPEN_PALETTE,
+        CommandId.EXAMPLES,
+    }
+    # A separator opens a group, never a menu: the first spec of every category has none.
+    first = {
+        next(s for s in COMMAND_SPECS if s.category is c).id for c in CATEGORY_ORDER
+    }
+    assert not first & behind
+
+
+def test_the_table_is_in_menu_order() -> None:
+    """A category's specs are contiguous in the table, in `CATEGORY_ORDER`: the table's
+    order is the bar's, the palette's and the cheatsheet's, so a spec filed out of place
+    would render out of place in all three."""
+    seen = [spec.category for spec in COMMAND_SPECS]
+    contiguous = [c for i, c in enumerate(seen) if i == 0 or seen[i - 1] is not c]
+    assert contiguous == CATEGORY_ORDER, contiguous
 
 
 # ---------------------------------------------------------------------------

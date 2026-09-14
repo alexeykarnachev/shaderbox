@@ -5,6 +5,7 @@ import moderngl
 from imgui_bundle import imgui
 
 from shaderbox.app import App
+from shaderbox.commands import CommandId, command_label
 from shaderbox.completion import (
     PYTHON_SITE,
     CompletionContext,
@@ -35,7 +36,6 @@ from shaderbox.theme import (
     COLOR,
     EDITOR_CURSOR_LINE_ALPHA,
     EDITOR_UNFOCUSED_ALPHA,
-    SIZE,
     SPACE,
     fade,
     kind_slot,
@@ -794,7 +794,7 @@ def draw_chrome(app: App) -> None:
             imgui.same_line()
             imgui.text_colored(COLOR.STATE_OK, "compiled")
         imgui.same_line(spacing=float(SPACE.LG))
-        if standard_button("Open dir", width=float(SIZE.BTN_SM_W)):
+        if standard_button(command_label(CommandId.OPEN_DOCUMENT_DIR)):
             app.open_current_document_dir()
     else:
         imgui.text_colored(COLOR.FG_DIM, tab_label(app, tab))

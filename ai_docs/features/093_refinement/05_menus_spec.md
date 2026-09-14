@@ -42,13 +42,20 @@ copy inside the modals is inside the budget the repo already enforces.
 
 ## Design decisions
 
-**M1. The menu bar is a render of `COMMAND_SPECS`.** One top-level menu per `CommandCategory`
-in `CATEGORY_ORDER`; one item per spec with `in_menu`, in table order; label = `spec.label`,
-hint = `chord_to_str(app.effective_bindings[id])` (`""` for chord `0`); a `separator_before`
-spec draws `imgui.separator()` first. `CommandSpec` gains `in_menu: bool = True` and
-`separator_before: bool = False`; `in_menu` is `False` on `FOCUS_TAB_DOCUMENT`, `_UNIFORMS`,
-`_RENDER`, `_SHARE` and `CYCLE_CODE_TAB`; `separator_before` is `True` on `QUIT`. The
-right-aligned `project <name>` stays. Every `imgui.menu_item` in `ui.py::_draw_menu_bar` goes.
+**M1. The command table is designed as the command system, and the menu bar is a render of
+it.** (Revised on the maintainer's instruction after the first landing: the bar had inherited
+the cheatsheet's grouping, which was never designed.) `06_command_system.md` is the map: six
+categories, one per object a verb acts on — File, Document, Pass, Editor, View, Help — in
+that order; within each, groups opened by `separator_before`, most-used first; labels that
+name their object (`Reset document`, `Next code tab`, `Format code`, `Play/stop script`,
+`Keyboard cheatsheet`); every command in the bar (no `in_menu` — a view-focus verb is in the
+View menu with its chord like any other); `OPEN_DOCUMENT_DIR` (`Open folder`, unbound) added
+so the editor chrome's button is an echo of a command. One top-level menu per
+`CommandCategory` in `CATEGORY_ORDER`; one item per spec, in table order; label =
+`spec.label`, hint = `chord_to_str(app.effective_bindings[id])` (`""` for chord `0`); a
+`separator_before` spec draws `imgui.separator()` first. Chords are unchanged (muscle
+memory). The right-aligned `project <name>` stays. Every `imgui.menu_item` in
+`ui.py::_draw_menu_bar` goes.
 
 **M2. `shaderbox/menus.py` holds the `App`-facing menu primitives; `commands.py` holds the
 pure label.** `menus.py` (imports `App`, `commands`, `ui_primitives`): `draw_menu_bar(app)`,
@@ -186,8 +193,8 @@ the completion popup; the Examples selection persisting across opens; `toggle_co
 
 ## Files touched
 
-- `shaderbox/commands.py` — `in_menu`, `separator_before`, `command_label`; the five `in_menu=False`
-  and the one `separator_before=True`.
+- `shaderbox/commands.py` — the designed table (M1): the enum in menu order, six categories,
+  `separator_before`, `confirm_label`, `command_label`, `OPEN_DOCUMENT_DIR`.
 - `shaderbox/menus.py` (new) — `draw_menu_bar`, `command_menu_item`, `menu_enabled`.
 - `shaderbox/ui.py` — `_draw_menu_bar` and `_hint` go; `menus.draw_menu_bar(app)` called.
 - `shaderbox/ui_primitives.py` — `confirm_menu_item`, `name_input_row`, `InputRowResult`,
@@ -231,8 +238,8 @@ an auto-sized one).
 
 | Guarantee | Test | Kind |
 |---|---|---|
-| M1: the bar is the table | `draw_menu_bar` inside a rig frame: the set of item labels drawn equals `{spec.label for spec in COMMAND_SPECS if spec.in_menu}` and each sits under its category's menu; break: hand-add one `imgui.menu_item` in `menus.py` — the label set gains one | frame-driven |
-| M1: `in_menu` | the five view-focus specs have `in_menu=False` and no item is drawn for them; every other spec has one | pure + frame |
+| M1: the bar is the table | `draw_menu_bar` inside a rig frame: the set of item labels drawn equals `{spec.label for spec in COMMAND_SPECS}` and each sits under its category's menu; break: hand-add one `imgui.menu_item` in `menus.py` — the label set gains one | frame-driven |
+| M1: the designed map | every category has a command and `CATEGORY_ORDER` is the enum's order; the `separator_before` set is exactly the designed groups' first items and no category's first spec carries one; a category's specs are contiguous in the table in `CATEGORY_ORDER`; break: move a separator onto `Save` | pure |
 | M2: `menu_enabled` | EDITOR scope with `active_tab=None` -> `False`, with a tab -> `True`; COPILOT with the chat closed -> `False`; GLOBAL -> `True` while a popup is open | pure |
 | M2: layering | `ui_primitives.py`'s source imports no `App` and no `commands`; `menus.py` imports both | pure |
 | M3: one spelling | an AST walk over `shaderbox/`: no string literal equal to a spec label with a trailing `...`, and no `standard_button` / `primary_button` literal that case-insensitively matches a spec label but is not equal to it (`add pass` vs `Add pass`); break: restore `add pass` | pure |
