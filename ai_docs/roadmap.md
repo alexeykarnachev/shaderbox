@@ -27,17 +27,16 @@ feature; brief points at the superseder).
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
 <!-- As of 2026-09-14, 093 wave 2 has landed and awaits his eyes. -->
-**Next: his hands-on pass over 093 wave 2**, his own first batch fed back (findings 6-11). The
-graph's `open` moved beside the script's on one entry-point row; the open tabs survive a restart
-(`UIAppState.editor_tabs`, restored before the shader-tab fallback, a record dropped when its
-file or document is gone); the feedback glyph is gone; an input pin is no longer a drag source,
-so a wire leaves by its ✕ or Delete and is replaced by a drop from an output; the picture grew
-into half its margin; the last port row gained a bottom pad. Two of those reverse wave-1 rules
-on his verdict and one reverses 092's re-plug -- against every reference the research read, on
-his objection to the ghost wire.
+**Next: his hands-on pass over 093 wave 2**, his first batch fed back (findings 6-11). The
+graph's `open` sits on its own row under the Script row; open tabs survive a restart
+(`UIAppState.editor_tabs`, the active one by path, a record dropped when its file is gone); the feedback glyph is gone; an input pin is no longer a drag source, so a wire leaves
+by its ✕ or Delete and is replaced by a drop from an output; the picture grew into half its
+margin; the last port row gained a bottom pad. Two reverse wave-1 rules on his verdict; the
+input-pin one reverses 092's re-plug against the references that drag a wire off a filled input.
 
 **Awaiting his eyes** (no WM here): all six of wave 2, plus wave 1's four tuning forks, each one
-token -- card width, hover hue, drag lock, a wire menu entry.
+token -- card width, hover hue, drag lock, a wire menu entry. Still unseen: 091's outline, the
+import dialog, the gear's group row.
 
 **Open, unmeasured:** the canvas past twenty passes (the largest real document is six); no
 brake watches copilot cost or a frame going lit to flat (082); the GL thread if the throttle

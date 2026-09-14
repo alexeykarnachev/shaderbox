@@ -1435,8 +1435,8 @@ def _drop(
 ) -> None:
     """A wire released from an output dot: onto a port it is a read, onto empty canvas nothing.
 
-    A drop onto a FILLED port overwrites its source -- `drop_wire` is the one write -- which is
-    how a wire is replaced now that an input pin is not a drag source (093 W2-4).
+    A drop onto a FILLED port overwrites its source, and `drop_wire` is the one write: it is the
+    only way to replace a read, since an input pin is not a drag source (093 W2-4).
     """
     if target is None:
         return

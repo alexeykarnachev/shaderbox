@@ -643,7 +643,7 @@ def rank_layout(
             laid[name] = (x, y)
             y += height + gap_y
         # Center the column once its extent is known: the tallest column is not known until
-        # every column is measured, so the vertical centring is applied in a second pass.
+        # every column is measured, so the vertical centering is applied in a second pass.
         columns[rank] = column
         x += widest + gap_x
     tallest = max(

@@ -268,10 +268,11 @@ class UIAppState(BaseModel):
     copilot_input_h: float = Field(default=48.0, ge=0.0)
 
     # The editor's open tabs and which was active (093 W2-2), mirrored from the live list by
-    # `App.save` and restored on launch. An absent key is an empty list, which falls back to
-    # the current document's shader tab exactly as before the key existed.
+    # `App.save` and restored on launch. The active tab is held by PATH, not by index: a record
+    # whose file is gone is dropped on restore, which shifts every later position. An empty
+    # list restores nothing and the launch falls back to the current document's shader tab.
     editor_tabs: list[TabRecord] = []
-    active_tab_index: int = 0
+    active_tab_path: str = ""
 
     # Persisted UI layout prefs (the App holds the live copies; synced at load/save).
     # NOT copilot_focused — that one is transient-by-design.

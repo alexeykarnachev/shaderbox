@@ -32,6 +32,9 @@ _BRITISH_WORDS: tuple[str, ...] = (
     "behaviour",
     "favourite",
     "centre",
+    # The participle needs its own entry: the pattern anchors at the word's start only, so
+    # `\bcentre` never reaches `centring`.
+    "centring",
     "neighbour",
 )
 _BRITISH = re.compile(r"\b(?:" + "|".join(_BRITISH_WORDS) + r")", re.IGNORECASE)

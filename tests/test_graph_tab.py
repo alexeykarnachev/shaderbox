@@ -17,6 +17,7 @@ from imgui_bundle import imgui
 
 from shaderbox.app import App
 from shaderbox.commands import CommandId
+from shaderbox.editor_types import TabRecord
 from shaderbox.formatting import formatter_for
 from shaderbox.pass_graph import PassSource
 from shaderbox.paths import shader_lib_root
@@ -339,7 +340,7 @@ def test_the_saved_tabs_reopen_on_a_fresh_app(app: Any, tmp_path: Any) -> None:
     app.save()
     records = app.app_state.editor_tabs
     assert [r.path for r in records] == [str(p) for p in saved_paths]
-    assert app.app_state.active_tab_index == app.active_tab_index
+    assert app.app_state.active_tab_path == str(shader_path)
 
     project_dir = app.project_dir
     app.shutdown()
@@ -350,6 +351,90 @@ def test_the_saved_tabs_reopen_on_a_fresh_app(app: Any, tmp_path: Any) -> None:
         assert fresh.active_tab is not None
         assert fresh.active_tab.path == shader_path
         assert fresh.tab_select_pending is True
+    finally:
+        fresh.shutdown()
+
+
+def test_the_active_tab_comes_back_by_path_not_by_position(
+    app: Any, tmp_path: Any
+) -> None:
+    """W2-2: the active tab is held by PATH, because a dropped record shifts every later one.
+
+    Four records with the FIRST one's file gone, and the tab he was looking at is the second.
+    A saved index of 1 lands on the third file once the first is dropped -- the file that took
+    that position -- so this asserts the identity instead.
+
+    Falsifier: restore by a clamped index and the active tab is `c`, not `b`.
+    """
+    document_id, document = _chain(app)
+    doomed = document.passes["a"].source.path
+    records = [
+        TabRecord(path=str(doomed), kind="shader", document_id=document_id),
+        TabRecord(
+            path=str(document.passes["b"].source.path),
+            kind="shader",
+            document_id=document_id,
+        ),
+        TabRecord(
+            path=str(document.passes["c"].source.path),
+            kind="shader",
+            document_id=document_id,
+        ),
+        TabRecord(
+            path=str(app.paths.graph_json_for(document_id)),
+            kind="graph",
+            document_id=document_id,
+        ),
+    ]
+    app.app_state.editor_tabs = records
+    app.app_state.active_tab_path = records[1].path
+    app.app_state.save(app.paths.app_state_file)
+    project_dir = app.project_dir
+    app.shutdown()
+    # The pass whose tab was first is deleted between the sessions, which is what makes the
+    # index shift: its record is dropped and every later tab moves down one.
+    doomed.unlink()
+
+    fresh = App(project_dir=project_dir)
+    try:
+        assert [t.path.name for t in fresh.editor_tabs] == [
+            "b.frag.glsl",
+            "c.frag.glsl",
+            "graph.json",
+        ], fresh.editor_tabs
+        assert fresh.active_tab is not None
+        assert fresh.active_tab.path.name == "b.frag.glsl", fresh.active_tab
+        assert fresh.active_tab_index == 0
+    finally:
+        fresh.shutdown()
+
+
+def test_an_active_path_nothing_carries_falls_to_the_first_tab(app: Any) -> None:
+    # The other half: a saved active path whose tab did not survive selects the first restored
+    # tab rather than leaving the index out of range. Falsifier: return -1 from the lookup and
+    # `active_tab` reads the LAST tab through Python's negative indexing.
+    document_id, document = _chain(app)
+    app.app_state.editor_tabs = [
+        TabRecord(
+            path=str(document.passes["b"].source.path),
+            kind="shader",
+            document_id=document_id,
+        ),
+        TabRecord(
+            path=str(app.paths.graph_json_for(document_id)),
+            kind="graph",
+            document_id=document_id,
+        ),
+    ]
+    app.app_state.active_tab_path = "/nowhere/at/all.glsl"
+    app.app_state.save(app.paths.app_state_file)
+    project_dir = app.project_dir
+    app.shutdown()
+    fresh = App(project_dir=project_dir)
+    try:
+        assert fresh.active_tab_index == 0
+        assert fresh.active_tab is not None
+        assert fresh.active_tab.path.name == "b.frag.glsl"
     finally:
         fresh.shutdown()
 

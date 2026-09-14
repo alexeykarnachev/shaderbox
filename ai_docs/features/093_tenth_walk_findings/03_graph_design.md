@@ -693,8 +693,9 @@ says so in a source comment.
 
 **The "Re-plug" row is REVERSED by wave 2 (finding 9).** An input pin is not a drag source: its
 press moves the node, and a wire is removed by its ✕ or Delete and replaced by a drop from an
-output. This goes against the convergent schema recorded below -- every reference detaches by
-dragging the wire off its input -- because his objection is to the ghost, which does not say
+output. This goes against the convergent schema recorded below -- every reference that draws a wire from a filled input (imgui-node-editor, litegraph, xyflow, Blender; imnodes behind an opt-in per-pin flag)
+detaches by dragging the wire off it; Houdini is click-based and ImNodeFlow has no such gesture
+-- because his objection is to the ghost, which does not say
 that releasing removes the read. Trigger to revisit: he asks for drag-to-detach after living
 with the ✕. Every other row here stands.
 

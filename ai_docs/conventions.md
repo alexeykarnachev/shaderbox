@@ -859,8 +859,9 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   beats a later one, and the ports must keep declaring nothing or the drop target dies. An
   INPUT PIN is not a drag source at all: its press moves the node, filled or not, so a wire
   leaves only by that badge or the Delete key and is replaced by dropping a new one from an
-  output onto the port (`drop_wire` overwrites). That goes against every reference the research
-  read -- all of them detach by dragging the wire off its input -- and is the maintainer's call
+  output onto the port (`drop_wire` overwrites). That goes against the references that draw a
+  wire from a filled input (imgui-node-editor, litegraph, xyflow, Blender; imnodes behind an
+  opt-in flag), which detach by dragging it off, and is the maintainer's call
   on the ghost wire, which does not say that releasing removes the read; revisit if he asks for
   drag-to-detach after living with the badge. A
   single CLICK on a node chooses the output and nothing else (`App.choose_output`); only a

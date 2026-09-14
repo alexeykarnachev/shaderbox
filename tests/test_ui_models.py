@@ -70,14 +70,14 @@ def test_the_open_tabs_round_trip_through_the_app_state(tmp_path: Path) -> None:
     # Falsifier: drop the field from `UIAppState` and the loaded state carries `[]`.
     state = UIAppState()
     assert state.editor_tabs == []
-    assert state.active_tab_index == 0
+    assert state.active_tab_path == ""
     state.editor_tabs = [
         TabRecord(path="/p/doc/passes/main.frag.glsl", kind="shader", document_id="d1"),
         TabRecord(path="/p/doc/scripts/script.py", kind="script", document_id="d1"),
         TabRecord(path="/p/doc/graph.json", kind="graph", document_id="d1"),
         TabRecord(path="/lib/sdf.glsl", kind="lib"),
     ]
-    state.active_tab_index = 2
+    state.active_tab_path = "/p/doc/graph.json"
     state.save(tmp_path / "app_state.json")
     loaded = UIAppState.load(tmp_path / "app_state.json")
     assert [(r.path, r.kind, r.document_id) for r in loaded.editor_tabs] == [
@@ -86,7 +86,7 @@ def test_the_open_tabs_round_trip_through_the_app_state(tmp_path: Path) -> None:
         ("/p/doc/graph.json", "graph", "d1"),
         ("/lib/sdf.glsl", "lib", ""),
     ]
-    assert loaded.active_tab_index == 2
+    assert loaded.active_tab_path == "/p/doc/graph.json"
 
 
 def test_one_malformed_tab_record_costs_only_itself(tmp_path: Path) -> None:
@@ -102,7 +102,7 @@ def test_one_malformed_tab_record_costs_only_itself(tmp_path: Path) -> None:
                     {"path": "/b", "kind": "not_a_kind"},
                     {"path": "/c", "kind": "lib"},
                 ],
-                "active_tab_index": 1,
+                "active_tab_path": "/c",
                 "global_target_fps": 90,
             }
         )

@@ -413,7 +413,8 @@ def _draw_entry_points(app: App) -> None:
     # The document's entry-points (049, 093 W2-1): SCRIPT (CPU script) and the pass GRAPH, each
     # with an `open` that summons its tab into the editor (the document panel is "about this
     # document"; the tab bar is the editor's own state — `open` is a summoner, not a duplicate).
-    # Both sit on ONE row, so the two summoners are side by side. The whole-document PLAY/STOP
+    # One row each, the graph's directly under the script's, so the two summoners read as one
+    # group without a `same_line` that would clip at the narrow panel. The whole-document PLAY/STOP
     # toggle lives with the script (its true owner — it freezes/resumes the script's driven
     # uniforms; the script keeps ticking). An accent tick marks whichever entry-point is the
     # editor's active tab. Frozen mid-copilot-turn (a write races the reload).
@@ -426,7 +427,7 @@ def _draw_entry_points(app: App) -> None:
     imgui.begin_disabled(app.copilot_turn_active)
 
     # No section caption: a document has exactly one script (048) and one graph, so a heading
-    # over them said the word twice and cost a line the panel could not spare.
+    # over them would say the word twice and cost a line the panel cannot spare.
     _entry_row_label(script_active, "Script")
     open_tooltip = (
         "Open the document script" if present else "Create the document script"
@@ -446,7 +447,11 @@ def _draw_entry_points(app: App) -> None:
         ):
             app.set_document_all_stopped(document_id, playing)
 
-    imgui.same_line(spacing=float(SPACE.LG))
+    # Its OWN row, not a `same_line` beside the script's: at the narrow split the settings child
+    # gives the row ~194px of content and the pair needs ~276, and `same_line` clips rather than
+    # wraps -- the graph's `open` would be the first thing to vanish. The gap is the tight
+    # within-group one, since the two summoners are one group and not two sections.
+    imgui.dummy((0, float(SPACE.SM)))
     _entry_row_label(graph_active, "Graph")
     if standard_button("open##entry_graph"):
         app.open_graph_for(document_id, focus_editor=True)

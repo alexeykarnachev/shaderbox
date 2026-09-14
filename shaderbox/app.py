@@ -1481,8 +1481,16 @@ class App:
             lambda path: path.exists(),
         )
         if self.editor_tabs:
-            self.active_tab_index = max(
-                0, min(self.app_state.active_tab_index, len(self.editor_tabs) - 1)
+            # By PATH: a dropped record shifts every later position, so a saved index would
+            # select the tab that took its place.
+            active_path = Path(self.app_state.active_tab_path)
+            self.active_tab_index = next(
+                (
+                    i
+                    for i, tab in enumerate(self.editor_tabs)
+                    if tab.path == active_path
+                ),
+                0,
             )
             self.tab_select_pending = True
 
@@ -2189,7 +2197,8 @@ class App:
         self.app_state.is_copilot_open = self.is_copilot_open
         self.app_state.copilot_layout = self.copilot_layout
         self.app_state.editor_tabs = tab_records(self.editor_tabs)
-        self.app_state.active_tab_index = self.active_tab_index
+        active = self.active_tab
+        self.app_state.active_tab_path = "" if active is None else str(active.path)
 
         self.integrations_store.save()
         self.app_state.save(self.paths.app_state_file)

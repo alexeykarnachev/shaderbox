@@ -1,8 +1,7 @@
 # 093 — Tenth walk findings
 
-Status: **wave 2 in progress (his first hands-on batch, findings 6-11); wave 1 landed (f012074,
-ccdf6d1).**
-maintainer's hands-on pass, whose findings open wave 2.**
+Status: **waves 1 and 2 landed and reviewed (f012074, ccdf6d1; 1974aa0 and its fix commit); next
+is his second hands-on pass, whose findings open wave 3.**
 Five findings filed (`00_findings.md`). The maintainer's verdict on the shipped canvas ("feels
 very cheap") sent the walk into research first: `02_research_brief.md` is the brief, `research/`
 holds six area reports against primary sources, `03_graph_design.md` is the design record
@@ -393,21 +392,25 @@ Where the record's "Code" paragraphs and this spec differ, this spec wins, for t
 **Wave 2: his first hands-on batch, findings 6-11 (2026-09-14).** Six decisions, one wave,
 one commit, two post-implementation reviewers; two of them reverse wave-1 rules and say so.
 
-- **W2-1 (finding 6). The graph's `open` sits beside the Script row's.** `_draw_entry_points`
-  draws, on the Script row after the play/stop toggle and a `SPACE.LG` gap,
+- **W2-1 (finding 6). The graph's `open` sits on its own row directly under the Script row.**
+  `_draw_entry_points` draws, under the Script row at the row spacing that row uses,
   `_entry_row_label(graph_active, "Graph")` + `standard_button("open##entry_graph")` (tooltip
-  `"Open the pass graph"`, same handler). The Passes row goes back to the plain
+  `"Open the pass graph"`, same handler). Not on the Script row itself: at the narrow panel
+  (`_APP_PANEL_MIN_W` minus the grid) the settings child offers about 194px and the combined row
+  needs about 276, and `same_line` clips rather than wraps (measured). The Passes row goes back to the plain
   `small_caption(app.font_12, "Passes")` over the strip with no tick and no button; T5's
   entry-row shape moves with the button. `_entry_tab_active` stays the one predicate.
 - **W2-2 (finding 7). Open tabs survive a restart.** `UIAppState` gains `editor_tabs:
-  list[TabRecord]` and `active_tab_index: int = 0`, where `TabRecord` (in `editor_types.py`,
+  list[TabRecord]` and `active_tab_path: str = ""`, where `TabRecord` (in `editor_types.py`,
   a pydantic model beside `EditorTab`: `path: str`, `kind: EditorTabKind`, `document_id: str`)
   is the persisted shape of one tab. `App.save` mirrors the live list through a pure
   `tab_records(tabs) -> list[TabRecord]`; `App._init`, after the documents are loaded and
   before today's `ensure_shader_tab` fallback, restores through a pure
   `tabs_from_records(records, document_ids, exists) -> list[EditorTab]` that drops a record
   whose path no longer exists or whose `document_id` names no loaded document (a lib tab has
-  `""` and passes), then sets `active_tab_index` clamped to the list and `tab_select_pending`;
+  `""` and passes), then sets `active_tab_index` to the restored tab whose path equals the
+  persisted `active_tab_path: str` (else 0 -- a positional index would land on the wrong file
+  once an earlier record is dropped) and `tab_select_pending`;
   the fallback runs only when nothing was restored. Sessions are not restored -- the draw
   creates one lazily as it does for any tab today. No migration: an absent key is the default
   `[]`; the sandbox's `app_state.json` picks the key up as drift and is `git add`ed.
@@ -428,7 +431,8 @@ one commit, two post-implementation reviewers; two of them reverse wave-1 rules 
   6px and asserts `node_drag` is set, `wire_drag` is `None`, and no write followed.
 - **W2-5 (finding 10). The picture grows into the margin.** `GRAPH_THUMB 96 -> 116` and
   `GRAPH_PAD 8 -> 4`: the side gap goes 20 -> 10 and the top gap 8 -> 4, both halved as asked.
-  The name and label budgets follow the tokens (128 and 126) and the ellipsis test's slack
+  The name and label budgets follow the tokens (128 and 122 -- the label formula subtracts the
+  dot, its inset and `GRAPH_PAD`) and the ellipsis test's slack
   assertions still hold.
 - **W2-6 (finding 11). A bottom margin under the last port row.** `SIZE.GRAPH_PORT_BOTTOM: int
   = 7`, added to `node_size` when the card has ports, so the last label's text bottom clears
@@ -635,3 +639,16 @@ card); the `ast` lock gate shown red on a commented token where the old text win
 green; the spelling roster and sweep in one commit with zero hits left outside the gate's
 exclusions; `make gates` exit 0 with the smoke run. Wave 1 is closed; the maintainer's hands-on
 pass is the next input.
+
+**Wave 2 post-implementation round 1 (2026-09-14): two reviewers on opus -- correctness PARTIAL
+(one defect, two fragile), fidelity PARTIAL (seven text rows); gate exit 0 with the smoke run.**
+Reports: `reviews/post_w2_code_correctness.md`, `reviews/post_w2_fidelity_conventions.md`.
+Fixed in the follow-up commit: the Graph label and button on the Script row clipped at the
+narrow panel (own row under it, W2-1 amended); the active tab persisted by position landed on
+the wrong file once an earlier record was dropped (by path, W2-2 amended); two comments
+narrating the change; `centring` added to the spelling roster with its one live site. Corrected
+here: the spec's Status fragment, the label budget (122, an arithmetic slip), and the research
+readout behind W2-4, which had overstated the convergence -- Houdini is click-based, imnodes
+opt-in, ImNodeFlow without the gesture; the claim now names the references that draw a wire
+from a filled input. Rejected: a value pin on `GRAPH_THUMB` / `GRAPH_PAD` (tuning values, his
+eyes). The banner regained wave 1's "still unseen" list.
