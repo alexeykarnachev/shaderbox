@@ -389,3 +389,308 @@ edit.
 ---
 
 VERDICT: PARTIAL
+
+---
+
+# Round 2
+
+Re-read `01_spec.md` at commit `3f75d78` in full from disk. Baseline re-run before reviewing:
+`uv run pytest tests/test_graph_view.py tests/test_theme.py tests/test_uniforms_tab.py
+tests/test_pass_settings_layout.py -q` → `26 passed in 2.37s`. Two new probes (`probe7`,
+`probe8`) and two `app`-fixture experiments were run; both experiment files were deleted after
+reading.
+
+## Part 1 — closure of the eleven round-1 findings
+
+| # | round-1 finding | closing text | verdict |
+|---|---|---|---|
+| 1 | `GRAPH_HOVER = blue_b` is an accent primary | **S1**: "For G-Q4 the record's `blue_b` is refused by the code: `blue_b` IS the `blue` accent preset's primary (`theme._ACCENTS["blue"]`) … the record's G6 sentence 'is not an accent primary' is wrong. … the hover takes the record's own fallback, a neutral: `COLOR.GRAPH_HOVER = _P["fg_0"]` … with the invariant `GRAPH_HOVER not in _accent_primaries`". **S12**: "the import-time invariants gain `GRAPH_HOVER not in _accent_primaries` (the one that bites -- it is red for `blue_b`)". **Theme row**: "Break to try: `blue_b` -- the accent clause goes red". | CLOSED |
+| 2 | the ✕ does not win the overlap by submission order | **S6**: "Submission order cannot make it win: an item without `allow_overlap` submitted earlier beats a later overlapper (measured), the ports declare nothing so the drop target keeps working, and a short wire's midpoint lands inside its consumer port's 7px box. So the ✕ is not an item." | CLOSED — the false premise is gone and the ports keep their no-flag state, so `test_a_wire_dropped_on_a_drawn_port_writes_that_port` is untouched. The replacement mechanism carries two new defects of its own (findings 12 and 13 below). |
+| 3 | the wire pass's frame position was unstated | **S3**: "The wire distance pass (G4) runs AFTER the node/port/output button loop and BEFORE the background press is acted on (S4), so this frame's hover is fully known at the point a selection is decided". **S4**: "acted on AFTER the node loop and the wire pass". Title now reads "one frame late for the DRAW, same-frame for the selection". | CLOSED |
+| 4 | S5's falsifier could not go red | **S5**: "the group-name prompt is a plain `begin_popup`, for which `app.any_popup_open()` is False and `is_window_hovered(child_windows)` is already False, so a Delete typed into it is refused by `hovered` before `is_any_item_active` is consulted; the clause `not is_any_item_active()` is what refuses the key while a press is HELD on the canvas … and that is its falsifier." Two rows now exist: the held-press row carries "Break to try: drop `not is_any_item_active()` -- the held case writes", and the prompt row is relabelled "Behaviour pin; the clause it exercises is `hovered`". | CLOSED — and the relocation of the read (S5's "AFTER the hit-test section and the drag blocks") is a second correction I had not asked for, justified by its own measurement. |
+| 5 | `tab_label` falls through to `pass_name_of(graph.json)` | **T1**: "Two edits are REQUIRED for the claim to hold, not implied: `tab_label` gains a `"graph"` branch returning `f"{document_name} (graph)"` before the multi-pass fallthrough (which would call `pass_name_of` on `graph.json`)". Files touched now reads "`tab_label`'s graph branch". | CLOSED |
+| 6 | `get_current_session()` reachable on a graph tab | **T1**: "`widgets/uniform.py::_locate_uniform_declaration` switches from the creating `app.get_current_session()` to `get_current_session_if_exists()` (it already handles `None` on both branches) -- it is the one creating call site … it would otherwise open a GLSL editor session over `graph.json` and make the graph tab dirty-capable." The T1-T6 row gains "no `editor_sessions` key at the graph path after the Uniforms tab has been focused for those frames". | CLOSED — the fix, the reason and a gate. |
+| 7 | S8's control-polygon hull over-frames | **S8**: "by the curve, not its control polygon … Framing the four control points would over-frame it (on the spec's own three-column chain the hull inflates the fitted width from 605 to 957px and drops the fit zoom to 0.84 where the curve needs none), so `_fit` … frames the union of the nodes' bounding box and, per wire, the 25 points `bezier_point(..., i / 24)`". | CLOSED — construction verified below; its test row does not yet bite (finding 14). |
+| 8 | S4 lacked `is_item_hovered()`; same-frame move+release | **S4**: "`is_item_deactivated() and is_item_hovered() and is_mouse_released(left)` … `is_item_hovered()` is there because `is_item_deactivated()` is also True when the release lands off the item. A move and a release arriving in ONE frame read as a click (imgui resets the drag before the frame runs); today's press-time click does the same, and the frame-driven tests keep the move and the release in separate frames." The Verification preamble repeats the rule as a standing mechanic. | CLOSED |
+| 9 | the smoke tail reads the current session | **T6**: "The tail's `get_current_session_if_exists() is not None` assertion is about the tab ACTIVE at the end, and it holds because frame 48's `set_current_document_id(canary_id)` runs `_on_current_document_changed` -> `ensure_shader_tab`, which focuses a shader tab; a later edit to frames 47 or 48 must keep that true." | CLOSED |
+| 10 | G18 vs S9: two `_draw_wire` signatures | **S9**: "(G18's rule kept; G18's seven-parameter signature superseded, see the Refinements table)", and the table gains the row "G18: `_draw_wire(dl, xf, a, b, col, halo_col, halo_alpha)` (and G1's `..., hovered, selected`) → S9: `_draw_wire(dl, points, col, halo_col)`". | CLOSED |
+| 11 | T5's caption-widget change was unflagged | **T5**: "draws `_entry_row_label(graph_active, "Passes")` -- a VISUAL change from today's `small_caption(app.font_12, "Passes")`: the label moves to the ambient font with frame-padding alignment". The maintainer's-eyes list gains "the Passes row's label in the ambient font with its tick", and a T5 row pins the predicate. | CLOSED |
+
+Eleven of eleven CLOSED. No round-1 finding is still open.
+
+## Part 2 — the new and rewritten decisions
+
+### S15 — GAP: the Uniforms panel does not follow the clicked node when an explicit pin is set
+
+The split itself is safe for every caller. `pick_pass` is `ensure_shader_tab` + the
+`set_output_pass` half (`app.py:1883-1892`), and the five production callers that keep it are
+`create_pass_from_draft` (`app.py:1154`), `step_output_pass` (`app.py:2027`),
+`pass_list.py:166`, `uniform.py:339`, and the canvas's `_double_click` (`pass_graph.py:1227`).
+Each wants the tab to come forward, so leaving them on `pick_pass` is right. The copilot calls
+neither verb (`grep -rn 'pick_pass\|choose_output\|set_output_pass' shaderbox/copilot/` → no
+hits), so the spec's phrase "unchanged for the strip, the uniforms row and the copilot" names one
+surface that was never a caller and omits the two `app.py` internal ones — cosmetic, both keep
+`pick_pass`.
+
+The panel claim is where it breaks. S15 asserts: "The Uniforms panel follows: `panel_pass` falls
+to the output when no shader tab of the document is active, so the clicked node's uniforms are the
+ones shown." `panel_pass` (`app.py:743-761`) is a three-rung chain, and rung 1 is an explicit
+pin that outranks the output:
+
+```python
+chosen = ui_document.ui_state.panel_pass
+if chosen and chosen in document.passes:
+    return document.passes[chosen]
+```
+
+Today a canvas click reached that pin, because `pick_pass` → `ensure_shader_tab` →
+`self.set_panel_pass(document_id, "")` (`app.py:1568`), whose own comment says "Opening a pass in
+the editor is itself a pick, so it retires an older explicit one (083)". `choose_output` alone
+does not clear it. Measured on the `app` fixture:
+
+```
+after pick_pass('b'):      panel_pass ui_state = ''    panel_pass resolves to b
+after choose_output('c'):  panel_pass ui_state = 'a'   panel_pass resolves to a
+document.graph.output = c
+VERDICT: panel_pass follows the clicked node? False
+```
+
+With no pin the claim holds exactly (`no pin, no shader tab: output = c  panel_pass -> c`), so the
+gap is scoped to the explicit-pin case — but that pin is **persisted**
+(`ui_models.py:177 panel_pass: str = ""`, and `tabs/uniforms.py:35-38`: "picking one here pins it
+until a shader tab is opened, which retires the pick"). So a user who once used the Uniforms
+tab's pass row gets a canvas whose clicks change the output while the panel stays put, across
+restarts. That is a behaviour regression the split introduces, not a pre-existing one.
+
+Fix: `choose_output` calls `set_panel_pass(document_id, "")` — which also keeps the 083 rule
+("a pick retires an older explicit one") true of the canvas's pick, since choosing the output IS
+a pick. One line, and it deserves a row: with a pin set, a canvas click leaves
+`ui_state.panel_pass == ""`.
+
+### S6 as rewritten — GAP: the mid-frame latch is invisible to this frame's `blocked`, and the press still reaches the background item
+
+`press_blocked` has exactly four sites (`graph_state.py:91`, `pass_graph.py:846, 850, 856`), and
+the reconcile block is:
+
+```python
+840  mouse_down = imgui.is_mouse_down(imgui.MouseButton_.left)
+844  if not mouse_down:
+846      view.press_blocked = False
+847  elif frozen:
+850      view.press_blocked = True
+856  blocked = frozen or view.press_blocked
+```
+
+`blocked` is a **local**, computed once at `:856`, before the hit-test section. S6 writes
+`view.press_blocked = True` after that, so `blocked` stays False for the rest of that frame at
+all four gesture-start gates (`:946` band, `:973` node drag, `:1013` port press, `:1046` output
+dot). Two consequences, one benign and one not.
+
+**Benign.** All four gates also require `is_mouse_dragging(left, 4.0)`, which probe7 shows is
+False on the press frame:
+
+```
+PRESS frame:            {'bg_clicked': True,  'bg_active': True,  'drag4': False, 'mouse_clicked': True}
+held, frame 2:          {'bg_clicked': False, 'bg_active': True,  'drag4': False}
+moved 40px while held:  {'bg_clicked': False, 'bg_active': True,  'drag4': True}
+```
+
+`drag4` first turns True on a later frame, by which time `blocked` has been recomputed from the
+latched `press_blocked` and correctly suppresses everything. So "keeps this press from becoming …
+a port grab, a band" holds, and the stale local is harmless for those.
+
+**Not benign, two claims.**
+
+1. "**The check runs FIRST in the hit-test section, before the background button, so the press is
+   consumed before any item reads it.**" Ordering a hand test first does not stop imgui routing
+   the press to an item — the ✕ is not an item, so nothing is consumed. probe7 shows
+   `bg_clicked: True` on that same press frame, and the background's selection-clear at `:938`
+   reads no `blocked`:
+   ```python
+   938  if imgui.is_item_clicked(imgui.MouseButton_.left) and not io.key_shift:
+   939      view.selection.clear()
+   ```
+   So a ✕ click on a wire over empty canvas also clears the node selection. Minor, but the
+   sentence as written is false and the `:938` line needs the `bg_pressed` treatment S4 gives the
+   rest of that button (defer it, gate it on `not blocked` or on the ✕ not having fired).
+
+2. "**a node click**" is listed among what the latch prevents. It is not, because S4 moved the
+   node click to the **release** frame and `:844-846` clears the latch at the top of that frame,
+   before `:856` recomputes `blocked`. And where a wire runs under a card — which G15 says is the
+   normal case — the node, not the background, takes the press (probe8, a bg with
+   `allow_overlap` and a node submitted after it, covering the point):
+   ```
+   PRESS over the node:  {'bg_active': False, 'nd_hov': True, 'nd_active': True,  'nd_deact': False, 'nd_clicked': True}
+   RELEASE:              {'bg_active': False, 'nd_hov': True, 'nd_active': False, 'nd_deact': True,  'rel': True}
+   ```
+   So on the release frame S4's gate is `is_item_deactivated()` True, `is_item_hovered()` True,
+   `is_mouse_released()` True, `node_drag`/`wire_drag` None, `not blocked` True → `_click` runs
+   and `choose_output` fires. **One ✕ click on a wire crossing a card both unwires the sampler and
+   changes the document's output pass.**
+
+   Fix: the latch must survive the release frame, or the ✕ must set a one-shot the node click also
+   reads. The smallest correct shape is to clear `press_blocked` on the release frame only *after*
+   the gesture gates have run, or to have the ✕ set a separate `press_consumed` flag that
+   `:844-846` does not touch and the node-click gate reads. Either way the verification row
+   ("assert … that the press started no band and no drag (`band_anchor is None`, `node_drag is
+   None`)") does not cover it: add `set_output_pass` was not called, and `document.graph.output`
+   is unchanged.
+
+The channel half of S6 is sound and was already probed in round 1 (a 5-way split held open across
+item submissions and a `begin_popup` merges in index-buffer order `ff0000ff → ff00ff00 →
+ffffffff` for channels 1/2/4).
+
+### S1's `fg_0` — SOUND
+
+Probed against every cue drawn on the canvas and against the theme block:
+
+```
+fg_0                       (0.9843, 0.9451, 0.7804, 1.0)
+in accents?                False        == SELECT?  False
+== STATE_ERROR?            False        == GRAPH_EDGE? False
+in GROUP_TINTS?            False
+FG_TITLE == fg_0           True
+GRAPH_EDGE == FG_DIM       (0.5725, 0.5137, 0.4549, 1.0)
+```
+
+All four proposed invariants pass, `fg_0` is not in `_ACCENTS` under any accent, and it is a clear
+brightness step above the `gray`/`FG_DIM` wire and the `FG_MUTED` dots at 0.35/0.55 alpha, which
+is what G-Q4's fallback asked for.
+
+The `FG_TITLE` identity is **a legitimate reuse of a neutral, not a collision the theme block
+should refuse.** `FG_TITLE` has exactly one canvas use — `pass_graph.py:695`, the node's name
+text inside the card — while `GRAPH_HOVER` is a border **inset** (G6) and a wire stroke, so the
+two never share a pixel. The block's own rule permits precisely this: "a FIXED hue … may not equal
+any accent preset's primary, nor another fixed hue **it shares spatial context with**"
+(`theme.py:219-221`), and its cited precedent for allowing a share is the same shape — "State
+colors are status TEXT, not nested outlines, so they may share an accent hue" (`:225-227`). An
+invariant `GRAPH_HOVER != FG_TITLE` would be the domain-narrowing kind: it would forbid the one
+safe neutral the palette has left, since S1 already establishes every chromatic hue is taken.
+
+### S3/S4's pinned positions — SOUND, no read precedes its write
+
+The sequence as now written:
+
+```
+ 1  press_blocked reconciled; blocked computed (LOCAL, :840-856)
+ 2  port_rects = {}, canvas_rect written
+ 3  _build_view, _fit, wheel zoom
+ 4  channels_split(5); draw wires (reads last frame's hovered_*, selected_wire, x_rect written here), draw nodes (node_order)
+ 5  S6: the ✕ hand hit-test on is_mouse_clicked inside x_rect        -> writes press_blocked
+ 6  background button; bg_pressed = is_item_clicked
+ 7  node/port/output loop, sorted per S7                             -> node_hovered, drop_target, node_order; node CLICK on release
+ 8  S3: the wire distance pass                                       -> writes hovered_node/port/out/wire (this frame)
+ 9  S4: act on bg_pressed                                            -> reads this frame's hovered_wire, node_hovered
+10  drag blocks (node_drag commit, wire_drag drop, band release)
+11  guides
+12  S5: the Delete read
+13  channels_merge(); _canvas_menu; _group_prompt
+```
+
+Field by field: `x_rect` written at 4, read at 5 — after. `bg_pressed` written at 6, read at 9 —
+after. `node_hovered` written at 7, read at 9 — after. `hovered_wire` written at 8 and read at 9
+for the selection — after; its read at 4 is last frame's, which S3 now names as intentional for
+the draw only. `node_order` is read at 4 and at 7, so the sort must happen once before 4, which
+S7 states ("One list, sorted once per frame, used by both loops"). The only stale read in the
+whole sequence is `blocked` against a `press_blocked` written at step 5 — S6's defect above, not
+S3/S4's.
+
+One edge checked and safe: on a frame where S2's `revalidated_wire` clears `selected_wire`, step 4
+draws no ✕ and writes `x_rect = None` (the spec says "`None` otherwise"), so step 5's
+inside-the-rect guard skips and there is no `unwire(*None)`.
+
+### S8's sampled-curve fit — SOUND (construction); GAP (its verification row's break does not bite)
+
+The construction is exact enough. 25 points at `i/24` against the true curve sampled at 2001
+points, on the spec's own three-column chain with a backward read:
+
+```
+sampled@24  union=(-29.4, 0.0, 541.4, 132.0)  w=602.8  fitzoom(800x600)=1.0000
+true(2000)  union=(-30.3, 0.0, 542.3, 132.0)  w=604.6  fitzoom(800x600)=1.0000
+ctrl pts    union=(-206.6, 0.0, 718.6, 132.0) w=957.2  fitzoom(800x600)=0.8358
+max under-coverage per side (px): 0.916  0.0  0.916  0.0   (against a 16px _FIT_MARGIN)
+```
+
+Under-coverage is 0.92px at worst, absorbed by the margin, and the sampled fit recovers the full
+zoom the hull threw away. The spec's own figures (605 → 957px, 0.84) reproduce exactly.
+
+**But the row's named break is green.** The row is "`_fit` with `avail = (800, 600)` … every wire's
+25 sampled canvas-space curve points lie inside it. Break to try: fit the nodes alone -- the
+backward wire's bulge lands outside." At 800×600 the zoom clamps to 1.0 and the pan centres the
+content, so the visible window (-144 … 656 in canvas x) swallows the 21px bulge under **both**
+implementations:
+
+```
+     avail |        correct (nodes+curve) |          broken (nodes only)
+(800, 600) | zoom=1.000 outside=0         | zoom=1.000 outside=0
+(600, 400) | zoom=0.995 outside=0         | zoom=1.000 outside=0
+(560, 300) | zoom=0.929 outside=0         | zoom=1.000 outside=4
+(520, 200) | zoom=0.863 outside=0         | zoom=0.956 outside=8
+(460, 150) | zoom=0.763 outside=0         | zoom=0.846 outside=8
+```
+
+Fix: one number — the row needs an `avail` at or below `(560, 300)`. At `(520, 200)` the break
+puts 8 of 75 points outside, which is unambiguous.
+
+### T2's guard ordering — SOUND
+
+`code.py:871-882` is `_draw_tab_row(app)` → `tab = app.active_tab` → the guard
+`if tab is None or current_path is None or ui_document is None: return`, and `ui_document` is
+keyed on `app.current_document_id` (`:873`), not on `tab.document_id`. So a graph tab of a
+non-current document — or any tab while every document is deleted and the id is `""` — would hit
+that guard and never draw. T2's revision ("right after the tab row and **before** the
+`ui_document is None` guard (a graph tab of a non-current document must still draw)") is exactly
+right, and the branch is safe on its own: `pass_graph.draw` guards its own id
+(`pass_graph.py:791-793`, `ui_document = app.ui_documents.get(document_id); if ui_document is
+None: return`), and testing "the active tab's kind is `graph`" implies the tab is not None.
+
+T2's added sentence about scope is also correct: `CommandScope.EDITOR` specs dispatchable on the
+tab are `CYCLE_CODE_TAB`, `CLOSE_CODE_TAB` and `FORMAT_BUFFER`, and `format_current_editor`
+returns on `get_current_session_if_exists() is None` (`app.py:1767-1772`) before reaching
+`formatter_for`.
+
+## Round-2 finding summary
+
+Three new findings, all demonstrated:
+
+| # | decision | class | one line |
+|---|---|---|---|
+| 12 | S15 | GAP | `choose_output` does not clear the persisted `ui_state.panel_pass`, so with a pin set the panel does not follow the clicked node (measured: resolves to `a` while the output is `c`). One line to fix. |
+| 13 | S6 | GAP | The mid-frame `press_blocked` write is invisible to this frame's local `blocked`, and it is cleared at the top of the release frame — so a ✕ over a card runs `_click` → `choose_output` on release (probe8), and the background's `:938` selection-clear fires on the ✕ press (probe7). "the press is consumed before any item reads it" is false. |
+| 14 | S8 | GAP | The row's named break ("fit the nodes alone") is green at `avail = (800, 600)` because the 1.0 clamp centres the content; it bites at `(560, 300)` and below. One number. |
+
+SOUND with nothing to add: **S1** (`fg_0` passes every invariant and the `FG_TITLE` identity is a
+legitimate neutral reuse the theme block's own rule permits), **S3/S4**'s pinned sequence (no read
+precedes its write; the only stale read belongs to finding 13), **S8**'s construction (0.92px
+worst under-coverage against a 16px margin), **T2**'s guard ordering.
+
+Nothing marked SPECULATION — every claim above is a quoted line, a probe, or an arithmetic
+result reproduced here.
+
+## Round-2 false trails — checked and fine
+
+- **The `pick_pass` split breaking a caller.** All five keepers want the tab forward; the copilot
+  calls neither verb. The split is behaviour-preserving for every one.
+- **`choose_output` needing its own refusal path.** `pick_pass`'s tail already guards
+  `ui_document is None or output == name` and toasts `set_output_pass`'s error; lifting that whole
+  tail is the split.
+- **S6's `unwire(*None)` on a stale `x_rect`.** The spec writes `x_rect = None` when no selected
+  wire is drawn, and the inside-the-rect guard skips on `None`.
+- **`is_mouse_dragging` leaking a gesture on the ✕'s press frame.** `drag4` is False on that
+  frame (probe7), so all four gates are inert regardless of the stale `blocked`.
+- **`fg_0` colliding with a group tint, `SELECT`, `STATE_ERROR`, `GRAPH_EDGE` or an accent.** None
+  of them; probed.
+- **S8's 25 samples missing the curve's extremum.** 0.92px worst case against a 16px margin.
+- **T2 drawing a graph tab with `tab is None`.** The branch's own predicate excludes it, and
+  `pass_graph.draw` guards its document id.
+- **S11's reader list being incomplete.** Exactly the four external sites named:
+  `popups/lib_picker/tree.py:24,350`, `tests/test_pass_settings_layout.py:20,91`,
+  `tests/test_anchored_note.py:15,53`.
+- **The xdist claim.** `tests/test_graph_view.py` carries no `pytestmark` today while
+  `pyproject.toml:91-93` states the per-module rule — "green by luck of the worker split" is
+  accurate.
+- **The rig-frame shape S-Verification cites.** Real, at
+  `tests/test_pass_settings_layout.py:86-90` (`new_frame` / `begin("rig")` / `push_font` /
+  `calc_text_size`).
+
+VERDICT: PARTIAL

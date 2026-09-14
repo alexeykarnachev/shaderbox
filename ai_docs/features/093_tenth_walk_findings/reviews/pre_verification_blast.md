@@ -400,3 +400,301 @@ rewrites plus one spec sentence each for F1 and F7, not a redesign.
 **VERDICT: PARTIAL** — land after deciding F1 (what a node click does to the graph tab)
 and F7 (where in `_draw_canvas` the Delete read sits), and after rewriting the four rows
 named in F2, F3, F8 and row 19 so each can only pass for the reason it names.
+
+---
+
+# Round 2
+
+Re-read `01_spec.md` from disk at `3f75d78` in full (499 lines). Every round-1 finding is
+addressed by quoted spec text; two of the fixes introduced a new defect and one older claim
+the revision inherited turns out to be measurably false. Probes: `test_r2a.py`..`test_r2f.py`
+under the scratchpad.
+
+## New findings
+
+**N1 (BLOCKER). The card is too narrow for the very names it was widened for — the record's
+font advance is wrong, and it is the same error this repo already fixed once.** S1 ships
+`GRAPH_NODE_W = 128` on G11's table, which gives `distance_field` as 107.0px at 14 bold and
+`u_distance_field` as 104.8px at 12, from "the shipped font's measured advance (0.545898 ×
+em, monospace)". Measured in a rig frame against the real rasterized faces (`test_r2f.py`):
+
+```
+font_12:      legacy_size=12.0  advance/char=7.0000  ratio=0.583333
+    'u_distance_field'   =  112.00  (16 chars)
+font_14_bold: legacy_size=14.0  advance/char=8.0000  ratio=0.571429
+    'distance_field'     =  112.00  (14 chars)
+```
+
+The advance is **7.0 at 12px and 8.0 at 14px, not 6.55 and 7.64**. So at `GRAPH_NODE_W = 128`
+with `GRAPH_PAD = 8`:
+
+| Name | Record says | Measured | Budget at 128 | Fits? |
+|---|---|---|---|---|
+| `distance_field` @14 bold | 107.0 | **112.00** | `128 - 2*8 = 112.0` | tie — `_ellipsize` uses `<=`, so kept, with **0.0px** of slack |
+| `u_distance_field` @12 | 104.8 | **112.00** | `128 - (2*4+2) - 8 = 110.0` | **NO — truncates** |
+
+Probed end-to-end through the real helper (`test_r2e.py`):
+
+```
+W=  128 port_budget= 110.0 u_distance_field measures 112.00 -> 'u_distance_f...'
+        name_budget= 112.0 distance_field   measures 112.00 -> 'distance_field'
+```
+
+So the Verification row's own pin — "at the 128 budget returns the string unchanged... This
+is the width decision's pin -- red at 108, green at 128" — is **red at 128 for the port-label
+half**. The goal section's promise ("a card wide enough for his own longest names") is not met
+by 128, and the maintainer's two real names are exactly the two that fail.
+
+This is not a new class. `tests/test_pass_settings_layout.py:74-77` carries the same lesson in
+its docstring: *"Measured against the real rasterized face inside a frame, never a hard-coded
+em ratio: the first version of this check assumed 6.5508px per character where the 12px face
+advances 7.0, so it passed a 19-character name that visibly truncates."* `0.545898 × 12 =
+6.5508` — the record's ratio **is** that already-refuted number. The fix is a width, not a
+test edit. Smallest multiples of 4 that clear both at `PAD = 8`:
+
+```
+W= 128 PAD=8: name_budget= 112.0 (need >112.0: NO)  port_budget= 110.0 (need >112.0: NO)
+W= 132 PAD=8: name_budget= 116.0 (OK)               port_budget= 114.0 (OK)
+W= 136 PAD=8: name_budget= 120.0 (OK)               port_budget= 118.0 (OK)
+```
+
+**136 is C's original recommendation**, which the record overrode using the bad arithmetic
+("The width call (128, against C's 136 and the fit numbers). The fork is real and the
+arithmetic decides it"). The arithmetic decided it wrongly, so C's number stands. Set
+`GRAPH_NODE_W = 136` (or 132 for the tightest fit with ~2px of slack; 136 gives 6-8px and
+survives a font bump), re-run the fit-clamp row's numbers, and keep the ellipsis row as the
+pin — it then bites for the right reason. The fit still clears a six-column chain at 136:
+`6*136 + 5*64 + 32 = 1168`, so `1225/1168 = 1.049` still clamps to 1.0, and `740/1168 = 0.634`
+is still inside `0.6 < zoom < 1.0`, so that row's asserts survive the change unedited.
+
+**N2. S5's named break does not turn its own test red.** The row says: *"Break to try: drop
+`not is_any_item_active()` -- the held case writes"*, and S5's prose says *"the clause `not
+is_any_item_active()` is what refuses the key while a press is HELD on the canvas ... and that
+is its falsifier."* Measured at S5's pinned read position with a press held on empty canvas,
+evaluating all four gate variants on the same frame (`test_r2c.py`):
+
+```
+HELD-PRESS gate outcomes (1 = it would write): {'full': 0, 'no_active': 0, 'no_hovered': 0, 'neither': 1}
+```
+
+Dropping `is_any_item_active()` alone still yields **0** writes, because `hovered` is
+*independently* False while the press is held — `is_window_hovered(child_windows)` reads False
+for the whole drag (`test_r2b.py`: `HELD {'any_active': True, 'hovered': False, ...}`). Only
+dropping **both** clauses lets the held case through. So this gate passes whether or not the
+clause it names is present, which is the exact family `CLAUDE.md` calls the most expensive.
+Two ways out: name the break as "drop both `hovered` and `not is_any_item_active()`" and say
+the two clauses are redundant for THIS case; or find a case where they separate — a press held
+on a node while the mouse stays inside the child would be one if `hovered` recovered, but it
+does not (measured), so the honest statement is that `hovered` is the clause that refuses the
+held press and `is_any_item_active()` is belt-and-braces. Either way the row must not claim a
+falsifier it does not have.
+
+**N3. The T1-T6 row's last clause PASSES WITHOUT THE FIX.** The row asserts *"no
+`editor_sessions` key at the graph path after the Uniforms tab has been focused for those
+frames (T1's non-creating getter)"*. But `_locate_uniform_declaration` is reached only past
+`widgets/uniform.py:67`:
+
+```
+    if not (clicked or imgui.is_item_hovered()):
+        return
+    located = _locate_uniform_declaration(app, name)
+```
+
+Probed (`test_r2d.py`) with the Uniforms tab focused for four frames and no mouse over a name:
+
+```
+UNIFORMS_TAB_FOCUSED_NO_MOUSE: _locate calls 0 get_current_session calls 0
+```
+
+So the row is green with or without T1's edit. The underlying risk is real — driving the
+creating getter on a graph-path tab does make a session:
+
+```
+get_current_session on graph.json created a session? True -> editor_sessions now has graph.json: True
+```
+
+— so T1's edit is needed; the test just does not exercise it. **The input the test must
+inject**: park the mouse on the uniform-name cell, whose imgui id is `uname_<name>`
+(`widgets/uniform.py:59`, `clickable_label(..., id_=f"uname_{name}")`). There is no rect
+exposed for it the way `port_rects` is, so either expose one, or drive
+`_locate_uniform_declaration(app, "<a uniform of the document>")` directly with a graph tab
+active and assert no `editor_sessions` key appears — a unit call on the function the edit
+touches, which is the cheaper and more direct falsifier.
+
+**N4. T5's tick predicate is not a nameable predicate today, so the row cannot be called as
+written.** The row says *"the Passes row's `graph_active` is True for A and False for B (the
+predicate is pure over `app.active_tab`)"*. Its model, `script_active`, is computed **inline**
+inside `_draw_entry_points` (`tabs/document.py:414-418`):
+
+```
+    script_active = (
+        active is not None
+        and active.kind == "script"
+        and active.document_id == document_id
+    )
+```
+
+and no `*_active` helper exists anywhere in `tabs/document.py` or `app.py` (grep returns only
+`close_active_tab`, `set_active_tab`, `_reanchor_active_tab`, `_active_tab`). So the row is
+runnable only if the implementation extracts the predicate — e.g. a free
+`tab_active_for(tab: EditorTab | None, kind: EditorTabKind, document_id: str) -> bool` in
+`tabs/document.py` that both rows call. Say so in T5, or the row becomes a test nobody can
+write and gets dropped at implementation time. (Extracting it also removes the copy-paste
+between the Script and Passes rows, which is the reason to do it anyway.)
+
+## 1. Closure, item by item
+
+### Round-1 findings
+
+| # | Closing spec text (quoted) | Status |
+|---|---|---|
+| **F1** `pick_pass` evicts the graph tab | **S15**: "`App.pick_pass` splits into `App.choose_output(document_id, name)` (the `set_output_pass` half with its toast) and `pick_pass` = `ensure_shader_tab` + `choose_output`, unchanged for the strip, the uniforms row and the copilot. The canvas's `_click` calls `choose_output`". | **CLOSED**, and verified: `set_output_pass` (`project_session.py:1045-1054`) writes `document.graph` and calls `save_ui_document`, firing no `on_*` callback; `save_ui_document` (`:435-450`) is a disk write plus an mtime rebaseline. Probed the split (`test_r2a.py`): `BEFORE (0, 1, ['main.frag.glsl'])` → `3px: set_output_pass 1 set_pass_positions 0` → `AFTER (0, 1, ['main.frag.glsl'])`, `canvas_rect nonzero after: True`, `output pass now: c`. No tab side effect. The Uniforms claim also holds by code: `App.panel_pass` (`app.py:756-761`) requires `tab.kind == "shader"` and falls to `document.render_pass` otherwise, so with a graph tab active the panel shows the output — probed `panel_pass default: ''` unchanged after `set_output_pass('c')`. |
+| **F2** `canvas_rect` unreadable without a frame | **S8** row: "the fitted window in canvas space is `(pan.x, pan.y, pan.x + 800 / zoom, pan.y + 600 / zoom)`, and every wire's 25 sampled canvas-space curve points lie inside it." | **CLOSED.** `_fit` writes `pan` and `zoom` outside a frame (probed round 1: `zoom 1.0, pan (-240.0, -223.0)`), and the target is no longer `canvas_rect`. The "Break to try: fit the nodes alone" clause makes it a real check. Also closed the harder half I did not ask for: S8 now frames the **sampled curve** rather than the control polygon, with the over-framing measured ("inflates the fitted width from 605 to 957px"). |
+| **F3** theme row passes without the fix | **S1**: "`blue_b` IS the `blue` accent preset's primary (`theme._ACCENTS["blue"]`) ... the record's G6 sentence 'is not an accent primary' is wrong ... `COLOR.GRAPH_HOVER = _P["fg_0"]`". **Theme row**: "imports `_GROUP_TINT_EXCLUSIONS` ... `GRAPH_HOVER not in {primary for primary, _, _ in _ACCENTS.values()}` ... Break to try: `blue_b` -- the accent clause goes red". | **CLOSED, and the revision found more than I did.** My round 1 checked `blue_b` against TAG and the exclusion set but **not** against `_accent_primaries`; the spec is right: `blue_b in accent primaries: True`. And `fg_0` is **not** already in `_GROUP_TINT_EXCLUSIONS` (`fg_0 in _GROUP_TINT_EXCLUSIONS already: False`), so the edit is now a real change rather than a no-op. The named break bites exactly once: `fg_0 -> ALL GREEN`; `blue_b -> RED at: not in accent primaries`. The hand-typed-set half is closed too ("imports `_GROUP_TINT_EXCLUSIONS`"). |
+| **F4** `_ellipsize` readers outside `ui_primitives` | **S11**: "every reader follows: its four call sites inside `ui_primitives`, `popups/lib_picker/tree.py`, `tests/test_pass_settings_layout.py`, `tests/test_anchored_note.py`." Files-touched adds `shaderbox/popups/lib_picker/tree.py`, `tests/test_pass_settings_layout.py`, `tests/test_anchored_note.py`. | **CLOSED.** All three named; the count now matches the grep. |
+| **F5** `calc_text_size` segfaults between frames | **Verification preamble**: "A measurement that needs a font (`ellipsize`, `calc_text_size`) runs inside `imgui.new_frame()` / `imgui.begin("rig")` / `push_font` / `imgui.end()` / `imgui.end_frame()` on the `app` fixture, the shape of `tests/test_pass_settings_layout.py::test_the_auto_name_column_fits_every_engine_uniform`; outside a frame `calc_text_size` segfaults the process (measured)." | **CLOSED**, and the cited pattern is real and green (`3 passed`). The row's kind is now "rig frame". |
+| **F6** key-after-mouse batching | **Verification preamble**: "a key event queued in the same batch as a mouse-button event reaches `is_key_pressed` one frame LATER than the button (measured), so a `_frames` call separates them". The G5 row now reads "click ..., release, frames, send `Key.delete`, frames, assert". | **CLOSED.** |
+| **F7** where the Delete read sits | **S5** title: "read locally, once, AFTER the hit-test section and the drag blocks, before `_canvas_menu`", with the reason: "on a release frame `is_any_item_active()` is True at the top of `_draw_canvas` and False at the bottom, and `is_window_hovered` the reverse (measured), so a read at the top is dead on exactly the frame a user who just clicked the wire presses the key." | **CLOSED** (the position is pinned and the measurement recorded). The clause-attribution inside it is **N2**, a new defect. |
+| **F8** six-column fit pins nothing | Row renamed "`_fit`'s clamp (regression check, not a width pin)" with "Green at 108 too; the width is pinned by the ellipsis row". | **CLOSED as stated** — the row no longer claims to pin the width. But the pin it hands off to is **N1**, which is red at 128. |
+| **F9** 24 segments discriminate only to 8 | Row renamed "the flattening misses no real hit (regression guard)" with "this discriminates a count of 6 or below (worst error 9.5px at 6, 2.7 at 8), so it guards against a catastrophic count, not the choice of 24". | **CLOSED**, and the numbers quoted match mine exactly (9.477 at 6, 2.666 at 8). |
+
+### Round-1 row verdicts other than RUNNABLE
+
+| Round-1 row | Closing text | Status |
+|---|---|---|
+| Row 2 continuity, thin margin | "each control point moves by less than `1.0 + 2 * GRAPH_WIRE_BOW` px per step (the endpoint's own 1px plus the offset's change ...). Measured today's worst step at these tokens: 1.31px" | **CLOSED** — the bound is now derived from the token, so a bow change moves the bound with it. |
+| Row 4 → F9 | above | CLOSED |
+| Row 10 → F2 | above | CLOSED |
+| Row 11 → F8 | above | CLOSED (but see N1) |
+| Row 15 hover, TWO REASONS | Row split into five lettered sequences, "one rung per sequence, no click in any", with "(d) place `c` (through `app.session.set_pass_positions`) so its body covers `wire_mids[("b", "u_src")]`" and "Breaks to try: swap the port and node rungs (a flips); swap the node and wire rungs (d flips)". | **CLOSED.** The "no click in any" clause removes the F1 contamination and the (d) position gives the node↔wire swap a falsifier. Geometry verified below. |
+| Row 17 cursor, NOT RUNNABLE + TWO REASONS | **S14**: "`ui.py` applies once per frame on change and resets `want_cursor` to `None`, so a test reads `app.cur_cursor` after the frame." Row: "during a middle-drag pan, after the frame, `app.cur_cursor is app.hand_cursor`; at rest, on a frame where `view.canvas_rect != (0, 0, 0, 0)`, `app.cur_cursor is None`". | **CLOSED** on both halves — the `want_cursor` phrasing is gone and the at-rest assert is anchored to a frame that provably drew. |
+| Row 18 G14, TWO REASONS | "a failure that traces to a binding is a silent change, a failure that traces to the tab being inactive is a test-mechanics bug (the tab is opened before any copilot-turn simulation, since `open_graph_for` is frozen during one)" | **CLOSED** — the two causes are now named and separated, and the `open_graph_for`-frozen interaction I flagged is called out. |
+| Row 19 channels, PASSES WITHOUT THE FIX | "the first occurrence of each `channels_set_current(k)` literal for k in 0..4 appears in ascending source order (halos, strokes, nodes, in-flight, overlays)" | **CLOSED** — the assignment order is now checked. |
+| Row 20 T1-T6 riders (a) `tab_label`, (b) `editor_focused` arming EDITOR scope | **T1**: "Two edits are REQUIRED for the claim to hold, not implied: `tab_label` gains a `"graph"` branch returning `f"{document_name} (graph)"` before the multi-pass fallthrough (which would call `pass_name_of` on `graph.json`)". **T2**: "it also makes every `CommandScope.EDITOR` spec dispatchable on the tab, which today is those two plus `FORMAT_BUFFER`, whose handler returns on the missing session." | **CLOSED** on both. T2's enumeration is correct — `COMMAND_SPECS` has `OPEN_SHADER`/`OPEN_SCRIPT` at default GLOBAL scope, so the EDITOR-scope set really is small. |
+| Row 21 theme → F3 | above | CLOSED |
+
+### Section C items
+
+| Item | Closing text | Status |
+|---|---|---|
+| S2 revalidation | **S2**: "revalidated every canvas frame through a pure `graph_state.revalidated_wire(selected, edges) -> tuple[str, str] \| None` (the shape of `revalidated_scope`)"; row "S2: a stale wire selection clears". | **CLOSED** as a pure row, exactly the `revalidated_scope` shape I proposed. |
+| S3 every field written | Row "S3: the hover fields are exactly the ones written ... the set of `GraphViewState` fields whose name starts with `hovered_` is exactly `{...}` ... a fifth field nobody wires is caught". | **CLOSED** — enumerated from the dataclass, which is the anti-narrowing shape. |
+| S4 exclusivity | Row "S4: the selections are exclusive ... after selecting the wire, click a node: `selected_wire is None` ...; select the wire again, rubber-band over empty canvas and release: `selected_wire is None`". | **CLOSED.** |
+| S5 `not blocked` | Row "S5: Delete is refused during a copilot turn ... `app.copilot.state.in_flight = True` ... no write (the `not blocked` clause)". | **CLOSED.** |
+| S7 shared order | **S7**: "exposed as `view.node_order: list[str]` (node keys, this frame) so a test can assert the selected node is last"; row "S7: the selected node draws and hit-tests last ... `view.node_order[-1] == "p:a"`". | **CLOSED** via the `node_order` field I proposed. |
+| T2 `editor_errors = []` | Already covered in round 1; still in the T1-T6 row. | CLOSED |
+| T5 tick | Row "T5: the tick predicate". | **STILL OPEN — N4**: the predicate does not exist as a callable thing. |
+| T6 close assertion | **T6**: "frame 47 ends with `app.close_editor_for_path(...)` in place of the `passes_view = STRIP` reset ... The tail's `get_current_session_if_exists() is not None` assertion ... holds because frame 48's `set_current_document_id(canary_id)` runs `_on_current_document_changed` -> `ensure_shader_tab`". | **CLOSED**, and it answers the frame-48 question I raised with the mechanism rather than an assertion. |
+| S12 `_MIN_DIRECT_DX` deletion | Row "the widget's source contains none of `_draw_self_loop`, `bus_y`, `_MIN_DIRECT_DX`, `_BEZIER_BOW`, `glfw.set_cursor`". | **CLOSED** — all four names plus S14's `glfw.set_cursor` rule in one grep row. |
+| `is_any_item_active()` vs the canvas's own buttons | **S5**: "the clause `not is_any_item_active()` is what refuses the key while a press is HELD on the canvas (the background, a node or a port button is active), and that is its falsifier"; row "S5: Delete is refused while a press is held on the canvas". | **STILL OPEN — N2**: the row exists and the behaviour is right, but the named falsifier is not one. |
+| S14 no raw `set_cursor` | In the S12/G8 grep row (above) and S14's "`glfw.set_cursor` never appears in the widget". | **CLOSED.** |
+
+### Section D items
+
+| Item | Closing text | Status |
+|---|---|---|
+| Smoke passes, not skipped | "`make gates` green with the smoke run (not skipped -- it passes on this box without `xvfb-run`, measured)". | **CLOSED.** |
+| New module's xdist group | Files touched: "new `tests/test_graph_tab.py` with `xdist_group("gl_frames_graph_tab")`"; gates paragraph: "Every new frame-driving test module declares its own `xdist_group`". | **CLOSED.** |
+| `test_graph_view.py` has no group | Files touched: "`tests/test_graph_view.py` (gains `pytestmark = pytest.mark.xdist_group("gl_frames_graph_view")` -- it drives frames today with no group, green by luck of the worker split)". | **CLOSED**, with my reason quoted. |
+| Prose budget accepts the three strings | Not restated in the spec — correctly, since it was a clean result needing no change. | CLOSED (no action was required). |
+| `test_ui_regions.py` deletion loses nothing | **T5**: "its three tests cover only the retired enum (its docstring's `ChannelView` claim has no test behind it; `tests/test_channel_view.py` covers that enum)". | **CLOSED**, and verified: `tests/test_channel_view.py` exists and imports `CHANNEL_VIEW_LABELS`, `ChannelView`, `next_channel_view`. |
+| `conventions.md:483` "4th editable kind" | Files touched: "the editor-tab bullet's "a 4th editable `kind` lands" trigger gains the clause that a non-editable kind -- the graph -- does not fire it, since it has no session". | **CLOSED.** |
+| `pass_list.py` docstring | Files touched: "`shaderbox/widgets/pass_list.py` -- its docstring's "shared with the graph view" clause about the add / import row is corrected". | **CLOSED.** |
+
+## 2. The rewritten Verification table
+
+| # | Row | Verdict | Note |
+|---|---|---|---|
+| 1 | G1 no cusp | RUNNABLE | Unchanged from round 1. |
+| 2 | G1 continuity | RUNNABLE | Bound now token-derived (`1.0 + 2 * GRAPH_WIRE_BOW = 1.8` against a measured 1.31). |
+| 3 | G4 threshold + floor | RUNNABLE | Break added and it bites: `(0.25)` reads 0.75 without the floor. |
+| 4 | G4 flattening regression guard | RUNNABLE | Honestly labelled; numbers match my measurement. |
+| 5 | G18 wire_state ×16 | RUNNABLE | |
+| 6 | S2 stale wire clears | RUNNABLE | Pure, `revalidated_scope`'s shape; `revalidated_scope` has a green test of exactly this form. |
+| 7 | G6 nothing changes size | RUNNABLE | `signature(node_size).parameters` is `('port_count', 'box')` today. |
+| 8 | G8/G3/S12 removals | RUNNABLE | Five names, all greppable today; `_MIN_DIRECT_DX` has 7 sites, `bus_y` 3. |
+| 9 | S13 the lock | RUNNABLE | 4 + 1 sites today, all thresholdless. |
+| 10 | G12 five channels in order | RUNNABLE | The assignment order is now the assertion. |
+| 11 | G11 the ellipsis pins the width | **NOT RUNNABLE AS WRITTEN** | **N1.** Measured: `u_distance_field` is 112.00 against a 110.0 port budget at 128 → `'u_distance_f...'`. The row's "green at 128" half is red. Red at 108 holds. |
+| 12 | S8 the fit frames every wire | RUNNABLE | Target restated in canvas space; `_fit`/`_Xf` run frameless (probed round 1). Break clause present. |
+| 13 | `_fit`'s clamp | RUNNABLE | Correctly demoted. Survives N1's width change unedited (`1225/1168 = 1.049` clamps; `740/1168 = 0.634`). |
+| 14 | G5 select + Delete | RUNNABLE | Frame order fixed per F6. Midpoints land on open background (probed round 1). |
+| 15 | G5 the ✕ unwires | **RUNNABLE** — probed | The new clause "the press started no band and no drag (`band_anchor is None`, `node_drag is None`)" holds. Splicing S6's latch in at the top of `_draw_canvas` (where the check is pinned, before the background button) and then dragging 160px (`test_r2b.py`): `PRESS_FRAME ['LATCHED', ('end', True, None, False, False, [])]`, `DRAG_FRAME_1/2/4 ('end', True, None, False, False, [])`, `AFTER_RELEASE ('end', False, None, ...)`. The unarmed control DOES start a band on the same gesture: `UNARMED_BAND ('end', False, (2324.0, 1375.0), ...)`. So `press_blocked` set before the background button really does survive the button's own `is_item_clicked`/`is_item_active` reads for that frame and every later frame of the press, `selection` stays empty, and the latch clears on release. |
+| 16 | S5 Delete refused while a press is held | **PASSES WITHOUT THE FIX** | **N2.** The behaviour is right, but dropping the named clause alone leaves the test green (`no_active: 0`); `hovered` refuses it independently. |
+| 17 | S5 Delete in the group prompt | RUNNABLE | Correctly re-attributed to `hovered` and labelled "Behaviour pin"; probed round 1 (`any_active` True, and now known `hovered` is False too). The one-shot caveat is carried. |
+| 18 | S5 Delete during a copilot turn | RUNNABLE | The `blocked` path is the one `test_a_press_that_spans_a_copilot_turn...` already drives. |
+| 19 | G6 exclusive hover (a)-(e) | **RUNNABLE** — geometry verified | (d) is satisfiable at the decided tokens. The `a->b` wire (key `("b", "u_src")`, the consumer being `b`) runs `(128.0, 56.0) -> (192.0, 145.0)`, offset 43.85, midpoint **(160.0, 100.5)**. Placing `c` at `(96.0, 23.5)` puts its 128×154 body over that point; `c`'s own port is **93.4px** away and its output **67.4px** (both far outside the 7px port box), and the `b->c` wire passes **26.9px** from it (outside the 6px wire threshold). Crucially the midpoint does not move: `wire_points` reads only the two endpoints, and `a` and `b` are untouched. So (d) isolates the node↔wire rung. |
+| 20 | S3 hover fields enumerated | RUNNABLE | |
+| 21 | S4 selections exclusive | RUNNABLE | Unblocked by S15 (the node click no longer switches tabs). |
+| 22 | G13/S15 3px vs 5px | **RUNNABLE** — probed | The added clause `app.active_tab.kind == "graph"` holds under the split: `test_r2a.py` shows a 3px click with the `choose_output` half leaves `active_tab_index` 0 and the tab list length 1. `set_output_pass` fires no callback and `save_ui_document` touches no tab state. The break still bites (measured today: 5px is a click, 8px a drag). |
+| 23 | S15 double-click opens the shader tab | RUNNABLE | `_double_click` keeps `pick_pass(..., focus_editor=True)` → `ensure_shader_tab`, which is what the round-1 probe measured doing exactly this. |
+| 24 | S7 node_order | RUNNABLE | |
+| 25 | G7 cursor | RUNNABLE | Both halves fixed (`cur_cursor`, canvas-drew anchor). |
+| 26 | G14 kept bindings | RUNNABLE | Causes separated. |
+| 27 | T1-T6 the tab | **TWO REASONS** on the last clause | **N3.** Eight sub-asserts are RUNNABLE (each verified against the code in round 1 and unchanged). The ninth — "no `editor_sessions` key at the graph path after the Uniforms tab has been focused" — passes without T1's edit, because `_locate_uniform_declaration` is gated on a click/hover of the name (`uniform.py:67`) and never runs with no mouse there: probed `_locate calls 0 get_current_session calls 0`. The two reasons a green result has: the edit landed, or nothing called the function. |
+| 28 | T5 the tick predicate | **NOT RUNNABLE AS WRITTEN** | **N4.** `graph_active`'s model `script_active` is inline in `_draw_entry_points`; no `*_active` predicate exists to call. |
+| 29 | Theme | RUNNABLE | The accent clause is the one that bites; break verified (`blue_b -> RED at: not in accent primaries`). |
+
+## 3. Blast radius of the additions
+
+Grepped `shaderbox/ tests/ scripts/ dogfood/` for each new name — **zero pre-existing hits**
+for `choose_output`, `revalidated_wire`, `node_order`, `GRAPH_WIRE_HIT_FLOOR`, `bezier_point`
+(and `GRAPH_WIRE_HIT_MIN`, so the rename leaves no stale reader). No collisions.
+
+- **`App.choose_output`.** No name collision. Every surviving `pick_pass` caller is still
+  correct under S15's "unchanged for the strip, the uniforms row and the copilot": `app.py:1154`
+  (a newly added pass — "the editor tab, the viewer and the gear all follow it", so it wants
+  the tab), `app.py:2027` (the step-through-passes hotkey, `focus_editor=self.editor_focused`),
+  `widgets/pass_list.py:166` (a strip tile), `widgets/uniform.py:339` (the panel's source
+  thumbnail, whose comment says "its click does what the strip's tile does"). Only
+  `pass_graph.py:1209` (`_click`) moves to `choose_output`; `pass_graph.py:1227`
+  (`_double_click`) stays. That is 1 of 6 call sites changed, matching S15 exactly. One
+  behaviour note the spec already owns: `set_output_pass` returns `""` or an error string and
+  S15 keeps "the toast", so the refusal path is preserved.
+- **`revalidated_wire`.** New pure function beside `revalidated_scope`, same arity shape, its
+  own row. No reader to update.
+- **`node_order`.** New `GraphViewState` field; nothing reads the name today. Like
+  `port_rects` and `canvas_rect` it is rebuilt per frame, so the round-1 F2 hazard (a
+  no-frames test reading a default) applies — the S7 row correctly says "select `a`, frames"
+  rather than calling `_fit` alone.
+- **`GRAPH_WIRE_HIT_FLOOR`.** The rename answers my round-1 note verbatim ("named so it cannot
+  be misread for the port floor `GRAPH_HIT_MIN = 7`; a comment names the pair and the 6-under-7
+  reason"). No existing reader of either spelling outside `theme.py` and the port hit-box line.
+- **The `xdist_group` additions.** Adding a module-level `pytestmark` to
+  `tests/test_graph_view.py` pins **all ten** tests to one worker, not just the two that drive
+  frames — including `test_the_widget_makes_no_session_write_of_its_own`, a pure source grep
+  that needs no fixture at all. Acceptable, and measured: the whole module runs in **1.83s**
+  (slowest test 0.30s, and seven of the ten already pay a ~0.06-0.19s `app`-fixture setup), so
+  the serialisation costs a fraction of a second against a suite that runs `-n 8`. The
+  alternative — marking only the two frame tests — would split the module across workers and
+  is exactly what `pyproject.toml:91-96` warns against. Module-level is the right granularity
+  and matches all four existing frame modules.
+- **`widgets/uniform.py`.** One-line getter swap; `_locate_uniform_declaration` already
+  handles `None` on both branches (`uniform.py:86` `if session is not None`, `:91`
+  `active_path = session.source.path if session is not None else None`), so the change is
+  behaviour-preserving for every existing case. Verified the risk it removes is real
+  (`get_current_session` on a graph-path tab creates a session). Its test coverage is **N3**.
+- **`widgets/pass_list.py`.** Docstring only (`:178`). No code reader.
+- **`conventions.md`.** Two clauses: the 092 bullet (the canvas's home, the click choosing the
+  output) and the editor-tab bullet's "4th editable `kind`" trigger. Both quoted lines exist
+  where the spec says — `conventions.md:856-857` for the first, `:483-485` for the second. No
+  other convention names `passes_view` or the strip/graph toggle.
+
+## Verdict
+
+N1 is the one that matters: the card ships at a width that truncates both of the maintainer's
+real names, the row meant to pin the width is red at 128 for the port-label half, and the
+error is the same hard-coded em ratio (`0.545898 × 12 = 6.5508`) that
+`tests/test_pass_settings_layout.py`'s own docstring records as already having shipped a
+truncating check once. The fix is a token (`GRAPH_NODE_W = 136`, C's original number) plus
+re-reading the ellipsis row's expectation off the measurement, and the fit-clamp row survives
+it unedited. N2 and N3 are gates that pass whether or not the thing they name is present —
+cheap to restate, expensive to leave. N4 needs one sentence in T5. Everything else from round
+1 is closed by quoted text, two of the closures (S8's sampled curve, S1's accent-primary
+collision) go further than what I asked for, and the twenty-nine-row table is otherwise sound:
+twenty-five RUNNABLE, and the two rows whose new mechanics I probed (S6's latch, G6's (d)
+geometry) both behave as specified.
+
+**VERDICT: PARTIAL** — land after setting `GRAPH_NODE_W` from the measured advances (N1),
+restating S5's held-press falsifier and T1's session-creation falsifier so each can only pass
+for its own reason (N2, N3), and naming the tick predicate as an extracted function (N4).

@@ -1,6 +1,6 @@
 # 093 — Tenth walk findings
 
-Status: **in progress; wave 1 spec revised after pre-implementation round 1, round 2 next.**
+Status: **in progress; wave 1 spec revised after pre-implementation rounds 1 and 2, round 3 next.**
 Five findings filed (`00_findings.md`). The maintainer's verdict on the shipped canvas ("feels
 very cheap") sent the walk into research first: `02_research_brief.md` is the brief, `research/`
 holds six area reports against primary sources, `03_graph_design.md` is the design record
@@ -61,14 +61,14 @@ delegated (below).
 - **Keys for Fit and Arrange, Escape cancelling a live gesture** (G14): not asked for. Trigger:
   he asks.
 - **Auto-width cards** (G11 alt. a): a layout pass over every label under a pushed font, and it
-  would make `node_size` depend on fonts. Trigger: a real document whose names ellipsize at 128
+  would make `node_size` depend on fonts. Trigger: a real document whose names ellipsize at 136
   in a way he objects to after seeing it.
 - **Blender's flatness correction / Rete's vertical term for a long near-horizontal wire** (G1
   alt. d): the references disagree and neither addresses the defect. Trigger: a screenshot of a
   wire reading conspicuously flat.
 - **Tab persistence across restarts**: tabs are not persisted today (only the current document's
   shader tab reopens), and the graph tab follows that rule.
-- **The box width.** `GRAPH_BOX_EXTRA_W` stays 40, so a box is 168 wide around a 96 picture.
+- **The box width.** `GRAPH_BOX_EXTRA_W` stays 40, so a box is 176 wide around a 96 picture.
   The maintainer's eyes; a token if he objects.
 
 ## Design decisions
@@ -78,8 +78,17 @@ the record's **G1-G18, adopted as locked constraints by reference** (a reviewer 
 implementation against the record's Rule paragraphs; this spec does not restate them). The four
 forks are closed here as S1.
 
-**S1. The forks ship at the record's recommendation, with one hue corrected.** `GRAPH_NODE_W =
-128` (G-Q1), no menu entry for a wire (G-Q2), `GRAPH_DRAG_LOCK_PX = 4.0` (G-Q3). For G-Q4 the
+**S1. The forks ship at the record's recommendation, with the width and the hue corrected by
+measurement.** No menu entry for a wire (G-Q2), `GRAPH_DRAG_LOCK_PX = 4.0` (G-Q3). For G-Q1 the
+record's 128 rests on a font advance of 0.545898 em; measured in a rig frame on the shipped
+faces, the advance is 7.0px at 12px and 8.0px at 14px bold, so `u_distance_field` is 112px
+against 128's 110px port-label budget (it ellipsizes) and `distance_field` is 112px against
+128's 112px name budget (zero slack). The requirement he stated -- his own two names fit uncut
+-- is met by **`GRAPH_NODE_W = 136`** (budgets 118 and 120), C's original recommendation, which
+the fit-clamp check survives (1168px fitted width: 1.049 at 1225px, 0.634 at 740px). The same
+6.5508px-per-character estimate once shipped a truncating check in
+`tests/test_pass_settings_layout.py`; the ellipsis row below measures in a rig frame for that
+reason. For G-Q4 the
 record's `blue_b` is refused by the code: `blue_b` IS the `blue` accent preset's primary
 (`theme._ACCENTS["blue"]`), so under that accent a hovered wire would read as the in-flight wire
 and a hovered node's halo as the output border -- the collision the import-time invariant block
@@ -140,7 +149,10 @@ coverage test then requires the label in the help shortcuts, which the generated
 provides.
 
 **T5. The Document tab keeps the strip and gets an `open` for the graph, like the Script row.**
-`tabs/document.py::_draw_passes` draws `_entry_row_label(graph_active, "Passes")` -- a VISUAL
+`tabs/document.py::_draw_passes` draws `_entry_row_label(graph_active, "Passes")`, where
+`graph_active = _entry_tab_active(app, document_id, "graph")` -- a new free predicate over
+`app.active_tab` (kind and document match) that the Script row's inline `script_active` also
+moves onto, so the tick rule has one home and a test can call it -- a VISUAL
 change from today's `small_caption(app.font_12, "Passes")`: the label moves to the ambient font
 with frame-padding alignment, and the accent tick marks a graph tab of THIS document as the
 editor's active tab, exactly as the Script row's tick does -- then
@@ -219,9 +231,14 @@ toasted as `_drop`'s is. With a node selection and no wire, the key does nothing
 facts about the gate's clauses, so no one narrows it: the group-name prompt is a plain
 `begin_popup`, for which `app.any_popup_open()` is False and `is_window_hovered(child_windows)`
 is already False, so a Delete typed into it is refused by `hovered` before `is_any_item_active`
-is consulted; the clause `not is_any_item_active()` is what refuses the key while a press is
-HELD on the canvas (the background, a node or a port button is active), and that is its
-falsifier. Both key names are present on this build's `imgui.Key` (verified).
+is consulted; and while a press is HELD on the canvas `hovered` is likewise already False
+(measured: dropping `is_any_item_active` alone still refuses the held case). The one reachable
+state where `not is_any_item_active()` is the clause doing the work is a text input ACTIVE in
+another window while the mouse rests over the canvas -- the copilot chat's input, or the
+Document tab's name field -- and its falsifier is built through the chat: `app.is_copilot_open =
+True; app.focus_copilot()` puts the chat input in focus through `copilot_focus_pending`, the
+mouse moves over the canvas, Delete is sent, and no write may follow; dropping the clause
+writes. Both key names are present on this build's `imgui.Key` (verified).
 
 **S6. The ✕ lives on the top channel and is hit-tested by hand on the press.** Submission order
 cannot make it win: an item without `allow_overlap` submitted earlier beats a later overlapper
@@ -230,9 +247,17 @@ midpoint lands inside its consumer port's 7px box. So the ✕ is not an item. On
 `imgui.is_mouse_clicked(left)` with `hovered` and `not blocked`, if the mouse lies inside
 `view.x_rect`, the canvas calls `app.unwire(document_id, *view.selected_wire)` and sets
 `view.press_blocked = True`, the existing latch that keeps this press from becoming any other
-gesture (a node click, a port grab, a band) until the button comes up. The check runs FIRST in
-the hit-test section, before the background button, so the press is consumed before any item
-reads it. `x_rect` is written every frame the selected wire is drawn (`(centre - h, centre - h,
+gesture (a node click, a port grab, a band) until the button comes up. Two orderings make that
+true, and both are required. First, the check runs at the TOP of `_draw_canvas`, inside the
+press bookkeeping and BEFORE `blocked = frozen or view.press_blocked` is computed (it reads last
+frame's `x_rect` and `hovered`, which is computed just above the picture), so the same frame's
+`blocked` already carries the latch and the background button's `is_item_clicked` on that frame
+is ignored by S4's `not blocked` gate. Second, the latch's clear (`if not mouse_down:
+view.press_blocked = False`, today at the top of the frame) moves to the END of `_draw_canvas`,
+so on the RELEASE frame `blocked` is still True and the release-time node click of S4 is
+refused; the next frame is clean. Without the second ordering a ✕ over a card (the normal case
+under G15: a wire runs under a node) would both unwire the sampler and, on release, choose the
+node as the output (measured). `x_rect` is written every frame the selected wire is drawn (`(centre - h, centre - h,
 centre + h, centre + h)` with `h = max(GRAPH_WIRE_X_R * z, float(GRAPH_HIT_MIN))`) and `None`
 otherwise. The channels: 0 wire halos, 1 wires (crisp strokes), 2 nodes, 3 the in-flight wire,
 4 the overlays (the ✕ drawn per G5 -- a `BG_APP` disc, a 1px `SELECT` ring, two `add_line`s --
@@ -293,7 +318,7 @@ and every reader follows: its four call sites inside `ui_primitives`, `popups/li
 port-label budget are G11's, measured inside the same pushed-font scope as the `calc_text_size`
 that positions the text.
 
-**S12. Theme tokens.** `SIZE`: `GRAPH_NODE_W 108 -> 128`, `GRAPH_THUMB 80 -> 96`,
+**S12. Theme tokens.** `SIZE`: `GRAPH_NODE_W 108 -> 136` (S1), `GRAPH_THUMB 80 -> 96`,
 `GRAPH_PAD 6 -> 8`, `GRAPH_NAME_H 18 -> 20`, `GRAPH_PORT_ROW 16 -> 18`; new `GRAPH_WIRE_BOW:
 float = 0.40`, `GRAPH_WIRE_MIN_OFF: int = 24`, `GRAPH_WIRE_HIT_FLOOR: int = 6` (named so it
 cannot be misread for the port floor `GRAPH_HIT_MIN = 7`; a comment names the pair and the
@@ -328,11 +353,15 @@ Today `_click` calls `pick_pass`, which is `ensure_shader_tab` + `set_output_pas
 canvas stops drawing, so the strip's rule cannot be the canvas's. `App.pick_pass` splits into
 `App.choose_output(document_id, name)` (the `set_output_pass` half with its toast) and
 `pick_pass` = `ensure_shader_tab` + `choose_output`, unchanged for the strip, the uniforms row
-and the copilot. The canvas's `_click` calls `choose_output` (a ghost click stays as it is: back
-to the root, the ghost selected); `_double_click` keeps `pick_pass(..., focus_editor=True)`,
-which is the deliberate "open this pass" gesture and switches the pane to the shader tab. The
-Uniforms panel follows: `panel_pass` falls to the output when no shader tab of the document is
-active, so the clicked node's uniforms are the ones shown. This reverses the click half of
+and the copilot (which calls neither). `choose_output` also clears the Uniforms tab's explicit
+pick (`set_panel_pass(document_id, "")`), which `ensure_shader_tab` did for today's click and
+083 states as the rule ("a pick retires an older explicit one"); without it a persisted pin
+would keep the panel on another pass after a canvas click (measured). The canvas's `_click`
+calls `choose_output` (a ghost click stays as it is: back to the root, the ghost selected);
+`_double_click` keeps `pick_pass(..., focus_editor=True)`, which is the deliberate "open this
+pass" gesture and switches the pane to the shader tab. The Uniforms panel follows: with the pin
+cleared, `panel_pass` falls to the output when no shader tab of the document is active, so the
+clicked node's uniforms are the ones shown. This reverses the click half of
 092 D10 ("Click a node: `pick_pass(...)`"); 092's spec records it beside D2's reversal.
 
 ## Refinements over the record
@@ -347,6 +376,7 @@ Where the record's "Code" paragraphs and this spec differ, this spec wins, for t
 | G5/G12: the ✕ on channel 1, an item submitted last that "wins the overlap" | S6: on the top channel, hand hit-tested on the press, latching `press_blocked` | An earlier item without `allow_overlap` beats a later one (measured); the ports must keep declaring nothing for the drop target |
 | G3: "no wire leaves the nodes' bounding box" | S8: the fit frames nodes and the sampled curves | A backward S-curve bulges 21px past both cards (measured); the control polygon over-frames by 58%, the sampled curve does not |
 | G11's fit-zoom table | S8's note: `_fit` clamps at 1.0 | The table is the unclamped ratio |
+| G11/G-Q1: 128, from a 0.545898 em advance | S1: 136 | The advance is 7.0 / 8.0px (measured in a rig frame); at 128 `u_distance_field` ellipsizes and `distance_field` has zero slack |
 | G4/G18: helpers as module-level functions in the widget | S9: in `graph_state.py` | The pure tests import no imgui and need no `app` fixture |
 | G18: `_draw_wire(dl, xf, a, b, col, halo_col, halo_alpha)` (and G1's `..., hovered, selected`) | S9: `_draw_wire(dl, points, col, halo_col)` | It takes the points `wire_points` returns; the rule that the caller resolves the state is kept |
 | G8: `path_stroke(col, ImDrawFlags_.none, thickness)` | S10: `path_stroke(col, thickness)` | The binding's signature is `(col, thickness=1.0, flags=0)` (verified) |
@@ -434,12 +464,13 @@ outside a frame `calc_text_size` segfaults the process (measured).
 | G8/G3/S12: the loop, the bus and the module constants are gone | `SIZE` has none of `GRAPH_LOOP_RISE`, `GRAPH_LOOP_REACH`, `GRAPH_BUS_STEP`, `GRAPH_BUS_CLEAR`, `GRAPH_MIN_H`; the widget's source contains none of `_draw_self_loop`, `bus_y`, `_MIN_DIRECT_DX`, `_BEZIER_BOW`, `glfw.set_cursor` | pure |
 | S13: the lock is passed everywhere | every `is_mouse_dragging(` and `get_mouse_drag_delta(` in the widget's source carries `GRAPH_DRAG_LOCK_PX` | pure |
 | G12: the five channels in order | the widget's source calls `channels_split(5)` once and `channels_merge()` once, and the first occurrence of each `channels_set_current(k)` literal for k in 0..4 appears in ascending source order (halos, strokes, nodes, in-flight, overlays) | pure |
-| G11: the ellipsis pins the width | inside a rig frame with `app.font_12` pushed at its `legacy_size`: `ellipsize("u_distance_field", budget)` at the 108-card port-label budget ends in `...`, and at the 128 budget returns the string unchanged; with `app.font_14_bold`: the same for `distance_field` against the name budgets. This is the width decision's pin -- red at 108, green at 128 | rig frame |
-| S8: the fit frames every wire | build `a -> b -> c` plus a backward read (`a` reading `c` through `app.session.set_sampler_source`, so a cycle wire is present), `_fit` with `avail = (800, 600)`; the fitted window in canvas space is `(pan.x, pan.y, pan.x + 800 / zoom, pan.y + 600 / zoom)`, and every wire's 25 sampled canvas-space curve points lie inside it. Break to try: fit the nodes alone -- the backward wire's bulge lands outside | app fixture, no frames |
-| `_fit`'s clamp (regression check, not a width pin) | six chained passes, `_fit` with `avail = (1225, 600)`: `view.zoom == 1.0`; with `(740, 600)`: `0.6 < view.zoom < 1.0`. Green at 108 too; the width is pinned by the ellipsis row | app fixture, no frames |
+| G11: the ellipsis pins the width | inside a rig frame with `app.font_12` pushed at its `legacy_size`: `ellipsize("u_distance_field", budget)` at the 128-card port-label budget (110) ends in `...`, and at the decided card's budget (`GRAPH_NODE_W - 2 * GRAPH_PORT_R - 2 - GRAPH_PAD`, 118 at 136) returns the string unchanged with at least 4px of slack; with `app.font_14_bold`: `distance_field` against the name budget (`GRAPH_NODE_W - 2 * GRAPH_PAD`, 120 at 136) unchanged with at least 4px of slack. This is the width decision's pin -- red at 128 (measured: 112px against 110 and 112), green at 136 | rig frame |
+| S8: the fit frames every wire | build `a -> b -> c` plus a backward read (`a` reading `c` through `app.session.set_sampler_source`, so a cycle wire is present), `_fit` with `avail = (520, 200)` -- small enough that the 1.0 clamp does not centre slack around the content (at 800x600 the break below stays green, measured); the fitted window in canvas space is `(pan.x, pan.y, pan.x + 520 / zoom, pan.y + 200 / zoom)`, and every wire's 25 sampled canvas-space curve points lie inside it. Break to try: fit the nodes alone -- 8 of 75 points land outside (measured) | app fixture, no frames |
+| `_fit`'s clamp (regression check, not a width pin) | six chained passes, `_fit` with `avail = (1225, 600)`: `view.zoom == 1.0`; with `(740, 600)`: `0.6 < view.zoom < 1.0`. Green at 108 and 136 alike; the width is pinned by the ellipsis row | app fixture, no frames |
 | G5: select a wire and Delete it | open the graph tab, frames, click `view.wire_mids[("c", "u_src")]`, assert `selected_wire == ("c", "u_src")` and `selection == set()`, release, frames, send `Key.delete`, frames, assert exactly one `set_sampler_source(..., "c", "u_src", NoSource())` and nothing else | frame-driven |
-| G5: the ✕ unwires | select the wire as above, press at the centre of `view.x_rect`, assert the same single write, and that the press started no band and no drag (`band_anchor is None`, `node_drag is None`) | frame-driven |
-| S5: Delete is refused while a press is held on the canvas | select a wire, press and hold on empty canvas (the background button active), send `Key.delete`, frames: no write; release, frames, send `Key.delete`: the write. Break to try: drop `not is_any_item_active()` -- the held case writes | frame-driven |
+| G5: the ✕ unwires, and the press is nothing else | select the wire as above, press at the centre of `view.x_rect`, hold two frames, release, frames: exactly the one unwire write; `band_anchor is None` and `node_drag is None` throughout; `set_output_pass` was never called and `view.selection` is unchanged. Then place a node (through `app.session.set_pass_positions`) so its body covers the selected wire's midpoint and repeat: the same single write and still no `set_output_pass` -- the release-frame node click is refused because the latch clears at the end of the frame. Break to try: clear the latch at the top of the frame as today -- the covered case chooses the output | frame-driven |
+| S5: Delete is refused while a press is held on the canvas | select a wire, press and hold on empty canvas, send `Key.delete`, frames: no write; release, frames, send `Key.delete`: the write. A behavior pin; the clause it exercises is `hovered` (measured: `is_window_hovered` is False for the whole held press) | frame-driven |
+| S5: Delete typed into another window's text input is refused | select a wire, `app.is_copilot_open = True; app.focus_copilot()`, frames until the chat input is active (`imgui.is_any_item_active()` read on the frame after, through a probe frame), move the mouse over the canvas, send `Key.delete`, frames: no write. Break to try: drop `not is_any_item_active()` -- the write happens. If the chat input does not take focus headlessly, the row is replaced by a direct call of `_draw_canvas`'s gate predicate with `any_item_active=True` and the mechanism is the maintainer's check; the implementation commit says which | frame-driven |
 | S5: Delete typed into the group prompt is refused | select a wire, set `view.group_prompt = True` (a one-shot the first frame consumes; do not re-assert it), frames, send `Key.delete`, frames: no write. Behaviour pin; the clause it exercises is `hovered` | frame-driven |
 | S5: Delete is refused during a copilot turn | select a wire, `app.copilot.state.in_flight = True`, frames, send `Key.delete`: no write (the `not blocked` clause) | frame-driven |
 | G6: exclusive hover, one rung per sequence, no click in any | (a) park on `port_rects[("c", "u_src")]`'s centre: `hovered_port` set, the other three `None`; (b) park on a node body away from any port and wire: `hovered_node` set, others `None`; (c) park on `wire_mids[("b", "u_src")]` in open canvas: `hovered_wire` set, others `None`; (d) place `c` (through `app.session.set_pass_positions`) so its body covers `wire_mids[("b", "u_src")]`, park there: `hovered_node` set and `hovered_wire is None`; (e) off the canvas: all `None`. Breaks to try: swap the port and node rungs (a flips); swap the node and wire rungs (d flips) | frame-driven |
@@ -450,8 +481,9 @@ outside a frame `calc_text_size` segfaults the process (measured).
 | S7: the selected node draws and hit-tests last | select `a`, frames: `view.node_order[-1] == "p:a"` | frame-driven |
 | G7: the cursor follows the gesture | during a middle-drag pan, after the frame, `app.cur_cursor is app.hand_cursor`; at rest, on a frame where `view.canvas_rect != (0, 0, 0, 0)`, `app.cur_cursor is None` | frame-driven |
 | G14: every kept binding still works | the existing `tests/test_graph_view.py` passes with only the `passes_view -> open_graph_for` substitution and the new `pytestmark`; a failure that traces to a binding is a silent change, a failure that traces to the tab being inactive is a test-mechanics bug (the tab is opened before any copilot-turn simulation, since `open_graph_for` is frozen during one) | frame-driven |
-| T1-T6: the tab | `tab_label` reads `"<name> (graph)"` on a multi-pass document; `open_graph_for` twice yields one tab and it is active; `is_tab_dirty` False; `formatter_for("graph") is None`; `format_current_editor` and `jump_to_next_error` return without error on a graph tab; `close_editor_for_path` removes it; `_on_document_deleted` removes it and keeps a lib tab; `command_callbacks[CommandId.OPEN_GRAPH]` exists; three frames with the graph tab active leave `view.fitted` True, `app.editor_errors == []`, and no `editor_sessions` key at the graph path after the Uniforms tab has been focused for those frames (T1's non-creating getter) | app fixture + frames |
-| T5: the tick predicate | with document A's graph tab active the Passes row's `graph_active` is True for A and False for B (the predicate is pure over `app.active_tab`; the drawn tick is the maintainer's eyes, as the Script row's is) | app fixture |
+| T1-T6: the tab | `tab_label` reads `"<name> (graph)"` on a multi-pass document; `open_graph_for` twice yields one tab and it is active; `is_tab_dirty` False; `formatter_for("graph") is None`; `format_current_editor` and `jump_to_next_error` return without error on a graph tab; `close_editor_for_path` removes it; `_on_document_deleted` removes it and keeps a lib tab; `command_callbacks[CommandId.OPEN_GRAPH]` exists; three frames with the graph tab active leave `view.fitted` True and `app.editor_errors == []` | app fixture + frames |
+| T1: the Uniforms panel creates no session over `graph.json` | with the graph tab active, inside a rig frame, call `widgets.uniform._locate_uniform_declaration(app, "u_src")` directly (it runs only on a hover or click of a uniform's name, which four frames of the focused tab never inject -- measured), then assert `app.paths.graph_json_for(document_id) not in app.editor_sessions`. Break to try: the creating `get_current_session()` -- a session appears at the graph path | rig frame |
+| T5: the tick predicate | with document A's graph tab active, `_entry_tab_active(app, A, "graph")` is True, `_entry_tab_active(app, B, "graph")` False, `_entry_tab_active(app, A, "script")` False; the drawn tick is the maintainer's eyes, as the Script row's is | app fixture |
 | Theme | `test_group_tints_are_stable_and_collide_with_nothing` imports `_GROUP_TINT_EXCLUSIONS` and asserts `GRAPH_HOVER` is in it, `GRAPH_HOVER not in {primary for primary, _, _ in _ACCENTS.values()}`, and `GRAPH_HOVER` differs from `SELECT`, `STATE_ERROR`, `GRAPH_EDGE`. Break to try: `blue_b` -- the accent clause goes red | pure |
 
 **Gates that must be broken before they are believed.** G13's lock, G6's order and G4's floor
@@ -465,7 +497,7 @@ exit code captured unpiped. Every new frame-driving test module declares its own
 
 **The maintainer's eyes (no gate can run these):** the halo never reads as a thicker wire at
 0.25 and 2.5 zoom; the feedback glyph's shape at 12px; a selected card over a neighbor; the
-neutral hover against the grey wire; the 128 card with his own names and the 168 box; the 4px
+neutral hover against the grey wire; the 136 card with his own names and the 176 box; the 4px
 lock under his hand; the Passes row's label in the ambient font with its tick. Each of the four
 forks is then a token edit.
 
@@ -497,3 +529,16 @@ added to Files touched; `tab_label`'s branch and `uniform.py`'s creating getter 
 required edits; `_Edge.span`'s removal named; `GRAPH_WIRE_HIT_MIN` renamed; xdist groups for
 both graph frame modules; S2's revalidation, S3's field enumeration, S4's exclusivity, S5's
 `blocked` clause, S7's order and S14's no-raw-`set_cursor` rule each given a row.
+
+**Pre-implementation round 2 (2026-09-14): the same two reviewers, both PARTIAL, seven new
+findings, all demonstrated and folded; every round-1 item confirmed CLOSED by quoted text.**
+Round-2 sections in the same two reports. The width fork moved: the font advance is 7.0 / 8.0px
+in a rig frame, so 128 truncates the very names it was widened for; **136** (S1). `choose_output`
+clears the Uniforms pin, or a persisted pin outlives a canvas click (S15). The ✕ latch needed two
+orderings -- the check above `blocked`'s computation and the clear at the frame's END -- since
+S4's release-time click would otherwise fire on a ✕ over a card (S6). The `is_any_item_active`
+clause's held-press falsifier was shown redundant with `hovered`; its reachable case is a text
+input active in another window, built through the chat's focus (S5). The fit row's break was
+green at 800x600 (the clamp centres slack) and bites at 520x200. `_locate_uniform_declaration`
+runs only on a hover or click, so its row calls it directly. `graph_active` becomes the callable
+`_entry_tab_active`, shared with the Script row (T5).
