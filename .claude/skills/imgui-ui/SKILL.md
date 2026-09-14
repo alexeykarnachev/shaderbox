@@ -304,12 +304,14 @@ The convention:
 **Gate the chrome, don't write it down twice.** These rules are prose, and prose
 did not hold: four modals had drifted (one inverted `keep_open`, three had no
 spacer, one closed itself inside its body). A cheap AST walk fixes the shape —
-enumerate the domain from the popup-state ENUM rather than from a `popups/*.py`
+enumerate the domain from the REGISTRY (§7.2) rather than from a `popups/*.py`
 glob (a picker that grew into a package is exactly what a glob misses), resolve
-each member to the function that returns the bool through a table the test owns,
-then assert the local is bound and returned, that the last low-emphasis button is
-labelled Close or Cancel, and that the spacer precedes it. ShaderBox:
-`tests/test_modal_chrome.py`.
+each row to the LEAF function(s) that return the bool through a table the test
+owns, then assert the local is bound and returned, that the last low-emphasis
+button is labelled Close or Cancel, and that the spacer precedes it. ShaderBox:
+`tests/test_modal_chrome.py`. A row whose `body` is a dispatcher (one modal, two
+modes) must list both leaves: walking the dispatcher passes while checking
+nothing, which is the checker-narrows-its-own-domain family.
 
 ### 7.2 Modal wrapper (kill the boilerplate)
 
@@ -325,6 +327,27 @@ guard → body call → close-flag write-back. **Wrap this once** and call sites
 become 5 lines. Bonus: the `first_use_ever` rule is mechanically enforced
 instead of being a copy-pasted comment.
 
+**Then wrap the ROSTER too, once a third modal lands.** The wrapper kills the
+per-modal boilerplate; it does not stop the roster being hand-maintained in
+several places at once — an enum member, an opener, a branch in a
+hand-dispatching close funnel, a draw call in the frame, a row in the chrome
+gate. Forgetting the draw call is INVISIBLE at runtime: the state is enterable,
+the mutex suppresses every other render, and nothing draws, which looks exactly
+like a healthy modal. So make a modal ONE value — its id, label, size, flags,
+and the hooks for what must run before the popup opens, what cleans up on close,
+and whether an inline input inside it owns Esc — and derive the draw call, the
+close funnel and the gates from the tuple of those values. ShaderBox:
+`shaderbox/popups/registry.py`, with `draw_modal(app)` the frame's one popup
+call and `close_modal(app, forced=...)` the one close.
+
+**A Close the user CLICKED is a forced close.** When a modal declines Esc while
+an inline input inside it is armed (§7.5), that decline must not reach the
+body's own Close: the button goes dead exactly when a half-typed rename makes
+the user want out. One flag on the funnel, set by the draw path and unset by the
+Esc path, is the whole fix. And `imgui.close_current_popup()` runs only after a
+close that actually happened, inside the popup's own scope — a call on the
+declined path desyncs imgui's popup stack from the model's.
+
 Reference shape (used in `ui_primitives.modal_window`):
 
 ```python
@@ -338,9 +361,11 @@ def modal_window(label: str, size: tuple[float, float]) -> Iterator[bool]:
 ```
 
 The wrapper is the mandated shape — hand-rolling `begin_popup_modal` is the
-violation. **The `is_X_open` flag stays on `App`** (not on the wrapper) so
-each modal can do its own per-close cleanup (re-apply editor settings, null a
-pick-target, reset a query buffer).
+violation. **The open/closed state stays on `App`** (not on the wrapper): one
+field holding which modal is open, so "at most one" is structural, and each
+modal's per-close cleanup (re-apply editor settings, null a pick-target, reset a
+query buffer) is a hook on its registry row rather than a branch someone has to
+remember to write.
 
 **`is_window_appearing()` is the first-frame signal** — but inside a
 `begin_child` it returns the *child's* appearing state, not the modal's.
@@ -351,17 +376,18 @@ a child window.
 ### 7.3 Modal body returns `bool keep_open`
 
 Every `_draw_body(app) -> bool` returns True to keep the modal open, False to
-close. The wrapper translates False → `is_X_open = False` +
-`imgui.close_current_popup()` (plus any per-modal close cleanup). **Don't
-invert the boolean** — `keep_open` reads better than `is_keep_opened` /
-`should_close` / `keep_running`. One name, every modal.
+close. The draw path translates False → the close funnel →
+`imgui.close_current_popup()`. **Don't invert the boolean** — `keep_open` reads
+better than `is_keep_opened` / `should_close` / `keep_running`. One name, every
+modal.
 
 Multiple close paths inside one body all set the same `keep_open = False` and
-return. If a body needs branched cleanup (Settings's `apply_editor_settings()`
-on close, Emoji picker's `emoji_pick_target = None`), do that **at the wrapper
-call site after the body returns False**, not inside conditional cleanup logic
-in the body — the body should describe what it draws, not what happens on
-close.
+return. Branched cleanup (Settings's `apply_editor_settings()` on close, Emoji
+picker's `emoji_pick_target = None`) is the row's `on_close` hook, never
+conditional cleanup logic in the body — the body describes what it draws, not
+what happens on close. A modal serving two modes (a draft and a live object)
+keeps ONE id and dispatches inside its `body`, with both leaves listed in the
+chrome gate (§7.1).
 
 ### 7.4 Right-click context menus for per-row actions
 
@@ -397,13 +423,23 @@ list / grid actions, prefer a right-click context menu over inline buttons.**
   category wrapped in `begin_disabled` hides what is in it — disable per ITEM.
   Gate in Python only where the item must ALSO refuse a programmatic path.
 
-- **A destructive menu verb confirms through its own submenu**, not through an
-  armed label that flips on a second open: `begin_menu("Delete")` holding one
-  error-colored item ("Move to trash", "Delete pass blur"). The submenu opens on
-  hover, the second click is inside the same open menu, and the whole popup
-  closes on it — no armed flag to reset, no reopen, no modal. An armed
-  `danger_button` row stays the shape INSIDE a modal, where there is no menu to
-  hang a submenu from.
+- **A destructive menu verb is a PLAIN item whose click opens the confirm modal.**
+  Two shapes were tried and both lost: an armed label that flips on a second
+  open, and a `begin_menu("Delete")` holding one error-colored item. The submenu
+  opens on HOVER, which means the confirm is reachable without a decision; it
+  carries no consequence text and no chord hint; and it is a shape no desktop app
+  confirms with. The modal states what is lost, names its target, and is the same
+  question from a menu, a bar item, a button, a chord and the palette — which is
+  what makes the verb, not the surface, the owner of its confirm. An armed
+  `danger_button` row stays the shape INSIDE a modal, where a modal over a modal
+  is not the mechanism.
+
+- **The confirm modal's Enter is declined on its appearing frame.** A menu item
+  activated by keyboard nav fires on the same frame the modal first draws, and
+  `is_key_pressed` is edge-triggered, so the press that chose the item would also
+  confirm it. `not imgui.is_window_appearing()` is the whole guard. And the
+  button and the key share ONE branch: drawn in the same pass, two branches run
+  the verb twice on a frame where both land.
 
 ### 7.5 Inline inputs inside modals (rename / new-file / new-dir)
 

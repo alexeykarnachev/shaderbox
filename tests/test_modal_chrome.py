@@ -1,14 +1,14 @@
-"""Every modal closes the same way and ends in the same action row (093/17 M8).
+"""Every modal is one registry row, closes the same way, and ends in the same action row.
 
 The rulebook's modal chrome (`.claude/skills/imgui-ui/SKILL.md` §7.1, §7.3) is prose that
 four modals had already drifted from: one body inverted the `keep_open` name, three had no
 `SPACE.MD` spacer above the action row, and the copilot's revert confirm closed itself inside
 its body instead of returning a bool. Prose does not hold a shape; this does.
 
-The domain is ENUMERATED from `PopupState` (minus `CLOSED`) plus the one modal outside the
-enum, and each member is resolved to its body through `_BODIES` here -- a member with no row
-fails, so a new modal cannot join the mutex without joining this gate. Never a `popups/*.py`
-glob: the lib picker is a package, and a glob would miss it.
+The domain is the REGISTRY (`popups.registry.MODALS`), paired against `ModalId` so a member
+with no `Modal` and a `Modal` with no member both fail. Each modal's LEAF bodies are resolved
+through `_BODIES` here -- the pass-settings entry lists both of its modes, since its `Modal.body`
+is a dispatcher and walking that instead would check nothing for it.
 """
 
 import ast
@@ -19,8 +19,9 @@ from types import FunctionType
 
 import pytest
 
-from shaderbox.app import PopupState
+from shaderbox.app import ModalId
 from shaderbox.popups import (
+    confirm,
     emoji_picker,
     examples,
     help,
@@ -30,41 +31,39 @@ from shaderbox.popups import (
     projects,
     settings,
 )
-from shaderbox.widgets import copilot_chat
+from shaderbox.popups.registry import BY_ID, MODALS
 
-# The one modal outside `PopupState`: it carries a `Message` payload, so its open/closed state
-# is `App.copilot_revert_target` rather than an enum member. It rides the same mutex through
-# `App.any_popup_open`, so it obeys the same chrome.
-REVERT_MODAL = "copilot_revert"
-
-# Each modal's body: the function that RETURNS the keep-open bool and draws the action row.
-# The Projects modal has three mutually-exclusive bodies; the verb row is the one a plain
-# open shows, and the other two are covered by the same rules through their own rows.
-_BODIES: dict[str, FunctionType] = {
-    PopupState.EXAMPLES.value: examples._draw_body,
-    PopupState.HELP.value: help._draw_body,
-    PopupState.SETTINGS.value: settings._draw_body,
-    PopupState.PASS_SETTINGS.value: pass_settings._draw_body,
-    PopupState.IMPORT_PASSES.value: import_passes._draw_body,
-    PopupState.EMOJI_PICKER.value: emoji_picker._draw_body,
-    PopupState.SHADER_LIB_PICKER.value: lib_picker._draw_body,
-    PopupState.PROJECTS.value: projects._draw_verb_row,
-    REVERT_MODAL: copilot_chat._draw_revert_body,
+# Each modal's LEAF bodies: the functions that RETURN the keep-open bool and draw the action
+# row. `PASS_SETTINGS` has two (the dispatcher picks per `app.pass_draft`), and the Projects
+# modal has three mutually-exclusive ones -- the verb row is the one a plain open shows, and
+# the other two are covered by the same rules through their own rows.
+_BODIES: dict[ModalId, tuple[FunctionType, ...]] = {
+    ModalId.EXAMPLES: (examples._draw_body,),
+    ModalId.HELP: (help._draw_body,),
+    ModalId.SETTINGS: (settings._draw_body,),
+    ModalId.PASS_SETTINGS: (pass_settings._draw_body, pass_settings._draw_draft),
+    ModalId.IMPORT_PASSES: (import_passes._draw_body,),
+    ModalId.EMOJI_PICKER: (emoji_picker._draw_body,),
+    ModalId.SHADER_LIB_PICKER: (lib_picker._draw_body,),
+    ModalId.PROJECTS: (projects._draw_verb_row,),
+    ModalId.CONFIRM: (confirm._draw_body,),
 }
 
 _CLOSE_LABELS: frozenset[str] = frozenset({"Close", "Cancel"})
 
-
-def _domain() -> list[str]:
-    return [state.value for state in PopupState if state is not PopupState.CLOSED] + [
-        REVERT_MODAL
-    ]
+_PKG = Path(__file__).resolve().parent.parent / "shaderbox"
 
 
-def _body_ast(name: str) -> ast.FunctionDef:
-    function = _BODIES[name]
-    source = inspect.getsource(function)
-    tree = ast.parse(textwrap.dedent(source))
+def _leaves() -> list[tuple[ModalId, FunctionType]]:
+    return [(modal_id, body) for modal_id, bodies in _BODIES.items() for body in bodies]
+
+
+def _leaf_ids() -> list[str]:
+    return [f"{modal_id.value}::{body.__name__}" for modal_id, body in _leaves()]
+
+
+def _body_ast(body: FunctionType) -> ast.FunctionDef:
+    tree = ast.parse(textwrap.dedent(inspect.getsource(body)))
     node = tree.body[0]
     assert isinstance(node, ast.FunctionDef)
     return node
@@ -114,146 +113,231 @@ def _label_of(call: ast.Call) -> str:
     return ""
 
 
-@pytest.mark.parametrize("name", _domain())
-def test_every_modal_has_a_body_row(name: str) -> None:
-    """A member the table does not name is a modal nothing below checks.
+# ---------------------------------------------------------------------------
+# R1 / R6 — the registry IS the roster
+# ---------------------------------------------------------------------------
 
-    Falsifier: add a `PopupState` member with no `_BODIES` row.
+
+def test_every_modal_id_has_exactly_one_registry_row() -> None:
+    """The structural half: the enum and the registry are the same set, one row each.
+
+    Falsifier: add a `ModalId` member with no `Modal` -- or a second `Modal` for one id.
     """
-    assert name in _BODIES, (
-        f"{name} has no _BODIES row: add its body function, or the chrome rules below "
-        f"silently skip it."
+    ids = [modal.id for modal in MODALS]
+    assert len(ids) == len(set(ids)), f"a ModalId appears twice in MODALS: {ids}"
+    assert set(ids) == set(ModalId), (
+        f"in ModalId but not MODALS: {sorted(set(ModalId) - set(ids))}; "
+        f"in MODALS but not ModalId: {sorted(set(ids) - set(ModalId))}"
     )
+    assert set(BY_ID) == set(ModalId)
 
 
-@pytest.mark.parametrize("name", sorted(_BODIES))
-def test_every_body_binds_and_returns_keep_open(name: str) -> None:
+def test_every_registry_row_has_leaf_bodies_listed() -> None:
+    """A modal the table does not name is one nothing below checks.
+
+    Falsifier: add a `Modal` and no `_BODIES` row.
+    """
+    assert set(_BODIES) == set(ModalId), (
+        f"_BODIES misses {sorted(set(ModalId) - set(_BODIES))}; "
+        f"names retired ids {sorted(set(_BODIES) - set(ModalId))}"
+    )
+    for modal_id, bodies in _BODIES.items():
+        assert bodies, f"{modal_id.value} lists no leaf body"
+
+
+# ---------------------------------------------------------------------------
+# R3 — the chrome of each leaf body
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(("modal_id", "body"), _leaves(), ids=_leaf_ids())
+def test_every_body_binds_and_returns_keep_open(
+    modal_id: ModalId, body: FunctionType
+) -> None:
     """§7.3: one name for the flag, never inverted.
 
-    Falsifier: rename `keep_open` to `ok` in one modal.
+    Falsifier: rename `keep_open` to `ok` in one modal -- or point a `_BODIES` row at the
+    pass-settings DISPATCHER, which binds no such local.
     """
-    body = _body_ast(name)
+    node = _body_ast(body)
     bound = {
         target.id
-        for node in ast.walk(body)
-        if isinstance(node, (ast.Assign, ast.AnnAssign))
-        for target in (node.targets if isinstance(node, ast.Assign) else [node.target])
+        for inner in ast.walk(node)
+        if isinstance(inner, (ast.Assign, ast.AnnAssign))
+        for target in (
+            inner.targets if isinstance(inner, ast.Assign) else [inner.target]
+        )
         if isinstance(target, ast.Name)
     }
     assert "keep_open" in bound, (
-        f"{name}'s body binds no local named `keep_open` (bound: {sorted(bound)})"
+        f"{modal_id.value}::{body.__name__} binds no local named `keep_open` "
+        f"(bound: {sorted(bound)})"
     )
     returned = {
-        ast.unparse(node.value)
-        for node in ast.walk(body)
-        if isinstance(node, ast.Return) and node.value is not None
+        ast.unparse(inner.value)
+        for inner in ast.walk(node)
+        if isinstance(inner, ast.Return) and inner.value is not None
     }
     assert "keep_open" in returned, (
-        f"{name}'s body never returns `keep_open` (returns: {sorted(returned)})"
+        f"{modal_id.value}::{body.__name__} never returns `keep_open` "
+        f"(returns: {sorted(returned)})"
     )
 
 
-@pytest.mark.parametrize("name", sorted(_BODIES))
-def test_every_body_ends_in_a_close_or_cancel_row(name: str) -> None:
+@pytest.mark.parametrize(("modal_id", "body"), _leaves(), ids=_leaf_ids())
+def test_every_body_ends_in_a_close_or_cancel_row(
+    modal_id: ModalId, body: FunctionType
+) -> None:
     """§7.1: the dismiss control is a `standard_button` labelled Close or Cancel, and it is
     the LAST one in the body -- the bottom action row, never mid-body.
 
     Falsifier: drop the Close row from one modal.
     """
-    calls = _close_calls(_body_ast(name))
-    assert calls, f"{name}'s body draws no standard_button at all"
+    calls = _close_calls(_body_ast(body))
+    assert calls, f"{modal_id.value}::{body.__name__} draws no standard_button at all"
     label = _label_of(calls[-1])
     assert label in _CLOSE_LABELS, (
-        f"{name}'s last standard_button is {label!r}; §7.1 ends a modal on Close or Cancel"
+        f"{modal_id.value}::{body.__name__}'s last standard_button is {label!r}; "
+        "§7.1 ends a modal on Close or Cancel"
     )
 
 
-@pytest.mark.parametrize("name", sorted(_BODIES))
-def test_a_medium_spacer_precedes_the_action_row(name: str) -> None:
+@pytest.mark.parametrize(("modal_id", "body"), _leaves(), ids=_leaf_ids())
+def test_a_medium_spacer_precedes_the_action_row(
+    modal_id: ModalId, body: FunctionType
+) -> None:
     """§7.1: `imgui.dummy((0, SPACE.MD))` above the action row -- one token, one spelling.
 
     Falsifier: delete one modal's spacer.
     """
-    body = _body_ast(name)
-    close = _close_calls(body)[-1]
+    node = _body_ast(body)
+    close = _close_calls(node)[-1]
     spacers = [
-        node
-        for node in ast.walk(body)
-        if isinstance(node, ast.Call)
-        and _is_md_spacer(node)
-        and node.lineno < close.lineno
+        inner
+        for inner in ast.walk(node)
+        if isinstance(inner, ast.Call)
+        and _is_md_spacer(inner)
+        and inner.lineno < close.lineno
     ]
     assert spacers, (
-        f"{name}'s action row has no SPACE.MD spacer above it "
+        f"{modal_id.value}::{body.__name__}'s action row has no SPACE.MD spacer above it "
         f"(the Close row is at offset {close.lineno} of the body)"
     )
 
 
-# Where each modal's own draw function lives, for the close-branch walk below.
-_DRAW_MODULES: dict[str, str] = {
-    PopupState.EXAMPLES.value: "popups/examples.py",
-    PopupState.HELP.value: "popups/help.py",
-    PopupState.SETTINGS.value: "popups/settings.py",
-    PopupState.PASS_SETTINGS.value: "popups/pass_settings.py",
-    PopupState.IMPORT_PASSES.value: "popups/import_passes.py",
-    PopupState.EMOJI_PICKER.value: "popups/emoji_picker.py",
-    PopupState.SHADER_LIB_PICKER.value: "popups/lib_picker/__init__.py",
-    PopupState.PROJECTS.value: "popups/projects.py",
-}
+# ---------------------------------------------------------------------------
+# R2 — the mutex is the registry's to write, and ui.py draws it once
+# ---------------------------------------------------------------------------
 
-_FUNNEL_VERBS: frozenset[str] = frozenset(
-    {"close_popup", "close_pass_settings", "close_import_passes", "close_emoji_picker"}
+
+def _package_sources(subdirs: tuple[str, ...]) -> list[tuple[str, ast.Module]]:
+    found: list[tuple[str, ast.Module]] = []
+    for subdir in subdirs:
+        for path in sorted((_PKG / subdir).rglob("*.py")):
+            if path.name == "registry.py":
+                continue
+            name = path.relative_to(_PKG).as_posix()
+            found.append((name, ast.parse(path.read_text(encoding="utf-8"))))
+    return found
+
+
+@pytest.mark.parametrize(
+    ("module", "tree"),
+    _package_sources(("popups", "widgets")),
+    ids=[name for name, _ in _package_sources(("popups", "widgets"))],
 )
+def test_no_popup_or_widget_writes_the_mutex(module: str, tree: ast.Module) -> None:
+    """The mutex is the registry's field: a popup or widget that writes it closes around
+    the per-modal cleanup the funnel owns.
 
-_PKG = Path(__file__).resolve().parent.parent / "shaderbox"
-
-
-@pytest.mark.parametrize("name", sorted(_DRAW_MODULES))
-def test_no_modal_writes_the_closed_state_by_hand(name: str) -> None:
-    """M9: a modal's own Close branch calls the funnel, never `popup_state = CLOSED`.
-
-    A hand-written close is how the emoji picker leaked its `emoji_pick_target`: the state
-    went to CLOSED and the cleanup the funnel owns never ran. Falsifier: put
-    `app.popup_state = PopupState.CLOSED` back in one draw function.
+    A hand-written close is how the emoji picker leaked its `emoji_pick_target`. Falsifier:
+    put `app.modal = None` back in `help.py`.
     """
-    source = (_PKG / _DRAW_MODULES[name]).read_text(encoding="utf-8")
-    tree = ast.parse(source)
-    hand_written = [
+    written = [
         node.lineno
         for node in ast.walk(tree)
         if isinstance(node, ast.Assign)
-        and "PopupState.CLOSED" in ast.unparse(node.value)
+        for target in node.targets
+        if isinstance(target, ast.Attribute) and target.attr == "modal"
     ]
-    assert not hand_written, (
-        f"{name} writes PopupState.CLOSED by hand at {hand_written}; close through the funnel"
-    )
-    called = {
-        node.func.attr
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-    }
-    assert called & _FUNNEL_VERBS, (
-        f"{name} calls none of the close verbs {sorted(_FUNNEL_VERBS)}"
+    assert not written, (
+        f"{module} assigns app.modal at {written}; close through `registry.close_modal`"
     )
 
 
-def test_the_close_funnel_covers_every_popup_state() -> None:
-    """`App.close_popup` is the ONE close funnel (M9), so every enum member but CLOSED must
-    name a branch in it. A member with no branch closes through nothing and leaves its own
-    cleanup undone -- the emoji picker's dangling `emoji_pick_target` was exactly that.
+def test_ui_draws_the_registry_once_and_imports_no_popup_draw() -> None:
+    """R2: one `draw_modal(app)` call, and no per-modal draw function imported.
 
-    Falsifier: add a `PopupState` member, wire its draw, omit its `close_popup` branch.
+    Falsifier: re-add `draw_help(app)` and its import -- the import half goes red.
     """
-    tree = ast.parse((_PKG / "app.py").read_text(encoding="utf-8"))
-    funnel = next(
+    tree = ast.parse((_PKG / "ui.py").read_text(encoding="utf-8"))
+    imported = {
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+        and (node.module or "").startswith("shaderbox.popups")
+        for alias in node.names
+    }
+    assert imported == {"draw_modal"}, (
+        f"ui.py imports {sorted(imported)} from shaderbox.popups; the registry's "
+        "`draw_modal` is the whole popup surface"
+    )
+    calls = [
         node
         for node in ast.walk(tree)
-        if isinstance(node, ast.FunctionDef) and node.name == "close_popup"
-    )
-    named = ast.unparse(funnel)
-    missing = [
-        state.name
-        for state in PopupState
-        if state is not PopupState.CLOSED and f"PopupState.{state.name}" not in named
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "draw_modal"
     ]
-    assert not missing, f"close_popup names no branch for: {missing}"
+    assert len(calls) == 1, f"ui.py calls draw_modal {len(calls)} times"
+
+
+def test_app_is_not_a_client_of_the_popups_layer() -> None:
+    """R2: the registry is a LEAF -- it imports `app.py`, so `app.py` importing anything
+    under `shaderbox.popups` is the cycle that forces a banned escape.
+
+    Falsifier: `from shaderbox.popups.confirm import ConfirmRequest` in `app.py`.
+    """
+    tree = ast.parse((_PKG / "app.py").read_text(encoding="utf-8"))
+    offenders = [
+        (node.lineno, node.module)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+        and (node.module or "").startswith("shaderbox.popups")
+    ]
+    assert not offenders, (
+        f"app.py imports from the popups layer at {offenders}; a payload type belongs in "
+        "`ui_models.py`, which app.py already imports"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Deletions — the roster's old five places are gone
+# ---------------------------------------------------------------------------
+
+_RETIRED: tuple[str, ...] = (
+    "PopupState",
+    "close_popup",
+    "copilot_revert_target",
+    "confirm_menu_item",
+    "confirm_label",
+)
+
+
+@pytest.mark.parametrize("name", _RETIRED)
+def test_a_retired_name_is_gone_from_the_tree(name: str) -> None:
+    """The five-place roster and the submenu confirm are deleted, not merely unused.
+
+    Falsifier: leave any one of them behind anywhere in `shaderbox/` or `tests/`.
+    """
+    roots = (_PKG, _PKG.parent / "tests", _PKG.parent / "scripts" / "smoke.py")
+    offenders: list[str] = []
+    for root in roots:
+        paths = [root] if root.is_file() else sorted(root.rglob("*.py"))
+        for path in paths:
+            for number, line in enumerate(
+                path.read_text(encoding="utf-8").splitlines(), 1
+            ):
+                if name in line and path.name != Path(__file__).name:
+                    offenders.append(f"{path.name}:{number}")
+    assert not offenders, f"{name} survives at {offenders}"

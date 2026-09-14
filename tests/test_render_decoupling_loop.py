@@ -18,7 +18,7 @@ from typing import Any
 import pytest
 
 from shaderbox import ui
-from shaderbox.app import PopupState
+from shaderbox.app import ModalId
 from shaderbox.constants import STARTER_EXAMPLE_ID
 from shaderbox.profiling import FrameProfile, Span
 from shaderbox.render_plan import AUTO_RESIZE_STABLE_FRAMES, CostRecord, RenderPlan
@@ -26,6 +26,7 @@ from shaderbox.render_shape import ResolutionMode, fit_to_aspect
 from shaderbox.tabs.document import _apply_canvas_size, _switch_resolution_mode
 from shaderbox.theme import SIZE
 from shaderbox.ui import _tick_frame_state, update_and_draw
+from shaderbox.ui_models import ConfirmRequest
 from shaderbox.ui_primitives import profile_rows_plan
 from tests.conftest import seed_extra_document
 
@@ -178,6 +179,38 @@ def test_the_throttle_off_advances_every_document_every_frame(
     assert set(app.render_plan.intervals.values()) == {1}
 
 
+def test_the_confirm_modal_pauses_the_normal_render_set(
+    app: Any, monkeypatch: Any
+) -> None:
+    """A new mutex member is a new member of the render plan's domain (093 W4).
+
+    `ModalId.CONFIRM` is not the pass-settings exception, so it pauses the document set like
+    every other modal. Falsifier: add a CONFIRM branch to `planned_set_mode` or to the
+    render chain's `elif` -- the document then keeps rendering behind a destructive confirm,
+    which is the one moment its GPU cost buys nothing.
+    """
+    _freeze_costs(app, monkeypatch)
+    app.request_confirm(
+        ConfirmRequest(
+            title="Delete pass b?",
+            line="Its wiring is lost.",
+            verb="Delete",
+            on_confirm=lambda: None,
+        )
+    )
+    assert ui.planned_set_mode(app) == (False, False)
+
+    renders = _count_renders(app, monkeypatch, app.ui_documents)
+    for _ in range(8):
+        app.modal = ModalId.CONFIRM
+        update_and_draw(app)
+    assert renders.get(app.current_document_id, 0) == 0, (
+        f"the current document rendered {renders.get(app.current_document_id, 0)} times "
+        "behind the confirm modal"
+    )
+    app.modal = None
+
+
 def test_a_throttled_document_behind_the_pass_settings_modal_is_gated_too(
     app: Any, monkeypatch: Any
 ) -> None:
@@ -190,17 +223,17 @@ def test_a_throttled_document_behind_the_pass_settings_modal_is_gated_too(
     _freeze_costs(app, monkeypatch)
     _plant_cost(app, app.current_document_id, 100.0)
     for _ in range(8):
-        app.popup_state = PopupState.PASS_SETTINGS
+        app.modal = ModalId.PASS_SETTINGS
         update_and_draw(app)
 
     renders = _count_renders(app, monkeypatch, app.ui_documents)
     begins = _count_begin_frames(app, monkeypatch)
     try:
         for _ in range(24):
-            app.popup_state = PopupState.PASS_SETTINGS
+            app.modal = ModalId.PASS_SETTINGS
             update_and_draw(app)
     finally:
-        app.popup_state = PopupState.CLOSED
+        app.modal = None
 
     assert app.render_plan is not None
     interval = app.render_plan.intervals[app.current_document_id]
@@ -379,13 +412,13 @@ def test_a_throttled_example_renders_less_often_than_a_cheap_one(
         pytest.skip("needs two shipped examples")
     expensive, cheap = ids
     _freeze_costs(app, monkeypatch)
-    app.popup_state = PopupState.EXAMPLES
+    app.modal = ModalId.EXAMPLES
     app.app_state.selected_example_id = ""
     _plant_cost(app, expensive, 100.0)
     _plant_cost(app, cheap, 0.5)
     # Warm both examples past their first render, which the popup admits one per frame.
     for _ in range(8):
-        app.popup_state = PopupState.EXAMPLES
+        app.modal = ModalId.EXAMPLES
         update_and_draw(app)
 
     # The RENDER calls, not `_frame`: step 8's `begin_frame` gate and the render gate are two
@@ -394,10 +427,10 @@ def test_a_throttled_example_renders_less_often_than_a_cheap_one(
     renders = _count_renders(app, monkeypatch, app.ui_document_examples)
     try:
         for _ in range(24):
-            app.popup_state = PopupState.EXAMPLES
+            app.modal = ModalId.EXAMPLES
             update_and_draw(app)
     finally:
-        app.popup_state = PopupState.CLOSED
+        app.modal = None
 
     assert app.render_plan is not None
     assert app.render_plan.intervals[expensive] > app.render_plan.intervals[cheap]
@@ -674,7 +707,7 @@ def test_the_import_dialog_plans_the_open_tabs_documents(
         app, monkeypatch, {**app.ui_documents, **app.ui_document_examples}
     )
     for _ in range(8):
-        app.popup_state = PopupState.IMPORT_PASSES
+        app.modal = ModalId.IMPORT_PASSES
         update_and_draw(app)
     assert sum(renders.get(e, 0) for e in app.ui_document_examples) > 0
     assert renders.get(other, 0) == 0, (
@@ -683,7 +716,7 @@ def test_the_import_dialog_plans_the_open_tabs_documents(
 
     app.import_draft.examples_tab = False
     for _ in range(8):
-        app.popup_state = PopupState.IMPORT_PASSES
+        app.modal = ModalId.IMPORT_PASSES
         update_and_draw(app)
     assert renders.get(other, 0) > 0, (
         "the project tab did not render the other document"

@@ -4,7 +4,7 @@ from typing import get_args
 
 from imgui_bundle import imgui
 
-from shaderbox.app import App, PopupState
+from shaderbox.app import App, ModalId
 from shaderbox.commands import (
     CATEGORY_ORDER,
     COMMAND_SPECS,
@@ -19,6 +19,7 @@ from shaderbox.commands import (
 from shaderbox.constants import SHADER_LIB_SEED_DIR
 from shaderbox.copilot.config import COPILOT_LIMIT_ROWS
 from shaderbox.paths import shader_lib_root
+from shaderbox.popups import Modal
 from shaderbox.shader_lib.seed import reset_to_shipped
 from shaderbox.theme import COLOR, SETTINGS_MARK_S, SIZE, SPACE
 from shaderbox.ui_models import EditorKeymap
@@ -32,7 +33,6 @@ from shaderbox.ui_primitives import (
     help_marker,
     label_row,
     labeled_text_input,
-    modal_window,
     standard_button,
 )
 
@@ -54,19 +54,6 @@ class SettingsField(StrEnum):
 
 _LABEL = "Settings##popup"
 _KEYMAPS: tuple[EditorKeymap, ...] = get_args(EditorKeymap)
-
-
-def draw_settings(app: App) -> None:
-    if app.popup_state != PopupState.SETTINGS:
-        return
-    with modal_window(
-        _LABEL, (float(SIZE.SETTINGS_W), float(SIZE.SETTINGS_H))
-    ) as visible:
-        if not visible:
-            return
-        if not _draw_body(app):
-            app.close_popup()
-            imgui.close_current_popup()
 
 
 def _draw_body(app: App) -> bool:
@@ -333,3 +320,12 @@ def _draw_keybindings(app: App) -> None:
                 app.rebinding_command = spec.id
             if not spec.rebindable:
                 imgui.end_disabled()
+
+
+MODAL = Modal(
+    id=ModalId.SETTINGS,
+    label=_LABEL,
+    size=lambda app: (float(SIZE.SETTINGS_W), float(SIZE.SETTINGS_H)),
+    body=_draw_body,
+    on_close=lambda app: app.apply_editor_settings(),
+)

@@ -5,12 +5,12 @@ Section list on the left, prose + an insertable GLSL snippet on the right; the l
 
 from imgui_bundle import imgui
 
-from shaderbox.app import App, PopupState
+from shaderbox.app import App, ModalId
 from shaderbox.help_content import HelpSection, help_sections
+from shaderbox.popups import Modal
 from shaderbox.theme import COLOR, SPACE
 from shaderbox.ui_primitives import (
     markdown_text,
-    modal_window,
     primary_button,
     standard_button,
 )
@@ -21,23 +21,12 @@ _POPUP_H = 640.0
 _LIST_W = 200.0
 
 
-def draw_help(app: App) -> None:
-    if app.popup_state != PopupState.HELP:
-        return
-    with modal_window(_LABEL, (_POPUP_W, _POPUP_H)) as visible:
-        if not visible:
-            return
-        if not _draw_body(app):
-            app.close_popup()
-            imgui.close_current_popup()
-
-
 def _current_section(app: App) -> HelpSection:
     sections = help_sections()
     for section in sections:
         if section.key == app.help_section:
             return section
-    # An unknown key (a renamed section, a harness that set popup_state directly) falls back
+    # An unknown key (a renamed section, a harness that set `app.modal` directly) falls back
     # rather than indexing into nothing.
     return sections[0]
 
@@ -97,3 +86,11 @@ def _insert_target_ok(app: App) -> bool:
     # The tab's own `kind` is the semantic answer; a filename test would re-derive it.
     tab = app.active_tab
     return app.editor_was_ever_focused and tab is not None and tab.kind == "shader"
+
+
+MODAL = Modal(
+    id=ModalId.HELP,
+    label=_LABEL,
+    size=lambda app: (_POPUP_W, _POPUP_H),
+    body=_draw_body,
+)

@@ -25,7 +25,7 @@ import glfw
 from imgui_bundle import imgui
 from loguru import logger
 
-from shaderbox.app import App, PopupState
+from shaderbox.app import App, ModalId
 from shaderbox.constants import DOCUMENT_EXAMPLES_DIR, EXAMPLE_ORDER
 from shaderbox.document import Document
 from shaderbox.editor.ffi import Kind as EditorKind
@@ -137,10 +137,10 @@ _TAB_FOCUS_FRAMES: dict[int, DocumentTab] = {
 
 
 def _check_invariants(app: App, frame_idx: int) -> None:
-    # The "at most one modal popup open" mutex is now structural — popup_state is a single
-    # PopupState value, so two modals can't be open at once by construction (feature 023).
-    assert isinstance(app.popup_state, PopupState), (
-        f"frame {frame_idx}: popup_state is not a PopupState ({app.popup_state!r})"
+    # The "at most one modal open" mutex is structural — `app.modal` is one ModalId or None,
+    # so two modals can't be open at once by construction (feature 023, reshaped by 093 W4).
+    assert app.modal is None or isinstance(app.modal, ModalId), (
+        f"frame {frame_idx}: modal is not a ModalId ({app.modal!r})"
     )
     assert (
         app.current_document_id == "" or app.current_document_id in app.ui_documents
@@ -205,8 +205,8 @@ def main() -> int:
             app = App(project_dir=project, headless=True)
             # An explicit-dir App is never a first run: the examples browser must NOT
             # auto-open (feature 051 — the auto-open is gated on project_dir=None).
-            assert app.popup_state == PopupState.CLOSED, (
-                f"popup auto-opened for an explicit-dir App ({app.popup_state!r})"
+            assert app.modal is None, (
+                f"popup auto-opened for an explicit-dir App ({app.modal!r})"
             )
             # 048 D15: _init opens the restored current document's shader tab, so a non-empty
             # project always has one.
@@ -280,7 +280,7 @@ def main() -> int:
                 # loop executing every branch IS the check, plus the state asserts a draw-time
                 # write or a lost scope would break silently.
                 if frame_idx == 43:
-                    app.popup_state = PopupState.CLOSED
+                    app.modal = None
                     app.pass_settings_name = ""
                     app.open_graph_for(multi)
                     # 092 D6: opening the view must WRITE NOTHING. Falsifier: a canvas that
@@ -361,10 +361,10 @@ def main() -> int:
                 # Open the Examples browser for a stretch so its draw path (grid + desc slot +
                 # action row sizing) is exercised — it never opens on its own in the loop.
                 if frame_idx == 70:
-                    app.popup_state = PopupState.EXAMPLES
+                    app.modal = ModalId.EXAMPLES
                 if frame_idx == 90:
-                    app.popup_state = PopupState.CLOSED
-                # Help goes through the REAL opener (not a popup_state poke) so the
+                    app.modal = None
+                # Help goes through the REAL opener (not a bare `modal` poke) so the
                 # section reset is exercised, not just the draw path.
                 if frame_idx == 120:
                     app.open_help()
@@ -372,7 +372,7 @@ def main() -> int:
                         f"open_help did not reset the section ({app.help_section!r})"
                     )
                 if frame_idx == 135:
-                    app.popup_state = PopupState.CLOSED
+                    app.modal = None
                 # Cold-start copilot gate over an open Settings modal: the chat is open with no key
                 # (gate path) and the focus-pending latch is set, the exact state that re-grabbed
                 # focus every frame and dismissed the modal. The render must not crash; the
@@ -385,7 +385,7 @@ def main() -> int:
                 if frame_idx == 102:
                     app.open_settings()
                 if frame_idx == 113:
-                    app.popup_state = PopupState.CLOSED
+                    app.modal = None
                     app.is_copilot_open = False
             # Canary (048): the script must have BOUND + ticked (binding is by `script.py` existence).
             engine = app.session.script_engine

@@ -239,11 +239,11 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   the offset never negative), `bezier_point`, `wire_hit_threshold` / `wire_hit`, `WireState` +
   `wire_state`, `revalidated_wire`, `delete_allowed`; `node_size` and `revalidated_scope` beside
   them.
-- **`popups/pass_settings.py`** — the pass-settings modal (feature 065), in the `PopupState`
+- **`popups/pass_settings.py`** — the pass-settings modal (feature 065), in the modal
   mutex: one pass's name, group (091), run count and target controls. Opens from a tile's gear,
   its context menu, or automatically on `add pass` — set-up-once choices live here, off the
   strip. What a pass reads is not here since 072: that is each sampler's own row.
-- **`popups/import_passes.py`** — the import dialog (feature 091), in the `PopupState` mutex: a
+- **`popups/import_passes.py`** — the import dialog (feature 091), in the modal mutex: a
   source picked from two tabs (the project's other documents, the shipped examples), the group
   name that also prefixes the passes, one combo per ENTRY POINT of the source (kept, or fed by a
   host pass) with the host's readers of that pass as handover checkboxes. The plan is recomputed
@@ -254,7 +254,7 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
 - **`pass_import.py`** — leaf, GL-free (feature 091): `ImportPlan` and `plan_import`, every
   write an import makes or the message that rejects it, decided over the source's and the
   host's wiring. Imports `pass_graph` only.
-- **`popups/projects.py`** — the Projects modal (feature 084, Alt+O), in the `PopupState` mutex:
+- **`popups/projects.py`** — the Projects modal (feature 084, Alt+O), in the modal mutex:
   every project verb in one surface — a row per project (name, document count, path), New,
   Duplicate, Delete, and the folder picker demoted to `Open other...`. Requests a switch rather
   than performing one; `ui.py`'s frame tick consumes it before any drawing.
@@ -324,13 +324,15 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   `COMMAND_SPECS` default table, `chord_to_str` (display), `route_flag`/`popup_suppresses`/
   `capture_chord`/`chord_needs_modifier`, and `command_label(id)` — the ONE spelling every button
   that opens a command's surface takes. The table's ORDER is the UI's (bar, palette, cheatsheet,
-  rebinder, Help); `.separator_before` opens a group, `.confirm_label` makes a confirm submenu;
+  rebinder, Help); `.separator_before` opens a group; a destructive verb needs no field of its
+  own, since its own callback opens the confirm modal (093 W4);
   the designed map is `features/093_refinement/06_command_system.md`. The id->callback wiring lives on `App` (closes over self),
   not here, so this stays cycle-free.
 - **`menus.py`** — the `App`-facing menu primitives (093/17): `draw_menu_bar(app)` (a render of
   `COMMAND_SPECS`, one menu per `CommandCategory`, plus the right-aligned project name),
   `command_menu_item(app, id)` (label + chord hint + scope-derived `enabled`, fires the registered
-  callback; a spec carrying a `confirm_label` draws as a confirm submenu instead) and
+  callback; every spec draws as a plain item, destructive ones included, since the confirm is
+  the modal their callback opens) and
   `menu_enabled(app, spec)`. That predicate asks "does the verb have a target" while
   `hotkeys.spec_eligible` asks "may this key press fire" — deliberately different questions, since
   the click that opened the menu has already taken the focus a chord's gate reads. It is exhaustive
@@ -417,14 +419,22 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   `details.py`, `media_ops.py`, `document_grid.py` (the project's documents as live thumbnails;
   incl. `draw_document_preview_button`, the free preview helper the document grid, the
   examples browser and the import dialog all call, and `document_menu_items` — Open, Open folder,
-  Delete behind its confirm submenu. The tile carries no button since 093/17, and a dim
+  Delete through the confirm modal. The tile carries no button since 093/17, and a dim
   `Right-click for actions` caption sits beside `New document`), `uniform.py`,
   `cheatsheet.py` (the floating bottom-right keyboard-cheatsheet overlay — own top-level window,
   scope-filtered rows, opt-out via `UIAppState.show_cheatsheet`).
-- **`popups/`** — popup `draw(app: App)` free functions. Open/closed state on `App` as a single
-  `PopupState` enum field (`app.popup_state`); the `app.open_*()` helpers set it, `any_popup_open()`
-  gates rendering, and `scripts/smoke.py` asserts it's a `PopupState`. Model owned by
-  `conventions.md ## Design decisions` (the `popups/*.py` bullet).
+- **`popups/`** — one module per modal, each a `_draw_body(app) -> bool` plus a `MODAL =
+  Modal(...)` constant. Open/closed state is `app.modal: ModalId | None`; the `app.open_*()`
+  helpers set it, `any_popup_open()` gates rendering, and `scripts/smoke.py` asserts it is a
+  `ModalId` or None. Model owned by `conventions.md ## Design decisions` (the registry bullet).
+  **`popups/registry.py`** — the roster: `MODALS` / `BY_ID` pair every `ModalId` with its row,
+  `draw_modal(app)` is `ui.py`'s one popup call and `close_modal(app, forced=...)` the one close
+  funnel `hotkeys.py` and every Close button reach. It imports `App` and every popup; nothing in
+  `popups/` imports it, and `app.py` imports nothing from the package at all (a gate pins that).
+  **`popups/__init__.py`** — the shared `Modal` dataclass alone, so the registry and the popups
+  it imports do not cycle. **`popups/confirm.py`** — the confirm modal every destructive verb
+  routes through (093 W4); its request type is `ui_models.ConfirmRequest` and its builders are
+  the `App.*_confirmed` verbs.
   `examples.py` (the Examples browser — grid + description + "Open a copy"), `settings.py` (global target FPS + inline-editor visual options + the
   **Integrations** credential blocks), `emoji_data.py` + `emoji_picker.py` (monochrome glyph grid),
   `lib_picker/` (package: `__init__` entry+orchestrator, `tree`, `preview`, `search`, `filtering` —
@@ -471,7 +481,7 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   `app_data_dir()/logs`).
 - **`ui_primitives.py`** (imgui+theme draw helpers, `App`-free by the three-layer rule: button
   tiers + shared draw primitives — `context_menu_style()`, `pill_button`, `preview_cell`,
-  `confirm_menu_item` (a destructive menu verb behind its own submenu), `InlineInput` +
+  `modal_window` (the modal chrome every registry row draws through), `InlineInput` +
   `name_input_row` / `InputRowResult` (the ONE name-entry row), …;
   plus `profile_rows_plan` / `ProfileRow`, the FPS panel's rows decided as pure headless data —
   order, depth, formatted number and color — which the overlay then only draws) /

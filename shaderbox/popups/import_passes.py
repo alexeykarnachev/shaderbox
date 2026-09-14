@@ -1,6 +1,6 @@
 """The import dialog (091 D10): another document's passes, copied into this one as a group.
 
-One modal in the `PopupState` mutex. Pick a source on one of two tabs (the project's other
+One modal in the `ModalId` mutex. Pick a source on one of two tabs (the project's other
 documents, the shipped examples), name the group (it also prefixes the passes), and decide
 each ENTRY POINT of the source -- a pass that reads no other pass of it: kept as it is, or fed
 by one of this document's passes, whose own readers are then handed to the bundle's output
@@ -14,17 +14,17 @@ prefill.
 
 from imgui_bundle import imgui
 
-from shaderbox.app import App, PopupState
+from shaderbox.app import App, ModalId
 from shaderbox.document import document_dir_of, offered_entry_points
 from shaderbox.pass_import import ImportPlan, plan_import
 from shaderbox.paths import DOCUMENT_SCRIPT_BASENAME, SCRIPTS_DIR_NAME
+from shaderbox.popups import Modal
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_models import ImportDraft, UIDocument
 from shaderbox.ui_primitives import (
     caption_text,
     help_marker,
     label_row,
-    modal_window,
     primary_button,
     standard_button,
 )
@@ -39,17 +39,6 @@ _ROW_LABEL_W = 110.0
 _CTRL_W = 168.0
 _COMBO_W = 200.0
 _KEEP = "theirs"
-
-
-def draw_import_passes(app: App) -> None:
-    if app.popup_state != PopupState.IMPORT_PASSES:
-        return
-    with modal_window(_LABEL, (_POPUP_W, _POPUP_H)) as visible:
-        if not visible:
-            return
-        if not _draw_body(app):
-            app.close_import_passes()
-            imgui.close_current_popup()
 
 
 def _draw_body(app: App) -> bool:
@@ -254,3 +243,12 @@ def _has_script(source: UIDocument) -> bool:
     return (
         document_dir_of(source.document) / SCRIPTS_DIR_NAME / DOCUMENT_SCRIPT_BASENAME
     ).is_file()
+
+
+MODAL = Modal(
+    id=ModalId.IMPORT_PASSES,
+    label=_LABEL,
+    size=lambda app: (_POPUP_W, _POPUP_H),
+    body=_draw_body,
+    on_close=lambda app: app.close_import_passes(),
+)

@@ -242,7 +242,7 @@ def _draw_document_reset(app: App) -> None:
     )
     imgui.end_disabled()
     if danger_button(label, width=width):
-        app.reset_current_document()
+        app.reset_document_confirmed()
     if imgui.is_item_hovered():
         imgui.set_tooltip("Reset document")
     imgui.begin_disabled(app.copilot_turn_active)

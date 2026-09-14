@@ -16,10 +16,11 @@ from typing import Any
 import pytest
 from imgui_bundle import imgui
 
-from shaderbox.app import PopupState
+from shaderbox.app import ModalId
 from shaderbox.commands import COMMAND_SPECS, CommandId
 from shaderbox.copilot.gate import SourceLock
 from shaderbox.paths import project_trash_dir
+from shaderbox.popups.registry import close_modal
 from shaderbox.project_session import (
     create_project,
     list_projects,
@@ -227,7 +228,7 @@ def test_the_projects_command_replaced_the_open_project_one(app: Any) -> None:
 
 def test_opening_the_modal_lists_projects_and_selects_the_open_one(app: Any) -> None:
     app.open_projects()
-    assert app.popup_state == PopupState.PROJECTS
+    assert app.modal is ModalId.PROJECTS
     assert app.projects_selected == app.project_dir.resolve()
     assert any(row.is_open for row in app.projects_rows)
 
@@ -253,28 +254,34 @@ def test_an_open_name_input_owns_escape(app: Any) -> None:
 
 
 def test_escape_is_owned_by_an_open_name_input_at_the_close_funnel(app: Any) -> None:
-    """The BRANCH, not the predicate: `App.close_popup` must consult the ownership.
+    """The WIRE, not the predicate: `registry.close_modal` must consult the row's `owns_esc`.
 
-    Falsifier: delete the PROJECTS branch from `close_popup` — Esc then closes the whole modal
-    out from under a half-typed name. The predicate test above passes either way, which is what
+    Falsifier: drop `owns_esc` from `projects.MODAL` — Esc then closes the whole modal out
+    from under a half-typed name. The predicate test above passes either way, which is what
     let that branch survive as dead code through a mutation round.
 
-    `close_popup` is what `hotkeys._handle_escape` calls for every popup since 093/17, so the
-    branch is exercised directly rather than through frames: a second frame-driving App in one
-    process hits a torn-down imgui font atlas (`glTexSubImage2D` on a None binding), which
-    poisons every later test that draws.
+    `close_modal` is what `hotkeys._handle_escape` calls for every modal, so the funnel is
+    exercised directly rather than through frames: a second frame-driving App in one process
+    hits a torn-down imgui font atlas (`glTexSubImage2D` on a None binding), which poisons
+    every later test that draws.
     """
     app.open_projects()
     app.projects_new_input.open(app.default_projects_root_dir, "half typed")
     assert app.projects_input_owns_esc(), "the input must own Esc while it is open"
 
-    assert not app.close_popup(), "the funnel closed a modal whose input owns Esc"
-    assert app.popup_state == PopupState.PROJECTS
+    assert not close_modal(app), "the funnel closed a modal whose input owns Esc"
+    assert app.modal is ModalId.PROJECTS
 
-    # The mirror case: with the input closed, the same call closes the modal.
+    # A Close the user CLICKED is forced, so the armed input cannot refuse it (the lib
+    # picker's dead-Close-button bug). Falsifier: drop `forced` from `draw_modal`'s call.
+    assert close_modal(app, forced=True), "a forced close was refused by an armed input"
+    assert app.modal is None
+
+    # The mirror case: with the input closed, the unforced call closes the modal.
+    app.open_projects()
     app.projects_new_input.close()
-    assert app.close_popup()
-    assert app.popup_state == PopupState.CLOSED
+    assert close_modal(app)
+    assert app.modal is None
 
 
 def test_the_open_project_refuses_to_be_deleted(app: Any) -> None:
@@ -390,7 +397,7 @@ def test_the_recovery_opens_projects_not_examples(
     # the gallery wins and the question "which project?" is never asked.
     app = _app_with_pointer_at(tmp_path, monkeypatch, tmp_path / "vanished")
     try:
-        assert app.popup_state == PopupState.PROJECTS
+        assert app.modal is ModalId.PROJECTS
     finally:
         app.release()
 
@@ -404,7 +411,7 @@ def test_a_live_pointer_is_not_treated_as_a_first_launch(
     app = _app_with_pointer_at(tmp_path, monkeypatch, live)
     try:
         assert app.project_dir == live.resolve()
-        assert app.popup_state == PopupState.CLOSED
+        assert app.modal is None
     finally:
         app.release()
 
@@ -450,7 +457,7 @@ def test_the_recovery_modal_is_populated_not_empty(
     # with no rows and no selection, so the recovery shows an empty list.
     app = _app_with_pointer_at(tmp_path, monkeypatch, tmp_path / "vanished")
     try:
-        assert app.popup_state == PopupState.PROJECTS
+        assert app.modal is ModalId.PROJECTS
         assert app.projects_rows, (
             "the recovery modal must list the project it recovered into"
         )
@@ -613,46 +620,12 @@ def test_the_consuming_half_is_wired(app: Any, tmp_path: Path) -> None:
     assert app.project_dir == app.default_projects_root_dir / "through_the_frame"
     assert app.ui_documents, "a new project must arrive seeded, not blank"
 
-    # 3. the modal draws (falsifier: no `draw_projects(app)` in ui.py — a modal that never
+    # 3. the modal draws (falsifier: no `draw_modal(app)` in ui.py — a modal that never
     # draws cannot close itself, so the state surviving is the signal).
     app.open_projects()
     _pump(app)
-    assert app.popup_state == PopupState.PROJECTS
+    assert app.modal is ModalId.PROJECTS
     assert app.projects_rows
-
-
-def test_every_popup_state_has_a_draw_call(app: Any) -> None:
-    # The enum-derived version of the row above: a member added without wiring its draw is the
-    # class, not just this one instance. Falsifier: add a PopupState member and no draw call.
-    # A state with no draw call is INVISIBLE at runtime -- the popup mutex suppresses every
-    # render, nothing draws, and the state simply persists, which looks identical to a healthy
-    # modal. So the wiring is checked structurally, and by PARSING rather than by substring: an
-    # earlier version used `f"{name}(app)" in source`, which a call named only inside a comment
-    # satisfied (demonstrated with a `# TODO: wire draw_ghost(app)` line).
-    _ = app
-    tree = ast.parse(Path("shaderbox/ui.py").read_text(encoding="utf-8"))
-    imported = {
-        alias.name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom)
-        and (node.module or "").startswith("shaderbox.popups")
-        for alias in node.names
-    }
-    called = {
-        node.func.id
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id in imported
-    }
-    unwired = sorted(imported - called)
-    assert not unwired, (
-        f"imported from shaderbox.popups but never called in ui.py: {unwired}"
-    )
-    assert len(called) == len(PopupState) - 1, (
-        f"{len(PopupState) - 1} PopupState members need a draw call; "
-        f"ui.py calls {len(called)}: {sorted(called)}"
-    )
 
 
 def test_open_is_the_verb_row_s_primary_and_never_rides_a_row(app: Any) -> None:

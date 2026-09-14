@@ -15,13 +15,13 @@ from pathlib import Path
 
 from imgui_bundle import imgui
 
-from shaderbox.app import App, PopupState
+from shaderbox.app import App, ModalId
+from shaderbox.popups import Modal
 from shaderbox.project_session import ProjectInfo
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_primitives import (
     InlineInput,
     danger_button,
-    modal_window,
     name_input_row,
     primary_button,
     standard_button,
@@ -32,19 +32,6 @@ _POPUP_W = 620.0
 _POPUP_H = 420.0
 # Where the path column begins, clear of the longest project name.
 _PATH_X = 240.0
-
-
-def draw_projects(app: App) -> None:
-    if app.popup_state != PopupState.PROJECTS:
-        return
-    with modal_window(_LABEL, (_POPUP_W, _POPUP_H)) as visible:
-        if not visible:
-            return
-        if not _draw_body(app):
-            # The body only returns False once its own input is closed, so the funnel's
-            # "an input owns Esc" branch cannot refuse this close.
-            app.close_popup()
-            imgui.close_current_popup()
 
 
 def _draw_body(app: App) -> bool:
@@ -167,7 +154,7 @@ def _draw_name_input(
     # The outer Enter (a switch) must not also fire while this input holds focus.
     app.projects_input_focused = result.focused
     if result.cancelled:
-        # `App.close_popup` leaves the modal open for exactly this; without the cancel here,
+        # The close funnel leaves the modal open for exactly this; without the cancel here,
         # Esc would be a dead key.
         state.close()
         app.projects_error = ""
@@ -188,3 +175,13 @@ def _draw_name_input(
 
 def _commit_new(app: App, name: str) -> str:
     return app.new_project(name)
+
+
+MODAL = Modal(
+    id=ModalId.PROJECTS,
+    label=_LABEL,
+    size=lambda app: (_POPUP_W, _POPUP_H),
+    body=_draw_body,
+    on_close=lambda app: app.reset_projects_state(),
+    owns_esc=lambda app: app.projects_input_owns_esc(),
+)

@@ -456,17 +456,17 @@ def _pass_settings_frames(app: Any) -> Any:
     Enough of them that the profile finally published is itself a modal frame: a profile
     completes two frames after it closes, so fewer would still be reporting the main branch.
     """
-    from shaderbox.app import PopupState
+    from shaderbox.app import ModalId
     from shaderbox.ui import update_and_draw
 
     try:
         for _ in range(RING_DEPTH + 2):
             # Re-set each frame: the modal's own draw closes it again, since imgui never sees
             # the `open_popup` a real click would have made.
-            app.popup_state = PopupState.PASS_SETTINGS
+            app.modal = ModalId.PASS_SETTINGS
             update_and_draw(app)
     finally:
-        app.popup_state = PopupState.CLOSED
+        app.modal = None
     return app.last_profile
 
 

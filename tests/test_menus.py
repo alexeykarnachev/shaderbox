@@ -19,7 +19,7 @@ import pytest
 from imgui_bundle import imgui
 
 from shaderbox import menus, ui_primitives
-from shaderbox.app import PopupState
+from shaderbox.app import ModalId
 from shaderbox.commands import (
     CATEGORY_ORDER,
     COMMAND_SPECS,
@@ -29,6 +29,7 @@ from shaderbox.commands import (
     CommandScope,
     command_label,
 )
+from shaderbox.popups.registry import BY_ID, close_modal
 from shaderbox.widgets import document_grid, pass_graph, pass_list
 
 # The imgui font atlas is process-global, so every frame-driving module owns a worker.
@@ -63,7 +64,6 @@ class _ItemSpy:
         self.labels: list[str] = []
         real_simple = imgui.menu_item_simple
         real_item = imgui.menu_item
-        real_confirm = ui_primitives.confirm_menu_item
 
         def simple(label: str, *args: Any, **kwargs: Any) -> bool:
             self.labels.append(label)
@@ -73,14 +73,8 @@ class _ItemSpy:
             self.labels.append(label)
             return real_item(label, *args, **kwargs)
 
-        def confirm(label: str, *args: Any, **kwargs: Any) -> bool:
-            self.labels.append(label)
-            return real_confirm(label, *args, **kwargs)
-
         monkeypatch.setattr(imgui, "menu_item_simple", simple)
         monkeypatch.setattr(imgui, "menu_item", item)
-        for module in (pass_list, document_grid, pass_graph, menus):
-            monkeypatch.setattr(module, "confirm_menu_item", confirm, raising=False)
 
 
 @pytest.fixture
@@ -244,14 +238,17 @@ def test_a_separator_opens_a_group_never_a_menu() -> None:
     assert not first & behind
 
 
-def test_a_destructive_verb_is_not_in_the_palette(app: Any) -> None:
-    """The palette has no second step, so a spec with a `confirm_label` is not offered
-    there. Falsifier: drop the `confirm_label` filter from `_register_palette_commands`."""
+def test_the_palette_offers_every_in_palette_spec(app: Any) -> None:
+    """The palette needs no second step since 093 W4: a destructive verb's own callback
+    opens the confirm modal, so every `in_palette` spec is offered again.
+
+    Falsifier: filter the destructive specs back out of `_register_palette_commands`.
+    """
     for spec in COMMAND_SPECS:
         offered = any(
             name.startswith(spec.label) for name in app._palette_command_names
         )
-        assert offered == (spec.in_palette and not spec.confirm_label), spec.id
+        assert offered == spec.in_palette, spec.id
 
 
 def test_the_table_is_in_menu_order() -> None:
@@ -288,9 +285,9 @@ def test_menu_enabled_reads_the_scope_not_the_editor_focus(app: Any) -> None:
     assert menus.menu_enabled(app, copilot)
 
     # GLOBAL stays enabled even behind an open modal: the bar is drawn under one.
-    app.popup_state = PopupState.SETTINGS
+    app.modal = ModalId.SETTINGS
     assert menus.menu_enabled(app, global_spec)
-    app.popup_state = PopupState.CLOSED
+    app.modal = None
 
     app.ensure_shader_tab(app.current_document_id, focus_editor=False)
     assert app.active_tab is not None
@@ -517,117 +514,13 @@ def test_the_canvas_menu_fires_the_add_pass_command(app: Any, monkeypatch: Any) 
 
     # The callback the item fires is the registry's, and it opens the draft modal.
     app.command_callbacks[CommandId.ADD_PASS]()
-    assert app.popup_state == PopupState.PASS_SETTINGS
+    assert app.modal is ModalId.PASS_SETTINGS
     assert app.pass_draft is not None
 
 
 # ---------------------------------------------------------------------------
-# M5 — the confirm submenu
+# M5 — a destructive verb's menu item is plain; the confirm is the modal
 # ---------------------------------------------------------------------------
-
-
-def test_the_confirm_submenu_needs_the_inner_click(app: Any) -> None:
-    """The outer label opens the submenu and confirms nothing; the inner item is the verb.
-
-    Driven through the REAL `confirm_menu_item` inside a real context popup with synthetic
-    mouse events, the shape the closure review's probe settled. Falsifier: make the primitive
-    return the OUTER click (a plain `menu_item_simple(label)`) -- the label click then
-    confirms on the frame the submenu was only supposed to open on.
-    """
-    _ = app
-    io = imgui.get_io()
-    confirmed: list[int] = []
-    outer_rect: list[tuple[float, float, float, float]] = []
-    inner_rect: list[tuple[float, float, float, float]] = []
-    popup_open: list[bool] = []
-
-    real_item = imgui.menu_item_simple
-
-    def body() -> None:
-        imgui.button("target", (140.0, 40.0))
-        was_open = False
-        if imgui.begin_popup_context_item("##probe_confirm"):
-            was_open = True
-
-            # The inner item's rect is read through a one-frame spy on the call the primitive
-            # makes, since the primitive itself reports only the click.
-            def spy(label: str, *args: Any, **kwargs: Any) -> bool:
-                fired = real_item(label, *args, **kwargs)
-                if label == "Delete pass blur":
-                    lo, hi = imgui.get_item_rect_min(), imgui.get_item_rect_max()
-                    inner_rect.append((lo.x, lo.y, hi.x, hi.y))
-                return fired
-
-            imgui.menu_item_simple = spy
-            try:
-                if ui_primitives.confirm_menu_item("Delete", "Delete pass blur"):
-                    confirmed.append(1)
-            finally:
-                imgui.menu_item_simple = real_item
-            lo, hi = imgui.get_item_rect_min(), imgui.get_item_rect_max()
-            outer_rect.append((lo.x, lo.y, hi.x, hi.y))
-            imgui.end_popup()
-        popup_open.append(was_open)
-
-    for _ in range(3):
-        _frame(body)
-    # Right-click the target to open the context popup.
-    io.add_mouse_pos_event(70.0, 60.0)
-    _frame(body)
-    io.add_mouse_button_event(1, True)
-    _frame(body)
-    io.add_mouse_button_event(1, False)
-    for _ in range(2):
-        _frame(body)
-    assert popup_open[-1], "the context popup never opened"
-    assert outer_rect, "the Delete label was never submitted"
-    assert not inner_rect, "the submenu was open before the pointer reached the label"
-
-    # A click on the OUTER label alone: the submenu opens, nothing is confirmed.
-    x0, y0, x1, y1 = outer_rect[-1]
-    io.add_mouse_pos_event((x0 + x1) / 2.0, (y0 + y1) / 2.0)
-    _frame(body)
-    io.add_mouse_button_event(0, True)
-    _frame(body)
-    io.add_mouse_button_event(0, False)
-    for _ in range(2):
-        _frame(body)
-    assert confirmed == [], "the outer label alone confirmed"
-    assert inner_rect, "the submenu never opened on hover"
-
-    # Now the inner item.
-    x0, y0, x1, y1 = inner_rect[-1]
-    io.add_mouse_pos_event((x0 + x1) / 2.0, (y0 + y1) / 2.0)
-    _frame(body)
-    io.add_mouse_button_event(0, True)
-    _frame(body)
-    io.add_mouse_button_event(0, False)
-    for _ in range(2):
-        _frame(body)
-    assert confirmed == [1], "the inner item did not confirm"
-
-
-def test_a_disabled_confirm_submenu_never_opens(app: Any) -> None:
-    """The last pass's Delete: `begin_menu(enabled=False)` refuses to open on this build
-    (measured 093/17), so nothing inside it is reachable."""
-    _ = app
-    io = imgui.get_io()
-    inside: list[int] = []
-    rect: list[tuple[float, float, float, float]] = []
-
-    def body() -> None:
-        if ui_primitives.confirm_menu_item("Delete", "Delete pass main", enabled=False):
-            inside.append(1)
-        lo, hi = imgui.get_item_rect_min(), imgui.get_item_rect_max()
-        rect.append((lo.x, lo.y, hi.x, hi.y))
-
-    for _ in range(3):
-        _frame(body)
-    x0, y0, x1, y1 = rect[-1]
-    io.add_mouse_pos_event((x0 + x1) / 2.0, (y0 + y1) / 2.0)
-    for _ in range(4):
-        _frame(body)
-    assert inside == [], "a disabled confirm submenu opened and fired"
 
 
 def test_the_lib_trees_armed_delete_is_gone() -> None:
@@ -642,16 +535,16 @@ def test_the_lib_trees_armed_delete_is_gone() -> None:
     assert not hasattr(ShaderLibFileManager, "arm_dir_delete")
 
     tree_source = (_PKG / "popups/lib_picker/tree.py").read_text(encoding="utf-8")
-    # The favorite star's own push stays (§10.3 keeps the inline star); the two RED pushes
-    # around the flipped Delete label are what the primitive absorbed.
+    # The favorite star's own push stays (§10.3 keeps the inline star); the RED the tree
+    # drew around a flipped Delete label is the confirm modal's now.
     assert "COLOR.STATE_ERROR" not in tree_source, (
-        "the tree hand-rolls the error color again; the confirm primitive owns the red"
+        "the tree hand-rolls the error color again; the confirm modal owns the red"
     )
-    assert 'confirm_menu_item("Delete", "Move to .trash")' in tree_source
+    assert 'imgui.menu_item_simple("Delete")' in tree_source
 
 
 def test_the_lib_delete_still_trashes_and_toasts(app: Any) -> None:
-    """The verb behind the submenu is unchanged: a trash move plus its toast."""
+    """The verb behind the confirm is unchanged: a trash move plus its toast."""
     from shaderbox.paths import shader_lib_root, shader_lib_trash_dir
 
     victim = shader_lib_root() / "menus_probe.glsl"
@@ -864,7 +757,7 @@ class _MenuDriver:
         self.rects: dict[str, tuple[float, float, float, float]] = {}
         self.open = False
         real_simple = imgui.menu_item_simple
-        real_confirm = ui_primitives.confirm_menu_item
+        real_item = imgui.menu_item
 
         def record(label: str) -> None:
             lo, hi = imgui.get_item_rect_min(), imgui.get_item_rect_max()
@@ -875,14 +768,13 @@ class _MenuDriver:
             record(label)
             return fired
 
-        def confirm(label: str, confirm_label: str, **kwargs: Any) -> bool:
-            fired = real_confirm(label, confirm_label, **kwargs)
+        def item(label: str, *args: Any, **kwargs: Any) -> tuple[bool, bool]:
+            fired = real_item(label, *args, **kwargs)
             record(label)
             return fired
 
         monkeypatch.setattr(imgui, "menu_item_simple", simple)
-        for module in (pass_list, document_grid, pass_graph, menus):
-            monkeypatch.setattr(module, "confirm_menu_item", confirm, raising=False)
+        monkeypatch.setattr(imgui, "menu_item", item)
 
     def _body(self) -> None:
         imgui.button("target", (140.0, 40.0))
@@ -917,11 +809,13 @@ class _MenuDriver:
             _frame(self._body)
 
 
-def test_the_pass_delete_item_reaches_the_session_verb(
+def test_the_pass_delete_item_opens_the_confirm_rather_than_deleting(
     app: Any, monkeypatch: Any
 ) -> None:
-    """The confirm's inner click runs `session.delete_pass` once, spied with `wraps` so the
-    real verb still runs. Falsifier: replace the `Delete` branch's body with `pass`."""
+    """The item ASKS: the pass survives the click and the confirm names it.
+
+    Falsifier: call `app.delete_pass` from the item -- the pass is gone with no confirm.
+    """
     document_id = app.current_document_id
     name = next(iter(app.ui_documents[document_id].document.passes))
     assert app.session.add_pass(document_id, "other") == ""
@@ -933,28 +827,27 @@ def test_the_pass_delete_item_reaches_the_session_verb(
         app.session, "delete_pass", wraps=app.session.delete_pass
     ) as verb:
         driver.click("Delete")
-        assert verb.call_count == 0, "the outer label alone deleted the pass"
-        driver.click(f"Delete pass {name}")
-    assert verb.call_count == 1, [c.args for c in verb.call_args_list]
-    assert verb.call_args.args[:2] == (document_id, name)
+    assert verb.call_count == 0, "the menu item deleted the pass with no confirm"
+    assert name in app.ui_documents[document_id].document.passes
+    assert app.modal is ModalId.CONFIRM
+    assert app.confirm is not None and app.confirm.title == f"Delete pass {name}?"
 
 
-def test_the_document_delete_item_reaches_the_app_verb(
-    app: Any, monkeypatch: Any
-) -> None:
-    """The document menu's confirm runs `App.delete_document` once. Falsifier: replace the
-    `Delete` branch's body with `pass`."""
+def test_the_document_delete_item_opens_the_confirm(app: Any, monkeypatch: Any) -> None:
+    """The document tile's Delete asks first, naming the document. Falsifier: call
+    `app.delete_document` from the item -- the document goes with no confirm."""
     document_id = app.current_document_id
+    ui_name = app.ui_documents[document_id].ui_state.ui_name
     driver = _MenuDriver(
         lambda: document_grid.document_menu_items(app, document_id), monkeypatch
     )
     driver.open_menu()
     with mock.patch.object(app, "delete_document", wraps=app.delete_document) as verb:
         driver.click("Delete")
-        assert verb.call_count == 0, "the outer label alone deleted the document"
-        driver.click(SPEC_BY_ID[CommandId.DELETE_DOCUMENT].confirm_label)
-    assert verb.call_count == 1, [c.args for c in verb.call_args_list]
-    assert verb.call_args.args[:1] == (document_id,)
+    assert verb.call_count == 0, "the menu item deleted the document with no confirm"
+    assert app.modal is ModalId.CONFIRM
+    assert app.confirm is not None
+    assert app.confirm.title == f"Move {ui_name} to the trash?"
 
 
 def test_the_open_folder_item_reaches_the_app_verb(app: Any, monkeypatch: Any) -> None:
@@ -988,25 +881,37 @@ def test_the_box_dissolve_item_reaches_the_app_verb(app: Any, monkeypatch: Any) 
     assert verb.call_args.args[:2] == (document_id, "bloom")
 
 
-def test_the_bars_delete_document_is_a_confirm_submenu(
+def test_the_bars_delete_document_is_a_plain_item_that_confirms(
     app: Any, monkeypatch: Any
 ) -> None:
-    """M5 is a rule, not a case: the bar's one destructive verb confirms like an object
-    menu's. Falsifier: drop `confirm_label` from `DELETE_DOCUMENT` -- the label click then
-    trashes the open document on one pointer slip below `New document`."""
+    """R5: the bar's one destructive verb is a PLAIN item carrying its chord hint, and its
+    click opens the confirm rather than trashing the document.
+
+    Falsifier: point `DELETE_DOCUMENT`'s callback back at `delete_current_document` -- the
+    label click then trashes the open document on one pointer slip below `New document`.
+    """
     spec = SPEC_BY_ID[CommandId.DELETE_DOCUMENT]
-    assert spec.confirm_label, "DELETE_DOCUMENT carries no confirm label"
+    document_id = app.current_document_id
+    submenus: list[str] = []
+    real_begin_menu = imgui.begin_menu
+
+    def begin_menu(label: str, *args: Any, **kwargs: Any) -> bool:
+        submenus.append(label)
+        return real_begin_menu(label, *args, **kwargs)
+
+    monkeypatch.setattr(imgui, "begin_menu", begin_menu)
     driver = _MenuDriver(
         lambda: menus.command_menu_item(app, CommandId.DELETE_DOCUMENT), monkeypatch
     )
     driver.open_menu()
+    submenus.clear()
     with mock.patch.object(app, "delete_document", wraps=app.delete_document) as verb:
         driver.click(spec.label)
-        assert verb.call_count == 0, (
-            "the bar's Delete document fired on the label click"
-        )
-        driver.click(spec.confirm_label)
-    assert verb.call_count == 1, [c.args for c in verb.call_args_list]
+    assert submenus == [], f"the bar's Delete document drew a submenu: {submenus}"
+    assert verb.call_count == 0, "the bar's Delete document trashed with no confirm"
+    assert app.modal is ModalId.CONFIRM
+    assert app.confirm is not None and app.confirm.verb == "Delete"
+    assert document_id in app.ui_documents
 
 
 # ---------------------------------------------------------------------------
@@ -1033,31 +938,32 @@ def _settings_cleanup_ran(app: Any, applied: Any) -> None:
 
 
 @pytest.mark.parametrize(
-    ("state", "open_it", "cleaned"),
+    ("modal_id", "open_it", "cleaned"),
     [
-        (PopupState.EMOJI_PICKER, _open_emoji_picker, _emoji_cleanup_ran),
-        (PopupState.SETTINGS, lambda app: app.open_settings(), _settings_cleanup_ran),
+        (ModalId.EMOJI_PICKER, _open_emoji_picker, _emoji_cleanup_ran),
+        (ModalId.SETTINGS, lambda app: app.open_settings(), _settings_cleanup_ran),
     ],
     ids=["emoji_picker", "settings"],
 )
-def test_each_close_branch_runs_its_own_cleanup(
+def test_each_registry_row_runs_its_own_cleanup(
     app: Any,
-    state: PopupState,
+    modal_id: ModalId,
     open_it: Callable[[Any], None],
     cleaned: Callable[[Any, Any], None],
 ) -> None:
-    """M9's dispatch is gated structurally; its per-branch cleanup was not, so both branches
+    """The funnel's dispatch is gated structurally; the per-row cleanup was not, so both rows
     that carry more than a state write could be gutted with the suite green.
 
     Falsifiers, one per case: drop the nulling from `close_emoji_picker` (the target dangles
-    at a dead caller); drop `apply_editor_settings()` from the SETTINGS branch (Esc silently
-    discards the user's edits).
+    at a dead caller); drop `on_close` from `settings.MODAL` (Esc silently discards the
+    user's edits).
     """
     open_it(app)
-    assert app.popup_state == state
+    assert app.modal is modal_id
+    assert BY_ID[modal_id].on_close is not None, f"{modal_id.value} has no on_close"
     with mock.patch.object(
         app, "apply_editor_settings", wraps=app.apply_editor_settings
     ) as applied:
-        assert app.close_popup() is True
-    assert app.popup_state == PopupState.CLOSED
+        assert close_modal(app) is True
+    assert app.modal is None
     cleaned(app, applied)

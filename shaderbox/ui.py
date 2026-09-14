@@ -11,7 +11,7 @@ from imgui_bundle import portable_file_dialogs as pfd
 from loguru import logger
 
 from shaderbox import menus
-from shaderbox.app import App, PopupState
+from shaderbox.app import App, ModalId
 from shaderbox.commands import CommandId, chord_to_str
 from shaderbox.constants import (
     GLSL_EXTENSIONS,
@@ -23,14 +23,7 @@ from shaderbox.core import process_time
 from shaderbox.hotkeys import dispatch_commands, process_hotkeys
 from shaderbox.logging_setup import configure_logging
 from shaderbox.paths import log_dir
-from shaderbox.popups.emoji_picker import draw_emoji_picker
-from shaderbox.popups.examples import draw_examples
-from shaderbox.popups.help import draw_help
-from shaderbox.popups.import_passes import draw_import_passes
-from shaderbox.popups.lib_picker import draw_lib_picker
-from shaderbox.popups.pass_settings import draw_pass_settings
-from shaderbox.popups.projects import draw_projects
-from shaderbox.popups.settings import draw_settings
+from shaderbox.popups.registry import draw_modal
 from shaderbox.profiling import gpu_total
 from shaderbox.render_plan import (
     AutoSizeState,
@@ -170,9 +163,9 @@ def planned_set_mode(app: App) -> tuple[bool, bool]:
     Examples tab, plans the examples; the import dialog on its project tab plans the ordinary
     set, since its cards blit the project documents' live canvases. Every other popup
     pauses the set to the current document alone."""
-    importing = app.popup_state == PopupState.IMPORT_PASSES
+    importing = app.modal is ModalId.IMPORT_PASSES
     draft = app.import_draft
-    examples_planned = app.popup_state == PopupState.EXAMPLES or (
+    examples_planned = app.modal is ModalId.EXAMPLES or (
         importing and draft is not None and draft.examples_tab
     )
     return examples_planned, importing and not examples_planned
@@ -516,7 +509,7 @@ def _update_and_draw(app: App) -> None:
             with app.profiler.cpu(document_span_name(example_id)):
                 ui_document.document.render(profiler=app.profiler)
     elif (
-        app.popup_state == PopupState.PASS_SETTINGS
+        app.modal is ModalId.PASS_SETTINGS
         and current_ui_document is not None
         # The THIRD read of the plan, and it must agree with the other two: step 8 gates this
         # document's `begin_frame` whatever popup is open, so a render here that ignored the
@@ -627,14 +620,7 @@ def _update_and_draw(app: App) -> None:
 
             # ------------------------------------------------------------
             # Popups and notifications
-            draw_examples(app)
-            draw_help(app)
-            draw_settings(app)
-            draw_pass_settings(app)
-            draw_import_passes(app)
-            draw_emoji_picker(app)
-            draw_lib_picker(app)
-            draw_projects(app)
+            draw_modal(app)
 
             if app.is_palette_open:
                 app.is_palette_open = imcmd.command_palette_window(

@@ -16,8 +16,9 @@ Submodules: `search` (top bar + query parsing), `tree` (left column),
 
 from imgui_bundle import imgui, imgui_ctx
 
-from shaderbox.app import App, PopupState
+from shaderbox.app import App, ModalId
 from shaderbox.paths import shader_lib_root
+from shaderbox.popups import Modal
 from shaderbox.popups.lib_picker import filtering, preview, search, tree
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_primitives import modal_window, primary_button, standard_button
@@ -27,21 +28,6 @@ _POPUP_W = 1420.0
 _POPUP_H = 1130.0
 _TREE_FRAC = 0.40
 _TREE_W_MIN = 280.0
-
-
-def draw_lib_picker(app: App) -> None:
-    if app.popup_state != PopupState.SHADER_LIB_PICKER:
-        return
-    with modal_window(_LABEL, (_POPUP_W, _POPUP_H)) as visible:
-        if not visible:
-            return
-        if not _draw_body(app):
-            # A Close reached with an inline input still armed cancels it first: the funnel
-            # otherwise declines, leaving a modal the user asked to dismiss on screen.
-            app.shader_lib_files.reset_inline_state()
-            app.shader_lib_files.picker_tag_input_focused = False
-            app.close_popup()
-            imgui.close_current_popup()
 
 
 def _draw_body(app: App) -> bool:
@@ -138,3 +124,13 @@ def _draw_body(app: App) -> bool:
         keep_open = False
 
     return keep_open
+
+
+MODAL = Modal(
+    id=ModalId.SHADER_LIB_PICKER,
+    label=_LABEL,
+    size=lambda app: (_POPUP_W, _POPUP_H),
+    body=_draw_body,
+    on_close=lambda app: app.close_lib_picker(),
+    owns_esc=lambda app: app.shader_lib_files.inline_input_owns_esc(),
+)

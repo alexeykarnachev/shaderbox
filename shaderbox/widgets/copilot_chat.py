@@ -31,7 +31,6 @@ from shaderbox.ui_primitives import (
     layout_icon_button,
     markdown_text,
     message_bubble,
-    modal_window,
     open_path_button,
     open_url_button,
     primary_button,
@@ -168,45 +167,6 @@ def draw(app: App) -> None:
             )
         else:
             _draw_transcript(app)
-
-        _draw_revert_modal(app)
-
-
-_REVERT_MODAL_LABEL = "Revert turn?"
-
-
-def _draw_revert_modal(app: App) -> None:
-    # The confirm modal for a clicked Revert glyph (decision 6): spell out the consequence,
-    # Confirm / Cancel. app.copilot_revert_target carries the user Message to revert.
-    target = app.copilot_revert_target
-    if target is None:
-        return
-    with modal_window(_REVERT_MODAL_LABEL, (380.0, 0.0)) as visible:
-        if not visible:
-            return
-        if not _draw_revert_body(app, target):
-            app.copilot_revert_target = None
-            imgui.close_current_popup()
-
-
-def _draw_revert_body(app: App, target: Message) -> bool:
-    keep_open = True
-    excerpt = sanitize_display(target.text).strip().splitlines()
-    head = excerpt[0][:80] if excerpt else ""
-    imgui.text_wrapped(f'Revert the assistant\'s changes from "{head}"?')
-    imgui.dummy(imgui.ImVec2(0, float(SPACE.XS)))
-    caption_text(
-        "Shaders edited since that message are restored to their state before it. "
-        "This undoes the assistant's work on those documents.",
-    )
-    imgui.dummy(imgui.ImVec2(0, float(SPACE.MD)))
-    if primary_button("Revert"):
-        app.revert_turn(target)
-        keep_open = False
-    imgui.same_line()
-    if standard_button("Cancel"):
-        keep_open = False
-    return keep_open
 
 
 _MIN_INPUT_H: float = 40.0
@@ -761,7 +721,7 @@ def _draw_top_bar(app: App) -> None:
     # Disabled mid-turn so it can't bypass the in_flight gate the reset relies on.
     imgui.begin_disabled(app.copilot.state.in_flight)
     if danger_button(clear_label, width=clear_w):
-        app.copilot_clear_chat()
+        app.copilot_clear_chat_confirmed()
     imgui.end_disabled()
     imgui.same_line()
     if standard_button("Close", width=close_w):

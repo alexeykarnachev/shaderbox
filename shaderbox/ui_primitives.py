@@ -498,23 +498,6 @@ def context_menu_style() -> Iterator[None]:
         imgui.pop_style_color(4)
 
 
-def confirm_menu_item(label: str, confirm_label: str, enabled: bool = True) -> bool:
-    """A destructive menu verb behind its own submenu: `label` opens on hover, the one item
-    inside it is the confirm. Returns whether the confirm was clicked.
-
-    The submenu is what replaces an armed flip — there is no state to hold and no popup to
-    reopen, and the whole context menu closes on the inner click. A disabled one draws greyed
-    and does not open, so there is nothing inside it to click.
-    """
-    clicked = False
-    with imgui_ctx.begin_menu(label, enabled) as menu:
-        if menu:
-            imgui.push_style_color(imgui.Col_.text, COLOR.STATE_ERROR)
-            clicked = imgui.menu_item_simple(confirm_label)
-            imgui.pop_style_color(1)
-    return clicked
-
-
 @dataclass
 class InlineInput:
     """One inline text-input affordance (a rename, a new file, a new name), mutually

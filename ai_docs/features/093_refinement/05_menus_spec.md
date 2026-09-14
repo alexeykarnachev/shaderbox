@@ -91,7 +91,11 @@ The document menu is inside the grid's `begin_disabled(copilot_turn_active)`, wh
 shows keeps the popup from opening at all (§10 P2 coupling 3 — verify in the impl, and if a
 disabled tile's right-click still opens it, gate the items in Python as the strip does).
 
-**M5. A destructive menu verb confirms through a submenu.** `ui_primitives.confirm_menu_item(
+**M5. A destructive menu verb confirms through a submenu.** *(REVERSED by wave 4 on the
+maintainer's call: the submenu is hover-reachable, carries no consequence text and no chord
+hint. A destructive item is plain and its callback opens the confirm modal —
+`07_modal_registry_spec.md` R4-R5. The `danger_button` rows INSIDE Projects and Settings,
+the second half below, stand.)* `ui_primitives.confirm_menu_item(
 label, confirm_label) -> bool`: `imgui.begin_menu(label)` holding one `menu_item_simple(
 confirm_label)` drawn in `COLOR.STATE_ERROR` text; returns the inner click. Used by the pass
 Delete, the document Delete, the lib tree's file Delete (`Delete` ▸ `Move to .trash`) and
@@ -130,7 +134,10 @@ commit), and the group prompt, whose state becomes `GraphViewState.group_input: 
 (replacing `group_prompt: bool` + `group_name: str`; `InlineInput.target` unused there). The
 group prompt stays a `begin_popup` (093 S5); a blank name still refuses to commit.
 
-**M8. Modal chrome, one shape, gated.** `settings.py`: `is_keep_opened` -> `keep_open`.
+**M8. Modal chrome, one shape, gated.** *(The chrome rules stand; wave 4 moved the gate's
+DOMAIN from `PopupState` to the registry's `MODALS` and walks each row's leaf bodies —
+`07_modal_registry_spec.md` R6. The revert modal is gone, folded into the confirm modal.)*
+`settings.py`: `is_keep_opened` -> `keep_open`.
 `copilot_chat.py::_draw_revert_modal` returns `keep_open`; its caller nulls
 `copilot_revert_target` and calls `close_current_popup`. Every action row is preceded by
 `imgui.dummy((0, SPACE.MD))` (Examples, Help and the lib picker gain it; the revert modal's
@@ -144,7 +151,10 @@ is bound and returned; the last `standard_button(...)` call in it has label `Clo
 `keep_open` -> `ok` in one modal; one spacer deleted; a member added whose draw has no
 Close row (on the lib picker).
 
-**M9. `App.close_popup() -> bool` is the one close funnel.** Dispatch on `popup_state`:
+**M9. `App.close_popup() -> bool` is the one close funnel.** *(Wave 4 replaced the
+hand-written dispatch with `popups.registry.close_modal`, which reads each row's `on_close`
+and `owns_esc` hooks — `07_modal_registry_spec.md` R2. The funnel idea stands; the
+per-member branches are gone.)* Dispatch on `popup_state`:
 `PASS_SETTINGS` -> `close_pass_settings()`; `IMPORT_PASSES` -> `close_import_passes()`;
 `EMOJI_PICKER` -> new `close_emoji_picker()` (nulls `emoji_pick_target`, clears the query,
 `CLOSED`); `SETTINGS` -> `apply_editor_settings()` + `CLOSED`; `PROJECTS` -> returns `False`
@@ -175,7 +185,8 @@ were never in that list -- being reached through a loop variable they are `_UNME
 deleting their rows would have created no gate, and they get a direct assertion over the
 table instead, as `_FORMATS` already does.
 
-**M12. The hint rule and the destructive rule are conventions.** `conventions.md ## Design
+**M12. The hint rule and the destructive rule are conventions.** *(The confirm bullet was
+rewritten to the modal rule by wave 4; the hint bullet stands.)* `conventions.md ## Design
 decisions` gains two bullets in "we decided X; revisit if Y" form: the confirm rule (M5) and
 "a right-click hint sits over a modal's or panel's list; a canvas, a strip, or a card row
 with a visible primary click gets none; revisit if a walk finds a menu undiscovered". The

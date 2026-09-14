@@ -98,10 +98,6 @@ class CommandSpec:
     rebindable: bool = True
     # Draws a separator above this spec's menu item: the first item of a group within the menu.
     separator_before: bool = False
-    # A destructive verb's confirm text: non-empty makes the menu item a confirm submenu
-    # holding this one label, so the bar cannot fire the verb on a single click, and keeps
-    # the verb out of the palette, which has no second step.
-    confirm_label: str = ""
 
 
 def _chord(key: imgui.Key, *mods: imgui.Key) -> int:
@@ -159,7 +155,6 @@ COMMAND_SPECS: list[CommandSpec] = [
         "Reset document",
         _chord(K.f6),
         C.DOCUMENT,
-        confirm_label="Reset histories and clock",
     ),
     CommandSpec(
         CommandId.DELETE_DOCUMENT,
@@ -167,7 +162,6 @@ COMMAND_SPECS: list[CommandSpec] = [
         _chord(K.d, K.mod_alt),
         C.DOCUMENT,
         separator_before=True,
-        confirm_label="Move to trash",
     ),
     # -- Pass: the document's passes -----------------------------------------------------
     CommandSpec(CommandId.ADD_PASS, "Add pass", _chord(K.a, K.mod_alt), C.PASS),
@@ -267,7 +261,6 @@ COMMAND_SPECS: list[CommandSpec] = [
         0,
         C.VIEW,
         scope=CommandScope.COPILOT,
-        confirm_label="Clear conversation",
     ),
     CommandSpec(
         CommandId.OPEN_PALETTE,

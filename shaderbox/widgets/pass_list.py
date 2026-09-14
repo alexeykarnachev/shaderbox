@@ -25,7 +25,6 @@ from shaderbox.pass_graph import (
 )
 from shaderbox.theme import COLOR, SIZE, SPACE, group_tint
 from shaderbox.ui_primitives import (
-    confirm_menu_item,
     context_menu_style,
     preview_cell,
 )
@@ -91,10 +90,8 @@ def pass_menu_items(
     imgui.separator()
     # The last pass of a document cannot go: the delete would leave no output to draw. The
     # disabled submenu does not open, so nothing inside it is reachable.
-    if confirm_menu_item(
-        "Delete", f"Delete pass {name}", enabled=len(document.passes) > 1
-    ):
-        _delete_pass(app, document_id, name)
+    if imgui.menu_item_simple("Delete", enabled=len(document.passes) > 1):
+        app.delete_pass_confirmed(document_id, name)
 
 
 def _draw_context_menu(app: App, document_id: str, name: str) -> None:
@@ -102,25 +99,6 @@ def _draw_context_menu(app: App, document_id: str, name: str) -> None:
         if imgui.begin_popup_context_item(f"##pass_menu_{name}"):
             pass_menu_items(app, document_id, name)
             imgui.end_popup()
-
-
-def _delete_pass(app: App, document_id: str, name: str) -> None:
-    # Capture the pass file's path BEFORE the core deletes it: the editor
-    # session + tab for that file must go with the pass (the one eviction
-    # path that had no teardown — the native handle leaked and the orphan
-    # tab kept editing a file no pass owned).
-    ui_document = app.ui_documents.get(document_id)
-    doomed = (
-        ui_document.document.passes[name].source.path
-        if ui_document is not None and name in ui_document.document.passes
-        else None
-    )
-    error = app.session.delete_pass(document_id, name)
-    if error:
-        app.notifications.push(error)
-        return
-    if doomed is not None:
-        app.close_editor_for_path(doomed)
 
 
 def _draw_pass_tile(

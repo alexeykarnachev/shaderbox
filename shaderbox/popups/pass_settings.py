@@ -11,13 +11,13 @@ panel (072).
 
 from imgui_bundle import imgui
 
-from shaderbox.app import App, PopupState
+from shaderbox.app import App, ModalId
 from shaderbox.pass_graph import MAX_ITERATIONS, PassEntry, PassGraph
+from shaderbox.popups import Modal
 from shaderbox.theme import SIZE, SPACE
 from shaderbox.ui_primitives import (
     help_marker,
     label_row,
-    modal_window,
     primary_button,
     standard_button,
 )
@@ -38,30 +38,28 @@ _FORMAT_LABELS = [label for _, label, _ in _FORMATS]
 _FORMAT_CODES = [code for code, _, _ in _FORMATS]
 
 
-def draw_pass_settings(app: App) -> None:
-    if app.popup_state != PopupState.PASS_SETTINGS:
-        return
+def _constrain_size(app: App) -> None:
     # `always_auto_resize` IGNORES set_next_window_size, so the width token only holds
     # through a constraint: min and max both PASS_SETTINGS_W pins the axis the user reads
     # across, while the height follows the content up to the display. The scrollbar is left
     # enabled deliberately -- it can only appear once content exceeds the display, which is
     # exactly when the user needs to be told the panel continues.
+    _ = app
     display_h = imgui.get_io().display_size.y
     width = float(SIZE.PASS_SETTINGS_W)
     imgui.set_next_window_size_constraints(
         (width, 0.0), (width, max(1.0, display_h - float(SIZE.PASS_SETTINGS_MARGIN)))
     )
-    with modal_window(
-        _LABEL,
-        (width, 0.0),
-        flags=imgui.WindowFlags_.always_auto_resize,
-    ) as visible:
-        if not visible:
-            return
-        keep_open = _draw_draft(app) if app.pass_draft is not None else _draw_body(app)
-        if not keep_open:
-            app.close_pass_settings()
-            imgui.close_current_popup()
+
+
+def _size(app: App) -> tuple[float, float]:
+    _ = app
+    return (float(SIZE.PASS_SETTINGS_W), 0.0)
+
+
+def _draw_modal_body(app: App) -> bool:
+    """One modal, two modes: the draft is what `add pass` opens, the pass what the gear does."""
+    return _draw_draft(app) if app.pass_draft is not None else _draw_body(app)
 
 
 def _draw_draft(app: App) -> bool:
@@ -299,3 +297,14 @@ def _draw_repeat(app: App, name: str, entry: PassEntry) -> PassEntry:
     if changed and runs != entry.iterations:
         return entry.model_copy(update={"iterations": runs})
     return entry
+
+
+MODAL = Modal(
+    id=ModalId.PASS_SETTINGS,
+    label=_LABEL,
+    size=_size,
+    body=_draw_modal_body,
+    flags=imgui.WindowFlags_.always_auto_resize,
+    before=_constrain_size,
+    on_close=lambda app: app.close_pass_settings(),
+)

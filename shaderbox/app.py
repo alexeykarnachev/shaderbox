@@ -1,7 +1,7 @@
 import time
 from collections.abc import Callable
 from dataclasses import replace
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +33,7 @@ from shaderbox.copilot.backend import CopilotBackend
 from shaderbox.copilot.gate import GateRequest
 from shaderbox.copilot.persistence import ConversationStore
 from shaderbox.copilot.revert import RevertExecutor
+from shaderbox.copilot.sanitize import sanitize_display
 from shaderbox.copilot.session import CopilotSession
 from shaderbox.copilot.state import CopilotLayout, Message
 from shaderbox.core import Pass
@@ -112,6 +113,7 @@ from shaderbox.shader_source import ShaderSource
 from shaderbox.tabs import share_state
 from shaderbox.theme import COLOR, SETTINGS_MARK_S, SIZE, apply_theme, editor_palette
 from shaderbox.ui_models import (
+    ConfirmRequest,
     EditorSettings,
     ImportDraft,
     PassDraft,
@@ -129,10 +131,10 @@ from shaderbox.util import (
 from shaderbox.widgets.graph_state import GraphViewState, node_sizes, ports_of
 
 
-class PopupState(Enum):
-    # The one open modal popup, or CLOSED — a single field makes the "at most one open"
-    # mutex structural. The command palette is non-modal (App.is_palette_open), not here.
-    CLOSED = "closed"
+class ModalId(StrEnum):
+    # The one open modal, or None on `App.modal` — a single field makes the "at most one
+    # open" mutex structural. The command palette is non-modal (App.is_palette_open), not
+    # here. `popups/registry.py` pairs every member with its `Modal`.
     EXAMPLES = "examples"
     HELP = "help"
     SETTINGS = "settings"
@@ -141,6 +143,7 @@ class PopupState(Enum):
     EMOJI_PICKER = "emoji_picker"
     SHADER_LIB_PICKER = "shader_lib_picker"
     PROJECTS = "projects"
+    CONFIRM = "confirm"
 
 
 def _create_dir_if_needed(path: Path | str) -> Path:
@@ -410,7 +413,7 @@ class App:
         # The pass list's inline add input (name a new pass).
         # The pass being created in the settings modal; None outside create mode.
         self.pass_draft: PassDraft | None = None
-        # The pass whose settings modal is open (a PopupState.PASS_SETTINGS payload), or "",
+        # The pass whose settings modal is open (a ModalId.PASS_SETTINGS payload), or "",
         # and the modal's rename buffer (seeded on open, committed on Enter).
         self.pass_settings_name: str = ""
         self.pass_settings_name_buf: str = ""
@@ -430,8 +433,6 @@ class App:
         self.copilot_prev_layout: CopilotLayout = CopilotLayout.CORNER
         self.copilot_focus_pending: bool = False
         self.copilot_focused: bool = False
-        # The user message whose Revert glyph was clicked; drives the confirm modal. None = closed.
-        self.copilot_revert_target: Message | None = None
         # True while the mouse is over the open chat window. code.py's mouse handler
         # stands down while it's set, so a drag inside the chat can't select editor
         # text beneath it.
@@ -448,9 +449,11 @@ class App:
         # floating chat anchors to the coding area, not the whole glfw window.
         self.editor_rect: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
 
-        # A single PopupState enum replaces four mutually-exclusive booleans; the
-        # "at most one open" mutex is structural.
-        self.popup_state: PopupState = PopupState.CLOSED
+        # A single ModalId field (None = closed) is the modal mutex: two modals cannot be
+        # open at once by construction. `popups/registry.py` derives the roster from it.
+        self.modal: ModalId | None = None
+        # The destructive verb the confirm modal is asking about; None while it is closed.
+        self.confirm: ConfirmRequest | None = None
         # Popup focus restore (a modal steals focus on open + leaves nothing focused on close).
         # The editor case reads the sticky editor_was_ever_focused directly; only the chat needs a
         # captured pre-popup flag (copilot_focused is NOT sticky — the popup clobbers it). Set in the
@@ -500,7 +503,7 @@ class App:
         # honors + clears it on the next render.
         self.editor_focus_requested: bool = False
         # Selected Help section key. Initialized here as well as in open_help(): a harness that
-        # sets popup_state directly never runs the opener, and the content pane must not index
+        # sets `modal` directly never runs the opener, and the content pane must not index
         # into an unknown key.
         self.help_section: str = help_sections()[0].key
         # Path-tagged jump request for tabs/code.py to honor next render — the consumer gates
@@ -577,7 +580,7 @@ class App:
             )
             # Set BEFORE _init so its `first_run` gallery open stands down (one popup at a time);
             # open_projects() below then fills the rows, which a bare assignment cannot.
-            self.popup_state = PopupState.PROJECTS
+            self.modal = ModalId.PROJECTS
         self._init(
             project_dir, first_run=is_first_launch, persist_pointer=persist_pointer
         )
@@ -638,14 +641,14 @@ class App:
         self.command_callbacks = {
             CommandId.OPEN_PROJECTS: self.open_projects,
             CommandId.SAVE: self.save,
-            CommandId.CLEAR_COPILOT_CHAT: self.copilot_clear_chat,
+            CommandId.CLEAR_COPILOT_CHAT: self.copilot_clear_chat_confirmed,
             CommandId.OPEN_DOCUMENT_DIR: self.open_current_document_dir,
             CommandId.NEW_DOCUMENT: lambda: self.create_document_from_example(
                 STARTER_EXAMPLE_ID
             ),
             CommandId.EXAMPLES: self.open_examples,
             CommandId.HELP: self.open_help,
-            CommandId.DELETE_DOCUMENT: self.delete_current_document,
+            CommandId.DELETE_DOCUMENT: self.delete_current_document_confirmed,
             CommandId.TOGGLE_DOCUMENT_PLAY: self.toggle_current_document_play,
             CommandId.OPEN_SETTINGS: self.open_settings,
             CommandId.OPEN_LIB_PICKER: self.open_shader_lib_picker,
@@ -682,7 +685,7 @@ class App:
             CommandId.OPEN_PASS_SETTINGS: self.open_pass_settings_for_panel_pass,
             CommandId.ADD_PASS: self.open_add_pass,
             CommandId.IMPORT_PASSES: self.open_import_passes,
-            CommandId.RESET_DOCUMENT: self.reset_current_document,
+            CommandId.RESET_DOCUMENT: self.reset_document_confirmed,
             CommandId.CYCLE_CHANNEL_VIEW: self.cycle_channel_view,
             CommandId.NEXT_PASS: lambda: self.step_output_pass(1),
             CommandId.PREV_PASS: lambda: self.step_output_pass(-1),
@@ -846,9 +849,7 @@ class App:
         for name in self._palette_command_names:
             imcmd.remove_command(name)
         self._palette_command_names = []
-        palette_specs = [
-            spec for spec in COMMAND_SPECS if spec.in_palette and not spec.confirm_label
-        ]
+        palette_specs = [spec for spec in COMMAND_SPECS if spec.in_palette]
         # Pad labels to a common width so the chord column lines up.
         label_w = max(len(spec.label) for spec in palette_specs)
         for spec in palette_specs:
@@ -1021,67 +1022,108 @@ class App:
         }
 
     def any_popup_open(self) -> bool:
-        # The copilot revert confirm joins the mutex from outside PopupState (it
-        # carries its Message payload in copilot_revert_target; None = closed).
-        return (
-            self.popup_state != PopupState.CLOSED
-            or self.copilot_revert_target is not None
-        )
+        return self.modal is not None
 
-    def close_popup(self) -> bool:
-        """Close the open modal through its OWN funnel, and report whether it closed.
-
-        The one place the per-modal cleanup lives, so Esc and a modal's own Close button
-        cannot diverge. Two states decline to close while an inline input owns Esc -- the
-        input's own cancel runs later in the same frame.
-        """
-        state = self.popup_state
-        if state is PopupState.CLOSED:
-            return False
-        if state is PopupState.PASS_SETTINGS:
-            self.close_pass_settings()
-            return True
-        if state is PopupState.IMPORT_PASSES:
-            self.close_import_passes()
-            return True
-        if state is PopupState.EMOJI_PICKER:
-            self.close_emoji_picker()
-            return True
-        if state is PopupState.SETTINGS:
-            self.apply_editor_settings()
-            self.popup_state = PopupState.CLOSED
-            return True
-        if state is PopupState.PROJECTS:
-            if self.projects_input_owns_esc():
-                return False
-            self.reset_projects_state()
-            self.popup_state = PopupState.CLOSED
-            return True
-        if state is PopupState.SHADER_LIB_PICKER:
-            if self.shader_lib_files.inline_input_owns_esc():
-                return False
-            self.popup_state = PopupState.CLOSED
-            return True
-        if state is PopupState.EXAMPLES or state is PopupState.HELP:
-            self.popup_state = PopupState.CLOSED
-            return True
-        return False
-
-    def _open_popup(self, state: PopupState) -> None:
+    def _open_modal(self, modal_id: ModalId) -> None:
         # Capture chat focus BEFORE the popup steals it (the openers run in dispatch_commands,
         # before any window draws, so copilot_focused still holds the true pre-popup value), then
         # open. reconcile_popup_focus restores on the close edge.
         self._chat_focused_before_popup = self.copilot_focused
-        self.popup_state = state
+        self.modal = modal_id
+
+    def request_confirm(self, request: ConfirmRequest) -> None:
+        """Ask the confirm modal about one destructive verb; `on_confirm` runs on Yes."""
+        self.confirm = request
+        self._open_modal(ModalId.CONFIRM)
+
+    def clear_confirm(self) -> None:
+        self.confirm = None
 
     def open_copilot_revert(self, msg: Message) -> None:
-        # Outside PopupState (the modal carries a payload) but in the popup mutex via
-        # any_popup_open; same pre-open chat-focus capture as _open_popup.
-        self._chat_focused_before_popup = self.copilot_focused
-        self.copilot_revert_target = msg
+        excerpt = sanitize_display(msg.text).strip().splitlines()
+        head = excerpt[0][:80] if excerpt else ""
+        self.request_confirm(
+            ConfirmRequest(
+                title=f'Revert "{head}"?',
+                line=(
+                    "Shaders edited since that message are restored to their state "
+                    "before it."
+                ),
+                verb="Revert",
+                on_confirm=lambda: self.revert_turn(msg),
+            )
+        )
+
+    def delete_pass_confirmed(self, document_id: str, name: str) -> None:
+        self.request_confirm(
+            ConfirmRequest(
+                title=f"Delete pass {name}?",
+                line="Its wiring and position are lost; the shader file stays.",
+                verb="Delete",
+                on_confirm=lambda: self.delete_pass(document_id, name),
+            )
+        )
+
+    def delete_pass(self, document_id: str, name: str) -> None:
+        """Delete a pass and tear down the editor it owned.
+
+        The path's capture is BEFORE the core deletes it: the editor session + tab for that
+        file must go with the pass, and the source path is unreachable afterwards.
+        """
+        ui_document = self.ui_documents.get(document_id)
+        doomed = (
+            ui_document.document.passes[name].source.path
+            if ui_document is not None and name in ui_document.document.passes
+            else None
+        )
+        error = self.session.delete_pass(document_id, name)
+        if error:
+            self.notifications.push(error)
+            return
+        if doomed is not None:
+            self.close_editor_for_path(doomed)
+
+    def delete_document_confirmed(self, document_id: str) -> None:
+        ui_document = self.ui_documents.get(document_id)
+        if ui_document is None:
+            return
+        self.request_confirm(
+            ConfirmRequest(
+                title=f"Move {ui_document.ui_state.ui_name} to the trash?",
+                line="Nothing in the app brings it back.",
+                verb="Delete",
+                on_confirm=lambda: self.delete_document(document_id),
+            )
+        )
+
+    def delete_current_document_confirmed(self) -> None:
+        self.delete_document_confirmed(self.current_document_id)
+
+    def reset_document_confirmed(self) -> None:
+        ui_document = self.ui_documents.get(self.current_document_id)
+        if ui_document is None:
+            return
+        self.request_confirm(
+            ConfirmRequest(
+                title=f"Reset {ui_document.ui_state.ui_name}?",
+                line="Feedback histories, the clock and the script restart.",
+                verb="Reset",
+                on_confirm=self.reset_current_document,
+            )
+        )
+
+    def copilot_clear_chat_confirmed(self) -> None:
+        self.request_confirm(
+            ConfirmRequest(
+                title="Clear the conversation?",
+                line="The transcript and its checkpoints are dropped.",
+                verb="Clear",
+                on_confirm=self.copilot_clear_chat,
+            )
+        )
 
     def open_examples(self) -> None:
-        self._open_popup(PopupState.EXAMPLES)
+        self._open_modal(ModalId.EXAMPLES)
 
     def open_settings(self, focus: str = "") -> None:
         # focus: a SettingsField key to expand-section + keyboard-focus on open (e.g. from an
@@ -1089,7 +1131,7 @@ class App:
         self.lib_reset_armed = False
         self.settings_focus = focus
         self.settings_mark = (focus, time.monotonic() + SETTINGS_MARK_S)
-        self._open_popup(PopupState.SETTINGS)
+        self._open_modal(ModalId.SETTINGS)
 
     def open_pass_settings(self, name: str) -> None:
         self.pass_settings_name = name
@@ -1100,7 +1142,7 @@ class App:
             if ui_document is not None and name in ui_document.document.graph.passes
             else ""
         )
-        self._open_popup(PopupState.PASS_SETTINGS)
+        self._open_modal(ModalId.PASS_SETTINGS)
 
     def commit_pass_group(self) -> None:
         """Write the gear's group buffer to the open pass (091 D9); a refusal toasts and
@@ -1144,7 +1186,7 @@ class App:
                 self.notifications.push(error)
         if self.pass_draft is None:
             self.commit_pass_group()
-        self.popup_state = PopupState.CLOSED
+        self.modal = None
         self.pass_settings_name = ""
         self.pass_settings_name_buf = ""
         self.pass_settings_group_buf = ""
@@ -1164,7 +1206,7 @@ class App:
         if document_id not in self.ui_documents:
             return
         self.pass_draft = PassDraft()
-        self._open_popup(PopupState.PASS_SETTINGS)
+        self._open_modal(ModalId.PASS_SETTINGS)
 
     def create_pass_from_draft(self) -> bool:
         """Make the draft a pass; True when it landed (the modal closes on it). A refused
@@ -1207,10 +1249,10 @@ class App:
         if self.current_document_id not in self.ui_documents:
             return
         self.import_draft = ImportDraft()
-        self._open_popup(PopupState.IMPORT_PASSES)
+        self._open_modal(ModalId.IMPORT_PASSES)
 
     def close_import_passes(self) -> None:
-        self.popup_state = PopupState.CLOSED
+        self.modal = None
         self.import_draft = None
 
     def import_sources(self, examples_tab: bool) -> dict[str, UIDocument]:
@@ -1301,12 +1343,12 @@ class App:
         return True
 
     def open_emoji_picker(self, target: Callable[[str], None] | None = None) -> None:
-        self._open_popup(PopupState.EMOJI_PICKER)
+        self._open_modal(ModalId.EMOJI_PICKER)
         self.emoji_pick_target = target
         self.emoji_picker_query = ""
 
     def close_emoji_picker(self) -> None:
-        self.popup_state = PopupState.CLOSED
+        self.modal = None
         self.emoji_pick_target = None
         self.emoji_picker_query = ""
 
@@ -1314,12 +1356,17 @@ class App:
         # The picker derives `picker_just_opened` from imgui's `is_window_appearing()` on its
         # first frame.
         self.shader_lib_files.reset_inline_state()
-        self._open_popup(PopupState.SHADER_LIB_PICKER)
+        self._open_modal(ModalId.SHADER_LIB_PICKER)
         self.shader_lib_files.picker_query = ""
         self.shader_lib_files.picker_tag_input_focused = False
 
+    def close_lib_picker(self) -> None:
+        self.modal = None
+        self.shader_lib_files.reset_inline_state()
+        self.shader_lib_files.picker_tag_input_focused = False
+
     def open_help(self) -> None:
-        self._open_popup(PopupState.HELP)
+        self._open_modal(ModalId.HELP)
         self.help_section = help_sections()[0].key
 
     def insert_text_at_caret(self, text: str) -> bool:
@@ -1556,7 +1603,7 @@ class App:
 
         # First launch lands on the examples gallery (onboarding); never for an
         # explicit-dir harness (first_run requires project_dir=None) or a project switch.
-        if first_run and self.popup_state is PopupState.CLOSED:
+        if first_run and self.modal is None:
             # A dead-pointer recovery sets PROJECTS before this runs: at that moment the question
             # is "which project?", not "which example?", and the single-field popup mutex means
             # only one of them can win.
@@ -1567,8 +1614,10 @@ class App:
         if self.is_copilot_open:
             self.focus_copilot()
         self.copilot_layout = self.app_state.copilot_layout
-        # A pending revert confirm points at the outgoing project's conversation.
-        self.copilot_revert_target = None
+        # A pending confirm closes over the outgoing project's state.
+        self.confirm = None
+        if self.modal is ModalId.CONFIRM:
+            self.modal = None
         # Drive imgui's tab bar to the restored tab on the first frame — set_selected only
         # fires while this one-shot is set (else imgui defaults to the first tab).
         self.document_tab_select_pending = True
@@ -2453,7 +2502,7 @@ class App:
             self.default_projects_root_dir, self.project_dir
         )
         self.projects_selected = self.project_dir.resolve()
-        self._open_popup(PopupState.PROJECTS)
+        self._open_modal(ModalId.PROJECTS)
 
     def reset_projects_state(self) -> None:
         self.projects_delete_armed = None

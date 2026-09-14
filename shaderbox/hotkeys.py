@@ -20,6 +20,7 @@ from shaderbox.editor.ffi import (
 )
 from shaderbox.editor.input import KeyEvent
 from shaderbox.editor_types import EditorSession
+from shaderbox.popups.registry import close_modal
 from shaderbox.theme import COLOR
 
 
@@ -360,15 +361,13 @@ def _handle_escape(app: App) -> None:
     # gate defensively on the same condition.
     if not app.escape_has_job():
         return
-    # Esc dismisses ONE thing, most-modal first: the revert confirm, else an open popup, else
-    # the palette, else the chat focus, else the editor caret. Dismissing a popup/palette must
-    # NOT also defocus the editor or chat — App.reconcile_popup_focus restores focus to whoever
-    # the popup stole it from. Every modal closes through `App.close_popup`, which owns the
-    # per-modal cleanup and declines while an inline input owns Esc.
-    if app.copilot_revert_target is not None:
-        app.copilot_revert_target = None
-    elif app.any_popup_open():
-        app.close_popup()
+    # Esc dismisses ONE thing, most-modal first: an open modal, else the palette, else the chat
+    # focus, else the editor caret. Dismissing a modal/palette must NOT also defocus the editor
+    # or chat — App.reconcile_popup_focus restores focus to whoever the popup stole it from.
+    # Every modal closes through `popups.registry.close_modal`, which owns the per-modal cleanup
+    # and declines while an inline input owns Esc.
+    if app.any_popup_open():
+        close_modal(app)
     elif app.is_palette_open:
         app.is_palette_open = False
     elif app.copilot_focused:

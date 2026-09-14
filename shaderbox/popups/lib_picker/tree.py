@@ -20,14 +20,36 @@ from shaderbox.popups.lib_picker.filtering import (
 )
 from shaderbox.shader_lib import ShaderLibFunction
 from shaderbox.theme import COLOR, SPACE
+from shaderbox.ui_models import ConfirmRequest
 from shaderbox.ui_primitives import (
     InlineInput,
     InputRowResult,
-    confirm_menu_item,
     context_menu_style,
     ellipsize,
     name_input_row,
 )
+
+
+def _confirm_file_delete(app: App, path: Path) -> None:
+    app.request_confirm(
+        ConfirmRequest(
+            title=f"Delete {path.name}?",
+            line="It moves to .trash.",
+            verb="Delete",
+            on_confirm=lambda: app.shader_lib_files.delete_file(path),
+        )
+    )
+
+
+def _confirm_dir_delete(app: App, path: Path) -> None:
+    app.request_confirm(
+        ConfirmRequest(
+            title=f"Delete {path.name}?",
+            line="It moves to .trash.",
+            verb="Delete",
+            on_confirm=lambda: app.shader_lib_files.delete_dir(path),
+        )
+    )
 
 
 @dataclass
@@ -157,8 +179,8 @@ def _draw_dir_context_menu(app: App, dir_rel: tuple[str, ...], is_root: bool) ->
             if not is_root:
                 imgui.separator()
                 abs_path = shader_lib_root() / dir_path_rel
-                if confirm_menu_item("Delete directory", "Move every file to .trash"):
-                    app.shader_lib_files.delete_dir(abs_path)
+                if imgui.menu_item_simple("Delete directory"):
+                    _confirm_dir_delete(app, abs_path)
             imgui.end_popup()
 
 
@@ -239,8 +261,8 @@ def _draw_file_context_menu(app: App, path: Path) -> None:
             if imgui.menu_item_simple("Reveal in file manager"):
                 app.reveal_shader_lib_file_in_manager(path)
             imgui.separator()
-            if confirm_menu_item("Delete", "Move to .trash"):
-                app.shader_lib_files.delete_file(path)
+            if imgui.menu_item_simple("Delete"):
+                _confirm_file_delete(app, path)
             imgui.end_popup()
 
 

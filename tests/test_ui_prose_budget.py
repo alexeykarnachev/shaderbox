@@ -54,6 +54,9 @@ _PARAMETER_BUDGETS: dict[str, int] = {
 # "Open a copy". § 2's table has no row for one, so the budget is stated here at 3 — long
 # enough for a verb and its object, short enough to reject a sentence on a button.
 _BUTTON_LABEL_BUDGET = 3
+# The confirm modal's consequence line: see the `ConfirmRequest` rows below for why it has a
+# budget of its own rather than a control label's.
+_CONFIRM_LINE_BUDGET = 12
 _BUTTON_TIERS: frozenset[str] = frozenset(
     {
         "primary_button",
@@ -117,6 +120,17 @@ _IMGUI_ROWS: list[tuple[str, str, int | None, int]] = [
     # A menu item is an action phrase like a button, and may carry a qualifier the button
     # column has no room for ("Reveal in file manager"): four words (092).
     ("menu_item_simple", "label", 0, 4),
+    # The confirm modal's request (093 W4), authored at each destructive verb. The title is
+    # a heading naming its target and the verb a button, both at their usual budgets. The
+    # LINE is the one place § 2's "documentation belongs in the Help panel" does not apply:
+    # a destructive confirm is read at the moment of consequence, by a user who stopped to
+    # read it, and it must say both what is lost and what survives. Hence its own budget,
+    # and its exemption from the one-clause rule below -- a "what goes; what stays" line is
+    # two clauses on purpose. It is still a budget, not an exemption: 12 words rejects a
+    # paragraph.
+    ("ConfirmRequest", "title", None, 5),
+    ("ConfirmRequest", "line", None, _CONFIRM_LINE_BUDGET),
+    ("ConfirmRequest", "verb", None, _BUTTON_LABEL_BUDGET),
 ]
 
 _SCORED: list[tuple[str, str, int | None, int]] = _IMGUI_ROWS + _derived_rows()
@@ -142,11 +156,6 @@ _UNMEASURABLE: dict[tuple[str, str], str] = {
         "shaderbox/ui_primitives.py",
         "grouped_combo",
     ): "the group captions of a grouped combo, passed in by the caller (one word each)",
-    (
-        "shaderbox/menus.py",
-        "command_menu_item",
-    ): "the spec's own label and confirm label; "
-    "test_every_command_label_is_within_the_menu_budget measures the table",
     (
         "shaderbox/ui_primitives.py",
         "anchored_note",
@@ -212,9 +221,10 @@ _UNMEASURABLE: dict[tuple[str, str], str] = {
     ): "the command table's own label, read through `command_label`; "
     "test_every_command_label_is_within_the_menu_budget measures it directly",
     (
-        "shaderbox/ui_primitives.py",
-        "confirm_menu_item",
-    ): "forwards the caller's confirm label",
+        "shaderbox/popups/confirm.py",
+        "_draw_body",
+    ): "the request's own title, consequence line and verb, each authored at the App verb "
+    "that built the request and scored there as a `ConfirmRequest` literal",
     (
         "shaderbox/exporters/telegram.py",
         "draw_config_ui",
@@ -318,12 +328,6 @@ _OVER_BUDGET: dict[tuple[str, str, int], str] = {
         "_draw_body",
         3,
     ): "derived: an exporter's name joined to its own unavailable reason",
-    (
-        "shaderbox/widgets/copilot_chat.py",
-        "_draw_revert_body",
-        20,
-    ): "a destructive-confirm body: what a revert will undo, which § 2's table has no "
-    "row for and a 4-word fragment cannot state without misleading",
     (
         "shaderbox/widgets/copilot_chat.py",
         "_draw_turn_snippet",
@@ -617,7 +621,17 @@ def test_every_measured_site_is_within_budget(site: Site) -> None:
     )
 
 
-@pytest.mark.parametrize("site", _budgeted(), ids=_ids(_budgeted()))
+def _clause_checked() -> list[Site]:
+    """Every budgeted site but the confirm's consequence line, which is two clauses by
+    design (`ConfirmRequest`'s rows say why)."""
+    return [
+        site
+        for site in _budgeted()
+        if not (site.call == "ConfirmRequest" and site.parameter == "line")
+    ]
+
+
+@pytest.mark.parametrize("site", _clause_checked(), ids=_ids(_clause_checked()))
 def test_no_scored_string_joins_a_second_clause(site: Site) -> None:
     for joiner in _CLAUSE_JOINERS:
         assert joiner not in site.text, (

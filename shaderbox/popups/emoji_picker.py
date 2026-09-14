@@ -1,26 +1,16 @@
 from imgui_bundle import imgui, imgui_ctx
 
-from shaderbox.app import App, PopupState
+from shaderbox.app import App, ModalId
+from shaderbox.popups import Modal
 from shaderbox.popups.emoji_data import EmojiEntry, EmojiGroup, load_emoji_groups
 from shaderbox.theme import COLOR, SIZE, SPACE
-from shaderbox.ui_primitives import modal_window, standard_button
+from shaderbox.ui_primitives import standard_button
 
 _LABEL = "Emoji##picker"
 _GRID_COLS = 12
 _CELL = 34.0
 _POPUP_W = 600.0
 _POPUP_H = 560.0
-
-
-def draw_emoji_picker(app: App) -> None:
-    if app.popup_state != PopupState.EMOJI_PICKER:
-        return
-    with modal_window(_LABEL, (_POPUP_W, _POPUP_H)) as visible:
-        if not visible:
-            return
-        if not _draw_body(app):
-            app.close_popup()
-            imgui.close_current_popup()
 
 
 def _draw_body(app: App) -> bool:
@@ -79,3 +69,12 @@ def _draw_body(app: App) -> bool:
 def _pick(app: App, char: str) -> None:
     if app.emoji_pick_target is not None:
         app.emoji_pick_target(char)
+
+
+MODAL = Modal(
+    id=ModalId.EMOJI_PICKER,
+    label=_LABEL,
+    size=lambda app: (_POPUP_W, _POPUP_H),
+    body=_draw_body,
+    on_close=lambda app: app.close_emoji_picker(),
+)

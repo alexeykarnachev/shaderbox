@@ -24,11 +24,14 @@ menu bar had rendered the cheatsheet's grouping, which was never designed.
 4. **Every command has a menu home**; a verb that exists only as a button or a chord is the
    defect. A button that opens a command's surface takes the command's label
    (`command_label`).
-5. **A destructive verb carries `confirm_label`** and renders as a confirm submenu wherever it
-   is a menu item (the bar, a tile's menu); the palette, which has no second step, does not
-   offer it. Destructive means the loss has no undo in the app: a reset's histories and
-   clock, a chat's conversation. A document delete moves to the project trash, and carries
-   the confirm because nothing in the app recovers it.
+5. **A destructive verb confirms in the confirm modal, from every surface** (093 W4). Its
+   `App` method builds the request — a title naming its target, one line of consequence, the
+   button's word — and every surface calls that one method: a menu item, a bar item, a
+   button, a chord, the palette. So the table needs no field for it, the item is plain and
+   keeps its chord hint, and the palette offers every `in_palette` spec again. Destructive
+   means the loss has no undo in the app: a reset's histories and clock, a chat's
+   conversation. A document delete moves to the project trash, and carries the confirm
+   because nothing in the app recovers it.
 6. **Chords are defaults with muscle memory behind them**: this design keeps every existing
    chord and binds nothing new. `Import passes` and `Open folder` are unbound.
 
@@ -51,9 +54,9 @@ Document
   Open folder
   ─
   Play/stop script    F5
-  Reset document ▸ Reset histories and clock    F6
+  Reset document      F6
   ─
-  Delete document ▸ Move to trash    Alt+D
+  Delete document     Alt+D
 
 Pass
   Add pass            Alt+A
@@ -84,7 +87,7 @@ View
   ─
   Toggle copilot      Alt+J
   Next copilot layout  Ctrl+H           (copilot scope)
-  Clear chat ▸ Clear conversation      (copilot scope)
+  Clear chat           (copilot scope)
   ─
   Command palette     Ctrl+Shift+P
 
@@ -108,10 +111,11 @@ Help
   named where they are.
 - A modal's own verbs: the Projects modal's `New` / `Open other...` / `Delete` and Settings'
   `Reset library...` act inside the modal that holds their target and confirm with its armed
-  danger row; the modal itself is the command (`Projects`, `Settings`).
+  danger row (a modal over a modal is not the mechanism's shape); the modal itself is the
+  command (`Projects`, `Settings`).
 - The copilot chat's `Close` and the `Copilot` chip are second paths to `Toggle copilot`; its
-  `Clear` button is the `Clear chat` command's own button and keeps the one click a chat
-  control has, while the menu item confirms.
+  `Clear` button is the `Clear chat` command's own button, and since 093 W4 it opens the same
+  confirm the menu item does.
 
 ## What changed against the first landing
 
@@ -121,9 +125,12 @@ them); `Tools` went, its verbs re-filed by object (`Settings` to File, `Add pass
 View, `Examples` / `Help` / the cheatsheet to Help); `Open shader` moved from Editor to Pass;
 `Next` / `Previous pass` from Document to Pass; seven labels renamed to name their object;
 `OPEN_DOCUMENT_DIR` and `CLEAR_COPILOT_CHAT` added; the enum and the table reordered to the
-map; the separators set per group; `Reset document` and `Clear chat` confirm, and a
-confirming verb is not in the palette. `tests/test_menus.py` renders the table and compares
-it to the fenced map above, parsed from this file, so the map and the table cannot drift
-(a review found the earlier set-based test passed a moved `Save` and a moved
-`Shader library`); it also pins that no category opens with a separator and that a
-confirming verb is absent from the palette.
+map; the separators set per group. `tests/test_menus.py` renders the table and compares it
+to the fenced map above, parsed from this file, so the map and the table cannot drift (a
+review found the earlier set-based test passed a moved `Save` and a moved `Shader library`);
+it also pins that no category opens with a separator and that the palette offers every
+`in_palette` spec.
+
+Wave 4 then reversed the confirm's shape: `confirm_label` is deleted, a destructive item is
+plain and carries its chord hint again, and the confirm is the modal the verb's own callback
+opens (rule 5).

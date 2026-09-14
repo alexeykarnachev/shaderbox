@@ -3,7 +3,7 @@
 
 from typing import Any
 
-from shaderbox.app import PopupState
+from shaderbox.app import ModalId
 from shaderbox.pass_graph import PassEntry
 
 
@@ -12,7 +12,7 @@ def test_opening_add_pass_creates_nothing(app: Any) -> None:
     before = set(document.passes)
     app.open_add_pass()
     assert app.pass_draft is not None
-    assert app.popup_state == PopupState.PASS_SETTINGS
+    assert app.modal is ModalId.PASS_SETTINGS
     assert set(document.passes) == before
     app.close_pass_settings()
     assert app.pass_draft is None

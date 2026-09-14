@@ -3,19 +3,19 @@ the per-frame plan, the Escape wire, and the unbordered tile keeping its padding
 
 App-driven where the state is the subject, frame-driven where the question is what a drawn
 frame reads. A second frame-driving App in one process hits the torn-down font atlas, so the
-Escape wire is asserted through `App.close_popup` -- the one funnel the Esc dispatch calls --
+Escape wire is asserted through `registry.close_modal` -- the funnel the Esc dispatch calls --
 rather than through a key injected into a frame.
 """
 
-import ast
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 from imgui_bundle import imgui
 
-from shaderbox.app import PopupState
+from shaderbox.app import ModalId
 from shaderbox.pass_graph import group_slug
-from shaderbox.popups import import_passes
+from shaderbox.popups.registry import BY_ID, close_modal, draw_modal
 from shaderbox.ui_primitives import preview_cell
 
 _PKG = Path(__file__).resolve().parent.parent / "shaderbox"
@@ -31,7 +31,7 @@ def test_the_draft_resets_on_source_change_and_on_close(app: Any) -> None:
     # Verification 15. Falsifier: keep `handovers` across a source change and the plan
     # rejects a pair that reads nobody, so the Import button stays dead with a stale message.
     app.open_import_passes()
-    assert app.popup_state == PopupState.IMPORT_PASSES
+    assert app.modal is ModalId.IMPORT_PASSES
     draft = app.import_draft
     assert draft is not None and draft.source_id == ""
     example_id = _multi_pass_example(app)
@@ -56,43 +56,34 @@ def test_the_draft_resets_on_source_change_and_on_close(app: Any) -> None:
         app.ui_document_examples[other].ui_state.ui_name
     )
     app.close_import_passes()
-    assert app.import_draft is None and app.popup_state == PopupState.CLOSED
+    assert app.import_draft is None and app.modal is None
     app.open_import_passes()
     assert app.import_draft is not None and app.import_draft.source_id == ""
     app.close_import_passes()
 
 
 def test_escape_reaches_the_close_funnel(app: Any) -> None:
-    """Verification 15's wire: a bare `popup_state = CLOSED` would leave the draft populated.
+    """Verification 15's wire: a bare `app.modal = None` would leave the draft populated.
 
-    Structural over a substring: the IMPORT_PASSES branch of `App.close_popup` must CALL
-    `close_import_passes`, which a comment naming it would satisfy. The branch is also driven
-    for real below, so a branch that parses but does nothing fails too. Falsifier: delete the
-    IMPORT_PASSES branch from `close_popup`.
+    The registry row is what carries the cleanup now, so the structural half asserts the
+    row's `on_close` IS `App.close_import_passes` -- a lambda that forgot to call it would
+    fail here. The funnel is then driven for real, so a row that parses but does nothing
+    fails too. Falsifier: drop `on_close` from `import_passes.MODAL`.
     """
-    tree = ast.parse((_PKG / "app.py").read_text(encoding="utf-8"))
-    funnel = next(
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.FunctionDef) and node.name == "close_popup"
+    modal = BY_ID[ModalId.IMPORT_PASSES]
+    assert modal.on_close is not None, (
+        "the import dialog's registry row has no on_close"
     )
-    branches = [
-        node
-        for node in ast.walk(funnel)
-        if isinstance(node, ast.If) and "IMPORT_PASSES" in ast.unparse(node.test)
-    ]
-    assert branches, "close_popup has no IMPORT_PASSES branch"
-    assert any(
-        "close_import_passes" in ast.unparse(call)
-        for branch in branches
-        for call in ast.walk(branch)
-        if isinstance(call, ast.Call)
-    ), "the IMPORT_PASSES branch does not call close_import_passes"
-
-    app.open_import_passes()
-    assert app.import_draft is not None
-    assert app.close_popup()
-    assert app.import_draft is None and app.popup_state == PopupState.CLOSED
+    cleaned: list[int] = []
+    with mock.patch.object(
+        app, "close_import_passes", wraps=app.close_import_passes
+    ) as cleanup:
+        app.open_import_passes()
+        assert app.import_draft is not None
+        assert close_modal(app)
+        cleaned.append(cleanup.call_count)
+    assert cleaned == [1], f"close_import_passes ran {cleaned} times through the funnel"
+    assert app.import_draft is None and app.modal is None
 
 
 def test_the_busy_guard_refuses_the_palette_route(app: Any, monkeypatch: Any) -> None:
@@ -104,14 +95,14 @@ def test_the_busy_guard_refuses_the_palette_route(app: Any, monkeypatch: Any) ->
     )
     app.copilot_turn_active = True
     app.open_import_passes()
-    assert app.popup_state == PopupState.CLOSED and app.import_draft is None
+    assert app.modal is None and app.import_draft is None
     assert pushed and "locked" in pushed[0]
     app.copilot_turn_active = False
 
 
 def _pump(app: Any) -> None:
     imgui.new_frame()
-    import_passes.draw_import_passes(app)
+    draw_modal(app)
     imgui.end_frame()
 
 

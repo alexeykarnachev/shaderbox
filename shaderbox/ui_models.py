@@ -1,5 +1,6 @@
 import base64
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal, Self, get_args
@@ -669,3 +670,18 @@ class PassDraft:
     entry: PassEntry = field(default_factory=PassEntry)
     # One-shot: the name field's first draw takes keyboard focus.
     needs_focus: bool = True
+
+
+@dataclass(frozen=True)
+class ConfirmRequest:
+    """One destructive verb awaiting its confirm (093 W4).
+
+    `title` names the target, `line` states the consequence, `verb` labels the button that
+    runs `on_confirm`. Built by the `App` verb, so the confirm reads the same from a menu,
+    a bar item, a button, a chord and the palette.
+    """
+
+    title: str
+    line: str
+    verb: str
+    on_confirm: Callable[[], None]

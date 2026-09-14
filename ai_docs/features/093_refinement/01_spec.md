@@ -1,8 +1,8 @@
 # 093 — Refinement: the graph editor
 
-Status: **waves 1 and 2 landed and reviewed (f012074, ccdf6d1; 1974aa0, 62ce546); next is his
-visual review of both in the running app, whose findings open wave 3 as rows 12+ in the ledger.**
-Eleven findings filed (`00_findings.md`): five from his screenshot batch, six from his first hands-on pass. The maintainer's verdict on the shipped canvas ("feels
+Status: **waves 1-4 landed and reviewed; next is his visual review in the running app, whose
+findings open the next wave in the ledger.** The waves and what each landed are the `## Waves`
+section below, newest first; the findings are `00_findings.md`. The maintainer's verdict on the shipped canvas ("feels
 very cheap") sent the walk into research first: `02_research_brief.md` is the brief, `research/`
 holds six area reports against primary sources, `03_graph_design.md` is the design record
 (G1-G18, what stays, the four forks G-Q1..Q4, the false trails, a verification sketch), and
@@ -388,6 +388,27 @@ Where the record's "Code" paragraphs and this spec differ, this spec wins, for t
 
 ## Waves
 
+**Wave 4: one modal mechanism, and the confirm modal (2026-09-14).**
+`07_modal_registry_spec.md`'s R1-R7, one commit, after one pre-implementation review
+(`reviews/modal_registry_pre.md`, nine findings, all folded). The roster that had been
+hand-maintained in five places became one registry: `ModalId` on `App` (`app.modal`, `None`
+is closed), one `Modal(...)` constant per popup module, and `popups/registry.py` deriving
+`draw_modal` (ui.py's one popup call), `close_modal` (the Esc and Close funnel, with each
+row's `on_close` cleanup and `owns_esc` decline) and every gate from `MODALS`. A Close the
+user clicked is a FORCED close, which is what the lib picker's dead Close button under an
+armed rename had been missing. `popups/confirm.py` landed on it as the first new client, and
+every destructive verb now routes through an `App` method that builds a
+`ui_models.ConfirmRequest` naming its target and its consequence -- the pass and document
+tiles, the bar's `Delete document` / `Reset document`, the Document tab's Reset button, the
+lib tree's two deletes, the chat's Clear and its revert glyph. That REVERSED M5's confirm
+submenu on the maintainer's call and deleted `confirm_menu_item`, `CommandSpec.confirm_label`
+and the copilot's own revert modal with it; the palette offers every `in_palette` spec again.
+`app.py` imports nothing from `shaderbox.popups` and a gate walks its imports to keep it that
+way -- the cycle a payload type in the popups layer would close has only banned escapes. Docs
+in the same commit: `conventions.md` (the popups bullet rewritten around the registry, the M5
+bullet reversed), `dev_flow.md`'s module map, the repo's `/imgui-ui` §7.1-7.4,
+`06_command_system.md`'s rule 5 and its map, and 05's M5 / M8 / M9 / M12 pointers.
+
 **The menus wave: finding 17, the whole spec (2026-09-14).** `05_menus_spec.md`'s M1-M14, one
 commit. The menu bar became a render of `COMMAND_SPECS` (`shaderbox/menus.py`, new: the
 `App`-facing `draw_menu_bar` / `command_menu_item` / `menu_enabled`; `commands.command_label`
@@ -396,10 +417,12 @@ object kind got ONE item-set function its every surface draws -- the pass set al
 the group box's and the document grid's are new -- and the grid tile lost its armed corner ✕,
 as the pass tile did in W3-2. A destructive menu verb confirms through
 `ui_primitives.confirm_menu_item`'s submenu, which retired the lib tree's armed flip and its
-two hand-rolled red pushes. `InlineInput` moved into `ui_primitives.py` beside the one
+two hand-rolled red pushes (the submenu itself is reversed by wave 4, above; the armed flip
+stays retired). `InlineInput` moved into `ui_primitives.py` beside the one
 `name_input_row` every name-entry row now draws through (the trigger the conventions bullet
 named, met a third time). `App.close_popup` became the single Esc/Close funnel, so
-`hotkeys._handle_escape` lost its four carve-outs and the `was_settings_open` latch. Modal
+`hotkeys._handle_escape` lost its four carve-outs and the `was_settings_open` latch (wave 4
+moved that funnel into the registry). Modal
 chrome is pinned by `tests/test_modal_chrome.py`, the bar and the item sets by
 `tests/test_menus.py`; the copilot limits' copy moved into one `COPILOT_LIMIT_ROWS` table
 (`copilot/config.py`) whose short `hint` Settings shows and whose long `explanation` the Help

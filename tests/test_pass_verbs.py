@@ -22,7 +22,7 @@ from unittest import mock
 import pytest
 from imgui_bundle import imgui
 
-from shaderbox.app import PopupState
+from shaderbox.app import ModalId
 from shaderbox.core import Pass
 from shaderbox.document import offered_entry_points
 from shaderbox.media import MediaWithTexture, texture_to_rgba8
@@ -475,7 +475,7 @@ def test_add_pass_activates_the_new_pass(app: Any) -> None:
 
     app.ensure_shader_tab = spy
     app.open_add_pass()
-    assert app.popup_state == PopupState.PASS_SETTINGS
+    assert app.modal is ModalId.PASS_SETTINGS
     app.pass_draft.name_buf = "z"
     assert app.create_pass_from_draft() is True
 
@@ -501,7 +501,7 @@ def test_closing_the_gear_on_a_retired_pass_stays_silent(app: Any) -> None:
     app.close_pass_settings()
 
     assert pushed == [], pushed
-    assert app.popup_state == PopupState.CLOSED
+    assert app.modal is None
     assert name in app.ui_documents[document_id].document.passes
 
 

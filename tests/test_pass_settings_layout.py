@@ -16,6 +16,7 @@ from imgui_bundle import imgui
 from shaderbox.core import ENGINE_DRIVEN_UNIFORMS
 from shaderbox.glyph_tables import TABLE_UNIFORMS
 from shaderbox.popups import pass_settings
+from shaderbox.popups.registry import draw_modal
 from shaderbox.theme import SIZE
 from shaderbox.ui_primitives import ellipsize
 
@@ -39,7 +40,7 @@ def _gear_sizes(app: Any, frames: int = 6) -> list[tuple[float, float]]:
     try:
         for _ in range(frames):
             imgui.new_frame()
-            pass_settings.draw_pass_settings(app)
+            draw_modal(app)
             imgui.end_frame()
     finally:
         pass_settings._draw_body = original

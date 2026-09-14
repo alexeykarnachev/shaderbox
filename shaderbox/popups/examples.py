@@ -1,10 +1,10 @@
 from imgui_bundle import imgui
 
-from shaderbox.app import App, PopupState
+from shaderbox.app import App, ModalId
+from shaderbox.popups import Modal
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_primitives import (
     caption_text,
-    modal_window,
     primary_button,
     standard_button,
 )
@@ -41,9 +41,7 @@ def _grid_dims(app: App) -> tuple[float, float]:
     return grid_h, modal_w
 
 
-def draw_examples(app: App) -> None:
-    if app.popup_state != PopupState.EXAMPLES:
-        return
+def _size(app: App) -> tuple[float, float]:
     style = imgui.get_style()
     grid_h, modal_w = _grid_dims(app)
     frame_h = imgui.get_frame_height()
@@ -52,17 +50,11 @@ def draw_examples(app: App) -> None:
     # is grid + desc slot + action row (frame_h) with two inter-block item_spacing.y gaps.
     body_h = grid_h + _DESC_SLOT_H + frame_h + 2.0 * style.item_spacing.y
     modal_h = body_h + frame_h + 2.0 * style.window_padding.y
-    flags = (
-        imgui.WindowFlags_.no_resize
-        | imgui.WindowFlags_.no_scrollbar
-        | imgui.WindowFlags_.no_scroll_with_mouse
-    )
-    with modal_window(_LABEL, (modal_w, modal_h), flags=flags, fixed_size=True) as vis:
-        if not vis:
-            return
-        if not _draw_body(app, grid_h):
-            app.close_popup()
-            imgui.close_current_popup()
+    return (modal_w, modal_h)
+
+
+def _draw_modal_body(app: App) -> bool:
+    return _draw_body(app, _grid_dims(app)[0])
 
 
 def _draw_body(app: App, grid_h: float) -> bool:
@@ -124,3 +116,17 @@ def _draw_description_slot(app: App, selected: str) -> None:
             imgui.text(desc if desc else "(no description)")
             imgui.pop_text_wrap_pos()
     imgui.end_child()
+
+
+MODAL = Modal(
+    id=ModalId.EXAMPLES,
+    label=_LABEL,
+    size=_size,
+    body=_draw_modal_body,
+    flags=(
+        imgui.WindowFlags_.no_resize
+        | imgui.WindowFlags_.no_scrollbar
+        | imgui.WindowFlags_.no_scroll_with_mouse
+    ),
+    fixed_size=True,
+)

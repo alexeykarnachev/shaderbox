@@ -450,19 +450,33 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
 - **`widgets/*.py`: free functions taking `app: App`, no wrapper, no protocol.** Widgets are an
   organizational convention, not a polymorphic contract — no `Widget` ABC, no shared return shape;
   each gets the shape that fits its job. Revisit if a polymorphic `list[Widget]` dispatcher materializes.
-- **`popups/*.py`: free `draw(app: App)` functions; open/closed state lives on `App` as a single
-  `PopupState` enum field.** Every modal popup shares one `app.popup_state` field, whose members
-  ARE the roster — `CLOSED` plus one per modal (examples browser, help, settings, pass settings,
-  emoji picker, shader-lib picker, projects). Each `app.open_*()` helper sets `popup_state`; the single field IS the mutex
-  ("at most one modal open" holds by construction — one field can't be two states). A new modal popup
-  adds an enum member, its `open_*()`, a self-close to `CLOSED`, **and its `draw_*(app)` call in
-  `ui.py`'s popup block** — that last one is the step that gets forgotten, and forgetting it is
-  INVISIBLE at runtime: the state is enterable, the mutex suppresses every other render, and nothing
-  draws, which looks exactly like a healthy modal. `tests/test_project_management.py` counts the
-  block's calls against the enum so the omission fails instead. `app.any_popup_open()`
-  (`popup_state != CLOSED`) is the render-gate question. The command palette (`is_palette_open`) stays
-  a separate bool — non-modal, coexists with any modal. No popup classes. Revisit if a popup grows
-  internal state that doesn't belong on `App`.
+- **A modal is ONE registry row: `popups/registry.py` derives the whole roster from
+  `ModalId`.** `app.modal: ModalId | None` is the mutex (one field can't be two states, so "at
+  most one open" holds by construction; `None` is closed, and `any_popup_open()` is the
+  render-gate question). Each popup module is a `_draw_body(app) -> bool` plus a `MODAL =
+  Modal(...)` constant naming its id, imgui label, size, flags, and the three optional hooks:
+  `before` (window constraints that must precede `begin_popup_modal`), `on_close` (the per-modal
+  cleanup, in ONE place) and `owns_esc` (an inline input inside the body has claimed Esc). The
+  registry's `MODALS` tuple pairs every member with its row, and `draw_modal` / `close_modal` are
+  the only two verbs any surface calls — `ui.py` draws one modal, `hotkeys.py` closes one. This
+  replaced a roster hand-maintained in FIVE places (the enum, an `open_*`, a hand-dispatching
+  `close_popup`, eight `draw_*` calls in `ui.py`, a table in the chrome gate), where forgetting
+  the draw call was INVISIBLE at runtime: the state was enterable, the mutex suppressed every
+  other render, and nothing drew, which looks exactly like a healthy modal.
+  `tests/test_modal_chrome.py` now pins the enum against the registry, walks each row's leaf
+  bodies for the chrome, and rejects any `app.modal` write under `popups/` or `widgets/`.
+  **The layering: `registry.py` imports `App` and every popup; no popup imports the registry
+  (the shared `Modal` type lives in `popups/__init__.py`, which imports `App` alone); and
+  `app.py` imports NOTHING from `shaderbox.popups` — a gate walks its `ImportFrom` nodes,
+  because a modal's payload type placed in the popups layer closes a cycle whose only escapes
+  are the two this repo bans.** A payload belongs in `ui_models.py`, which `app.py` already
+  imports. A close is FORCED when the body returns False (a Close the user clicked cannot be
+  refused by an armed rename input) and unforced on the Esc path, where `owns_esc` declines;
+  `imgui.close_current_popup()` runs only after a close that happened. `switch_project` writes
+  `self.modal = None` directly rather than calling the funnel — it runs in `_tick_frame_state`,
+  outside the draw phase, where `close_current_popup` asserts (084 D5). The command palette
+  (`is_palette_open`) stays a separate bool — non-modal, coexists with any modal. No popup
+  classes. Revisit if a popup grows internal state that doesn't belong on `App`.
 - **Inline editor state lives on `App`; disk is the source of truth; one libeditor instance per
   opened FILE.** The code editor is the maintainer's own library, vim-modal or standard per
   `EditorSettings.keymap` (features 067, 069):
@@ -564,15 +578,19 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   reads them directly via `app.shader_lib_files.*` (no delegating facade on `App`). Revisit if
   a row needs a commit rule the two (Enter, deactivate) cannot express.
 
-- **A destructive verb confirms by its SURFACE, not by arming state (093).** On a menu it is
-  `ui_primitives.confirm_menu_item(label, confirm_label)` — a `begin_menu` holding one
-  error-colored item, so the second click is a hover-and-click inside the same open menu: no
-  armed flag, no reopen, no modal, no `PopupState` change (the pass Delete, the document
-  Delete, the lib tree's file and directory deletes). Inside a MODAL it is the armed
-  `danger_button` row the rulebook already prescribes (Projects' delete, Settings' library
-  reset). A tile never carries one: a verb on an object lives on that object's context menu.
-  This reverses 092 D16's strip arm and the lib tree's second-open label flip. Revisit if a
-  submenu proves unreachable on a touchpad.
+- **A destructive verb confirms in the confirm modal, from every surface (093 W4).** The
+  verb is an `App` method that builds a `ConfirmRequest` (title naming its target, one line of
+  consequence, the button's word, the callable) and calls `App.request_confirm`; a menu item, a
+  bar item, a button, a chord and the palette all call that one method, so the question reads
+  the same wherever it is asked. `popups/confirm.py` is the modal — `ModalId.CONFIRM`, in the
+  mutex like every other, one decision per frame (the `danger_button` and Enter share a single
+  branch, and Enter is declined on the appearing frame, which a keyboard menu activation shares
+  with the press that opened the modal). This REVERSES the submenu confirm and the arming flags
+  that preceded it: the submenu was hover-reachable, carried no consequence text and no chord
+  hint, and is a shape no desktop app confirms with. Two confirms stay INSIDE a modal as armed
+  `danger_button` rows — Projects' delete and Settings' library reset — because a modal over a
+  modal is not the mechanism's shape; revisit at a third. A tile never carries a destructive
+  control: a verb on an object lives on that object's context menu.
 
 - **A right-click hint sits over a modal's or a panel's LIST (093).** The documents grid and
   the shader-lib tree carry the dim `Right-click for actions` caption; a canvas, a strip, or a
@@ -583,8 +601,8 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   category per OBJECT a verb acts on (File, Document, Pass, Editor, View, Help), in the order
   a desktop bar reads; within a category, groups opened by `separator_before`, most-used
   first; a label names its object so it reads the same in a menu, the palette and the
-  cheatsheet; a destructive verb carries `confirm_label` and is kept out of the palette,
-  which has no second step. The map with its reasoning is
+  cheatsheet; a destructive verb needs no entry of its own, since its callback opens the
+  confirm modal, so the palette offers every `in_palette` spec. The map with its reasoning is
   `ai_docs/features/093_refinement/06_command_system.md`; the bar, the palette, the
   cheatsheet, the rebinder and the Help panel all read the table in ITS order, so a verb is
   filed once. The menu bar is a RENDER of it: one top-level menu per `CommandCategory` in
