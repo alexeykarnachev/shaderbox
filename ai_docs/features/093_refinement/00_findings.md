@@ -1,6 +1,6 @@
-# 093 — Tenth walk: the raw ledger
+# 093 — Refinement: the raw ledger
 
-The maintainer's tenth batch: his dogfooding of the graph view (092), fed back in rounds and
+The maintainer's dogfooding of the graph view (092), fed back in rounds and
 fixed round by round, the same loop as the earlier walks. Each finding is quoted verbatim and
 checked against the code before it is filed; numbered in the order he wrote them, never
 renumbered. Batches he reports in one go are one wave each: one gate run, one commit, this

@@ -1,6 +1,6 @@
 # C — Node card layout and sizing
 
-Research for 093 area C: questions 9-11 of `ai_docs/features/093_tenth_walk_findings/02_research_brief.md`.
+Research for 093 area C: questions 9-11 of `ai_docs/features/093_refinement/02_research_brief.md`.
 Scope is the card's own geometry (width, height, picture, label overflow) — not wire routing (A),
 mouse schema (B), or hover feedback (D), covered by other areas' reports.
 

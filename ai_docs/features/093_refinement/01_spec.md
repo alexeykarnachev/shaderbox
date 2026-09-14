@@ -1,7 +1,7 @@
-# 093 — Tenth walk findings
+# 093 — Refinement: the graph editor
 
-Status: **waves 1 and 2 landed and reviewed (f012074, ccdf6d1; 1974aa0 and its fix commit); next
-is his second hands-on pass, whose findings open wave 3.**
+Status: **waves 1 and 2 landed and reviewed (f012074, ccdf6d1; 1974aa0, 62ce546); next is his
+visual review of both in the running app, whose findings open wave 3 as rows 12+ in the ledger.**
 Five findings filed (`00_findings.md`). The maintainer's verdict on the shipped canvas ("feels
 very cheap") sent the walk into research first: `02_research_brief.md` is the brief, `research/`
 holds six area reports against primary sources, `03_graph_design.md` is the design record

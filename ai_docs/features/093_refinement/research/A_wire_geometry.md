@@ -1,7 +1,7 @@
 # Area A — wire geometry and routing
 
 Research for feature 093 (the tenth walk on the graph editor), answering questions 1-5 of
-`ai_docs/features/093_tenth_walk_findings/02_research_brief.md`. Every claim below is checked
+`ai_docs/features/093_refinement/02_research_brief.md`. Every claim below is checked
 against source code fetched into a scratchpad clone or single-file fetch, never against a README,
 and every disputed claim below was independently re-derived with the actual arithmetic before being
 stated as fact (see the note after Q2).

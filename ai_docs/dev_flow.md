@@ -613,8 +613,9 @@ no gate can run: it is done on a real display via `make run`, never headless and
 
 The session's job is to catch what they say and turn it into a plan:
 
-- **Open a new feature dir** `ai_docs/features/NNN_<name>/` with `00_findings.md` as the raw ledger,
-  in the format 069 used: one table, columns `# | Class | Step | Reported | What the code does
+- **Open a new feature dir** `ai_docs/features/NNN_refinement/` -- the number is the identity, so
+  the name carries no ordinal and no "walk" (the walk directories before 093 keep their historical
+  names) -- with `00_findings.md` as the raw ledger, in the format 069 used: one table, columns `# | Class | Step | Reported | What the code does
   (verified)`, findings numbered in walk order and never renumbered once filed.
 - **Quote the maintainer verbatim** in `Reported`. Their words are the external anchor every later
   review is checked against, so paraphrase loses the evidence.

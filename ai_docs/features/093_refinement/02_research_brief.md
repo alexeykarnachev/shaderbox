@@ -98,7 +98,7 @@ delivers a decision record, not a reading list.
 
 ## Deliverable shape (each researcher)
 
-A markdown report under `ai_docs/features/093_tenth_walk_findings/research/`, named for the area,
+A markdown report under `ai_docs/features/093_refinement/research/`, named for the area,
 with: a sources table (name | what it is | URL or path | what was read: code / docs / article);
 one section per question with the answer per reference in a table where a table fits; the
 CONVERGENCE (what the strongest references agree on) and the DIVERGENCE (where and why they
