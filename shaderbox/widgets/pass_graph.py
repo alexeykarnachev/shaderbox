@@ -1,22 +1,32 @@
-"""The graph canvas (092): a document's passes as nodes on a pannable, zoomable draw list.
+"""The graph canvas (092, 093): a document's passes as nodes on a pannable, zoomable draw list.
 
 A node is a pass's live picture, its name, one input port per sampler its compiled program
 declares (`pass_graph.node_ports`) and an output dot; a wire is a read from the effective
-wiring. At the root every group is one BOX whose ports are the group's boundary edges
-(`pass_graph.group_boundary`); a group's own tab shows its members with the outside passes
-they touch as GHOSTS. Nothing here is a second source of truth: positions are the pass entry's
-(or the rank layout's, for a pass never placed), edges are the wiring, ports are the program.
+wiring, drawn as ONE cubic bezier whose control offset is never negative, so a backward read
+is an S-curve from the same two lines rather than a fold. At the root every group is one BOX
+whose ports are the group's boundary edges (`pass_graph.group_boundary`); a group's own tab
+shows its members with the outside passes they touch as GHOSTS. Nothing here is a second
+source of truth: positions are the pass entry's (or the rank layout's, for a pass never
+placed), edges are the wiring, ports are the program.
 
-Drawn on one `ImDrawList` inside one child, hit-tested with `invisible_button`s: the canvas
+Drawn on one `ImDrawList` inside one child over five channels -- wire halos, wire strokes,
+nodes, the in-flight wire, the overlays -- and hit-tested with `invisible_button`s: the canvas
 background first, then every node, each declaring `set_next_item_allow_overlap()` so the later
 item wins (imgui gives an overlapping hit to the EARLIEST item unless it allows it), then the
 ports, which are last and declare nothing: the flag makes an item overlappable by a LATER one
-and costs it its own hover, so on the last rung it only forfeits the drop target. A
-context menu anchors with `begin_popup_context_item(None)` -- an explicit id on one shared
-child fires on a right-click anywhere in it. Every write a gesture makes goes through an
-`App` verb, never a session call from here, so each refusal is testable without a window.
+and costs it its own hover, so on the last rung it only forfeits the drop target. A wire is
+the one thing NOT hit-tested through the item system -- a curve has no rect -- so a distance
+pass over the flattened cubics runs after that loop, and the selected wire's unwire badge is
+hand hit-tested on the press for the same reason, latching `press_blocked` so the press
+becomes nothing else. Hover is EXCLUSIVE -- port, then node, then wire, then background --
+written fresh each frame at the end of that pass and read one frame late at draw time, since
+the picture must be drawn before the rects the ports' positions come from. A context menu
+anchors with `begin_popup_context_item(None)` -- an explicit id on one shared child fires on a
+right-click anywhere in it. Every write a gesture makes goes through an `App` verb, never a
+session call from here, so each refusal is testable without a window.
 """
 
+import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from itertools import pairwise
@@ -33,7 +43,6 @@ from shaderbox.pass_graph import (
     Wiring,
     cycle_edges,
     evaluation_order,
-    graph_ranks,
     group_boundary,
     plan_passes,
     rank_layout,
@@ -43,6 +52,7 @@ from shaderbox.project_session import compile_pending_passes
 from shaderbox.theme import COLOR, SIZE, SPACE, fade, group_tint
 from shaderbox.ui_primitives import (
     context_menu_style,
+    ellipsize,
     primary_button,
     standard_button,
     text_tab_row,
@@ -50,12 +60,22 @@ from shaderbox.ui_primitives import (
 from shaderbox.widgets.graph_state import (
     GraphViewState,
     NodeDrag,
+    Position,
     WireDrag,
+    WireId,
+    WireState,
+    bezier_point,
+    delete_allowed,
     group_names_in_order,
     node_size,
     node_sizes,
     ports_of,
     revalidated_scope,
+    revalidated_wire,
+    wire_hit,
+    wire_hit_threshold,
+    wire_points,
+    wire_state,
 )
 from shaderbox.widgets.pass_list import pass_menu_items
 
@@ -67,11 +87,6 @@ _CYCLE_PREFIX = "passes form a cycle"
 _ROOT_LABEL = "document"
 _FIT_MARGIN = float(SPACE.LG)
 _ZOOM_STEP = 1.1
-# A consumer at least this far right of its producer (canvas units) gets a plain curve;
-# closer or leftward, the wire rides the bus. One constant, read in one coordinate space.
-_MIN_DIRECT_DX = 24.0
-# The bezier's horizontal control offset, as a fraction of the run.
-_BEZIER_BOW = 0.45
 # The port dot's inner shapes, as fractions of its radius: the NoSource centre, the prev
 # inner ring, the media square's half side.
 _NONE_CORE = 0.45
@@ -112,7 +127,15 @@ class _Edge:
     dst_slot: int
     on_cycle: bool
     dim: bool
-    span: int
+    # The wire's identity anywhere on the canvas (093 S2): the consumer pass behind the
+    # terminating slot -- the node itself, a box's member, or a ghost reader -- and its
+    # sampler. It is what hover, selection and `App.unwire` all take.
+    owner: str
+    sampler: str
+
+    @property
+    def wire_id(self) -> WireId:
+        return (self.owner, self.sampler)
 
 
 @dataclass
@@ -211,7 +234,6 @@ def _build_view(
     errors = plan_passes(wiring)[1]
     cycle_pairs = cycle_edges(errors)
     culprits = {e.pass_name for e in errors if e.message.startswith(_CYCLE_PREFIX)}
-    ranks = graph_ranks(wiring)
     view = _View(positions=positions)
 
     def pass_key(name: str) -> str:
@@ -301,7 +323,8 @@ def _build_view(
                         slot,
                         (source, name) in cycle_pairs,
                         name not in live or source not in live,
-                        ranks[name] - ranks[source],
+                        name,
+                        port.sampler,
                     )
                 )
         for name in readers:
@@ -315,7 +338,8 @@ def _build_view(
                             slot,
                             (port.source, name) in cycle_pairs,
                             name not in live or port.source not in live,
-                            ranks[name] - ranks[port.source],
+                            name,
+                            port.sampler,
                         )
                     )
         return view
@@ -414,7 +438,8 @@ def _build_view(
                     dst[1],
                     (source, name) in cycle_pairs,
                     name not in live or source not in live,
-                    ranks[name] - ranks[source],
+                    name,
+                    port.sampler,
                 )
             )
     return view
@@ -481,10 +506,44 @@ def _bbox(nodes: Sequence[_Node]) -> tuple[float, float, float, float]:
     return min(xs0), min(ys0), max(xs1), max(ys1)
 
 
-def _fit(view: GraphViewState, nodes: Sequence[_Node], avail: imgui.ImVec2) -> None:
+def _wire_canvas_points(
+    picture: _View, edge: _Edge
+) -> tuple[Position, Position, Position, Position]:
+    """One edge's four CANVAS-space bezier points.
+
+    Exact at any zoom: the control offset and the endpoints both scale linearly with it, so
+    the canvas-space curve is the screen-space one divided by the zoom, and `zoom = 1.0` is
+    the canvas-space cubic itself.
+    """
+    src = picture.nodes[edge.src_key]
+    dst = picture.nodes[edge.dst_key]
+    return wire_points(
+        _out_point(src, edge.src_slot), _port_point(dst, edge.dst_slot), 1.0
+    )
+
+
+def _fit(
+    view: GraphViewState,
+    nodes: Sequence[_Node],
+    picture: _View,
+    avail: imgui.ImVec2,
+) -> None:
+    """Frame every node AND every wire (093 S8).
+
+    A backward wire's S-curve bulges past both cards, so the nodes' bounding box alone leaves
+    part of it outside the fitted view. The curve is framed by SAMPLING it, not by its control
+    polygon: the hull inflates the fitted width by more than half on an ordinary chain, which
+    would zoom out for slack no wire needs.
+    """
     if not nodes or avail.x <= 0 or avail.y <= 0:
         return
     x0, y0, x1, y1 = _bbox(nodes)
+    segs = SIZE.GRAPH_WIRE_HIT_SEGS
+    for edge in picture.edges:
+        points = _wire_canvas_points(picture, edge)
+        for i in range(segs + 1):
+            px, py = bezier_point(*points, i / segs)
+            x0, y0, x1, y1 = min(x0, px), min(y0, py), max(x1, px), max(y1, py)
     w = x1 - x0 + 2 * _FIT_MARGIN
     h = y1 - y0 + 2 * _FIT_MARGIN
     zoom = min(1.0, avail.x / w, avail.y / h)
@@ -531,48 +590,57 @@ def _dashed_rect(
             t += 2 * dash
 
 
+# The five channels one canvas frame splits into (093 G12), lowest first.
+_CH_HALO = 0
+_CH_WIRE = 1
+_CH_NODE = 2
+_CH_INFLIGHT = 3
+_CH_OVERLAY = 4
+
+
 def _draw_wire(
     dl: imgui.ImDrawList,
-    xf: _Xf,
-    a: tuple[float, float],
-    b: tuple[float, float],
-    bus_y: float,
+    points: tuple[Position, Position, Position, Position],
+    zoom: float,
     col: int,
+    halo_col: int | None,
 ) -> None:
-    z = xf.zoom
-    p0 = xf.to_screen(a)
-    p3 = xf.to_screen(b)
-    thickness = max(1.0, SIZE.GRAPH_WIRE_W * z)
-    dx = p3[0] - p0[0]
-    if dx >= _MIN_DIRECT_DX * z and bus_y <= 0:
-        c = max(_MIN_DIRECT_DX * z, dx * _BEZIER_BOW)
-        dl.add_bezier_cubic(
-            p0, (p0[0] + c, p0[1]), (p3[0] - c, p3[1]), p3, col, thickness
-        )
-        return
-    gx = SIZE.GRAPH_GAP_X / 2.0 * z
-    by = xf.to_screen((0.0, bus_y))[1]
-    m0 = (p0[0] + gx + _MIN_DIRECT_DX * z, by)
-    m1 = (p3[0] - gx - _MIN_DIRECT_DX * z, by)
-    dl.add_bezier_cubic(p0, (p0[0] + gx, p0[1]), (p0[0] + gx, by), m0, col, thickness)
-    dl.add_line(m0, m1, col, thickness)
-    dl.add_bezier_cubic(m1, (p3[0] - gx, by), (p3[0] - gx, p3[1]), p3, col, thickness)
+    """One wire: a wider dimmer halo under a crisp stroke, never a single thickened line.
+
+    The two live on separate channels, so one wire's halo never paints over a neighbour's
+    stroke. The caller resolves the state; this function never reads it.
+    """
+    thickness = max(1.0, SIZE.GRAPH_WIRE_W * zoom)
+    if halo_col is not None:
+        dl.channels_set_current(_CH_HALO)
+        dl.add_bezier_cubic(*points, halo_col, max(1.0, SIZE.GRAPH_WIRE_W * 3.0 * zoom))
+        thickness = max(1.0, SIZE.GRAPH_WIRE_W * 1.4 * zoom)
+    dl.channels_set_current(_CH_WIRE)
+    dl.add_bezier_cubic(*points, col, thickness)
 
 
-def _draw_self_loop(
-    dl: imgui.ImDrawList, xf: _Xf, node: _Node, slot: int, col: int
+def _draw_wire_x(
+    dl: imgui.ImDrawList, centre: Position, radius: float, zoom: float
 ) -> None:
-    z = xf.zoom
-    out = xf.to_screen(_out_point(node, 0))
-    port = xf.to_screen(_port_point(node, slot))
-    top = xf.to_screen(node.pos)[1] - SIZE.GRAPH_LOOP_RISE * z
-    dl.add_bezier_cubic(
-        out,
-        (out[0] + SIZE.GRAPH_LOOP_REACH * z, top),
-        (port[0] - SIZE.GRAPH_LOOP_REACH * z, top),
-        port,
+    """The selected wire's unwire badge: a disc so the wire does not read through it, a ring,
+    and the mark itself as two lines -- never a font glyph (/imgui-ui §3)."""
+    dl.channels_set_current(_CH_OVERLAY)
+    dl.add_circle_filled(centre, radius, _u32(COLOR.BG_APP))
+    col = _u32(COLOR.SELECT)
+    dl.add_circle(centre, radius, col, 0, 1.0)
+    arm = radius * 0.5
+    thickness = max(1.0, SIZE.GRAPH_WIRE_W * zoom)
+    dl.add_line(
+        (centre[0] - arm, centre[1] - arm),
+        (centre[0] + arm, centre[1] + arm),
         col,
-        max(1.0, SIZE.GRAPH_WIRE_W * z),
+        thickness,
+    )
+    dl.add_line(
+        (centre[0] - arm, centre[1] + arm),
+        (centre[0] + arm, centre[1] - arm),
+        col,
+        thickness,
     )
 
 
@@ -612,8 +680,9 @@ def _draw_badge(
     z: float,
     bg: int,
     fg: int,
-) -> None:
-    """A small pill with a word on it at a picture's corner, in the current font."""
+) -> float:
+    """A small pill with a word on it at a picture's corner, in the current font. Returns the
+    pill's width, so the feedback glyph can sit left of it."""
     w = imgui.calc_text_size(label).x + 2 * _BADGE_PAD * z
     x0 = (
         corner[0] - _BADGE_INSET * z - w
@@ -627,6 +696,38 @@ def _draw_badge(
         fg,
         label,
     )
+    return w
+
+
+# The feedback glyph's two rings, as fractions of its square, and the gap each arc leaves
+# facing the other (radians).
+_FB_RING_R = 0.25
+_FB_GAP_ARC = 0.6
+_FB_ARC_SEGS = 20
+
+
+def _draw_feedback_glyph(
+    dl: imgui.ImDrawList, right: float, top: float, z: float, col: int
+) -> None:
+    """A pass that reads its own previous frame, marked in the badge row (093 G8).
+
+    Two open rings, the same double-ring the feedback PORT dot draws (092 D11), so the mark
+    and the dot share one visual language. Drawn with the draw list at 12px, where a font
+    character's centring and presence are neither verifiable nor crisp.
+    """
+    size = SIZE.GRAPH_FB_SIZE * z
+    r = size * _FB_RING_R
+    cy = top + size / 2.0
+    thickness = max(1.0, SIZE.GRAPH_WIRE_W * z)
+    for cx, a_min in (
+        (right - size + r, _FB_GAP_ARC),
+        (right - r, math.pi + _FB_GAP_ARC),
+    ):
+        dl.path_clear()
+        dl.path_arc_to(
+            (cx, cy), r, a_min, a_min + 2.0 * math.pi - 2.0 * _FB_GAP_ARC, _FB_ARC_SEGS
+        )
+        dl.path_stroke(col, thickness)
 
 
 def _draw_node(
@@ -636,6 +737,9 @@ def _draw_node(
     node: _Node,
     is_output: bool,
     selected: bool,
+    hovered: bool,
+    hovered_port: int | None,
+    hovered_out: int | None,
 ) -> None:
     z = xf.zoom
     p0 = xf.to_screen(node.pos)
@@ -664,6 +768,25 @@ def _draw_node(
         _dashed_rect(dl, p0, p1, border_col, SIZE.GRAPH_DASH * z, thickness)
     else:
         dl.add_rect(p0, p1, border_col, rounding, thickness)
+    # A halo says selected or hovered by COLOR, never by size (/imgui-ui §3): it is drawn
+    # INSET so it cannot bleed into the gap between two cards and read as motion. The select
+    # halo is outermost, the hover halo just inside it, each at its own alpha.
+    halo_w = SIZE.GRAPH_WIRE_W * 2.0 * z
+    inset = SIZE.GRAPH_WIRE_W * z
+    for on, hue, halo_alpha in (
+        (selected, COLOR.SELECT, COLOR.GRAPH_SELECT_HALO_ALPHA),
+        (hovered, COLOR.GRAPH_HOVER, COLOR.GRAPH_HOVER_HALO_ALPHA),
+    ):
+        if not on:
+            continue
+        dl.add_rect(
+            (p0[0] + inset, p0[1] + inset),
+            (p1[0] - inset, p1[1] - inset),
+            _u32(fade(hue, halo_alpha * alpha)),
+            max(0.0, rounding - inset),
+            halo_w,
+        )
+        inset += halo_w
 
     # The picture: the pass's own live target, scaled by imgui -- no second render.
     tx0, ty0, tx1, ty1 = _thumb_rect(node)
@@ -694,12 +817,15 @@ def _draw_node(
     name_color = (
         tint if tint is not None else COLOR.FG_DORMANT if node.stale else COLOR.FG_TITLE
     )
-    text_size = imgui.calc_text_size(node.name)
+    # The budget is measured inside this same pushed-font scope as the `calc_text_size` that
+    # centres the text, so the cut and the placement cannot disagree (093 G11).
+    name = ellipsize(node.name, (p1[0] - p0[0]) - 2 * SIZE.GRAPH_PAD * z)
+    text_size = imgui.calc_text_size(name)
     name_y = s1[1] + (SIZE.GRAPH_NAME_H * z - text_size.y) / 2.0
     dl.add_text(
         ((p0[0] + p1[0] - text_size.x) / 2.0, name_y),
         _u32(fade(name_color, alpha)),
-        node.name,
+        name,
     )
     imgui.pop_font()
 
@@ -707,8 +833,21 @@ def _draw_node(
     # Badges on the picture: the run count top-right, a box's member count top-left.
     badge_bg = _u32(fade(COLOR.BG_FRAME, alpha))
     badge_fg = _u32(fade(COLOR.FG_MUTED, alpha))
+    badge_w = 0.0
     if node.runs > 1 and node.kind != "ghost":
-        _draw_badge(dl, (s1[0], s0[1]), True, f"x{node.runs}", z, badge_bg, badge_fg)
+        badge_w = _draw_badge(
+            dl, (s1[0], s0[1]), True, f"x{node.runs}", z, badge_bg, badge_fg
+        )
+    # The feedback mark replaces the self-loop wire the maintainer objected to (093 G8): flush
+    # at the picture's top-right, or left of an `xN` badge when one is drawn this frame.
+    if node.kind != "ghost" and any(port.kind == "prev" for port in node.ports):
+        _draw_feedback_glyph(
+            dl,
+            s1[0] - (badge_w + SIZE.GRAPH_FB_GAP * z if badge_w else 0.0),
+            s0[1],
+            z,
+            badge_fg,
+        )
     if node.kind == "box":
         _draw_badge(
             dl,
@@ -723,24 +862,34 @@ def _draw_node(
     # Ports: a dot on the left edge and the label beside it, one row each.
     r = SIZE.GRAPH_PORT_R * z
     port_col = _u32(fade(COLOR.FG_MUTED, alpha))
+    hover_col = _u32(fade(COLOR.GRAPH_HOVER, alpha))
     label_col = _u32(fade(COLOR.FG_MUTED, alpha))
+    label_x = 2 * r + 2 * z
+    label_budget = node.size[0] * z - label_x - SIZE.GRAPH_PAD * z
     for slot, port in enumerate(node.ports):
         center = xf.to_screen(_port_point(node, slot))
-        _draw_port_dot(dl, center, port.kind, r, port_col)
-        label = node.labels[slot]
+        # A hovered dot swaps its COLOR; its radius never moves (093 G6).
+        _draw_port_dot(
+            dl,
+            center,
+            port.kind,
+            r,
+            hover_col if slot == hovered_port else port_col,
+        )
         dl.add_text(
-            (center[0] + 2 * r + 2 * z, center[1] - imgui.get_font_size() / 2.0),
+            (center[0] + label_x, center[1] - imgui.get_font_size() / 2.0),
             label_col,
-            label,
+            ellipsize(node.labels[slot], label_budget),
         )
     # Output dots on the right of the picture; a box's unread ones hollow.
     out_col = _u32(fade(COLOR.FG_SECONDARY, alpha))
     for slot, (_member, hollow) in enumerate(node.outputs):
         center = xf.to_screen(_out_point(node, slot))
+        col = hover_col if slot == hovered_out else out_col
         if hollow:
-            dl.add_circle(center, r, out_col, 0, SIZE.GRAPH_PORT_RING_W)
+            dl.add_circle(center, r, col, 0, SIZE.GRAPH_PORT_RING_W)
         else:
-            dl.add_circle_filled(center, r, out_col)
+            dl.add_circle_filled(center, r, col)
     imgui.pop_font()
 
 
@@ -786,9 +935,9 @@ def _canvas_menu(app: App, document_id: str, view: GraphViewState) -> None:
             imgui.end_popup()
 
 
-def draw(app: App, document_id: str, height: float) -> None:
-    """The graph canvas for one document: the tab row, then a child `height` tall with the
-    picture. The caller sizes it; the widget measures no sibling."""
+def draw(app: App, document_id: str) -> None:
+    """The graph canvas for one document: the tab row, then a child filling what is left of the
+    host's content region. The widget positions no sibling and measures none."""
     ui_document = app.ui_documents.get(document_id)
     if ui_document is None:
         return
@@ -812,7 +961,7 @@ def draw(app: App, document_id: str, height: float) -> None:
     imgui.push_style_color(imgui.Col_.child_bg, COLOR.BG_APP)
     child_open = imgui.begin_child(
         "##pass_graph",
-        size=imgui.ImVec2(0.0, height),
+        size=imgui.ImVec2(0.0, 0.0),
         child_flags=imgui.ChildFlags_.borders,
         window_flags=imgui.WindowFlags_.no_scrollbar
         | imgui.WindowFlags_.no_scroll_with_mouse,
@@ -842,9 +991,7 @@ def _draw_canvas(
         imgui.MouseButton_.left
     )
     frozen = app.copilot_turn_active
-    if not mouse_down:
-        view.press_blocked = False
-    elif frozen:
+    if mouse_down and frozen:
         # A press held across a turn stays no gesture after it: the item is still active
         # when the turn ends, and the start branches would otherwise rebuild the drag.
         view.press_blocked = True
@@ -853,20 +1000,40 @@ def _draw_canvas(
         view.wire_drag = None
         view.band_anchor = None
         view.guides = []
+    hovered = imgui.is_window_hovered(imgui.HoveredFlags_.child_windows)
+    # The unwire badge is not an imgui item: an earlier item that declares no overlap beats a
+    # later one, and the ports must keep declaring nothing or the drop target dies. So it is
+    # hit-tested by hand, HERE -- above `blocked`'s computation, so the same frame's latch
+    # already refuses the background press this press would otherwise become (093 S6).
+    if (
+        imgui.is_mouse_clicked(imgui.MouseButton_.left)
+        and hovered
+        and not (frozen or view.press_blocked)
+        and view.x_rect is not None
+        and view.selected_wire is not None
+        and view.x_rect[0] <= io.mouse_pos.x <= view.x_rect[2]
+        and view.x_rect[1] <= io.mouse_pos.y <= view.x_rect[3]
+    ):
+        error = app.unwire(document_id, *view.selected_wire)
+        if error:
+            app.notifications.push(error)
+        view.press_blocked = True
     blocked = frozen or view.press_blocked
     view.port_rects = {}
     view.canvas_rect = (origin.x, origin.y, origin.x + avail.x, origin.y + avail.y)
     overrides = view.node_drag.current() if view.node_drag is not None else {}
     picture = _build_view(document, view.scope, overrides)
     nodes = list(picture.nodes.values())
+    view.selected_wire = revalidated_wire(
+        view.selected_wire, {edge.wire_id for edge in picture.edges}
+    )
     if not view.fitted:
-        _fit(view, nodes, avail)
+        _fit(view, nodes, picture, avail)
     xf = _Xf(origin, view.pan, view.zoom)
     dl = imgui.get_window_draw_list()
     output = document.graph.output
 
     # ---- wheel zoom about the cursor, read before the transform is used ----
-    hovered = imgui.is_window_hovered(imgui.HoveredFlags_.child_windows)
     if hovered and io.mouse_wheel != 0.0:
         mouse = (io.mouse_pos.x, io.mouse_pos.y)
         under = xf.to_canvas(mouse)
@@ -879,41 +1046,87 @@ def _draw_canvas(
         )
         xf = _Xf(origin, view.pan, view.zoom)
 
-    # ---- the picture: wires under nodes ----
-    dl.channels_split(2)
-    dl.channels_set_current(0)
+    # ---- the picture: halos, wires, nodes, then the overlays ----
+    # Five channels, and paint order follows the channel index rather than the call order, so
+    # one wire's halo can never cover a neighbour's crisp stroke.
+    dl.channels_split(5)
     edge_col = _u32(COLOR.GRAPH_EDGE)
     dim_col = _u32(fade(COLOR.GRAPH_EDGE, COLOR.GRAPH_DIM_ALPHA))
     err_col = _u32(COLOR.STATE_ERROR)
-    bottom = max((n.pos[1] + n.size[1] for n in nodes), default=0.0)
+    hover_col = _u32(COLOR.GRAPH_HOVER)
+    select_col = _u32(COLOR.SELECT)
+    hover_halo = _u32(fade(COLOR.GRAPH_HOVER, COLOR.GRAPH_HOVER_HALO_ALPHA))
+    select_halo = _u32(fade(COLOR.SELECT, COLOR.GRAPH_SELECT_HALO_ALPHA))
+    # Last frame's hover, since the rects a hover is read from are submitted after this draw
+    # (093 S3). The selection is this frame's: it was resolved before the picture.
+    view.wire_mids = {}
+    view.x_rect = None
     for edge in picture.edges:
         src = picture.nodes[edge.src_key]
         dst = picture.nodes[edge.dst_key]
-        a = _out_point(src, edge.src_slot)
-        b = _port_point(dst, edge.dst_slot)
-        col = err_col if edge.on_cycle else dim_col if edge.dim else edge_col
-        backward = b[0] < a[0] + _MIN_DIRECT_DX
-        bus = (
-            bottom
-            + SIZE.GRAPH_BUS_CLEAR
-            + max(0, edge.span - 2) * SIZE.GRAPH_BUS_STEP
-            + (SIZE.GRAPH_BUS_STEP if backward else 0)
+        points = wire_points(
+            xf.to_screen(_out_point(src, edge.src_slot)),
+            xf.to_screen(_port_point(dst, edge.dst_slot)),
+            view.zoom,
         )
-        _draw_wire(dl, xf, a, b, bus if (backward or edge.span > 1) else 0.0, col)
-    for node in nodes:
-        for slot, port in enumerate(node.ports):
-            if port.kind == "prev":
-                _draw_self_loop(dl, xf, node, slot, dim_col if node.stale else edge_col)
-    dl.channels_set_current(1)
+        selected = edge.wire_id == view.selected_wire
+        state = wire_state(
+            edge.on_cycle, selected, edge.wire_id == view.hovered_wire, edge.dim
+        )
+        col, halo = {
+            WireState.ERROR: (err_col, None),
+            WireState.SELECTED: (select_col, select_halo),
+            WireState.HOVERED: (hover_col, hover_halo),
+            WireState.DIM: (dim_col, None),
+            WireState.NORMAL: (edge_col, None),
+        }[state]
+        _draw_wire(dl, points, view.zoom, col, halo)
+        centre = bezier_point(*points, 0.5)
+        view.wire_mids[edge.wire_id] = centre
+        if selected:
+            half = max(SIZE.GRAPH_WIRE_X_R * view.zoom, float(SIZE.GRAPH_HIT_MIN))
+            view.x_rect = (
+                centre[0] - half,
+                centre[1] - half,
+                centre[0] + half,
+                centre[1] + half,
+            )
+            _draw_wire_x(dl, centre, half, view.zoom)
+    # One list, sorted once: the selected and dragged cards paint LAST, and the hit-test loop
+    # below submits their buttons last for the same reason (093 S7, G12).
+    dragging = set(view.node_drag.origin) if view.node_drag is not None else set()
+    selected_of = {
+        node.key: (node.kind != "box" and node.name in view.selection)
+        or (node.kind == "box" and bool(set(node.members) & view.selection))
+        for node in nodes
+    }
+    nodes.sort(
+        key=lambda n: (
+            selected_of[n.key],
+            bool(set(n.members) & dragging) if n.kind == "box" else n.name in dragging,
+        )
+    )
+    view.node_order = [node.key for node in nodes]
+    dl.channels_set_current(_CH_NODE)
     for node in nodes:
         is_output = (
             node.name == output if node.kind != "box" else output in node.members
         )
-        selected = (node.kind != "box" and node.name in view.selection) or (
-            node.kind == "box" and bool(set(node.members) & view.selection)
+        _draw_node(
+            app,
+            dl,
+            xf,
+            node,
+            is_output,
+            selected_of[node.key],
+            node.key == view.hovered_node,
+            view.hovered_port[1]
+            if view.hovered_port and view.hovered_port[0] == node.key
+            else None,
+            view.hovered_out[1]
+            if view.hovered_out and view.hovered_out[0] == node.key
+            else None,
         )
-        _draw_node(app, dl, xf, node, is_output, selected)
-    dl.channels_merge()
 
     # ---- hit testing: the background first, every node after, each allowing overlap ----
     imgui.set_cursor_screen_pos(origin)
@@ -925,6 +1138,7 @@ def _draw_canvas(
     )
     bg_hovered = imgui.is_item_hovered()
     bg_active = imgui.is_item_active()
+    bg_pressed = imgui.is_item_clicked(imgui.MouseButton_.left)
     panning = bg_active and (
         imgui.is_mouse_down(imgui.MouseButton_.middle) or io.key_alt
     )
@@ -933,20 +1147,22 @@ def _draw_canvas(
             view.pan[0] - io.mouse_delta.x / view.zoom,
             view.pan[1] - io.mouse_delta.y / view.zoom,
         )
-    if imgui.is_item_clicked(imgui.MouseButton_.left) and not io.key_shift:
-        view.selection.clear()
     # The rubber band: a left-drag on empty canvas that is not a pan (092 D14).
     if (
         bg_active
         and not panning
-        and imgui.is_mouse_dragging(imgui.MouseButton_.left)
+        and imgui.is_mouse_dragging(imgui.MouseButton_.left, SIZE.GRAPH_DRAG_LOCK_PX)
         and view.band_anchor is None
         and not blocked
     ):
-        delta = imgui.get_mouse_drag_delta(imgui.MouseButton_.left)
+        delta = imgui.get_mouse_drag_delta(
+            imgui.MouseButton_.left, SIZE.GRAPH_DRAG_LOCK_PX
+        )
         view.band_anchor = (io.mouse_pos.x - delta.x, io.mouse_pos.y - delta.y)
 
-    node_hovered = False
+    node_hovered: str | None = None
+    port_hovered: tuple[str, int] | None = None
+    out_hovered: tuple[str, int] | None = None
     drop_target: tuple[str, str, str] | None = None  # (owner, sampler, kind)
     for node in nodes:
         p0 = xf.to_screen(node.pos)
@@ -958,14 +1174,28 @@ def _draw_canvas(
             imgui.ImVec2(max(1.0, p1[0] - p0[0]), max(1.0, p1[1] - p0[1])),
         )
         if imgui.is_item_hovered():
-            node_hovered = True
+            node_hovered = node.key
             if imgui.is_mouse_double_clicked(imgui.MouseButton_.left):
                 _double_click(app, document_id, view, node)
-            elif imgui.is_item_clicked(imgui.MouseButton_.left):
-                _click(app, document_id, view, node, io.key_shift)
+        # The click fires on the RELEASE, resolved against the drag lock: a press-time click
+        # would make every drag an output choice too (093 S4). `is_item_deactivated` is also
+        # True when the release lands off the item, which the hover clause refuses; the drag
+        # objects are what survive into the release frame, where `is_mouse_dragging` is
+        # already False.
+        if (
+            imgui.is_item_deactivated()
+            and imgui.is_item_hovered()
+            and imgui.is_mouse_released(imgui.MouseButton_.left)
+            and view.node_drag is None
+            and view.wire_drag is None
+            and not blocked
+        ):
+            _click(app, document_id, view, node, io.key_shift)
         if (
             imgui.is_item_active()
-            and imgui.is_mouse_dragging(imgui.MouseButton_.left)
+            and imgui.is_mouse_dragging(
+                imgui.MouseButton_.left, SIZE.GRAPH_DRAG_LOCK_PX
+            )
             and view.node_drag is None
             and view.wire_drag is None
             and node.kind != "ghost"
@@ -998,15 +1228,20 @@ def _draw_canvas(
                 center[0] + hit,
                 center[1] + hit,
             )
+            if imgui.is_item_hovered():
+                port_hovered = (node.key, slot)
             # While a wire is in flight another item (the dot it left, the background) is
             # ACTIVE, which blocks plain hover; the drag-and-drop flag is what sees through it.
             if view.wire_drag is not None and imgui.is_item_hovered(
                 imgui.HoveredFlags_.allow_when_blocked_by_active_item
             ):
                 drop_target = (owner, port.sampler, port.kind)
+                port_hovered = (node.key, slot)
             pressed = (
                 imgui.is_item_active()
-                and imgui.is_mouse_dragging(imgui.MouseButton_.left)
+                and imgui.is_mouse_dragging(
+                    imgui.MouseButton_.left, SIZE.GRAPH_DRAG_LOCK_PX
+                )
                 and view.wire_drag is None
                 and view.node_drag is None
                 and not blocked
@@ -1037,39 +1272,84 @@ def _draw_canvas(
             imgui.invisible_button(
                 f"##gout_{node.key}_{slot}", imgui.ImVec2(2 * out_hit, 2 * out_hit)
             )
+            if imgui.is_item_hovered():
+                out_hovered = (node.key, slot)
             if (
                 imgui.is_item_active()
-                and imgui.is_mouse_dragging(imgui.MouseButton_.left)
+                and imgui.is_mouse_dragging(
+                    imgui.MouseButton_.left, SIZE.GRAPH_DRAG_LOCK_PX
+                )
                 and view.wire_drag is None
                 and view.node_drag is None
                 and not blocked
             ):
                 view.wire_drag = WireDrag(producer=member, start=_out_point(node, slot))
 
+    # ---- the wire distance pass: the one thing outside the item system (093 G4) ----
+    # After the button loop, so this frame's node and port hovers are known, and before the
+    # background press is acted on, so a selection is decided against this frame's hover.
+    wire_hovered: WireId | None = None
+    if hovered:
+        threshold = wire_hit_threshold(view.zoom)
+        mouse = (io.mouse_pos.x, io.mouse_pos.y)
+        best = threshold
+        for edge in picture.edges:
+            points = wire_points(
+                xf.to_screen(_out_point(picture.nodes[edge.src_key], edge.src_slot)),
+                xf.to_screen(_port_point(picture.nodes[edge.dst_key], edge.dst_slot)),
+                view.zoom,
+            )
+            distance = wire_hit(mouse, points, threshold, SIZE.GRAPH_WIRE_HIT_SEGS)
+            if distance is not None and distance <= best:
+                best = distance
+                wire_hovered = edge.wire_id
+    # Exactly one element is hovered per frame, in this order: a port or output dot, else a
+    # node body, else the nearest wire, else nothing (093 G6). Every field is written every
+    # frame, `None` included, so a mouse that left the canvas leaves no stale cue.
+    dot = port_hovered or out_hovered
+    view.hovered_port = port_hovered
+    view.hovered_out = None if port_hovered else out_hovered
+    view.hovered_node = None if dot else node_hovered
+    view.hovered_wire = None if (dot or node_hovered) else wire_hovered
+
+    # ---- the background press, decided against this frame's hover (093 S4) ----
+    if bg_pressed and not blocked:
+        if view.hovered_wire is not None:
+            view.selected_wire = view.hovered_wire
+            if not io.key_shift:
+                view.selection.clear()
+        elif not io.key_shift:
+            view.selected_wire = None
+            view.selection.clear()
+
     # ---- the drag in flight: move, snap, and commit on release ----
     if view.node_drag is not None:
+        app.want_cursor = app.hand_cursor
         view.node_drag.update(
             io.mouse_delta.x / view.zoom, io.mouse_delta.y / view.zoom
         )
         view.guides = _snap(view, picture, nodes)
         if imgui.is_mouse_released(imgui.MouseButton_.left):
             app.commit_node_drag(document_id)
+    if panning:
+        app.want_cursor = app.hand_cursor
     if view.wire_drag is not None:
+        app.want_cursor = app.crosshair_cursor
         wire = view.wire_drag
-        start = xf.to_screen(wire.start)
-        end = (io.mouse_pos.x, io.mouse_pos.y)
-        c = max(_MIN_DIRECT_DX * view.zoom, abs(end[0] - start[0]) * _BEZIER_BOW)
+        dl.channels_set_current(_CH_INFLIGHT)
         dl.add_bezier_cubic(
-            start,
-            (start[0] + c, start[1]),
-            (end[0] - c, end[1]),
-            end,
+            *wire_points(
+                xf.to_screen(wire.start),
+                (io.mouse_pos.x, io.mouse_pos.y),
+                view.zoom,
+            ),
             _u32(COLOR.ACCENT_PRIMARY),
             max(1.0, SIZE.GRAPH_WIRE_W * view.zoom),
         )
         if imgui.is_mouse_released(imgui.MouseButton_.left):
             _drop(app, document_id, wire, drop_target)
             view.wire_drag = None
+    dl.channels_set_current(_CH_OVERLAY)
     if view.band_anchor is not None:
         a = view.band_anchor
         b = (io.mouse_pos.x, io.mouse_pos.y)
@@ -1096,6 +1376,7 @@ def _draw_canvas(
                 ):
                     picked |= set(node.members) if node.kind == "box" else {node.name}
             view.selection = (view.selection | picked) if io.key_shift else picked
+            view.selected_wire = None
             view.band_anchor = None
     for kind, value in view.guides:
         if kind == "v":
@@ -1112,15 +1393,37 @@ def _draw_canvas(
                 (origin.x + avail.x, y),
                 _u32(fade(COLOR.SELECT, COLOR.GRAPH_GUIDE_ALPHA)),
             )
+    dl.channels_merge()
+
+    # ---- Delete unwires the selected wire, read HERE and once (093 S5) ----
+    # The position is the decision: on a release frame `is_any_item_active` is True at the top
+    # of this function and False here, and `is_window_hovered` the reverse, so a read at the
+    # top is dead on exactly the frame a user who just clicked the wire presses the key.
+    if delete_allowed(
+        imgui.is_key_pressed(imgui.Key.delete)
+        or imgui.is_key_pressed(imgui.Key.backspace),
+        hovered,
+        imgui.is_any_item_active(),
+        blocked,
+        view.selected_wire is not None,
+    ):
+        assert view.selected_wire is not None
+        error = app.unwire(document_id, *view.selected_wire)
+        if error:
+            app.notifications.push(error)
 
     if (
         bg_hovered
-        and not node_hovered
+        and node_hovered is None
         and imgui.is_mouse_released(imgui.MouseButton_.right)
     ):
         imgui.open_popup("##graph_canvas_menu")
     _canvas_menu(app, document_id, view)
     _group_prompt(app, document_id, view)
+    # The latch clears at the END of the frame the button came up on, so the release-frame
+    # node click of S4 is refused too; the next frame is clean (093 S6).
+    if not mouse_down:
+        view.press_blocked = False
 
 
 def _drag_names(view: GraphViewState, node: _Node) -> list[str]:
@@ -1200,17 +1503,19 @@ def _click(
         view.scope = ""
         view.fitted = False
         view.selection = {node.name}
+        view.selected_wire = None
         return
     names = set(node.members) if node.kind == "box" else {node.name}
     if extend:
         view.selection ^= names
+        view.selected_wire = None
         return
     view.selection = names
-    app.pick_pass(
-        document_id,
-        node.bundle if node.kind == "box" else node.name,
-        focus_editor=False,
-    )
+    view.selected_wire = None
+    # The output half of a strip click, without the shader tab (093 S15): inside the editor
+    # pane opening one would evict the graph tab this click was made on. The double-click is
+    # the deliberate "open this pass" gesture.
+    app.choose_output(document_id, node.bundle if node.kind == "box" else node.name)
 
 
 def _double_click(

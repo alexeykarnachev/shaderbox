@@ -34,7 +34,7 @@ from shaderbox.logging_setup import configure_logging
 from shaderbox.pass_graph import PassEntry, PassGraph
 from shaderbox.paths import PASSES_DIR_NAME, pass_shader_name
 from shaderbox.ui import update_and_draw
-from shaderbox.ui_regions import DocumentTab, PassesView
+from shaderbox.ui_regions import DocumentTab
 
 N_FRAMES: int = 200
 
@@ -278,15 +278,15 @@ def main() -> int:
                     app.open_pass_settings(
                         sorted(app.ui_documents[multi].document.passes)[0]
                     )
-                # The graph canvas (092): the second view of the same passes, drawn on the
-                # multi-pass document selected at frame 42 so it has nodes, a box
-                # (`smoke_group`), wires and a group tab to draw. None of it can be screenshotted
-                # here, so the frame loop executing every branch IS the check, plus the state
-                # asserts a draw-time write or a lost scope would break silently.
+                # The graph canvas (092, 093): its own editor tab, drawn on the multi-pass
+                # document selected at frame 42 so it has nodes, a box (`smoke_group`), wires
+                # and a group tab to draw. None of it can be screenshotted here, so the frame
+                # loop executing every branch IS the check, plus the state asserts a draw-time
+                # write or a lost scope would break silently.
                 if frame_idx == 43:
                     app.popup_state = PopupState.CLOSED
                     app.pass_settings_name = ""
-                    app.app_state.passes_view = PassesView.GRAPH
+                    app.open_graph_for(multi)
                     # 092 D6: opening the view must WRITE NOTHING. Falsifier: a canvas that
                     # stores the rank layout on first sight.
                     graph_before = json.dumps(
@@ -337,7 +337,14 @@ def main() -> int:
                             multi
                         ].document.graph.passes.values()
                     ), "frame 47: Arrange left a pass unplaced"
-                    app.app_state.passes_view = PassesView.STRIP
+                    # The session-less teardown (093 T1): a graph tab holds no EditorSession,
+                    # so closing it must walk the same path a shader tab's close does and
+                    # leave nothing behind.
+                    app.close_editor_for_path(app.paths.graph_json_for(multi))
+                    assert not any(t.kind == "graph" for t in app.editor_tabs), (
+                        "frame 47: closing the graph tab left one open -- the path-keyed "
+                        "teardown missed a tab with no session"
+                    )
                 if frame_idx == 48:
                     # Back to the feedback canary's document, whose accumulation the tail asserts.
                     app.set_current_document_id(canary_id)

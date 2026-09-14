@@ -21,7 +21,7 @@ from shaderbox.popups.lib_picker.filtering import (
 )
 from shaderbox.shader_lib import ShaderLibFunction
 from shaderbox.theme import COLOR, SPACE
-from shaderbox.ui_primitives import _ellipsize, context_menu_style, standard_button
+from shaderbox.ui_primitives import context_menu_style, ellipsize, standard_button
 
 
 @dataclass
@@ -347,7 +347,7 @@ def _draw_function_leaf(app: App, fn: ShaderLibFunction) -> bool:
         avail = imgui.get_content_region_avail().x - sep_w
         if avail > imgui.calc_text_size("...").x:
             first_doc_line = fn.doc.splitlines()[0]
-            imgui.text_colored(COLOR.FG_DIM, sep + _ellipsize(first_doc_line, avail))
+            imgui.text_colored(COLOR.FG_DIM, sep + ellipsize(first_doc_line, avail))
     return close_picker
 
 

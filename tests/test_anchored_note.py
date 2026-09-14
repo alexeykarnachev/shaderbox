@@ -12,7 +12,7 @@ from imgui_bundle import imgui
 
 from shaderbox.scripting.api_doc import API_NAMES, api_symbol_doc
 from shaderbox.theme import SIZE
-from shaderbox.ui_primitives import _ellipsize, anchored_note
+from shaderbox.ui_primitives import anchored_note, ellipsize
 
 
 def _note_size(title: str, body: str, value: str = "") -> tuple[float, float]:
@@ -44,13 +44,13 @@ def test_a_notes_size_does_not_lag_a_frame_behind_its_content(app: Any) -> None:
 
 def test_a_long_value_is_cut_rather_than_widening_the_note(app: Any) -> None:
     # A long array uniform's value must not overflow the note (finding 3). Falsifier: drop the
-    # `_ellipsize` and the note grows past its width token.
+    # `ellipsize` and the note grows past its width token.
     long_value = ", ".join(str(i / 7.0) for i in range(40))
     imgui.new_frame()
     imgui.begin("rig")
     padding = imgui.get_style().window_padding
     wrap = float(SIZE.NOTE_W) - 2.0 * padding.x
-    cut = _ellipsize(long_value, wrap)
+    cut = ellipsize(long_value, wrap)
     imgui.end()
     imgui.end_frame()
     assert cut.endswith("...") and len(cut) < len(long_value)

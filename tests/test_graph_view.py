@@ -5,17 +5,27 @@ without a window: the cycle drop, the media drop, the unwire, the drag commit, G
 Dissolve. The widget itself is pinned to have no session write of its own.
 """
 
+from dataclasses import fields
 from pathlib import Path
 from typing import Any
 from unittest import mock
 
+import pytest
 from imgui_bundle import imgui
 
 from shaderbox.pass_graph import NoSource, PassSource
 from shaderbox.ui import update_and_draw
-from shaderbox.ui_regions import PassesView
 from shaderbox.widgets import pass_graph, pass_list
-from shaderbox.widgets.graph_state import NodeDrag, WireDrag
+from shaderbox.widgets.graph_state import (
+    GraphViewState,
+    NodeDrag,
+    WireDrag,
+    node_size,
+)
+
+# The imgui font atlas is process-global, so every frame-driving module owns a worker
+# (`pyproject.toml`).
+pytestmark = pytest.mark.xdist_group("gl_frames_graph_view")
 
 _SAMPLER = """#version 460 core
 in vec2 vs_uv;
@@ -188,7 +198,7 @@ def test_a_wire_dropped_on_a_drawn_port_writes_that_port(app: Any) -> None:
     # the flag costs the LAST rung its own hover, `drop_target` never sets, and the drop
     # writes nothing at any zoom.
     document_id, document = _chain(app)
-    app.app_state.passes_view = PassesView.GRAPH
+    app.open_graph_for(document_id)
     _frames(app, 4)
     view = app.graph_view_for(document_id)
     assert ("c", "u_src") in view.port_rects, sorted(view.port_rects)
@@ -210,7 +220,7 @@ def test_a_wire_dropped_on_a_drawn_port_writes_that_port(app: Any) -> None:
     _frames(app, 2)
     assert document.passes["c"].uniform_values["u_src"] == PassSource("a")
     assert view.wire_drag is None
-    app.app_state.passes_view = PassesView.STRIP
+    app.close_editor_for_path(app.paths.graph_json_for(document_id))
     _frames(app, 1)
 
 
@@ -220,7 +230,7 @@ def test_a_press_that_spans_a_copilot_turn_never_becomes_a_gesture(app: Any) -> 
     # gesture from a press nobody made after the turn. Falsifier: drop the `press_blocked`
     # latch -- the release after the turn writes NoSource over the wire the press was on.
     document_id, document = _chain(app)
-    app.app_state.passes_view = PassesView.GRAPH
+    app.open_graph_for(document_id)
     _frames(app, 4)
     view = app.graph_view_for(document_id)
     x0, y0, x1, y1 = view.port_rects[("b", "u_src")]
@@ -256,5 +266,530 @@ def test_a_press_that_spans_a_copilot_turn_never_becomes_a_gesture(app: Any) -> 
     assert view.wire_drag is not None
     io.add_mouse_button_event(0, False)
     _frames(app, 2)
-    app.app_state.passes_view = PassesView.STRIP
+    app.close_editor_for_path(app.paths.graph_json_for(document_id))
     _frames(app, 1)
+
+
+# ----------------------------------------------------------------
+# The canvas's own gestures (093), driven through the real frame loop. Three mechanics every
+# test here obeys, each measured on this imgui build: a key event queued in the same batch as
+# a mouse-button event reaches `is_key_pressed` one frame LATER than the button, so a `_frames`
+# call separates them; a move and a release arriving in one frame read as a click, so they are
+# separate frames too; and a test that needs the canvas to have drawn asserts `canvas_rect`
+# first, since every geometry field it then reads is written only on a sized frame.
+
+
+def _open_graph(app: Any, document_id: str) -> Any:
+    app.open_graph_for(document_id)
+    _frames(app, 4)
+    view = app.graph_view_for(document_id)
+    assert view.canvas_rect != (0.0, 0.0, 0.0, 0.0), "the canvas never drew"
+    return view
+
+
+def _park(app: Any, point: tuple[float, float], frames: int = 3) -> None:
+    imgui.get_io().add_mouse_pos_event(point[0], point[1])
+    _frames(app, frames)
+
+
+def _click_at(app: Any, point: tuple[float, float]) -> None:
+    _park(app, point)
+    imgui.get_io().add_mouse_button_event(0, True)
+    _frames(app, 2)
+    imgui.get_io().add_mouse_button_event(0, False)
+    _frames(app, 2)
+
+
+def _let_the_double_click_lapse(app: Any) -> None:
+    """Run frames until imgui's double-click window has closed.
+
+    A test's two presses land microseconds apart on almost the same pixel, which imgui reads
+    as ONE double-click -- a real hand aiming from a wire to its badge never does. Frames are
+    free here, and the alternative (moving the mouse far away between presses) would change
+    what the gesture under test is."""
+    deadline = imgui.get_io().mouse_double_click_time + 0.05
+    elapsed = 0.0
+    while elapsed < deadline:
+        elapsed += imgui.get_io().delta_time
+        _frames(app, 1)
+
+
+def _press_key(app: Any, key: Any) -> None:
+    imgui.get_io().add_key_event(key, True)
+    _frames(app, 2)
+    imgui.get_io().add_key_event(key, False)
+    _frames(app, 1)
+
+
+def test_a_wire_is_selected_by_a_click_and_deleted_by_the_key(app: Any) -> None:
+    # G5: the whole point of finding 1 -- a wire can be reached at all. Falsifier: read the
+    # Delete key at the TOP of `_draw_canvas`, where on the release frame `is_any_item_active`
+    # is still True (measured), and the key is dead on exactly the frame a user who just
+    # clicked the wire presses it.
+    document_id, document = _chain(app)
+    view = _open_graph(app, document_id)
+    assert ("c", "u_src") in view.wire_mids, sorted(view.wire_mids)
+    _click_at(app, view.wire_mids[("c", "u_src")])
+    assert view.selected_wire == ("c", "u_src")
+    assert view.selection == set()
+    with mock.patch.object(
+        app.session, "set_sampler_source", wraps=app.session.set_sampler_source
+    ) as write:
+        _press_key(app, imgui.Key.delete)
+    assert write.call_count == 1, [c.args for c in write.call_args_list]
+    assert write.call_args.args[1:] == (document_id, "c", "u_src", NoSource())[1:] or (
+        write.call_args.args[0],
+        write.call_args.args[1],
+        write.call_args.args[2],
+    ) == (document_id, "c", "u_src")
+    assert document.passes["c"].uniform_values["u_src"] == NoSource()
+    _close_graph(app, document_id)
+
+
+def _close_graph(app: Any, document_id: str) -> None:
+    app.close_editor_for_path(app.paths.graph_json_for(document_id))
+    _frames(app, 1)
+
+
+def test_the_wires_own_badge_unwires_it_and_the_press_is_nothing_else(app: Any) -> None:
+    """G5/S6: the badge is not an imgui item -- an earlier item that declares no overlap beats
+    a later one, and a short wire's midpoint lands inside its consumer port's box -- so it is
+    hand hit-tested on the press and latches `press_blocked`.
+
+    Break to try: clear the latch at the TOP of the frame as 092 did -- the covered case below
+    both unwires the sampler AND, on the release, chooses the covering node as the output.
+    """
+    document_id, document = _chain(app)
+    view = _open_graph(app, document_id)
+    _click_at(app, view.wire_mids[("b", "u_src")])
+    assert view.selected_wire == ("b", "u_src")
+    selection_before = set(view.selection)
+    assert view.x_rect is not None
+    centre = (
+        (view.x_rect[0] + view.x_rect[2]) / 2.0,
+        (view.x_rect[1] + view.x_rect[3]) / 2.0,
+    )
+    _let_the_double_click_lapse(app)
+    with (
+        mock.patch.object(
+            app.session, "set_sampler_source", wraps=app.session.set_sampler_source
+        ) as write,
+        mock.patch.object(
+            app.session, "set_output_pass", wraps=app.session.set_output_pass
+        ) as output,
+    ):
+        _park(app, centre)
+        imgui.get_io().add_mouse_button_event(0, True)
+        _frames(app, 2)
+        assert view.band_anchor is None and view.node_drag is None
+        imgui.get_io().add_mouse_button_event(0, False)
+        _frames(app, 2)
+    assert write.call_count == 1, [c.args for c in write.call_args_list]
+    assert output.call_count == 0, "the press became an output choice as well"
+    assert view.band_anchor is None and view.node_drag is None
+    assert view.selection == selection_before
+    assert document.passes["b"].uniform_values["u_src"] == NoSource()
+    _close_graph(app, document_id)
+
+
+def test_the_badge_wins_over_a_card_that_covers_the_wire(app: Any) -> None:
+    # The normal case under G15: a wire runs UNDER a node. The card is shifted toward the
+    # producer so its body covers the midpoint but not the port the wire ends at -- centred on
+    # the midpoint it would cover both. Break to try: the same latch clear as above.
+    document_id, document = _chain(app)
+    view = _open_graph(app, document_id)
+    _click_at(app, view.wire_mids[("b", "u_src")])
+    assert view.selected_wire == ("b", "u_src")
+    xf_mid = view.wire_mids[("b", "u_src")]
+    canvas_mid = (
+        (xf_mid[0] - view.canvas_rect[0]) / view.zoom + view.pan[0],
+        (xf_mid[1] - view.canvas_rect[1]) / view.zoom + view.pan[1],
+    )
+    size = node_size(1, False)
+    app.session.set_pass_positions(
+        document_id,
+        {
+            "c": (
+                canvas_mid[0] - size[0] / 2.0 - 50.0,
+                canvas_mid[1] - size[1] / 2.0,
+            )
+        },
+    )
+    _frames(app, 3)
+    assert view.x_rect is not None
+    centre = (
+        (view.x_rect[0] + view.x_rect[2]) / 2.0,
+        (view.x_rect[1] + view.x_rect[3]) / 2.0,
+    )
+    _let_the_double_click_lapse(app)
+    with (
+        mock.patch.object(
+            app.session, "set_sampler_source", wraps=app.session.set_sampler_source
+        ) as write,
+        mock.patch.object(
+            app.session, "set_output_pass", wraps=app.session.set_output_pass
+        ) as output,
+    ):
+        _park(app, centre)
+        imgui.get_io().add_mouse_button_event(0, True)
+        _frames(app, 2)
+        imgui.get_io().add_mouse_button_event(0, False)
+        _frames(app, 2)
+    assert write.call_count == 1, [c.args for c in write.call_args_list]
+    assert output.call_count == 0, (
+        "the release-frame node click fired through the latch"
+    )
+    assert document.passes["b"].uniform_values["u_src"] == NoSource()
+    _close_graph(app, document_id)
+
+
+def test_delete_is_refused_while_a_press_is_held_on_the_canvas(app: Any) -> None:
+    # S5, a behavior pin: the clause it exercises is `hovered` -- `is_window_hovered` is False
+    # for the whole duration of a held press (measured), which is why the gate needs no
+    # separate "a gesture is in flight" clause.
+    document_id, document = _chain(app)
+    view = _open_graph(app, document_id)
+    _click_at(app, view.wire_mids[("c", "u_src")])
+    assert view.selected_wire == ("c", "u_src")
+    empty = (view.canvas_rect[2] - 6.0, view.canvas_rect[3] - 6.0)
+    with mock.patch.object(
+        app.session, "set_sampler_source", wraps=app.session.set_sampler_source
+    ) as write:
+        _park(app, empty)
+        imgui.get_io().add_mouse_button_event(0, True)
+        _frames(app, 2)
+        _press_key(app, imgui.Key.delete)
+        assert write.call_count == 0, "Delete fired under a held press"
+        imgui.get_io().add_mouse_button_event(0, False)
+        _frames(app, 2)
+    # The press on empty canvas cleared the selection, so re-select before the positive half.
+    _click_at(app, view.wire_mids[("c", "u_src")])
+    assert view.selected_wire == ("c", "u_src")
+    with mock.patch.object(
+        app.session, "set_sampler_source", wraps=app.session.set_sampler_source
+    ) as write:
+        _press_key(app, imgui.Key.delete)
+    assert write.call_count == 1
+    assert document.passes["c"].uniform_values["u_src"] == NoSource()
+    _close_graph(app, document_id)
+
+
+def test_delete_typed_into_the_group_prompt_is_refused(app: Any) -> None:
+    # S5, a behavior pin on the same `hovered` clause: the prompt is a plain `begin_popup`, so
+    # `any_popup_open()` is False for it while `is_window_hovered(child_windows)` is already
+    # False (the binding's own doc: "not blocked by a popup/modal").
+    document_id, document = _chain(app)
+    view = _open_graph(app, document_id)
+    _click_at(app, view.wire_mids[("c", "u_src")])
+    assert view.selected_wire == ("c", "u_src")
+    # A one-shot the first frame consumes; re-asserting it would reopen the popup each frame.
+    view.group_prompt = True
+    _frames(app, 3)
+    with mock.patch.object(
+        app.session, "set_sampler_source", wraps=app.session.set_sampler_source
+    ) as write:
+        _press_key(app, imgui.Key.delete)
+    assert write.call_count == 0
+    assert document.passes["c"].uniform_values["u_src"] == PassSource("b")
+    _close_graph(app, document_id)
+
+
+def test_delete_is_refused_during_a_copilot_turn(app: Any) -> None:
+    # S5's `not blocked` clause: a turn freezes every canvas write, and a key is no exception.
+    document_id, document = _chain(app)
+    view = _open_graph(app, document_id)
+    _click_at(app, view.wire_mids[("c", "u_src")])
+    assert view.selected_wire == ("c", "u_src")
+    app.copilot.state.in_flight = True
+    _frames(app, 3)
+    with mock.patch.object(
+        app.session, "set_sampler_source", wraps=app.session.set_sampler_source
+    ) as write:
+        _press_key(app, imgui.Key.delete)
+    assert write.call_count == 0
+    app.copilot.state.in_flight = False
+    _frames(app, 3)
+    assert document.passes["c"].uniform_values["u_src"] == PassSource("b")
+    _close_graph(app, document_id)
+
+
+def _hover_fields(view: Any) -> tuple[Any, Any, Any, Any]:
+    return (view.hovered_port, view.hovered_out, view.hovered_node, view.hovered_wire)
+
+
+def test_exactly_one_thing_is_hovered_and_the_rungs_are_in_order(app: Any) -> None:
+    """G6: port, then node, then wire, then background -- each rung short-circuiting the rest,
+    so a cue never says two things at once.
+
+    Break to try: swap the node and wire rungs, and (d) flips. The port-over-node rung is NOT
+    breakable from the resolution chain: imgui gives the overlap to the port button submitted
+    last, so at a dot the node's own hover already reads False and the chain has nothing left
+    to decide (measured -- swapping those two rungs leaves every row green, and so does
+    dropping the node button's `set_next_item_allow_overlap`). What (a) pins is the
+    submission chain's OUTCOME, which is what the cue is drawn from.
+    """
+    document_id, document = _chain(app)
+    view = _open_graph(app, document_id)
+    x0, y0, x1, y1 = view.port_rects[("c", "u_src")]
+
+    # (a) a port dot outranks the node body it sits on. Aimed a pixel INSIDE the card rather
+    # than at the dot's centre, which sits on the card's left edge: on the boundary the node
+    # button does not contain the point, and the rung would not be exercised at all.
+    _park(app, ((x0 + x1) / 2.0 + 2.0, (y0 + y1) / 2.0))
+    port, out, node, wire = _hover_fields(view)
+    assert port is not None, "the port rung did not fire"
+    assert (out, node, wire) == (None, None, None)
+
+    # (b) a node body, away from every dot and every wire.
+    picture = pass_graph._build_view(document, "", {})
+    node_c = picture.nodes["p:c"]
+    body = (
+        node_c.pos[0] + node_c.size[0] * 0.75,
+        node_c.pos[1] + node_c.size[1] * 0.2,
+    )
+    _park(
+        app,
+        (
+            view.canvas_rect[0] + (body[0] - view.pan[0]) * view.zoom,
+            view.canvas_rect[1] + (body[1] - view.pan[1]) * view.zoom,
+        ),
+    )
+    port, out, node, wire = _hover_fields(view)
+    assert node == "p:c", (node, port, out, wire)
+    assert (port, out, wire) == (None, None, None)
+
+    # (c) a wire in open canvas.
+    _park(app, view.wire_mids[("b", "u_src")])
+    port, out, node, wire = _hover_fields(view)
+    assert wire == ("b", "u_src"), (wire, node, port, out)
+    assert (port, out, node) == (None, None, None)
+
+    # (d) a node body COVERING that wire: the node wins, the wire goes quiet.
+    mid = view.wire_mids[("b", "u_src")]
+    canvas_mid = (
+        (mid[0] - view.canvas_rect[0]) / view.zoom + view.pan[0],
+        (mid[1] - view.canvas_rect[1]) / view.zoom + view.pan[1],
+    )
+    size = node_size(1, False)
+    app.session.set_pass_positions(
+        document_id,
+        {"c": (canvas_mid[0] - size[0] / 2.0 - 50.0, canvas_mid[1] - size[1] / 2.0)},
+    )
+    _frames(app, 3)
+    _park(app, view.wire_mids[("b", "u_src")])
+    port, out, node, wire = _hover_fields(view)
+    assert node == "p:c", (node, wire)
+    assert wire is None, "the wire rung fired under a node body"
+
+    # (e) off the canvas: every field written, every one None.
+    _park(app, (view.canvas_rect[0] - 40.0, view.canvas_rect[1] - 40.0))
+    assert _hover_fields(view) == (None, None, None, None)
+    _close_graph(app, document_id)
+
+
+def test_the_hover_fields_are_exactly_the_four_that_are_written(app: Any) -> None:
+    # S3: a fifth `hovered_` field nobody wires would read stale forever, and the frame loop
+    # gives no sign of it. Falsifier: add one -- this row names it.
+    names = {f.name for f in fields(GraphViewState) if f.name.startswith("hovered_")}
+    assert names == {"hovered_node", "hovered_port", "hovered_out", "hovered_wire"}
+
+
+def test_a_wire_selection_and_a_node_selection_are_exclusive(app: Any) -> None:
+    # S4: one Delete, one unambiguous target. Falsifier: leave `selected_wire` alone in
+    # `_click` and a node click leaves both selections live.
+    document_id, document = _chain(app)
+    view = _open_graph(app, document_id)
+    _click_at(app, view.wire_mids[("c", "u_src")])
+    assert view.selected_wire == ("c", "u_src")
+
+    picture = pass_graph._build_view(document, "", {})
+    node_a = picture.nodes["p:a"]
+    centre = (
+        node_a.pos[0] + node_a.size[0] * 0.5,
+        node_a.pos[1] + node_a.size[1] * 0.25,
+    )
+    _click_at(
+        app,
+        (
+            view.canvas_rect[0] + (centre[0] - view.pan[0]) * view.zoom,
+            view.canvas_rect[1] + (centre[1] - view.pan[1]) * view.zoom,
+        ),
+    )
+    assert view.selected_wire is None
+    assert view.selection == {"a"}
+
+    # And a rubber band's release clears a wire selection too.
+    _click_at(app, view.wire_mids[("c", "u_src")])
+    assert view.selected_wire == ("c", "u_src")
+    empty = (view.canvas_rect[2] - 8.0, view.canvas_rect[3] - 8.0)
+    _park(app, empty)
+    imgui.get_io().add_mouse_button_event(0, True)
+    _frames(app, 2)
+    _park(app, (empty[0] - 60.0, empty[1] - 60.0))
+    imgui.get_io().add_mouse_button_event(0, False)
+    _frames(app, 2)
+    assert view.selected_wire is None
+    _close_graph(app, document_id)
+
+
+def _drag_node(app: Any, view: Any, start: tuple[float, float], dx: float) -> None:
+    # The mouse is walked back to `start` with the button UP first: a second drag begun from
+    # wherever the previous one ended would carry that offset into imgui's drag delta and the
+    # two cases would not measure what they name.
+    _park(app, start)
+    imgui.get_io().add_mouse_button_event(0, True)
+    _frames(app, 2)
+    # The move and the release in SEPARATE frames: in one frame imgui resets the drag before
+    # the frame runs and the pair reads as a click (measured).
+    _park(app, (start[0] + dx, start[1]))
+    imgui.get_io().add_mouse_button_event(0, False)
+    _frames(app, 3)
+
+
+def test_three_pixels_is_a_click_and_five_is_a_drag(app: Any) -> None:
+    """G13/S15: the lock is what separates "choose this output" from "move this card", and a
+    click must not evict the graph tab it was made on.
+
+    Break to try: omit `lock_threshold` at the node-body site -- the 5px case falls back to
+    imgui's 6px default and stays a click (measured today: 5px a click, 8px a drag).
+    """
+    document_id, document = _chain(app)
+    view = _open_graph(app, document_id)
+    picture = pass_graph._build_view(document, "", {})
+    node_a = picture.nodes["p:a"]
+    body = (
+        node_a.pos[0] + node_a.size[0] * 0.5,
+        node_a.pos[1] + node_a.size[1] * 0.2,
+    )
+    start = (
+        view.canvas_rect[0] + (body[0] - view.pan[0]) * view.zoom,
+        view.canvas_rect[1] + (body[1] - view.pan[1]) * view.zoom,
+    )
+
+    with (
+        mock.patch.object(
+            app.session, "set_output_pass", wraps=app.session.set_output_pass
+        ) as output,
+        mock.patch.object(
+            app.session, "set_pass_positions", wraps=app.session.set_pass_positions
+        ) as placed,
+    ):
+        _drag_node(app, view, start, 3.0)
+    assert output.call_count == 1, "3px did not read as a click"
+    assert placed.call_count == 0, "3px wrote a position"
+    assert app.active_tab is not None and app.active_tab.kind == "graph", (
+        "the click opened a shader tab and evicted the canvas it was made on"
+    )
+
+    # A fresh node, so the 3px case's own position write cannot decide this one.
+    node_b = pass_graph._build_view(document, "", {}).nodes["p:b"]
+    body_b = (
+        node_b.pos[0] + node_b.size[0] * 0.5,
+        node_b.pos[1] + node_b.size[1] * 0.2,
+    )
+    start_b = (
+        view.canvas_rect[0] + (body_b[0] - view.pan[0]) * view.zoom,
+        view.canvas_rect[1] + (body_b[1] - view.pan[1]) * view.zoom,
+    )
+    with (
+        mock.patch.object(
+            app.session, "set_output_pass", wraps=app.session.set_output_pass
+        ) as output,
+        mock.patch.object(
+            app.session, "set_pass_positions", wraps=app.session.set_pass_positions
+        ) as placed,
+    ):
+        _drag_node(app, view, start_b, 5.0)
+    assert placed.call_count == 1, "5px did not read as a drag"
+    assert output.call_count == 0, "5px chose an output as well"
+    _close_graph(app, document_id)
+
+
+def test_a_double_click_opens_the_passs_shader_tab(app: Any) -> None:
+    # S15: the deliberate "open this pass" gesture keeps `pick_pass`, so the pane switches on
+    # purpose rather than on every click. Falsifier: point `_double_click` at `choose_output`.
+    document_id, document = _chain(app)
+    view = _open_graph(app, document_id)
+    picture = pass_graph._build_view(document, "", {})
+    node_a = picture.nodes["p:a"]
+    body = (
+        node_a.pos[0] + node_a.size[0] * 0.5,
+        node_a.pos[1] + node_a.size[1] * 0.2,
+    )
+    point = (
+        view.canvas_rect[0] + (body[0] - view.pan[0]) * view.zoom,
+        view.canvas_rect[1] + (body[1] - view.pan[1]) * view.zoom,
+    )
+    _park(app, point)
+    for _ in range(2):
+        imgui.get_io().add_mouse_button_event(0, True)
+        _frames(app, 1)
+        imgui.get_io().add_mouse_button_event(0, False)
+        _frames(app, 1)
+    _frames(app, 2)
+    tab = app.active_tab
+    assert tab is not None and tab.kind == "shader", tab
+    assert tab.path == document.passes["a"].source.path
+
+
+def test_the_selected_card_draws_and_hit_tests_last(app: Any) -> None:
+    # S7: bring-to-front is one sorted list, used by the draw loop and the button loop alike,
+    # so the card that paints on top is the one whose button wins the overlap. Falsifier: sort
+    # only the draw loop -- the picture and the hit test disagree about which card is on top.
+    document_id, _document = _chain(app)
+    view = _open_graph(app, document_id)
+    view.selection = {"a"}
+    _frames(app, 2)
+    assert view.node_order[-1] == "p:a", view.node_order
+    _close_graph(app, document_id)
+
+
+def test_the_cursor_follows_the_gesture(app: Any) -> None:
+    """G7: three gestures, three cursors, and nothing at rest.
+
+    The widget REQUESTS into the single owner and `ui.py` applies once per frame on change; a
+    raw `glfw.set_cursor` per surface flickers on X11. `want_cursor` is reset every frame
+    after being applied, so what a test reads is `cur_cursor`, on a frame where the canvas
+    provably drew. Falsifier: drop a request and its gesture leaves the arrow up.
+
+    The pan is driven Alt+left rather than middle-drag: both take the same `panning` branch,
+    and imgui does not activate an `invisible_button` on a synthetic middle press.
+    """
+    document_id, _document = _chain(app)
+    view = _open_graph(app, document_id)
+    assert view.canvas_rect != (0.0, 0.0, 0.0, 0.0)
+    assert app.cur_cursor is None, "something requested a cursor at rest"
+    io = imgui.get_io()
+    centre = (
+        (view.canvas_rect[0] + view.canvas_rect[2]) / 2.0,
+        (view.canvas_rect[1] + view.canvas_rect[3]) / 2.0,
+    )
+
+    _park(app, centre)
+    io.add_key_event(imgui.Key.mod_alt, True)
+    _frames(app, 2)
+    io.add_mouse_button_event(0, True)
+    _frames(app, 2)
+    _park(app, (centre[0] + 30.0, centre[1] + 20.0), frames=2)
+    assert app.cur_cursor is app.hand_cursor, "a pan left the arrow up"
+    io.add_mouse_button_event(0, False)
+    io.add_key_event(imgui.Key.mod_alt, False)
+    _frames(app, 3)
+    assert view.canvas_rect != (0.0, 0.0, 0.0, 0.0)
+    assert app.cur_cursor is None, "the cursor survived the gesture"
+
+    # A wire in flight asks for the crosshair instead, driven as a user drives it: a press on
+    # a filled input port re-grabs the wire at its producer's end. A `wire_drag` merely
+    # ASSIGNED would be cancelled at the top of the next frame, which is the guard that keeps
+    # a gesture whose press the canvas never saw from writing.
+    x0, y0, x1, y1 = view.port_rects[("c", "u_src")]
+    _park(app, ((x0 + x1) / 2.0, (y0 + y1) / 2.0))
+    io.add_mouse_button_event(0, True)
+    _frames(app, 2)
+    _park(app, ((x0 + x1) / 2.0 + 60.0, (y0 + y1) / 2.0 + 40.0), frames=2)
+    assert view.wire_drag is not None, "the grab never started"
+    assert app.cur_cursor is app.crosshair_cursor
+    io.add_mouse_button_event(0, False)
+    _frames(app, 3)
+    assert app.cur_cursor is None
+    _close_graph(app, document_id)

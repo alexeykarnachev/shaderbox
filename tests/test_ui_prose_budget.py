@@ -141,6 +141,18 @@ _UNMEASURABLE: dict[tuple[str, str], str] = {
         "grouped_combo",
     ): "the group captions of a grouped combo, passed in by the caller (one word each)",
     (
+        "shaderbox/ui_primitives.py",
+        "anchored_note",
+    ): "a uniform's live VALUE, cut to the note's width -- a number, not authored copy",
+    (
+        "shaderbox/ui_primitives.py",
+        "preview_cell",
+    ): "the caller's footer, cut to the cell -- each caller's own string is the measured site",
+    (
+        "shaderbox/widgets/pass_graph.py",
+        "_draw_node",
+    ): "a pass's own name and its shader's sampler names, cut to the card's width",
+    (
         "shaderbox/tabs/code.py",
         "_draw_lookup_popup",
     ): "the `K` lookup's signature and doc, read from the lib index and ENGINE_UNIFORM_DOCS",

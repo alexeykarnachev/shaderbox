@@ -1,6 +1,7 @@
 from imgui_bundle import imgui
 
 from shaderbox.app import App
+from shaderbox.editor_types import EditorTabKind
 from shaderbox.media import MediaWithTexture
 from shaderbox.pass_graph import clamp_canvas_size
 from shaderbox.render_preset import resolve_dims
@@ -27,9 +28,8 @@ from shaderbox.ui_primitives import (
     small_caption,
     standard_button,
 )
-from shaderbox.ui_regions import PASSES_VIEW_LABELS, PassesView
 from shaderbox.util import get_resolution_str
-from shaderbox.widgets import pass_graph, pass_list
+from shaderbox.widgets import pass_list
 
 _SQUARE_PRESETS: tuple[int, ...] = (256, 512, 1024, 2048)
 
@@ -380,9 +380,18 @@ def draw(app: App) -> None:
 _ENTRY_TICK_W = float(SPACE.SM)
 
 
+def _entry_tab_active(app: App, document_id: str, kind: EditorTabKind) -> bool:
+    """Whether the editor's ACTIVE tab is this document's tab of that kind -- the rule the
+    accent tick on an entry-point row marks. One home, so the two rows cannot drift."""
+    active = app.active_tab
+    return (
+        active is not None and active.kind == kind and active.document_id == document_id
+    )
+
+
 def _entry_row_label(active: bool, label: str) -> None:
-    # The Script row's label. `align_text_to_frame_padding` centres the text on the button's row
-    # height (the font mix floats it high otherwise). The accent tick marking the editor's active
+    # An entry-point row's label. `align_text_to_frame_padding` centres the text on the button's
+    # row height (the font mix floats it high otherwise). The accent tick marking the editor's active
     # tab is a draw-list line — presence and color only, never size (/imgui-ui §3) — drawn in the
     # margin to the LEFT of the text, so it costs the row no indent.
     imgui.align_text_to_frame_padding()
@@ -410,12 +419,7 @@ def _draw_entry_points(app: App) -> None:
     document_id = app.current_document_id
     present = app.session.has_script(document_id)
     error = present and app.session.script_has_error(document_id)
-    active = app.active_tab
-    script_active = (
-        active is not None
-        and active.kind == "script"
-        and active.document_id == document_id
-    )
+    script_active = _entry_tab_active(app, document_id, "script")
 
     imgui.begin_disabled(app.copilot_turn_active)
 
@@ -446,30 +450,18 @@ def _draw_entry_points(app: App) -> None:
 
 
 def _draw_passes(app: App, document_id: str) -> None:
-    # The two views of the same passes (092 D2): the caption row carries the choice, the
-    # body is the strip's tiles or the graph canvas, and the add / import row sits under
-    # both -- inside its own copilot-turn bracket, since the strip's used to carry it.
+    # The Passes row is a third entry point (093 T5): its own `open` summons the graph into the
+    # editor pane, exactly as the Script row's summons the script, and the accent tick marks a
+    # graph tab of THIS document as the editor's active tab. The strip stays below it; the
+    # add / import row sits under both, inside its own copilot-turn bracket.
     imgui.begin_disabled(app.copilot_turn_active)
-    small_caption(app.font_12, "Passes")
-    imgui.same_line(spacing=float(SPACE.LG))
-    views = list(PassesView)
-    current = views.index(app.app_state.passes_view)
-    chosen = segmented_choice(
-        "##passes_view", [PASSES_VIEW_LABELS[v] for v in views], current
-    )
-    if chosen != current:
-        app.app_state.passes_view = views[chosen]
+    _entry_row_label(_entry_tab_active(app, document_id, "graph"), "Passes")
+    if standard_button("open##entry_graph"):
+        app.open_graph_for(document_id, focus_editor=True)
+    if imgui.is_item_hovered():
+        imgui.set_tooltip("Open the pass graph")
     imgui.end_disabled()
-    if app.app_state.passes_view is PassesView.GRAPH:
-        # The canvas fills what is left of the tab above the add / import row, which this
-        # function reserves: the widget positions no sibling and measures none.
-        reserve = imgui.get_frame_height() + 2 * float(SPACE.SM)
-        height = max(
-            float(SIZE.GRAPH_MIN_H), imgui.get_content_region_avail().y - reserve
-        )
-        pass_graph.draw(app, document_id, height)
-    else:
-        pass_list.draw(app, document_id)
+    pass_list.draw(app, document_id)
     imgui.begin_disabled(app.copilot_turn_active)
     imgui.dummy((0, float(SPACE.SM)))
     if standard_button("add pass"):

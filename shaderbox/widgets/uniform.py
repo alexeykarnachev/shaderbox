@@ -81,8 +81,10 @@ def uniform_name_label(
 
 def _locate_uniform_declaration(app: App, name: str) -> tuple[Path, int] | None:
     # The active editor first (it carries unsaved edits); then every file in the document's
-    # compile unit, so a uniform declared in a resolved lib file is jump-reachable.
-    session = app.get_current_session()
+    # compile unit, so a uniform declared in a resolved lib file is jump-reachable. The
+    # NON-creating getter: this is reachable while a session-less tab (the graph) is active,
+    # and the creating one would open a GLSL editor over that tab's own file (093 T1).
+    session = app.get_current_session_if_exists()
     if session is not None:
         line = find_uniform_declaration_line(session.editor.get_text(), name)
         if line is not None:

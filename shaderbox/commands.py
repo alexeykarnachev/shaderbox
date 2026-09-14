@@ -37,6 +37,7 @@ class CommandId(StrEnum):
     CYCLE_COPILOT_LAYOUT = auto()
     OPEN_SHADER = auto()
     OPEN_SCRIPT = auto()
+    OPEN_GRAPH = auto()
     CYCLE_CODE_TAB = auto()
     CLOSE_CODE_TAB = auto()
     OPEN_PASS_SETTINGS = auto()
@@ -146,6 +147,7 @@ COMMAND_SPECS: list[CommandSpec] = [
     ),
     CommandSpec(CommandId.OPEN_SHADER, "Open shader", _chord(K.c, K.mod_alt), C.EDITOR),
     CommandSpec(CommandId.OPEN_SCRIPT, "Open script", _chord(K.r, K.mod_alt), C.EDITOR),
+    CommandSpec(CommandId.OPEN_GRAPH, "Open graph", _chord(K.g, K.mod_alt), C.EDITOR),
     # Ctrl+Tab is ours: imgui's built-in window-cycle needs nav_enable_keyboard, which is
     # off app-wide (069 W-E D4). WindowFlags_.no_nav_focus on the main window and the chat
     # keeps it that way if nav is ever turned back on. Scope GLOBAL on purpose (071 D8): the

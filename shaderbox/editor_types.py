@@ -5,7 +5,7 @@ from typing import Literal
 from shaderbox.editor.ffi import Editor
 from shaderbox.shader_source import ShaderSource
 
-EditorTabKind = Literal["shader", "script", "lib"]
+EditorTabKind = Literal["shader", "script", "lib", "graph"]
 
 
 @dataclass(frozen=True)
@@ -13,7 +13,9 @@ class EditorTab:
     # One open file in the code-editor's tab bar (feature 045; 048 collapsed to one script per document).
     # `path` is the on-disk file (the EditorSession key); the tab LABEL is derived from the document name
     # (tab_label), but the imgui `##id` keys on the stable path. `kind` selects the semantic
-    # label + the error tint. For a script/shader tab, `document_id` addresses the document; "" for lib tabs.
+    # label + the error tint. For a script/shader/graph tab, `document_id` addresses the document; "" for
+    # lib tabs. A `graph` tab has NO EditorSession: its path is the document's `graph.json`, which keys
+    # every path-keyed pass-through, and nothing edits it as text (093 T1).
     path: Path
     kind: EditorTabKind
     document_id: str = ""

@@ -207,25 +207,35 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   hand the strip sorted-name order. A tile is a picture, a name, and a row of chips naming the
   passes it reads (070); the source itself is chosen on the sampler's row of the uniforms panel
   (072). The pass verbs are reachable from the strip (gear overlay / context menu, the item set
-  shared with the graph's node menu as `pass_menu_items`); holds no state of its own. Since 092
-  the caption, the `strip | graph` toggle and the `add pass` / `import...` row are the Document
-  tab's (`tabs/document.py::_draw_passes`), drawn over whichever view is on. A group's consecutive tiles draw inside
+  shared with the graph's node menu as `pass_menu_items`); holds no state of its own. The caption
+  row and the `add pass` / `import...` row are the Document tab's (`tabs/document.py::_draw_passes`);
+  since 093 that caption row is an entry-point row like the Script one -- an accent tick, the word
+  `Passes`, and an `open` that summons the graph's editor tab -- and the strip is always what the
+  Document tab draws below it. A group's consecutive tiles draw inside
   one flush outline with the name on its border (091): the fill on the parent draw list, the
   outline and label on the foreground list clipped to the strip, since the tiles are child
   windows that paint over their parent; member tiles keep their padding through
   `preview_cell(bordered=False)`.
-- **`widgets/pass_graph.py`** — the graph canvas (feature 092), the Document tab's second view of
-  the same passes: nodes with one port per sampler the compiled program declares, wires from the
-  effective wiring, a box per group at the root (its ports the group's boundary edges) and a tab
-  per group with the outside passes as ghosts. One `begin_child`, one draw list, hit-tested with
-  `invisible_button`s in the allow-overlap chain (background, node, ports). Pan, wheel zoom, fit,
-  arrange, drag with snap, wire drag, rubber band, Group / Dissolve; every write goes through an
+- **`widgets/pass_graph.py`** — the graph canvas (features 092, 093), a second picture of the same
+  passes in its own editor tab (`draw(app, document_id)`, filling whatever child it is handed):
+  nodes with one port per sampler the compiled program declares, wires from the effective wiring,
+  a box per group at the root (its ports the group's boundary edges) and a tab per group with the
+  outside passes as ghosts. One `begin_child`, one draw list over five channels (halos, strokes,
+  nodes, the wire in flight, the overlays), hit-tested with `invisible_button`s in the allow-overlap
+  chain (background, node, ports) -- except a wire, which has no rect and gets a distance pass over
+  its flattened cubic, and the selected wire's unwire badge, hand-tested on the press. Pan, wheel
+  zoom, fit (framing the sampled curves, not only the cards), arrange, drag with snap past a named
+  lock, wire drag, rubber band, wire select + Delete, Group / Dissolve; every write goes through an
   `App` verb. The pure half (`rank_layout`, `node_ports`, `group_boundary`, `bundle_output`,
   `refuse_drop`, `cycle_edges`, `group_name_error`) lives in `pass_graph.py`.
 - **`widgets/graph_state.py`** — the canvas's per-document transient state (`GraphViewState`:
-  pan, zoom, scope, selection, the drag machines) held in `App.graph_views` and dropped in
-  `forget_render_state`; `NodeDrag` is the pure drag whose `update` writes nothing and whose
-  `commit` is the only writer; `node_size` and `revalidated_scope` beside it.
+  pan, zoom, scope, selection, the exclusive hover, the wire selection, the drag machines) held in
+  `App.graph_views` and dropped in `forget_render_state`; `NodeDrag` is the pure drag whose
+  `update` writes nothing and whose `commit` is the only writer. The wire's whole geometry is pure
+  and lives here too, so it is tested without imgui: `wire_points` (one cubic per pair of endpoints,
+  the offset never negative), `bezier_point`, `wire_hit_threshold` / `wire_hit`, `WireState` +
+  `wire_state`, `revalidated_wire`, `delete_allowed`; `node_size` and `revalidated_scope` beside
+  them.
 - **`popups/pass_settings.py`** — the pass-settings modal (feature 065), in the `PopupState`
   mutex: one pass's name, group (091), run count and target controls. Opens from a tile's gear,
   its context menu, or automatically on `add pass` — set-up-once choices live here, off the
@@ -377,7 +387,11 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   `code.py` (inline GLSL editor — main-window LEFT split), `document.py`, `uniforms.py`,
   `render.py`, `share.py` — the last four are the settings-panel tabs, in `_NODE_TABS` order.
   `uniforms.py` owns the uniform rows and the pass selector that picks whose uniforms they are;
-  `document.py` keeps the pass strip, since a pass is CHOSEN there and TUNED next door.
+  `document.py` keeps the pass strip, since a pass is CHOSEN there and TUNED next door, and its
+  two entry-point rows (Script, Passes) each carry an `open` that summons a tab. `code.py` is the
+  editor pane's whole dispatch: its tab row, the text body, and -- since 093 -- a branch above the
+  session fetch that hands a `graph` tab to `pass_graph.draw` and does the pane's focus bookkeeping
+  for it, since that kind has no session to fetch.
   `share_state.py` holds the share-tab dataclass (`TabState`) separately to keep `app.py`
   cycle-free (app.py imports `share_state`, NOT `share`).
 - **`widgets/`** — stateless imgui-drawing functions taking `app: App`. No shared contract.

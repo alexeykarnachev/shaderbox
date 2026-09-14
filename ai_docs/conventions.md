@@ -474,15 +474,19 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   editor handle + its dirty baseline, one per on-disk file — the handle keeps mode + undo across tab
   switches). Dirty tracking is `ed_revision` vs `saved_undo`, and the revision RISES across
   `set_text`, so every re-baseline reads it AFTER the set. A tab's `kind` (`shader` / `script` / `lib`,
-  feature 048) drives its document-derived display label (`tab_label`: `<document> (shader)` / `(script)` /
-  `library - <file>`) + the error tint; the imgui `##id` keys on the stable path/index, never the mutable
+  feature 048; `graph`, 093) drives its document-derived display label (`tab_label`: `<document> (shader)` /
+  `(script)` / `(graph)` / `library - <file>`) + the error tint; a `graph` tab is the one kind with NO
+  session at all -- its path is the document's `graph.json`, which keys every path-keyed pass-through
+  while nothing edits it as text, so `is_tab_dirty`, `formatter_for` and the flush paths all answer on
+  the missing session; the imgui `##id` keys on the stable path/index, never the mutable
   label. The same file is never opened twice (`_focus_or_add_tab` focuses the existing tab). Editing
   acts on the ACTIVE tab: `flush_current_editor()` flushes its dirty editor before any save; the mtime
   watcher re-syncs every open session from disk on external change (disk wins). A document's editors close
   with the document (lib tabs survive); a renamed file re-keys its session in place. The vendored
   binary + rebuild procedure live in `## Known quirks`. Revisit if a tab needs durable per-tab state
-  beyond its open files (e.g. persisting the open-tab set across restart) or a 4th editable `kind`
-  lands.
+  beyond its open files (e.g. persisting the open-tab set across restart) or a 4th EDITABLE `kind`
+  lands -- a non-editable kind does not fire it, since it brings no session and so no dirty state,
+  no formatter and no flush (the graph is the first).
 - **What the editor knows about a buffer lives in `shaderbox/intel/` and is read three ways**
   (feature 078 W-A): `symbols.py` is the one vocabulary (`SymbolKind`, `Symbol`); `glsl.py`
   reads a shader buffer as TEXT (a declared uniform the body never reads is still declared —
@@ -831,9 +835,26 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   node the planner orders, convexity is not a rule there either. Revisit if a group-level fact
   appears that no member can hold (an exposed parameter set, a description) -- then it becomes
   an entity.
-- **The graph view is a second picture of the same wiring, and it stores one thing (feature
-  092).** `widgets/pass_graph.py` draws a document's passes as nodes on one imgui draw list,
-  beside the strip and never instead of it. Ports come from the COMPILED program
+- **The graph view is a second picture of the same wiring, it lives in the editor pane, and it
+  stores one thing (features 092, 093).** `widgets/pass_graph.py` draws a document's passes as
+  nodes on one imgui draw list, in its OWN editor tab -- one per document, `EditorTab(kind=
+  "graph")` keyed on the document's `graph.json` -- so it gets the pane's whole height and the
+  Document tab keeps the strip with an `open` beside it, the way the Script row works. (092
+  put it behind a `strip | graph` toggle in half the Document tab; 093 reversed that, and
+  `PassesView` went with it.) A wire is ONE cubic bezier for every pair of endpoints, forward
+  or backward, whose control offset is a `max` of two non-negative terms: a fold needs
+  `2 * offset <= dx`, so it is unreachable while `dx < 0`, which makes the S-curve structural
+  rather than tuned -- there is no backward case in the code, no bus, and no threshold that
+  switches curve topology. Hover is EXCLUSIVE and resolved in one order -- a port or output
+  dot, else a node body, else the nearest wire under a screen-floored distance threshold, else
+  nothing -- written fresh every frame and read one frame late at draw time, because the
+  picture must be drawn before the rects the ports' positions come from. A wire is the one
+  thing hit-tested outside imgui's item system (a curve has no rect), and the selected wire's
+  unwire badge likewise, hand-tested on the press: an earlier item that declares no overlap
+  beats a later one, and the ports must keep declaring nothing or the drop target dies. A
+  single CLICK on a node chooses the output and nothing else (`App.choose_output`); only a
+  double-click opens its shader tab, because inside the pane the old `pick_pass` click evicted
+  the graph tab it was made on. Ports come from the COMPILED program
   (`sampler_names`, through `pass_graph.node_ports`) and edges from `effective_wiring()`, two
   sources of truth on purpose: the wiring drops an unfilled sampler, so a port list built from
   it would have no dot to drop on, and a port list built from stored rows would draw a sampler
@@ -853,8 +874,9 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   moves (`Document.wiring_if_renamed`). One asymmetry is deliberate: the uniforms panel's combo
   replaces (and so releases) a bound texture on a pick, while the canvas refuses a wire dropped
   on a media-bound port before the write -- a pick is a per-sampler choice the user is looking
-  at, a drag is a coarser gesture. Revisit the canvas's home when the editor pane can host it
-  (the planned pane swap): the widget fills whatever child it is handed.
+  at, a drag is a coarser gesture. Revisit if a gesture needs state the canvas cannot rebuild
+  from the document each frame: everything transient it holds is rebuilt by the draw, which is
+  what keeps "opening the view writes nothing" a fact a test can assert.
 - **Import is by COPY, decided as a pure plan over two wirings, with entry-point substitution and
   insertion (feature 091).** `pass_import.plan_import` takes the source's and the host's
   `effective_wiring()` -- both AFTER every pass has compiled, since a never-compiled pass answers

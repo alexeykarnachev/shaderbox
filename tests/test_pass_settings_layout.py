@@ -17,7 +17,7 @@ from shaderbox.core import ENGINE_DRIVEN_UNIFORMS
 from shaderbox.glyph_tables import TABLE_UNIFORMS
 from shaderbox.popups import pass_settings
 from shaderbox.theme import SIZE
-from shaderbox.ui_primitives import _ellipsize
+from shaderbox.ui_primitives import ellipsize
 
 
 def _gear_sizes(app: Any, frames: int = 6) -> list[tuple[float, float]]:
@@ -88,7 +88,7 @@ def test_the_auto_name_column_fits_every_engine_uniform(app: Any) -> None:
     imgui.push_font(app.font_12, app.font_12.legacy_size)
     for name in names:
         widths[name] = imgui.calc_text_size(name).x
-        kept[name] = _ellipsize(name, float(SIZE.AUTO_NAME_W))
+        kept[name] = ellipsize(name, float(SIZE.AUTO_NAME_W))
     imgui.pop_font()
     imgui.end()
     imgui.end_frame()

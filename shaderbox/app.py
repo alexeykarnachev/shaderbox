@@ -273,6 +273,8 @@ class App:
         self.ibeam_cursor = glfw.create_standard_cursor(glfw.IBEAM_CURSOR)
         self.resize_ew_cursor = glfw.create_standard_cursor(glfw.RESIZE_EW_CURSOR)
         self.resize_ns_cursor = glfw.create_standard_cursor(glfw.RESIZE_NS_CURSOR)
+        self.hand_cursor = glfw.create_standard_cursor(glfw.HAND_CURSOR)
+        self.crosshair_cursor = glfw.create_standard_cursor(glfw.CROSSHAIR_CURSOR)
         # Single cursor owner: surfaces REQUEST a cursor into want_cursor each frame; apply_cursor
         # sets it via glfw ONCE, only on change. Re-calling glfw.set_cursor every frame (or several
         # times per frame as panes competed) flickers the cursor on X11. None = default arrow.
@@ -668,6 +670,9 @@ class App:
                 self.current_document_id, focus_editor=True
             ),
             CommandId.OPEN_SCRIPT: lambda: self.open_script_for(
+                self.current_document_id, focus_editor=True
+            ),
+            CommandId.OPEN_GRAPH: lambda: self.open_graph_for(
                 self.current_document_id, focus_editor=True
             ),
             CommandId.CYCLE_CODE_TAB: self.cycle_code_tab,
@@ -1661,6 +1666,22 @@ class App:
             focus_editor=focus_editor,
         )
 
+    def open_graph_for(self, document_id: str, focus_editor: bool = False) -> None:
+        # Summon the document's pass graph into the editor pane as its own tab (093 T1, T4).
+        # The path is the document's `graph.json`, so every path-keyed pass-through works
+        # unchanged; the tab has NO EditorSession and nothing here creates one. Frozen
+        # mid-copilot-turn like its `open_script_for` sibling.
+        if self.copilot_turn_active or document_id not in self.ui_documents:
+            return
+        self._focus_or_add_tab(
+            EditorTab(
+                path=self.paths.graph_json_for(document_id),
+                kind="graph",
+                document_id=document_id,
+            ),
+            focus_editor=focus_editor,
+        )
+
     def get_session(self, source: ShaderSource) -> EditorSession:
         # Lazy-create a session bound to this source's path (the stable identity);
         # `source.text` is the initial buffer text. The language is suffix-aware (045): a `.py`
@@ -1880,16 +1901,27 @@ class App:
     def cycle_channel_view(self) -> None:
         self.app_state.channel_view = next_channel_view(self.app_state.channel_view)
 
-    def pick_pass(self, document_id: str, name: str, focus_editor: bool) -> None:
-        """What a strip tile click does: the pass becomes the output and its shader tab comes
-        to the front. `focus_editor` says whether the editor takes keyboard focus with it."""
-        self.ensure_shader_tab(document_id, name, focus_editor=focus_editor)
+    def choose_output(self, document_id: str, name: str) -> None:
+        """The pass becomes the document's output, and the editor pane is left alone (093 S15).
+
+        The canvas's click takes this half alone: opening a shader tab there would evict the
+        graph tab the click was made on. The explicit Uniforms pick is retired with it, the
+        same rule `ensure_shader_tab` applies (083) -- without that a persisted pin would keep
+        the panel on another pass after a canvas click.
+        """
+        self.set_panel_pass(document_id, "")
         ui_document = self.ui_documents.get(document_id)
         if ui_document is None or ui_document.document.graph.output == name:
             return
         error = self.session.set_output_pass(document_id, name)
         if error:
             self.notifications.push(error)
+
+    def pick_pass(self, document_id: str, name: str, focus_editor: bool) -> None:
+        """What a strip tile click does: the pass becomes the output and its shader tab comes
+        to the front. `focus_editor` says whether the editor takes keyboard focus with it."""
+        self.ensure_shader_tab(document_id, name, focus_editor=focus_editor)
+        self.choose_output(document_id, name)
 
     def graph_view_for(self, document_id: str) -> GraphViewState:
         view = self.graph_views.get(document_id)

@@ -174,8 +174,8 @@ def _draw_pass_tile(
 
 
 def draw(app: App, document_id: str) -> None:
-    """The pass strip for one document: the tiles alone. The caption, the view toggle and
-    the add / import row are the Document tab's (092 D2), shared with the graph view."""
+    """The pass strip for one document: the tiles alone. The caption row and the add / import
+    row are the Document tab's; the graph has its own editor tab and draws neither (093 T5)."""
     ui_document = app.ui_documents.get(document_id)
     if ui_document is None:
         return

@@ -68,7 +68,13 @@ otherwise never get ports). The per-node port list is a pure function,
 `pass_graph.node_ports(declared, values, wiring_row, name) -> list[Port]`, over
 `sampler_names(pass)`, the pass's sampler values and its wiring row; the canvas only calls it.
 
-**D2. Where it lives.** The Document tab's Passes caption row gets a `strip | graph`
+**D2. Where it lives.** REVERSED by 093 T1-T5: the canvas is a third editor-tab kind
+(`EditorTabKind` gains `"graph"`, one tab per document at its `graph.json` path), the
+`strip | graph` toggle and `PassesView` are deleted, and the Document tab's Passes row keeps
+the strip with an `open` that summons the graph tab. What follows describes the shipped 092
+shape.
+
+The Document tab's Passes caption row gets a `strip | graph`
 `segmented_choice`; the choice is `UIAppState.passes_view: PassesView` (`ui_regions.PassesView`,
 `STRIP` default), an app-level preference like `channel_view`. `tabs/document.py` draws the
 caption, the toggle and the `add pass` / `import...` row itself and dispatches the body to
@@ -178,7 +184,10 @@ current scope. Left-drag on empty canvas is
 the rubber band (W2) and does nothing in W1.
 
 **D10. Click and menus (W1).** Click a node: `pick_pass(document_id, name, focus_editor=False)`,
-the strip's verb. Double-click a node: the same with `focus_editor=True`. Click a box: pick the
+the strip's verb. (REVERSED by 093 S15 for the CLICK only: inside the editor pane `pick_pass`
+activates the shader tab and so evicts the graph tab the click was made on, so a single click
+now calls `App.choose_output` alone and the double-click keeps `pick_pass`. The menus below
+stand.) Double-click a node: the same with `focus_editor=True`. Click a box: pick the
 bundle output; double-click: enter. Right-click a node: the strip's item set, extracted from
 `pass_list._draw_context_menu` into `pass_list.pass_menu_items(app, document_id, name)` so the
 two surfaces cannot drift (Settings, Delete, Leave group); the strip keeps its own
@@ -550,6 +559,19 @@ does not re-plan and the cycle cue would lag.
 ---
 
 ## Review history
+
+**Reversed by 093 wave 1 (2026-09-14): D2 and D10's click half.** The maintainer's tenth-walk
+verdict on the shipped canvas ("feels very cheap") sent the redesign into research, and two of
+its findings landed against decisions made here. **D2**: the canvas's home. 092 gave it half of
+the Document tab behind a `strip | graph` toggle, and left the question open in
+`conventions.md` ("revisit the canvas's home when the editor pane can host it"); 093 resolves
+it -- the canvas is a third editor-tab kind, one tab per document keyed on the document's
+`graph.json`, so it gets the pane's whole height and the toggle, `PassesView` and
+`UIAppState.passes_view` are deleted. **D10's click half**: a node click ran `pick_pass`, whose
+`ensure_shader_tab` ACTIVATES the shader tab -- inside the pane that evicted the graph tab on
+every click and the canvas stopped drawing. `App.pick_pass` splits, the click takes
+`choose_output` alone, and the double-click keeps `pick_pass` as the deliberate "open this
+pass" gesture. Everything else in this spec stands, D10's menus included.
 
 **Pre-implementation round 1 (2026-09-12): two reviewers, both PARTIAL, no should-not-land.**
 Reports: `reviews/pre_correctness_design.md`, `reviews/pre_verification_blast.md`. Folded in:

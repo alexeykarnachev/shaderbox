@@ -11,7 +11,14 @@ exists: `load_color` is red at 1.0, and 1.0 is where a converged throttled docum
 
 from shaderbox.profiling import FrameProfile, Span
 from shaderbox.render_plan import RenderPlan
-from shaderbox.theme import _ACCENTS, COLOR, group_tint, load_color, throttle_color
+from shaderbox.theme import (
+    _ACCENTS,
+    _GROUP_TINT_EXCLUSIONS,
+    COLOR,
+    group_tint,
+    load_color,
+    throttle_color,
+)
 from shaderbox.ui_primitives import profile_rows_plan
 
 
@@ -127,7 +134,22 @@ def test_group_tints_are_stable_and_collide_with_nothing() -> None:
         # 092: a wire is drawn against a box border and beside a STATE_ERROR wire.
         # Falsifier: `GRAPH_EDGE = COLOR.GROUP_TINTS[2]` imported clean before it joined.
         COLOR.GRAPH_EDGE,
+        # 093: the hover hue is drawn on the same wire and the same border.
+        COLOR.GRAPH_HOVER,
     }
     assert not set(COLOR.GROUP_TINTS) & excluded
     assert len(set(COLOR.GROUP_TINTS)) == len(COLOR.GROUP_TINTS)
     assert COLOR.GRAPH_EDGE != COLOR.STATE_ERROR
+    # (c) 093 S1: the hover hue meets three other cues on one wire and, as a node's halo,
+    # sits beside the output node's accent border. Break to try: the design record's own
+    # `blue_b` -- it IS the blue accent's primary, so the accent clause goes red while the
+    # three `!=` clauses all stay green, which is why they alone were not enough.
+    assert COLOR.GRAPH_HOVER in _GROUP_TINT_EXCLUSIONS
+    assert COLOR.GRAPH_HOVER not in {
+        primary for primary, _active, _alpha in _ACCENTS.values()
+    }
+    assert COLOR.GRAPH_HOVER not in {
+        COLOR.SELECT,
+        COLOR.STATE_ERROR,
+        COLOR.GRAPH_EDGE,
+    }

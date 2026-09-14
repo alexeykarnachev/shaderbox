@@ -1,6 +1,6 @@
 # 093 — Tenth walk findings
 
-Status: **in progress; wave 1 spec converged (pre-implementation rounds 1-3), implementation next.**
+Status: **wave 1 implemented, post-implementation review next.**
 Five findings filed (`00_findings.md`). The maintainer's verdict on the shipped canvas ("feels
 very cheap") sent the walk into research first: `02_research_brief.md` is the brief, `research/`
 holds six area reports against primary sources, `03_graph_design.md` is the design record

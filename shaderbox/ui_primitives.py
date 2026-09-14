@@ -23,7 +23,7 @@ from shaderbox.theme import (
 )
 
 
-def _ellipsize(text: str, max_width: float) -> str:
+def ellipsize(text: str, max_width: float) -> str:
     if imgui.calc_text_size(text).x <= max_width:
         return text
     ellipsis = "..."
@@ -388,7 +388,7 @@ def anchored_note(
     title_size = imgui.calc_text_size(title, wrap_width=wrap)
     width, height = title_size.x, title_size.y + line_gap
     if value:
-        value = _ellipsize(value, wrap)
+        value = ellipsize(value, wrap)
         value_size = imgui.calc_text_size(value)
         width = max(width, value_size.x)
         height += value_size.y + line_gap
@@ -574,7 +574,7 @@ def clipped_caption(
     """A `caption_text` bounded to `max_width` — ellipsizes when it would overflow, full value on
     hover. For read-only value readouts in a fixed column (a vec-array uniform's `[[...], ...]` would
     otherwise overflow the row and shove trailing controls off-screen)."""
-    shown = _ellipsize(text, max_width)
+    shown = ellipsize(text, max_width)
     imgui.text_colored(color or COLOR.FG_DIM, shown)
     if shown != text and imgui.is_item_hovered():
         imgui.set_tooltip(text)
@@ -1316,7 +1316,7 @@ def preview_cell(
         if footer:
             if footer_font is not None:
                 imgui.push_font(footer_font, footer_font.legacy_size)
-            label: str = _ellipsize(footer, avail.x)
+            label: str = ellipsize(footer, avail.x)
             fw = imgui.calc_text_size(label)
             fy: float = origin.y + img_h
             imgui.set_cursor_screen_pos((origin.x + (avail.x - fw.x) / 2, fy))
@@ -1738,7 +1738,7 @@ def clickable_label(
     overrides the hover/active wash (default: ACCENT_PRIMARY). Returns True on click.
     """
     imgui.align_text_to_frame_padding()
-    text = _ellipsize(label, width)
+    text = ellipsize(label, width)
     fg = text_color or COLOR.FG_DIM
     base = accent or COLOR.ACCENT_PRIMARY
     imgui.push_style_color(imgui.Col_.text, fg)

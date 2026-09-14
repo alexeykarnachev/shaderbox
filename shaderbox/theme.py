@@ -184,10 +184,15 @@ class _ColorBag:
     )
     GROUP_FILL_ALPHA: float = 0.10
 
-    # The graph canvas (092): a wire's stroke, and how far a ghost node fades. GRAPH_EDGE is
-    # a fixed role drawn against box borders and beside STATE_ERROR wires, so it is excluded
-    # from the group tints below.
+    # The graph canvas (092, 093): a wire's stroke, the hover hue and its halo alphas, and how
+    # far a ghost node fades. GRAPH_EDGE and GRAPH_HOVER are fixed roles drawn against box
+    # borders and beside STATE_ERROR wires, so both are excluded from the group tints below.
     GRAPH_EDGE: tuple[float, float, float, float] = _P["gray"]
+    # The exclusive hover cue (093): a neutral, because every chromatic palette hue is an
+    # accent primary, a state hue, a group tint or SELECT, and three of those meet on one wire.
+    GRAPH_HOVER: tuple[float, float, float, float] = _P["fg_0"]
+    GRAPH_HOVER_HALO_ALPHA: float = 0.35
+    GRAPH_SELECT_HALO_ALPHA: float = 0.55
     GRAPH_GHOST_ALPHA: float = 0.45
     GRAPH_STALE_ALPHA: float = 0.5
     GRAPH_DIM_ALPHA: float = 0.35
@@ -240,6 +245,7 @@ _GROUP_TINT_EXCLUSIONS: set[tuple[float, float, float, float]] = _accent_primari
     COLOR.TAG,
     COLOR.FAVS,
     COLOR.GRAPH_EDGE,
+    COLOR.GRAPH_HOVER,
 }
 assert not set(COLOR.GROUP_TINTS) & _GROUP_TINT_EXCLUSIONS, (
     "theme invariant: a group tint collides with an accent primary, a state hue, SELECT, TAG "
@@ -256,6 +262,20 @@ assert COLOR.SELECT not in {
     COLOR.STATE_ERROR,
     COLOR.STATE_INFO,
 }, "theme invariant: SELECT must differ from every STATE_* hue."
+
+# The graph's hover hue meets three other cues on one wire (the selected stroke, the cycle
+# error, the resting stroke) and, as a node's halo, sits beside the output node's accent
+# border -- so it may not be an accent primary either.
+assert COLOR.GRAPH_HOVER not in _accent_primaries, (
+    f"theme invariant: GRAPH_HOVER={COLOR.GRAPH_HOVER} collides with an accent preset's "
+    f"primary -- under that accent a hovered wire reads as the in-flight wire and a hovered "
+    f"node's halo as the output border."
+)
+assert COLOR.GRAPH_HOVER not in {
+    COLOR.SELECT,
+    COLOR.STATE_ERROR,
+    COLOR.GRAPH_EDGE,
+}, "theme invariant: GRAPH_HOVER must differ from SELECT, STATE_ERROR and GRAPH_EDGE."
 
 
 # ============================================================================
@@ -308,25 +328,23 @@ class SIZE:
 
     PANEL_CTRL_MINH: int = 600
 
-    # The graph canvas (092 D7): a compact node, its picture, one port row, the dot and the
-    # screen-pixel floor its hit box keeps under zoom; the layout's gaps; the bus one extra
-    # rank of span drops a wire by; the child's least height; the snap distance; the zoom
-    # clamp.
-    GRAPH_NODE_W: int = 108
+    # The graph canvas (092 D7, 093): a node wide enough for the longest real pass and sampler
+    # names (an `ellipsize` cuts anything longer), its picture, one port row, the dot and the
+    # screen-pixel floor its hit box keeps under zoom; the layout's gaps; the snap distance;
+    # the zoom clamp.
+    GRAPH_NODE_W: int = 136
     GRAPH_BOX_EXTRA_W: int = 40
-    GRAPH_THUMB: int = 80
-    GRAPH_PAD: int = 6
-    GRAPH_NAME_H: int = 18
+    GRAPH_THUMB: int = 96
+    GRAPH_PAD: int = 8
+    GRAPH_NAME_H: int = 20
     # The gap between the name and the first port row; one owner, read by the node's height
     # (`node_size`) and by where the dots go (`_port_point`).
     GRAPH_PORT_TOP: int = 4
-    GRAPH_PORT_ROW: int = 16
+    GRAPH_PORT_ROW: int = 18
     GRAPH_PORT_R: int = 4
     GRAPH_HIT_MIN: int = 7
     GRAPH_GAP_X: int = 64
     GRAPH_GAP_Y: int = 20
-    GRAPH_BUS_STEP: int = 12
-    GRAPH_MIN_H: int = 320
     GRAPH_SNAP_PX: int = 6
     GRAPH_ZOOM_MIN: float = 0.25
     GRAPH_ZOOM_MAX: float = 2.5
@@ -335,10 +353,24 @@ class SIZE:
     GRAPH_DASH: int = 4
     GRAPH_WIRE_W: float = 1.5
     GRAPH_PORT_RING_W: float = 1.2
-    GRAPH_BUS_CLEAR: int = 16
-    # A feedback loop's rise above the node and its horizontal control reach.
-    GRAPH_LOOP_RISE: int = 12
-    GRAPH_LOOP_REACH: int = 28
+    # A wire is one cubic bezier for every pair of endpoints: the control offset is a fraction
+    # of the endpoints' distance, floored in canvas units, and never negative -- which is what
+    # makes a backward wire an S-curve from the same two lines rather than a fold.
+    GRAPH_WIRE_BOW: float = 0.40
+    GRAPH_WIRE_MIN_OFF: int = 24
+    # A wire's hit reach in SCREEN pixels, floored at 6 -- one under the port's own
+    # `GRAPH_HIT_MIN = 7`, so a port always outranks a wire for the same pixel -- and the
+    # segment count the curve is flattened to before the distance is measured.
+    GRAPH_WIRE_HIT_FLOOR: int = 6
+    GRAPH_WIRE_HIT_SEGS: int = 24
+    # The selected wire's mid-curve unwire badge, in canvas units.
+    GRAPH_WIRE_X_R: int = 7
+    # The feedback glyph in the badge row: its square, and its gap from an `xN` badge.
+    GRAPH_FB_SIZE: int = 12
+    GRAPH_FB_GAP: int = 2
+    # How far the mouse travels, in SCREEN pixels, before a press becomes a drag rather than a
+    # click. Not zoom-scaled; imgui's own 6px default is tuned for buttons.
+    GRAPH_DRAG_LOCK_PX: float = 4.0
 
     # One square of the viewer's alpha checkerboard. At 8 the pattern is busy behind a small
     # preview; at 24 a narrow preview shows two cells and reads as a diagonal split.
