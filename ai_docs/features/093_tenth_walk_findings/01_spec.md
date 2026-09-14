@@ -1,7 +1,16 @@
 # 093 — Tenth walk findings
 
-Status: **pending, first batch filed.** Four findings from the maintainer's `../TODO` on
-2026-09-13 plus one of mine from his screenshot; the raw ledger is `00_findings.md`.
+Status: **pending; research done, design record awaiting the maintainer's review.** Five
+findings filed (`00_findings.md`). The maintainer's verdict on the shipped canvas ("feels very
+cheap": the wire anomalies, the controls, the card size, the hover cues) sent the walk into
+research first: `02_research_brief.md` is the brief, `research/` holds six area reports against
+primary sources, and **`03_graph_design.md` is the design record** (eighteen decisions G1-G18,
+what stays, four open questions G-Q1..Q4, a verification sketch). He also chose mock C of
+`00_mock_panel.html`: the graph moves into the editor pane as a third tab kind
+(`01_research_graph_tab.md`). NEXT: he reviews `03_graph_design.md` and answers G-Q1..Q4; then
+this spec's Goal / Design decisions / Waves are written from the record and the tab move, and
+the run is planned as one feature flow (pre-implementation review, implement, review to
+closure).
 
 Source: `../TODO` (2026-09-13) and the screenshot of the control panel he took with it, verbatim
 in the ledger.

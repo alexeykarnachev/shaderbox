@@ -26,12 +26,14 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-12, 092 is done and reviewed to closure; 093, the tenth walk, is opened as an empty ledger awaiting his first batch of graph-view findings. -->
-**Next: 093, the tenth walk.** He dogfoods the graph view and reports findings in batches;
-everything lands in one run. Five findings filed; the graph moves into the editor pane as a tab
-kind, one per document keyed by `graph.json` (his pick over the panel mock, researched in
-`01_research_graph_tab.md`). 092 landed the graph view beside the strip: a box per group at the
-root, a tab per group, positions written only by a placement, every gesture through an App verb.
+<!-- As of 2026-09-14, 093's research is done and its design record awaits his review; nothing is implemented yet. -->
+**Next: he reviews `ai_docs/features/093_tenth_walk_findings/03_graph_design.md`** and answers
+its four open questions (card width, a wire Delete on a menu, the drag threshold, the hover
+hue). The record redesigns the canvas he judged "very cheap": one cusp-proof bezier per wire
+and no bus, wire selection with a mid-curve ✕ and Delete, an exclusive hover model with halos,
+a feedback glyph instead of the loop, a wider card with ellipsis, five draw channels. With the
+graph moving into the editor pane as a tab kind (`01_research_graph_tab.md`), the walk's spec is
+then written from the record and the run lands as one feature flow.
 
 **Awaiting his eyes** (no WM here): the spec's manual list over both waves, on documents of
 his own making (the items about a box need a group). Still unseen from before: 091's
