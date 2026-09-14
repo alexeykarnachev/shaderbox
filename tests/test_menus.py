@@ -197,30 +197,61 @@ def test_every_category_is_a_menu_and_every_spec_has_one() -> None:
         )
 
 
-def test_the_groups_are_the_designed_ones() -> None:
-    """`06_command_system.md`'s map, pinned: the first item of every group within a menu
-    carries the separator, and nothing else does. Falsifier: move `separator_before` onto
-    Save -- File splits after New document."""
-    behind = {spec.id for spec in COMMAND_SPECS if spec.separator_before}
-    assert behind == {
-        CommandId.OPEN_PROJECTS,
-        CommandId.QUIT,
-        CommandId.TOGGLE_DOCUMENT_PLAY,
-        CommandId.DELETE_DOCUMENT,
-        CommandId.OPEN_SHADER,
-        CommandId.NEXT_PASS,
-        CommandId.CYCLE_CODE_TAB,
-        CommandId.OPEN_LIB_PICKER,
-        CommandId.CYCLE_CHANNEL_VIEW,
-        CommandId.TOGGLE_COPILOT,
-        CommandId.OPEN_PALETTE,
-        CommandId.EXAMPLES,
-    }
-    # A separator opens a group, never a menu: the first spec of every category has none.
+_DESIGN_DOC = Path(__file__).resolve().parent.parent / (
+    "ai_docs/features/093_refinement/06_command_system.md"
+)
+
+
+def _designed_map() -> dict[str, list[list[str]]]:
+    """The map as `06_command_system.md` draws it in its fenced block: category headings at
+    column 0, `  ─` between groups, `  <label>  <chord>` rows (a `▸` opens the confirm)."""
+    text = _DESIGN_DOC.read_text(encoding="utf-8")
+    block = text.split("```", 2)[1].splitlines()[1:]
+    designed: dict[str, list[list[str]]] = {}
+    groups: list[list[str]] = []
+    for line in block:
+        if not line.strip():
+            continue
+        if not line.startswith(" "):
+            groups = [[]]
+            designed[line.strip()] = groups
+        elif line.strip() == "─":
+            groups.append([])
+        else:
+            label = line.strip().split(" ▸")[0].split("  ")[0]
+            groups[-1].append(label)
+    return designed
+
+
+def test_the_map_is_the_designed_one() -> None:
+    """The table renders `06_command_system.md`'s map verbatim: every category's labels in
+    order, grouped as drawn. Falsifier: move `Shader library` from Editor to View, or `Save`
+    into File's second group -- both render a different map and pass every other test."""
+    rendered: dict[str, list[list[str]]] = {}
+    for spec in COMMAND_SPECS:
+        groups = rendered.setdefault(spec.category.value, [[]])
+        if spec.separator_before:
+            groups.append([])
+        groups[-1].append(spec.label)
+    assert rendered == _designed_map()
+
+
+def test_a_separator_opens_a_group_never_a_menu() -> None:
     first = {
         next(s for s in COMMAND_SPECS if s.category is c).id for c in CATEGORY_ORDER
     }
+    behind = {spec.id for spec in COMMAND_SPECS if spec.separator_before}
     assert not first & behind
+
+
+def test_a_destructive_verb_is_not_in_the_palette(app: Any) -> None:
+    """The palette has no second step, so a spec with a `confirm_label` is not offered
+    there. Falsifier: drop the `confirm_label` filter from `_register_palette_commands`."""
+    for spec in COMMAND_SPECS:
+        offered = any(
+            name.startswith(spec.label) for name in app._palette_command_names
+        )
+        assert offered == (spec.in_palette and not spec.confirm_label), spec.id
 
 
 def test_the_table_is_in_menu_order() -> None:

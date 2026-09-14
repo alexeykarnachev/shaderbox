@@ -407,6 +407,19 @@ panel's new copilot section prints. Docs in the same commit: `conventions.md` (f
 design decisions), `dev_flow.md`'s module map, the repo's `/imgui-ui` §7.1 and §7.4, and 092's
 D14 / D16 pointers.
 
+Post-implementation: three opus reviewers (correctness, architecture, spec fidelity;
+`reviews/menus_post_*.md`), fourteen findings, one fix commit (the group prompt's runaway
+width, a bar `Delete document` without its submenu, four verb wirings no test gated, `Group`'s
+place, the rest small), then a closure round that re-ran every mutation: PASS. Then the
+maintainer's verdict on the bar's grouping -- it had rendered the cheatsheet's, which was
+never designed -- and `06_command_system.md`: the command table designed as one system, six
+categories by object, groups most-used first, labels naming their object, every command in
+the bar, chords kept; one opus review of it (`reviews/menus_command_system.md`) found the
+tests pinning the skeleton and not the map (fixed: the test parses the doc's map), the
+reset/delete confirms inverted against recoverability (`Reset document` confirms; a
+confirming verb leaves the palette), and the chat's one-click `Clear` with no home (now the
+`Clear chat` command).
+
 **Wave 3: his second hands-on batch, findings 12-17 (2026-09-14).** Five fixes in one commit;
 finding 17 (every menu, popup and modal, reviewed and redesigned) is delegated to
 `04_menus_inventory.md` -> `05_menus_spec.md` in this directory and runs the feature flow.

@@ -48,6 +48,7 @@ class CommandId(StrEnum):
     CYCLE_CHANNEL_VIEW = auto()
     TOGGLE_COPILOT = auto()
     CYCLE_COPILOT_LAYOUT = auto()
+    CLEAR_COPILOT_CHAT = auto()
     OPEN_PALETTE = auto()
     # Help
     HELP = auto()
@@ -98,7 +99,8 @@ class CommandSpec:
     # Draws a separator above this spec's menu item: the first item of a group within the menu.
     separator_before: bool = False
     # A destructive verb's confirm text: non-empty makes the menu item a confirm submenu
-    # holding this one label, so the bar cannot fire the verb on a single click.
+    # holding this one label, so the bar cannot fire the verb on a single click, and keeps
+    # the verb out of the palette, which has no second step.
     confirm_label: str = ""
 
 
@@ -142,7 +144,9 @@ COMMAND_SPECS: list[CommandSpec] = [
         CommandId.OPEN_SCRIPT, "Open script", _chord(K.r, K.mod_alt), C.DOCUMENT
     ),
     CommandSpec(CommandId.OPEN_GRAPH, "Open graph", _chord(K.g, K.mod_alt), C.DOCUMENT),
-    CommandSpec(CommandId.OPEN_DOCUMENT_DIR, "Open folder", 0, C.DOCUMENT),
+    CommandSpec(
+        CommandId.OPEN_DOCUMENT_DIR, "Open folder", 0, C.DOCUMENT, separator_before=True
+    ),
     CommandSpec(
         CommandId.TOGGLE_DOCUMENT_PLAY,
         "Play/stop script",
@@ -150,7 +154,13 @@ COMMAND_SPECS: list[CommandSpec] = [
         C.DOCUMENT,
         separator_before=True,
     ),
-    CommandSpec(CommandId.RESET_DOCUMENT, "Reset document", _chord(K.f6), C.DOCUMENT),
+    CommandSpec(
+        CommandId.RESET_DOCUMENT,
+        "Reset document",
+        _chord(K.f6),
+        C.DOCUMENT,
+        confirm_label="Reset histories and clock",
+    ),
     CommandSpec(
         CommandId.DELETE_DOCUMENT,
         "Delete document",
@@ -252,6 +262,14 @@ COMMAND_SPECS: list[CommandSpec] = [
         scope=CommandScope.COPILOT,
     ),
     CommandSpec(
+        CommandId.CLEAR_COPILOT_CHAT,
+        "Clear chat",
+        0,
+        C.VIEW,
+        scope=CommandScope.COPILOT,
+        confirm_label="Clear conversation",
+    ),
+    CommandSpec(
         CommandId.OPEN_PALETTE,
         "Command palette",
         _chord(K.p, K.mod_ctrl, K.mod_shift),
@@ -259,7 +277,7 @@ COMMAND_SPECS: list[CommandSpec] = [
         separator_before=True,
     ),
     # -- Help ----------------------------------------------------------------------------
-    CommandSpec(CommandId.HELP, "Help", _chord(K.f1), C.HELP),
+    CommandSpec(CommandId.HELP, "Help panel", _chord(K.f1), C.HELP),
     CommandSpec(
         CommandId.TOGGLE_CHEATSHEET,
         "Keyboard cheatsheet",

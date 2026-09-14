@@ -25,7 +25,10 @@ menu bar had rendered the cheatsheet's grouping, which was never designed.
    defect. A button that opens a command's surface takes the command's label
    (`command_label`).
 5. **A destructive verb carries `confirm_label`** and renders as a confirm submenu wherever it
-   is a menu item (the bar, a tile's menu).
+   is a menu item (the bar, a tile's menu); the palette, which has no second step, does not
+   offer it. Destructive means the loss has no undo in the app: a reset's histories and
+   clock, a chat's conversation. A document delete moves to the project trash, and carries
+   the confirm because nothing in the app recovers it.
 6. **Chords are defaults with muscle memory behind them**: this design keeps every existing
    chord and binds nothing new. `Import passes` and `Open folder` are unbound.
 
@@ -44,10 +47,11 @@ File
 Document
   Open script         Alt+R
   Open graph          Alt+G
+  ─
   Open folder
   ─
   Play/stop script    F5
-  Reset document      F6
+  Reset document ▸ Reset histories and clock    F6
   ─
   Delete document ▸ Move to trash    Alt+D
 
@@ -79,13 +83,14 @@ View
   Next channel view   Alt+V
   ─
   Toggle copilot      Alt+J
-  Next copilot layout Ctrl+H           (copilot scope)
+  Next copilot layout  Ctrl+H           (copilot scope)
+  Clear chat ▸ Clear conversation      (copilot scope)
   ─
   Command palette     Ctrl+Shift+P
 
 Help
-  Help                F1
-  Keyboard cheatsheet Alt+/
+  Help panel          F1
+  Keyboard cheatsheet  Alt+/
   ─
   Examples            Alt+E
 ```
@@ -101,6 +106,12 @@ Help
 - The Document tab's resolution mode, aspect chips and canvas fields; the Uniforms tab's sort
   and pass selector; the Render / Share tabs' own buttons: state controls and exporter verbs,
   named where they are.
+- A modal's own verbs: the Projects modal's `New` / `Open other...` / `Delete` and Settings'
+  `Reset library...` act inside the modal that holds their target and confirm with its armed
+  danger row; the modal itself is the command (`Projects`, `Settings`).
+- The copilot chat's `Close` and the `Copilot` chip are second paths to `Toggle copilot`; its
+  `Clear` button is the `Clear chat` command's own button and keeps the one click a chat
+  control has, while the menu item confirms.
 
 ## What changed against the first landing
 
@@ -109,5 +120,10 @@ them); `Tools` went, its verbs re-filed by object (`Settings` to File, `Add pass
 `Import passes` / `Pass settings` to Pass, `Shader library` to Editor, `Command palette` to
 View, `Examples` / `Help` / the cheatsheet to Help); `Open shader` moved from Editor to Pass;
 `Next` / `Previous pass` from Document to Pass; seven labels renamed to name their object;
-`OPEN_DOCUMENT_DIR` added; the enum and the table reordered to the map; the separators set
-per group. `tests/test_menus.py` pins the map's group structure and the table's order.
+`OPEN_DOCUMENT_DIR` and `CLEAR_COPILOT_CHAT` added; the enum and the table reordered to the
+map; the separators set per group; `Reset document` and `Clear chat` confirm, and a
+confirming verb is not in the palette. `tests/test_menus.py` renders the table and compares
+it to the fenced map above, parsed from this file, so the map and the table cannot drift
+(a review found the earlier set-based test passed a moved `Save` and a moved
+`Shader library`); it also pins that no category opens with a separator and that a
+confirming verb is absent from the palette.

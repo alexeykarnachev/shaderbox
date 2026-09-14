@@ -4,7 +4,7 @@ GL-free (no App, no imgui)."""
 
 import re
 
-from shaderbox.commands import CATEGORY_ORDER, COMMAND_SPECS, chord_to_str
+from shaderbox.commands import CATEGORY_ORDER, COMMAND_SPECS, CommandId, chord_to_str
 from shaderbox.core import ENGINE_UNIFORM_TYPES
 from shaderbox.help_content import (
     ENGINE_UNIFORM_DOCS,
@@ -39,7 +39,7 @@ def test_shortcuts_section_covers_every_populated_category() -> None:
     for category in CATEGORY_ORDER:
         if any(s.category == category and s.default_chord for s in COMMAND_SPECS):
             assert category.value in section.snippet
-    help_spec = next(s for s in COMMAND_SPECS if s.label == "Help")
+    help_spec = next(s for s in COMMAND_SPECS if s.id is CommandId.HELP)
     assert chord_to_str(help_spec.default_chord) in section.snippet
 
 

@@ -226,6 +226,9 @@ The FILE-gate is the one async dialog: the native picker is opened once (`ui.py:
 
 ### 7.1 `COMMAND_SPECS` — all 32 commands (`shaderbox/commands.py:108-238`)
 
+(The table as it stood when inventoried. The command system was then redesigned from
+scratch -- categories, order, labels, two commands added -- in `06_command_system.md`.)
+
 One row per `CommandId`, in table-declaration order. "Other surfaces" lists every additional path to the same verb, so the cross-surface tables below (§ "Verbs reachable from more than one surface") can be regenerated from this table.
 
 | `CommandId` | Label | Default chord | Category (cheatsheet) | Scope | `in_palette` | Other surfaces reaching the same verb |

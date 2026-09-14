@@ -638,6 +638,7 @@ class App:
         self.command_callbacks = {
             CommandId.OPEN_PROJECTS: self.open_projects,
             CommandId.SAVE: self.save,
+            CommandId.CLEAR_COPILOT_CHAT: self.copilot_clear_chat,
             CommandId.OPEN_DOCUMENT_DIR: self.open_current_document_dir,
             CommandId.NEW_DOCUMENT: lambda: self.create_document_from_example(
                 STARTER_EXAMPLE_ID
@@ -845,7 +846,9 @@ class App:
         for name in self._palette_command_names:
             imcmd.remove_command(name)
         self._palette_command_names = []
-        palette_specs = [spec for spec in COMMAND_SPECS if spec.in_palette]
+        palette_specs = [
+            spec for spec in COMMAND_SPECS if spec.in_palette and not spec.confirm_label
+        ]
         # Pad labels to a common width so the chord column lines up.
         label_w = max(len(spec.label) for spec in palette_specs)
         for spec in palette_specs:

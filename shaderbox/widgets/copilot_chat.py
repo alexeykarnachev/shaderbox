@@ -701,7 +701,8 @@ def _draw_top_bar(app: App) -> None:
     content_w: float = imgui.get_content_region_avail().x
     icon_side: float = float(SIZE.BTN_SM_H)
     btn_pad: float = 2.0 * float(SPACE.MD)
-    clear_w: float = imgui.calc_text_size("Clear").x + btn_pad
+    clear_label = command_label(CommandId.CLEAR_COPILOT_CHAT)
+    clear_w: float = imgui.calc_text_size(clear_label).x + btn_pad
     close_w: float = imgui.calc_text_size("Close").x + btn_pad
     cluster_w: float = clear_w + float(SPACE.SM) + close_w
     cluster_x: float = content_w - cluster_w
@@ -759,7 +760,7 @@ def _draw_top_bar(app: App) -> None:
     imgui.same_line(cluster_x)
     # Disabled mid-turn so it can't bypass the in_flight gate the reset relies on.
     imgui.begin_disabled(app.copilot.state.in_flight)
-    if danger_button("Clear", width=clear_w):
+    if danger_button(clear_label, width=clear_w):
         app.copilot_clear_chat()
     imgui.end_disabled()
     imgui.same_line()

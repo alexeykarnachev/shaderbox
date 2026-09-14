@@ -583,7 +583,8 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   category per OBJECT a verb acts on (File, Document, Pass, Editor, View, Help), in the order
   a desktop bar reads; within a category, groups opened by `separator_before`, most-used
   first; a label names its object so it reads the same in a menu, the palette and the
-  cheatsheet; a destructive verb carries `confirm_label`. The map with its reasoning is
+  cheatsheet; a destructive verb carries `confirm_label` and is kept out of the palette,
+  which has no second step. The map with its reasoning is
   `ai_docs/features/093_refinement/06_command_system.md`; the bar, the palette, the
   cheatsheet, the rebinder and the Help panel all read the table in ITS order, so a verb is
   filed once. The menu bar is a RENDER of it: one top-level menu per `CommandCategory` in

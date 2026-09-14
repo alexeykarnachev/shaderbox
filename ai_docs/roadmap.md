@@ -26,20 +26,19 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-14, 093 wave 3 landed; the menus refinement (finding 17) is the work in flight. -->
-**In flight: 093's menus refinement (finding 17)**, inside this feature's directory: an
-inventory of every menu, popup, context menu and modal in the app
-(`ai_docs/features/093_refinement/04_menus_inventory.md`, reviewed for completeness by opus
-readers), then a holistic design pass (gaps, improvements, the balance between coverage and
-state), then `05_menus_spec.md` and the feature flow -- opus implementer, post-implementation
-review to convergence, sanitize. Findings 14 and 15 (the shared pass menu, verbs off the tile)
-are fixed requirements of that spec; the code side (one context menu for node and tile, the
-refactors unification needs) is in scope by his instruction.
+<!-- As of 2026-09-14, 093's menus wave landed and reviewed; his visual review of it is the next input. -->
+**Next: his visual review of the menus wave** (`make run`): the menu bar rendered from the
+redesigned command table (`ai_docs/features/093_refinement/06_command_system.md` is the map --
+File, Document, Pass, Editor, View, Help), the context menus on a pass tile, a graph node, a
+group box, the canvas and a document tile (`Delete` confirms through a submenu), the name
+rows that commit on a click-away, Esc through one funnel, the Settings copilot hints cut to a
+clause with the Help panel's new section. Each finding is a new ledger row (18+) in
+`00_findings.md`, fixed as wave 4 by `01_spec.md ## How this walk runs`; a table change is
+one row in `commands.py` and the map test follows the doc.
 
-**Landed and awaiting his eyes:** wave 3 -- the card's top inset, no shader tab from any
-click (the menu's `Open shader` instead), the tile without its gear and ✕, no `u_prev` pin.
-Waves 1 and 2 as before. Still unseen: 091's outline, the import dialog, the gear's group row;
-090's `Auto | Fixed`. Finding 4 (the control panel's composition) is the feature after this.
+**Also awaiting his eyes:** wave 3 (the card's top inset, no shader tab from any click, the
+tile without buttons, no `u_prev` pin); 091's outline and import dialog; 090's `Auto | Fixed`.
+Finding 4 (the control panel's composition) is the feature after this walk.
 
 **Open, unmeasured:** the canvas past twenty passes (the largest real document is six); no
 brake watches copilot cost or a frame going lit to flat (082); the GL thread if the throttle
