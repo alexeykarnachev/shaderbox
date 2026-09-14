@@ -285,7 +285,7 @@
 <p>
   Now spread those coordinates outward until every texel knows the nearest one. The naive way is
   to check every texel against every solid texel — O(n²), hopeless. The <b>jump flood algorithm</b>
-  does it in <code>log₂(size)</code> passes. Each pass looks at 8 neighbours at a given offset and
+  does it in <code>log₂(size)</code> passes. Each pass looks at 8 neighbors at a given offset and
   keeps the nearest seed found. The offset <em>halves</em> each pass: first 256 texels away, then
   128, 64, down to 1. Big jumps carry coordinates across the canvas; small jumps refine the answer
   locally.
@@ -484,9 +484,9 @@
 
 <p>
   The four taps are a bilinear blend done <b>by hand</b>, and the target stays unsmoothed for the
-  same reason. Neighbouring texels here are <em>different directions of the same probe</em>, so
+  same reason. Neighboring texels here are <em>different directions of the same probe</em>, so
   hardware filtering would blend unrelated angles. The four taps sample the <b>same slot</b> in
-  four <b>neighbouring probes</b>, which is the quantity you actually want.
+  four <b>neighboring probes</b>, which is the quantity you actually want.
 </p>
 
 <p>

@@ -365,7 +365,7 @@ def test_the_wires_own_badge_unwires_it_and_the_press_is_nothing_else(app: Any) 
     assert view.selected_wire == ("b", "u_src")
     selection_before = set(view.selection)
     assert view.x_rect is not None
-    centre = (
+    center = (
         (view.x_rect[0] + view.x_rect[2]) / 2.0,
         (view.x_rect[1] + view.x_rect[3]) / 2.0,
     )
@@ -378,7 +378,7 @@ def test_the_wires_own_badge_unwires_it_and_the_press_is_nothing_else(app: Any) 
             app.session, "set_output_pass", wraps=app.session.set_output_pass
         ) as output,
     ):
-        _park(app, centre)
+        _park(app, center)
         imgui.get_io().add_mouse_button_event(0, True)
         _frames(app, 2)
         assert view.band_anchor is None and view.node_drag is None
@@ -394,7 +394,7 @@ def test_the_wires_own_badge_unwires_it_and_the_press_is_nothing_else(app: Any) 
 
 def test_the_badge_wins_over_a_card_that_covers_the_wire(app: Any) -> None:
     # The normal case under G15: a wire runs UNDER a node. The card is shifted toward the
-    # producer so its body covers the midpoint but not the port the wire ends at -- centred on
+    # producer so its body covers the midpoint but not the port the wire ends at -- centered on
     # the midpoint it would cover both. Break to try: the same latch clear as above.
     document_id, document = _chain(app)
     view = _open_graph(app, document_id)
@@ -417,7 +417,7 @@ def test_the_badge_wins_over_a_card_that_covers_the_wire(app: Any) -> None:
     )
     _frames(app, 3)
     assert view.x_rect is not None
-    centre = (
+    center = (
         (view.x_rect[0] + view.x_rect[2]) / 2.0,
         (view.x_rect[1] + view.x_rect[3]) / 2.0,
     )
@@ -430,7 +430,7 @@ def test_the_badge_wins_over_a_card_that_covers_the_wire(app: Any) -> None:
             app.session, "set_output_pass", wraps=app.session.set_output_pass
         ) as output,
     ):
-        _park(app, centre)
+        _park(app, center)
         imgui.get_io().add_mouse_button_event(0, True)
         _frames(app, 2)
         imgui.get_io().add_mouse_button_event(0, False)
@@ -533,7 +533,7 @@ def test_exactly_one_thing_is_hovered_and_the_rungs_are_in_order(app: Any) -> No
     x0, y0, x1, y1 = view.port_rects[("c", "u_src")]
 
     # (a) a port dot outranks the node body it sits on. Aimed a pixel INSIDE the card rather
-    # than at the dot's centre, which sits on the card's left edge: on the boundary the node
+    # than at the dot's center, which sits on the card's left edge: on the boundary the node
     # button does not contain the point, and the rung would not be exercised at all.
     _park(app, ((x0 + x1) / 2.0 + 2.0, (y0 + y1) / 2.0))
     port, out, node, wire = _hover_fields(view)
@@ -604,15 +604,15 @@ def test_a_wire_selection_and_a_node_selection_are_exclusive(app: Any) -> None:
 
     picture = pass_graph._build_view(document, "", {})
     node_a = picture.nodes["p:a"]
-    centre = (
+    center = (
         node_a.pos[0] + node_a.size[0] * 0.5,
         node_a.pos[1] + node_a.size[1] * 0.25,
     )
     _click_at(
         app,
         (
-            view.canvas_rect[0] + (centre[0] - view.pan[0]) * view.zoom,
-            view.canvas_rect[1] + (centre[1] - view.pan[1]) * view.zoom,
+            view.canvas_rect[0] + (center[0] - view.pan[0]) * view.zoom,
+            view.canvas_rect[1] + (center[1] - view.pan[1]) * view.zoom,
         ),
     )
     assert view.selected_wire is None
@@ -744,6 +744,36 @@ def test_the_selected_card_draws_and_hit_tests_last(app: Any) -> None:
     _close_graph(app, document_id)
 
 
+def test_the_card_in_flight_outranks_a_merely_selected_one(app: Any) -> None:
+    # G12: the key is ascending, so its LAST component dominates -- with `is_selected` there, a
+    # still card that happens to be selected drew and hit-tested over the card under the hand.
+    # Falsifier: put `selected` last again and `node_order[-1]` is the selected `b`, not `a`.
+    document_id, document = _chain(app)
+    view = _open_graph(app, document_id)
+    picture = pass_graph._build_view(document, "", {})
+    node_a = picture.nodes["p:a"]
+    body = (
+        node_a.pos[0] + node_a.size[0] * 0.5,
+        node_a.pos[1] + node_a.size[1] * 0.2,
+    )
+    start = (
+        view.canvas_rect[0] + (body[0] - view.pan[0]) * view.zoom,
+        view.canvas_rect[1] + (body[1] - view.pan[1]) * view.zoom,
+    )
+    # `b` selected and still, `a` under the hand: a real drag, held open across the assertion.
+    view.selection = {"b"}
+    _park(app, start)
+    imgui.get_io().add_mouse_button_event(0, True)
+    _frames(app, 2)
+    _park(app, (start[0] + 30.0, start[1] + 10.0))
+    assert view.node_drag is not None, "the drag never started"
+    assert view.selection == {"b"}, view.selection
+    assert view.node_order[-1] == "p:a", view.node_order
+    imgui.get_io().add_mouse_button_event(0, False)
+    _frames(app, 3)
+    _close_graph(app, document_id)
+
+
 def test_the_cursor_follows_the_gesture(app: Any) -> None:
     """G7: three gestures, three cursors, and nothing at rest.
 
@@ -760,17 +790,17 @@ def test_the_cursor_follows_the_gesture(app: Any) -> None:
     assert view.canvas_rect != (0.0, 0.0, 0.0, 0.0)
     assert app.cur_cursor is None, "something requested a cursor at rest"
     io = imgui.get_io()
-    centre = (
+    center = (
         (view.canvas_rect[0] + view.canvas_rect[2]) / 2.0,
         (view.canvas_rect[1] + view.canvas_rect[3]) / 2.0,
     )
 
-    _park(app, centre)
+    _park(app, center)
     io.add_key_event(imgui.Key.mod_alt, True)
     _frames(app, 2)
     io.add_mouse_button_event(0, True)
     _frames(app, 2)
-    _park(app, (centre[0] + 30.0, centre[1] + 20.0), frames=2)
+    _park(app, (center[0] + 30.0, center[1] + 20.0), frames=2)
     assert app.cur_cursor is app.hand_cursor, "a pan left the arrow up"
     io.add_mouse_button_event(0, False)
     io.add_key_event(imgui.Key.mod_alt, False)

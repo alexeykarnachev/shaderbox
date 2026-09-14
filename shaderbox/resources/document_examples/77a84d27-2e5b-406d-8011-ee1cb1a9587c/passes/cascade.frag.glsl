@@ -95,8 +95,8 @@ void main() {
             vec2 c10 = clamp(base + vec2(1, 0), vec2(0.0), lim) * usp + uslot + 0.5;
             vec2 c01 = clamp(base + vec2(0, 1), vec2(0.0), lim) * usp + uslot + 0.5;
             vec2 c11 = clamp(base + vec2(1, 1), vec2(0.0), lim) * usp + uslot + 0.5;
-            // Bilinear BY HAND across the four neighbouring probes, sampling the SAME slot in
-            // each. Letting the sampler do it would blend neighbouring slots -- different
+            // Bilinear BY HAND across the four neighboring probes, sampling the SAME slot in
+            // each. Letting the sampler do it would blend neighboring slots -- different
             // directions -- which is a different and wrong quantity. The clamp keeps a probe at
             // the edge from reading across to the far side and leaking light.
             r += mix(mix(texture(u_prev, c00 / u_resolution).rgb,

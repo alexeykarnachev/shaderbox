@@ -206,7 +206,7 @@ _MIN_INPUT_H: float = 40.0
 _MIN_FEED_H: float = 60.0
 # Core divider thickness; the actual hit-band also absorbs the item-spacing on each side (see
 # _draw_input_splitter) so the whole feed->input gap is one hit-rect — no dead zone to flicker
-# the resize cursor — with the grab line centred in it.
+# the resize cursor — with the grab line centered in it.
 _SPLITTER_CORE_H: float = 4.0
 
 
@@ -220,7 +220,7 @@ def _draw_input_splitter(app: App, avail_y: float) -> None:
     # (below). The input keeps its set height on window resize; the FEED flexes. Mirrors the
     # editor splitter idiom in ui.py (imgui has no built-in sibling-splitter widget). The button
     # is pulled UP over the spacing after the feed and spans the whole gap (core + both spacings),
-    # so the hit-rect runs feed-edge to input-edge (no dead zone) and the line is the true centre.
+    # so the hit-rect runs feed-edge to input-edge (no dead zone) and the line is the true center.
     spacing_y = imgui.get_style().item_spacing.y
     pos = imgui.get_cursor_pos()
     imgui.set_cursor_pos((pos.x, pos.y - spacing_y))

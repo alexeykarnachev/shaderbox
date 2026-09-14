@@ -380,7 +380,7 @@ void main() {
 // u_pass_iteration and feeding each run the previous run&#x27;s output through u_prev (the pass
 // reads ITSELF).
 //
-// Each run samples 8 neighbours at a HALVING offset derived from the canvas -- at 512 that is
+// Each run samples 8 neighbors at a HALVING offset derived from the canvas -- at 512 that is
 // 256 texels, then 128, 64 ... 1. Big jumps first spread coordinates across the canvas; small
 // jumps refine. After ceil(log2(max side)) runs every texel holds the UV of its nearest solid
 // texel; the runs past that copy their input forward.
@@ -416,7 +416,7 @@ void main() {
             if (uv.x &lt; 0.0 || uv.x &gt; 1.0 || uv.y &lt; 0.0 || uv.y &gt; 1.0) continue;
             vec4 sampled = first ? texture(u_seed, uv) : texture(u_prev, uv);
             // (0,0) means &quot;this texel has not been reached yet&quot; -- skip it, or every empty
-            // neighbour would claim to be a seed at the canvas corner.
+            // neighbor would claim to be a seed at the canvas corner.
             if (sampled.x == 0.0 &amp;&amp; sampled.y == 0.0) continue;
             vec2 diff = sampled.xy - vs_uv;
             float d = dot(diff, diff);
@@ -432,7 +432,7 @@ void main() {
 <p>
   Now spread those coordinates outward until every texel knows the nearest one. The naive way is
   to check every texel against every solid texel — O(n²), hopeless. The <b>jump flood algorithm</b>
-  does it in <code>log₂(size)</code> passes. Each pass looks at 8 neighbours at a given offset and
+  does it in <code>log₂(size)</code> passes. Each pass looks at 8 neighbors at a given offset and
   keeps the nearest seed found. The offset <em>halves</em> each pass: first 256 texels away, then
   128, 64, down to 1. Big jumps carry coordinates across the canvas; small jumps refine the answer
   locally.
@@ -724,8 +724,8 @@ void main() {
             vec2 c10 = clamp(base + vec2(1, 0), vec2(0.0), lim) * usp + uslot + 0.5;
             vec2 c01 = clamp(base + vec2(0, 1), vec2(0.0), lim) * usp + uslot + 0.5;
             vec2 c11 = clamp(base + vec2(1, 1), vec2(0.0), lim) * usp + uslot + 0.5;
-            // Bilinear BY HAND across the four neighbouring probes, sampling the SAME slot in
-            // each. Letting the sampler do it would blend neighbouring slots -- different
+            // Bilinear BY HAND across the four neighboring probes, sampling the SAME slot in
+            // each. Letting the sampler do it would blend neighboring slots -- different
             // directions -- which is a different and wrong quantity. The clamp keeps a probe at
             // the edge from reading across to the far side and leaking light.
             r += mix(mix(texture(u_prev, c00 / u_resolution).rgb,
@@ -781,9 +781,9 @@ void main() {
 
 <p>
   The four taps are a bilinear blend done <b>by hand</b>, and the target stays unsmoothed for the
-  same reason. Neighbouring texels here are <em>different directions of the same probe</em>, so
+  same reason. Neighboring texels here are <em>different directions of the same probe</em>, so
   hardware filtering would blend unrelated angles. The four taps sample the <b>same slot</b> in
-  four <b>neighbouring probes</b>, which is the quantity you actually want.
+  four <b>neighboring probes</b>, which is the quantity you actually want.
 </p>
 
 <p>

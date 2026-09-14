@@ -602,7 +602,7 @@ def rank_layout(
     """Where each of `names` goes (092 D6): columns by `graph_ranks`, left to right at `gap_x`;
     within a column, group members adjacent, then by the mean y of the pass's predecessors
     (a placed predecessor contributes its stored y), then strip order; rows at `gap_y`, each
-    column centred on the tallest. Every pass of `wiring` is laid out so the picture is the
+    column centered on the tallest. Every pass of `wiring` is laid out so the picture is the
     same whichever subset is asked for; only `names` are returned, so a caller placing the
     unplaced passes never overwrites a stored one.
     """
@@ -642,7 +642,7 @@ def rank_layout(
         for name, height in zip(column, heights, strict=True):
             laid[name] = (x, y)
             y += height + gap_y
-        # Centre the column once its extent is known: the tallest column is not known until
+        # Center the column once its extent is known: the tallest column is not known until
         # every column is measured, so the vertical centring is applied in a second pass.
         columns[rank] = column
         x += widest + gap_x

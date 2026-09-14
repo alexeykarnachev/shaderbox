@@ -7,7 +7,7 @@
 // u_pass_iteration and feeding each run the previous run's output through u_prev (the pass
 // reads ITSELF).
 //
-// Each run samples 8 neighbours at a HALVING offset derived from the canvas -- at 512 that is
+// Each run samples 8 neighbors at a HALVING offset derived from the canvas -- at 512 that is
 // 256 texels, then 128, 64 ... 1. Big jumps first spread coordinates across the canvas; small
 // jumps refine. After ceil(log2(max side)) runs every texel holds the UV of its nearest solid
 // texel; the runs past that copy their input forward.
@@ -43,7 +43,7 @@ void main() {
             if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) continue;
             vec4 sampled = first ? texture(u_seed, uv) : texture(u_prev, uv);
             // (0,0) means "this texel has not been reached yet" -- skip it, or every empty
-            // neighbour would claim to be a seed at the canvas corner.
+            // neighbor would claim to be a seed at the canvas corner.
             if (sampled.x == 0.0 && sampled.y == 0.0) continue;
             vec2 diff = sampled.xy - vs_uv;
             float d = dot(diff, diff);

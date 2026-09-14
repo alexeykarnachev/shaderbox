@@ -1676,7 +1676,7 @@ function buildGrid() {
   // Draw a perspective-projected wireframe terrain like the UV Mango shader.
   // World grid lies on XZ plane, projected by a simple oblique camera.
   // Z (depth) compresses vertically, X spreads horizontally.
-  const cx = 200, cy = 200;        // vanishing centre on viewBox 400x300
+  const cx = 200, cy = 200;        // vanishing center on viewBox 400x300
   const N = 11;                    // grid cells per side
   const half = (N - 1) / 2;
   const project = (x, z) => {

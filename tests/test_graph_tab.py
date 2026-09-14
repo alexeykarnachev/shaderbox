@@ -222,7 +222,7 @@ def test_the_fit_frames_every_wire_not_only_the_cards(app: Any) -> None:
     rather than repaired.
 
     Break to try: frame the nodes alone -- 8 of the 75 sampled points land outside. The
-    `avail` is small on purpose: at 800x600 the 1.0 zoom clamp centres enough slack to hide
+    `avail` is small on purpose: at 800x600 the 1.0 zoom clamp centers enough slack to hide
     the bulge for the broken implementation too.
     """
     document_id, document = _chain(app)

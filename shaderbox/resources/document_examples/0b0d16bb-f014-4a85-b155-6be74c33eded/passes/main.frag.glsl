@@ -186,9 +186,9 @@ vec3 embers(vec2 p, float t) {
 }
 
 // --- Text -------------------------------------------------------------------
-// Render "LABEL\nMATH" (one codepoint array, 10 = newline) as TWO centred lines:
+// Render "LABEL\nMATH" (one codepoint array, 10 = newline) as TWO centered lines:
 // label at u_text_pos, math one u_text_line_gap below (smaller). Each line is
-// centred on its own char count. Returns combined ink coverage [0,1].
+// centered on its own char count. Returns combined ink coverage [0,1].
 // The step's codepoint at index i. A runtime `step` keeps ONE draw_caption in the program:
 // dispatching whole arrays instantiated it nine times, and the driver spent seconds
 // compiling nine unrolled copies of the glyph SDF loop.

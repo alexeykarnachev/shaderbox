@@ -2,6 +2,7 @@
 commit, a scope no pass carries falls back to the root, and the wire's whole geometry --
 the cusp-proof curve, the hit test, the state precedence -- is decided without imgui."""
 
+import ast
 import inspect
 import itertools
 import math
@@ -225,16 +226,40 @@ def test_the_loop_the_bus_and_the_module_constants_are_gone() -> None:
     assert "glfw" not in source
 
 
+def _drag_call_sites() -> list[tuple[str, int, list[str]]]:
+    """Every `is_mouse_dragging` / `get_mouse_drag_delta` CALL in the widget, with the source
+    of each argument.
+
+    Walked as an `ast`, not scanned as text: a text window around the call is satisfied by a
+    comment that merely names the token, so the gate would pass on a site that passes nothing.
+    """
+    tree = ast.parse(_widget_source())
+    sites: list[tuple[str, int, list[str]]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        name = func.attr if isinstance(func, ast.Attribute) else None
+        if name not in ("is_mouse_dragging", "get_mouse_drag_delta"):
+            continue
+        arguments = [ast.unparse(a) for a in node.args]
+        arguments += [ast.unparse(k.value) for k in node.keywords]
+        sites.append((name, node.lineno, arguments))
+    return sites
+
+
 def test_the_drag_lock_is_passed_at_every_site() -> None:
     # S13: imgui's global 6px default is tuned for buttons, and one site left on it is a
-    # gesture that behaves unlike its four neighbours. Falsifier: omit it anywhere.
-    source = _widget_source()
-    for call in ("is_mouse_dragging(", "get_mouse_drag_delta("):
-        for index, line in enumerate(source.split("\n")):
-            if call not in line:
-                continue
-            window = "\n".join(source.split("\n")[index : index + 4])
-            assert "GRAPH_DRAG_LOCK_PX" in window, (call, index + 1)
+    # gesture that behaves unlike its four neighbors. Falsifier: omit it anywhere -- or write
+    # it in a COMMENT beside a bare call, which the text-window version of this gate accepted.
+    sites = _drag_call_sites()
+    assert len(sites) == 5, [(n, ln) for n, ln, _ in sites]
+    for name, lineno, arguments in sites:
+        assert any("GRAPH_DRAG_LOCK_PX" in a for a in arguments), (
+            name,
+            lineno,
+            arguments,
+        )
 
 
 def test_the_five_channels_carry_the_layers_in_order() -> None:

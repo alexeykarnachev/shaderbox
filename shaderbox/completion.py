@@ -78,7 +78,7 @@ def _declarations(context: CompletionContext) -> Sequence[Symbol]:
     return shaped
 
 
-# A GLSL member site: a dot whose left neighbour is a name, and the swizzle typed so far.
+# A GLSL member site: a dot whose left neighbor is a name, and the swizzle typed so far.
 # `\w` alone would read a float literal's dot as one (`1.0` offering `x`), so the name may
 # not start with a digit. Group 1 is the name the dot hangs off.
 MEMBER_SITE = re.compile(r"(?<![\w.])((?!\d)\w+)\.(\w*)$")
@@ -119,7 +119,7 @@ def _python_words(context: CompletionContext) -> Sequence[Symbol]:
 
 
 # Where a Python completion makes sense: after a dot (member access, prefix may be empty) or
-# inside an identifier. A MEMBER site is a dot whose left neighbour is a name or a closing
+# inside an identifier. A MEMBER site is a dot whose left neighbor is a name or a closing
 # bracket (079 D4) — `\w` alone treats a float literal's dot as one, and jedi answers `1.` with
 # the keywords that can follow an expression.
 PYTHON_SITE = re.compile(r"(?:(?<!\d)[A-Za-z_]\w*|[)\]}])\.\w*$|\w+$")

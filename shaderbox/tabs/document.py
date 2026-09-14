@@ -390,7 +390,7 @@ def _entry_tab_active(app: App, document_id: str, kind: EditorTabKind) -> bool:
 
 
 def _entry_row_label(active: bool, label: str) -> None:
-    # An entry-point row's label. `align_text_to_frame_padding` centres the text on the button's
+    # An entry-point row's label. `align_text_to_frame_padding` centers the text on the button's
     # row height (the font mix floats it high otherwise). The accent tick marking the editor's active
     # tab is a draw-list line — presence and color only, never size (/imgui-ui §3) — drawn in the
     # margin to the LEFT of the text, so it costs the row no indent.

@@ -87,7 +87,7 @@ _CYCLE_PREFIX = "passes form a cycle"
 _ROOT_LABEL = "document"
 _FIT_MARGIN = float(SPACE.LG)
 _ZOOM_STEP = 1.1
-# The port dot's inner shapes, as fractions of its radius: the NoSource centre, the prev
+# The port dot's inner shapes, as fractions of its radius: the NoSource center, the prev
 # inner ring, the media square's half side.
 _NONE_CORE = 0.45
 _PREV_INNER = 0.5
@@ -313,7 +313,7 @@ def _build_view(
             for slot, port in enumerate(ports[name]):
                 source = port.source
                 if source is None or source == name:
-                    continue  # a self-read is the loop drawn on the node
+                    continue  # a self-read is the node's feedback glyph, not an edge
                 src_key = pass_key(source) if source in inside else f"g:in:{source}"
                 view.edges.append(
                     _Edge(
@@ -607,7 +607,7 @@ def _draw_wire(
 ) -> None:
     """One wire: a wider dimmer halo under a crisp stroke, never a single thickened line.
 
-    The two live on separate channels, so one wire's halo never paints over a neighbour's
+    The two live on separate channels, so one wire's halo never paints over a neighbor's
     stroke. The caller resolves the state; this function never reads it.
     """
     thickness = max(1.0, SIZE.GRAPH_WIRE_W * zoom)
@@ -620,25 +620,25 @@ def _draw_wire(
 
 
 def _draw_wire_x(
-    dl: imgui.ImDrawList, centre: Position, radius: float, zoom: float
+    dl: imgui.ImDrawList, center: Position, radius: float, zoom: float
 ) -> None:
     """The selected wire's unwire badge: a disc so the wire does not read through it, a ring,
     and the mark itself as two lines -- never a font glyph (/imgui-ui §3)."""
     dl.channels_set_current(_CH_OVERLAY)
-    dl.add_circle_filled(centre, radius, _u32(COLOR.BG_APP))
+    dl.add_circle_filled(center, radius, _u32(COLOR.BG_APP))
     col = _u32(COLOR.SELECT)
-    dl.add_circle(centre, radius, col, 0, 1.0)
+    dl.add_circle(center, radius, col, 0, 1.0)
     arm = radius * 0.5
     thickness = max(1.0, SIZE.GRAPH_WIRE_W * zoom)
     dl.add_line(
-        (centre[0] - arm, centre[1] - arm),
-        (centre[0] + arm, centre[1] + arm),
+        (center[0] - arm, center[1] - arm),
+        (center[0] + arm, center[1] + arm),
         col,
         thickness,
     )
     dl.add_line(
-        (centre[0] - arm, centre[1] + arm),
-        (centre[0] + arm, centre[1] - arm),
+        (center[0] - arm, center[1] + arm),
+        (center[0] + arm, center[1] - arm),
         col,
         thickness,
     )
@@ -811,14 +811,14 @@ def _draw_node(
             SIZE.GRAPH_THUMB_ROUNDING * z,
         )
 
-    # The name, centred under the picture.
+    # The name, centered under the picture.
     font = app.font_14_bold if not node.stale else app.font_14
     imgui.push_font(font, max(4.0, font.legacy_size * z))
     name_color = (
         tint if tint is not None else COLOR.FG_DORMANT if node.stale else COLOR.FG_TITLE
     )
     # The budget is measured inside this same pushed-font scope as the `calc_text_size` that
-    # centres the text, so the cut and the placement cannot disagree (093 G11).
+    # centers the text, so the cut and the placement cannot disagree (093 G11).
     name = ellipsize(node.name, (p1[0] - p0[0]) - 2 * SIZE.GRAPH_PAD * z)
     text_size = imgui.calc_text_size(name)
     name_y = s1[1] + (SIZE.GRAPH_NAME_H * z - text_size.y) / 2.0
@@ -838,8 +838,7 @@ def _draw_node(
         badge_w = _draw_badge(
             dl, (s1[0], s0[1]), True, f"x{node.runs}", z, badge_bg, badge_fg
         )
-    # The feedback mark replaces the self-loop wire the maintainer objected to (093 G8): flush
-    # at the picture's top-right, or left of an `xN` badge when one is drawn this frame.
+    # Flush at the picture's top-right, or left of an `xN` badge when one is drawn this frame.
     if node.kind != "ghost" and any(port.kind == "prev" for port in node.ports):
         _draw_feedback_glyph(
             dl,
@@ -1048,7 +1047,7 @@ def _draw_canvas(
 
     # ---- the picture: halos, wires, nodes, then the overlays ----
     # Five channels, and paint order follows the channel index rather than the call order, so
-    # one wire's halo can never cover a neighbour's crisp stroke.
+    # one wire's halo can never cover a neighbor's crisp stroke.
     dl.channels_split(5)
     edge_col = _u32(COLOR.GRAPH_EDGE)
     dim_col = _u32(fade(COLOR.GRAPH_EDGE, COLOR.GRAPH_DIM_ALPHA))
@@ -1081,31 +1080,25 @@ def _draw_canvas(
             WireState.NORMAL: (edge_col, None),
         }[state]
         _draw_wire(dl, points, view.zoom, col, halo)
-        centre = bezier_point(*points, 0.5)
-        view.wire_mids[edge.wire_id] = centre
+        center = bezier_point(*points, 0.5)
+        view.wire_mids[edge.wire_id] = center
         if selected:
             half = max(SIZE.GRAPH_WIRE_X_R * view.zoom, float(SIZE.GRAPH_HIT_MIN))
             view.x_rect = (
-                centre[0] - half,
-                centre[1] - half,
-                centre[0] + half,
-                centre[1] + half,
+                center[0] - half,
+                center[1] - half,
+                center[0] + half,
+                center[1] + half,
             )
-            _draw_wire_x(dl, centre, half, view.zoom)
+            _draw_wire_x(dl, center, half, view.zoom)
     # One list, sorted once: the selected and dragged cards paint LAST, and the hit-test loop
     # below submits their buttons last for the same reason (093 S7, G12).
     dragging = set(view.node_drag.origin) if view.node_drag is not None else set()
-    selected_of = {
-        node.key: (node.kind != "box" and node.name in view.selection)
-        or (node.kind == "box" and bool(set(node.members) & view.selection))
-        for node in nodes
-    }
-    nodes.sort(
-        key=lambda n: (
-            selected_of[n.key],
-            bool(set(n.members) & dragging) if n.kind == "box" else n.name in dragging,
-        )
-    )
+    selected_of = {node.key: _touches(node, view.selection) for node in nodes}
+    dragged_of = {node.key: _touches(node, dragging) for node in nodes}
+    # A tuple compares FIRST component first, so the drag flag leads: a card in flight sorts
+    # over a merely selected one, since it is the card the hand is on.
+    nodes.sort(key=lambda n: (dragged_of[n.key], selected_of[n.key]))
     view.node_order = [node.key for node in nodes]
     dl.channels_set_current(_CH_NODE)
     for node in nodes:
@@ -1424,6 +1417,13 @@ def _draw_canvas(
     # node click of S4 is refused too; the next frame is clean (093 S6).
     if not mouse_down:
         view.press_blocked = False
+
+
+def _touches(node: _Node, names: set[str]) -> bool:
+    """Whether `names` reaches this node: a box answers for any of its members."""
+    if node.kind == "box":
+        return bool(set(node.members) & names)
+    return node.name in names
 
 
 def _drag_names(view: GraphViewState, node: _Node) -> list[str]:

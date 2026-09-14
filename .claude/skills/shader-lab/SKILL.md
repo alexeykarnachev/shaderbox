@@ -421,7 +421,7 @@ Levers for any SDF-raymarched scene (cities, terrain, abstract solids — anythi
   the boundary — near the edge the clamped cell can be the *wrong* (farther) one, the field
   over-reports distance, the march OVERSHOOTS and grazes a primitive's infinite-plane extension →
   phantom diagonal/triangular slivers in empty space. FIX (iq `opLimitedRepetition`): sample the
-  rounded cell AND its 3×3 (or 3×3×3) neighbours, each clamped, and take the min. https://iquilezles.org/articles/distfunctions/
+  rounded cell AND its 3×3 (or 3×3×3) neighbors, each clamped, and take the min. https://iquilezles.org/articles/distfunctions/
 - **Detail by PAINTING the shaded surface beats adding geometry.** Recessed-window AO, sills, panel
   lines, grime, pilasters — fake them in the surface-shading function (zero march cost) rather than in
   the SDF. Reserve real geometry (extra `min()`-unioned primitives) for things that must change the
@@ -435,7 +435,7 @@ Levers for any SDF-raymarched scene (cities, terrain, abstract solids — anythi
 - **A "cell-local" coordinate must round to the cell's CENTER, and the cell boundary must not land on a
   feature you care about.** Computing `local = p - round(p/S)*S` puts the seam at the half-cell; if
   your feature (a road centerline, a tile join) sits exactly on a `floor()`/`round()` boundary, half of
-  it falls into the neighbour cell with a garbage local coord and renders nothing. Round to the
+  it falls into the neighbor cell with a garbage local coord and renders nothing. Round to the
   feature's center explicitly (e.g. roads centered on half-integer cells → `round(p/S - 0.5) + 0.5`).
   (This was the "left lane of every street is empty" bug — a cell-assignment error, NOT occlusion.)
 - **A sky feature (sun/moon/plane/cloud) lives in a fixed WORLD direction → whether it's on-screen is

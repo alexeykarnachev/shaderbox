@@ -31,6 +31,8 @@ _BRITISH_WORDS: tuple[str, ...] = (
     "serialisation",
     "behaviour",
     "favourite",
+    "centre",
+    "neighbour",
 )
 _BRITISH = re.compile(r"\b(?:" + "|".join(_BRITISH_WORDS) + r")", re.IGNORECASE)
 _EXCLUDED_PREFIXES = (

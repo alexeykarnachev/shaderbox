@@ -932,7 +932,7 @@ def _glyph_button(
 def close_cross_button(id_: str, side: float) -> bool:
     """A red square with a crisp drawn ✕ — overlay close/delete affordance.
 
-    The glyph is two draw-list lines (no font dependency), so it's always centred.
+    The glyph is two draw-list lines (no font dependency), so it's always centered.
     Returns True on click."""
     clicked, origin = _glyph_button(
         id_, side, COLOR.STATE_ERROR, COLOR.STATE_ERROR, COLOR.STATE_ERROR
@@ -1013,7 +1013,7 @@ def cycle_chip_width(labels: Sequence[str]) -> float:
     """How wide `cycle_chip` will draw for this label set.
 
     Public because a caller laying out a row has to RESERVE this: the chip sizes to its widest
-    label, so a neighbour budgeting `SIZE.CHIP_W` instead is short by however much the longest
+    label, so a neighbor budgeting `SIZE.CHIP_W` instead is short by however much the longest
     label exceeds it, and whatever the row draws next overruns. One owner of the number, read by
     both the drawer and the layout."""
     return max(
@@ -1028,7 +1028,7 @@ def cycle_chip(id_: str, labels: Sequence[str], active: int) -> bool:
     The caller owns the ordering and does the advancing — this is the drawn seam, matching the
     uniform panel's input-type selector. Width is the WIDEST label's, not the current one's, so
     the chip keeps one size across the cycle and the row cannot shift on click; sizing to the
-    current label instead makes every neighbour jump."""
+    current label instead makes every neighbor jump."""
     return chip_button(f"{labels[active]}##{id_}", cycle_chip_width(labels))
 
 
@@ -1036,7 +1036,7 @@ def layout_icon_button(id_: str, variant: int, side: float) -> bool:
     """A square ghost button drawn as a box-in-frame glyph showing a panel layout.
 
     `variant`: 0 = corner (small rect bottom-right), 1 = strip (wide rect along the
-    bottom), 2 = free (centred rect). The frame is the editor area; the filled sub-rect
+    bottom), 2 = free (centered rect). The frame is the editor area; the filled sub-rect
     is where the panel sits. No font/emoji dependency. Returns True on click."""
     clicked, origin = _glyph_button(
         id_, side, COLOR.TRANSPARENT, COLOR.BG_FRAME, COLOR.BORDER
@@ -1052,7 +1052,7 @@ def layout_icon_button(id_: str, variant: int, side: float) -> bool:
     if variant == 1:  # bottom strip
         sx0, sy0 = fx0, fy1 - fh * 0.32
         sx1, sy1 = fx1, fy1
-    elif variant == 2:  # free / centred
+    elif variant == 2:  # free / centered
         sx0, sy0 = fx0 + fw * 0.28, fy0 + fh * 0.28
         sx1, sy1 = fx1 - fw * 0.28, fy1 - fh * 0.28
     else:  # corner (bottom-right)
@@ -1064,7 +1064,7 @@ def layout_icon_button(id_: str, variant: int, side: float) -> bool:
 
 def gauge_bar(id_: str, fraction: float, tooltip: str, width: float) -> None:
     """A thin horizontal fill bar (`fraction` pre-clamped [0, 1] by the caller), vertically
-    centred within one frame-height row, with a hover tooltip. Owns the hit rect + the
+    centered within one frame-height row, with a hover tooltip. Owns the hit rect + the
     tooltip — geometry/color live here so richer visuals can replace it without touching the
     caller."""
     bar_h: float = float(SIZE.USAGE_BAR_H)
