@@ -1,6 +1,7 @@
 # 093 — Tenth walk findings
 
-Status: **wave 1 landed and reviewed to convergence (f012074, ccdf6d1); next is the
+Status: **wave 2 in progress (his first hands-on batch, findings 6-11); wave 1 landed (f012074,
+ccdf6d1).**
 maintainer's hands-on pass, whose findings open wave 2.**
 Five findings filed (`00_findings.md`). The maintainer's verdict on the shipped canvas ("feels
 very cheap") sent the walk into research first: `02_research_brief.md` is the brief, `research/`
@@ -389,7 +390,61 @@ Where the record's "Code" paragraphs and this spec differ, this spec wins, for t
 
 ## Waves
 
-**Wave 1 (this spec): the graph editor's redesign and its move into the editor pane.** Findings
+**Wave 2: his first hands-on batch, findings 6-11 (2026-09-14).** Six decisions, one wave,
+one commit, two post-implementation reviewers; two of them reverse wave-1 rules and say so.
+
+- **W2-1 (finding 6). The graph's `open` sits beside the Script row's.** `_draw_entry_points`
+  draws, on the Script row after the play/stop toggle and a `SPACE.LG` gap,
+  `_entry_row_label(graph_active, "Graph")` + `standard_button("open##entry_graph")` (tooltip
+  `"Open the pass graph"`, same handler). The Passes row goes back to the plain
+  `small_caption(app.font_12, "Passes")` over the strip with no tick and no button; T5's
+  entry-row shape moves with the button. `_entry_tab_active` stays the one predicate.
+- **W2-2 (finding 7). Open tabs survive a restart.** `UIAppState` gains `editor_tabs:
+  list[TabRecord]` and `active_tab_index: int = 0`, where `TabRecord` (in `editor_types.py`,
+  a pydantic model beside `EditorTab`: `path: str`, `kind: EditorTabKind`, `document_id: str`)
+  is the persisted shape of one tab. `App.save` mirrors the live list through a pure
+  `tab_records(tabs) -> list[TabRecord]`; `App._init`, after the documents are loaded and
+  before today's `ensure_shader_tab` fallback, restores through a pure
+  `tabs_from_records(records, document_ids, exists) -> list[EditorTab]` that drops a record
+  whose path no longer exists or whose `document_id` names no loaded document (a lib tab has
+  `""` and passes), then sets `active_tab_index` clamped to the list and `tab_select_pending`;
+  the fallback runs only when nothing was restored. Sessions are not restored -- the draw
+  creates one lazily as it does for any tab today. No migration: an absent key is the default
+  `[]`; the sandbox's `app_state.json` picks the key up as drift and is `git add`ed.
+- **W2-3 (finding 8). The feedback glyph goes; the `xN` badge stays.** `_draw_feedback_glyph`
+  and `GRAPH_FB_SIZE` / `GRAPH_FB_GAP` are deleted; `_draw_badge` returns to returning
+  nothing if no reader of its width remains; the `prev` port's double ring stays. Reverses
+  wave 1's G8 on the maintainer's own verdict after seeing it; the record's G8 gets a pointer.
+- **W2-4 (finding 9). An input pin is not a drag source.** A press on any input port moves the
+  node, exactly as an unfilled port's press does today; `WireDrag.grabbed` is deleted with the
+  re-grab branch and `_drop`'s two `grabbed` paths, so a wire is removed only by its ✕ or
+  Delete and replaced only by dropping a new wire from an output onto the port (`drop_wire`
+  overwrites the source). Reverses 092 D12's re-grab half and the record's G14 "re-plug" row,
+  against the convergent schema the research recorded (every reference detaches by dragging
+  the wire off the input); his objection is the ghost that does not say "release removes".
+  Trigger to revisit: he asks for a drag-to-detach again after living with the ✕.
+  `test_a_press_that_spans_a_copilot_turn_never_becomes_a_gesture` and the crosshair-cursor
+  test start their wire from an OUTPUT dot instead; a new test presses a filled input, drags
+  6px and asserts `node_drag` is set, `wire_drag` is `None`, and no write followed.
+- **W2-5 (finding 10). The picture grows into the margin.** `GRAPH_THUMB 96 -> 116` and
+  `GRAPH_PAD 8 -> 4`: the side gap goes 20 -> 10 and the top gap 8 -> 4, both halved as asked.
+  The name and label budgets follow the tokens (128 and 126) and the ellipsis test's slack
+  assertions still hold.
+- **W2-6 (finding 11). A bottom margin under the last port row.** `SIZE.GRAPH_PORT_BOTTOM: int
+  = 7`, added to `node_size` when the card has ports, so the last label's text bottom clears
+  the border by the same 10px its left inset gives it (`PORT_ROW / 2 - 6 + 7`);
+  `test_a_node_grows_one_row_per_port_and_a_box_is_wider` includes the term.
+
+Tests: `TabRecord` round trip through `UIAppState.save` / `load`; `tabs_from_records` drops a
+vanished path and an unknown document and keeps a lib tab; an `app`-fixture test sets
+`app.app_state.editor_tabs` to a shader, a script and a graph record and calls the restore
+verb, asserting the three tabs and the active index; the W2-4 test above; the token tests
+follow the values. Docs in the same commit: 092's D12 gets a `REVERSED by 093 W2-4` pointer;
+the record's G8 and G14 get one-line pointers; `conventions.md`'s graph bullet loses the
+re-grab clause and gains the input-pin rule; `dev_flow.md`'s `tabs/document.py` and
+`pass_graph.py` entries; the ledger's "Landed in" column; `ai_docs/roadmap.md` banner.
+
+**Wave 1: the graph editor's redesign and its move into the editor pane.** Findings
 1, 2, 3, 5 closed; finding 4 delegated to its own feature. One feature flow: pre-implementation
 review (two reviewers, to convergence), implementation as one diff, post-implementation review
 to convergence (three reviewers per round, a spec-fidelity audit among them), sanitize, the
