@@ -342,7 +342,7 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   poll + imgui `process_inputs` only) and `dispatch_commands(app)` (IN-frame, top of the main-window
   block: registry-driven `imgui.shortcut()` dispatch reading `app.effective_bindings`, the bespoke ESC
   handler, and the document-creator arrow/Enter nav). The split exists because `imgui.shortcut()` asserts
-  outside an active frame. Esc closes a modal through `App.close_popup` — the one funnel that owns
+  outside an active frame. Esc closes a modal through `popups.registry.close_modal` — the one funnel that owns
   every modal's cleanup and declines while an inline input owns the key (093/17); the handler carries
   no per-modal carve-out of its own.
 - **`editor/`** — the embedded keymap-selectable code editor, vim or standard per
