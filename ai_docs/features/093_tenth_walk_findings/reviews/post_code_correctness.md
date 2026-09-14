@@ -303,4 +303,54 @@ prose mention at line 1183 (backticked, no paren, so it does not match the gate'
   shipped pure test.
 - Pixel comparison of the rendered canvas (no window manager here).
 
+## Round 2 — closure against `ccdf6d1` (spec text `db93fe1`)
+
+**F1 is CLOSED.** The key is now `nodes.sort(key=lambda n: (dragged_of[n.key], selected_of[n.key]))`
+(read from disk, line 1101), both flags from one `_touches(node, names)` helper that answers for a
+box's members. Driving the same real gesture as round 1 — select `b`, then press-drag the
+unselected `a`:
+
+```
+selection={b}: node_order: ['p:a', 'p:main', 'p:b']
+mid-drag: node_drag origin: ['a']  selection: ['b']  node_order: ['p:main', 'p:b', 'p:a']
+VERDICT: the card in flight is LAST (on top)
+```
+
+Round 1 measured `['p:main', 'p:a', 'p:b']` here. The card under the hand now paints and
+hit-tests last. The shipped gate is real: reverting the key in a scratch worktree turns
+`test_the_card_in_flight_outranks_a_merely_selected_one` red with `assert 'p:b' == 'p:a'` —
+the commit body's quoted failure, reproduced.
+
+**The three suites are green:** `tests/test_graph_view.py`, `tests/test_graph_state.py`,
+`tests/test_graph_tab.py` → **53 passed** under the GL env.
+
+**No rename changed a key.** The sweep's sites in `pass_graph.py` are one local variable
+(`centre` → `center`, subscripts included), `_draw_wire_x`'s parameter of the same name, and
+prose. Proved rather than skimmed: an `ast` diff of every string `Constant` between `f012074`
+and disk gives, as only-in-old / only-in-new / spelling-related — `pass_graph.py` 1/2/2 (both
+hits the SAME docstring), `test_graph_view.py` 0/1/0, `test_graph_state.py` 3/3/0,
+`test_graph_tab.py` 1/1/2 (one docstring). Every spelling-related string change is a docstring.
+No `##id` (`##gnode_`, `##gport_`, `##gout_`, `##graph_bg`, `##graph_canvas_menu`,
+`##graph_group`), no `NodeKind` `Literal` member, no port `kind` string, no `port_rects` /
+`wire_mids` tuple element moved. Nothing found.
+
+**The drag-lock gate is a real gate.** `_drag_call_sites()` walks the `ast` and reads each call's
+unparsed arguments, with a site count of 5. In a scratch worktree at `ccdf6d1`, replacing the
+node-body site with a bare call and the token in a comment on the next line:
+
+```
+            and imgui.is_mouse_dragging(imgui.MouseButton_.left)
+            # the lock is SIZE.GRAPH_DRAG_LOCK_PX
+```
+
+→ `FAILED tests/test_graph_state.py::test_the_drag_lock_is_passed_at_every_site`
+`AssertionError: ('is_mouse_dragging', 1189, ['imgui.MouseButton_.left'])`.
+
+Replaying the OLD `f012074` four-line text-window logic on that same broken tree:
+`failures: []` — it accepted the comment, which is precisely the hole the rewrite closes.
+Restored; `tests/test_graph_state.py` 18 passed.
+
+F2 (the doubled-ghost `port_rects` collision) stands as round 1 filed it; the commit body leaves
+it on record for the reason I measured — it cannot reach a write. No new finding.
+
 VERDICT: PASS

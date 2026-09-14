@@ -319,3 +319,66 @@ Verification row's mechanic (spec text wrong, test stronger); the stale "loop dr
 comment at `pass_graph.py:316`; and the drag-lock gate's comment-permeable window. Four of the
 five are doc/spec corrections, one is a one-line comment edit; none is a behaviour defect, and
 all four of the maintainer's findings are met in his own terms.
+
+---
+
+## Round 2 (fix commits ccdf6d1 + db93fe1) — re-read from disk
+
+### My five rows
+
+| # | Closing line, quoted from the new tree | Verdict |
+|---|---|---|
+| 1 ledger `<sha>` | `00_findings.md`: `| wave 1 (f012074) |` on rows 1, 2, 3 and 5; row 4 still `— (delegated to its own feature)` | **CLOSED** |
+| 2 `_draw_wire` signature | `01_spec.md` S9: "`_draw_wire(dl, points, zoom, col, halo_col)` in the widget draws the halo", and the Refinements row now reads "S9: `_draw_wire(dl, points, zoom, col, halo_col)`" | **CLOSED** (spec corrected to the code, as recommended) |
+| 3 channel row mechanic | `01_spec.md`: "the five named channel constants (`_CH_HALO`, `_CH_WIRE`, `_CH_NODE`, `_CH_INFLIGHT`, `_CH_OVERLAY`) are strictly ascending … the call sites are not in source order (the overlay channel is entered from `_draw_wire_x` early in the file)" | **CLOSED** — the row now describes the shipped check and names why source order fails |
+| 4 stale self-loop comment | `pass_graph.py:316`: `continue  # a self-read is the node's feedback glyph, not an edge` | **CLOSED** |
+| 5 comment-permeable lock gate | `test_graph_state.py:245-247`: `arguments = [ast.unparse(a) for a in node.args]` … and `assert len(sites) == 5`. Broken to confirm: I replaced the band site with a bare `is_mouse_dragging(imgui.MouseButton_.left)` plus `# the lock is SIZE.GRAPH_DRAG_LOCK_PX` on the line above, in memory — `MUTATED (comment only): 5 sites, gate RED [('is_mouse_dragging', 1148, ['imgui.MouseButton_.left'])]`, against `REAL TREE: 5 sites, gate GREEN` | **CLOSED** — the gate now catches exactly the hole the row named |
+
+### Re-audit of what changed
+
+**S7's code against the amended text — matches.** `pass_graph.py:1101`:
+`nodes.sort(key=lambda n: (dragged_of[n.key], selected_of[n.key]))`, with the comment "A tuple
+compares FIRST component first, so the drag flag leads". The spec now reads "ascending
+`(is_being_dragged, is_selected)` order (G12) -- a card in flight paints above a merely selected
+one". `view.node_order = [node.key for node in nodes]` (`:1102`) is still exposed, still assigned
+from the one list both loops walk (`for node in nodes` at `:1104` for the draw, `:1165` for the
+buttons). The two flags now come from one `_touches(node, names)` helper (`:1422`), so the box
+rule cannot drift between them. This was a real defect, not a cosmetic reorder: the commit body
+demonstrates the old order (`node_order ['p:main','p:a','p:b']` with `p:a` dragged), and
+`test_the_card_in_flight_outranks_a_merely_selected_one` pins it — `assert view.node_order[-1] ==
+"p:a"` with `view.selection == {"b"}` and `view.node_drag is not None`.
+
+**One new inaccuracy in the amended S7 row.** The row says "drag `b` and read `node_order`
+mid-drag: `[-1] == "p:b"`". The shipped test does the mirror — selects `b`, drags `a`, asserts
+`"p:a"`. Same guarantee, swapped letters; the row's names do not match the test's. One-word fix
+in the spec, no code change.
+
+**Renamed identifiers vs the spec's symbol references.** The sweep renamed exactly one
+identifier the spec names: `_draw_wire_x`'s parameter `centre` → `center` (`:620-622`, plus the
+local in `_draw_canvas:1083`). `grep -n "centre" 01_spec.md` returns five hits, four of them
+ordinary prose ("centre of `view.x_rect`", "does not centre slack", "the clamp centres slack",
+"port_rects's centre") and one a code-shaped reference — S6, line 262: "`x_rect` is written every
+frame the selected wire is drawn (`(centre - h, centre - h, centre + h, centre + h)` …)". That
+spells a local the code now calls `center`. It is prose about a formula, not a signature, so no
+reader is misdirected to a missing symbol, and `ai_docs/features/` is an excluded prefix in
+`test_prose_spelling.py:40`, so the gate does not reach it. Accurate enough to leave; cosmetic.
+`neighbour` does not appear in the spec at all.
+
+**`00_findings.md` reads correctly for all five rows** — verified above; the four closed rows name
+a real sha and row 4 keeps its delegation. Minor: the cells name `f012074` alone while the wave
+also carries `ccdf6d1`; the spec's Status line carries both ("wave 1 implemented (f012074 +
+ccdf6d1)"), so nothing is lost.
+
+**The 068 tutorial rebuild is warranted by the gate.** `test_tutorial_build.py:96-108`:
+`test_the_committed_tutorial_is_a_fresh_build` builds into `tmp_path` and asserts
+`out.read_bytes() == committed`, with the message "the committed tutorial.html is not what
+build_tutorial.py produces now; rerun …". The sweep edited `tutorial_body.html`, which
+`test_prose_spelling.py:45` deliberately un-excludes from the `ai_docs/features/` prefix, so the
+built page had to be regenerated or that gate goes red. Both pass (69 tests green across
+`test_graph_view / test_graph_state / test_graph_tab / test_prose_spelling / test_tutorial_build`).
+
+**Nothing else in the graph widget moved.** `git show ccdf6d1 -- shaderbox/widgets/pass_graph.py`
+is the sort key, the `_touches` extraction, the `centre`→`center` rename and two comment deletions;
+no token, no gate clause, no verb.
+
+VERDICT: PASS

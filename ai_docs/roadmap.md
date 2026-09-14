@@ -26,19 +26,19 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-14, 093 wave 1 is implemented and awaits its post-implementation review. -->
-**Next: the post-implementation review of 093 wave 1**, to convergence, with a spec-fidelity
-audit among the reviewers; then his hands-on pass. Wave 1 redesigned the canvas he judged "very
-cheap" and moved it into the editor pane as a third tab kind, one tab per document: one
-cusp-proof bezier per wire and no bus, a wire selected by click and removed by its ✕ or Delete,
-exclusive hover with halos, a feedback glyph instead of the self-loop, a 136-wide card that
-ellipsizes, five channels, a 4px drag lock, cursors. Findings 1, 2, 3 and 5 close; finding 4,
-the control panel's composition, is its own feature.
+<!-- As of 2026-09-14, 093 wave 1 landed and passed review; his hands-on pass is the next input. -->
+**Next: his hands-on pass of 093 wave 1** (`make run`, open a multi-pass document, `Alt+G` or
+the Passes row's `open`); its findings open wave 2 in `00_findings.md`. Wave 1 rebuilt the
+canvas he judged "very cheap" and moved it into the editor pane as a graph tab per document:
+one cusp-proof bezier per wire, a wire selected by click and removed by its ✕ or Delete,
+exclusive hover with halos, a feedback glyph, a 136-wide card that ellipsizes, a click that
+chooses the output, a 4px drag lock. Findings 1, 2, 3 and 5 closed; finding 4, the control
+panel's composition, is its own feature next.
 
-**Awaiting his eyes** (no WM here): the four tuning forks, each one token -- card width, hover
-hue, drag lock, a wire menu entry -- plus the halos at both zoom extremes and the Passes row's
-label and tick. Still unseen: 091's outline, the import dialog, the gear's group row; 090's
-`Auto | Fixed` control.
+**Awaiting his eyes** (no WM here): the four tuning forks, each one token -- card width,
+hover hue, drag lock, no wire menu entry -- plus the halos at both zoom extremes, the feedback
+glyph, the Passes row's tick. Still unseen: 091's outline, the import dialog, the gear's group
+row; 090's `Auto | Fixed` control.
 
 **Open, unmeasured:** the canvas past twenty passes (the largest real document is six); no
 brake watches copilot cost or a frame going lit to flat (082); the GL thread if the throttle

@@ -839,9 +839,8 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   stores one thing (features 092, 093).** `widgets/pass_graph.py` draws a document's passes as
   nodes on one imgui draw list, in its OWN editor tab -- one per document, `EditorTab(kind=
   "graph")` keyed on the document's `graph.json` -- so it gets the pane's whole height and the
-  Document tab keeps the strip with an `open` beside it, the way the Script row works. (092
-  put it behind a `strip | graph` toggle in half the Document tab; 093 reversed that, and
-  `PassesView` went with it.) A wire is ONE cubic bezier for every pair of endpoints, forward
+  Document tab keeps the strip with an `open` beside it, the way the Script row works. A wire
+  is ONE cubic bezier for every pair of endpoints, forward
   or backward, whose control offset is a `max` of two non-negative terms: a fold needs
   `2 * offset <= dx`, so it is unreachable while `dx < 0`, which makes the S-curve structural
   rather than tuned -- there is no backward case in the code, no bus, and no threshold that

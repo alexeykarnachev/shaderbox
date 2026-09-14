@@ -1,6 +1,7 @@
 # 093 — Tenth walk findings
 
-Status: **wave 1 implemented (f012074 + ccdf6d1), post-implementation review round 2 next.**
+Status: **wave 1 landed and reviewed to convergence (f012074, ccdf6d1); next is the
+maintainer's hands-on pass, whose findings open wave 2.**
 Five findings filed (`00_findings.md`). The maintainer's verdict on the shipped canvas ("feels
 very cheap") sent the walk into research first: `02_research_brief.md` is the brief, `research/`
 holds six area reports against primary sources, `03_graph_design.md` is the design record
@@ -481,7 +482,7 @@ outside a frame `calc_text_size` segfaults the process (measured).
 | S4: the selections are exclusive | after selecting the wire, click a node: `selected_wire is None` and `selection == {node}`; select the wire again, rubber-band over empty canvas and release: `selected_wire is None` | frame-driven |
 | G13/S15: 3px is a click, 5px is a drag | press on a node's body, move 3px, release: `set_output_pass` ran once, `set_pass_positions` did not, and `app.active_tab.kind == "graph"` still; press, move 5px, release: `set_pass_positions` ran, `set_output_pass` did not. Break to try: omit `lock_threshold` at the node-body site -- the 5px case reads imgui's 6px default and stays a click (measured today: 5px is a click, 8px a drag) | frame-driven |
 | S15: a double-click opens the shader tab | double-click a node: `app.active_tab.kind == "shader"` and its path is the pass's | frame-driven |
-| S7: the selected node draws and hit-tests last, a dragged one above it | select `a`, frames: `view.node_order[-1] == "p:a"`; with `a` selected, drag `b` and read `node_order` mid-drag: `[-1] == "p:b"` | frame-driven |
+| S7: the selected node draws and hit-tests last, a dragged one above it | select `a`, frames: `view.node_order[-1] == "p:a"`; with `b` selected, drag `a` and read `node_order` mid-drag: `[-1] == "p:a"` | frame-driven |
 | G7: the cursor follows the gesture | during a middle-drag pan, after the frame, `app.cur_cursor is app.hand_cursor`; at rest, on a frame where `view.canvas_rect != (0, 0, 0, 0)`, `app.cur_cursor is None` | frame-driven |
 | G14: every kept binding still works | the existing `tests/test_graph_view.py` passes with only the `passes_view -> open_graph_for` substitution and the new `pytestmark`; a failure that traces to a binding is a silent change, a failure that traces to the tab being inactive is a test-mechanics bug (the tab is opened before any copilot-turn simulation, since `open_graph_for` is frozen during one) | frame-driven |
 | T1-T6: the tab | `tab_label` reads `"<name> (graph)"` on a multi-pass document; `open_graph_for` twice yields one tab and it is active; `is_tab_dirty` False; `formatter_for("graph") is None`; `format_current_editor` and `jump_to_next_error` return without error on a graph tab; `close_editor_for_path` removes it; `_on_document_deleted` removes it and keeps a lib tab; `command_callbacks[CommandId.OPEN_GRAPH]` exists; three frames with the graph tab active leave `view.fitted` True and `app.editor_errors == []` | app fixture + frames |
@@ -572,3 +573,10 @@ text corrected here: `_draw_wire` carries `zoom`; the channel row describes the 
 rung is enforced by imgui's item chain, so its swap is struck from the breaks. Rejected: the
 1.4x hovered stroke (the record's G6 prescribes it); the doubled-ghost `port_rects` collision
 (pre-existing, and the live drop reads `drop_target`).
+
+**Post-implementation round 2 (2026-09-14): all three reviewers PASS.** Each round-1 item closed
+by a quoted line; the bring-to-front fix re-driven (`node_order` mid-drag ends on the dragged
+card); the `ast` lock gate shown red on a commented token where the old text window stayed
+green; the spelling roster and sweep in one commit with zero hits left outside the gate's
+exclusions; `make gates` exit 0 with the smoke run. Wave 1 is closed; the maintainer's hands-on
+pass is the next input.

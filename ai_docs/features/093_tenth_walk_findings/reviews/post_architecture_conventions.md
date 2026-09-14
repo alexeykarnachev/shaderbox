@@ -314,4 +314,50 @@ Smoke **passed**, not skipped. Run once, at the end of the review.
 
 ---
 
-VERDICT: PARTIAL
+
+## Round 2
+
+Closure over `ccdf6d1` (fixes) and `db93fe1` (spec text). F4 rejected on record; nothing further on it.
+
+**F1 (ledger sha) — CLOSED.** `grep -c '<sha>' 00_findings.md` → `0`. All four cells now read
+`| wave 1 (f012074) |`; finding 4 correctly keeps `— (delegated to its own feature)`.
+
+**F2 (the change-narrating comment) — CLOSED.** The clause is gone, the live placement rule kept:
+```
+-    # The feedback mark replaces the self-loop wire the maintainer objected to (093 G8): flush
+-    # at the picture's top-right, or left of an `xN` badge when one is drawn this frame.
++    # Flush at the picture's top-right, or left of an `xN` badge when one is drawn this frame.
+```
+It also fixed one I had not flagged: a self-read still called "the loop drawn on the node" after G8
+deleted that loop, now `continue  # a self-read is the node's feedback glyph, not an edge`.
+
+**F3 (spelling roster and sweep) — CLOSED.** The roster addition is in the SAME commit as the sweep:
+```
+$ git show ccdf6d1 -- tests/test_prose_spelling.py | grep '^[+-]' | grep -v '^[+-][+-]'
++    "centre",
++    "neighbour",
+
+$ uv run pytest tests/test_prose_spelling.py -q
+..                                                                       [100%]
+2 passed in 0.22s
+```
+Independent `grep -inE "\bcentre|\bneighbour"` over the 449 tracked files outside the gate's four
+excluded prefixes, and again over the one file it re-includes under one
+(`068_radiance_cascades/tutorial_body.html`): `exit=1` both times — zero hits. The commit body reports the
+gate RED on 52 sites across 13 files when the words landed and GREEN after 63 replacements over 15 files:
+broken before being believed, not a check that passes either way.
+
+**The comment rule over `ccdf6d1`'s diff — CLEAN.** Twenty-seven added comment or docstring lines, all
+read; twenty-one are the sweep rewriting an existing line's British word in place. The new ones state live
+facts — `# A tuple compares FIRST component first, so the drag flag leads: a card in flight sorts over a
+merely selected one, since it is the card the hand is on.` and `_touches`'s one-line docstring. Two new
+TEST comments use the past tense for a falsifier's outcome (`# ... a still card that happens to be
+selected drew and hit-tested over the card under the hand. Falsifier: put 'selected' last again ...`) —
+a test naming what it discriminates, not a source comment narrating history. No new finding.
+
+**The gate — CLEAN.** Run once: `EXIT=0`, and
+`== gates: GREEN -- check passed, test passed, smoke passed ==`. Smoke **passed**, not skipped.
+
+All three accepted findings are closed by a quoted line in the new tree; F4 stands rejected.
+
+VERDICT: PASS
