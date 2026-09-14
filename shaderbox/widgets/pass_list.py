@@ -1,9 +1,9 @@
 """The pass strip: one live thumbnail per pass, with the six verbs of D15 reachable from it (065).
 
-The graph is edited as a LIST, not a canvas -- 070 rejected a spatial view. Click a tile to open
-that pass in the editor; its name, run count and target live in the pass-settings modal
-(`popups/pass_settings.py`), reached from the tile's gear, its context menu, or automatically on
-`add pass` -- set-up-once choices don't get an always-open block of panel space.
+The list view of the graph (the canvas is 092's tab). Click a tile to make that pass the
+output; every other verb -- open its shader, its settings modal (`popups/pass_settings.py`,
+where its name, run count and target live), delete, leave its group -- is on the tile's
+context menu, which the graph's node shares.
 
 A tile is a picture, a name, and a row of chips naming the passes it reads (`prev` for its own
 previous frame). Compile errors show as a red border rather than as text; a sampler's source is
@@ -24,11 +24,7 @@ from shaderbox.pass_graph import (
     strip_order,
 )
 from shaderbox.theme import COLOR, SIZE, SPACE, group_tint
-from shaderbox.ui_primitives import (
-    context_menu_style,
-    preview_cell,
-    tune_icon_button,
-)
+from shaderbox.ui_primitives import context_menu_style, preview_cell
 
 FEEDBACK_CHIP = "prev"
 # The group outline sits this far inside the run's tiles: a full row can end flush with the
@@ -69,6 +65,8 @@ def pass_menu_items(app: App, document_id: str, name: str) -> None:
     anchors it with an explicit id (safe there, each tile is its own window), the canvas with
     the previous item."""
     document = app.ui_documents[document_id].document
+    if imgui.menu_item_simple("Open shader"):
+        app.ensure_shader_tab(document_id, name, focus_editor=True)
     if imgui.menu_item_simple("Settings"):
         app.open_pass_settings(name)
     # Gated in Python, not by `enabled=`: menu_item_simple can still register a click
@@ -134,26 +132,19 @@ def _draw_pass_tile(
     tint = group_tint(group) if group else None
     bg = (*tint[:3], COLOR.GROUP_FILL_ALPHA) if tint is not None else None
 
-    def _settings_overlay(side: float) -> None:
-        if tune_icon_button(f"settings_{name}", side):
-            app.open_pass_settings(name)
-        if imgui.is_item_hovered():
-            imgui.set_tooltip("Pass settings")
-
     result = preview_cell(
         id_=f"pass_{name}",
         cell_w=float(SIZE.PASS_TILE),
         texture_glo=render_pass.canvas.texture.glo,
         texture_size=render_pass.canvas.texture.size,
         selected=is_output,
-        armed=app.pass_delete_armed == name,
+        armed=False,
         border_color=border,
         bg_color=bg,
         bordered=tint is None,
         footer=name,
         footer_font=None if stale else app.font_14_bold,
         footer_color=COLOR.FG_DORMANT if stale else COLOR.FG_TITLE,
-        overlay=_settings_overlay,
         stale=stale,
         chips=reads,
         chip_font=app.font_12,
@@ -162,15 +153,9 @@ def _draw_pass_tile(
 
     if result.clicked:
         # Picking a tile IS setting the output: the viewer and export follow the graph output,
-        # so one click fully switches what the document shows. The editor tab comes along.
-        app.pick_pass(document_id, name, focus_editor=False)
-    if result.delete_armed:
-        app.pass_delete_armed = name
-    elif result.delete_confirmed:
-        _delete_pass(app, document_id, name)
-        app.pass_delete_armed = ""
-    elif result.delete_cancelled:
-        app.pass_delete_armed = ""
+        # so one click fully switches what the document shows. The editor pane is left alone
+        # (093 W3-3); the context menu opens the shader.
+        app.choose_output(document_id, name)
 
 
 def draw(app: App, document_id: str) -> None:

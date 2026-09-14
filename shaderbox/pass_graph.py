@@ -664,7 +664,7 @@ def rank_layout(
     return {name: laid[name] for name in names if name in laid}
 
 
-PortKind = Literal["wired", "unfilled", "none", "prev", "media"]
+PortKind = Literal["wired", "unfilled", "none", "media"]
 
 
 @dataclass(frozen=True)
@@ -684,19 +684,19 @@ def node_ports(
     wiring_row: Mapping[str, str],
     name: str,
 ) -> list[Port]:
-    """A node's input ports, one per sampler the COMPILED program declares, in the program's
-    order with every self-read moved last. The state comes from the sampler's VALUE, the way
-    the uniforms panel's row decides it: a value that is no source kind is a bound texture.
-    A stored row for a sampler the program no longer declares is no port, which is what keeps
-    a drop from writing a row nothing reads."""
+    """A node's input ports, one per sampler the COMPILED program declares that reads
+    another pass or nothing, in the program's order. A sampler reading the pass itself is
+    its feedback, not an input, and has no port (093 W3-5). The state comes from the
+    sampler's VALUE, the way the uniforms panel's row decides it: a value that is no source
+    kind is a bound texture. A stored row for a sampler the program no longer declares is no
+    port, which is what keeps a drop from writing a row nothing reads."""
     ports: list[Port] = []
-    feedback: list[Port] = []
     for sampler in declared:
         value = values.get(sampler, AutoSource())
         source = wiring_row.get(sampler)
         if source == name:
-            feedback.append(Port(sampler, "prev", source))
-        elif source is not None:
+            continue
+        if source is not None:
             ports.append(Port(sampler, "wired", source))
         elif isinstance(value, NoSource):
             ports.append(Port(sampler, "none"))
@@ -704,7 +704,7 @@ def node_ports(
             ports.append(Port(sampler, "unfilled"))
         else:
             ports.append(Port(sampler, "media"))
-    return ports + feedback
+    return ports
 
 
 @dataclass(frozen=True)
@@ -764,8 +764,6 @@ def group_boundary(
     for member in members:
         for port in ports.get(member, ()):
             if port.kind == "wired" and port.source in inside:
-                continue
-            if port.kind == "prev":
                 continue
             slots.append((member, port))
     counts: dict[str, int] = {}

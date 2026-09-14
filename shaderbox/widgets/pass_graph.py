@@ -86,10 +86,9 @@ _CYCLE_PREFIX = "passes form a cycle"
 _ROOT_LABEL = "document"
 _FIT_MARGIN = float(SPACE.LG)
 _ZOOM_STEP = 1.1
-# The port dot's inner shapes, as fractions of its radius: the NoSource center, the prev
-# inner ring, the media square's half side.
+# The port dot's inner shapes, as fractions of its radius: the NoSource center, the media
+# square's half side.
 _NONE_CORE = 0.45
-_PREV_INNER = 0.5
 _MEDIA_HALF = 0.8
 
 
@@ -200,7 +199,7 @@ def _pass_node(
         pos=pos,
         size=node_size(len(ports), False),
         ports=tuple(ports),
-        labels=tuple("prev" if p.kind == "prev" else p.sampler for p in ports),
+        labels=tuple(p.sampler for p in ports),
         outputs=((name, False),),
         owners=tuple(name for _ in ports),
         texture_glo=render_pass.canvas.texture.glo,
@@ -311,8 +310,8 @@ def _build_view(
         for name in members:
             for slot, port in enumerate(ports[name]):
                 source = port.source
-                if source is None or source == name:
-                    continue  # a self-read is the node's feedback glyph, not an edge
+                if source is None:
+                    continue
                 src_key = pass_key(source) if source in inside else f"g:in:{source}"
                 view.edges.append(
                     _Edge(
@@ -468,14 +467,14 @@ class _Xf:
 
 def _thumb_rect(node: _Node) -> tuple[float, float, float, float]:
     x = node.pos[0] + (node.size[0] - SIZE.GRAPH_THUMB) / 2.0
-    y = node.pos[1] + SIZE.GRAPH_PAD
+    y = node.pos[1] + SIZE.GRAPH_THUMB_INSET
     return x, y, x + SIZE.GRAPH_THUMB, y + SIZE.GRAPH_THUMB
 
 
 def _port_point(node: _Node, slot: int) -> tuple[float, float]:
     y0 = (
         node.pos[1]
-        + SIZE.GRAPH_PAD
+        + SIZE.GRAPH_THUMB_INSET
         + SIZE.GRAPH_THUMB
         + SIZE.GRAPH_NAME_H
         + SIZE.GRAPH_PAD
@@ -652,9 +651,6 @@ def _draw_port_dot(
     elif kind == "none":
         dl.add_circle(center, r, col, 0, ring)
         dl.add_circle_filled(center, r * _NONE_CORE, col)
-    elif kind == "prev":
-        dl.add_circle(center, r, col, 0, ring)
-        dl.add_circle(center, r * _PREV_INNER, col, 0, ring)
     elif kind == "media":
         half = r * _MEDIA_HALF
         dl.add_rect_filled(
@@ -1462,9 +1458,8 @@ def _click(
         return
     view.selection = names
     view.selected_wire = None
-    # The output half of a strip click, without the shader tab (093 S15): inside the editor
-    # pane opening one would evict the graph tab this click was made on. The double-click is
-    # the deliberate "open this pass" gesture.
+    # No shader tab from any click (093 S15, W3-3): inside the editor pane opening one would
+    # evict the graph tab; the context menu's `Open shader` is the gesture.
     app.choose_output(document_id, node.bundle if node.kind == "box" else node.name)
 
 
@@ -1478,8 +1473,6 @@ def _double_click(
         return
     if node.kind == "ghost":
         _click(app, document_id, view, node, False)
-        return
-    app.pick_pass(document_id, node.name, focus_editor=True)
 
 
 def _node_menu(app: App, document_id: str, view: GraphViewState, node: _Node) -> None:

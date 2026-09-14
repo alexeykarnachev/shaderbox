@@ -240,11 +240,7 @@ def main() -> int:
                     app.session.add_pass(app.current_document_id, "smoke_pass")
                 if frame_idx == 25:
                     app.open_pass_settings("smoke_pass")
-                if frame_idx == 32:
-                    # The tile's delete-✕ wash, which only draws while armed.
-                    app.pass_delete_armed = "smoke_pass"
                 if frame_idx == 35:
-                    app.pass_delete_armed = ""
                     # The modal's create mode (078 D5): a draft drawn for a few frames.
                     app.open_add_pass()
                 if frame_idx == 40:

@@ -58,7 +58,8 @@ folds" entry gets its revisit pointer (D20).
 are `sampler_names(pass)` in the order that function returns (the compiled program's own
 iteration order), with every port whose resolved source is the consumer itself moved to the
 end: a self-read is the feedback port and reads bottom-most whether it sits on `u_prev` or on
-any other sampler explicitly sourced to its own pass. Its edges are `Document.effective_wiring()`. A port is therefore never drawn for a sampler the program no
+any other sampler explicitly sourced to its own pass (REVERSED by 093 W3-5: a self-read is no
+port at all; the node shows the inputs that can read another pass). Its edges are `Document.effective_wiring()`. A port is therefore never drawn for a sampler the program no
 longer declares, which is what stops `set_sampler_source` (which does not validate the uniform)
 writing a dead row. A never-compiled pass has no ports, so **the canvas compiles what it draws** through the
 seam 091 already uses for the same reason, `project_session.compile_pending_passes(document)`,
@@ -186,8 +187,9 @@ the rubber band (W2) and does nothing in W1.
 **D10. Click and menus (W1).** Click a node: `pick_pass(document_id, name, focus_editor=False)`,
 the strip's verb. (REVERSED by 093 S15 for the CLICK only: inside the editor pane `pick_pass`
 activates the shader tab and so evicts the graph tab the click was made on, so a single click
-now calls `App.choose_output` alone and the double-click keeps `pick_pass`. The menus below
-stand.) Double-click a node: the same with `focus_editor=True`. Click a box: pick the
+now calls `App.choose_output` alone and the double-click keeps `pick_pass`; then by 093 W3-3
+for the double-click too -- the menu's `Open shader` is the gesture. The menus below
+stand, with `Open shader` added by 093 W3-4.) Double-click a node: the same with `focus_editor=True`. Click a box: pick the
 bundle output; double-click: enter. Right-click a node: the strip's item set, extracted from
 `pass_list._draw_context_menu` into `pass_list.pass_menu_items(app, document_id, name)` so the
 two surfaces cannot drift (Settings, Delete, Leave group); the strip keeps its own
@@ -205,7 +207,8 @@ the draw list still paints the live pictures.
 
 **D11. The error language.** Port dots carry state by shape: filled disc = wired; hollow ring =
 unfilled (black by default, not a fault); ring with a filled centre = `NoSource`; double ring =
-`prev`; a media-bound sampler draws a small square dot (D15). Node border: `STATE_ERROR` when
+`prev` (REVERSED by 093 W3-5: no port is drawn for a self-read); a media-bound sampler draws a
+small square dot (D15). Node border: `STATE_ERROR` when
 `compile_unit.errors`, else `ACCENT_PRIMARY` when the pass is the document output, else
 `BORDER`; a never-compiled pass has a dashed border. A node the output does not need (the
 strip's `live` set, `evaluation_order(wiring, output) or {output}`) dims its name and its edges.

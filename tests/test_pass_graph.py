@@ -444,7 +444,9 @@ def test_node_ports_come_from_the_program_never_the_stored_rows() -> None:
     assert [p.sampler for p in ports] == ["u_src"]
 
 
-def test_node_ports_classify_every_state_and_put_feedback_last() -> None:
+def test_node_ports_classify_every_state_and_skip_the_self_read() -> None:
+    # W3-5: `u_prev` (or any sampler sourced to its own pass) is feedback, not an input, so
+    # it grows no port. Falsifier: append the self-read as a port of any kind.
     values: dict[str, object] = {
         "u_prev": AutoSource(),
         "u_none": NoSource(),
@@ -460,9 +462,8 @@ def test_node_ports_classify_every_state_and_put_feedback_last() -> None:
         ("u_none", "none"),
         ("u_tex", "media"),
         ("u_lost", "unfilled"),
-        ("u_prev", "prev"),
     ]
-    assert ports[0].source == "scene" and ports[-1].source == "trail"
+    assert ports[0].source == "scene"
 
 
 def test_group_boundary_over_the_bloom_shape() -> None:

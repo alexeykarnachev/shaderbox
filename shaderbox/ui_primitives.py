@@ -949,24 +949,6 @@ def close_cross_button(id_: str, side: float) -> bool:
     return clicked
 
 
-def tune_icon_button(id_: str, side: float) -> bool:
-    """A framed square with a drawn sliders glyph (three rails, offset knobs) — the
-    settings affordance for a preview tile. The frame-colored fill keeps the glyph
-    readable over any image. No font dependency. Returns True on click."""
-    clicked, origin = _glyph_button(
-        id_, side, COLOR.BG_FRAME, COLOR.BORDER, COLOR.BORDER
-    )
-    col = imgui.color_convert_float4_to_u32(COLOR.FG_TITLE)
-    dl = imgui.get_window_draw_list()
-    pad: float = side * 0.28
-    x0, x1 = origin.x + pad, origin.x + side - pad
-    for i, knob in enumerate((0.7, 0.3, 0.55)):
-        y: float = origin.y + pad + (side - 2 * pad) * i / 2.0
-        dl.add_line((x0, y), (x1, y), col, 1.2)
-        dl.add_circle_filled((x0 + (x1 - x0) * knob, y), side * 0.09, col)
-    return clicked
-
-
 def copy_icon_button(id_: str, side: float) -> bool:
     """A ghost square with a drawn copy glyph (two offset rounded-rect outlines), for a
     corner copy affordance. No font dependency. Returns True on click."""

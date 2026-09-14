@@ -418,7 +418,6 @@ class App:
         # The import dialog's state (091 D10), None while it is closed.
         self.import_draft: ImportDraft | None = None
         # The pass whose tile has its delete-✕ armed (the in-cell "Delete?" wash), or "".
-        self.pass_delete_armed: str = ""
         # The graph canvas's per-document view state (092 D2), created on first use and
         # dropped with the document in forget_render_state.
         self.graph_views: dict[str, GraphViewState] = {}
@@ -744,8 +743,6 @@ class App:
         if self.pass_settings_name == old_name:
             self.pass_settings_name = new_name
             self.pass_settings_name_buf = new_name
-        if self.pass_delete_armed == old_name:
-            self.pass_delete_armed = new_name
 
     def panel_pass(self, document_id: str) -> Pass:
         """The pass whose uniforms the Document tab edits: the active shader tab's own pass when

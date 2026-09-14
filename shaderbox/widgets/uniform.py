@@ -338,7 +338,7 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
                 document.input_texture(panel_pass_name, source_pass),
                 source_pass,
             ):
-                app.pick_pass(document_id, source_pass, focus_editor=False)
+                app.choose_output(document_id, source_pass)
         elif isinstance(current_value, MediaWithTexture | moderngl.Texture):
             texture = (
                 current_value.texture

@@ -864,10 +864,13 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   opt-in flag), which detach by dragging it off, and is the maintainer's call
   on the ghost wire, which does not say that releasing removes the read; revisit if he asks for
   drag-to-detach after living with the badge. A
-  single CLICK on a node chooses the output and nothing else (`App.choose_output`); only a
-  double-click opens its shader tab, because inside the pane the old `pick_pass` click evicted
-  the graph tab it was made on. Ports come from the COMPILED program
-  (`sampler_names`, through `pass_graph.node_ports`) and edges from `effective_wiring()`, two
+  CLICK on a node -- or on the strip's tile, or the uniforms row's source preview -- chooses
+  the output and nothing else (`App.choose_output`); no click of any count opens a shader
+  tab, because inside the pane a `pick_pass` click evicted the graph tab it was made on, and
+  the pass's context menu (`pass_menu_items`, one item set for the tile and the node) carries
+  `Open shader` with the other verbs. Ports come from the COMPILED program
+  (`sampler_names`, through `pass_graph.node_ports`, which skips a self-read: `u_prev` is
+  feedback, not an input, and has no pin) and edges from `effective_wiring()`, two
   sources of truth on purpose: the wiring drops an unfilled sampler, so a port list built from
   it would have no dot to drop on, and a port list built from stored rows would draw a sampler
   the program no longer declares. A group at the root is one box whose ports are the group's

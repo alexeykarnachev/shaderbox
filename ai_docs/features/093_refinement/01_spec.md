@@ -349,6 +349,7 @@ never appears in the widget; `ui.py` applies once per frame on change and resets
 to `None`, so a test reads `app.cur_cursor` after the frame.
 
 **S15. A single click on a node chooses the output; only a double-click opens its shader tab.**
+(AMENDED by W3-3: no click of any count opens the tab; the context menu's `Open shader` does.)
 Today `_click` calls `pick_pass`, which is `ensure_shader_tab` + `set_output_pass`, and
 `ensure_shader_tab` ACTIVATES the shader tab (measured: one 3px click appends a tab and moves
 `active_tab_index`). Inside the editor pane that evicts the graph tab on every click and the
@@ -386,6 +387,42 @@ Where the record's "Code" paragraphs and this spec differ, this spec wins, for t
 | G4: `GRAPH_WIRE_HIT_MIN` | S12: `GRAPH_WIRE_HIT_FLOOR` | Two floors one pixel apart under near-identical names invite a transposition nothing would catch |
 
 ## Waves
+
+**Wave 3: his second hands-on batch, findings 12-17 (2026-09-14).** Five fixes in one commit;
+finding 17 (every menu, popup and modal, reviewed and redesigned) is delegated to
+`04_menus_inventory.md` -> `05_menus_spec.md` in this directory and runs the feature flow.
+
+- **W3-1 (finding 12). The picture's top inset equals its side inset.** `SIZE.GRAPH_THUMB_INSET
+  = 10` replaces `GRAPH_PAD` above the picture in `_thumb_rect`, `_port_point` and `node_size`;
+  `GRAPH_PAD` stays the name row's gap. A theme invariant asserts `GRAPH_NODE_W - GRAPH_THUMB ==
+  2 * GRAPH_THUMB_INSET` (break tried: `9` fails the import with the invariant's message).
+- **W3-2 (finding 15). The tile is a picture, a name and its chips.** The gear overlay
+  (`tune_icon_button`, deleted with no caller left) and the armed corner ✕ (`App.pass_delete_armed`,
+  its rename follow-through and its smoke frames, deleted) go; `preview_cell` gets
+  `armed=False` and no overlay. Both verbs stay on the context menu, which already had them.
+- **W3-3 (finding 13). No click opens a shader tab.** The tile click and the uniforms row's
+  source preview call `App.choose_output`; the canvas's double-click on a pass does nothing
+  beyond the click (a box's double-click still enters the group). **Amends S15**: the
+  double-click was the "open this pass" gesture; the context menu is now. `pick_pass` keeps
+  its two callers that create or step (`add pass`, `Alt+Left`/`Alt+Right`), where the editor
+  following is the point.
+- **W3-4 (finding 14). `Open shader` heads `pass_menu_items`**, calling `ensure_shader_tab(
+  document_id, name, focus_editor=True)`, so the tile and the node get it together.
+- **W3-5 (finding 16). A self-read grows no port.** `node_ports` skips a sampler whose source is
+  the pass itself; `PortKind` loses `"prev"`, `_draw_port_dot` its double ring, `group_boundary`
+  its skip, `_pass_node` its `prev` label. **Reverses 092 D1's "moved last" clause and D11's
+  double ring**; the feedback read itself is untouched (069 D9 still writes `u_prev` down as
+  reading yourself, and the strip's `prev` chip still says so). Revisit when the uniforms
+  extension he mentioned shows every uniform of a node.
+- **W3-6 (finding 17).** Delegated, above.
+
+Tests: `test_node_ports_classify_every_state_and_skip_the_self_read` (the self-read absent);
+`test_a_double_click_on_a_pass_leaves_the_pane_on_the_graph` (the tab kind stays `graph`, the
+output is chosen); `test_a_node_grows_one_row_per_port_and_a_box_is_wider` follows the token;
+`test_an_armed_delete_follows_a_rename` deleted with the latch. Docs in the same commit: 092's
+D1, D10 and D11 pointers; S15's verification row; `conventions.md`'s graph bullet (the click
+sentence and the ports sentence); `dev_flow.md`'s `pass_list.py` and `pass_graph.py` entries;
+the help text on ports; the ledger; the roadmap banner.
 
 **Wave 2: his first hands-on batch, findings 6-11 (2026-09-14).** Six decisions, one wave,
 one commit, two post-implementation reviewers; two of them reverse wave-1 rules and say so.
@@ -538,7 +575,7 @@ outside a frame `calc_text_size` segfaults the process (measured).
 | S3: the hover fields are exactly the ones written | the set of `GraphViewState` fields whose name starts with `hovered_` is exactly `{hovered_node, hovered_port, hovered_out, hovered_wire}`, and sequence (e) above leaves each `None` -- a fifth field nobody wires is caught | pure + frame-driven |
 | S4: the selections are exclusive | after selecting the wire, click a node: `selected_wire is None` and `selection == {node}`; select the wire again, rubber-band over empty canvas and release: `selected_wire is None` | frame-driven |
 | G13/S15: 3px is a click, 5px is a drag | press on a node's body, move 3px, release: `set_output_pass` ran once, `set_pass_positions` did not, and `app.active_tab.kind == "graph"` still; press, move 5px, release: `set_pass_positions` ran, `set_output_pass` did not. Break to try: omit `lock_threshold` at the node-body site -- the 5px case reads imgui's 6px default and stays a click (measured today: 5px is a click, 8px a drag) | frame-driven |
-| S15: a double-click opens the shader tab | double-click a node: `app.active_tab.kind == "shader"` and its path is the pass's | frame-driven |
+| S15 as amended by W3-3: no click opens the shader tab | double-click a pass node: `app.active_tab.kind == "graph"` still and the pass is the output | frame-driven |
 | S7: the selected node draws and hit-tests last, a dragged one above it | select `a`, frames: `view.node_order[-1] == "p:a"`; with `b` selected, drag `a` and read `node_order` mid-drag: `[-1] == "p:a"` | frame-driven |
 | G7: the cursor follows the gesture | during a middle-drag pan, after the frame, `app.cur_cursor is app.hand_cursor`; at rest, on a frame where `view.canvas_rect != (0, 0, 0, 0)`, `app.cur_cursor is None` | frame-driven |
 | G14: every kept binding still works | the existing `tests/test_graph_view.py` passes with only the `passes_view -> open_graph_for` substitution and the new `pytestmark`; a failure that traces to a binding is a silent change, a failure that traces to the tab being inactive is a test-mechanics bug (the tab is opened before any copilot-turn simulation, since `open_graph_for` is frozen during one) | frame-driven |

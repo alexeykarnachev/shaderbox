@@ -133,7 +133,7 @@ def node_size(port_count: int, box: bool) -> tuple[float, float]:
     """A node's canvas-space size at zoom 1: the picture, the name, and one row per port."""
     width = float(SIZE.GRAPH_NODE_W + (SIZE.GRAPH_BOX_EXTRA_W if box else 0))
     height = float(
-        SIZE.GRAPH_PAD + SIZE.GRAPH_THUMB + SIZE.GRAPH_NAME_H + SIZE.GRAPH_PAD
+        SIZE.GRAPH_THUMB_INSET + SIZE.GRAPH_THUMB + SIZE.GRAPH_NAME_H + SIZE.GRAPH_PAD
     )
     if port_count:
         height += (

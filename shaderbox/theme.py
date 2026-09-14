@@ -335,6 +335,9 @@ class SIZE:
     GRAPH_NODE_W: int = 136
     GRAPH_BOX_EXTRA_W: int = 40
     GRAPH_THUMB: int = 116
+    # The picture sits this far inside the card's top and both sides; the invariant below
+    # keeps the width the sum. `GRAPH_PAD` is the gap the name row keeps under it.
+    GRAPH_THUMB_INSET: int = 10
     GRAPH_PAD: int = 4
     GRAPH_NAME_H: int = 20
     # The gap between the name and the first port row, and the one under the LAST port row so
@@ -407,6 +410,12 @@ class SIZE:
 
     # Chat message bubble corner radius.
     BUBBLE_ROUNDING: int = 6
+
+
+assert SIZE.GRAPH_NODE_W - SIZE.GRAPH_THUMB == 2 * SIZE.GRAPH_THUMB_INSET, (
+    "theme invariant: the graph card's picture keeps one inset on its top and both sides "
+    "(093 W3-1); change the three tokens together."
+)
 
 
 class SPACE:

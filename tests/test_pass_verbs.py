@@ -319,17 +319,6 @@ def test_accepted_pass_names(app: Any, name: str) -> None:
     assert app.session.add_pass(_document_id(app), name) == ""
 
 
-def test_an_armed_delete_follows_a_rename(app: Any) -> None:
-    # The tile's delete-✕ arms an in-cell "Delete?" wash keyed by pass NAME, so a rename that left
-    # the arm behind would put the wash on whichever pass takes that name next.
-    document_id = _document_id(app)
-    app.session.add_pass(document_id, "doomed")
-    app.pass_delete_armed = "doomed"
-    assert app.session.rename_pass(document_id, "doomed", "spared") == ""
-    # The arm follows the rename rather than being left on a name a future pass could take.
-    assert app.pass_delete_armed == "spared"
-
-
 def test_renaming_a_pass_moves_the_settings_target_with_it(app: Any) -> None:
     # The settings modal's target is keyed by pass NAME, so a rename that left it behind would
     # show the wiring of a pass that no longer exists (the modal closes on a missing pass).

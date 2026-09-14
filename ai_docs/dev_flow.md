@@ -201,13 +201,14 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   the graph.
 - **`widgets/pass_list.py`** — the Document tab's pass strip (feature 065): one live `preview_cell`
   thumbnail per pass in `plan_passes` topological order, blind to the output choice. A tile click
-  sets the graph OUTPUT and opens that pass in the editor; off-plan tiles wash toward grey. Both
+  sets the graph OUTPUT and nothing else (093 W3-3); off-plan tiles wash toward grey. Both
   the order and the wash plan `Document.effective_wiring()`, never the stored rows alone — a pass
   wired only by its uniform's name has no stored row, and the rows would wash live ancestors and
   hand the strip sorted-name order. A tile is a picture, a name, and a row of chips naming the
   passes it reads (070); the source itself is chosen on the sampler's row of the uniforms panel
-  (072). The pass verbs are reachable from the strip (gear overlay / context menu, the item set
-  shared with the graph's node menu as `pass_menu_items`); holds no state of its own. The caption
+  (072). Every other pass verb -- open its shader, settings, delete, leave its group -- is on
+  the tile's context menu (the item set shared with the graph's node menu as
+  `pass_menu_items`); the tile itself carries no button; holds no state of its own. The caption
   row and the `add pass` / `import...` row are the Document tab's (`tabs/document.py::_draw_passes`);
   since 093 that caption row is an entry-point row like the Script one -- an accent tick, the word
   `Passes`, and an `open` that summons the graph's editor tab -- and the strip is always what the
@@ -218,7 +219,8 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   `preview_cell(bordered=False)`.
 - **`widgets/pass_graph.py`** — the graph canvas (features 092, 093), a second picture of the same
   passes in its own editor tab (`draw(app, document_id)`, filling whatever child it is handed):
-  nodes with one port per sampler the compiled program declares, wires from the effective wiring,
+  nodes with one port per sampler the compiled program declares that is not a self-read (`u_prev`
+  is feedback, not a pin -- 093 W3-5), wires from the effective wiring,
   a box per group at the root (its ports the group's boundary edges) and a tab per group with the
   outside passes as ghosts. One `begin_child`, one draw list over five channels (halos, strokes,
   nodes, the wire in flight, the overlays), hit-tested with `invisible_button`s in the allow-overlap

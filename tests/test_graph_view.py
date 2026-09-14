@@ -707,9 +707,9 @@ def test_three_pixels_is_a_click_and_five_is_a_drag(app: Any) -> None:
     _close_graph(app, document_id)
 
 
-def test_a_double_click_opens_the_passs_shader_tab(app: Any) -> None:
-    # S15: the deliberate "open this pass" gesture keeps `pick_pass`, so the pane switches on
-    # purpose rather than on every click. Falsifier: point `_double_click` at `choose_output`.
+def test_a_double_click_on_a_pass_leaves_the_pane_on_the_graph(app: Any) -> None:
+    # W3-3: no click of any count opens a shader tab from the canvas; the context menu's
+    # `Open shader` is the gesture. Falsifier: point `_double_click` at `pick_pass`.
     document_id, document = _chain(app)
     view = _open_graph(app, document_id)
     picture = pass_graph._build_view(document, "", {})
@@ -730,8 +730,9 @@ def test_a_double_click_opens_the_passs_shader_tab(app: Any) -> None:
         _frames(app, 1)
     _frames(app, 2)
     tab = app.active_tab
-    assert tab is not None and tab.kind == "shader", tab
-    assert tab.path == document.passes["a"].source.path
+    assert tab is not None and tab.kind == "graph", tab
+    assert document.graph.output == "a"
+    _close_graph(app, document_id)
 
 
 def test_the_selected_card_draws_and_hit_tests_last(app: Any) -> None:
