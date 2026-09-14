@@ -41,7 +41,14 @@ modal that names its target and its consequence, wherever the verb is fired from
 not None` and keeps its name (its callers are the render gates, not the roster).
 `App._open_modal(id)` replaces `_open_popup`; the per-modal `open_*` verbs stay on `App`
 (they set the modal's own state first, then open). `ui.py`'s three `PopupState` reads become
-`ModalId` reads.
+`ModalId` reads: `importing = app.modal is ModalId.IMPORT_PASSES`, `examples_planned = app.modal
+is ModalId.EXAMPLES or (...)`, and the pass-settings render exception at `ui.py:519`
+unchanged in meaning. `ModalId.CONFIRM` is in the mutex like every other modal, so the render
+plan pauses the normal set behind a confirm (today the revert confirm already did, through
+`copilot_revert_target`); `tests/test_render_decoupling_loop.py` gains a case for it, since a
+new mutex member is a new member of that plan's domain. `App.open_settings(focus=...)` and
+the other per-modal openers keep setting their modal's own state before `_open_modal` (the
+focus jump, the draft, the emoji target all live there).
 
 **R2. `popups/registry.py` holds the registry and the two verbs every surface uses.**
 
@@ -68,16 +75,26 @@ def close_modal(app: App) -> bool     # the ONE close funnel: Esc, and a body re
 
 `draw_modal`: `modal = BY_ID.get(app.modal)`; if none, return; `modal.before(app)` if set;
 `with modal_window(modal.label, modal.size(app), modal.flags, modal.fixed_size) as visible`;
-if visible and `not modal.body(app)`: `close_modal(app)` + `imgui.close_current_popup()`.
-`close_modal`: returns `False` without closing when `modal.owns_esc(app)`; else runs
-`modal.on_close(app)` if set, sets `app.modal = None`, returns `True`. `registry.py` imports
-`App` and every popup module; no popup module imports the registry (the popups import `App`
-only, as today), and `app.py` never imports `popups` — so the registry is a leaf of the
-popups layer, the way `menus.py` is of the commands layer. `hotkeys.py` imports `close_modal`;
-`App.close_popup` is deleted. An `App` method that closes a modal programmatically after its
-own cleanup (`close_pass_settings` after a rename commit, `close_import_passes`, the project
-switch) sets `self.modal = None` itself — it IS the cleanup owner; a `popups/` module never
-writes `app.modal`.
+if visible and `not modal.body(app)`: `close_modal(app, forced=True)` then
+`imgui.close_current_popup()`. `close_modal(app, forced=False) -> bool`: when not `forced`
+and `modal.owns_esc(app)`, returns `False` and closes nothing (an inline input owns that
+Esc; its own cancel runs later in the frame); else runs `modal.on_close(app)` if set, sets
+`app.modal = None`, returns `True`. A body returning `False` is a Close the user clicked, so
+it is always `forced` — the lib picker's Close was dead under an unforced funnel while a
+rename input was armed (`popups/lib_picker/__init__.py:39-44` today works around exactly
+that). `imgui.close_current_popup()` runs only after a close that happened. `registry.py`
+imports `App` and every popup module; no popup module imports the registry (the popups
+import `App` only, as today), and **`app.py` imports nothing from `popups`** — a gate pins
+it (R6) — so the registry is a leaf of the popups layer, the way `menus.py` is of the
+commands layer. `hotkeys.py` imports `close_modal`; `App.close_popup` is deleted. The three
+`close_*` App methods (`close_pass_settings`, `close_import_passes`, `close_emoji_picker`)
+stay FULL closes — the cleanup and `self.modal = None` — and are ALSO the registry's
+`on_close` values; `close_modal` writes `None` after `on_close` regardless, so the double
+write is idempotent and a programmatic caller (`create_pass_from_draft`'s commit path, the
+Esc funnel, the Close button) needs no registry import. `switch_project`'s close is
+`self.modal = None` directly, never `close_modal`: it runs in `_tick_frame_state`, outside
+the draw phase, where `imgui.close_current_popup()` asserts (084 D5). No module under
+`popups/` or `widgets/` assigns `app.modal`.
 
 **R3. Each popup module is a body and a spec.** `draw_X(app)` goes; `_draw_body(app) -> bool`
 stays (binding and returning `keep_open`, per the chrome rule) and `MODAL = Modal(...)` is a
@@ -85,15 +102,19 @@ module constant beside it. `on_close` values are the cleanups `close_popup` disp
 hand: `pass_settings` -> `App.close_pass_settings` (commits a pending rename / group, then
 clears); `import_passes` -> `App.close_import_passes`; `emoji_picker` -> `App.close_emoji_picker`
 (nulls the target, clears the query); `settings` -> `App.apply_editor_settings`; `projects` ->
-`App.reset_projects_state`; `examples`, `help`, `lib_picker` none. `owns_esc`: `projects` ->
+`App.reset_projects_state`; `lib_picker` -> `app.shader_lib_files.reset_inline_state` plus
+clearing `picker_tag_input_focused` (today's pre-funnel cleanup at `lib_picker/__init__.py:39-44`,
+moved into the registry's hook); `examples`, `help` none. `owns_esc`: `projects` ->
 `App.projects_input_owns_esc`; `lib_picker` -> `app.shader_lib_files.inline_input_owns_esc`.
-(The three `close_*` App methods stop writing the state field; they are cleanups.)
+`PASS_SETTINGS`'s `body` is `_draw_modal_body(app)`, which dispatches to `_draw_draft` or
+`_draw_body` on `app.pass_draft` (one modal, two modes, as today); the chrome gate walks
+BOTH leaf bodies for it, never the dispatcher (R6).
 
 **R4. `popups/confirm.py`: the confirm modal, one client for every destructive verb.**
 
 ```python
-@dataclass(frozen=True)
-class ConfirmRequest:
+@dataclass(frozen=True)          # in ui_models.py, beside ImportDraft / PassDraft:
+class ConfirmRequest:            # app.py imports ui_models already and must not import popups
     title: str            # "Delete pass blur?"  — names the target
     line: str             # "Its wiring and position are lost; the shader file stays."
     verb: str             # the button: "Delete", "Reset", "Clear", "Revert"
@@ -101,12 +122,15 @@ class ConfirmRequest:
 ```
 
 `App.confirm: ConfirmRequest | None`; `App.request_confirm(request)` sets it and opens
-`ModalId.CONFIRM`. The body: the title (wrapped, `FG_TITLE`), the line as `caption_text`,
-the `SPACE.MD` spacer, `danger_button(verb)` left and `standard_button("Cancel")` right;
-Enter fires the verb (the modal is the deliberate step; the click that opened it was a mouse
-gesture and no Enter is in flight), Esc cancels through `close_modal`. `on_close` nulls
-`app.confirm`; confirming calls `on_confirm()` then returns `False`. Size `(380, 0)`, the
-revert dialog's. The prose budget: `title` and `line` are authored at every call site, so the
+`ModalId.CONFIRM`. The body (`popups/confirm.py`): the title (wrapped, `FG_TITLE`), the line
+as `caption_text`, the `SPACE.MD` spacer, `danger_button(verb)` left and
+`standard_button("Cancel")` right. One decision per frame: `confirmed = danger_button(verb)
+or (imgui.is_key_pressed(imgui.Key.enter, repeat=False) and not imgui.is_window_appearing())`
+— the appearing frame is the one a keyboard menu activation shares with the Enter that
+opened the modal (the bar draws before the popup block), and a single `confirmed` value
+means the button and the key cannot fire `on_confirm` twice in one frame. Esc cancels
+through `close_modal`. `on_close` nulls `app.confirm`; confirming calls `on_confirm()` then
+returns `False`. Size `(380, 0)`, the revert dialog's. The prose budget: `title` and `line` are authored at every call site, so the
 gate's `_UNMEASURABLE` gains `confirm.py::_draw_body` with the reason, and each call site's
 strings are literals the AST walk scores at their own sites (the per-site budget: the title
 under the heading budget, the line under one clause).
@@ -125,7 +149,10 @@ one method, so the confirm is the same from every surface:
 | clear the chat | `copilot_clear_chat_confirmed()` — the `CLEAR_COPILOT_CHAT` callback and the chat's button | `Clear the conversation?` / `The transcript and its checkpoints are dropped.` / `Clear` |
 | revert a turn | `open_copilot_revert(msg)` builds the request (`copilot_revert_target` and `_draw_revert_modal` are deleted) | `Revert "{head}"?` / today's caption / `Revert` |
 
-`ui_primitives.confirm_menu_item` is deleted; `CommandSpec.confirm_label` is deleted;
+`ui_primitives.confirm_menu_item` is deleted (`tests/test_ui_prose_budget.py` loses it from
+its domain and gains the `confirm.py::_draw_body` `_UNMEASURABLE` row); `CommandSpec.confirm_label`
+is deleted, and with it `document_grid.py`'s read of it — the document delete's confirm copy
+is REWRITTEN from `Move to trash` to the title and line in the table above, on purpose;
 `command_menu_item` draws a plain item for every spec (the bar's `Delete document` gets its
 `Alt+D` hint back); the palette offers every `in_palette` spec again
 (`_register_palette_commands` loses the filter; `tests/test_menus.py`'s palette test is
@@ -137,14 +164,19 @@ maintainer's call; the bullet is rewritten to the modal rule with the reasons ab
 **R6. Gates derive from the registry.** `tests/test_modal_chrome.py`'s domain is `MODALS`
 (every `ModalId` has exactly one `Modal`, every `Modal.id` is a member — the structural half
 that replaces `test_every_popup_state_has_a_draw_call`, which is deleted with the `ui.py`
-draw list it parsed); for each `Modal`, `body` binds and returns `keep_open`, ends in the
-action row with the spacer (the existing clauses); the "no hand-written close" clause becomes
-"no `popups/` module assigns `app.modal`". `tests/test_import_dialog.py`'s structural check
-on `close_popup` is repointed at `import_passes.MODAL.on_close is App.close_import_passes`.
+draw list it parsed); for each `Modal`, its leaf bodies (two for `PASS_SETTINGS`, listed in
+the test beside the registry entry) bind and return `keep_open` and end in the action row
+with the spacer (the existing clauses); the "no hand-written close" clause becomes "no module
+under `popups/` or `widgets/` assigns `app.modal`". A new clause: `app.py`'s `ImportFrom`
+nodes name no module under `shaderbox.popups` (the registry's leaf-ness, which R4's payload
+type would otherwise break). `tests/test_import_dialog.py`'s structural check on
+`close_popup` is repointed at `import_passes.MODAL.on_close is App.close_import_passes`.
 Breaks to try and name in the commit: a `ModalId` member with no `Modal`; a `Modal` whose body
-returns `ok`; a popup module writing `app.modal = None`; a confirm client whose `on_confirm`
-is dropped (the confirm test's verb spy goes red); Esc on the confirm modal calling the verb
-(the cancel test goes red).
+returns `ok`; a popup module writing `app.modal = None`; `from shaderbox.popups.confirm
+import ...` added to `app.py`; a confirm client whose `on_confirm` is dropped (the confirm
+test's verb spy goes red); Esc on the confirm modal calling the verb (the cancel test goes
+red); the lib picker's Close with a rename armed (the forced-close test goes red under an
+unforced funnel).
 
 **R7. Tests for the confirm.** Frame-driven, through the real surfaces: right-click a pass
 tile, click `Delete`: `app.modal is ModalId.CONFIRM` and `app.confirm.title == "Delete pass
@@ -172,8 +204,12 @@ with its title and its verb spied. The lib tree's delete: one test through its m
   (`confirm_menu_item` gone).
 - Tests: `test_modal_chrome.py`, `test_project_management.py`, `test_import_dialog.py`,
   `test_menus.py`, `test_ui_prose_budget.py` (the `_UNMEASURABLE` row), a new
-  `tests/test_confirm.py`; every test that sets `popup_state` / `PopupState` (eight files)
-  repointed.
+  `tests/test_confirm.py`; every test that reads `popup_state` / `PopupState` / `close_popup` /
+  `copilot_revert_target` / `confirm_label` / `confirm_menu_item` — nine files:
+  `test_modal_chrome.py`, `test_menus.py`, `test_project_management.py`, `test_import_dialog.py`,
+  `test_ui_prose_budget.py`, `test_render_decoupling_loop.py` (gains the `CONFIRM` case),
+  `test_profiling.py`, `test_pass_verbs.py`, `test_pass_draft.py` — repointed; the
+  `Deletions` row catches any missed one.
 - Docs: `conventions.md` (the popups bullet rewritten around the registry; the M5 bullet
   reversed to the modal rule; the `InlineInput` bullet unchanged), `dev_flow.md`'s module map
   (`popups/registry.py`, `popups/confirm.py`, the popups entry), `.claude/skills/imgui-ui/SKILL.md`
@@ -188,9 +224,11 @@ with its title and its verb spied. The lib tree's delete: one test through its m
 |---|---|---|
 | R1/R6: the registry is the roster | `{m.id for m in MODALS} == set(ModalId)` and the ids are unique; break: add a member | pure |
 | R2: one draw call | `ui.py`'s AST calls `draw_modal` once and imports no `draw_*` from `popups`; break: re-add `draw_help(app)` | pure |
-| R2: no popup writes the mutex | an AST walk over `popups/`: no assignment whose target is `app.modal`; break: write one in `help.py` | pure |
-| R2: the close funnel | for each `Modal` with `on_close`: open it (its `open_*`), call `close_modal(app)`, the cleanup ran (spied) and `app.modal is None`; for each with `owns_esc`: arm the input, `close_modal` returns `False` and the modal stays | app fixture |
-| R3: chrome | the existing `test_modal_chrome` clauses over `MODALS` | pure |
+| R2: no popup or widget writes the mutex | an AST walk over `popups/` and `widgets/`: no assignment whose target is `app.modal`; break: write one in `help.py` | pure |
+| R2: the close funnel | for each `Modal` with `on_close`: open it (its `open_*`), call `close_modal(app)`, the cleanup ran (spied) and `app.modal is None`; for each with `owns_esc`: arm the input, `close_modal(app)` returns `False` and the modal stays, and `close_modal(app, forced=True)` closes it with the cleanup run (the lib picker's Close button path); break: drop `forced` — the second half goes red | app fixture |
+| R2: `app.py` is not a client of `popups` | an AST walk over `app.py`'s `ImportFrom` nodes: none names `shaderbox.popups`; break: import `ConfirmRequest` from `popups.confirm` | pure |
+| R4: one fire per frame | with the confirm open, press Enter and click the verb in the same frame: `on_confirm` ran once; on the modal's appearing frame Enter fires nothing | frame-driven |
+| R3: chrome | the existing `test_modal_chrome` clauses over `MODALS`' leaf bodies (both of `PASS_SETTINGS`'s); break: point the pass-settings row at the dispatcher — its clauses find no `keep_open` | pure |
 | R4/R5/R7: the confirm from every surface | as R7 lists, one test per client, each with its verb spied and the Esc case | frame-driven |
 | R5: the palette offers every spec | `app._palette_command_names` covers every `in_palette` spec | app fixture |
 | R5: the bar's Delete document is a plain item with its hint | the M1 label-set test; the item is not a submenu (spy on `begin_menu` inside the Document menu: zero calls) | frame-driven |
@@ -202,4 +240,13 @@ None. Enter confirming (R4) is the one call he may want reversed; it is one line
 
 ## Review history
 
-(filled by the flow)
+**Pre-implementation (2026-09-14), one reviewer on opus, PARTIAL, nothing should-not-land:**
+`reviews/modal_registry_pre.md`, nine findings and two unverified invariants, all folded:
+`ConfirmRequest` moved to `ui_models.py` and the `app.py`-imports-no-`popups` gate added
+(F1); the forced close for a Close the user clicked and the lib picker's `on_close` (F2); the
+three `close_*` methods as full closes AND `on_close` values (F3); the pass-settings
+dispatcher and the gate walking both leaf bodies (F4); the three `ui.py` reads named and
+`CONFIRM` in the render plan's domain (F5); `switch_project`'s direct write (F6); the Enter
+guard on the appearing frame and one `confirmed` per frame (F7, the second invariant); the
+document delete's copy rewrite recorded and the prose gate's domain (F8); nine test files
+(F9); the mutex-write walk covering `widgets/`.
