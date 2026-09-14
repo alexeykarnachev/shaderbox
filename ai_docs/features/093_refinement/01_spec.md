@@ -2,7 +2,7 @@
 
 Status: **waves 1 and 2 landed and reviewed (f012074, ccdf6d1; 1974aa0, 62ce546); next is his
 visual review of both in the running app, whose findings open wave 3 as rows 12+ in the ledger.**
-Five findings filed (`00_findings.md`). The maintainer's verdict on the shipped canvas ("feels
+Eleven findings filed (`00_findings.md`): five from his screenshot batch, six from his first hands-on pass. The maintainer's verdict on the shipped canvas ("feels
 very cheap") sent the walk into research first: `02_research_brief.md` is the brief, `research/`
 holds six area reports against primary sources, `03_graph_design.md` is the design record
 (G1-G18, what stays, the four forks G-Q1..Q4, the false trails, a verification sketch), and
@@ -67,9 +67,7 @@ delegated (below).
 - **Blender's flatness correction / Rete's vertical term for a long near-horizontal wire** (G1
   alt. d): the references disagree and neither addresses the defect. Trigger: a screenshot of a
   wire reading conspicuously flat.
-- **Tab persistence across restarts**: tabs are not persisted today (only the current document's
-  shader tab reopens), and the graph tab follows that rule.
-- **The box width.** `GRAPH_BOX_EXTRA_W` stays 40, so a box is 176 wide around a 96 picture.
+- **The box width.** `GRAPH_BOX_EXTRA_W` stays 40, so a box is 176 wide around a 116 picture.
   The maintainer's eyes; a token if he objects.
 
 ## Design decisions
