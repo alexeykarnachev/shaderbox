@@ -1209,9 +1209,11 @@ def preview_cell(
     chips: Sequence[str] | None = None,
     chip_font: imgui.ImFont | None = None,
     bordered: bool = True,
+    deletable: bool = True,
 ) -> PreviewCellResult:
     """A bordered preview tile: a `cell_w`-wide square image + whole-cell click
-    target + selection border + a top-right delete-✕ arming an in-cell `Delete?` wash.
+    target + selection border + (while `deletable`) a top-right delete-✕ arming an in-cell
+    `Delete?` wash.
 
     The cell is `cell_w` wide and grows below the image by one text line when `footer`
     is set; the caller sizes only the width. `overlay` draws an extra top-LEFT control,
@@ -1333,12 +1335,13 @@ def preview_cell(
                 imgui.set_next_item_allow_overlap()
                 imgui.set_cursor_screen_pos((origin.x, origin.y))
                 overlay(x_side)
-            imgui.set_cursor_screen_pos((origin.x + avail.x - x_side, origin.y))
-            imgui.set_next_item_allow_overlap()
-            if close_cross_button(f"del_{id_}", x_side):
-                result.delete_armed = True
-            if imgui.is_item_hovered():
-                imgui.set_tooltip("Delete")
+            if deletable:
+                imgui.set_cursor_screen_pos((origin.x + avail.x - x_side, origin.y))
+                imgui.set_next_item_allow_overlap()
+                if close_cross_button(f"del_{id_}", x_side):
+                    result.delete_armed = True
+                if imgui.is_item_hovered():
+                    imgui.set_tooltip("Delete")
     return result
 
 

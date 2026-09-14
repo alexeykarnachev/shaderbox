@@ -148,6 +148,7 @@ def _draw_pass_tile(
         stale=stale,
         chips=reads,
         chip_font=app.font_12,
+        deletable=False,
     )
     _draw_context_menu(app, document_id, name)
 
