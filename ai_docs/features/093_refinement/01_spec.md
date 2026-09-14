@@ -414,7 +414,10 @@ finding 17 (every menu, popup and modal, reviewed and redesigned) is delegated t
   double ring**; the feedback read itself is untouched (069 D9 still writes `u_prev` down as
   reading yourself, and the strip's `prev` chip still says so). Revisit when the uniforms
   extension he mentioned shows every uniform of a node.
-- **W3-6 (finding 17).** Delegated, above.
+- **W3-6 (finding 17).** Delegated: `04_menus_inventory.md` (§1-9 the inventory, three opus
+  readers over two rounds to convergence; §10 the design pass, two opus reviews and a PASS
+  closure round, `reviews/menus_*.md`) -> `05_menus_spec.md` (M1-M14), implemented by an opus
+  implementer and reviewed post-implementation as a high-blast-radius feature.
 
 Tests: `test_node_ports_classify_every_state_and_skip_the_self_read` (the self-read absent);
 `test_a_double_click_on_a_pass_leaves_the_pane_on_the_graph` (the tab kind stays `graph`, the

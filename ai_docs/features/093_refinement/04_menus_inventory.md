@@ -537,7 +537,7 @@ generalizes: **a verb lives on its object's context menu; a tile or card carries
    `Add pass`, `import...` / `Import...`, `Settings...` / `Open Settings` / `Set up token` /
    `Set up credentials`, `Projects...` vs the palette's `Projects`. The palette and the
    cheatsheet read one table (`COMMAND_SPECS`) and cannot drift; the menu bar and every
-   button and menu item are hand-written and do. Seven commands (Save, Next/Previous pass,
+   button and menu item are hand-written and do. Eight commands (Save, Next/Previous pass,
    Cycle code tab, the four Focus-tab chords) have no mouse-reachable home at all.
 3. **The menu bar is five hand-written entries** (File: New document / Projects... / Quit;
    Edit: Settings...; Library: Browse...; Examples; Help) beside a 32-row command table that
