@@ -1,6 +1,6 @@
 # 093 — Tenth walk findings
 
-Status: **wave 1 implemented, post-implementation review next.**
+Status: **wave 1 implemented (f012074 + ccdf6d1), post-implementation review round 2 next.**
 Five findings filed (`00_findings.md`). The maintainer's verdict on the shipped canvas ("feels
 very cheap") sent the walk into research first: `02_research_brief.md` is the brief, `research/`
 holds six area reports against primary sources, `03_graph_design.md` is the design record
@@ -269,7 +269,8 @@ section, which submits only invisible buttons and popups (a popup is its own win
 draw list; measured to leave the canvas splitter untouched).
 
 **S7. Bring-to-front orders the buttons too.** The nodes are drawn in ascending
-`(is_selected, is_being_dragged)` order (G12), and the hit-test loop submits the node buttons in
+`(is_being_dragged, is_selected)` order (G12) -- a card in flight paints above a merely selected
+one, which is what a drag needs -- and the hit-test loop submits the node buttons in
 the SAME order, so the card that paints on top is the one whose button, submitted later, wins
 the overlap. One list, sorted once per frame, used by both loops, and exposed as
 `view.node_order: list[str]` (node keys, this frame) so a test can assert the selected node is
@@ -301,7 +302,7 @@ functions beside `NodeDrag` and `node_size`:
   `wire_state(on_cycle, selected, hovered, dim) -> WireState` in G18's precedence (error first).
   The widget maps a state to its stroke color and halo; the precedence is the pure part.
 - `revalidated_wire(selected, edges)` (S2), `delete_allowed(...)` (S5).
-`_draw_wire(dl, points, col, halo_col)` in the widget draws the halo (`GRAPH_WIRE_W * 3.0 * z`
+`_draw_wire(dl, points, zoom, col, halo_col)` in the widget draws the halo (`GRAPH_WIRE_W * 3.0 * z`
 at the state's halo alpha, channel 0) when `halo_col` is not `None`, then the crisp stroke
 (channel 1) -- a hovered stroke is `GRAPH_WIRE_W * 1.4 * z` per G6, a selected or normal one
 `GRAPH_WIRE_W * z`, all floored at 1.0. The caller resolves the state; `_draw_wire` never reads
@@ -380,7 +381,7 @@ Where the record's "Code" paragraphs and this spec differ, this spec wins, for t
 | G11's fit-zoom table | S8's note: `_fit` clamps at 1.0 | The table is the unclamped ratio |
 | G11/G-Q1: 128, from a 0.545898 em advance | S1: 136 | The advance is 7.0 / 8.0px (measured in a rig frame); at 128 `u_distance_field` ellipsizes and `distance_field` has zero slack |
 | G4/G18: helpers as module-level functions in the widget | S9: in `graph_state.py` | The pure tests import no imgui and need no `app` fixture |
-| G18: `_draw_wire(dl, xf, a, b, col, halo_col, halo_alpha)` (and G1's `..., hovered, selected`) | S9: `_draw_wire(dl, points, col, halo_col)` | It takes the points `wire_points` returns; the rule that the caller resolves the state is kept |
+| G18: `_draw_wire(dl, xf, a, b, col, halo_col, halo_alpha)` (and G1's `..., hovered, selected`) | S9: `_draw_wire(dl, points, zoom, col, halo_col)` | It takes the points `wire_points` returns; the rule that the caller resolves the state is kept |
 | G8: `path_stroke(col, ImDrawFlags_.none, thickness)` | S10: `path_stroke(col, thickness)` | The binding's signature is `(col, thickness=1.0, flags=0)` (verified) |
 | G14: "Select -- left click, kept unchanged" | S15: a click chooses the output without opening the shader tab | Inside the pane the old click evicts the graph tab (measured) |
 | G4: `GRAPH_WIRE_HIT_MIN` | S12: `GRAPH_WIRE_HIT_FLOOR` | Two floors one pixel apart under near-identical names invite a transposition nothing would catch |
@@ -464,8 +465,8 @@ outside a frame `calc_text_size` segfaults the process (measured).
 | S2: a stale wire selection clears | `revalidated_wire(("c", "u_src"), edges)` returns it while an edge carries the pair and `None` once none does; `None` in gives `None` out | pure |
 | G6: nothing changes size on hover | `inspect.signature(node_size).parameters` is exactly `(port_count, box)`; `wire_hit_threshold` takes `zoom` alone | pure |
 | G8/G3/S12: the loop, the bus and the module constants are gone | `SIZE` has none of `GRAPH_LOOP_RISE`, `GRAPH_LOOP_REACH`, `GRAPH_BUS_STEP`, `GRAPH_BUS_CLEAR`, `GRAPH_MIN_H`; the widget's source contains none of `_draw_self_loop`, `bus_y`, `_MIN_DIRECT_DX`, `_BEZIER_BOW`, `glfw.set_cursor` | pure |
-| S13: the lock is passed everywhere | every `is_mouse_dragging(` and `get_mouse_drag_delta(` in the widget's source carries `GRAPH_DRAG_LOCK_PX` | pure |
-| G12: the five channels in order | the widget's source calls `channels_split(5)` once and `channels_merge()` once, and the first occurrence of each `channels_set_current(k)` literal for k in 0..4 appears in ascending source order (halos, strokes, nodes, in-flight, overlays) | pure |
+| S13: the lock is passed everywhere | an `ast` walk over the widget: every `is_mouse_dragging(` and `get_mouse_drag_delta(` call carries `GRAPH_DRAG_LOCK_PX` as a real argument, and the site count is the expected one (a token in a comment satisfies nothing) | pure |
+| G12: the five channels in order | the widget's source calls `channels_split(5)` once and `channels_merge()` once, and the five named channel constants (`_CH_HALO`, `_CH_WIRE`, `_CH_NODE`, `_CH_INFLIGHT`, `_CH_OVERLAY`) are strictly ascending -- paint order follows the index, so the constants' order IS the layering; the call sites are not in source order (the overlay channel is entered from `_draw_wire_x` early in the file) | pure |
 | G11: the ellipsis pins the width | inside a rig frame with `app.font_12` pushed at its `legacy_size`: `ellipsize("u_distance_field", budget)` at the 128-card port-label budget (110) ends in `...`, and at the decided card's budget (`GRAPH_NODE_W - 2 * GRAPH_PORT_R - 2 - GRAPH_PAD`, 118 at 136) returns the string unchanged with at least 4px of slack; with `app.font_14_bold`: `distance_field` against the name budget (`GRAPH_NODE_W - 2 * GRAPH_PAD`, 120 at 136) unchanged with at least 4px of slack. This is the width decision's pin -- red at 128 (measured: 112px against 110 and 112), green at 136 | rig frame |
 | S8: the fit frames every wire | build `a -> b -> c` plus a backward read (`a` reading `c` through `app.session.set_sampler_source`, so a cycle wire is present), `_fit` with `avail = (520, 200)` -- small enough that the 1.0 clamp does not centre slack around the content (at 800x600 the break below stays green, measured); the fitted window in canvas space is `(pan.x, pan.y, pan.x + 520 / zoom, pan.y + 200 / zoom)`, and every wire's 25 sampled canvas-space curve points lie inside it. Break to try: fit the nodes alone -- 8 of 75 points land outside (measured) | app fixture, no frames |
 | `_fit`'s clamp (regression check, not a width pin) | six chained passes, `_fit` with `avail = (1225, 600)`: `view.zoom == 1.0`; with `(740, 600)`: `0.6 < view.zoom < 1.0`. Green at 108 and 136 alike; the width is pinned by the ellipsis row | app fixture, no frames |
@@ -475,12 +476,12 @@ outside a frame `calc_text_size` segfaults the process (measured).
 | S5: the Delete gate over its whole domain | `delete_allowed` over all 32 combinations of its five booleans: True exactly when `pressed and hovered and not any_item_active and not blocked and has_wire`. The `any_item_active` clause's live scenario (a text input active in another window) is the maintainer's check | pure |
 | S5: Delete typed into the group prompt is refused | select a wire, set `view.group_prompt = True` (a one-shot the first frame consumes; do not re-assert it), frames, send `Key.delete`, frames: no write. Behaviour pin; the clause it exercises is `hovered` | frame-driven |
 | S5: Delete is refused during a copilot turn | select a wire, `app.copilot.state.in_flight = True`, frames, send `Key.delete`: no write (the `not blocked` clause) | frame-driven |
-| G6: exclusive hover, one rung per sequence, no click in any | (a) park on `port_rects[("c", "u_src")]`'s centre: `hovered_port` set, the other three `None`; (b) park on a node body away from any port and wire: `hovered_node` set, others `None`; (c) park on `wire_mids[("b", "u_src")]` in open canvas: `hovered_wire` set, others `None`; (d) place `c` (through `app.session.set_pass_positions`) so its body covers `wire_mids[("b", "u_src")]`, park there: `hovered_node` set and `hovered_wire is None`; (e) off the canvas: all `None`. Breaks to try: swap the port and node rungs (a flips); swap the node and wire rungs (d flips) | frame-driven |
+| G6: exclusive hover, one rung per sequence, no click in any | (a) park on `port_rects[("c", "u_src")]`'s centre: `hovered_port` set, the other three `None`; (b) park on a node body away from any port and wire: `hovered_node` set, others `None`; (c) park on `wire_mids[("b", "u_src")]` in open canvas: `hovered_wire` set, others `None`; (d) place `c` (through `app.session.set_pass_positions`) so its body covers `wire_mids[("b", "u_src")]`, park there: `hovered_node` set and `hovered_wire is None`; (e) off the canvas: all `None`. Break to try: swap the node and wire rungs (d flips). The port-over-node rung is enforced by imgui's item chain, not by the resolution order -- at a port dot the node button's own hover is already False because the later port button takes the overlap (measured) -- so swapping those two rungs changes nothing and is not a gate; the test's docstring says so | frame-driven |
 | S3: the hover fields are exactly the ones written | the set of `GraphViewState` fields whose name starts with `hovered_` is exactly `{hovered_node, hovered_port, hovered_out, hovered_wire}`, and sequence (e) above leaves each `None` -- a fifth field nobody wires is caught | pure + frame-driven |
 | S4: the selections are exclusive | after selecting the wire, click a node: `selected_wire is None` and `selection == {node}`; select the wire again, rubber-band over empty canvas and release: `selected_wire is None` | frame-driven |
 | G13/S15: 3px is a click, 5px is a drag | press on a node's body, move 3px, release: `set_output_pass` ran once, `set_pass_positions` did not, and `app.active_tab.kind == "graph"` still; press, move 5px, release: `set_pass_positions` ran, `set_output_pass` did not. Break to try: omit `lock_threshold` at the node-body site -- the 5px case reads imgui's 6px default and stays a click (measured today: 5px is a click, 8px a drag) | frame-driven |
 | S15: a double-click opens the shader tab | double-click a node: `app.active_tab.kind == "shader"` and its path is the pass's | frame-driven |
-| S7: the selected node draws and hit-tests last | select `a`, frames: `view.node_order[-1] == "p:a"` | frame-driven |
+| S7: the selected node draws and hit-tests last, a dragged one above it | select `a`, frames: `view.node_order[-1] == "p:a"`; with `a` selected, drag `b` and read `node_order` mid-drag: `[-1] == "p:b"` | frame-driven |
 | G7: the cursor follows the gesture | during a middle-drag pan, after the frame, `app.cur_cursor is app.hand_cursor`; at rest, on a frame where `view.canvas_rect != (0, 0, 0, 0)`, `app.cur_cursor is None` | frame-driven |
 | G14: every kept binding still works | the existing `tests/test_graph_view.py` passes with only the `passes_view -> open_graph_for` substitution and the new `pytestmark`; a failure that traces to a binding is a silent change, a failure that traces to the tab being inactive is a test-mechanics bug (the tab is opened before any copilot-turn simulation, since `open_graph_for` is frozen during one) | frame-driven |
 | T1-T6: the tab | `tab_label` reads `"<name> (graph)"` on a multi-pass document; `open_graph_for` twice yields one tab and it is active; `is_tab_dirty` False; `formatter_for("graph") is None`; `format_current_editor` and `jump_to_next_error` return without error on a graph tab; `close_editor_for_path` removes it; `_on_document_deleted` removes it and keeps a lib tab; `command_callbacks[CommandId.OPEN_GRAPH]` exists; three frames with the graph tab active leave `view.fitted` True and `app.editor_errors == []` | app fixture + frames |
@@ -490,7 +491,7 @@ outside a frame `calc_text_size` segfaults the process (measured).
 
 **Gates that must be broken before they are believed.** G13's lock, G6's order and G4's floor
 are gates, not tests: each is landed by breaking the guarded thing (omitting `lock_threshold`
-at one site; reversing the port and node rungs, then the node and wire rungs; dropping the
+at one site; reversing the node and wire rungs; dropping the
 `max(6.0, ...)` floor), watching the named test go red, restoring it. The implementation
 commit's body says which break was tried for each. `make gates` green with the smoke run (not
 skipped -- it passes on this box without `xvfb-run`, measured) before the commit, judged by its
@@ -553,3 +554,21 @@ unchanged). One demonstrated residual folded: the chat input cannot be focused i
 (no OpenRouter key, so no input is drawn), so the Delete gate is now the pure `delete_allowed`
 tested over its 32 combinations and the live text-input scenario is the maintainer's check; the
 ✕-over-a-card row names the 50px offset that covers the midpoint without covering the port.
+
+**Post-implementation round 1 (2026-09-14): three reviewers on opus -- correctness PASS (one
+FRAGILE), architecture PARTIAL (one violation, three smells), fidelity PARTIAL (five rows);
+`make gates` exit 0 with the smoke run, reproduced by two of the three.** Reports:
+`reviews/post_code_correctness.md`, `reviews/post_architecture_conventions.md`,
+`reviews/post_spec_fidelity.md`. Accepted and fixed in `ccdf6d1`: the ledger's literal
+`commit <sha>`; a comment narrating the change and a stale one naming the deleted self-loop;
+the bring-to-front key, which put a merely selected card over one in flight (now
+`(is_being_dragged, is_selected)`, S7 amended); the drag-lock source gate made an `ast` walk,
+since a token in a comment satisfied the text window (demonstrated); and the spelling gate's
+roster, which held neither `centre` nor `neighbour` and so passed fifty-two British spellings
+across thirteen files -- the roster grows and every site it then flags is fixed in the same
+commit, which also rebuilt the 068 tutorial page since its body is on the gate's roster. Spec
+text corrected here: `_draw_wire` carries `zoom`; the channel row describes the shipped check
+(the five constants ascending, since paint order follows the index); the port-over-node hover
+rung is enforced by imgui's item chain, so its swap is struck from the breaks. Rejected: the
+1.4x hovered stroke (the record's G6 prescribes it); the doubled-ghost `port_rects` collision
+(pre-existing, and the live drop reads `drop_target`).
