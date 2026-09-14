@@ -38,8 +38,7 @@ in `00_findings.md`, fixed as wave 6 by `01_spec.md ## How this walk runs`; a ta
 is one row in `commands.py` plus the map in the design doc, which the test compares.
 
 **Also awaiting his eyes:** 091's outline and import dialog; 090's `Auto | Fixed`. Finding 4
-(the control panel's composition) is the feature after this walk; the Documentation
-modal's content (he called it thin) is a later one.
+(the control panel) is the feature after this walk; the Documentation modal's content later.
 
 **Open, unmeasured:** the canvas past twenty passes (the largest real document is six); no
 brake watches copilot cost or a frame going lit to flat (082); the GL thread if the throttle
