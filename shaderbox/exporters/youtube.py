@@ -6,6 +6,7 @@ from imgui_bundle import imgui, imgui_ctx
 from imgui_bundle import portable_file_dialogs as pfd
 from loguru import logger
 
+from shaderbox.commands import CommandId, command_label
 from shaderbox.exporters.base import (
     AuthState,
     Exporter,
@@ -389,7 +390,7 @@ class YouTubeExporter(Exporter):
             unconnected_gate(
                 "Not connected to YouTube.",
                 "Connect your channel in Settings to upload.",
-                "Set up credentials",
+                command_label(CommandId.OPEN_SETTINGS),
                 extras.get(_OPEN_SETTINGS_KEY),
             )
             return

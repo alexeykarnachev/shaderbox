@@ -12,7 +12,6 @@ from pathlib import Path
 from imgui_bundle import imgui
 
 from shaderbox.app import App
-from shaderbox.editor_types import InlineInput
 from shaderbox.paths import shader_lib_root
 from shaderbox.popups.lib_picker.filtering import (
     copy_to_clipboard,
@@ -21,7 +20,14 @@ from shaderbox.popups.lib_picker.filtering import (
 )
 from shaderbox.shader_lib import ShaderLibFunction
 from shaderbox.theme import COLOR, SPACE
-from shaderbox.ui_primitives import context_menu_style, ellipsize, standard_button
+from shaderbox.ui_primitives import (
+    InlineInput,
+    InputRowResult,
+    confirm_menu_item,
+    context_menu_style,
+    ellipsize,
+    name_input_row,
+)
 
 
 @dataclass
@@ -102,16 +108,10 @@ def _draw_tree_children(
             imgui.TreeNodeFlags_.default_open | imgui.TreeNodeFlags_.span_avail_width
         )
         node_id = f"{subname}##dirnode_{'/'.join(child)}"
-        # Armed state is an absolute path; compare like-for-like or the red tint never shows.
-        is_armed = app.shader_lib_files.dir_delete_armed == root / Path(*child)
         # Force-open so a pending inline input in a descendant isn't hidden in a collapsed branch.
         if _dir_contains_pending_input(app, child):
             imgui.set_next_item_open(True, imgui.Cond_.always)
-        if is_armed:
-            imgui.push_style_color(imgui.Col_.text, COLOR.STATE_ERROR)
         open_dir = imgui.tree_node_ex(node_id, flags)
-        if is_armed:
-            imgui.pop_style_color(1)
         _draw_dir_context_menu(app, child, is_root=False)
         if open_dir:
             _draw_dir_new_inputs_for(app, child)
@@ -157,20 +157,8 @@ def _draw_dir_context_menu(app: App, dir_rel: tuple[str, ...], is_root: bool) ->
             if not is_root:
                 imgui.separator()
                 abs_path = shader_lib_root() / dir_path_rel
-                is_armed = app.shader_lib_files.dir_delete_armed == abs_path
-                label = (
-                    "Confirm delete (recursive)"
-                    if is_armed
-                    else "Delete directory (recursive)"
-                )
-                imgui.push_style_color(imgui.Col_.text, COLOR.STATE_ERROR)
-                clicked = imgui.menu_item_simple(label)
-                imgui.pop_style_color(1)
-                if clicked:
-                    if is_armed:
-                        app.shader_lib_files.delete_dir(abs_path)
-                    else:
-                        app.shader_lib_files.arm_dir_delete(abs_path)
+                if confirm_menu_item("Delete directory", "Move every file to .trash"):
+                    app.shader_lib_files.delete_dir(abs_path)
             imgui.end_popup()
 
 
@@ -210,32 +198,14 @@ def _draw_inline_new_input(
     imgui.indent(float(SPACE.MD))
     imgui.text_colored(COLOR.FG_DIM, label)
     imgui.same_line()
-    cancel_w = imgui.calc_text_size("x").x + float(SPACE.MD) * 2.0
-    imgui.set_next_item_width(imgui.get_content_region_avail().x - cancel_w)
-    if state.needs_focus:
-        imgui.set_keyboard_focus_here(0)
-        state.needs_focus = False
-    changed, state.buf = imgui.input_text(
-        f"##{id_prefix}_{dir_rel}",
-        state.buf,
-        flags=imgui.InputTextFlags_.enter_returns_true,
-    )
-    # Read on the line after the input: the item-scoped queries see the LAST submitted item.
-    wants_commit = changed or imgui.is_item_deactivated_after_edit()
-    # Esc cancels whenever the input is OPEN, not only while focused: a user who clicked away (input
-    # open but unfocused) would otherwise find Esc dead — inline_input_owns_esc routes Esc here, but
-    # the global handler leaves the picker open. Only one inline input is ever open at a time
-    # (mutually-exclusive targets), so this can't double-consume.
-    if imgui.is_key_pressed(imgui.Key.escape, repeat=False):
+    # Esc cancels whenever the input is OPEN, not only while focused: a user who clicked away
+    # (input open but unfocused) would otherwise find Esc dead -- inline_input_owns_esc routes
+    # Esc here, but the global handler leaves the picker open. Only one inline input is ever
+    # open at a time (mutually-exclusive targets), so this can't double-consume.
+    result: InputRowResult = name_input_row(f"{id_prefix}_{dir_rel}", state)
+    if result.cancelled:
         cancel()
-        wants_commit = False
-    imgui.same_line()
-    if standard_button(f"x##cancel_{id_prefix}_{dir_rel}"):
-        # The cancel click IS what deactivated the input, so the commit it raised would create
-        # the very thing the user just cancelled.
-        cancel()
-        wants_commit = False
-    if wants_commit:
+    elif result.committed:
         created = commit()
         if created is not None and on_create is not None:
             on_create(created)
@@ -249,13 +219,8 @@ def _draw_file_node(app: App, path: Path, fns: list[ShaderLibFunction]) -> bool:
         _draw_file_rename_input(app, path)
         return False
 
-    is_armed = app.shader_lib_files.file_delete_armed == path
-    if is_armed:
-        imgui.push_style_color(imgui.Col_.text, COLOR.STATE_ERROR)
     flags = imgui.TreeNodeFlags_.default_open | imgui.TreeNodeFlags_.span_avail_width
     open_file = imgui.tree_node_ex(f"{path.name}##filenode_{path}", flags)
-    if is_armed:
-        imgui.pop_style_color(1)
     close_picker = False
     _draw_file_context_menu(app, path)
     if open_file:
@@ -274,45 +239,21 @@ def _draw_file_context_menu(app: App, path: Path) -> None:
             if imgui.menu_item_simple("Reveal in file manager"):
                 app.reveal_shader_lib_file_in_manager(path)
             imgui.separator()
-            is_armed = app.shader_lib_files.file_delete_armed == path
-            label = "Confirm delete" if is_armed else "Delete"
-            imgui.push_style_color(imgui.Col_.text, COLOR.STATE_ERROR)
-            clicked = imgui.menu_item_simple(label)
-            imgui.pop_style_color(1)
-            if clicked:
-                if is_armed:
-                    app.shader_lib_files.delete_file(path)
-                else:
-                    app.shader_lib_files.arm_file_delete(path)
+            if confirm_menu_item("Delete", "Move to .trash"):
+                app.shader_lib_files.delete_file(path)
             imgui.end_popup()
 
 
 def _draw_file_rename_input(app: App, path: Path) -> None:
     imgui.indent(float(SPACE.MD))
-    # Reserve room on the right for the cancel `x` button.
-    cancel_w = imgui.calc_text_size("x").x + float(SPACE.MD) * 2.0
-    imgui.set_next_item_width(imgui.get_content_region_avail().x - cancel_w)
-    if app.shader_lib_files.file_rename.needs_focus:
-        imgui.set_keyboard_focus_here(0)
-        app.shader_lib_files.file_rename.needs_focus = False
-    changed, app.shader_lib_files.file_rename.buf = imgui.input_text(
-        f"##ren_in_{path}",
-        app.shader_lib_files.file_rename.buf,
-        flags=imgui.InputTextFlags_.enter_returns_true,
+    # Esc cancels whenever the rename input is OPEN, not only while focused (see the
+    # new-input note).
+    result: InputRowResult = name_input_row(
+        f"ren_in_{path}", app.shader_lib_files.file_rename
     )
-    # Read on the line after the input: the item-scoped queries see the LAST submitted item.
-    wants_commit = changed or imgui.is_item_deactivated_after_edit()
-    # Esc cancels whenever the rename input is OPEN, not only while focused (see the new-input note).
-    if imgui.is_key_pressed(imgui.Key.escape, repeat=False):
+    if result.cancelled:
         app.shader_lib_files.cancel_file_rename()
-        wants_commit = False
-    imgui.same_line()
-    if standard_button(f"x##cancel_ren_{path}"):
-        # The cancel click IS what deactivated the input, so the commit it raised would perform
-        # the very rename the user just cancelled.
-        app.shader_lib_files.cancel_file_rename()
-        wants_commit = False
-    if wants_commit:
+    elif result.committed:
         app.shader_lib_files.rename_file(path, app.shader_lib_files.file_rename.buf)
     imgui.unindent(float(SPACE.MD))
 
@@ -330,9 +271,6 @@ def _draw_function_leaf(app: App, fn: ShaderLibFunction) -> bool:
     label = f"{fn.name}##leaf_{fn.name}"
     if imgui.selectable(label, is_selected)[0]:
         app.shader_lib_files.picker_selected_function = fn.name
-        # Selecting a function disarms any pending file/dir delete.
-        app.shader_lib_files.arm_file_delete(None)
-        app.shader_lib_files.arm_dir_delete(None)
     close_picker = _draw_function_context_menu(app, fn)
     if (
         is_selected

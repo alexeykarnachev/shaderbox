@@ -50,7 +50,6 @@ from shaderbox.editor_types import (
     EditorSession,
     EditorTab,
     HoverMark,
-    InlineInput,
     JumpRequest,
     LookupPopup,
     tab_records,
@@ -121,6 +120,7 @@ from shaderbox.ui_models import (
     UIDocumentState,
     load_document_from_dir,
 )
+from shaderbox.ui_primitives import InlineInput
 from shaderbox.ui_regions import DocumentTab, next_channel_view
 from shaderbox.util import (
     open_in_file_manager,
@@ -484,7 +484,6 @@ class App:
         self.emoji_picker_query: str = ""
         # Where a picked emoji is delivered (set by whoever opens the picker).
         self.emoji_pick_target: Callable[[str], None] | None = None
-        self.document_delete_armed: str = ""  # document id pending delete-confirm
         self.render_defer = RenderDefer()
         self.editor_focused: bool = False
         # Sticky variant: stays True while the editor is a real interaction target (even
@@ -788,8 +787,6 @@ class App:
             if t.document_id != document_id or t.kind == "lib"
         ]
         self._reanchor_active_tab(active)
-        if document_id == self.document_delete_armed:
-            self.document_delete_armed = ""
         self.forget_render_state(document_id)
 
     def forget_render_state(self, document_id: str) -> None:
@@ -1025,6 +1022,45 @@ class App:
             self.popup_state != PopupState.CLOSED
             or self.copilot_revert_target is not None
         )
+
+    def close_popup(self) -> bool:
+        """Close the open modal through its OWN funnel, and report whether it closed.
+
+        The one place the per-modal cleanup lives, so Esc and a modal's own Close button
+        cannot diverge. Two states decline to close while an inline input owns Esc -- the
+        input's own cancel runs later in the same frame.
+        """
+        state = self.popup_state
+        if state is PopupState.CLOSED:
+            return False
+        if state is PopupState.PASS_SETTINGS:
+            self.close_pass_settings()
+            return True
+        if state is PopupState.IMPORT_PASSES:
+            self.close_import_passes()
+            return True
+        if state is PopupState.EMOJI_PICKER:
+            self.close_emoji_picker()
+            return True
+        if state is PopupState.SETTINGS:
+            self.apply_editor_settings()
+            self.popup_state = PopupState.CLOSED
+            return True
+        if state is PopupState.PROJECTS:
+            if self.projects_input_owns_esc():
+                return False
+            self.reset_projects_state()
+            self.popup_state = PopupState.CLOSED
+            return True
+        if state is PopupState.SHADER_LIB_PICKER:
+            if self.shader_lib_files.inline_input_owns_esc():
+                return False
+            self.popup_state = PopupState.CLOSED
+            return True
+        if state is PopupState.EXAMPLES or state is PopupState.HELP:
+            self.popup_state = PopupState.CLOSED
+            return True
+        return False
 
     def _open_popup(self, state: PopupState) -> None:
         # Capture chat focus BEFORE the popup steals it (the openers run in dispatch_commands,
@@ -1264,6 +1300,11 @@ class App:
         self.emoji_pick_target = target
         self.emoji_picker_query = ""
 
+    def close_emoji_picker(self) -> None:
+        self.popup_state = PopupState.CLOSED
+        self.emoji_pick_target = None
+        self.emoji_picker_query = ""
+
     def open_shader_lib_picker(self) -> None:
         # The picker derives `picker_just_opened` from imgui's `is_window_appearing()` on its
         # first frame.
@@ -1374,9 +1415,6 @@ class App:
 
     def set_current_document_id(self, id: str = "") -> None:
         self.session.set_current_document_id(id)
-
-    def set_document_delete_armed(self, id: str = "") -> None:
-        self.document_delete_armed = id
 
     def _rewire_exporters(self) -> None:
         """Point the exporter registry at the project just loaded.
@@ -1888,10 +1926,13 @@ class App:
         self.session.sync_editor_from_disk(path, source)
 
     def open_current_document_dir(self) -> None:
-        if not self.current_document_id:
+        self.open_document_dir(self.current_document_id)
+
+    def open_document_dir(self, document_id: str) -> None:
+        if not document_id:
             logger.warning("No document selected")
             return
-        document_dir = self.paths.documents_dir / self.current_document_id
+        document_dir = self.paths.documents_dir / document_id
         if not document_dir.exists():
             logger.warning(f"Document directory does not exist: {document_dir}")
             return

@@ -388,6 +388,25 @@ Where the record's "Code" paragraphs and this spec differ, this spec wins, for t
 
 ## Waves
 
+**The menus wave: finding 17, the whole spec (2026-09-14).** `05_menus_spec.md`'s M1-M14, one
+commit. The menu bar became a render of `COMMAND_SPECS` (`shaderbox/menus.py`, new: the
+`App`-facing `draw_menu_bar` / `command_menu_item` / `menu_enabled`; `commands.command_label`
+is the pure one-spelling accessor every button that opens a command's surface now takes). Each
+object kind got ONE item-set function its every surface draws -- the pass set already shared,
+the group box's and the document grid's are new -- and the grid tile lost its armed corner ✕,
+as the pass tile did in W3-2. A destructive menu verb confirms through
+`ui_primitives.confirm_menu_item`'s submenu, which retired the lib tree's armed flip and its
+two hand-rolled red pushes. `InlineInput` moved into `ui_primitives.py` beside the one
+`name_input_row` every name-entry row now draws through (the trigger the conventions bullet
+named, met a third time). `App.close_popup` became the single Esc/Close funnel, so
+`hotkeys._handle_escape` lost its four carve-outs and the `was_settings_open` latch. Modal
+chrome is pinned by `tests/test_modal_chrome.py`, the bar and the item sets by
+`tests/test_menus.py`; the copilot limits' copy moved into one `COPILOT_LIMIT_ROWS` table
+(`copilot/config.py`) whose short `hint` Settings shows and whose long `explanation` the Help
+panel's new copilot section prints. Docs in the same commit: `conventions.md` (four new
+design decisions), `dev_flow.md`'s module map, the repo's `/imgui-ui` §7.1 and §7.4, and 092's
+D14 / D16 pointers.
+
 **Wave 3: his second hands-on batch, findings 12-17 (2026-09-14).** Five fixes in one commit;
 finding 17 (every menu, popup and modal, reviewed and redesigned) is delegated to
 `04_menus_inventory.md` -> `05_menus_spec.md` in this directory and runs the feature flow.
@@ -416,8 +435,8 @@ finding 17 (every menu, popup and modal, reviewed and redesigned) is delegated t
   extension he mentioned shows every uniform of a node.
 - **W3-6 (finding 17).** Delegated: `04_menus_inventory.md` (§1-9 the inventory, three opus
   readers over two rounds to convergence; §10 the design pass, two opus reviews and a PASS
-  closure round, `reviews/menus_*.md`) -> `05_menus_spec.md` (M1-M14), implemented by an opus
-  implementer and reviewed post-implementation as a high-blast-radius feature.
+  closure round, `reviews/menus_*.md`) -> `05_menus_spec.md` (M1-M14), implemented and reviewed
+  as its own wave above.
 
 Tests: `test_node_ports_classify_every_state_and_skip_the_self_read` (the self-read absent);
 `test_a_double_click_on_a_pass_leaves_the_pane_on_the_graph` (the tab kind stays `graph`, the

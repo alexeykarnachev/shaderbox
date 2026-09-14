@@ -192,11 +192,14 @@ for the double-click too -- the menu's `Open shader` is the gesture. The menus b
 stand, with `Open shader` added by 093 W3-4.) Double-click a node: the same with `focus_editor=True`. Click a box: pick the
 bundle output; double-click: enter. Right-click a node: the strip's item set, extracted from
 `pass_list._draw_context_menu` into `pass_list.pass_menu_items(app, document_id, name)` so the
-two surfaces cannot drift (Settings, Delete, Leave group); the strip keeps its own
+two surfaces cannot drift (Open shader, Settings, Leave group, Delete — 093/17 reordered them
+and put Delete behind its confirm submenu); the strip keeps its own
 `begin_popup_context_item` with its explicit id, which is safe there because each tile is its
 own window. Right-click a box: Open, and Dissolve (W2). Right-click empty canvas: Add pass,
-Import..., Fit, Arrange. `pass_menu_items` keeps the strip's two gates (Delete only while
-`len(document.passes) > 1`; Leave group only while the entry carries one), and `Leave group`
+Import passes, Fit, Arrange (the first two through `menus.command_menu_item` since 093/17, so
+they carry the command table's label and chord). `pass_menu_items` keeps the strip's two gates (Delete only while
+`len(document.passes) > 1`, now as the confirm submenu's `enabled`, which refuses to open at
+all; Leave group only while the entry carries one), and `Leave group`
 writes through `App.leave_group`, so the shared menu makes no session write of its own from
 either surface (the no-write gate walks `widgets/pass_graph.py` and `widgets/pass_list.py`
 alike). A Dissolve of a group with no members writes nothing. A ghost's right-click
@@ -269,9 +272,12 @@ so no part of a node's surface is a dead press.
 selects its members). Left-drag on empty canvas draws the rubber band from
 `io.mouse_pos - get_mouse_drag_delta` and selects every node whose rect intersects it on
 release; shift-click toggles one; click on empty clears. Right-click with a selection adds
-`Group...` to the node menu: a popup with a name input (Enter or Create commits, Cancel closes; a
-blank name or an empty selection is not committable, since the blank would mean "no group" to
-the verb, which is Dissolve, not Create) that writes `set_pass_groups(document_id, names, group)` through `App.group_selection`, a new
+`Group` to the node menu (the label lost its ellipsis with 093/17's one-spelling rule): a popup
+with a name input (Enter, a click away, or Create commits, the `x` or Esc cancels — 093/17 put
+the row through `ui_primitives.name_input_row` and the state through one
+`GraphViewState.group_input: InlineInput`; a blank name or an empty selection is still not
+committable, since the blank would mean "no group" to the verb, which is Dissolve, not Create)
+that writes `set_pass_groups(document_id, names, group)` through `App.group_selection`, a new
 session verb that validates once (the group pattern, and D17's collision) and saves once, and
 writes nothing on a refusal.
 Selecting a box and grouping it with others rewrites its members to the new label (flat
@@ -291,8 +297,11 @@ hollow ring); a sampler whose resolved pass is the consumer itself is the feedba
 whatever its name.
 
 **D16. Dissolve is required.** It is the inverse of Group, which is N writes with no undo. A box
-gets no Delete verb; a member is deleted from its own node menu with the strip's two-click arm
-(`delete_pass` + `close_editor_for_path`, exactly `pass_list._delete_pass`).
+gets no Delete verb; a member is deleted from its own node menu (`delete_pass` +
+`close_editor_for_path`, exactly `pass_list._delete_pass`). The "strip's two-click arm" this
+decision named is GONE: 093 W3-2 removed the tile's arm, and 093/17 put the confirm on the menu
+itself as `ui_primitives.confirm_menu_item("Delete", f"Delete pass {name}")` — a submenu whose
+one item is the confirm (`conventions.md`, the destructive-verb bullet).
 
 **D17. One namespace for passes and groups.** One predicate decides the shared namespace,
 `pass_graph.namespace_error(candidate, pass_names, group_names) -> str`, and both directions

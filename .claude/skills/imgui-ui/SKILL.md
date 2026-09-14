@@ -301,6 +301,16 @@ The convention:
   `imgui.new_line()` (magic line-height), not `imgui.spacing()` (too tight).
   One token for the visual rhythm.
 
+**Gate the chrome, don't write it down twice.** These rules are prose, and prose
+did not hold: four modals had drifted (one inverted `keep_open`, three had no
+spacer, one closed itself inside its body). A cheap AST walk fixes the shape —
+enumerate the domain from the popup-state ENUM rather than from a `popups/*.py`
+glob (a picker that grew into a package is exactly what a glob misses), resolve
+each member to the function that returns the bool through a table the test owns,
+then assert the local is bound and returned, that the last low-emphasis button is
+labelled Close or Cancel, and that the spacer precedes it. ShaderBox:
+`tests/test_modal_chrome.py`.
+
 ### 7.2 Modal wrapper (kill the boilerplate)
 
 **Popup modal size: always `Cond_.first_use_ever`, never `Cond_.appearing`.**
@@ -363,7 +373,10 @@ list / grid actions, prefer a right-click context menu over inline buttons.**
   the actions are infrequent relative to the row's primary click; the action
   set might grow.
 - **Discoverability**: show a one-line "Right-click for actions" hint above
-  the list. No hover tooltip per row — the hint sets the affordance once.
+  the list. No hover tooltip per row — the hint sets the affordance once. The
+  hint belongs over a modal's or a panel's LIST; a canvas, a strip, or a card
+  row with a visible primary click gets none, since two affordances for one
+  thing is the slop signal below.
 - **Styling**: wrap the `begin_popup_context_item(...)` in
   `with context_menu_style():` (lighter fill + accent border + accent hover).
   Default popups use `popup_bg` which equals the picker modal's own `popup_bg`,
@@ -377,10 +390,20 @@ list / grid actions, prefer a right-click context menu over inline buttons.**
   (toggling a favorite — the inline star is fine), or rows where the primary
   click IS the action (selectable list of options). Two affordances for the
   same thing on the same row is the slop signal.
-- **`imgui.menu_item_simple(label, enabled=False)` can still register a
-  click** depending on the imgui-bundle version. Gate the action in Python
-  (`if has_editor: do_action()`), don't rely on `enabled=` alone to suppress
-  the call.
+- **On imgui-bundle 1.92.801 a `menu_item_simple(..., enabled=False)` refuses
+  the click** (measured with a positive control — the same item, the same click
+  path, `enabled` the only difference). A `begin_menu(..., enabled=False)` does
+  not open at all, and neither does one inside `begin_disabled`, so a whole
+  category wrapped in `begin_disabled` hides what is in it — disable per ITEM.
+  Gate in Python only where the item must ALSO refuse a programmatic path.
+
+- **A destructive menu verb confirms through its own submenu**, not through an
+  armed label that flips on a second open: `begin_menu("Delete")` holding one
+  error-colored item ("Move to trash", "Delete pass blur"). The submenu opens on
+  hover, the second click is inside the same open menu, and the whole popup
+  closes on it — no armed flag to reset, no reopen, no modal. An armed
+  `danger_button` row stays the shape INSIDE a modal, where there is no menu to
+  hang a submenu from.
 
 ### 7.5 Inline inputs inside modals (rename / new-file / new-dir)
 

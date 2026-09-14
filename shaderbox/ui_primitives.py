@@ -4,6 +4,7 @@ import webbrowser
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
+from pathlib import Path
 
 import moderngl
 import pyperclip
@@ -495,6 +496,112 @@ def context_menu_style() -> Iterator[None]:
     finally:
         imgui.pop_style_var(1)
         imgui.pop_style_color(4)
+
+
+def confirm_menu_item(label: str, confirm_label: str, enabled: bool = True) -> bool:
+    """A destructive menu verb behind its own submenu: `label` opens on hover, the one item
+    inside it is the confirm. Returns whether the confirm was clicked.
+
+    The submenu is what replaces an armed flip — there is no state to hold and no popup to
+    reopen, and the whole context menu closes on the inner click. A disabled one draws greyed
+    and does not open, so there is nothing inside it to click.
+    """
+    clicked = False
+    with imgui_ctx.begin_menu(label, enabled) as menu:
+        if menu:
+            imgui.push_style_color(imgui.Col_.text, COLOR.STATE_ERROR)
+            clicked = imgui.menu_item_simple(confirm_label)
+            imgui.pop_style_color(1)
+    return clicked
+
+
+@dataclass
+class InlineInput:
+    """One inline text-input affordance (a rename, a new file, a new name), mutually
+    exclusive with its siblings.
+
+    `target` is the path or key the input is bound to (None = closed), `buf` the edited
+    text, `needs_focus` the one-shot the first draw consumes. A surface hosting several
+    holds one instance per kind and clears them all through a single reset method, so two
+    inputs can never be live at once.
+    """
+
+    target: Path | None = None
+    buf: str = ""
+    needs_focus: bool = False
+
+    def open(self, target: Path, buf: str = "") -> None:
+        self.target = target
+        self.buf = buf
+        self.needs_focus = True
+
+    def close(self) -> None:
+        self.target = None
+        self.buf = ""
+        self.needs_focus = False
+
+    @property
+    def is_open(self) -> bool:
+        return self.target is not None
+
+
+@dataclass(frozen=True)
+class InputRowResult:
+    """What one `name_input_row` frame reports.
+
+    Attributes:
+        committed: The buffer should be applied — Enter fired, or the field was deactivated
+            after an edit and nothing cancelled it.
+        cancelled: Esc was pressed or the `x` was clicked; the caller closes the input.
+        focused: The text field held keyboard focus this frame, so an outer Enter must not
+            also fire. Read here because the `x` is submitted after the field, and an
+            item-scoped query at the call site would answer for the button.
+    """
+
+    committed: bool = False
+    cancelled: bool = False
+    focused: bool = False
+
+
+def name_input_row(id_: str, input: InlineInput, width: float = 0.0) -> InputRowResult:
+    """The ONE name-entry row: a focused text field plus an `x` cancel, committing on Enter
+    OR on a click away.
+
+    A transaction that only Enter fires is silently discarded when the user clicks elsewhere,
+    which is how people leave a field. The deactivate is read on the line after the input
+    (item-scoped queries see the last submitted item) and applied only when neither Esc nor
+    the `x` ran.
+
+    Returns:
+        `InputRowResult(committed=True, cancelled=False, focused=True)` on a commit by
+        Enter; `InputRowResult(committed=False, cancelled=True, focused=False)` on Esc or
+        the `x`.
+    """
+    cancel_w = imgui.calc_text_size("x").x + float(SPACE.MD) * 2.0
+    field_w = (
+        width - cancel_w
+        if width > 0.0
+        else imgui.get_content_region_avail().x - cancel_w
+    )
+    imgui.set_next_item_width(max(float(SIZE.NAME_INPUT_W), field_w))
+    if input.needs_focus:
+        # ONE-SHOT: re-grabbing every frame resets the caret blink and fights other inputs.
+        imgui.set_keyboard_focus_here(0)
+        input.needs_focus = False
+    entered, input.buf = imgui.input_text(
+        f"##{id_}", input.buf, flags=imgui.InputTextFlags_.enter_returns_true
+    )
+    committed = entered or imgui.is_item_deactivated_after_edit()
+    focused = imgui.is_item_focused()
+    cancelled = imgui.is_key_pressed(imgui.Key.escape, repeat=False)
+    imgui.same_line()
+    if standard_button(f"x##cancel_{id_}"):
+        # The cancel click IS what deactivated the input, so the commit it raised would
+        # perform the very transaction the user just cancelled.
+        cancelled = True
+    if cancelled:
+        committed = False
+    return InputRowResult(committed=committed, cancelled=cancelled, focused=focused)
 
 
 @contextmanager

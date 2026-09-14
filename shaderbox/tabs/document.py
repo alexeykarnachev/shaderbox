@@ -1,6 +1,7 @@
 from imgui_bundle import imgui
 
 from shaderbox.app import App
+from shaderbox.commands import CommandId, command_label
 from shaderbox.editor_types import EditorTabKind
 from shaderbox.media import MediaWithTexture
 from shaderbox.pass_graph import clamp_canvas_size
@@ -473,9 +474,9 @@ def _draw_passes(app: App, document_id: str) -> None:
     pass_list.draw(app, document_id)
     imgui.begin_disabled(app.copilot_turn_active)
     imgui.dummy((0, float(SPACE.SM)))
-    if standard_button("add pass"):
+    if standard_button(command_label(CommandId.ADD_PASS)):
         app.open_add_pass()
     imgui.same_line()
-    if standard_button("import..."):
+    if standard_button(command_label(CommandId.IMPORT_PASSES)):
         app.open_import_passes()
     imgui.end_disabled()

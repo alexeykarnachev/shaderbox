@@ -90,6 +90,11 @@ class CommandSpec:
     in_palette: bool = True
     # Excluded from the rebinder UI (e.g. arrow nav with a fixed key).
     rebindable: bool = True
+    # Excluded from the menu bar: a view-focus verb whose item would duplicate the tab bar
+    # under it.
+    in_menu: bool = True
+    # Draws a separator above this spec's menu item.
+    separator_before: bool = False
 
 
 def _chord(key: imgui.Key, *mods: imgui.Key) -> int:
@@ -108,7 +113,13 @@ C = CommandCategory
 COMMAND_SPECS: list[CommandSpec] = [
     CommandSpec(CommandId.OPEN_PROJECTS, "Projects", _chord(K.o, K.mod_alt), C.FILE),
     CommandSpec(CommandId.SAVE, "Save", _chord(K.s, K.mod_ctrl), C.FILE),
-    CommandSpec(CommandId.QUIT, "Quit", _chord(K.q, K.mod_ctrl), C.FILE),
+    CommandSpec(
+        CommandId.QUIT,
+        "Quit",
+        _chord(K.q, K.mod_ctrl),
+        C.FILE,
+        separator_before=True,
+    ),
     CommandSpec(
         CommandId.NEW_DOCUMENT,
         "New document",
@@ -159,6 +170,7 @@ COMMAND_SPECS: list[CommandSpec] = [
         _chord(K.tab, K.mod_ctrl),
         C.EDITOR,
         scope=CommandScope.GLOBAL,
+        in_menu=False,
     ),
     CommandSpec(
         CommandId.CLOSE_CODE_TAB,
@@ -178,19 +190,32 @@ COMMAND_SPECS: list[CommandSpec] = [
         scope=CommandScope.EDITOR,
     ),
     CommandSpec(
-        CommandId.FOCUS_TAB_DOCUMENT, "Document tab", _chord(K._1, K.mod_ctrl), C.VIEW
+        CommandId.FOCUS_TAB_DOCUMENT,
+        "Document tab",
+        _chord(K._1, K.mod_ctrl),
+        C.VIEW,
+        in_menu=False,
     ),
     CommandSpec(
         CommandId.FOCUS_TAB_UNIFORMS,
         "Uniforms tab",
         _chord(K._2, K.mod_ctrl),
         C.VIEW,
+        in_menu=False,
     ),
     CommandSpec(
-        CommandId.FOCUS_TAB_RENDER, "Render tab", _chord(K._3, K.mod_ctrl), C.VIEW
+        CommandId.FOCUS_TAB_RENDER,
+        "Render tab",
+        _chord(K._3, K.mod_ctrl),
+        C.VIEW,
+        in_menu=False,
     ),
     CommandSpec(
-        CommandId.FOCUS_TAB_SHARE, "Share tab", _chord(K._4, K.mod_ctrl), C.VIEW
+        CommandId.FOCUS_TAB_SHARE,
+        "Share tab",
+        _chord(K._4, K.mod_ctrl),
+        C.VIEW,
+        in_menu=False,
     ),
     CommandSpec(
         CommandId.CYCLE_CHANNEL_VIEW,
@@ -239,6 +264,11 @@ COMMAND_SPECS: list[CommandSpec] = [
 ]
 
 SPEC_BY_ID: dict[CommandId, CommandSpec] = {spec.id: spec for spec in COMMAND_SPECS}
+
+
+def command_label(command_id: CommandId) -> str:
+    """The ONE spelling of a command's name, for every button that opens its surface."""
+    return SPEC_BY_ID[command_id].label
 
 
 # The vim keymap's leader sequences (editor da8a850): `<leader>` plus a key, claimed from the

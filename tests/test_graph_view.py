@@ -484,8 +484,9 @@ def test_delete_typed_into_the_group_prompt_is_refused(app: Any) -> None:
     view = _open_graph(app, document_id)
     _click_at(app, view.wire_mids[("c", "u_src")])
     assert view.selected_wire == ("c", "u_src")
-    # A one-shot the first frame consumes; re-asserting it would reopen the popup each frame.
-    view.group_prompt = True
+    # `needs_focus` is the one-shot that opens the popup on the next frame; the row's first
+    # draw consumes it, so re-asserting it would reopen the popup every frame.
+    view.group_input.open(Path("c"))
     _frames(app, 3)
     with mock.patch.object(
         app.session, "set_sampler_source", wraps=app.session.set_sampler_source

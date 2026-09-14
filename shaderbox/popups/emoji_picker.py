@@ -19,8 +19,7 @@ def draw_emoji_picker(app: App) -> None:
         if not visible:
             return
         if not _draw_body(app):
-            app.popup_state = PopupState.CLOSED
-            app.emoji_pick_target = None
+            app.close_popup()
             imgui.close_current_popup()
 
 

@@ -3,10 +3,11 @@ the per-frame plan, the Escape wire, and the unbordered tile keeping its padding
 
 App-driven where the state is the subject, frame-driven where the question is what a drawn
 frame reads. A second frame-driving App in one process hits the torn-down font atlas, so the
-Escape wire is asserted the way `test_escape_is_owned_by_an_open_name_input_at_the_dispatch`
-does it: on the dispatch's source.
+Escape wire is asserted through `App.close_popup` -- the one funnel the Esc dispatch calls --
+rather than through a key injected into a frame.
 """
 
+import ast
 from pathlib import Path
 from typing import Any
 
@@ -60,10 +61,36 @@ def test_the_draft_resets_on_source_change_and_on_close(app: Any) -> None:
 
 
 def test_escape_reaches_the_close_funnel(app: Any) -> None:
-    # Verification 15's wire: the bare `popup_state = CLOSED` fallthrough would leave the draft
-    # populated. Falsifier: delete the IMPORT_PASSES branch from `_handle_escape`.
-    source = Path("shaderbox/hotkeys.py").read_text(encoding="utf-8")
-    assert "PopupState.IMPORT_PASSES" in source and "close_import_passes()" in source
+    """Verification 15's wire: a bare `popup_state = CLOSED` would leave the draft populated.
+
+    Structural over a substring: the IMPORT_PASSES branch of `App.close_popup` must CALL
+    `close_import_passes`, which a comment naming it would satisfy. The branch is also driven
+    for real below, so a branch that parses but does nothing fails too. Falsifier: delete the
+    IMPORT_PASSES branch from `close_popup`.
+    """
+    tree = ast.parse(Path("shaderbox/app.py").read_text(encoding="utf-8"))
+    funnel = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "close_popup"
+    )
+    branches = [
+        node
+        for node in ast.walk(funnel)
+        if isinstance(node, ast.If) and "IMPORT_PASSES" in ast.unparse(node.test)
+    ]
+    assert branches, "close_popup has no IMPORT_PASSES branch"
+    assert any(
+        "close_import_passes" in ast.unparse(call)
+        for branch in branches
+        for call in ast.walk(branch)
+        if isinstance(call, ast.Call)
+    ), "the IMPORT_PASSES branch does not call close_import_passes"
+
+    app.open_import_passes()
+    assert app.import_draft is not None
+    assert app.close_popup()
+    assert app.import_draft is None and app.popup_state == PopupState.CLOSED
 
 
 def test_the_busy_guard_refuses_the_palette_route(app: Any, monkeypatch: Any) -> None:

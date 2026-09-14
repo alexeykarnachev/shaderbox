@@ -28,7 +28,7 @@ def draw_help(app: App) -> None:
         if not visible:
             return
         if not _draw_body(app):
-            app.popup_state = PopupState.CLOSED
+            app.close_popup()
             imgui.close_current_popup()
 
 
@@ -71,6 +71,7 @@ def _draw_body(app: App) -> bool:
     if imgui.is_key_pressed(imgui.Key.escape, repeat=False):
         keep_open = False
 
+    imgui.dummy((0.0, float(SPACE.MD)))
     # A display-only snippet (the shortcuts table) gets no button at all — the affordance exists
     # only where inserting is meaningful.
     if section.snippet and section.insertable:
@@ -81,9 +82,7 @@ def _draw_body(app: App) -> bool:
         if not target_ok and imgui.is_item_hovered(
             imgui.HoveredFlags_.allow_when_disabled
         ):
-            imgui.set_tooltip(
-                "Open a document's shader and click into the editor first (so the caret is positioned)"
-            )
+            imgui.set_tooltip("needs a shader caret")
         if inserted and app.insert_text_at_caret(section.snippet):
             keep_open = False
         imgui.same_line()

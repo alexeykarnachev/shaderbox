@@ -24,7 +24,11 @@ from shaderbox.pass_graph import (
     strip_order,
 )
 from shaderbox.theme import COLOR, SIZE, SPACE, group_tint
-from shaderbox.ui_primitives import context_menu_style, preview_cell
+from shaderbox.ui_primitives import (
+    confirm_menu_item,
+    context_menu_style,
+    preview_cell,
+)
 
 FEEDBACK_CHIP = "prev"
 # The group outline sits this far inside the run's tiles: a full row can end flush with the
@@ -69,15 +73,18 @@ def pass_menu_items(app: App, document_id: str, name: str) -> None:
         app.ensure_shader_tab(document_id, name, focus_editor=True)
     if imgui.menu_item_simple("Settings"):
         app.open_pass_settings(name)
-    # Gated in Python, not by `enabled=`: menu_item_simple can still register a click
-    # while disabled on this imgui-bundle build (/imgui-ui §7.4).
-    deletable = len(document.passes) > 1
-    if imgui.menu_item_simple("Delete", enabled=deletable) and deletable:
-        _delete_pass(app, document_id, name)
+    imgui.separator()
     if document.graph.passes.get(name, PassEntry()).group and imgui.menu_item_simple(
         "Leave group"
     ):
         app.leave_group(document_id, name)
+    imgui.separator()
+    # The last pass of a document cannot go: the delete would leave no output to draw. The
+    # disabled submenu does not open, so nothing inside it is reachable.
+    if confirm_menu_item(
+        "Delete", f"Delete pass {name}", enabled=len(document.passes) > 1
+    ):
+        _delete_pass(app, document_id, name)
 
 
 def _draw_context_menu(app: App, document_id: str, name: str) -> None:

@@ -10,12 +10,12 @@ from imgui_bundle import imgui_command_palette as imcmd
 from imgui_bundle import portable_file_dialogs as pfd
 from loguru import logger
 
+from shaderbox import menus
 from shaderbox.app import App, PopupState
 from shaderbox.commands import CommandId, chord_to_str
 from shaderbox.constants import (
     GLSL_EXTENSIONS,
     MEDIA_EXTENSIONS,
-    STARTER_EXAMPLE_ID,
 )
 from shaderbox.copilot.capabilities import DocumentImportResult, MediaBindResult
 from shaderbox.copilot.gate import GateResponse
@@ -552,7 +552,7 @@ def _update_and_draw(app: App) -> None:
 
             # ------------------------------------------------------------
             # Main menu bar
-            _draw_menu_bar(app)
+            menus.draw_menu_bar(app)
 
             # ------------------------------------------------------------
             # Left editor / right app split
@@ -705,64 +705,6 @@ def _update_and_draw(app: App) -> None:
         app.copilot.bridge.run_deferred_render()
 
     app.frame_idx += 1
-
-
-def _hint(app: App, command_id: CommandId) -> str:
-    return chord_to_str(app.effective_bindings[command_id])
-
-
-def _draw_menu_bar(app: App) -> None:
-    with imgui_ctx.begin_menu_bar() as bar:
-        if not bar:
-            return
-        with imgui_ctx.begin_menu("File") as file_menu:
-            if file_menu:
-                if imgui.menu_item(
-                    "New document", _hint(app, CommandId.NEW_DOCUMENT), False
-                )[0]:
-                    app.create_document_from_example(STARTER_EXAMPLE_ID)
-                if imgui.menu_item(
-                    "Projects...", _hint(app, CommandId.OPEN_PROJECTS), False
-                )[0]:
-                    app.open_projects()
-                imgui.separator()
-                if imgui.menu_item("Quit", _hint(app, CommandId.QUIT), False)[0]:
-                    glfw.set_window_should_close(app.window, True)
-        with imgui_ctx.begin_menu("Edit") as edit_menu:
-            if (
-                edit_menu
-                and imgui.menu_item(
-                    "Settings...", _hint(app, CommandId.OPEN_SETTINGS), False
-                )[0]
-            ):
-                app.open_settings()
-        with imgui_ctx.begin_menu("Library") as lib_menu:
-            if (
-                lib_menu
-                and imgui.menu_item(
-                    "Browse...", _hint(app, CommandId.OPEN_LIB_PICKER), False
-                )[0]
-            ):
-                app.open_shader_lib_picker()
-        # A direct-click bar item, not a dropdown — opening the browser IS the action.
-        if imgui.menu_item("Examples", _hint(app, CommandId.EXAMPLES), False)[0]:
-            app.open_examples()
-        if imgui.menu_item("Help", _hint(app, CommandId.HELP), False)[0]:
-            app.open_help()
-        # The open project's name, right-aligned and dim (084 D8): the one piece of chrome no
-        # modal covers, and the only place the app says which project it is in. Text, not a
-        # button — `Projects...` two items away already owns the click.
-        name = app.project_dir.name
-        label = f"project {name}"
-        # SPACE.LG off the right edge: flush against it, the last glyph touches the window
-        # border.
-        imgui.same_line(
-            imgui.get_content_region_avail().x
-            - imgui.calc_text_size(label).x
-            + imgui.get_cursor_pos_x()
-            - float(SPACE.LG)
-        )
-        imgui.text_colored(COLOR.FG_DIM, label)
 
 
 def _draw_copilot_bar(app: App, width: float) -> None:

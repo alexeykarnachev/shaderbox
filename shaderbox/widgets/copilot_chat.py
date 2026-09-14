@@ -6,6 +6,7 @@ import pyperclip
 from imgui_bundle import imgui, imgui_ctx
 
 from shaderbox.app import App
+from shaderbox.commands import CommandId, command_label
 from shaderbox.copilot.config import COPILOT_ENGINE
 from shaderbox.copilot.gate import GateKind, LockAnswer, SourceLock
 from shaderbox.copilot.sanitize import sanitize_display
@@ -162,7 +163,7 @@ def draw(app: App) -> None:
             unconnected_gate(
                 not_connected_msg="Copilot is not set up.",
                 hint="Add your OpenRouter API key in Settings",
-                action_label="Open Settings",
+                action_label=command_label(CommandId.OPEN_SETTINGS),
                 on_action=lambda: app.open_settings(focus=SettingsField.COPILOT_KEY),
             )
         else:
@@ -183,23 +184,29 @@ def _draw_revert_modal(app: App) -> None:
     with modal_window(_REVERT_MODAL_LABEL, (380.0, 0.0)) as visible:
         if not visible:
             return
-        excerpt = sanitize_display(target.text).strip().splitlines()
-        head = excerpt[0][:80] if excerpt else ""
-        imgui.text_wrapped(f'Revert the assistant\'s changes from "{head}"?')
-        imgui.dummy(imgui.ImVec2(0, float(SPACE.XS)))
-        caption_text(
-            "Shaders edited since that message are restored to their state before it. "
-            "This undoes the assistant's work on those documents.",
-        )
-        imgui.dummy(imgui.ImVec2(0, float(SPACE.SM)))
-        if primary_button("Revert"):
-            app.revert_turn(target)
+        if not _draw_revert_body(app, target):
             app.copilot_revert_target = None
             imgui.close_current_popup()
-        imgui.same_line()
-        if standard_button("Cancel"):
-            app.copilot_revert_target = None
-            imgui.close_current_popup()
+
+
+def _draw_revert_body(app: App, target: Message) -> bool:
+    keep_open = True
+    excerpt = sanitize_display(target.text).strip().splitlines()
+    head = excerpt[0][:80] if excerpt else ""
+    imgui.text_wrapped(f'Revert the assistant\'s changes from "{head}"?')
+    imgui.dummy(imgui.ImVec2(0, float(SPACE.XS)))
+    caption_text(
+        "Shaders edited since that message are restored to their state before it. "
+        "This undoes the assistant's work on those documents.",
+    )
+    imgui.dummy(imgui.ImVec2(0, float(SPACE.MD)))
+    if primary_button("Revert"):
+        app.revert_turn(target)
+        keep_open = False
+    imgui.same_line()
+    if standard_button("Cancel"):
+        keep_open = False
+    return keep_open
 
 
 _MIN_INPUT_H: float = 40.0

@@ -1,3 +1,9 @@
+"""The documents grid: one live thumbnail per document of the open project.
+
+A tile click selects; every other verb -- open it, open its folder, delete it -- is on the
+tile's context menu (`document_menu_items`), and the tile itself carries no button.
+"""
+
 from imgui_bundle import imgui, imgui_ctx
 
 from shaderbox.app import App
@@ -6,6 +12,8 @@ from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_models import UIDocument
 from shaderbox.ui_primitives import (
     PreviewCellResult,
+    confirm_menu_item,
+    context_menu_style,
     preview_cell,
     standard_button,
 )
@@ -16,7 +24,6 @@ def draw_document_preview_button(
     border_color: tuple[float, float, float, float] | None,
     size: float,
     selected: bool = False,
-    armed: bool = False,
     stale: bool = False,
 ) -> PreviewCellResult:
     return preview_cell(
@@ -25,11 +32,24 @@ def draw_document_preview_button(
         texture_glo=ui_document.document.render_pass.canvas.texture.glo,
         texture_size=ui_document.document.render_pass.canvas.texture.size,
         selected=selected,
-        armed=armed,
+        armed=False,
         border_color=border_color,
         footer=ui_document.ui_state.ui_name,
         stale=stale,
+        deletable=False,
     )
+
+
+def document_menu_items(app: App, document_id: str) -> None:
+    """The items of one document's context menu. The caller owns the popup; each grid tile is
+    its own child window, so an explicit id is safe there."""
+    if imgui.menu_item_simple("Open"):
+        app.select_document(document_id)
+    if imgui.menu_item_simple("Open folder"):
+        app.open_document_dir(document_id)
+    imgui.separator()
+    if confirm_menu_item("Delete", "Move to trash"):
+        app.delete_document(document_id)
 
 
 def draw_document_preview_grid(app: App, width: float, height: float) -> None:
@@ -47,6 +67,9 @@ def draw_document_preview_grid(app: App, width: float, height: float) -> None:
         imgui.end_disabled()
 
         imgui.same_line()
+        imgui.text_colored(COLOR.FG_DIM, "Right-click for actions")
+
+        imgui.same_line()
 
         app.app_state.is_render_all_documents = imgui.checkbox(
             "Render all", app.app_state.is_render_all_documents
@@ -61,10 +84,6 @@ def draw_document_preview_grid(app: App, width: float, height: float) -> None:
         preview_size = SIZE.THUMB_LG
         n_cols = int(imgui.get_content_region_avail().x // (preview_size + SPACE.SM))
         n_cols = max(1, n_cols)
-        # Snapshot: the delete-confirm fires app.delete_document, which mutates
-        # app.ui_documents; deferring the pop until after the loop avoids mutating
-        # the dict mid-iteration.
-        id_to_delete: str | None = None
         imgui.begin_disabled(app.copilot_turn_active)
         for i, (id, ui_document) in enumerate(list(app.ui_documents.items())):
             border_color: tuple[float, float, float, float] | None = None
@@ -79,7 +98,6 @@ def draw_document_preview_grid(app: App, width: float, height: float) -> None:
                 border_color,
                 preview_size,
                 selected=id == app.current_document_id,
-                armed=app.document_delete_armed == id,
                 # Mirrors the render gate in ui.py: with "Render all" off, a non-current
                 # document stops ticking and its texture is a photograph of the past — and a
                 # document still waiting for its first render (066 D2) has none at all.
@@ -89,20 +107,15 @@ def draw_document_preview_grid(app: App, width: float, height: float) -> None:
                 )
                 or not ui_document.document.first_render_done,
             )
+            with context_menu_style():
+                if imgui.begin_popup_context_item(f"##document_menu_{id}"):
+                    document_menu_items(app, id)
+                    imgui.end_popup()
             if result.clicked:
                 app.select_document(id)
-            if result.delete_armed:
-                app.set_document_delete_armed(id)
-            elif result.delete_confirmed:
-                id_to_delete = id
-            elif result.delete_cancelled:
-                app.set_document_delete_armed("")
 
             if (i + 1) % n_cols != 0:
                 imgui.same_line()
             else:
                 imgui.spacing()
         imgui.end_disabled()
-
-    if id_to_delete is not None:
-        app.delete_document(id_to_delete)

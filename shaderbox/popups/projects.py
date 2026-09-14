@@ -16,12 +16,13 @@ from pathlib import Path
 from imgui_bundle import imgui
 
 from shaderbox.app import App, PopupState
-from shaderbox.editor_types import InlineInput
 from shaderbox.project_session import ProjectInfo
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_primitives import (
+    InlineInput,
     danger_button,
     modal_window,
+    name_input_row,
     primary_button,
     standard_button,
 )
@@ -40,8 +41,9 @@ def draw_projects(app: App) -> None:
         if not visible:
             return
         if not _draw_body(app):
-            app.popup_state = PopupState.CLOSED
-            app.reset_projects_state()
+            # The body only returns False once its own input is closed, so the funnel's
+            # "an input owns Esc" branch cannot refuse this close.
+            app.close_popup()
             imgui.close_current_popup()
 
 
@@ -51,7 +53,6 @@ def _draw_body(app: App) -> bool:
         for info in app.projects_rows:
             _draw_row(app, info)
     imgui.end_child()
-    imgui.dummy((0.0, float(SPACE.MD)))
 
     if app.projects_new_input.is_open:
         return _draw_name_input(app, app.projects_new_input, "New", _commit_new)
@@ -93,6 +94,7 @@ def _draw_row(app: App, info: ProjectInfo) -> None:
 
 
 def _draw_verb_row(app: App) -> bool:
+    imgui.dummy((0.0, float(SPACE.MD)))
     keep_open = True
     selected = app.projects_selected
     # Enter on the selection switches, so a row reached by keyboard can be activated (the rows are
@@ -127,7 +129,7 @@ def _draw_verb_row(app: App) -> bool:
     if danger_button("Delete"):
         app.projects_delete_armed = selected
     imgui.end_disabled()
-    imgui.same_line(imgui.get_content_region_avail().x - float(SIZE.BTN_SM_W))
+    imgui.same_line()
     if standard_button("Close", width=float(SIZE.BTN_SM_W)):
         keep_open = False
     if app.projects_error:
@@ -139,6 +141,7 @@ def _draw_delete_confirm(app: App) -> bool:
     armed = app.projects_delete_armed
     if armed is None:
         return True
+    imgui.dummy((0.0, float(SPACE.MD)))
     imgui.text_colored(COLOR.STATE_ERROR, "Delete to trash?")
     imgui.same_line(imgui.get_content_region_avail().x - float(SIZE.BTN_SM_W) * 2.0)
     # Yes is the PRIMARY tier, not a filled red: the armed row already carries the danger.
@@ -157,32 +160,20 @@ def _draw_delete_confirm(app: App) -> bool:
 def _draw_name_input(
     app: App, state: InlineInput, verb: str, commit: Callable[[App, str], str]
 ) -> bool:
+    imgui.dummy((0.0, float(SPACE.MD)))
     imgui.text_colored(COLOR.FG_DIM, verb)
     imgui.same_line()
-    if state.needs_focus:
-        # ONE-SHOT: re-grabbing every frame resets the caret blink and fights other inputs.
-        imgui.set_keyboard_focus_here(0)
-        state.needs_focus = False
-    imgui.set_next_item_width(SIZE.NAME_INPUT_W)
-    entered, state.buf = imgui.input_text(
-        "##project_name", state.buf, imgui.InputTextFlags_.enter_returns_true
-    )
+    result = name_input_row("project_name", state, width=float(SIZE.NAME_INPUT_W))
     # The outer Enter (a switch) must not also fire while this input holds focus.
-    app.projects_input_focused = imgui.is_item_focused()
-    if imgui.is_key_pressed(imgui.Key.escape, repeat=False):
-        # `hotkeys._handle_escape` leaves the modal open for exactly this; without the cancel
-        # here, Esc would be a dead key.
+    app.projects_input_focused = result.focused
+    if result.cancelled:
+        # `App.close_popup` leaves the modal open for exactly this; without the cancel here,
+        # Esc would be a dead key.
         state.close()
         app.projects_error = ""
         return True
-
     imgui.same_line()
-    accepted = primary_button(verb) or entered
-    imgui.same_line()
-    if standard_button("Cancel"):
-        state.close()
-        app.projects_error = ""
-        return True
+    accepted = primary_button(verb) or result.committed
     if accepted:
         app.projects_error = commit(app, state.buf)
         if not app.projects_error:

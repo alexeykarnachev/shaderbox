@@ -101,8 +101,8 @@ def _draw_draft(app: App) -> bool:
     imgui.dummy((0.0, float(SPACE.MD)))
     created = (primary_button("Create") or entered) and app.create_pass_from_draft()
     imgui.same_line()
-    cancelled = standard_button("Cancel")
-    return not (created or cancelled)
+    keep_open = not (created or standard_button("Cancel"))
+    return keep_open
 
 
 def _draw_body(app: App) -> bool:
@@ -134,7 +134,8 @@ def _draw_body(app: App) -> bool:
         _apply_entry(app, document_id, name, entry, new_entry)
 
     imgui.dummy((0.0, float(SPACE.MD)))
-    return not standard_button("Close")
+    keep_open = not standard_button("Close")
+    return keep_open
 
 
 def _apply_entry(

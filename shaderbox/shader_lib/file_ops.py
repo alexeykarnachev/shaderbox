@@ -14,11 +14,11 @@ from pathlib import Path
 
 from loguru import logger
 
-from shaderbox.editor_types import InlineInput
 from shaderbox.notifications import Notifications
 from shaderbox.paths import shader_lib_root, shader_lib_trash_dir
 from shaderbox.shader_lib.index import ShaderLibIndex
 from shaderbox.theme import COLOR
+from shaderbox.ui_primitives import InlineInput
 
 
 class ShaderLibFileManager:
@@ -51,36 +51,30 @@ class ShaderLibFileManager:
         self.file_rename = InlineInput()
         self.file_new = InlineInput()
         self.dir_new = InlineInput()
-        # One path armed for delete-confirm at a time. Root never armed.
-        self.file_delete_armed: Path | None = None
-        self.dir_delete_armed: Path | None = None
 
     # ----------------------------------------------------------------
     # Inline-input mutex + openers (UI shims; read buffers, call explicit cores)
     # ----------------------------------------------------------------
 
+    def inline_input_owns_esc(self) -> bool:
+        """Whether an inline input is live, so Esc cancels it rather than closing the picker.
+
+        Gated on the input being OPEN, not focused: a user who clicked away would otherwise
+        find Esc dead. `picker_tag_input_focused` still holds the previous frame's focus,
+        which is the value the in-frame Esc dispatch reads, since it runs before the draw.
+        """
+        return (
+            self.file_rename.is_open
+            or self.file_new.is_open
+            or self.dir_new.is_open
+            or self.picker_tag_input_focused
+        )
+
     def reset_inline_state(self) -> None:
-        # Every `begin_*` / `arm_*` opener calls this first to clear all sibling state.
+        # Every `begin_*` opener calls this first to clear all sibling state.
         self.file_rename.close()
         self.file_new.close()
         self.dir_new.close()
-        self.file_delete_armed = None
-        self.dir_delete_armed = None
-
-    def arm_file_delete(self, path: Path | None) -> None:
-        # None disarms (cancel); otherwise replace mutex state.
-        if path is None:
-            self.file_delete_armed = None
-            return
-        self.reset_inline_state()
-        self.file_delete_armed = path
-
-    def arm_dir_delete(self, path: Path | None) -> None:
-        if path is None:
-            self.dir_delete_armed = None
-            return
-        self.reset_inline_state()
-        self.dir_delete_armed = path
 
     def begin_file_rename(self, path: Path) -> None:
         # Pre-fill the buffer with the current relative path (edit, not retype).
@@ -222,7 +216,6 @@ class ShaderLibFileManager:
 
     def delete_file(self, path: Path) -> None:
         # Move into `.trash/` (basename + numeric suffix on collision).
-        self.file_delete_armed = None
         if not path.exists():
             logger.warning(f"Lib file no longer exists: {path}")
             return
@@ -253,7 +246,6 @@ class ShaderLibFileManager:
         # Move a subdir into .trash/: every file is moved first (numeric-suffix on
         # collision) so nothing is silently rmtree'd. Refuses symlinked/escaping dirs
         # so a `shader_lib/external -> /other/repo/` link can't trash files outside root.
-        self.dir_delete_armed = None
         if not path.exists() or not path.is_dir():
             logger.warning(f"Lib dir no longer exists or not a dir: {path}")
             return

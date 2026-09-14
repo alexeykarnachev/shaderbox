@@ -29,19 +29,6 @@ _TREE_FRAC = 0.40
 _TREE_W_MIN = 280.0
 
 
-def inline_input_owns_esc(app: App) -> bool:
-    # Esc-ownership for the in-frame Esc dispatch (hotkeys), which runs BEFORE this
-    # popup draws: picker_tag_input_focused still holds the previous frame's focus —
-    # the same value the picker's own Esc gate captures as tag_input_was_focused.
-    files = app.shader_lib_files
-    return (
-        files.file_rename.target is not None
-        or files.file_new.target is not None
-        or files.dir_new.target is not None
-        or files.picker_tag_input_focused
-    )
-
-
 def draw_lib_picker(app: App) -> None:
     if app.popup_state != PopupState.SHADER_LIB_PICKER:
         return
@@ -49,7 +36,11 @@ def draw_lib_picker(app: App) -> None:
         if not visible:
             return
         if not _draw_body(app):
-            app.popup_state = PopupState.CLOSED
+            # A Close reached with an inline input still armed cancels it first: the funnel
+            # otherwise declines, leaving a modal the user asked to dismiss on screen.
+            app.shader_lib_files.reset_inline_state()
+            app.shader_lib_files.picker_tag_input_focused = False
+            app.close_popup()
             imgui.close_current_popup()
 
 
@@ -120,7 +111,7 @@ def _draw_body(app: App) -> bool:
     with imgui_ctx.begin_child("##preview", size=imgui.ImVec2(0.0, body_h)):
         preview.draw_preview(app, filtering.selected_function(app, candidates), root)
 
-    imgui.spacing()
+    imgui.dummy((0.0, float(SPACE.MD)))
 
     # ---------- Action row ----------
     selected = filtering.selected_function(app, candidates)
@@ -137,9 +128,7 @@ def _draw_body(app: App) -> bool:
     if not has_editor and imgui.is_item_hovered(
         imgui.HoveredFlags_.allow_when_disabled
     ):
-        imgui.set_tooltip(
-            "Click into the code editor first (so the caret is positioned)"
-        )
+        imgui.set_tooltip("needs a shader caret")
     if (btn_clicked or pressed_enter) and can_insert:
         assert selected is not None
         if filtering.insert_name(app, selected):

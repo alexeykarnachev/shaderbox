@@ -103,29 +103,3 @@ class EditorSession:
     editor: Editor
     source: ShaderSource
     saved_undo: int
-
-
-@dataclass
-class InlineInput:
-    # One of the three shader-lib-picker inline inputs (file rename / file new /
-    # dir new). `target` is the path the input is bound to (file path for rename,
-    # parent dir for new). `buf` is the user-edited text. `needs_focus` is a
-    # one-shot the first draw consumes to grab keyboard focus. `target is None`
-    # = the input is closed.
-    target: Path | None = None
-    buf: str = ""
-    needs_focus: bool = False
-
-    def open(self, target: Path, buf: str = "") -> None:
-        self.target = target
-        self.buf = buf
-        self.needs_focus = True
-
-    def close(self) -> None:
-        self.target = None
-        self.buf = ""
-        self.needs_focus = False
-
-    @property
-    def is_open(self) -> bool:
-        return self.target is not None

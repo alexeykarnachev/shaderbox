@@ -316,18 +316,28 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
 - **`ui.py`** — thin entrypoint + orchestrator. `run(app)`, `update_and_draw(app)` (the imgui frame
   loop: render gates + the main-window left/right split — LEFT = code editor via `code_tab.draw`,
   RIGHT = `_draw_app_panel`), `_draw_splitter`, `_draw_app_panel`, `_draw_document_settings`
-  (Document/Render/Share tab-bar dispatcher), the **Library** menu (Browse…), `main()`. No tab bodies /
-  widget logic / hotkey dispatch — those live in `tabs/`, `widgets/`, `popups/`, `hotkeys.py`.
+  (Document/Render/Share tab-bar dispatcher), `main()`. No tab bodies /
+  widget logic / hotkey dispatch — those live in `tabs/`, `widgets/`, `popups/`, `hotkeys.py`; the
+  menu bar is `menus.draw_menu_bar(app)` since 093/17 and no longer written here.
 - **`commands.py`** — leaf (imports `imgui` only, never `App`): the command registry that drives all
   keyboard control (feature 018). `CommandId`/`CommandScope` StrEnums, the frozen `CommandSpec` + the
   `COMMAND_SPECS` default table, `chord_to_str` (display), `route_flag`/`popup_suppresses`/
-  `capture_chord`/`chord_needs_modifier`. The id->callback wiring lives on `App` (closes over self),
+  `capture_chord`/`chord_needs_modifier`, and `command_label(id)` — the ONE spelling every button
+  that opens a command's surface takes. `CommandSpec.in_menu` / `.separator_before` are what the
+  menu bar renders from. The id->callback wiring lives on `App` (closes over self),
   not here, so this stays cycle-free.
+- **`menus.py`** — the `App`-facing menu primitives (093/17): `draw_menu_bar(app)` (a render of
+  `COMMAND_SPECS`, one menu per `CommandCategory`, plus the right-aligned project name),
+  `command_menu_item(app, id)` (label + chord hint + scope-derived `enabled`, fires the registered
+  callback) and `menu_enabled(app, spec)`. Imports `App` and `commands`, which is why it is not in
+  `ui_primitives.py`.
 - **`hotkeys.py`** — two halves of keyboard handling: `process_hotkeys(app)` (PRE-`new_frame`: glfw
   poll + imgui `process_inputs` only) and `dispatch_commands(app)` (IN-frame, top of the main-window
   block: registry-driven `imgui.shortcut()` dispatch reading `app.effective_bindings`, the bespoke ESC
   handler, and the document-creator arrow/Enter nav). The split exists because `imgui.shortcut()` asserts
-  outside an active frame.
+  outside an active frame. Esc closes a modal through `App.close_popup` — the one funnel that owns
+  every modal's cleanup and declines while an inline input owns the key (093/17); the handler carries
+  no per-modal carve-out of its own.
 - **`editor/`** — the embedded keymap-selectable code editor, vim or standard per
   `EditorSettings.keymap` (features 067, 069): `ffi.py` (ctypes binding over
   the vendored `libeditor.so` in `shaderbox/resources/editor/`; leaf, no imgui/moderngl),
@@ -399,8 +409,11 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   `share_state.py` holds the share-tab dataclass (`TabState`) separately to keep `app.py`
   cycle-free (app.py imports `share_state`, NOT `share`).
 - **`widgets/`** — stateless imgui-drawing functions taking `app: App`. No shared contract.
-  `details.py`, `media_ops.py`, `document_grid.py` (incl. `draw_document_preview_button`, the free preview
-  helper both the document grid and the examples-browser grid call), `uniform.py`,
+  `details.py`, `media_ops.py`, `document_grid.py` (the project's documents as live thumbnails;
+  incl. `draw_document_preview_button`, the free preview helper the document grid, the
+  examples browser and the import dialog all call, and `document_menu_items` — Open, Open folder,
+  Delete behind its confirm submenu. The tile carries no button since 093/17, and a dim
+  `Right-click for actions` caption sits beside `New document`), `uniform.py`,
   `cheatsheet.py` (the floating bottom-right keyboard-cheatsheet overlay — own top-level window,
   scope-filtered rows, opt-out via `UIAppState.show_cheatsheet`).
 - **`popups/`** — popup `draw(app: App)` free functions. Open/closed state on `App` as a single
@@ -451,8 +464,10 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   regenerate via `scripts/gen_glyphs.py`, never hand-edit) / **`help_content.py`** (the F1 help
   panel's static copy) / **`logging_setup.py`** (loguru sinks: console + the rotating file in
   `app_data_dir()/logs`).
-- **`ui_primitives.py`** (imgui+theme draw helpers: button
-  tiers + shared draw primitives — `context_menu_style()`, `pill_button`, `preview_cell`, …;
+- **`ui_primitives.py`** (imgui+theme draw helpers, `App`-free by the three-layer rule: button
+  tiers + shared draw primitives — `context_menu_style()`, `pill_button`, `preview_cell`,
+  `confirm_menu_item` (a destructive menu verb behind its own submenu), `InlineInput` +
+  `name_input_row` / `InputRowResult` (the ONE name-entry row), …;
   plus `profile_rows_plan` / `ProfileRow`, the FPS panel's rows decided as pure headless data —
   order, depth, formatted number and color — which the overlay then only draws) /
   **`util.py`** (non-UI helpers: `adjust_size`, `select_next_value`, `get_uniform_hash`, `pfd_block`,

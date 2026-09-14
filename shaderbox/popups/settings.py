@@ -17,6 +17,7 @@ from shaderbox.commands import (
     scopes_overlap,
 )
 from shaderbox.constants import SHADER_LIB_SEED_DIR
+from shaderbox.copilot.config import COPILOT_LIMIT_ROWS
 from shaderbox.paths import shader_lib_root
 from shaderbox.shader_lib.seed import reset_to_shipped
 from shaderbox.theme import COLOR, SETTINGS_MARK_S, SIZE, SPACE
@@ -64,10 +65,7 @@ def draw_settings(app: App) -> None:
         if not visible:
             return
         if not _draw_body(app):
-            # Editor settings apply at the one close funnel, not per-edit
-            # while the modal is open.
-            app.apply_editor_settings()
-            app.popup_state = PopupState.CLOSED
+            app.close_popup()
             imgui.close_current_popup()
 
 
@@ -187,11 +185,11 @@ def _draw_body(app: App) -> bool:
 
     imgui.dummy((0.0, SPACE.MD))
 
-    is_keep_opened: bool = True
+    keep_open: bool = True
     if standard_button("Close", width=float(SIZE.BTN_SM_W)):
-        is_keep_opened = False
+        keep_open = False
 
-    return is_keep_opened
+    return keep_open
 
 
 def _draw_library_reset(app: App) -> None:
@@ -218,93 +216,6 @@ def _draw_library_reset(app: App) -> None:
     imgui.same_line()
     if standard_button("Cancel"):
         app.lib_reset_armed = False
-
-
-# (label, field, hint, min value, input step) per user-tunable agent limit. 0 = off where
-# the floor is 0; the hint is the durable explanation surfaced via help_marker.
-_COPILOT_LIMITS: list[tuple[str, str, str, int, int]] = [
-    (
-        "Context cap (tokens)",
-        "max_input_tokens",
-        "Max input tokens per LLM request — the context gauge's budget. Older chat "
-        "history is trimmed to fit under it. Bigger = more memory, higher cost per turn.",
-        10_000,
-        5_000,
-    ),
-    (
-        "Reply cap (tokens)",
-        "max_tokens_per_turn",
-        "Max output tokens per LLM step: the visible reply + tool arguments + the "
-        "model's hidden reasoning. Too low truncates big shader rewrites mid-edit.",
-        1_000,
-        1_000,
-    ),
-    (
-        "Turn time budget (s)",
-        "turn_time_budget_s",
-        "Wall-clock ceiling for one of your messages: past it the agent stops "
-        "using tools and replies with what it has (0 = no time limit). Steps are "
-        "also capped by Max steps.",
-        0,
-        30,
-    ),
-    (
-        "Max steps per turn",
-        "max_iterations",
-        "Tool-call steps the agent may take for one of your messages before it is "
-        "cut off with an error reply.",
-        1,
-        1,
-    ),
-    (
-        "Failed-edit giveup",
-        "max_edit_retries",
-        "Consecutive edits that FAIL to apply (bad match / bad range) before the "
-        "turn stops and the agent reports it is stuck.",
-        1,
-        1,
-    ),
-    (
-        "Broken-compile hint after",
-        "max_compile_failures",
-        "Consecutive edits that apply but compile broken before a one-time 'stop "
-        "patching, rewrite the whole block' hint. 0 = off.",
-        0,
-        1,
-    ),
-    (
-        "Broken-compile hard stop after",
-        "compile_failure_hard_streak",
-        "Consecutive edits that apply but compile broken before the turn is force-ended "
-        "(the agent returns to you). Should exceed the hint threshold. 0 = off.",
-        0,
-        1,
-    ),
-    (
-        "Clean-edit hint after",
-        "clean_edit_soft_streak",
-        "Consecutive clean edits on one file in a turn before an escalating 'stop and "
-        "let the user look / finish in one write_shader' hint. 0 = off.",
-        0,
-        1,
-    ),
-    (
-        "Clean-edit hard stop after",
-        "clean_edit_hard_streak",
-        "Consecutive clean edits on one file in a turn before the turn is force-ended "
-        "(the agent returns to you). Should exceed the hint threshold. 0 = off.",
-        0,
-        1,
-    ),
-    (
-        "Auto-restore after",
-        "auto_revert_after_failed_edits",
-        "Consecutive broken-compile edits on one file before the engine restores "
-        "its last clean-compiling state and tells the agent. 0 = off.",
-        0,
-        1,
-    ),
-]
 
 
 def _field_focus(app: App, field: str) -> FieldFocus:
@@ -334,19 +245,19 @@ def _draw_copilot_config(app: App, focus: FieldFocus = NO_FOCUS) -> None:
     caption_text("Agent limits")
     changed_any = False
     label_w = max(
-        imgui.calc_text_size(label).x for label, *_ in _COPILOT_LIMITS
+        imgui.calc_text_size(row.label).x for row in COPILOT_LIMIT_ROWS
     ) + float(SPACE.LG)
-    for label, field, hint, min_v, step in _COPILOT_LIMITS:
-        imgui.text_colored(COLOR.FG_DIM, label)
+    for row in COPILOT_LIMIT_ROWS:
+        imgui.text_colored(COLOR.FG_DIM, row.label)
         imgui.same_line(label_w)
         imgui.set_next_item_width(float(SIZE.SETTINGS_CTRL_W))
-        value = int(getattr(cfg, field))
-        changed, new_value = imgui.input_int(f"##cp_{field}", value, step=step)
-        if changed and max(min_v, new_value) != value:
-            setattr(cfg, field, max(min_v, new_value))
+        value = int(getattr(cfg, row.field))
+        changed, new_value = imgui.input_int(f"##cp_{row.field}", value, step=row.step)
+        if changed and max(row.min_value, new_value) != value:
+            setattr(cfg, row.field, max(row.min_value, new_value))
             changed_any = True
         imgui.same_line()
-        help_marker(hint)
+        help_marker(row.hint)
     if changed_any:
         app.integrations_store.save()
         cfg.apply_limits()

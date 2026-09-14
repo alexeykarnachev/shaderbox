@@ -15,6 +15,7 @@ from typing import Any
 
 from imgui_bundle import imgui
 
+from shaderbox import ui_primitives
 from shaderbox.paths import shader_lib_root
 from shaderbox.popups.lib_picker import tree
 
@@ -36,7 +37,8 @@ def _run_frames(
     # `cancel_on` makes the row's `x` button report a click on that frame. imgui's hover test
     # never fires for a synthetic mouse in a headless context (/imgui-ui § 0), so the click is
     # injected at the button rather than at the mouse — the drawn function still runs its own
-    # real branches, in their real order, against a real deactivate.
+    # real branches, in their real order, against a real deactivate. The stub sits on
+    # `ui_primitives`, where `name_input_row` draws the `x`.
     for frame in range(6):
         if frame == 2 and type_char is not None:
             imgui.get_io().add_input_character(ord(type_char))
@@ -48,7 +50,7 @@ def _run_frames(
             # A real cancel click both defocuses the input and presses the button; the focus
             # move is what makes the deactivate fire, one frame ahead of the click.
             imgui.set_keyboard_focus_here(1)
-        real_button = tree.standard_button
+        real_button = ui_primitives.standard_button
 
         def stub(
             label: str,
@@ -60,11 +62,11 @@ def _run_frames(
             _real(label, *args, **kwargs)
             return _clicking and label.startswith("x##")
 
-        tree.standard_button = stub
+        ui_primitives.standard_button = stub
         try:
             body(frame)
         finally:
-            tree.standard_button = real_button
+            ui_primitives.standard_button = real_button
         imgui.input_text("##sink", "sink")
         imgui.end()
         imgui.end_frame()

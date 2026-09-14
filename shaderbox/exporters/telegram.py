@@ -12,6 +12,7 @@ from imgui_bundle import imgui, imgui_ctx
 from loguru import logger
 from telegram.request import HTTPXRequest
 
+from shaderbox.commands import CommandId, command_label
 from shaderbox.exporters.base import (
     AuthState,
     Exporter,
@@ -407,7 +408,7 @@ class TelegramExporter(Exporter):
             unconnected_gate(
                 "Not connected to Telegram.",
                 "Connect a bot in Settings to share stickers.",
-                "Set up token",
+                command_label(CommandId.OPEN_SETTINGS),
                 extras.get(_OPEN_SETTINGS_KEY),
             )
             return

@@ -17,6 +17,7 @@ from shaderbox.commands import (
     COMMAND_SPECS,
     chord_to_str,
 )
+from shaderbox.copilot.config import COPILOT_LIMIT_ROWS
 from shaderbox.engine_uniforms import ENGINE_DRIVEN_UNIFORMS, ENGINE_UNIFORM_TYPES
 from shaderbox.glyph_tables import TABLE_UNIFORMS
 
@@ -91,6 +92,21 @@ def _shortcuts_section() -> HelpSection:
             "(`Alt+/`) shows only the chords valid right now."
         ),
         snippet="\n".join(lines).rstrip(),
+        insertable=False,
+    )
+
+
+def _copilot_limits_section() -> HelpSection:
+    lines = [f"**{row.label}** — {row.explanation}" for row in COPILOT_LIMIT_ROWS]
+    return HelpSection(
+        key="copilot_limits",
+        title="Copilot limits",
+        body=(
+            "Every limit under **Settings -> Copilot -> Agent limits**, in full. Each row's "
+            "(?) marker in Settings is the one-line version of what is written here.\n"
+            "\n" + "\n\n".join(lines)
+        ),
+        snippet="",
         insertable=False,
     )
 
@@ -221,5 +237,6 @@ def help_sections() -> list[HelpSection]:
                 "you make shows up a couple of frames later."
             ),
         ),
+        _copilot_limits_section(),
         _shortcuts_section(),
     ]

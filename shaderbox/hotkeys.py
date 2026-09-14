@@ -1,7 +1,7 @@
 import glfw
 from imgui_bundle import imgui
 
-from shaderbox.app import App, PopupState
+from shaderbox.app import App
 from shaderbox.commands import (
     COMMAND_SPECS,
     CommandScope,
@@ -20,7 +20,6 @@ from shaderbox.editor.ffi import (
 )
 from shaderbox.editor.input import KeyEvent
 from shaderbox.editor_types import EditorSession
-from shaderbox.popups.lib_picker import inline_input_owns_esc
 from shaderbox.theme import COLOR
 
 
@@ -361,33 +360,15 @@ def _handle_escape(app: App) -> None:
     # gate defensively on the same condition.
     if not app.escape_has_job():
         return
-    # Editor settings apply at the one close funnel, not per-edit while the
-    # modal is open.
-    was_settings_open = app.popup_state == PopupState.SETTINGS
     # Esc dismisses ONE thing, most-modal first: the revert confirm, else an open popup, else
     # the palette, else the chat focus, else the editor caret. Dismissing a popup/palette must
     # NOT also defocus the editor or chat — App.reconcile_popup_focus restores focus to whoever
-    # the popup stole it from.
+    # the popup stole it from. Every modal closes through `App.close_popup`, which owns the
+    # per-modal cleanup and declines while an inline input owns Esc.
     if app.copilot_revert_target is not None:
         app.copilot_revert_target = None
     elif app.any_popup_open():
-        # The lib picker's inline inputs (rename / new-file / new-dir / add-tag) own Esc:
-        # their per-input cancel runs later this frame — leave the picker open.
-        if app.popup_state == PopupState.PASS_SETTINGS:
-            # The gear's name field can hold an uncommitted edit; the close funnel commits it.
-            app.close_pass_settings()
-        elif app.popup_state == PopupState.IMPORT_PASSES:
-            app.close_import_passes()
-        elif app.popup_state == PopupState.PROJECTS and app.projects_input_owns_esc():
-            # The Projects modal's name input owns Esc while it is OPEN (not merely focused):
-            # a user who clicked away would otherwise find Esc dead. Its own cancel runs later
-            # this frame — leave the modal open.
-            pass
-        elif (
-            app.popup_state != PopupState.SHADER_LIB_PICKER
-            or not inline_input_owns_esc(app)
-        ):
-            app.popup_state = PopupState.CLOSED
+        app.close_popup()
     elif app.is_palette_open:
         app.is_palette_open = False
     elif app.copilot_focused:
@@ -395,5 +376,3 @@ def _handle_escape(app: App) -> None:
         app.copilot_defocus_requested = True
     # No editor branch: a focused editor's Esc never reaches imgui (the glfw
     # filter swallows it), so is_key_pressed above is False on those frames.
-    if was_settings_open:
-        app.apply_editor_settings()

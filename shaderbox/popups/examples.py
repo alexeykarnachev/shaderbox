@@ -1,7 +1,7 @@
 from imgui_bundle import imgui
 
 from shaderbox.app import App, PopupState
-from shaderbox.theme import COLOR, SIZE
+from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_primitives import (
     caption_text,
     modal_window,
@@ -61,7 +61,7 @@ def draw_examples(app: App) -> None:
         if not vis:
             return
         if not _draw_body(app, grid_h):
-            app.popup_state = PopupState.CLOSED
+            app.close_popup()
             imgui.close_current_popup()
 
 
@@ -77,6 +77,7 @@ def _draw_body(app: App, grid_h: float) -> bool:
     enter_open = is_selected and imgui.is_key_pressed(imgui.Key.enter, repeat=False)
 
     keep_open = True
+    imgui.dummy((0.0, float(SPACE.MD)))
     imgui.begin_disabled(not is_selected)
     open_clicked = primary_button("Open a copy")
     imgui.end_disabled()

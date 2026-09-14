@@ -175,3 +175,144 @@ def apply_user_limits(
         0, auto_revert_after_failed_edits
     )  # 0 = off
     COPILOT_CONFIG.turn_time_budget_s = max(0, turn_time_budget_s)  # 0 = off
+
+
+@dataclass(frozen=True)
+class CopilotLimitRow:
+    """One user-tunable agent limit as the Settings panel and the Help panel both read it.
+
+    Attributes:
+        label: The row's caption in Settings.
+        field: The `CopilotConfig` attribute the row edits.
+        hint: The `help_marker` clause beside the control — one clause, inside the copy budget.
+        explanation: The full paragraph the Help panel's copilot section prints.
+        min_value: The floor the input clamps to; 0 means the limit can be switched off.
+        step: The input's increment.
+    """
+
+    label: str
+    field: str
+    hint: str
+    explanation: str
+    min_value: int
+    step: int
+
+
+# One home for the tunable limits' copy, so the short marker and the long explanation cannot
+# drift apart. The Settings panel reads `hint`; the Help panel's copilot section reads
+# `explanation`.
+COPILOT_LIMIT_ROWS: list[CopilotLimitRow] = [
+    CopilotLimitRow(
+        label="Context cap (tokens)",
+        field="max_input_tokens",
+        hint="input tokens per request",
+        explanation=(
+            "Max input tokens per LLM request — the context gauge's budget. Older chat "
+            "history is trimmed to fit under it. Bigger means more memory and a higher "
+            "cost per turn."
+        ),
+        min_value=10_000,
+        step=5_000,
+    ),
+    CopilotLimitRow(
+        label="Reply cap (tokens)",
+        field="max_tokens_per_turn",
+        hint="output tokens per step",
+        explanation=(
+            "Max output tokens per LLM step: the visible reply, the tool arguments and the "
+            "model's hidden reasoning together. Too low truncates a big shader rewrite "
+            "mid-edit."
+        ),
+        min_value=1_000,
+        step=1_000,
+    ),
+    CopilotLimitRow(
+        label="Turn time budget (s)",
+        field="turn_time_budget_s",
+        hint="seconds per message, 0 is off",
+        explanation=(
+            "Wall-clock ceiling for one of your messages: past it the agent stops using "
+            "tools and replies with what it has (0 = no time limit). Steps are also capped "
+            "by Max steps."
+        ),
+        min_value=0,
+        step=30,
+    ),
+    CopilotLimitRow(
+        label="Max steps per turn",
+        field="max_iterations",
+        hint="tool-call steps per message",
+        explanation=(
+            "Tool-call steps the agent may take for one of your messages before it is cut "
+            "off with an error reply."
+        ),
+        min_value=1,
+        step=1,
+    ),
+    CopilotLimitRow(
+        label="Failed-edit giveup",
+        field="max_edit_retries",
+        hint="failed edits before giving up",
+        explanation=(
+            "Consecutive edits that FAIL to apply (a bad match or a bad range) before the "
+            "turn stops and the agent reports it is stuck."
+        ),
+        min_value=1,
+        step=1,
+    ),
+    CopilotLimitRow(
+        label="Broken-compile hint after",
+        field="max_compile_failures",
+        hint="broken compiles before a hint",
+        explanation=(
+            "Consecutive edits that apply but compile broken before a one-time 'stop "
+            "patching, rewrite the whole block' hint. 0 = off."
+        ),
+        min_value=0,
+        step=1,
+    ),
+    CopilotLimitRow(
+        label="Broken-compile hard stop after",
+        field="compile_failure_hard_streak",
+        hint="broken compiles before stopping",
+        explanation=(
+            "Consecutive edits that apply but compile broken before the turn is force-ended "
+            "and the agent returns to you. Should exceed the hint threshold. 0 = off."
+        ),
+        min_value=0,
+        step=1,
+    ),
+    CopilotLimitRow(
+        label="Clean-edit hint after",
+        field="clean_edit_soft_streak",
+        hint="clean edits before a hint",
+        explanation=(
+            "Consecutive clean edits on one file in a turn before an escalating 'stop and "
+            "let the user look, or finish in one write_shader' hint. 0 = off."
+        ),
+        min_value=0,
+        step=1,
+    ),
+    CopilotLimitRow(
+        label="Clean-edit hard stop after",
+        field="clean_edit_hard_streak",
+        hint="clean edits before stopping",
+        explanation=(
+            "Consecutive clean edits on one file in a turn before the turn is force-ended "
+            "and the agent returns to you. Should exceed the hint threshold. 0 = off."
+        ),
+        min_value=0,
+        step=1,
+    ),
+    CopilotLimitRow(
+        label="Auto-restore after",
+        field="auto_revert_after_failed_edits",
+        hint="broken edits before a restore",
+        explanation=(
+            "Consecutive broken-compile edits on one file before the engine restores its "
+            "last clean-compiling state and tells the agent. 0 = off."
+        ),
+        min_value=0,
+        step=1,
+    ),
+]

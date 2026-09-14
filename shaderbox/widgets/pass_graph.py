@@ -29,13 +29,16 @@ session call from here, so each refusal is testable without a window.
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from itertools import pairwise
+from pathlib import Path
 from typing import Literal
 
 from imgui_bundle import imgui
 
 from shaderbox.app import App
+from shaderbox.commands import CommandId
 from shaderbox.core import Pass
 from shaderbox.document import Document
+from shaderbox.menus import command_menu_item
 from shaderbox.pass_graph import (
     PassEntry,
     Port,
@@ -52,8 +55,8 @@ from shaderbox.theme import COLOR, SIZE, SPACE, fade, group_tint
 from shaderbox.ui_primitives import (
     context_menu_style,
     ellipsize,
+    name_input_row,
     primary_button,
-    standard_button,
     text_tab_row,
 )
 from shaderbox.widgets.graph_state import (
@@ -872,10 +875,8 @@ def _tab_row(
 def _canvas_menu(app: App, document_id: str, view: GraphViewState) -> None:
     with context_menu_style():
         if imgui.begin_popup("##graph_canvas_menu"):
-            if imgui.menu_item_simple("Add pass"):
-                app.open_add_pass()
-            if imgui.menu_item_simple("Import..."):
-                app.open_import_passes()
+            command_menu_item(app, CommandId.ADD_PASS)
+            command_menu_item(app, CommandId.IMPORT_PASSES)
             imgui.separator()
             if imgui.menu_item_simple("Fit"):
                 view.fitted = False
@@ -1475,54 +1476,52 @@ def _double_click(
         _click(app, document_id, view, node, False)
 
 
+def _box_menu_items(
+    app: App, document_id: str, view: GraphViewState, group: str
+) -> None:
+    """The items of one group box's context menu."""
+    if imgui.menu_item_simple("Open"):
+        view.scope = group
+        view.fitted = False
+    if imgui.menu_item_simple("Dissolve"):
+        app.dissolve_group(document_id, group)
+
+
 def _node_menu(app: App, document_id: str, view: GraphViewState, node: _Node) -> None:
     # Anchored to the node's button just submitted: the None id is what keeps a right-click
     # elsewhere on the shared child from opening this node's menu.
     with context_menu_style():
         if imgui.begin_popup_context_item(None):
             if node.kind == "box":
-                if imgui.menu_item_simple("Open"):
-                    view.scope = node.group
-                    view.fitted = False
-                if imgui.menu_item_simple("Dissolve"):
-                    app.dissolve_group(document_id, node.group)
+                _box_menu_items(app, document_id, view, node.group)
             else:
                 pass_menu_items(app, document_id, node.name)
-                if node.kind == "pass" and imgui.menu_item_simple("Group..."):
+                if node.kind == "pass" and imgui.menu_item_simple("Group"):
+                    # Node-only (092 D14): it seeds `view.selection`, which the strip has not
+                    # got and could not show.
                     if node.name not in view.selection:
                         view.selection = {node.name}
-                    view.group_prompt = True
-                    view.group_name = ""
+                    view.group_input.open(Path(node.name), buf="")
             imgui.end_popup()
 
 
 def _group_prompt(app: App, document_id: str, view: GraphViewState) -> None:
-    """The name a Group... asks for (092 D14): a small popup, Enter or Create commits."""
-    if view.group_prompt:
+    """The name a Group asks for (092 D14): a small popup, the shared name row, Create."""
+    if view.group_input.needs_focus and not imgui.is_popup_open("##graph_group"):
         imgui.open_popup("##graph_group")
-        view.group_prompt = False
     if not imgui.begin_popup("##graph_group"):
         return
-    if imgui.is_window_appearing():
-        imgui.set_keyboard_focus_here()
-    imgui.set_next_item_width(float(SIZE.NAME_INPUT_W))
-    entered, view.group_name = imgui.input_text(
-        "##graph_group_name",
-        view.group_name,
-        imgui.InputTextFlags_.enter_returns_true,
-    )
+    result = name_input_row("graph_group_name", view.group_input)
     imgui.same_line()
-    committed = primary_button("Create") or entered
-    name = view.group_name.strip()
+    committed = primary_button("Create") or result.committed
+    name = view.group_input.buf.strip()
     # A blank name would mean "no group" to the verb, which is Dissolve, not Create.
     if (
         committed
         and name
         and view.selection
         and app.group_selection(document_id, name) == ""
-    ):
-        imgui.close_current_popup()
-    imgui.same_line()
-    if standard_button("Cancel"):
+    ) or result.cancelled:
+        view.group_input.close()
         imgui.close_current_popup()
     imgui.end_popup()

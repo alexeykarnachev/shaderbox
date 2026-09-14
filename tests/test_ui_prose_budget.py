@@ -27,6 +27,8 @@ from types import FunctionType
 import pytest
 
 from shaderbox import ui_primitives
+from shaderbox.commands import COMMAND_SPECS
+from shaderbox.copilot.config import COPILOT_LIMIT_ROWS
 from shaderbox.popups.pass_settings import _FORMATS
 from shaderbox.ui_primitives import label_row, row_label, small_caption
 
@@ -200,6 +202,15 @@ _UNMEASURABLE: dict[tuple[str, str], str] = {
     ("shaderbox/tabs/uniforms.py", "_draw_auto_block"): "the uniform's live value",
     ("shaderbox/tabs/document.py", "_entry_row_label"): "the caller's row label",
     (
+        "shaderbox/tabs/document.py",
+        "_draw_passes",
+    ): "the command table's own label, read through `command_label`; "
+    "test_every_command_label_is_within_the_menu_budget measures it directly",
+    (
+        "shaderbox/ui_primitives.py",
+        "confirm_menu_item",
+    ): "forwards the caller's confirm label",
+    (
         "shaderbox/exporters/telegram.py",
         "draw_config_ui",
     ): "the integration's own auth message, built per attempt",
@@ -298,23 +309,13 @@ _OVER_BUDGET: dict[tuple[str, str, int], str] = {
         4,
     ): "a link's destination name, not a control label",
     (
-        "shaderbox/popups/help.py",
-        "_draw_body",
-        15,
-    ): "a disabled-state reason; a control's name cannot carry why it is greyed",
-    (
-        "shaderbox/popups/lib_picker/__init__.py",
-        "_draw_body",
-        11,
-    ): "the same disabled state on the picker's Insert button",
-    (
         "shaderbox/popups/settings.py",
         "_draw_body",
         3,
     ): "derived: an exporter's name joined to its own unavailable reason",
     (
         "shaderbox/widgets/copilot_chat.py",
-        "_draw_revert_modal",
+        "_draw_revert_body",
         20,
     ): "a destructive-confirm body: what a revert will undo, which § 2's table has no "
     "row for and a 4-word fragment cannot state without misleading",
@@ -842,6 +843,44 @@ def test_the_label_helpers_are_read_at_the_right_argument() -> None:
         assert parameters[index] == expected, (
             f"{function.__name__}'s argument {index} is {parameters[index]}, not {expected}"
         )
+
+
+def test_every_command_label_is_within_the_menu_budget() -> None:
+    """Every `CommandSpec.label` is a menu item's label, and the walk cannot see one.
+
+    `command_menu_item` takes an id, so the AST walk scores nothing at the menu bar or at a
+    button that spells its label through `command_label` -- without this row P1 would take
+    every menu label out of the gate's domain. Budget: the `menu_item_simple` row's four
+    words. Falsifier: a five-word label in COMMAND_SPECS.
+    """
+    for spec in COMMAND_SPECS:
+        assert len(spec.label.split()) <= 4, (
+            f"{spec.id}'s label is over the menu budget: {spec.label!r}"
+        )
+        for joiner in _CLAUSE_JOINERS:
+            assert joiner not in spec.label, (
+                f"{spec.id}'s label joins a second clause: {spec.label!r}"
+            )
+
+
+def test_every_copilot_limit_hint_is_within_the_help_budget() -> None:
+    """The Settings limits table is reached through a loop variable, so no call-site walk can
+    read it -- the same reason `_FORMATS` needs its own assertion below.
+
+    The long form of each row lives in the Help panel's copilot section, which § 2 exempts as
+    documentation. Falsifier: restore one of the old multi-clause hints.
+    """
+    for row in COPILOT_LIMIT_ROWS:
+        assert len(row.label.split()) <= 4, (
+            f"{row.field}'s label is over budget: {row.label!r}"
+        )
+        assert len(row.hint.split()) <= 8, (
+            f"{row.field}'s hint is over budget: {row.hint!r}"
+        )
+        for joiner in _CLAUSE_JOINERS:
+            assert joiner not in row.hint, (
+                f"{row.field}'s hint joins a second clause: {row.hint!r}"
+            )
 
 
 def test_the_format_tooltips_are_within_the_help_budget() -> None:

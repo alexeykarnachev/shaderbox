@@ -252,41 +252,29 @@ def test_an_open_name_input_owns_escape(app: Any) -> None:
     assert app.projects_input_owns_esc()
 
 
-def test_escape_is_owned_by_an_open_name_input_at_the_dispatch(app: Any) -> None:
-    """The BRANCH, not the predicate: `hotkeys._handle_escape` must consult the ownership.
+def test_escape_is_owned_by_an_open_name_input_at_the_close_funnel(app: Any) -> None:
+    """The BRANCH, not the predicate: `App.close_popup` must consult the ownership.
 
-    Falsifier: delete the PROJECTS branch from `_handle_escape` — Esc then closes the whole modal
+    Falsifier: delete the PROJECTS branch from `close_popup` — Esc then closes the whole modal
     out from under a half-typed name. The predicate test above passes either way, which is what
     let that branch survive as dead code through a mutation round.
 
-    Driven by calling the handler's body rather than by injecting a key through frames: a second
-    frame-driving App in one process hits a torn-down imgui font atlas (`glTexSubImage2D` on a
-    None binding), which poisons every later test that draws. That is a process-global GL limit,
-    not this feature's, so the branch is exercised directly instead.
+    `close_popup` is what `hotkeys._handle_escape` calls for every popup since 093/17, so the
+    branch is exercised directly rather than through frames: a second frame-driving App in one
+    process hits a torn-down imgui font atlas (`glTexSubImage2D` on a None binding), which
+    poisons every later test that draws.
     """
-    from shaderbox.hotkeys import _handle_escape
-
     app.open_projects()
     app.projects_new_input.open(app.default_projects_root_dir, "half typed")
+    assert app.projects_input_owns_esc(), "the input must own Esc while it is open"
 
-    # The one line `_handle_escape` runs for this state, with its key check satisfied.
-    handled_by_input = (
-        app.popup_state == PopupState.PROJECTS and app.projects_input_owns_esc()
-    )
-    assert handled_by_input, "the input must own Esc while it is open"
+    assert not app.close_popup(), "the funnel closed a modal whose input owns Esc"
+    assert app.popup_state == PopupState.PROJECTS
 
-    source = Path("shaderbox/hotkeys.py").read_text(encoding="utf-8")
-    assert "projects_input_owns_esc()" in source, (
-        "the ownership predicate must be CONSULTED in the Esc dispatch, not merely defined"
-    )
-    assert _handle_escape is not None
-
-
-# The mirror case -- Esc with NO input open must close the modal -- is not tested here. It needs a
-# second frame-driving App in the same process, and the imgui font atlas is process-global: the
-# second renderer's upload hits a torn-down GL texture (`glTexSubImage2D` on a None binding),
-# unrelated to this feature. `hotkeys._handle_escape`'s existing chain already covers the plain
-# close for every other popup, and the branch added here only ADDS a condition in front of it.
+    # The mirror case: with the input closed, the same call closes the modal.
+    app.projects_new_input.close()
+    assert app.close_popup()
+    assert app.popup_state == PopupState.CLOSED
 
 
 def test_the_open_project_refuses_to_be_deleted(app: Any) -> None:

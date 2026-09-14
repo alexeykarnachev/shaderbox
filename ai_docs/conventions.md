@@ -548,15 +548,48 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   aligned continuation because `BreakAfterOpenBracketIf` is inert for a plain `if` in
   clang-format 23.1.0 (measured; the documented example is `if constexpr`). Revisit the `if`
   shape when the `clang-format` wheel is bumped.
-- **`InlineInput` dataclass for mutually-exclusive inline editors.** A picker / panel hosting
-  multiple inline text-input affordances (rename / new-file / new-dir) uses one `InlineInput`
-  instance per kind — `target: Path | None`, `buf: str`, `needs_focus: bool` with
-  `open()` / `close()` / `is_open` (defined in `editor_types.py`). A single `reset_inline_state()`
-  method enforces the mutex: every `begin_*` opener calls it first, then sets only its own fields.
-  `needs_focus` is the one-shot the input's first draw consumes via `set_keyboard_focus_here(0)`.
-  The shader-lib instances live on `ShaderLibFileManager` (`shader_lib/file_ops.py`); the picker
-  reads them directly via `app.shader_lib_files.*` (no delegating facade on `App`). Revisit if a
-  second multi-inline-input surface lands (promote `InlineInput` to `ui_primitives.py`).
+- **One name-entry row, and `InlineInput` is a `ui_primitives` type (093).** A surface hosting
+  inline text-input affordances (rename / new-file / new-dir / a group name / a project name)
+  uses one `InlineInput` instance per kind — `target: Path | None`, `buf: str`,
+  `needs_focus: bool` with `open()` / `close()` / `is_open`. A single `reset_inline_state()`
+  method enforces the mutex: every `begin_*` opener calls it first, then sets only its own
+  fields. `needs_focus` is the one-shot the input's first draw consumes via
+  `set_keyboard_focus_here(0)`. Every such row DRAWS through `ui_primitives.name_input_row`,
+  which returns `InputRowResult(committed, cancelled, focused)`: it commits on Enter OR on
+  `is_item_deactivated_after_edit`, reserves the `x` cancel, and reports the FIELD's focus
+  (the `x` is submitted after the input, so an item-scoped query at the call site answers for
+  the button instead). The row was promoted out of `editor_types.py` when the third
+  multi-inline-input surface landed, which is what the earlier bullet's trigger named. The
+  shader-lib instances live on `ShaderLibFileManager` (`shader_lib/file_ops.py`); the picker
+  reads them directly via `app.shader_lib_files.*` (no delegating facade on `App`). Revisit if
+  a row needs a commit rule the two (Enter, deactivate) cannot express.
+
+- **A destructive verb confirms by its SURFACE, not by arming state (093).** On a menu it is
+  `ui_primitives.confirm_menu_item(label, confirm_label)` — a `begin_menu` holding one
+  error-colored item, so the second click is a hover-and-click inside the same open menu: no
+  armed flag, no reopen, no modal, no `PopupState` change (the pass Delete, the document
+  Delete, the lib tree's file and directory deletes). Inside a MODAL it is the armed
+  `danger_button` row the rulebook already prescribes (Projects' delete, Settings' library
+  reset). A tile never carries one: a verb on an object lives on that object's context menu.
+  This reverses 092 D16's strip arm and the lib tree's second-open label flip. Revisit if a
+  submenu proves unreachable on a touchpad.
+
+- **A right-click hint sits over a modal's or a panel's LIST (093).** The documents grid and
+  the shader-lib tree carry the dim `Right-click for actions` caption; a canvas, a strip, or a
+  card row with a visible primary click gets none — two affordances for one thing is the slop
+  signal the rulebook names. Revisit if a menu walk finds one undiscovered.
+
+- **The menu bar is a RENDER of `COMMAND_SPECS` (093).** One top-level menu per
+  `CommandCategory` in `CATEGORY_ORDER`, one item per spec carrying `in_menu`, in table order,
+  the label the spec's and the hint `chord_to_str(app.effective_bindings[id])`. `menus.py`
+  holds the `App`-facing primitives (`draw_menu_bar`, `command_menu_item`, `menu_enabled`) —
+  `ui_primitives.py` is `App`-free by the three-layer rule and cannot host them; the pure
+  `commands.command_label(id)` is the one spelling every BUTTON that opens a command's surface
+  takes, so `add pass` and `Add pass` cannot both exist. `menu_enabled` gates per ITEM, never
+  per category: a `begin_menu` under `begin_disabled` does not open at all, so a greyed
+  category would hide what is in it. `in_menu=False` on the four Focus-tab verbs and Cycle
+  code tab, whose item would duplicate the tab bar under it. Revisit if a menu needs an item
+  that is not a command.
 - **One shared row primitive per row-KIND, not per-kind special-case rows.** A list/grid whose
   items come in kinds (regular uniforms vs engine/`auto` uniforms) draws every kind through ONE
   row helper (`uniform_name_label`) with style overrides, never a separate hand-rolled row per
@@ -868,7 +901,12 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   the output and nothing else (`App.choose_output`); no click of any count opens a shader
   tab, because inside the pane a `pick_pass` click evicted the graph tab it was made on, and
   the pass's context menu (`pass_menu_items`, one item set for the tile and the node) carries
-  `Open shader` with the other verbs. Ports come from the COMPILED program
+  `Open shader` with the other verbs. Each object kind has exactly one item-set function in
+  the widget module that owns it and every surface showing that object draws it, the caller
+  owning only the popup: `pass_list.pass_menu_items` (the tile and the node, plus the node's
+  own `Group`), `pass_graph._box_menu_items` (a group box), `document_grid.document_menu_items`
+  (a grid tile), and `pass_graph._canvas_menu` for the canvas background, whose two creation
+  verbs render through `menus.command_menu_item`. Ports come from the COMPILED program
   (`sampler_names`, through `pass_graph.node_ports`, which skips a self-read: `u_prev` is
   feedback, not an input, and has no pin) and edges from `effective_wiring()`, two
   sources of truth on purpose: the wiring drops an unfilled sampler, so a port list built from

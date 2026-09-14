@@ -14,6 +14,7 @@ from enum import StrEnum, auto
 from shaderbox.document import Document, sampler_names
 from shaderbox.pass_graph import Port, Wiring, node_ports
 from shaderbox.theme import SIZE
+from shaderbox.ui_primitives import InlineInput
 
 Position = tuple[float, float]
 # A wire's identity anywhere on the canvas: the consumer pass and the sampler the wire
@@ -81,9 +82,8 @@ class GraphViewState:
     wire_drag: WireDrag | None = None
     # The snap guides the current drag aligned to, in canvas units: ("v", x) or ("h", y).
     guides: list[tuple[str, float]] = field(default_factory=list)
-    # The Group... name prompt: open, and its buffer.
-    group_prompt: bool = False
-    group_name: str = ""
+    # The Group name prompt: the shared inline input, whose `target` is unused here.
+    group_input: InlineInput = field(default_factory=InlineInput)
     # The rubber band's press point, in screen space, while one is being dragged.
     band_anchor: Position | None = None
     # Where each input port's hit rect landed on screen this frame, keyed by (pass, sampler):
