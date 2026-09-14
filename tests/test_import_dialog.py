@@ -18,6 +18,8 @@ from shaderbox.pass_graph import group_slug
 from shaderbox.popups import import_passes
 from shaderbox.ui_primitives import preview_cell
 
+_PKG = Path(__file__).resolve().parent.parent / "shaderbox"
+
 
 def _multi_pass_example(app: Any) -> str:
     return next(
@@ -68,7 +70,7 @@ def test_escape_reaches_the_close_funnel(app: Any) -> None:
     for real below, so a branch that parses but does nothing fails too. Falsifier: delete the
     IMPORT_PASSES branch from `close_popup`.
     """
-    tree = ast.parse(Path("shaderbox/app.py").read_text(encoding="utf-8"))
+    tree = ast.parse((_PKG / "app.py").read_text(encoding="utf-8"))
     funnel = next(
         node
         for node in ast.walk(tree)

@@ -1495,13 +1495,16 @@ def _node_menu(app: App, document_id: str, view: GraphViewState, node: _Node) ->
             if node.kind == "box":
                 _box_menu_items(app, document_id, view, node.group)
             else:
-                pass_menu_items(app, document_id, node.name)
-                if node.kind == "pass" and imgui.menu_item_simple("Group"):
+
+                def group_item() -> None:
                     # Node-only (092 D14): it seeds `view.selection`, which the strip has not
                     # got and could not show.
-                    if node.name not in view.selection:
-                        view.selection = {node.name}
-                    view.group_input.open(Path(node.name), buf="")
+                    if node.kind == "pass" and imgui.menu_item_simple("Group"):
+                        if node.name not in view.selection:
+                            view.selection = {node.name}
+                        view.group_input.open(Path(node.name), buf="")
+
+                pass_menu_items(app, document_id, node.name, slot=group_item)
             imgui.end_popup()
 
 
@@ -1510,8 +1513,16 @@ def _group_prompt(app: App, document_id: str, view: GraphViewState) -> None:
     if view.group_input.needs_focus and not imgui.is_popup_open("##graph_group"):
         imgui.open_popup("##graph_group")
     if not imgui.begin_popup("##graph_group"):
+        # A click outside dismisses the popup without reaching either commit branch, so the
+        # input is closed here or `is_open` reports a prompt that is no longer on screen.
+        # `begin_popup` returns True on the frame `open_popup` ran, so this cannot fire on
+        # the opening frame.
+        if view.group_input.is_open:
+            view.group_input.close()
         return
-    result = name_input_row("graph_group_name", view.group_input)
+    result = name_input_row(
+        "graph_group_name", view.group_input, width=float(SIZE.NAME_INPUT_W)
+    )
     imgui.same_line()
     committed = primary_button("Create") or result.committed
     name = view.group_input.buf.strip()

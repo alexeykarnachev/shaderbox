@@ -7,6 +7,7 @@ tile's context menu (`document_menu_items`), and the tile itself carries no butt
 from imgui_bundle import imgui, imgui_ctx
 
 from shaderbox.app import App
+from shaderbox.commands import SPEC_BY_ID, CommandId
 from shaderbox.constants import STARTER_EXAMPLE_ID
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_models import UIDocument
@@ -48,7 +49,7 @@ def document_menu_items(app: App, document_id: str) -> None:
     if imgui.menu_item_simple("Open folder"):
         app.open_document_dir(document_id)
     imgui.separator()
-    if confirm_menu_item("Delete", "Move to trash"):
+    if confirm_menu_item("Delete", SPEC_BY_ID[CommandId.DELETE_DOCUMENT].confirm_label):
         app.delete_document(document_id)
 
 

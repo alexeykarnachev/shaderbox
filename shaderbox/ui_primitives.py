@@ -572,18 +572,18 @@ def name_input_row(id_: str, input: InlineInput, width: float = 0.0) -> InputRow
     (item-scoped queries see the last submitted item) and applied only when neither Esc nor
     the `x` ran.
 
+    `width` is the FIELD's width, taken verbatim. The `width <= 0.0` fallback reads the
+    content region, which only has a fixed point inside a container whose own width does not
+    follow its content — an auto-sized popup must pass a width or it grows every frame.
+
     Returns:
         `InputRowResult(committed=True, cancelled=False, focused=True)` on a commit by
         Enter; `InputRowResult(committed=False, cancelled=True, focused=False)` on Esc or
         the `x`.
     """
     cancel_w = imgui.calc_text_size("x").x + float(SPACE.MD) * 2.0
-    field_w = (
-        width - cancel_w
-        if width > 0.0
-        else imgui.get_content_region_avail().x - cancel_w
-    )
-    imgui.set_next_item_width(max(float(SIZE.NAME_INPUT_W), field_w))
+    field_w = width if width > 0.0 else imgui.get_content_region_avail().x - cancel_w
+    imgui.set_next_item_width(field_w)
     if input.needs_focus:
         # ONE-SHOT: re-grabbing every frame resets the caret blink and fights other inputs.
         imgui.set_keyboard_focus_here(0)

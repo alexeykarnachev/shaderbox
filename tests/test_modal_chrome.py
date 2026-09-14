@@ -244,7 +244,7 @@ def test_the_close_funnel_covers_every_popup_state() -> None:
 
     Falsifier: add a `PopupState` member, wire its draw, omit its `close_popup` branch.
     """
-    tree = ast.parse(Path("shaderbox/app.py").read_text(encoding="utf-8"))
+    tree = ast.parse((_PKG / "app.py").read_text(encoding="utf-8"))
     funnel = next(
         node
         for node in ast.walk(tree)

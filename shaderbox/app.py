@@ -964,8 +964,9 @@ class App:
         self.tab_select_pending = True
 
     def close_active_tab(self) -> None:
-        # Close the focused editor tab (the Ctrl+W / tab-bar-x path share close_tab). No-op
-        # with no tabs open; only fires while the editor is focused (CommandScope.EDITOR gate).
+        # Close the active editor tab (the Ctrl+W / tab-bar-x path share close_tab). No-op
+        # with no tabs open. The chord needs editor focus; the menu item asks only for an
+        # active tab, since a menu click has already taken the focus away.
         if self.editor_tabs:
             self.close_tab(self.active_tab_index)
 

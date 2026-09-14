@@ -10,8 +10,10 @@ that as a library fact). The layering and one-spelling questions are pure source
 
 import ast
 from collections.abc import Callable, Iterator
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 import pytest
 from imgui_bundle import imgui
@@ -86,7 +88,7 @@ class _ItemSpy:
 
         monkeypatch.setattr(imgui, "menu_item_simple", simple)
         monkeypatch.setattr(imgui, "menu_item", item)
-        for module in (pass_list, document_grid, pass_graph):
+        for module in (pass_list, document_grid, pass_graph, menus):
             monkeypatch.setattr(module, "confirm_menu_item", confirm, raising=False)
 
 
@@ -337,7 +339,10 @@ def test_the_gate_buttons_take_the_command_label() -> None:
 def test_the_pass_set_is_the_same_on_the_strip_and_the_node(
     app: Any, spy: _ItemSpy
 ) -> None:
-    """The node adds `Group` and nothing else. Falsifier: add an item to one caller only."""
+    """The node adds `Group` right after `Settings` and nothing else (M4's Items column).
+
+    Falsifier: add an item to one caller only, or move the slot's draw away from `Settings`.
+    """
     document_id = app.current_document_id
     name = next(iter(app.ui_documents[document_id].document.passes))
     assert app.session.add_pass(document_id, "other") == ""
@@ -347,18 +352,63 @@ def test_the_pass_set_is_the_same_on_the_strip_and_the_node(
     shared = list(spy.labels)
 
     spy.labels.clear()
-
-    def node_menu() -> None:
-        pass_list.pass_menu_items(app, document_id, name)
-        imgui.menu_item_simple("Group")
-
-    _frame(node_menu)
+    _frame(
+        lambda: pass_list.pass_menu_items(
+            app, document_id, name, slot=lambda: imgui.menu_item_simple("Group")
+        )
+    )
     node = list(spy.labels)
 
     assert shared, "the shared set drew nothing"
-    assert node == [*shared, "Group"], (shared, node)
-    assert shared[:2] == ["Open shader", "Settings"]
-    assert shared[-1] == "Delete"
+    assert shared == ["Open shader", "Settings", "Delete"], shared
+    assert node == ["Open shader", "Settings", "Group", "Delete"], node
+
+
+def test_an_ungrouped_pass_draws_one_separator_before_delete(app: Any) -> None:
+    """M4: a separator before `Leave group` only when grouped, before `Delete` always.
+
+    Falsifier: emit the first separator unconditionally -- an ungrouped pass (the common
+    case) then draws two adjacent rules with nothing between them.
+    """
+    document_id = app.current_document_id
+    document = app.ui_documents[document_id].document
+    name = next(iter(document.passes))
+    order: list[str] = []
+    real_separator = imgui.separator
+    real_simple = imgui.menu_item_simple
+
+    def separator() -> None:
+        order.append("---")
+        real_separator()
+
+    def simple(label: str, *args: Any, **kwargs: Any) -> bool:
+        order.append(label)
+        return real_simple(label, *args, **kwargs)
+
+    imgui.separator = separator
+    imgui.menu_item_simple = simple
+    try:
+        _frame(lambda: pass_list.pass_menu_items(app, document_id, name))
+        ungrouped = list(order)
+        order.clear()
+        app.session.set_pass_group(document_id, name, "g")
+        _frame(lambda: pass_list.pass_menu_items(app, document_id, name))
+        grouped = list(order)
+    finally:
+        imgui.separator = real_separator
+        imgui.menu_item_simple = real_simple
+
+    assert "---" not in _adjacent_pairs(ungrouped), ungrouped
+    assert ungrouped.count("---") == 1, ungrouped
+    assert "Leave group" not in ungrouped, ungrouped
+    assert "---" not in _adjacent_pairs(grouped), grouped
+    assert grouped.count("---") == 2, grouped
+    assert "Leave group" in grouped, grouped
+
+
+def _adjacent_pairs(order: list[str]) -> list[str]:
+    """The entries that immediately follow an identical one -- two rules in a row."""
+    return [b for a, b in pairwise(order) if a == b]
 
 
 def test_a_documents_menu_carries_open_open_folder_and_delete(
@@ -751,3 +801,219 @@ def test_the_last_pass_cannot_be_deleted_through_the_menu(app: Any) -> None:
     assert len(document.passes) == 1
     assert app.session.delete_pass(document_id, only) != ""
     assert only in document.passes
+
+
+# ---------------------------------------------------------------------------
+# M4 — the verbs the items actually reach
+# ---------------------------------------------------------------------------
+
+
+class _MenuDriver:
+    """Drives a real context menu: right-click the target, then click an item by its rect.
+
+    The rects are read off the frame the item is submitted in, which is what makes the click
+    land on the item the menu drew rather than on a position the test guessed.
+    """
+
+    def __init__(self, items: Callable[[], None], monkeypatch: Any) -> None:
+        self.items = items
+        self.rects: dict[str, tuple[float, float, float, float]] = {}
+        self.open = False
+        real_simple = imgui.menu_item_simple
+        real_confirm = ui_primitives.confirm_menu_item
+
+        def record(label: str) -> None:
+            lo, hi = imgui.get_item_rect_min(), imgui.get_item_rect_max()
+            self.rects[label] = (lo.x, lo.y, hi.x, hi.y)
+
+        def simple(label: str, *args: Any, **kwargs: Any) -> bool:
+            fired = real_simple(label, *args, **kwargs)
+            record(label)
+            return fired
+
+        def confirm(label: str, confirm_label: str, **kwargs: Any) -> bool:
+            fired = real_confirm(label, confirm_label, **kwargs)
+            record(label)
+            return fired
+
+        monkeypatch.setattr(imgui, "menu_item_simple", simple)
+        for module in (pass_list, document_grid, pass_graph, menus):
+            monkeypatch.setattr(module, "confirm_menu_item", confirm, raising=False)
+
+    def _body(self) -> None:
+        imgui.button("target", (140.0, 40.0))
+        self.open = imgui.begin_popup_context_item("##drive_menu")
+        if self.open:
+            self.items()
+            imgui.end_popup()
+
+    def open_menu(self) -> None:
+        io = imgui.get_io()
+        for _ in range(3):
+            _frame(self._body)
+        io.add_mouse_pos_event(70.0, 60.0)
+        _frame(self._body)
+        io.add_mouse_button_event(1, True)
+        _frame(self._body)
+        io.add_mouse_button_event(1, False)
+        for _ in range(2):
+            _frame(self._body)
+        assert self.open, "the context menu never opened"
+
+    def click(self, label: str) -> None:
+        assert label in self.rects, (label, sorted(self.rects))
+        x0, y0, x1, y1 = self.rects[label]
+        io = imgui.get_io()
+        io.add_mouse_pos_event((x0 + x1) / 2.0, (y0 + y1) / 2.0)
+        _frame(self._body)
+        io.add_mouse_button_event(0, True)
+        _frame(self._body)
+        io.add_mouse_button_event(0, False)
+        for _ in range(2):
+            _frame(self._body)
+
+
+def test_the_pass_delete_item_reaches_the_session_verb(
+    app: Any, monkeypatch: Any
+) -> None:
+    """The confirm's inner click runs `session.delete_pass` once, spied with `wraps` so the
+    real verb still runs. Falsifier: replace the `Delete` branch's body with `pass`."""
+    document_id = app.current_document_id
+    name = next(iter(app.ui_documents[document_id].document.passes))
+    assert app.session.add_pass(document_id, "other") == ""
+    driver = _MenuDriver(
+        lambda: pass_list.pass_menu_items(app, document_id, name), monkeypatch
+    )
+    driver.open_menu()
+    with mock.patch.object(
+        app.session, "delete_pass", wraps=app.session.delete_pass
+    ) as verb:
+        driver.click("Delete")
+        assert verb.call_count == 0, "the outer label alone deleted the pass"
+        driver.click(f"Delete pass {name}")
+    assert verb.call_count == 1, [c.args for c in verb.call_args_list]
+    assert verb.call_args.args[:2] == (document_id, name)
+
+
+def test_the_document_delete_item_reaches_the_app_verb(
+    app: Any, monkeypatch: Any
+) -> None:
+    """The document menu's confirm runs `App.delete_document` once. Falsifier: replace the
+    `Delete` branch's body with `pass`."""
+    document_id = app.current_document_id
+    driver = _MenuDriver(
+        lambda: document_grid.document_menu_items(app, document_id), monkeypatch
+    )
+    driver.open_menu()
+    with mock.patch.object(app, "delete_document", wraps=app.delete_document) as verb:
+        driver.click("Delete")
+        assert verb.call_count == 0, "the outer label alone deleted the document"
+        driver.click(SPEC_BY_ID[CommandId.DELETE_DOCUMENT].confirm_label)
+    assert verb.call_count == 1, [c.args for c in verb.call_args_list]
+    assert verb.call_args.args[:1] == (document_id,)
+
+
+def test_the_open_folder_item_reaches_the_app_verb(app: Any, monkeypatch: Any) -> None:
+    """`Open folder` runs `App.open_document_dir(id)`. Falsifier: replace the item's body
+    with `pass` -- the click then reaches nothing."""
+    document_id = app.current_document_id
+    driver = _MenuDriver(
+        lambda: document_grid.document_menu_items(app, document_id), monkeypatch
+    )
+    driver.open_menu()
+    with mock.patch.object(app, "open_document_dir", wraps=lambda i: None) as verb:
+        driver.click("Open folder")
+    assert verb.call_count == 1, [c.args for c in verb.call_args_list]
+    assert verb.call_args.args[:1] == (document_id,)
+
+
+def test_the_box_dissolve_item_reaches_the_app_verb(app: Any, monkeypatch: Any) -> None:
+    """The group box's `Dissolve` runs `App.dissolve_group(id, group)`. Falsifier: replace
+    the item's body with `pass`."""
+    document_id = app.current_document_id
+    name = next(iter(app.ui_documents[document_id].document.passes))
+    app.session.set_pass_group(document_id, name, "bloom")
+    view = app.graph_view_for(document_id)
+    driver = _MenuDriver(
+        lambda: pass_graph._box_menu_items(app, document_id, view, "bloom"), monkeypatch
+    )
+    driver.open_menu()
+    with mock.patch.object(app, "dissolve_group", wraps=app.dissolve_group) as verb:
+        driver.click("Dissolve")
+    assert verb.call_count == 1, [c.args for c in verb.call_args_list]
+    assert verb.call_args.args[:2] == (document_id, "bloom")
+
+
+def test_the_bars_delete_document_is_a_confirm_submenu(
+    app: Any, monkeypatch: Any
+) -> None:
+    """M5 is a rule, not a case: the bar's one destructive verb confirms like an object
+    menu's. Falsifier: drop `confirm_label` from `DELETE_DOCUMENT` -- the label click then
+    trashes the open document on one pointer slip below `New document`."""
+    spec = SPEC_BY_ID[CommandId.DELETE_DOCUMENT]
+    assert spec.confirm_label, "DELETE_DOCUMENT carries no confirm label"
+    driver = _MenuDriver(
+        lambda: menus.command_menu_item(app, CommandId.DELETE_DOCUMENT), monkeypatch
+    )
+    driver.open_menu()
+    with mock.patch.object(app, "delete_document", wraps=app.delete_document) as verb:
+        driver.click(spec.label)
+        assert verb.call_count == 0, (
+            "the bar's Delete document fired on the label click"
+        )
+        driver.click(spec.confirm_label)
+    assert verb.call_count == 1, [c.args for c in verb.call_args_list]
+
+
+# ---------------------------------------------------------------------------
+# M9 — the close funnel's per-branch CLEANUP, not just its dispatch
+# ---------------------------------------------------------------------------
+
+
+def _open_emoji_picker(app: Any) -> None:
+    app.open_emoji_picker(lambda glyph: None)
+    app.emoji_picker_query = "smi"
+
+
+def _emoji_cleanup_ran(app: Any, applied: Any) -> None:
+    _ = applied
+    assert app.emoji_pick_target is None, "the pick target survived the close"
+    assert app.emoji_picker_query == "", "the query survived the close"
+
+
+def _settings_cleanup_ran(app: Any, applied: Any) -> None:
+    _ = app
+    assert applied.call_count == 1, (
+        f"apply_editor_settings ran {applied.call_count} times"
+    )
+
+
+@pytest.mark.parametrize(
+    ("state", "open_it", "cleaned"),
+    [
+        (PopupState.EMOJI_PICKER, _open_emoji_picker, _emoji_cleanup_ran),
+        (PopupState.SETTINGS, lambda app: app.open_settings(), _settings_cleanup_ran),
+    ],
+    ids=["emoji_picker", "settings"],
+)
+def test_each_close_branch_runs_its_own_cleanup(
+    app: Any,
+    state: PopupState,
+    open_it: Callable[[Any], None],
+    cleaned: Callable[[Any, Any], None],
+) -> None:
+    """M9's dispatch is gated structurally; its per-branch cleanup was not, so both branches
+    that carry more than a state write could be gutted with the suite green.
+
+    Falsifiers, one per case: drop the nulling from `close_emoji_picker` (the target dangles
+    at a dead caller); drop `apply_editor_settings()` from the SETTINGS branch (Esc silently
+    discards the user's edits).
+    """
+    open_it(app)
+    assert app.popup_state == state
+    with mock.patch.object(
+        app, "apply_editor_settings", wraps=app.apply_editor_settings
+    ) as applied:
+        assert app.close_popup() is True
+    assert app.popup_state == PopupState.CLOSED
+    cleaned(app, applied)

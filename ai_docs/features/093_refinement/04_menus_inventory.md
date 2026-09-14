@@ -622,7 +622,7 @@ module that owns the object, each caller owning only the popup.
 | Object | Items (draw order) | Surfaces that draw it |
 |---|---|---|
 | pass | Open shader · Settings · ─ · Leave group (when grouped) · ─ · Delete ▸ | strip tile, graph node (both today) |
-| pass, node only | + Group... (before Leave group) | graph node (today; 092 D14 — it seeds `view.selection`, which the strip does not have and could not show) |
+| pass, node only | + Group (after Settings, before Leave group) | graph node (today; 092 D14 — it seeds `view.selection`, which the strip does not have and could not show) |
 | group box | Open · Dissolve | graph box (today; plus its double-click) |
 | document | Open · Open folder · ─ · Delete ▸ | documents grid tile (new) |
 

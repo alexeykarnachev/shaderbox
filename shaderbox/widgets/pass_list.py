@@ -10,7 +10,7 @@ previous frame). Compile errors show as a red border rather than as text; a samp
 chosen on its own row of the uniforms panel (072).
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from imgui_bundle import imgui
 
@@ -63,21 +63,31 @@ def _reads(name: str, wiring: Wiring, order: Sequence[str]) -> list[str]:
     return chips
 
 
-def pass_menu_items(app: App, document_id: str, name: str) -> None:
+def pass_menu_items(
+    app: App,
+    document_id: str,
+    name: str,
+    slot: Callable[[], None] | None = None,
+) -> None:
     """The items of one pass's context menu, shared by the strip's tile and the graph's node
     (092 D10) so the two surfaces cannot drift. The caller owns the popup itself: the strip
     anchors it with an explicit id (safe there, each tile is its own window), the canvas with
-    the previous item."""
+    the previous item.
+
+    `slot` draws a caller's own items after `Settings` — the graph node's `Group`, which the
+    strip has no selection to seed."""
     document = app.ui_documents[document_id].document
     if imgui.menu_item_simple("Open shader"):
         app.ensure_shader_tab(document_id, name, focus_editor=True)
     if imgui.menu_item_simple("Settings"):
         app.open_pass_settings(name)
-    imgui.separator()
-    if document.graph.passes.get(name, PassEntry()).group and imgui.menu_item_simple(
-        "Leave group"
-    ):
-        app.leave_group(document_id, name)
+    if slot is not None:
+        slot()
+    grouped = bool(document.graph.passes.get(name, PassEntry()).group)
+    if grouped:
+        imgui.separator()
+        if imgui.menu_item_simple("Leave group"):
+            app.leave_group(document_id, name)
     imgui.separator()
     # The last pass of a document cannot go: the delete would leave no output to draw. The
     # disabled submenu does not open, so nothing inside it is reachable.

@@ -143,6 +143,11 @@ _UNMEASURABLE: dict[tuple[str, str], str] = {
         "grouped_combo",
     ): "the group captions of a grouped combo, passed in by the caller (one word each)",
     (
+        "shaderbox/menus.py",
+        "command_menu_item",
+    ): "the spec's own label and confirm label; "
+    "test_every_command_label_is_within_the_menu_budget measures the table",
+    (
         "shaderbox/ui_primitives.py",
         "anchored_note",
     ): "a uniform's live VALUE, cut to the note's width -- a number, not authored copy",

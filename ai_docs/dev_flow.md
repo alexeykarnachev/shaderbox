@@ -329,8 +329,12 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
 - **`menus.py`** — the `App`-facing menu primitives (093/17): `draw_menu_bar(app)` (a render of
   `COMMAND_SPECS`, one menu per `CommandCategory`, plus the right-aligned project name),
   `command_menu_item(app, id)` (label + chord hint + scope-derived `enabled`, fires the registered
-  callback) and `menu_enabled(app, spec)`. Imports `App` and `commands`, which is why it is not in
-  `ui_primitives.py`.
+  callback; a spec carrying a `confirm_label` draws as a confirm submenu instead) and
+  `menu_enabled(app, spec)`. That predicate asks "does the verb have a target" while
+  `hotkeys.spec_eligible` asks "may this key press fire" — deliberately different questions, since
+  the click that opened the menu has already taken the focus a chord's gate reads. It is exhaustive
+  over `CommandScope` through `assert_never`, so a new member fails the type check. Imports `App`
+  and `commands`, which is why it is not in `ui_primitives.py`.
 - **`hotkeys.py`** — two halves of keyboard handling: `process_hotkeys(app)` (PRE-`new_frame`: glfw
   poll + imgui `process_inputs` only) and `dispatch_commands(app)` (IN-frame, top of the main-window
   block: registry-driven `imgui.shortcut()` dispatch reading `app.effective_bindings`, the bespoke ESC

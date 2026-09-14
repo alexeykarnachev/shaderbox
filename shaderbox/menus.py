@@ -9,6 +9,8 @@ This module imports `App`, which is why it is not in `ui_primitives.py` (that la
 `App`-free by the three-layer rule). `commands.command_label` stays in the leaf.
 """
 
+from typing import assert_never
+
 from imgui_bundle import imgui, imgui_ctx
 
 from shaderbox.app import App
@@ -22,6 +24,7 @@ from shaderbox.commands import (
     chord_to_str,
 )
 from shaderbox.theme import COLOR, SPACE
+from shaderbox.ui_primitives import confirm_menu_item
 
 
 def menu_enabled(app: App, spec: CommandSpec) -> bool:
@@ -30,20 +33,32 @@ def menu_enabled(app: App, spec: CommandSpec) -> bool:
     Per ITEM, never per category: a `begin_menu` wrapped in `begin_disabled` does not open at
     all, so a whole greyed category would hide what is in it.
     """
-    if spec.scope is CommandScope.EDITOR:
-        return app.active_tab is not None
-    if spec.scope is CommandScope.COPILOT:
-        return app.is_copilot_open
-    return True
+    match spec.scope:
+        case CommandScope.EDITOR:
+            return app.active_tab is not None
+        case CommandScope.COPILOT:
+            return app.is_copilot_open
+        case CommandScope.GLOBAL:
+            return True
+        case _:
+            assert_never(spec.scope)
 
 
 def command_menu_item(app: App, command_id: CommandId) -> bool:
     """One command as a menu item: its label, its bound chord as the hint, its scope as the
-    enabled test. Fires the command's callback on a click and returns whether it fired."""
+    enabled test. Fires the command's callback on a click and returns whether it fired.
+
+    A spec carrying a `confirm_label` draws as a confirm submenu instead, so a destructive
+    verb on the bar takes the same two clicks an object menu's does.
+    """
     spec = SPEC_BY_ID[command_id]
-    chord = app.effective_bindings.get(command_id, spec.default_chord)
-    hint = chord_to_str(chord) if chord else ""
-    fired = imgui.menu_item(spec.label, hint, False, enabled=menu_enabled(app, spec))[0]
+    enabled = menu_enabled(app, spec)
+    if spec.confirm_label:
+        fired = confirm_menu_item(spec.label, spec.confirm_label, enabled=enabled)
+    else:
+        chord = app.effective_bindings.get(command_id, spec.default_chord)
+        hint = chord_to_str(chord) if chord else ""
+        fired = imgui.menu_item(spec.label, hint, False, enabled=enabled)[0]
     if fired:
         app.command_callbacks[command_id]()
     return fired

@@ -95,6 +95,9 @@ class CommandSpec:
     in_menu: bool = True
     # Draws a separator above this spec's menu item.
     separator_before: bool = False
+    # A destructive verb's confirm text: non-empty makes the menu item a confirm submenu
+    # holding this one label, so the bar cannot fire the verb on a single click.
+    confirm_label: str = ""
 
 
 def _chord(key: imgui.Key, *mods: imgui.Key) -> int:
@@ -131,6 +134,7 @@ COMMAND_SPECS: list[CommandSpec] = [
         "Delete document",
         _chord(K.d, K.mod_alt),
         C.DOCUMENT,
+        confirm_label="Move to trash",
     ),
     CommandSpec(
         CommandId.TOGGLE_DOCUMENT_PLAY,

@@ -878,3 +878,28 @@ def test_a_wire_dropped_on_a_filled_port_overwrites_its_source(app: Any) -> None
     _frames(app, 3)
     assert document.passes["c"].uniform_values["u_src"] == PassSource("a")
     _close_graph(app, document_id)
+
+
+def test_the_group_prompt_keeps_one_width_across_frames(app: Any) -> None:
+    """The prompt is an auto-sized `begin_popup`, so a name row asking for the content
+    region's width feeds the popup's own width back into itself: measured before the fix, the
+    popup grew 72px a frame (`[16, 292, 364, 436, ...]`) until it filled the viewport.
+
+    Falsifier: drop the explicit `width=` at the prompt's `name_input_row` call -- the width
+    on frame 10 then exceeds the width on frame 3.
+    """
+    document_id, _ = _chain(app)
+    view = _open_graph(app, document_id)
+    widths: list[float] = []
+    real_row = pass_graph.name_input_row
+
+    def measured(*args: Any, **kwargs: Any) -> Any:
+        widths.append(imgui.get_window_size().x)
+        return real_row(*args, **kwargs)
+
+    view.group_input.open(Path("c"))
+    with mock.patch.object(pass_graph, "name_input_row", measured):
+        _frames(app, 12)
+    assert len(widths) >= 10, widths
+    assert widths[9] == widths[2], widths
+    _close_graph(app, document_id)

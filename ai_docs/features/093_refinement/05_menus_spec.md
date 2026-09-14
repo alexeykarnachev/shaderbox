@@ -73,7 +73,7 @@ popup.**
 | Set | Function | Items | Callers |
 |---|---|---|---|
 | pass | `pass_list.pass_menu_items(app, document_id, name)` | `Open shader` · `Settings` · ─ · `Leave group` (when grouped) · ─ · `Delete` ▸ `Delete pass <name>` | strip tile (`##pass_menu_{name}`), graph node (`None` id) |
-| pass, node only | `pass_graph._node_menu` after the set | `Group...` between `Settings` and `Leave group` (092 D14: it seeds `view.selection`) | graph node |
+| pass, node only | `pass_graph._node_menu` through `pass_menu_items`'s `slot` | `Group` between `Settings` and `Leave group` (092 D14: it seeds `view.selection`) | graph node |
 | group box | `pass_graph._box_menu_items` | `Open` · `Dissolve` | graph box |
 | document | `document_grid.document_menu_items(app, document_id)` | `Open` · `Open folder` · ─ · `Delete` ▸ `Move to trash` | grid tile (`##document_menu_{id}`; each tile is its own child, so an explicit id is safe) |
 | canvas | `pass_graph._canvas_menu` | `Add pass` · `Import passes` (both `command_menu_item`) · ─ · `Fit` · `Arrange` | canvas background |
@@ -109,10 +109,15 @@ arming caller (out of scope). A dim `Right-click for actions` caption sits besid
 **M7. One name-input row.** `InlineInput` moves from `editor_types.py` to `ui_primitives.py`
 (the conventions trigger, met a third time; `file_ops.py` already imports imgui through
 `theme`, so nothing new is pulled). `ui_primitives.name_input_row(id_, input, width) ->
-InputRowResult(committed: bool, cancelled: bool)` draws the field with `enter_returns_true`,
-consumes `input.needs_focus` once, reads `is_item_deactivated_after_edit()` on the line after
-the input (before the `x`), draws the `x` cancel, and reports `committed` when Enter fired or
-the deactivate did AND the cancel did not. Callers: the lib tree's rename and new-file/dir
+InputRowResult(committed: bool, cancelled: bool, focused: bool)` draws the field with
+`enter_returns_true`, consumes `input.needs_focus` once, reads
+`is_item_deactivated_after_edit()` on the line after the input (before the `x`), draws the
+`x` cancel, and reports `committed` when Enter fired or the deactivate did AND the cancel did
+not. `focused` is the field's OWN focus, which only the row can read: the `x` is submitted
+after the input, so an `is_item_focused()` at the call site answers for the button — and
+Projects needs the right answer to keep its outer Enter from firing while a name is typed.
+`width` is the FIELD's width, taken verbatim; its `0.0` fallback reads the content region,
+which has no fixed point inside an auto-sized popup, so the group prompt passes one. Callers: the lib tree's rename and new-file/dir
 rows (their own `wants_commit` lines go), the Projects new-name row (gains the deactivate
 commit), and the group prompt, whose state becomes `GraphViewState.group_input: InlineInput`
 (replacing `group_prompt: bool` + `group_name: str`; `InlineInput.target` unused there). The
@@ -137,7 +142,7 @@ Close row (on the lib picker).
 `EMOJI_PICKER` -> new `close_emoji_picker()` (nulls `emoji_pick_target`, clears the query,
 `CLOSED`); `SETTINGS` -> `apply_editor_settings()` + `CLOSED`; `PROJECTS` -> returns `False`
 while `projects_input_owns_esc()`, else `CLOSED`; `SHADER_LIB_PICKER` -> returns `False`
-while `inline_input_owns_esc(app)`, else `CLOSED`; `EXAMPLES`, `HELP` -> `CLOSED`; the
+while `app.shader_lib_files.inline_input_owns_esc()`, else `CLOSED`; `EXAMPLES`, `HELP` -> `CLOSED`; the
 revert modal is not in the enum and keeps its own branch in `_handle_escape` first. Returns
 `True` when it closed. `hotkeys._handle_escape` calls it in place of its four carve-outs and
 the `was_settings_open` latch (`:366`, `:398-399`), which goes; the `rebinding_command` early
@@ -156,9 +161,12 @@ programmatic path." The inventory's §9.4 already records the measurement.
 
 **M11. Copy inside budget.** `help.py:85` and `lib_picker/__init__.py:141`'s disabled-Insert
 tooltips become `needs a shader caret`; the ten `_COPILOT_LIMITS` help markers become one
-clause each (<= 8 words), their long form appended to the Help panel's copilot section; the
-twelve `_OVER_BUDGET` rows in `tests/test_ui_prose_budget.py` for them are deleted, so the
-gate holds them from now on.
+clause each (<= 8 words) on a `COPILOT_LIMIT_ROWS` table in `copilot/config.py`, their long
+form printed by a NEW Help copilot section (there was none to append to). The two
+`_OVER_BUDGET` tooltip rows in `tests/test_ui_prose_budget.py` are deleted; the copilot hints
+were never in that list -- being reached through a loop variable they are `_UNMEASURABLE`, so
+deleting their rows would have created no gate, and they get a direct assertion over the
+table instead, as `_FORMATS` already does.
 
 **M12. The hint rule and the destructive rule are conventions.** `conventions.md ## Design
 decisions` gains two bullets in "we decided X; revisit if Y" form: the confirm rule (M5) and
@@ -232,7 +240,7 @@ an auto-sized one).
 | M4: a document's menu | right-click a grid tile: the popup opens with `Open` / `Open folder` / `Delete`; `Open` calls `select_document(id)`; `Open folder` calls `open_document_dir(id)` (spied) | frame-driven |
 | M4: the canvas menu's commands | its `Add pass` item fires `command_callbacks[ADD_PASS]` (spied) and the modal opens in draft mode | frame-driven |
 | M5: the submenu | `confirm_menu_item` in a context popup: hovering `Delete` opens the submenu; a click on the label alone deletes nothing (the pass count is unchanged after the frame); a click on the inner item calls `delete_pass` once. Break: return the outer click — the label click deletes | frame-driven |
-| M5: the lib tree's arm is gone | `ShaderLibFileManager` has no `file_delete_armed` / `dir_delete_armed`; `tree.py` contains no `push_style_color`; a click on the inner item moves the file into `.trash/` and toasts | pure + frame |
+| M5: the lib tree's arm is gone | `ShaderLibFileManager` has no `file_delete_armed` / `dir_delete_armed`; `tree.py` contains no `COLOR.STATE_ERROR` push (the favorite star keeps its own, §10.3); a click on the inner item moves the file into `.trash/` and toasts | pure + frame |
 | M6: no button on the document tile | `document_grid.py` passes `deletable=False`; `App` has no `document_delete_armed`; with a document selected, no item named `del_document_*` is submitted in the frame (spy on `close_cross_button`: zero calls) | pure + frame |
 | M7: `name_input_row` commits on deactivate | focus the row, type, click elsewhere: `committed=True` once; type, press Esc / click the `x`: `cancelled=True`, `committed=False`; Enter: `committed=True`. On the group prompt: a click-away with `blur` typed calls `group_selection` once; blank does not | frame-driven |
 | M7: the promotion | `editor_types.py` has no `InlineInput`; `ui_primitives.py` has it; `file_ops.py` imports it from there | pure |
@@ -240,7 +248,7 @@ an auto-sized one).
 | M9: Esc through the funnel | open the emoji picker with a target set; press Esc: `emoji_pick_target is None` and `popup_state == CLOSED`. Open Projects, arm the new-name input, press Esc: the modal stays open and the input closes. Open Settings, change a field, Esc: `apply_editor_settings` called once (spied). Break: restore the direct `CLOSED` write in `_handle_escape` — the target dangles | frame-driven |
 | M9: the dispatch gate | `test_every_popup_state_has_a_draw_call`'s new clause: every member but `CLOSED` names a branch in `close_popup`'s AST; the break named in M9 | pure |
 | M10: no double gate | `pass_list.py`'s `Delete` site has `enabled=deletable` and no `and deletable`; a click with one pass in the document deletes nothing (the item is disabled; the probe's fact) | pure + frame |
-| M11: budget | `tests/test_ui_prose_budget.py` passes with the twelve allowlist rows removed; break: restore one long marker | pure |
+| M11: budget | `tests/test_ui_prose_budget.py` passes with the two `_OVER_BUDGET` tooltip rows removed and a direct assertion over `COPILOT_LIMIT_ROWS`; break: restore one long marker | pure |
 | M13: labels in the budget | a five-word label added to `COMMAND_SPECS` in a temporary copy fails the new row | pure |
 | M14: nothing else moved | the exporter files' diffs touch label strings only; `preview_cell`'s signature is unchanged; `toggle_copilot` / `toggle_copilot_open` both exist | review |
 
@@ -255,3 +263,17 @@ Design review of §10 revision 1: `reviews/menus_design_brief.md` (PARTIAL, 12 f
 three blocking) and `reviews/menus_design_feasibility.md` (FEASIBLE WITH CHANGES; P4, P8,
 P9 not as written). Revision 2 folded every finding (§10.5). Closure round:
 `reviews/menus_design_closure.md`.
+
+Post-implementation round on the landed commit, three reviewers over the same tree:
+`reviews/menus_post_correctness.md` (PARTIAL, 7 findings — the group prompt's runaway popup
+width, `Delete document` on the bar with no confirm, four object-menu verbs no test reached,
+and four LOWs), `reviews/menus_post_architecture.md` (PARTIAL, 3 — a comment the diff
+invalidated, `name_input_row`'s inert `width`, a third un-funneled `CommandScope` predicate)
+and `reviews/menus_post_fidelity.md` (PARTIAL, 4 — `Group`'s position, and three verification
+rows whose test could not fail for the reason the row named). Round 1 of fixes took every
+finding: the width is now the field's and the prompt passes one, `CommandSpec.confirm_label`
+puts the bar's destructive verb behind the same submenu an object menu uses, the four verbs
+are pinned by frame-driven tests spying the real method, `close_popup`'s two cleanup-carrying
+branches by a parametrized one, `Group` moved into `pass_menu_items`'s `slot` between
+`Settings` and `Leave group`, and `menu_enabled` became exhaustive over `CommandScope`
+through `assert_never`.
