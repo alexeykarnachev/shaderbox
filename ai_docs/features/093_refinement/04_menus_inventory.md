@@ -478,12 +478,21 @@ Graph `##graph_group` prompt (§2, not a `PopupState` modal): Enter commits (`pa
 
 Exactly **one** hint exists anywhere in the app: `imgui.text_colored(COLOR.FG_DIM, "Right-click for actions")` above the shader-lib tree (`popups/lib_picker/__init__.py:116`). The pass strip (`pass_list.py`), the graph canvas background, and graph nodes — all three carrying right-click menus per §3 — have **no such hint**.
 
-### 9.4 `menu_item_simple(enabled=...)` — Python-side gate present or absent
+### 9.4 `menu_item_simple(enabled=...)` — no Python-side gate is needed on this build
+
+A probe on the pinned imgui-bundle (1.92.801) drove a real click onto the same menu item with
+`enabled` the only difference: `enabled=True` clicked, `enabled=False` did not; an item under
+`begin_disabled(True)` did not either (`reviews/menus_design_feasibility.md` §0.1, reproduced
+by the main session with a positive control in the same run). So:
 
 | Site | `enabled=` condition | Python-side guard on the callback? |
 |---|---|---|
-| Pass menu "Delete" | `enabled=deletable` (`pass_list.py:72-73`) | **yes** — `... and deletable` double-gates the click too (comment explains: this imgui-bundle build can register a click on a disabled item) |
-| Lib-tree function-leaf "Insert at caret" | `enabled=has_editor` (`tree.py:358`) | **no** — `insert_name(app, fn)` fires with no Python guard; on this build it can fire with no editor target, the exact failure class the pass-menu comment documents |
+| Pass menu "Delete" | `enabled=deletable` (`pass_list.py:72-73`) | yes — `... and deletable`, justified by a comment naming a footgun this build does not have |
+| Lib-tree function-leaf "Insert at caret" | `enabled=has_editor` (`tree.py:358`) | no — and none is needed |
+
+The comment at `pass_list.py:72-74` and `/imgui-ui` §7.4's bullet ("`menu_item_simple(label,
+enabled=False)` can still register a click depending on the imgui-bundle version") are wrong
+for the pinned build; §10 P9 corrects both.
 
 ### 9.5 Raw `imgui.button` / hand-rolled styling outside the tier system (rulebook §1)
 
@@ -505,6 +514,10 @@ Hand-rolled `push_style_color` **not** covered by that gate: `popups/lib_picker/
 
 ## 10. Design pass — gaps, defects, and the proposed shape
 
+Revision 2, after `reviews/menus_design_brief.md` (12 findings) and
+`reviews/menus_design_feasibility.md` (four library facts settled by probe; three proposals not
+as written). What changed and why is in 10.5.
+
 The brief (finding 17, verbatim in `00_findings.md`): every menu, popup, context menu and
 settings modal reviewed together; good coverage, a convenient UX, no overblown state, "the
 exact balance"; the code side included — one context menu for the node and the tile, the
@@ -517,50 +530,58 @@ generalizes: **a verb lives on its object's context menu; a tile or card carries
 1. **Coverage is uneven by object.** A pass has a full menu (open shader, settings, delete,
    group, leave group). A group box has two items. The canvas has four. A DOCUMENT has no menu
    at all: its verbs are an armed corner ✕ on the tile (the shape finding 15 just removed from
-   the pass tile) and a `New document` button above the grid. An editor tab has only the tab
-   bar's own close ✕ and the `Ctrl+W` chord. A uniform row has none (its one verb, jump to
-   declaration, is the label's click). The lib picker's tree has three menus with the richest
-   verb set in the app.
+   the pass tile) and a `New document` button above the grid. A uniform row has none (its one
+   verb, jump to declaration, is the label's click). The lib picker's tree has three menus with
+   the richest verb set in the app.
 2. **Every verb has two or three homes and the labels drift between them.** `add pass` /
    `Add pass`, `import...` / `Import...`, `Settings...` / `Open Settings` / `Set up token` /
    `Set up credentials`, `Projects...` vs the palette's `Projects`. The palette and the
    cheatsheet read one table (`COMMAND_SPECS`) and cannot drift; the menu bar and every
-   button and menu item are hand-written and do. Nine of the 32 commands are multi-surface
-   verbs; seven commands (Save, Next/Previous pass, Cycle code tab, the four Focus-tab
-   chords) have no mouse-reachable home at all.
+   button and menu item are hand-written and do. Seven commands (Save, Next/Previous pass,
+   Cycle code tab, the four Focus-tab chords) have no mouse-reachable home at all.
 3. **The menu bar is five hand-written entries** (File: New document / Projects... / Quit;
    Edit: Settings...; Library: Browse...; Examples; Help) beside a 32-row command table that
    already carries a category per command. Add pass, Import passes, Open graph, Open script,
    Reset document, Save, Toggle copilot, the cheatsheet — none is in the bar.
-4. **Four codings of "confirm a destructive verb".** The corner ✕ + in-cell wash
-   (`preview_cell`: document grid, sticker grid); a menu label that flips to `Confirm delete`
-   on a second open (lib tree, twice, with a hand-rolled red text push); a `danger_button`
-   that arms a confirm row (Projects delete, Settings library reset); a hand-rolled red child
-   (Telegram pack delete). And the pass's Delete on the shared menu confirms nothing.
-5. **Three codings of "ask for a name".** The group prompt is a hand-rolled `begin_popup`
-   (Enter commits, deactivate does not); the Projects new-name is an inline row (same
-   divergence); the lib tree's rename / new-file rows are `InlineInput`s with an `x` cancel
-   (commit-on-deactivate per §7.5). The rulebook's shape is the third one.
+4. **Four codings of "confirm a destructive verb", and the recoverability they guard does not
+   match.** The corner ✕ + in-cell wash (`preview_cell`: document grid, sticker grid); a menu
+   label that flips to `Confirm delete` on a second open (lib tree, twice, with a hand-rolled
+   red text push); a `danger_button` that arms a confirm row (Projects delete, Settings
+   library reset); a hand-rolled red child (Telegram pack delete). Against the code: a lib
+   file or directory delete MOVES to `.trash/` and already toasts "recoverable in .trash/"
+   (`shader_lib/file_ops.py:223-250`) — and confirms twice; a document delete moves to the
+   project trash but its only Recover affordance is the copilot's card, built for a copilot
+   delete alone (`app.py:810-825`, `copilot/backend.py:1177-1188`) — a grid delete has no
+   undo, and confirms once; a pass delete drops the entry, its wiring, its position and
+   every downstream sampler's source (`project_session.py:980-999`, the file stays) — and
+   the shared menu's `Delete` confirms nothing since W3-2 removed the tile's arm.
+5. **Two "ask for a name" rows commit only on Enter.** The group prompt (a hand-rolled
+   `begin_popup`) and the Projects new-name row (already an `InlineInput`) both discard a
+   click-away; the lib tree's rename / new-file rows commit on deactivate with an `x` cancel
+   (`tree.py:224`, `:304`), which is the rulebook's shape (§7.5).
 6. **Modal chrome drifts in the small.** Settings' body returns `is_keep_opened` (the one
    inverted name); the revert confirm closes itself inside its body instead of returning
-   `keep_open`; three modals have no `SPACE.MD` spacer above the action row; Projects
-   right-anchors its Close while every other modal left-packs the row.
+   `keep_open`; three modals have no `SPACE.MD` spacer above the action row (two spellings of
+   the spacer exist); Projects right-anchors its Close while every other modal left-packs the row.
 7. **The generic Esc branch bypasses the close funnels.** `hotkeys._handle_escape` sets
-   `popup_state = CLOSED` directly for any modal without a carve-out; three modals carry
-   carve-outs, the emoji picker does not and leaves `emoji_pick_target` dangling (§9.2). Each
-   new modal has to remember to add its own carve-out — the same forgettable step the
-   `PopupState` decision already warns about for the draw block.
-8. **Two `App` methods for one visible toggle.** `toggle_copilot` (focus-aware, the chord)
-   and `toggle_copilot_open` (the chip). The difference is deliberate and documented, but
-   the command table says one thing and the chip does another.
-9. **The `enabled=` footgun is guarded in one of its two sites** (§9.4): the pass menu's
-   Delete double-gates in Python; the lib tree's Insert at caret does not.
+   `popup_state = CLOSED` directly for any modal without a carve-out; four carve-outs exist
+   (two of them "leave it open, an inline input owns Esc"), the emoji picker has none and
+   leaves `emoji_pick_target` dangling (§9.2). Each new modal has to remember its own — the
+   same forgettable step the `PopupState` decision already warns about for the draw block.
+8. **Two `App` methods for one visible toggle** (`toggle_copilot`, `toggle_copilot_open`).
+   Three branches against two; the difference is deliberate and the comment at `app.py:901`
+   says why (a click has already moved focus). Stays (10.3).
+9. **The `enabled=` "footgun" is not on this build.** The skill's §7.4 and
+   `pass_list.py:72-74` say a disabled `menu_item_simple` can still register a click, and
+   the pass menu double-gates its Delete for it. A probe on the pinned bundle (a real click
+   on the same item, `enabled` the only difference) reads `True` / `False`
+   (`reviews/menus_design_feasibility.md` §0.1, reproduced by the main session). §9.4's
+   table sorts two sites by a guard that guards nothing.
 10. **Three tooltips and ten help markers are over the budget the repo enforces** (§9.6),
     all inside the modals this pass owns (Help, the lib picker, Settings' copilot limits).
 11. **Discoverability.** One "Right-click for actions" hint exists (the lib tree). The strip,
     the canvas and the nodes have none, and the maintainer found the node menu himself; the
-    documents grid, which will gain a menu here, is the one surface a first-time user would
-    not think to right-click.
+    documents grid, which gains a menu here, is the one surface a first-time user meets first.
 
 ### 10.2 The shape proposed
 
@@ -568,132 +589,189 @@ generalizes: **a verb lives on its object's context menu; a tile or card carries
 category and scope for 32 verbs, and the palette and cheatsheet already render from it. The
 menu bar becomes a RENDER of that table: one top-level menu per `CommandCategory` in
 `CATEGORY_ORDER` (File, Document, Editor, View, Tools), one item per spec in table order, the
-label from the spec, the chord hint from `effective_bindings`, disabled when the spec's scope
-is not active (an EDITOR-scoped Format with no editor focused) — through one primitive,
-`command_menu_item(app, command_id)`, that the context menus reuse for any item that IS a
-command (the canvas menu's Add pass / Import; the pass menu's Open shader / Settings). Every
-hand-written `imgui.menu_item` in `ui.py` goes. Labels get one spelling, the spec's, and the
-two case drifts and the `Settings...` / `Open Settings` split close by construction: a
-button that opens a command's surface takes its label from the spec too (`command_label`).
-Cost: `MenuItem`-level ordering inside a category follows the table, so the table's order
-becomes a UI fact (it already is for the cheatsheet); a separator between groups needs one
-optional field on the spec (`separator_before: bool`). The right-aligned project name stays.
+label from the spec, the chord hint from `effective_bindings`. Every hand-written
+`imgui.menu_item` in `ui.py` goes; the right-aligned project name stays.
+- `CommandSpec` gains `in_menu: bool = True` and `separator_before: bool = False`. `in_menu`
+  is `False` for the four Focus-tab chords and Cycle code tab: view-focus verbs whose menu
+  item would duplicate the tab bar under it (§7.4's two-affordances rule); Save, Next /
+  Previous pass and every other command get their first mouse home.
+- `command_menu_item(app, command_id)` and the bar live in a new `shaderbox/menus.py`
+  (imports `App`; `ui_primitives.py` is `App`-free by the three-layer rule and cannot host it).
+  `command_label(command_id)` is a pure function in `commands.py` (a leaf), the one spelling a
+  button uses when it opens a command's surface (`add pass` -> `Add pass`, `import...` ->
+  `Import passes`, the three `Open Settings` / `Set up ...` gate buttons -> `Settings`).
+- A per-item enabled test, `menu_enabled(app, spec)`: EDITOR scope -> `app.active_tab is
+  not None`; COPILOT scope -> `app.is_copilot_open`; GLOBAL -> always. Per item, never on
+  the category (`begin_menu` under `begin_disabled` does not open at all — probe §0.2). Not
+  the cheatsheet's `_is_active` (it reads `editor_focused`, which the menu click has just
+  cleared) and not `spec_eligible` (it rejects chord `0`, and Import passes is unbound).
+- The chord hint: `imgui.menu_item` takes `shortcut` as a required positional and returns a
+  tuple (§0.4); a spec with chord `0` passes `""`.
+- Labels: the spec's, verbatim, no trailing `...` anywhere (the palette and the cheatsheet
+  already show them so). `tests/test_command_registry_coverage.py` pins spec labels to the
+  help snippet, so the help text follows in the same commit.
+- Gate: `tests/test_ui_prose_budget.py` gains a row scoring `CommandSpec.label` from
+  `commands.py`, since a primitive taking a `command_id` is invisible to its AST walk — without
+  the row P1 removes every menu label from the budget's domain. Break: a 5-word label in
+  `COMMAND_SPECS` must fail.
 
 **P2. Object menus, one item set per object kind, drawn by every surface that shows the
-object.** Finding 14/15's `pass_menu_items` is the template. Four item sets, each a free
-function in the widget module that owns the object, each caller owning only the popup:
+object.** Finding 14/15's `pass_menu_items` is the template: a free function in the widget
+module that owns the object, each caller owning only the popup.
 
 | Object | Items (draw order) | Surfaces that draw it |
 |---|---|---|
-| pass | Open shader · Settings... · ─ · Group... · Leave group (when grouped) · ─ · Delete | strip tile, graph node (both today) |
-| group box | Open · Dissolve | graph box (today) |
-| document | Open · Open folder · ─ · Delete | documents grid tile (new); the graph/strip background does NOT draw it — a document's menu is on its tile |
-| editor tab | Close · Close others · ─ · Open folder | the editor tab bar (new; `begin_popup_context_item` on the tab item) |
+| pass | Open shader · Settings · ─ · Leave group (when grouped) · ─ · Delete ▸ | strip tile, graph node (both today) |
+| pass, node only | + Group... (before Leave group) | graph node (today; 092 D14 — it seeds `view.selection`, which the strip does not have and could not show) |
+| group box | Open · Dissolve | graph box (today; plus its double-click) |
+| document | Open · Open folder · ─ · Delete ▸ | documents grid tile (new) |
 
-`Group...` moves from the node-only branch into the shared set so the strip tile gets it too
-(it seeds the selection with the one pass, as the node does). The canvas background menu
-(Add pass, Import..., ─, Fit, Arrange) stays canvas-only; Add pass and Import render through
-`command_menu_item`. The uniform row gets no menu: its one verb is the label's click, which
-§7.4 names as the case where a menu is the wrong shape. The strip's empty background gets no
-menu either: the `add pass` / `import...` buttons under it are the entry (labels from the
-spec by P1), and finding 4 (the panel's composition) is where that row is redesigned.
+`Delete ▸` is the confirm submenu of P4. `Open folder` on a document generalizes
+`App.open_current_document_dir` to `open_document_dir(document_id)` (three lines; the
+current-document verb calls it). The canvas background menu (Add pass, Import passes, ─, Fit,
+Arrange) stays canvas-only; its first two render through `command_menu_item`. No menu for: the
+uniform row (its one verb is the label's click), the strip's empty background (the buttons
+under it are the entry; finding 4 redesigns that row), the editor tab (its one verb, Close,
+already has the tab's ✕ and `Ctrl+W`; a `Close others` would be a new verb and a right-click
+would also select the tab — probe §0.3).
 
-**P3. A tile carries no button; the document grid follows the pass strip.** `preview_cell`
-loses `armed`, `deletable`, the corner ✕, the `Delete?` wash and the `delete_*` results;
-`cell_delete_confirm` and `close_cross_button` go when their last caller goes;
-`App.document_delete_armed` and `set_document_delete_armed` go. The `overlay` slot stays for
-the sticker grid's emoji glyph, which is a per-cell control and not a verb. The Telegram
-sticker grid is the one caller that keeps a delete on the cell: a sticker delete is a
-server-side, irreversible verb inside an exporter panel this pass does not own — it keeps its
-arm-and-wash, so the machinery stays in `preview_cell` for that one caller (option B below
-removes it).
+**P3. A tile carries no button; the document grid follows the pass strip.** The grid tile
+passes `deletable=False` as the pass tile does; `App.document_delete_armed`,
+`set_document_delete_armed` and the handler's cleanup at `app.py:791-792` go; the grid's
+three result branches go. `preview_cell` keeps `armed` / `deletable` / the wash for its one
+remaining arming caller, the Telegram sticker grid: a sticker delete is a server-side verb
+inside an exporter panel this pass does not own (10.3), and a wash on the cell is the right
+confirm for an irreversible verb with no menu. The `overlay` slot stays (the sticker's emoji
+glyph is a per-cell control, not a verb).
 
-**P4. One destructive-verb rule: recoverable verbs fire at once and toast; irreversible ones
-confirm in a modal.** A deleted document moves to the project trash (recoverable, and the
-copilot's Recover card already reads it); a deleted pass leaves its shader file on disk and
-drops the entry (`delete_pass` unlinks nothing). Both fire on the menu click with a
-notification (`Deleted pass blur`). The armed-label flip in the lib tree (a click, the menu
-closes, reopen, click again) goes: a lib file / directory delete is a real filesystem delete,
-so it becomes a small confirm modal through the one primitive the revert confirm already
-is — `confirm_modal(title, line, verb)` returning `keep_open` — and the hand-rolled red text
-push goes with it. Projects' delete-to-trash and Settings' library reset keep their armed
-`danger_button` rows: both sit inside a modal where an inline confirm row is the rulebook's
-own shape and a nested modal is not. The Telegram pack delete is out of scope (exporter panel).
+**P4. Every destructive verb on a menu confirms through a submenu; a modal's own destructive
+button keeps its armed row.** One primitive, `confirm_menu_item(label, confirm_label) -> bool`
+in `ui_primitives.py`: `begin_menu(label)` with the one item `confirm_label` drawn in
+`STATE_ERROR` text, so the second click is a hover-and-click inside the same open menu — no
+armed state, no reopen, no modal, no `PopupState` change. Used by: the pass `Delete`
+(`Delete pass blur` — the entry, its wiring, its position and its readers' sources are lost
+and there is no undo; the file stays and the toast says so), the document `Delete` (`Move
+to trash` — the directory moves to the project trash; no undo affordance exists outside the
+copilot), the lib file and directory deletes (whose armed label flip, `file_delete_armed` /
+`dir_delete_armed` on `ShaderLibFileManager` and the two hand-rolled red pushes at
+`tree.py:165-167` / `:279-281` all go; the trash move and its toast stay). Projects' delete
+and Settings' library reset keep their armed `danger_button` rows: inside a modal an inline
+confirm row is the rulebook's own shape. The revert confirm stays a modal (it is the copilot's,
+and it shows the message being reverted). Reverses 092 D16's "the strip's two-click arm"
+(already gone with W3-2) and the lib tree's second-open confirm; records the rule in
+`conventions.md`.
 
-**P5. One name-prompt shape.** The group prompt (`##graph_group`) and the Projects new-name
-row both become `InlineInput`-backed rows with commit-on-deactivate, Enter, and an `x` cancel,
-through a `name_prompt_row(input, on_commit)` primitive in `ui_primitives.py`; `InlineInput`
-is promoted there from `editor_types.py` (the conventions bullet names that promotion's
-trigger: a second multi-inline-input surface — this is the third). The group prompt stops
-being a floating popup: it draws as a row at the top of the canvas child while
-`view.group_prompt` is set, where a click elsewhere commits or cancels by the same rule as
-every other inline input.
+**P5. One name-input shape.** `InlineInput` is promoted from `editor_types.py` to
+`ui_primitives.py` (the conventions trigger: a second multi-inline-input surface; this is the
+third — and `file_ops.py` already imports imgui through `theme`, so the move costs no new
+import). A `name_input_row(id, input) -> InputRowResult(committed, cancelled)` primitive draws
+the field, commits on Enter OR `is_item_deactivated_after_edit`, and reserves the `x` cancel;
+the lib tree's two rows, the Projects new-name row and the group prompt draw through it. The
+group prompt STAYS a popup (093 S5's Delete-key gate relies on it being one: an inline row in
+the canvas child would be hovered, and only `is_any_item_active` would stand between a Delete
+typed into the field and an unwire); its state moves from `group_prompt: bool` + `group_name:
+str` to one `InlineInput` on `GraphViewState`. Only the commit rule changes: a click away
+commits a non-blank name (a blank still refuses, as today).
 
 **P6. Modal chrome to one shape, mechanically.** `settings.py`'s `is_keep_opened` renamed;
-the revert confirm returns `keep_open` through `modal_window` like the other eight; every
-action row gets its `SPACE.MD` spacer; Projects' Close joins the left-packed row. A gate
-pins it: `tests/test_modal_chrome.py` walks `popups/*.py` and the revert modal's AST and
-fails a `modal_window` body that does not end in a `standard_button("Close")` /
-`("Cancel")` row preceded by `imgui.dummy((0, SPACE.MD))`, or that names its return anything
-but `keep_open`.
+the revert confirm returns `keep_open` through `modal_window` like the other eight (its
+caller nulls `copilot_revert_target`); every action row gets its `imgui.dummy((0, SPACE.MD))`
+spacer, one spelling; Projects' Close joins the left-packed row. Gate:
+`tests/test_modal_chrome.py` enumerates its domain from `PopupState` plus the revert modal
+(never a `popups/*.py` glob — the lib picker is a package), resolves each member to its draw
+function, and asserts the body binds a local `keep_open` that it returns, ends in a
+`standard_button("Close")` / `("Cancel")` row, and has the spacer call before it (normalized
+across `imgui.dummy((0, SPACE.MD))` and `ImVec2` spellings). Breaks to try, one per clause:
+rename `keep_open` back in one modal; delete one spacer; add an enum member whose body returns
+`ok` with no Close row (tried on the lib picker, whose layout a glob misses).
 
-**P7. Esc closes through the modal's own funnel.** `App.close_popup()` dispatches on
-`popup_state` to the per-modal close verb (`close_pass_settings`, `close_import_passes`,
-`close_emoji_picker` — the new one that nulls the target — and a plain `CLOSED` for the
-rest); `hotkeys._handle_escape` calls it and loses its four carve-outs; the modal draw
-functions' own close branches call the same verb. `tests/test_project_management.py`'s
-enum-count test gains the dispatch table (an enum member with no branch fails).
+**P7. Esc closes through the modal's own funnel.** `App.close_popup() -> bool` dispatches on
+`popup_state`: the per-modal close verb where one exists (`close_pass_settings`,
+`close_import_passes`, a new `close_emoji_picker` that nulls the target), `apply_editor_settings`
++ `CLOSED` for Settings (the `was_settings_open` latch at `hotkeys.py:366` / `:398-399` goes,
+or the apply runs twice), plain `CLOSED` for the rest; it returns `False` without closing when
+an inline input owns Esc (`projects_input_owns_esc`, `inline_input_owns_esc` move inside it).
+`hotkeys._handle_escape` calls it and loses its four carve-outs; the `rebinding_command` early
+return stays where it is. The modal draw functions' own close branches call the same verb.
+Gates: `tests/test_import_dialog.py:63-67` (a source-substring test on `hotkeys.py`) is
+repointed at `close_popup` and made structural; `test_every_popup_state_has_a_draw_call` gains
+a clause that parses `close_popup`'s body for a branch per member. Break: add a member, wire
+its draw, omit its close branch — the new clause goes red while the old count stays green.
 
-**P8. One copilot toggle.** `toggle_copilot_open` folds into `toggle_copilot(focus_aware:
-bool)`; the chip passes `False`. One `App` verb, one label.
+**P8. The two copilot toggles stay.** (10.1/8.)
 
-**P9. `menu_item` through one primitive.** `command_menu_item` (P1) and a plain
-`menu_item(label, enabled=True, danger=False)` in `ui_primitives.py` wrap
-`menu_item_simple`: the wrapper returns `False` when `enabled` is `False` whatever imgui
-reported, so the build's disabled-click footgun is dead at every site and the lib tree's
-Insert at caret is fixed by the move; `danger=True` pushes the error text color once,
-in the primitive. The button-tier gate gains a sibling: a raw `menu_item_simple` outside
-`ui_primitives.py` fails `tests/test_button_tiers.py`.
+**P9. The disabled-item double gate goes, and the two docs that prescribe it are corrected.**
+`pass_list.py`'s `and deletable` and its comment go; §9.4 is rewritten as "no Python-side
+guard is needed on this build"; `.claude/skills/imgui-ui/SKILL.md` §7.4's bullet is
+rewritten to state the probe's result and the build it was measured on. A menu-item wrapper
+primitive is NOT added: 21 of the 23 `menu_item_simple` sites pass no `enabled=` and gain
+nothing from one, and the red-text pushes P9 would have absorbed go with P4's primitive.
 
-**P10. Prose inside budget.** The two disabled-Insert tooltips shorten to the control's
-name plus one clause ("Insert at caret — click into a shader first" is over; "needs a
-shader caret" fits). The ten copilot-limit help markers cut to one clause each; their
-long form moves to the Help panel's copilot section, which the prose gate exempts as
-documentation. The over-budget allowlist rows for them are deleted so the gate holds them.
+**P10. Prose inside budget.** The two disabled-Insert tooltips shorten to one clause under the
+5-word tooltip budget ("needs a shader caret"); the ten copilot-limit help markers cut to one
+clause each and their long form moves to the Help panel's copilot section, which the prose
+gate exempts as documentation; the over-budget allowlist rows for all twelve are deleted so
+the gate holds them.
 
-**P11. Discoverability, one line where it earns it.** The documents grid gets the dim
-"Right-click for actions" caption beside `New document` (a first-time user's first surface);
-the strip, the canvas and the nodes get none — the node menu is how the maintainer found the
-gap, and a caption over the strip is a line the Document tab cannot spare (finding 4).
-The `/imgui-ui` §7.4 hint rule is amended to "on a modal's list; a canvas or a strip
-with a visible primary click gets none".
+**P11. One hint where it earns it.** The documents grid gets the dim "Right-click for
+actions" caption beside `New document`; the strip, the canvas and the nodes get none. The
+rule is filed as a `conventions.md` design decision ("a hint on a modal's or panel's list; a
+canvas or a strip with a visible primary click gets none; revisit if a walk finds a menu
+undiscovered") and mirrored in the repo's own `.claude/skills/imgui-ui/SKILL.md` §7.4.
 
 ### 10.3 What stays as it is, and why
 
-- The nine modals and their `PopupState` mutex (conventions): no modal is added or merged.
-  The pass settings modal's two modes stay one modal.
-- The Uniforms tab's pass selector, the graph's scope tabs, the Document/Uniforms/Render/
+- The nine modals and their `PopupState` mutex: no modal is added or merged (P4's confirm is
+  a submenu, not a modal). The pass settings modal's two modes stay one modal.
+- The Uniforms tab's pass selector, the graph's scope tabs, the Document / Uniforms / Render /
   Share tab bar, every chip and every combo in §4: they name a STATE and are not verbs.
-- The exporters' config panels and their gates (§1 Settings/Integrations, the
-  `unconnected_gate`s): the label split `Set up token` / `Set up credentials` / `Open
-  Settings` closes under P1 (one label, `Settings...`) but the panels' bodies are the
-  exporters' own and outside this pass.
+- The editor tab bar: its one verb has the tab's ✕ and `Ctrl+W` (P2).
+- The lib tree's inline favorite star beside the menu's Favorite / Unfavorite: the rulebook's
+  own carve-out (§7.4, "toggling a favorite — the inline star is fine"); P3's "no button on a
+  tile" is about verbs on a tile, and the star is a one-click state toggle on a row.
+- The editor error strip (a row whose primary click IS the action), the `K`-lookup note
+  (non-interactive) and the completion popup (the editor library's).
+- The Examples modal's selection persisting across opens: a browser's selection, not a query
+  (§7.6 is about transient search state); deliberate at `examples.py:69`.
+- `toggle_copilot` / `toggle_copilot_open` (P8).
+- The exporters' config panels, their `unconnected_gate`s and the Telegram pack forms —
+  including the hand-rolled red child at `telegram.py:484-485` §9.5 flags: the panels' bodies
+  are the exporters' own. Their gate buttons' labels do change under P1 (`command_label`).
 - The copilot chat's inline controls (copy, revert, recover, the gate answers): the
-  transcript is a conversation, its per-message icons are the convention for chats, and
-  the gate answers exist because a turn is paused on them.
+  transcript is a conversation, its per-message icons are the convention for chats, and the
+  gate answers exist because a turn is paused on them.
 
-### 10.4 Calls that are the maintainer's
+### 10.4 The one call that is the maintainer's
 
-- **Option A / B on the sticker grid.** A: keep `preview_cell`'s arm-and-wash for the one
-  sticker caller (P3 as written). B: the sticker grid gets a context menu with a confirm
-  modal like the lib tree, and `preview_cell` loses the delete machinery entirely. B is
-  cleaner code and touches an exporter this pass does not own; A is the recommendation.
-- **Pass delete without a confirm (P4).** The shader file stays on disk, so the loss is the
-  graph entry, its wiring and its position. If he wants a confirm anyway, it is the same
-  `confirm_modal` the lib tree gets, one line.
-- **Every command in the menu bar (P1)** — including Cycle code tab, the four Focus-tab
-  chords and Next/Previous pass, which read as noise to some. The alternative is an
-  `in_menu` flag on the spec (default `True`), which is one field and no design.
+**A pass `Delete` with a confirm submenu (P4).** Today the shared menu's Delete fires at once
+(the tile's two-click arm went with W3-2). P4 puts the submenu on it because the loss (the
+wiring, the position, every reader's source) has no undo and a wired pass in a six-node graph
+is minutes of work; the cost is one hover inside the menu. If he prefers the immediate
+delete, the pass row uses a plain `menu_item` and the toast names what was lost.
+
+### 10.5 Revision 2 — what the reviews changed
+
+- P4 rewritten from the code: the lib deletes were trash moves with a toast (not "a real
+  filesystem delete"), the document delete has no user-facing undo (the copilot's Recover card
+  is the copilot's), so the modal-vs-toast split inverted on three of four cases; replaced by
+  one submenu primitive that adds no state and no modal. 10.3's "no modal is added" and P4 now
+  agree. 092 D16 is named.
+- P2: `Group...` stays node-only (092 D14, silently reversed before); `Open folder` named as
+  the generalization it is; the editor-tab menu dropped (two new verbs it did not name, and a
+  right-click that selects).
+- P1: the primitive's home (`menus.py`, not `ui_primitives.py`), the enabled test, the
+  positional `shortcut`, the prose-budget row, the help-snippet coupling, `in_menu` decided.
+- P3: `preview_cell` keeps its machinery for the sticker grid (option A decided); the fifth
+  caller (`uniform.py:194`) noted as unaffected.
+- P5: the group prompt stays a popup (093 S5); the Projects row already IS an `InlineInput`,
+  so P5 is the commit rule, not an adoption.
+- P6, P7: gates made breakable as the feasibility review specified; P7 preserves the two
+  "leave it open" carve-outs and the Settings apply.
+- P8 dropped (a deliberate, documented difference). P9 replaced by the probe's result.
+- P11: the rule's home is `conventions.md`; the skill file is the repo's own
+  (`.claude/skills/imgui-ui/`), so it is amended too — F8's "outside the repo" was wrong.
+- 10.3 now rules on the favorite star, the error strip, the lookup note, the completion
+  popup, the Examples selection, the Telegram red child. 10.4 keeps the one genuine fork.
 
 ---
 
