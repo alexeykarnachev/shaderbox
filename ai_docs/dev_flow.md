@@ -419,8 +419,8 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   `details.py`, `media_ops.py`, `document_grid.py` (the project's documents as live thumbnails;
   incl. `draw_document_preview_button`, the free preview helper the document grid, the
   examples browser and the import dialog all call, and `document_menu_items` — Open, Open folder,
-  Delete through the confirm modal. The tile carries no button since 093/17, and a dim
-  `Right-click for actions` caption sits beside `New document`), `uniform.py`,
+  Delete through the confirm modal. The tile carries no button since 093/17, and no hint
+  caption since 093/22), `uniform.py`,
   `cheatsheet.py` (the floating bottom-right keyboard-cheatsheet overlay — own top-level window,
   scope-filtered rows, opt-out via `UIAppState.show_cheatsheet`).
 - **`popups/`** — one module per modal, each a `_draw_body(app) -> bool` plus a `MODAL =
@@ -476,12 +476,15 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   YouTube + copilot credential/config store at `app_data_dir()/integrations.json`; peer to
   `paths.py`, NOT an exporter) / **`shader_source.py`** (`ShaderSource`: the on-disk text + mtime
   a Document edits against) / **`glyph_tables.py`** (GENERATED stroke data for the SDF text shader —
-  regenerate via `scripts/gen_glyphs.py`, never hand-edit) / **`help_content.py`** (the F1 help
-  panel's static copy) / **`logging_setup.py`** (loguru sinks: console + the rotating file in
+  regenerate via `scripts/gen_glyphs.py`, never hand-edit) / **`help_content.py`** (the F1 documentation
+  modal's static copy) / **`logging_setup.py`** (loguru sinks: console + the rotating file in
   `app_data_dir()/logs`).
 - **`ui_primitives.py`** (imgui+theme draw helpers, `App`-free by the three-layer rule: button
   tiers + shared draw primitives — `context_menu_style()`, `pill_button`, `preview_cell`,
-  `modal_window` (the modal chrome every registry row draws through), `InlineInput` +
+  `modal_window` (the modal chrome every registry row draws through), the footer trio
+  `modal_footer_height` / `modal_content` / `modal_footer` (one number for the room a modal's
+  action row needs, spacing included; a body draws its content in the first and its tiered
+  buttons in the second, and an auto-resizing modal takes the footer alone), `InlineInput` +
   `name_input_row` / `InputRowResult` (the ONE name-entry row), …;
   plus `profile_rows_plan` / `ProfileRow`, the FPS panel's rows decided as pure headless data —
   order, depth, formatted number and color — which the overlay then only draws) /

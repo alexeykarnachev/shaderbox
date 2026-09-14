@@ -878,7 +878,7 @@ def _canvas_menu(app: App, document_id: str, view: GraphViewState) -> None:
             command_menu_item(app, CommandId.ADD_PASS)
             command_menu_item(app, CommandId.IMPORT_PASSES)
             imgui.separator()
-            if imgui.menu_item_simple("Fit"):
+            if imgui.menu_item_simple("Frame all"):
                 view.fitted = False
             if imgui.menu_item_simple("Arrange"):
                 app.arrange_graph(document_id)
@@ -909,10 +909,13 @@ def draw(app: App, document_id: str) -> None:
     _tab_row(app, document_id, view, group_names)
 
     imgui.push_style_color(imgui.Col_.child_bg, COLOR.BG_APP)
+    # No border: the editor pane the canvas fills is already framed, and a second frame one
+    # pixel inside it is the clutter the maintainer named. `always_use_window_padding` keeps
+    # the inset `borders` implied, so the canvas geometry is unchanged.
     child_open = imgui.begin_child(
         "##pass_graph",
         size=imgui.ImVec2(0.0, 0.0),
-        child_flags=imgui.ChildFlags_.borders,
+        child_flags=imgui.ChildFlags_.always_use_window_padding,
         window_flags=imgui.WindowFlags_.no_scrollbar
         | imgui.WindowFlags_.no_scroll_with_mouse,
     )

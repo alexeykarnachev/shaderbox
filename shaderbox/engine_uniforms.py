@@ -1,5 +1,5 @@
 """The engine-driven uniforms, as names and GLSL types: a GL-free leaf so the editor's
-intelligence, the help panel and the copilot's tables read them without importing the
+intelligence, the documentation modal and the copilot's tables read them without importing the
 renderer."""
 
 from shaderbox.glyph_tables import TABLE_UNIFORMS

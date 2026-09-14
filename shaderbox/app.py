@@ -452,6 +452,10 @@ class App:
         # A single ModalId field (None = closed) is the modal mutex: two modals cannot be
         # open at once by construction. `popups/registry.py` derives the roster from it.
         self.modal: ModalId | None = None
+        # The modal a STACKED modal was opened over; `close_modal` restores it. A confirm
+        # asked from inside another modal (the lib tree's deletes) returns the user to the
+        # modal that asked, with its state untouched.
+        self.modal_below: ModalId | None = None
         # The destructive verb the confirm modal is asking about; None while it is closed.
         self.confirm: ConfirmRequest | None = None
         # Popup focus restore (a modal steals focus on open + leaves nothing focused on close).
@@ -1024,17 +1028,30 @@ class App:
     def any_popup_open(self) -> bool:
         return self.modal is not None
 
-    def _open_modal(self, modal_id: ModalId) -> None:
-        # Capture chat focus BEFORE the popup steals it (the openers run in dispatch_commands,
-        # before any window draws, so copilot_focused still holds the true pre-popup value), then
-        # open. reconcile_popup_focus restores on the close edge.
-        self._chat_focused_before_popup = self.copilot_focused
+    def _open_modal(self, modal_id: ModalId, stacked: bool = False) -> None:
+        """Open one modal. `stacked` opens it OVER whatever is up, which `close_modal` restores.
+
+        A stacked open leaves the chat-focus capture alone: it happens mid-draw with a modal
+        already up, where `copilot_focused` is False by construction, so re-capturing would
+        overwrite the value the modal below recorded. An unstacked open runs before any window
+        draws, where the flag still holds the true pre-popup value; `reconcile_popup_focus`
+        restores on the close edge.
+        """
+        if stacked:
+            self.modal_below = self.modal
+        else:
+            self.modal_below = None
+            self._chat_focused_before_popup = self.copilot_focused
         self.modal = modal_id
 
     def request_confirm(self, request: ConfirmRequest) -> None:
-        """Ask the confirm modal about one destructive verb; `on_confirm` runs on Yes."""
+        """Ask the confirm modal about one destructive verb; `on_confirm` runs on Yes.
+
+        Stacked: a verb fired from inside another modal (the lib tree's deletes) leaves that
+        modal open underneath, so confirming or cancelling lands back in it.
+        """
         self.confirm = request
-        self._open_modal(ModalId.CONFIRM)
+        self._open_modal(ModalId.CONFIRM, stacked=True)
 
     def clear_confirm(self) -> None:
         self.confirm = None
@@ -1370,7 +1387,7 @@ class App:
         self.help_section = help_sections()[0].key
 
     def insert_text_at_caret(self, text: str) -> bool:
-        # The one insert seam (lib picker + help panel). Returns whether the text landed, so a
+        # The one insert seam (the lib picker). Returns whether the text landed, so a
         # caller closes its modal only on a real insert.
         session = self.get_current_session_if_exists()
         if session is None:
@@ -1614,10 +1631,12 @@ class App:
         if self.is_copilot_open:
             self.focus_copilot()
         self.copilot_layout = self.app_state.copilot_layout
-        # A pending confirm closes over the outgoing project's state.
+        # A pending confirm closes over the outgoing project's state, and so does whatever
+        # modal it was stacked over.
         self.confirm = None
         if self.modal is ModalId.CONFIRM:
             self.modal = None
+        self.modal_below = None
         # Drive imgui's tab bar to the restored tab on the first frame — set_selected only
         # fires while this one-shot is set (else imgui defaults to the first tab).
         self.document_tab_select_pending = True

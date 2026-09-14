@@ -110,12 +110,14 @@ two-click arm" (already gone with 093 W3-2) and the lib tree's second-open confi
 modal through an armed danger row; a tile never carries one. Revisit if a submenu proves
 unreachable on a touchpad."
 
-**M6. The document grid's tile carries no button.** `draw_document_preview_button` passes
+**M6. The document grid's tile carries no button.** *(Its hint caption is REVERSED by wave 5,
+finding 22: no surface carries one — see `conventions.md`'s hint bullet.)*
+`draw_document_preview_button` passes
 `deletable=False`; `App.document_delete_armed`, `set_document_delete_armed` and the cleanup at
 `app.py:791-792` go with the grid's three result branches. `preview_cell` keeps `armed` /
 `deletable` / `cell_delete_confirm` / `close_cross_button` for the sticker grid, its one
 arming caller (out of scope). A dim `Right-click for actions` caption sits beside
-`New document` (the one hint added; §10 P11).
+`New document` (the one hint added; §10 P11) — removed by wave 5.
 
 **M7. One name-input row.** `InlineInput` moves from `editor_types.py` to `ui_primitives.py`
 (the conventions trigger, met a third time; `file_ops.py` already imports imgui through
@@ -136,7 +138,10 @@ group prompt stays a `begin_popup` (093 S5); a blank name still refuses to commi
 
 **M8. Modal chrome, one shape, gated.** *(The chrome rules stand; wave 4 moved the gate's
 DOMAIN from `PopupState` to the registry's `MODALS` and walks each row's leaf bodies —
-`07_modal_registry_spec.md` R6. The revert modal is gone, folded into the confirm modal.)*
+`07_modal_registry_spec.md` R6. The revert modal is gone, folded into the confirm modal.
+Wave 5 replaced the hand-written spacer with `ui_primitives.modal_footer`, which owns it:
+the gate's spacer clause became "the row is drawn inside `modal_footer`", plus a clause
+failing a body that measures a frame height of its own.)*
 `settings.py`: `is_keep_opened` -> `keep_open`.
 `copilot_chat.py::_draw_revert_modal` returns `keep_open`; its caller nulls
 `copilot_revert_target` and calls `close_current_popup`. Every action row is preceded by
@@ -186,7 +191,8 @@ deleting their rows would have created no gate, and they get a direct assertion 
 table instead, as `_FORMATS` already does.
 
 **M12. The hint rule and the destructive rule are conventions.** *(The confirm bullet was
-rewritten to the modal rule by wave 4; the hint bullet stands.)* `conventions.md ## Design
+rewritten to the modal rule by wave 4. The hint bullet is REVERSED by wave 5, finding 22: no
+surface carries a hint caption, because a right-click menu is discoverable by convention.)* `conventions.md ## Design
 decisions` gains two bullets in "we decided X; revisit if Y" form: the confirm rule (M5) and
 "a right-click hint sits over a modal's or panel's list; a canvas, a strip, or a card row
 with a visible primary click gets none; revisit if a walk finds a menu undiscovered". The

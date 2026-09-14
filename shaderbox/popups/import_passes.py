@@ -25,6 +25,8 @@ from shaderbox.ui_primitives import (
     caption_text,
     help_marker,
     label_row,
+    modal_content,
+    modal_footer,
     primary_button,
     standard_button,
 )
@@ -47,43 +49,44 @@ def _draw_body(app: App) -> bool:
     if draft is None or host is None:
         return False
 
-    _draw_tabs(app, draft)
-    sources = app.import_sources(draft.examples_tab)
-    _draw_grid(app, draft, sources)
-    source = sources.get(draft.source_id)
-
-    imgui.dummy((0.0, float(SPACE.SM)))
     plan: ImportPlan | str = "pick a document"
-    if source is None:
-        caption_text("Pick a document")
-    else:
-        _draw_description(source)
+    with modal_content():
+        _draw_tabs(app, draft)
+        sources = app.import_sources(draft.examples_tab)
+        _draw_grid(app, draft, sources)
+        source = sources.get(draft.source_id)
+
         imgui.dummy((0.0, float(SPACE.SM)))
-        label_row(app.font_12, "group", _CTRL_W, _ROW_LABEL_W)
-        _, draft.group_buf = imgui.input_text("##import_group", draft.group_buf)
-        imgui.same_line()
-        help_marker("marks the tiles and prefixes the passes")
-        plan = _plan(draft, source, host)
-        _draw_entry_points(app, draft, source, host, plan)
+        if source is None:
+            caption_text("Pick a document")
+        else:
+            _draw_description(source)
+            imgui.dummy((0.0, float(SPACE.SM)))
+            label_row(app.font_12, "group", _CTRL_W, _ROW_LABEL_W)
+            _, draft.group_buf = imgui.input_text("##import_group", draft.group_buf)
+            imgui.same_line()
+            help_marker("marks the tiles and prefixes the passes")
+            plan = _plan(draft, source, host)
+            _draw_entry_points(app, draft, source, host, plan)
     draft.rejection = plan if isinstance(plan, str) else ""
 
-    imgui.dummy((0.0, float(SPACE.MD)))
     keep_open = True
-    imgui.begin_disabled(bool(draft.rejection))
-    label = (
-        f"Import {len(plan.renames)} passes"
-        if isinstance(plan, ImportPlan)
-        else "Import"
-    )
-    if primary_button(label) and app.import_passes_from_draft():
-        keep_open = False
-    imgui.end_disabled()
-    imgui.same_line()
-    if standard_button("Cancel"):
-        keep_open = False
-    if draft.rejection and source is not None:
+    with modal_footer():
+        imgui.begin_disabled(bool(draft.rejection))
+        label = (
+            f"Import {len(plan.renames)} passes"
+            if isinstance(plan, ImportPlan)
+            else "Import"
+        )
+        if primary_button(label) and app.import_passes_from_draft():
+            keep_open = False
+        imgui.end_disabled()
         imgui.same_line()
-        imgui.text_colored(COLOR.STATE_ERROR, draft.rejection)
+        if standard_button("Cancel"):
+            keep_open = False
+        if draft.rejection and source is not None:
+            imgui.same_line()
+            imgui.text_colored(COLOR.STATE_ERROR, draft.rejection)
     return keep_open
 
 

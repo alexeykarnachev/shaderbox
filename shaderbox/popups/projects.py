@@ -22,6 +22,8 @@ from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_primitives import (
     InlineInput,
     danger_button,
+    modal_content,
+    modal_footer,
     name_input_row,
     primary_button,
     standard_button,
@@ -35,12 +37,16 @@ _PATH_X = 240.0
 
 
 def _draw_body(app: App) -> bool:
-    rows_h = -imgui.get_frame_height_with_spacing() * 2.0
-    if imgui.begin_child("##projects_rows", size=(0.0, rows_h)):
+    with modal_content():
         for info in app.projects_rows:
             _draw_row(app, info)
-    imgui.end_child()
+        # The error sits with the list rather than in the footer: the footer is one row tall
+        # by contract, and a message appearing under the verbs would push them out of it.
+        if app.projects_error:
+            imgui.text_colored(COLOR.STATE_ERROR, app.projects_error)
 
+    # Three alternative footers, one at a time: the verb row a plain open shows, the armed
+    # delete row, and the name-entry row.
     if app.projects_new_input.is_open:
         return _draw_name_input(app, app.projects_new_input, "New", _commit_new)
     if app.projects_delete_armed is not None:
@@ -81,7 +87,6 @@ def _draw_row(app: App, info: ProjectInfo) -> None:
 
 
 def _draw_verb_row(app: App) -> bool:
-    imgui.dummy((0.0, float(SPACE.MD)))
     keep_open = True
     selected = app.projects_selected
     # Enter on the selection switches, so a row reached by keyboard can be activated (the rows are
@@ -98,29 +103,28 @@ def _draw_verb_row(app: App) -> bool:
     # selection like every other verb here. Nothing rides a row: a control that appears inside one
     # on selection shifts the row it lives in, which is the overlay trap.
     is_open_project = selected is not None and selected == app.project_dir.resolve()
-    imgui.begin_disabled(selected is None or is_open_project)
-    if primary_button("Open") and selected is not None:
-        app.request_project_switch(selected)
-        keep_open = False
-    imgui.end_disabled()
-    imgui.same_line()
-    if standard_button("New"):
-        app.reset_projects_state()
-        app.projects_new_input.open(app.default_projects_root_dir)
-    imgui.same_line()
-    if standard_button("Open other..."):
-        app.pick_project_dir()
-        keep_open = False
-    imgui.same_line()
-    imgui.begin_disabled(selected is None or is_open_project)
-    if danger_button("Delete"):
-        app.projects_delete_armed = selected
-    imgui.end_disabled()
-    imgui.same_line()
-    if standard_button("Close", width=float(SIZE.BTN_SM_W)):
-        keep_open = False
-    if app.projects_error:
-        imgui.text_colored(COLOR.STATE_ERROR, app.projects_error)
+    with modal_footer():
+        imgui.begin_disabled(selected is None or is_open_project)
+        if primary_button("Open") and selected is not None:
+            app.request_project_switch(selected)
+            keep_open = False
+        imgui.end_disabled()
+        imgui.same_line()
+        if standard_button("New"):
+            app.reset_projects_state()
+            app.projects_new_input.open(app.default_projects_root_dir)
+        imgui.same_line()
+        if standard_button("Open other..."):
+            app.pick_project_dir()
+            keep_open = False
+        imgui.same_line()
+        imgui.begin_disabled(selected is None or is_open_project)
+        if danger_button("Delete"):
+            app.projects_delete_armed = selected
+        imgui.end_disabled()
+        imgui.same_line()
+        if standard_button("Close", width=float(SIZE.BTN_SM_W)):
+            keep_open = False
     return keep_open
 
 
@@ -128,39 +132,39 @@ def _draw_delete_confirm(app: App) -> bool:
     armed = app.projects_delete_armed
     if armed is None:
         return True
-    imgui.dummy((0.0, float(SPACE.MD)))
-    imgui.text_colored(COLOR.STATE_ERROR, "Delete to trash?")
-    imgui.same_line(imgui.get_content_region_avail().x - float(SIZE.BTN_SM_W) * 2.0)
-    # Yes is the PRIMARY tier, not a filled red: the armed row already carries the danger.
-    if primary_button("Yes"):
-        app.projects_error = app.delete_project(armed)
-        app.projects_delete_armed = None
-        app.projects_rows = [r for r in app.projects_rows if r.path != armed]
-        if app.projects_selected == armed:
-            app.projects_selected = app.project_dir.resolve()
-    imgui.same_line()
-    if standard_button("No"):
-        app.projects_delete_armed = None
+    with modal_footer():
+        imgui.text_colored(COLOR.STATE_ERROR, "Delete to trash?")
+        imgui.same_line(imgui.get_content_region_avail().x - float(SIZE.BTN_SM_W) * 2.0)
+        # Yes is the PRIMARY tier, not a filled red: the armed row already carries the danger.
+        if primary_button("Yes"):
+            app.projects_error = app.delete_project(armed)
+            app.projects_delete_armed = None
+            app.projects_rows = [r for r in app.projects_rows if r.path != armed]
+            if app.projects_selected == armed:
+                app.projects_selected = app.project_dir.resolve()
+        imgui.same_line()
+        if standard_button("No"):
+            app.projects_delete_armed = None
     return True
 
 
 def _draw_name_input(
     app: App, state: InlineInput, verb: str, commit: Callable[[App, str], str]
 ) -> bool:
-    imgui.dummy((0.0, float(SPACE.MD)))
-    imgui.text_colored(COLOR.FG_DIM, verb)
-    imgui.same_line()
-    result = name_input_row("project_name", state, width=float(SIZE.NAME_INPUT_W))
-    # The outer Enter (a switch) must not also fire while this input holds focus.
-    app.projects_input_focused = result.focused
-    if result.cancelled:
-        # The close funnel leaves the modal open for exactly this; without the cancel here,
-        # Esc would be a dead key.
-        state.close()
-        app.projects_error = ""
-        return True
-    imgui.same_line()
-    accepted = primary_button(verb) or result.committed
+    with modal_footer():
+        imgui.text_colored(COLOR.FG_DIM, verb)
+        imgui.same_line()
+        result = name_input_row("project_name", state, width=float(SIZE.NAME_INPUT_W))
+        # The outer Enter (a switch) must not also fire while this input holds focus.
+        app.projects_input_focused = result.focused
+        if result.cancelled:
+            # The close funnel leaves the modal open for exactly this; without the cancel
+            # here, Esc would be a dead key.
+            state.close()
+            app.projects_error = ""
+            return True
+        imgui.same_line()
+        accepted = primary_button(verb) or result.committed
     if accepted:
         app.projects_error = commit(app, state.buf)
         if not app.projects_error:
@@ -168,8 +172,6 @@ def _draw_name_input(
             # already stale.
             state.close()
             return False
-    if app.projects_error:
-        imgui.text_colored(COLOR.STATE_ERROR, app.projects_error)
     return True
 
 

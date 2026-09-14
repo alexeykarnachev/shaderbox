@@ -1,6 +1,6 @@
 """Every command reaches every surface that lists commands (078). A command added to the enum
 without a spec, a handler, or a help line is the gap the maintainer asked to be gated: the
-quick help pane and the Help panel's shortcuts both read the registry, so the gate is that the
+quick help pane and the documentation modal's shortcuts both read the registry, so the gate is that the
 registry itself is complete."""
 
 from typing import Any

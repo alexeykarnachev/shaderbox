@@ -66,9 +66,6 @@ def draw_document_preview_grid(app: App, width: float, height: float) -> None:
         imgui.end_disabled()
 
         imgui.same_line()
-        imgui.text_colored(COLOR.FG_DIM, "Right-click for actions")
-
-        imgui.same_line()
 
         app.app_state.is_render_all_documents = imgui.checkbox(
             "Render all", app.app_state.is_render_all_documents

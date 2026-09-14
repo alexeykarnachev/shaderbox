@@ -3,7 +3,7 @@
 The app's verbs, designed as one system: what a user can invoke, what each is called, which
 menu it lives under, in what order, and which chord fires it. `shaderbox/commands.py`'s
 `COMMAND_SPECS` IS this table; the menu bar, the palette, the keyboard cheatsheet, the
-Settings rebinder and the Help panel's shortcuts section all render it in this order, so a
+Settings rebinder and the documentation modal's shortcuts section all render it in this order, so a
 verb is filed once and shows up everywhere. The maintainer's instruction that produced it:
 "you must not assume any pre-existing order. You have all the code, all the commands we
 have, all the features, you should design the whole system!" — the first landing of the
@@ -92,7 +92,7 @@ View
   Command palette     Ctrl+Shift+P
 
 Help
-  Help panel          F1
+  Documentation       F1
   Keyboard cheatsheet  Alt+/
   ─
   Examples            Alt+E
@@ -100,7 +100,7 @@ Help
 
 ## What is NOT a command, and why
 
-- The graph canvas's `Fit` and `Arrange` and the node menu's `Group...` / `Dissolve` /
+- The graph canvas's `Frame all` and `Arrange` and the node menu's `Group...` / `Dissolve` /
   `Leave group`: verbs on a view or a selection that only the canvas holds; they live on the
   canvas and node menus. Revisit if a graph tab gains its own scope.
 - The pass tile's `Delete pass` and the document tile's `Open` / `Open folder` / `Delete`:

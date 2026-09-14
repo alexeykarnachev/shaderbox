@@ -6,9 +6,10 @@ four modals had already drifted from: one body inverted the `keep_open` name, th
 its body instead of returning a bool. Prose does not hold a shape; this does.
 
 The domain is the REGISTRY (`popups.registry.MODALS`), paired against `ModalId` so a member
-with no `Modal` and a `Modal` with no member both fail. Each modal's LEAF bodies are resolved
-through `_BODIES` here -- the pass-settings entry lists both of its modes, since its `Modal.body`
-is a dispatcher and walking that instead would check nothing for it.
+with no `Modal` and a `Modal` with no member both fail. Each modal's LEAF bodies are the
+registry row's own `body`, except a row whose body DISPATCHES (the pass-settings modal's two
+modes, the Projects modal's three footers) -- those alone are listed here, and each listed
+function must live in the module that declares the row.
 """
 
 import ast
@@ -20,34 +21,32 @@ from types import FunctionType
 import pytest
 
 from shaderbox.app import ModalId
-from shaderbox.popups import (
-    confirm,
-    emoji_picker,
-    examples,
-    help,
-    import_passes,
-    lib_picker,
-    pass_settings,
-    projects,
-    settings,
-)
+from shaderbox.popups import examples, pass_settings, projects
 from shaderbox.popups.registry import BY_ID, MODALS
 
-# Each modal's LEAF bodies: the functions that RETURN the keep-open bool and draw the action
-# row. `PASS_SETTINGS` has two (the dispatcher picks per `app.pass_draft`), and the Projects
-# modal has three mutually-exclusive ones -- the verb row is the one a plain open shows, and
-# the other two are covered by the same rules through their own rows.
-_BODIES: dict[ModalId, tuple[FunctionType, ...]] = {
+# The leaf bodies come from the REGISTRY: every row's `Modal.body` is the leaf, except a row
+# whose body DISPATCHES (one modal, two or more modes). A dispatcher's leaves are the only
+# thing this table holds, and `test_every_dispatcher_override_lives_in_its_own_modules_module` pins each one to
+# the module that declares the row -- a table free to name any function can point a row at
+# another modal's body and pass every clause below on the wrong code.
+_DISPATCHER_LEAVES: dict[ModalId, tuple[FunctionType, ...]] = {
+    # Examples' row body measures the grid and hands it to the leaf.
     ModalId.EXAMPLES: (examples._draw_body,),
-    ModalId.HELP: (help._draw_body,),
-    ModalId.SETTINGS: (settings._draw_body,),
     ModalId.PASS_SETTINGS: (pass_settings._draw_body, pass_settings._draw_draft),
-    ModalId.IMPORT_PASSES: (import_passes._draw_body,),
-    ModalId.EMOJI_PICKER: (emoji_picker._draw_body,),
-    ModalId.SHADER_LIB_PICKER: (lib_picker._draw_body,),
+    # The Projects modal has three mutually-exclusive footers; the verb row is the one a
+    # plain open shows, and the other two are name-entry and an armed-delete row, neither of
+    # which is a dismiss row the clauses below describe.
     ModalId.PROJECTS: (projects._draw_verb_row,),
-    ModalId.CONFIRM: (confirm._draw_body,),
 }
+
+
+def _bodies() -> dict[ModalId, tuple[FunctionType, ...]]:
+    return {
+        modal.id: _DISPATCHER_LEAVES.get(modal.id) or (modal.body,) for modal in MODALS
+    }
+
+
+_BODIES: dict[ModalId, tuple[FunctionType, ...]] = _bodies()
 
 _CLOSE_LABELS: frozenset[str] = frozenset({"Close", "Cancel"})
 
@@ -69,28 +68,32 @@ def _body_ast(body: FunctionType) -> ast.FunctionDef:
     return node
 
 
-def _is_md_spacer(call: ast.Call) -> bool:
-    """`imgui.dummy((0, SPACE.MD))` in either spelling: a bare tuple or an `ImVec2`.
+def _footer_calls(body: ast.FunctionDef) -> list[ast.Call]:
+    return [
+        node
+        for node in ast.walk(body)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "modal_footer"
+    ]
 
-    The second element is what carries the token; both `SPACE.MD` and `float(SPACE.MD)`
-    count, since the cast is noise the reader does not see.
+
+def _hand_reservations(body: ast.FunctionDef) -> list[str]:
+    """Calls measuring a footer's room by hand instead of asking `modal_footer_height`.
+
+    `get_frame_height` / `get_frame_height_with_spacing` under a modal body is one modal
+    computing what every modal must agree on -- the Help modal grew a scrollbar out of
+    nowhere when its content reserved one frame height and its footer drew a spacer above
+    the row.
     """
-    func = call.func
-    if not isinstance(func, ast.Attribute) or func.attr != "dummy":
-        return False
-    if not call.args:
-        return False
-    first = call.args[0]
-    if isinstance(first, ast.Call) and isinstance(first.func, ast.Attribute):
-        # imgui.ImVec2(0, SPACE.MD)
-        elements: list[ast.expr] = list(first.args)
-    elif isinstance(first, (ast.Tuple, ast.List)):
-        elements = list(first.elts)
-    else:
-        return False
-    if len(elements) != 2:
-        return False
-    return "SPACE.MD" in ast.unparse(elements[1])
+    measured = {"get_frame_height", "get_frame_height_with_spacing"}
+    return [
+        f"imgui.{node.func.attr}"
+        for node in ast.walk(body)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in measured
+    ]
 
 
 def _close_calls(body: ast.FunctionDef) -> list[ast.Call]:
@@ -135,7 +138,7 @@ def test_every_modal_id_has_exactly_one_registry_row() -> None:
 def test_every_registry_row_has_leaf_bodies_listed() -> None:
     """A modal the table does not name is one nothing below checks.
 
-    Falsifier: add a `Modal` and no `_BODIES` row.
+    Falsifier: drop a `Modal` from `MODALS` -- the id/registry pairing above goes red first.
     """
     assert set(_BODIES) == set(ModalId), (
         f"_BODIES misses {sorted(set(ModalId) - set(_BODIES))}; "
@@ -143,6 +146,28 @@ def test_every_registry_row_has_leaf_bodies_listed() -> None:
     )
     for modal_id, bodies in _BODIES.items():
         assert bodies, f"{modal_id.value} lists no leaf body"
+
+
+def test_every_dispatcher_override_lives_in_its_own_modules_module() -> None:
+    """An override may only name a leaf of the modal it overrides.
+
+    A row pointed at ANOTHER modal's body binds `keep_open`, returns it and ends in a Close
+    row, so every clause below passes on the wrong function while that modal's real chrome
+    goes unchecked. The row's own `Modal.body` names the owning module, so no second table is
+    needed.
+
+    Falsifier: point the `PASS_SETTINGS` override at `help._draw_body`.
+    """
+    assert set(_DISPATCHER_LEAVES) <= set(ModalId), (
+        f"an override names a retired id: {sorted(set(_DISPATCHER_LEAVES) - set(ModalId))}"
+    )
+    for modal_id, bodies in _DISPATCHER_LEAVES.items():
+        owner = BY_ID[modal_id].body.__module__
+        for body in bodies:
+            assert body.__module__ == owner, (
+                f"{modal_id.value}'s override {body.__name__} lives in {body.__module__}, "
+                f"but the row's body is declared in {owner}"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -156,8 +181,8 @@ def test_every_body_binds_and_returns_keep_open(
 ) -> None:
     """§7.3: one name for the flag, never inverted.
 
-    Falsifier: rename `keep_open` to `ok` in one modal -- or point a `_BODIES` row at the
-    pass-settings DISPATCHER, which binds no such local.
+    Falsifier: rename `keep_open` to `ok` in one modal -- or point the pass-settings override
+    at its own DISPATCHER, which binds no such local.
     """
     node = _body_ast(body)
     bound = {
@@ -203,25 +228,37 @@ def test_every_body_ends_in_a_close_or_cancel_row(
 
 
 @pytest.mark.parametrize(("modal_id", "body"), _leaves(), ids=_leaf_ids())
-def test_a_medium_spacer_precedes_the_action_row(
+def test_the_action_row_is_drawn_inside_modal_footer(
     modal_id: ModalId, body: FunctionType
 ) -> None:
-    """§7.1: `imgui.dummy((0, SPACE.MD))` above the action row -- one token, one spelling.
+    """§7.1: the action row is `ui_primitives.modal_footer()`, which owns the `SPACE.MD`
+    spacer -- one primitive, so the room the content reserves and the room the row occupies
+    are the same number.
 
-    Falsifier: delete one modal's spacer.
+    Falsifier: draw one modal's row after a hand-written `imgui.dummy((0, SPACE.MD))`.
     """
     node = _body_ast(body)
     close = _close_calls(node)[-1]
-    spacers = [
-        inner
-        for inner in ast.walk(node)
-        if isinstance(inner, ast.Call)
-        and _is_md_spacer(inner)
-        and inner.lineno < close.lineno
-    ]
-    assert spacers, (
-        f"{modal_id.value}::{body.__name__}'s action row has no SPACE.MD spacer above it "
+    footers = [call for call in _footer_calls(node) if call.lineno <= close.lineno]
+    assert footers, (
+        f"{modal_id.value}::{body.__name__}'s action row is not inside `modal_footer()` "
         f"(the Close row is at offset {close.lineno} of the body)"
+    )
+
+
+@pytest.mark.parametrize(("modal_id", "body"), _leaves(), ids=_leaf_ids())
+def test_no_body_measures_the_footer_by_hand(
+    modal_id: ModalId, body: FunctionType
+) -> None:
+    """A body asks `modal_footer_height()` for the room its footer needs; a frame height it
+    measures itself is the reservation that disagreed with what the footer drew.
+
+    Falsifier: restore `list_h = -imgui.get_frame_height_with_spacing()` in `help.py`.
+    """
+    offenders = _hand_reservations(_body_ast(body))
+    assert not offenders, (
+        f"{modal_id.value}::{body.__name__} measures its own footer with {offenders}; "
+        "`ui_primitives.modal_footer_height()` is the one number"
     )
 
 
@@ -230,28 +267,37 @@ def test_a_medium_spacer_precedes_the_action_row(
 # ---------------------------------------------------------------------------
 
 
-def _package_sources(subdirs: tuple[str, ...]) -> list[tuple[str, ast.Module]]:
+# The two modules ALLOWED to write `app.modal`: the field's owner and the close funnel.
+# Everything else in the package is walked -- the domain is the package TREE, never a list of
+# the subpackages anyone happened to think of (`tabs/document.py` held a destructive control
+# and was outside a `("popups", "widgets")` tuple).
+_MUTEX_OWNERS: frozenset[str] = frozenset({"app.py", "popups/registry.py"})
+
+
+def _package_sources() -> list[tuple[str, ast.Module]]:
     found: list[tuple[str, ast.Module]] = []
-    for subdir in subdirs:
-        for path in sorted((_PKG / subdir).rglob("*.py")):
-            if path.name == "registry.py":
-                continue
-            name = path.relative_to(_PKG).as_posix()
-            found.append((name, ast.parse(path.read_text(encoding="utf-8"))))
+    for path in sorted(_PKG.rglob("*.py")):
+        name = path.relative_to(_PKG).as_posix()
+        if name in _MUTEX_OWNERS:
+            continue
+        found.append((name, ast.parse(path.read_text(encoding="utf-8"))))
     return found
 
 
 @pytest.mark.parametrize(
     ("module", "tree"),
-    _package_sources(("popups", "widgets")),
-    ids=[name for name, _ in _package_sources(("popups", "widgets"))],
+    _package_sources(),
+    ids=[name for name, _ in _package_sources()],
 )
-def test_no_popup_or_widget_writes_the_mutex(module: str, tree: ast.Module) -> None:
-    """The mutex is the registry's field: a popup or widget that writes it closes around
-    the per-modal cleanup the funnel owns.
+def test_no_module_but_the_owners_writes_the_mutex(
+    module: str, tree: ast.Module
+) -> None:
+    """The mutex is the registry's field to clear: any other module that writes it closes
+    around the per-modal cleanup the funnel owns.
 
     A hand-written close is how the emoji picker leaked its `emoji_pick_target`. Falsifier:
-    put `app.modal = None` back in `help.py`.
+    put `app.modal = None` back in `help.py` -- or in `tabs/document.py`, beside its Reset
+    button.
     """
     written = [
         node.lineno

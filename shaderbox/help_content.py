@@ -28,9 +28,6 @@ class HelpSection:
     title: str
     body: str
     snippet: str = ""
-    # Whether `snippet` is GLSL the user can drop into a shader. False for a snippet that is
-    # displayed-only (the shortcuts table is plain text — inserting it would never compile).
-    insertable: bool = True
 
 
 # The user-facing engine uniforms: what the engine writes into each per frame (the type comes
@@ -92,7 +89,6 @@ def _shortcuts_section() -> HelpSection:
             "(`Alt+/`) shows only the chords valid right now."
         ),
         snippet="\n".join(lines).rstrip(),
-        insertable=False,
     )
 
 
@@ -107,7 +103,6 @@ def _copilot_limits_section() -> HelpSection:
             "\n" + "\n\n".join(lines)
         ),
         snippet="",
-        insertable=False,
     )
 
 

@@ -44,6 +44,9 @@ def close_modal(app: App, forced: bool = False) -> bool:
     An unforced close defers to `owns_esc`: an inline input owns that Esc and runs its own
     cancel later in the same frame. A Close the user clicked is always forced, since a
     dismissal the user asked for cannot be refused by a rename input inside the modal.
+
+    A modal opened STACKED restores the one it covered, whose own `on_close` runs only when
+    that one closes in its turn; an unstacked modal restores `None`.
     """
     modal = BY_ID.get(app.modal) if app.modal is not None else None
     if modal is None:
@@ -52,7 +55,8 @@ def close_modal(app: App, forced: bool = False) -> bool:
         return False
     if modal.on_close is not None:
         modal.on_close(app)
-    app.modal = None
+    app.modal = app.modal_below
+    app.modal_below = None
     return True
 
 

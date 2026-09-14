@@ -60,7 +60,7 @@ class CommandCategory(StrEnum):
     """The menu a command lives under. One per OBJECT the verb acts on, in the order a
     desktop app's bar reads: the app's files and its settings, the open document, its
     passes, the code editor, what is shown, and help. The same grouping is the cheatsheet's,
-    the rebinder's and the Help panel's (`ai_docs/features/093_refinement/06_command_system.md`)."""
+    the rebinder's and the documentation modal's (`ai_docs/features/093_refinement/06_command_system.md`)."""
 
     FILE = "File"
     DOCUMENT = "Document"
@@ -270,7 +270,7 @@ COMMAND_SPECS: list[CommandSpec] = [
         separator_before=True,
     ),
     # -- Help ----------------------------------------------------------------------------
-    CommandSpec(CommandId.HELP, "Help panel", _chord(K.f1), C.HELP),
+    CommandSpec(CommandId.HELP, "Documentation", _chord(K.f1), C.HELP),
     CommandSpec(
         CommandId.TOGGLE_CHEATSHEET,
         "Keyboard cheatsheet",

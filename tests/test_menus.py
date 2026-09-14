@@ -27,6 +27,7 @@ from shaderbox.commands import (
     CommandCategory,
     CommandId,
     CommandScope,
+    chord_to_str,
     command_label,
 )
 from shaderbox.popups.registry import BY_ID, close_modal
@@ -755,6 +756,8 @@ class _MenuDriver:
     def __init__(self, items: Callable[[], None], monkeypatch: Any) -> None:
         self.items = items
         self.rects: dict[str, tuple[float, float, float, float]] = {}
+        # Each `menu_item` label -> the shortcut string it was submitted with.
+        self.hints: dict[str, str] = {}
         self.open = False
         real_simple = imgui.menu_item_simple
         real_item = imgui.menu_item
@@ -768,9 +771,12 @@ class _MenuDriver:
             record(label)
             return fired
 
-        def item(label: str, *args: Any, **kwargs: Any) -> tuple[bool, bool]:
-            fired = real_item(label, *args, **kwargs)
+        def item(
+            label: str, shortcut: str = "", *args: Any, **kwargs: Any
+        ) -> tuple[bool, bool]:
+            fired = real_item(label, shortcut, *args, **kwargs)
             record(label)
+            self.hints[label] = shortcut
             return fired
 
         monkeypatch.setattr(imgui, "menu_item_simple", simple)
@@ -912,6 +918,11 @@ def test_the_bars_delete_document_is_a_plain_item_that_confirms(
     assert app.modal is ModalId.CONFIRM
     assert app.confirm is not None and app.confirm.verb == "Delete"
     assert document_id in app.ui_documents
+    expected = chord_to_str(app.effective_bindings[CommandId.DELETE_DOCUMENT])
+    assert expected, "the command lost its default chord"
+    assert driver.hints.get(spec.label) == expected, (
+        f"the item carries {driver.hints.get(spec.label)!r}, not its chord {expected!r}"
+    )
 
 
 # ---------------------------------------------------------------------------

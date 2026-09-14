@@ -20,8 +20,13 @@ from shaderbox.app import App, ModalId
 from shaderbox.paths import shader_lib_root
 from shaderbox.popups import Modal
 from shaderbox.popups.lib_picker import filtering, preview, search, tree
-from shaderbox.theme import COLOR, SIZE, SPACE
-from shaderbox.ui_primitives import modal_window, primary_button, standard_button
+from shaderbox.theme import SPACE
+from shaderbox.ui_primitives import (
+    modal_footer,
+    modal_footer_height,
+    primary_button,
+    standard_button,
+)
 
 _LABEL = "Shader Library##picker"
 _POPUP_W = 1420.0
@@ -85,19 +90,19 @@ def _draw_body(app: App) -> bool:
     imgui.spacing()
 
     # ---------- Body: tree | preview ----------
+    # The two columns are their own children, so they take the content height directly rather
+    # than nesting inside `modal_content`; the footer's room is the same number the primitive
+    # reserves.
     avail = imgui.get_content_region_avail()
-    body_h = max(220.0, avail.y - SIZE.BTN_SM_H - float(SPACE.MD) * 2.0)
+    body_h = max(220.0, avail.y - modal_footer_height())
 
     tree_w = max(_TREE_W_MIN, avail.x * _TREE_FRAC)
     with imgui_ctx.begin_child("##tree_col", size=imgui.ImVec2(tree_w, body_h)):
-        imgui.text_colored(COLOR.FG_DIM, "Right-click for actions")
         if tree.draw_tree(app, document_tree, root):
             keep_open = False
     imgui.same_line(spacing=float(SPACE.MD))
     with imgui_ctx.begin_child("##preview", size=imgui.ImVec2(0.0, body_h)):
         preview.draw_preview(app, filtering.selected_function(app, candidates), root)
-
-    imgui.dummy((0.0, float(SPACE.MD)))
 
     # ---------- Action row ----------
     selected = filtering.selected_function(app, candidates)
@@ -108,20 +113,21 @@ def _draw_body(app: App) -> bool:
     # correctly disables insert.
     has_editor = app.editor_was_ever_focused and app.current_editor_path is not None
     can_insert = selected is not None and has_editor
-    imgui.begin_disabled(not can_insert)
-    btn_clicked = primary_button("Insert at caret")
-    imgui.end_disabled()
-    if not has_editor and imgui.is_item_hovered(
-        imgui.HoveredFlags_.allow_when_disabled
-    ):
-        imgui.set_tooltip("needs a shader caret")
-    if (btn_clicked or pressed_enter) and can_insert:
-        assert selected is not None
-        if filtering.insert_name(app, selected):
+    with modal_footer():
+        imgui.begin_disabled(not can_insert)
+        btn_clicked = primary_button("Insert at caret")
+        imgui.end_disabled()
+        if not has_editor and imgui.is_item_hovered(
+            imgui.HoveredFlags_.allow_when_disabled
+        ):
+            imgui.set_tooltip("needs a shader caret")
+        if (btn_clicked or pressed_enter) and can_insert:
+            assert selected is not None
+            if filtering.insert_name(app, selected):
+                keep_open = False
+        imgui.same_line()
+        if standard_button("Close"):
             keep_open = False
-    imgui.same_line()
-    if standard_button("Close"):
-        keep_open = False
 
     return keep_open
 

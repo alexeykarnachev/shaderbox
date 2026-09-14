@@ -118,7 +118,7 @@ filters is a verb even when it sits in a row of filter pills.
   A `help_marker` exists only where the label alone is ambiguous; a label that is clear gets no
   marker at all. It names what the control does, never why one would want it, never the
   alternative, never the history. Anything longer than the budget is documentation and goes to the
-  Help panel or the tutorial, where a reader chose to read. A string with an em-dash-joined second
+  documentation modal or the tutorial, where a reader chose to read. A string with an em-dash-joined second
   clause is over budget by construction.
 - **Derived values go in the control, not the label.** `size (1080, 1080)` in a fixed label column
   overflows it; the label stays `size` and the slider's own format string carries `100% · 1080x1080`
@@ -300,6 +300,19 @@ The convention:
 - **Spacing above the action row: `imgui.dummy((0, SPACE.MD))`.** Not
   `imgui.new_line()` (magic line-height), not `imgui.spacing()` (too tight).
   One token for the visual rhythm.
+- **One primitive owns the row AND the room it needs.** The scrolling half of
+  a modal reserves space for the action row, and the row draws into it — two
+  numbers computed apart, per modal, and one of them was short by the spacer
+  plus the two `item_spacing.y` gaps imgui adds after every item. The symptom is
+  a vertical scrollbar on a modal whose content fits, and it cannot be fixed per
+  modal without the same arithmetic happening again. So: one
+  `modal_footer_height()` that both sides read, one `modal_content()` context
+  manager opening a child sized `(0, -modal_footer_height())`, one
+  `modal_footer()` that draws the spacer and yields. A body that still calls
+  `get_frame_height` / `get_frame_height_with_spacing` is the shape to fail.
+  An AUTO-RESIZING modal has no scrollable region to size, so it takes the
+  footer alone. ShaderBox: `ui_primitives.modal_footer_height` /
+  `modal_content` / `modal_footer`, gated in `tests/test_modal_chrome.py`.
 
 **Gate the chrome, don't write it down twice.** These rules are prose, and prose
 did not hold: four modals had drifted (one inverted `keep_open`, three had no
@@ -308,7 +321,13 @@ enumerate the domain from the REGISTRY (§7.2) rather than from a `popups/*.py`
 glob (a picker that grew into a package is exactly what a glob misses), resolve
 each row to the LEAF function(s) that return the bool through a table the test
 owns, then assert the local is bound and returned, that the last low-emphasis
-button is labelled Close or Cancel, and that the spacer precedes it. ShaderBox:
+button is labelled Close or Cancel, that the row is drawn inside the footer
+primitive, and that the body measures no frame height of its own. Resolve the
+leaves from the REGISTRY, not a hand-written table — a table free to name any
+function can point one row at another modal's body and pass every clause on the
+wrong code (measured: an emoji-picker row pointed at the Help body stayed
+green). Only a DISPATCHER row needs its leaves listed, and each listed function
+must live in the module that declares the row. ShaderBox:
 `tests/test_modal_chrome.py`. A row whose `body` is a dispatcher (one modal, two
 modes) must list both leaves: walking the dispatcher passes while checking
 nothing, which is the checker-narrows-its-own-domain family.
@@ -339,6 +358,17 @@ and whether an inline input inside it owns Esc — and derive the draw call, the
 close funnel and the gates from the tuple of those values. ShaderBox:
 `shaderbox/popups/registry.py`, with `draw_modal(app)` the frame's one popup
 call and `close_modal(app, forced=...)` the one close.
+
+**A modal opened OVER another restores it on close.** The mutex makes "at most
+one open" structural, which turns every open into a REPLACEMENT: the modal
+underneath is dropped without reaching the close funnel, so its per-close
+cleanup never runs and the user is dumped two levels out from where they were.
+The fix is one field and one flag — the opener records what it covered, the
+funnel restores it instead of writing `None` — and it belongs on the OPEN, not
+on the one caller that noticed: the next verb fired from inside a modal gets it
+for free. A stacked open must also leave any pre-popup capture alone (a chat
+focus flag, a scroll position), since it reads mid-draw where the value is
+already clobbered.
 
 **A Close the user CLICKED is a forced close.** When a modal declines Esc while
 an inline input inside it is armed (§7.5), that decline must not reach the
@@ -398,11 +428,12 @@ list / grid actions, prefer a right-click context menu over inline buttons.**
 - **When**: a row has more than ONE action (delete + rename + reveal, etc.);
   the actions are infrequent relative to the row's primary click; the action
   set might grow.
-- **Discoverability**: show a one-line "Right-click for actions" hint above
-  the list. No hover tooltip per row — the hint sets the affordance once. The
-  hint belongs over a modal's or a panel's LIST; a canvas, a strip, or a card
-  row with a visible primary click gets none, since two affordances for one
-  thing is the slop signal below.
+- **Discoverability**: nothing. No hint caption above the list, no hover
+  tooltip per row — a right-click menu is discoverable by convention, and a
+  caption that names no verb reads as noise ("Which actions? What is this even
+  about?"). A hint was tried over a modal's list and a panel's grid and
+  reversed; if a walk finds a menu nobody finds, the fix is the affordance, not
+  a sentence about it.
 - **Styling**: wrap the `begin_popup_context_item(...)` in
   `with context_menu_style():` (lighter fill + accent border + accent hover).
   Default popups use `popup_bg` which equals the picker modal's own `popup_bg`,
@@ -430,9 +461,11 @@ list / grid actions, prefer a right-click context menu over inline buttons.**
   carries no consequence text and no chord hint; and it is a shape no desktop app
   confirms with. The modal states what is lost, names its target, and is the same
   question from a menu, a bar item, a button, a chord and the palette — which is
-  what makes the verb, not the surface, the owner of its confirm. An armed
-  `danger_button` row stays the shape INSIDE a modal, where a modal over a modal
-  is not the mechanism.
+  what makes the verb, not the surface, the owner of its confirm. A verb fired
+  from INSIDE a modal opens the same confirm STACKED over it (§7.2), so the
+  answer reads the same there too; an armed `danger_button` row stays only where
+  the question is about the modal's own list and the modal must keep drawing
+  underneath a decision it owns.
 
 - **The confirm modal's Enter is declined on its appearing frame.** A menu item
   activated by keyboard nav fires on the same frame the modal first draws, and

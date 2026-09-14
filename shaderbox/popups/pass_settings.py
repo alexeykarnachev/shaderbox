@@ -18,6 +18,7 @@ from shaderbox.theme import SIZE, SPACE
 from shaderbox.ui_primitives import (
     help_marker,
     label_row,
+    modal_footer,
     primary_button,
     standard_button,
 )
@@ -96,10 +97,10 @@ def _draw_draft(app: App) -> bool:
     )
     draft.entry = _draw_repeat(app, "draft", draft.entry)
 
-    imgui.dummy((0.0, float(SPACE.MD)))
-    created = (primary_button("Create") or entered) and app.create_pass_from_draft()
-    imgui.same_line()
-    keep_open = not (created or standard_button("Cancel"))
+    with modal_footer():
+        created = (primary_button("Create") or entered) and app.create_pass_from_draft()
+        imgui.same_line()
+        keep_open = not (created or standard_button("Cancel"))
     return keep_open
 
 
@@ -131,8 +132,8 @@ def _draw_body(app: App) -> bool:
         new_entry = _draw_repeat(app, name, new_entry)
         _apply_entry(app, document_id, name, entry, new_entry)
 
-    imgui.dummy((0.0, float(SPACE.MD)))
-    keep_open = not standard_button("Close")
+    with modal_footer():
+        keep_open = not standard_button("Close")
     return keep_open
 
 

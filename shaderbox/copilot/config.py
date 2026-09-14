@@ -179,13 +179,13 @@ def apply_user_limits(
 
 @dataclass(frozen=True)
 class CopilotLimitRow:
-    """One user-tunable agent limit as the Settings panel and the Help panel both read it.
+    """One user-tunable agent limit as the Settings panel and the documentation modal both read it.
 
     Attributes:
         label: The row's caption in Settings.
         field: The `CopilotConfig` attribute the row edits.
         hint: The `help_marker` clause beside the control — one clause, inside the copy budget.
-        explanation: The full paragraph the Help panel's copilot section prints.
+        explanation: The full paragraph the documentation modal's copilot section prints.
         min_value: The floor the input clamps to; 0 means the limit can be switched off.
         step: The input's increment.
     """
@@ -199,7 +199,7 @@ class CopilotLimitRow:
 
 
 # One home for the tunable limits' copy, so the short marker and the long explanation cannot
-# drift apart. The Settings panel reads `hint`; the Help panel's copilot section reads
+# drift apart. The Settings panel reads `hint`; the documentation modal's copilot section reads
 # `explanation`.
 COPILOT_LIMIT_ROWS: list[CopilotLimitRow] = [
     CopilotLimitRow(

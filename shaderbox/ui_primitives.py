@@ -322,22 +322,27 @@ def modal_window(
     flags: int = 0,
     fixed_size: bool = False,
 ) -> Iterator[bool]:
-    """Boilerplate-free modal-popup wrapper. Caller owns the `is_X_open` flag on `App`
-    (allows per-modal cleanup on close); this owns the imgui dance: open by label,
-    seed size, enter the popup scope, yield visibility. `flags` passes window flags
-    through (e.g. `no_scrollbar` for a modal that sizes its own content). `fixed_size`
-    forces `size` every frame (`Cond_.always`) for a non-resizable modal — pair it with
-    `WindowFlags_.no_resize`; the default seeds `size` once (`Cond_.first_use_ever`) so a
-    user resize persists via imgui.ini. Use as:
+    """Boilerplate-free modal-popup wrapper, called once from `popups/registry.py`: it owns
+    the imgui dance (open by label, seed size, center, enter the popup scope, yield
+    visibility). Which modal is open lives on `App.modal`, and a modal's per-close cleanup
+    is its registry row's `on_close` hook, never a write at a call site. `flags` passes
+    window flags through (e.g. `no_scrollbar` for a modal that sizes its own content).
+    `fixed_size` forces `size` every frame (`Cond_.always`) for a non-resizable modal — pair
+    it with `WindowFlags_.no_resize`; the default seeds `size` once (`Cond_.first_use_ever`)
+    so a user resize persists via imgui.ini.
 
-        if not app.is_X_open:
-            return
-        with modal_window(LABEL, (W, H)) as visible:
-            if not visible:
-                return
-            if not _draw_body(app):
-                app.is_X_open = False
-                imgui.close_current_popup()
+    A modal module is a body plus one constant, and nothing else:
+
+        def _draw_body(app: App) -> bool:
+            keep_open = True
+            with modal_content():
+                ...
+            with modal_footer():
+                if standard_button("Close"):
+                    keep_open = False
+            return keep_open
+
+        MODAL = Modal(id=ModalId.X, label="X##x", size=lambda app: (W, H), body=_draw_body)
     """
     if not imgui.is_popup_open(label):
         imgui.open_popup(label)
@@ -351,6 +356,54 @@ def modal_window(
     )
     with imgui_ctx.begin_popup_modal(label, flags=flags) as popup:
         yield popup.visible
+
+
+def modal_footer_height() -> float:
+    """The vertical room a modal's action row needs, spacing included.
+
+    `modal_footer` draws two items -- the `SPACE.MD` spacer and the row -- and imgui advances
+    the cursor by `item_spacing.y` after EVERY item, the row that ends the window included.
+    A reservation that counts only the two items is short by those two gaps, which is a
+    scrollbar on a modal whose content fits. Every reservation reads this one number, so what
+    the content subtracts and what the footer occupies cannot disagree.
+    """
+    spacing = imgui.get_style().item_spacing.y
+    return float(SPACE.MD) + imgui.get_frame_height() + 2.0 * spacing
+
+
+@contextmanager
+def modal_content() -> Iterator[bool]:
+    """A modal body's scrollable content region, sized to leave `modal_footer()` its room.
+
+    Yields whether the child is visible, the way `begin_child` does; the caller draws inside
+    the `with` and the region closes on the way out. Window padding is kept so content does
+    not touch the modal's edge, and the child carries no border -- the modal frame is the
+    frame.
+
+    A modal that AUTO-RESIZES has no scrollable region to size (its height follows its
+    content), so it uses `modal_footer()` alone -- the pass-settings modal is the one such
+    case today.
+    """
+    open_ = imgui.begin_child(
+        "##modal_content",
+        size=imgui.ImVec2(0.0, -modal_footer_height()),
+        child_flags=imgui.ChildFlags_.always_use_window_padding,
+    )
+    try:
+        yield open_
+    finally:
+        imgui.end_child()
+
+
+@contextmanager
+def modal_footer() -> Iterator[None]:
+    """A modal's bottom action row: the `SPACE.MD` spacer, then the caller's tiered buttons.
+
+    The conventional order is primary first and the dismiss control last, which is what the
+    chrome gate walks for.
+    """
+    imgui.dummy((0.0, float(SPACE.MD)))
+    yield
 
 
 # The caret row a note's anchor already stepped past, so a note flipped ABOVE the caret clears

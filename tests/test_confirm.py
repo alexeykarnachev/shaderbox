@@ -331,6 +331,175 @@ def test_the_lib_tree_delete_asks_through_its_menu(app: Any, monkeypatch: Any) -
     assert not victim.exists()
 
 
+def _fire_tree_item(monkeypatch: Any, str_id: str, label: str) -> None:
+    """Open ONE of the lib tree's context menus and fire ONE of its items, by id and label.
+
+    The item bodies are only submitted while their popup is open, and a frame-driven
+    right-click on a tree row cannot be aimed at a row whose rect the test does not know --
+    so the popup gate and the click are supplied for that one menu, and the item's own body
+    is what runs. `end_popup` is neutered only for the frames this menu is faked open, since
+    nothing was pushed for it.
+    """
+    faked: list[bool] = []
+    real_begin = imgui.begin_popup_context_item
+    real_end = imgui.end_popup
+
+    def begin(item_id: Any = None, *args: Any, **kwargs: Any) -> bool:
+        if item_id == str_id:
+            faked.append(True)
+            return True
+        return real_begin(item_id, *args, **kwargs)
+
+    def end() -> None:
+        if faked:
+            faked.pop()
+            return
+        real_end()
+
+    monkeypatch.setattr(imgui, "begin_popup_context_item", begin)
+    monkeypatch.setattr(imgui, "end_popup", end)
+    monkeypatch.setattr(
+        imgui,
+        "menu_item_simple",
+        lambda item_label, *args, **kwargs: item_label == label,
+    )
+
+
+def test_a_confirm_from_inside_the_picker_leaves_the_picker_below(
+    app: Any, monkeypatch: Any
+) -> None:
+    """The lib tree's Delete runs INSIDE the open picker, so its confirm is STACKED: the file
+    is trashed and the user is back in the picker, with the rename it had armed still armed
+    and `close_lib_picker` never run.
+
+    Falsifier: open the confirm unstacked (`request_confirm` without `stacked=True`) --
+    `app.modal` is None after the confirm and the picker is gone.
+    """
+    victim = shader_lib_root() / "stacked_probe.glsl"
+    victim.write_text("float SB_stacked() { return 1.0; }\n", encoding="utf-8")
+    app.open_shader_lib_picker()
+    app.shader_lib_files.begin_file_rename(victim)
+    assert app.shader_lib_files.inline_input_owns_esc()
+
+    with mock.patch.object(
+        app, "close_lib_picker", wraps=app.close_lib_picker
+    ) as cleanup:
+        tree._confirm_file_delete(app, victim)
+        assert app.modal is ModalId.CONFIRM
+        assert app.modal_below is ModalId.SHADER_LIB_PICKER
+        assert victim.exists(), "the item deleted with no confirm"
+
+        _release(imgui.Key.enter)
+        _pump(app)
+        _press(imgui.Key.enter)
+        _pump(app)
+        _release(imgui.Key.enter)
+
+        assert not victim.exists(), "confirming did not trash the file"
+        assert app.modal is ModalId.SHADER_LIB_PICKER, (
+            "confirming closed the picker the confirm was asked from"
+        )
+        assert app.modal_below is None
+        assert cleanup.call_count == 0, (
+            "the picker's on_close ran while the picker is still open"
+        )
+    assert app.shader_lib_files.inline_input_owns_esc(), (
+        "the armed rename did not survive the confirm"
+    )
+
+
+def test_escape_on_a_stacked_confirm_returns_to_the_picker(app: Any) -> None:
+    """Cancelling lands the user back in the picker with nothing trashed.
+
+    Falsifier: have `close_modal` write `None` rather than `app.modal_below`.
+    """
+    victim = shader_lib_root() / "stacked_cancel_probe.glsl"
+    victim.write_text("float SB_cancel() { return 1.0; }\n", encoding="utf-8")
+    app.open_shader_lib_picker()
+    tree._confirm_file_delete(app, victim)
+    assert app.modal is ModalId.CONFIRM
+
+    assert close_modal(app) is True
+    assert app.modal is ModalId.SHADER_LIB_PICKER
+    assert app.modal_below is None
+    assert app.confirm is None, "the confirm's own cleanup did not run"
+    assert victim.exists(), "Escape trashed the file"
+
+
+def test_a_stacked_confirm_leaves_the_chat_focus_capture_alone(app: Any) -> None:
+    """The capture belongs to the modal that was opened from the app, not to the confirm
+    stacked over it: a stacked open reads `copilot_focused` mid-draw, where it is False by
+    construction, so re-capturing would send a chat user back to the editor.
+
+    Falsifier: drop the `stacked` branch from `_open_modal` -- the flag reads False after the
+    confirm.
+    """
+    victim = shader_lib_root() / "focus_probe.glsl"
+    victim.write_text("float SB_focus() { return 1.0; }\n", encoding="utf-8")
+    app.copilot_focused = True
+    app.open_shader_lib_picker()
+    assert app._chat_focused_before_popup is True
+    app.copilot_focused = False
+
+    tree._confirm_file_delete(app, victim)
+    assert app._chat_focused_before_popup is True, (
+        "the stacked confirm clobbered the pre-popup chat focus"
+    )
+    close_modal(app)
+    assert app._chat_focused_before_popup is True
+
+
+def test_the_lib_tree_delete_item_asks_from_inside_the_open_picker(
+    app: Any, monkeypatch: Any
+) -> None:
+    """The real menu item, submitted from inside the picker's own body: the file survives the
+    click and the confirm stacks over the picker.
+
+    Falsifier: call `shader_lib_files.delete_file` from the item -- the file is gone with no
+    confirm.
+    """
+    victim = shader_lib_root() / "menu_probe.glsl"
+    victim.write_text("float SB_menu() { return 1.0; }\n", encoding="utf-8")
+    app.session.rebuild_shader_lib_index()
+    app.open_shader_lib_picker()
+    _fire_tree_item(monkeypatch, f"##filectx_{victim}", "Delete")
+
+    with mock.patch.object(
+        app.shader_lib_files, "delete_file", wraps=app.shader_lib_files.delete_file
+    ) as verb:
+        _pump(app)
+    assert verb.call_count == 0, "the item deleted with no confirm"
+    assert victim.exists()
+    assert app.modal is ModalId.CONFIRM
+    assert app.modal_below is ModalId.SHADER_LIB_PICKER
+    assert app.confirm is not None
+    assert app.confirm.title == f"Delete {victim.name}?"
+
+
+def test_the_lib_tree_dir_delete_asks_through_its_menu(app: Any) -> None:
+    """The directory item's own confirm, which had no test at all.
+
+    Falsifier: call `shader_lib_files.delete_dir` from `_confirm_dir_delete`.
+    """
+    victim = shader_lib_root() / "confirm_probe_dir"
+    victim.mkdir(exist_ok=True)
+
+    with mock.patch.object(
+        app.shader_lib_files, "delete_dir", wraps=app.shader_lib_files.delete_dir
+    ) as verb:
+        tree._confirm_dir_delete(app, victim)
+        assert verb.call_count == 0, "the item deleted with no confirm"
+        assert victim.exists()
+        assert app.modal is ModalId.CONFIRM
+        assert app.confirm is not None
+        assert app.confirm.title == f"Delete {victim.name}?"
+        assert app.confirm.line == "It moves to .trash."
+        assert app.confirm.verb == "Delete"
+        app.confirm.on_confirm()
+    assert verb.call_count == 1
+    assert not victim.exists()
+
+
 # ---------------------------------------------------------------------------
 # R2 — the close funnel, per registry row
 # ---------------------------------------------------------------------------

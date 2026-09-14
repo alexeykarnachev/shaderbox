@@ -1,6 +1,6 @@
 # 093 — Refinement: the graph editor
 
-Status: **waves 1-4 landed and reviewed; next is his visual review in the running app, whose
+Status: **waves 1-5 landed and reviewed; next is his visual review in the running app, whose
 findings open the next wave in the ledger.** The waves and what each landed are the `## Waves`
 section below, newest first; the findings are `00_findings.md`. The maintainer's verdict on the shipped canvas ("feels
 very cheap") sent the walk into research first: `02_research_brief.md` is the brief, `research/`
@@ -387,6 +387,26 @@ Where the record's "Code" paragraphs and this spec differ, this spec wins, for t
 | G4: `GRAPH_WIRE_HIT_MIN` | S12: `GRAPH_WIRE_HIT_FLOOR` | Two floors one pixel apart under near-identical names invite a transposition nothing would catch |
 
 ## Waves
+
+**Wave 5: a stacked confirm, the modal footer, and his four items (2026-09-14).** Two halves,
+one commit. (A) Wave 4's three post-implementation reports, every finding accepted. A
+`request_confirm` fired from inside an open modal used to REPLACE it, skipping its `on_close`
+and re-capturing the chat focus while a modal was up -- the lib tree's two deletes are the one
+such caller, and confirming one left the picker gone with its armed rename leaked.
+`App._open_modal(id, stacked=False)` is the general fix: a stacked open records
+`App.modal_below` and leaves the focus capture alone, and `close_modal` restores that modal
+instead of writing `None`, so a modal below keeps its state and its `on_close` runs only when
+IT closes. The mutex-write gate now walks the whole package tree minus its two owners
+(`tabs/document.py` held a destructive control and was outside the old tuple); the chrome
+gate derives each row's leaf bodies from `BY_ID` and pins every dispatcher override to the
+module that declares its row. (B) Findings 19-22. `ui_primitives` gains
+`modal_footer_height` / `modal_content` / `modal_footer`, one number every modal's
+reservation reads, and every body adopts them -- the Help modal's scrollbar was its content
+and its footer measuring the room apart. The graph canvas loses its border (the pane's frame
+is the frame), `Fit` becomes `Frame all`, `Insert at caret` leaves the reading surface, the
+Help modal becomes `Documentation`, and the `Right-click for actions` caption goes from both
+the documents grid and the lib tree -- REVERSING M6/M12 and the conventions bullet that put
+it there.
 
 **Wave 4: one modal mechanism, and the confirm modal (2026-09-14).**
 `07_modal_registry_spec.md`'s R1-R7, one commit, after one pre-implementation review

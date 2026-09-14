@@ -1,6 +1,6 @@
 """Every shipped help snippet must actually compile.
 
-The Help panel presents these as working examples and offers "Insert at caret", so a
+The documentation modal presents these as working examples, so a
 snippet that has rotted teaches the user something false and hands them a broken shader.
 Only snippets that are whole shaders (they start with `#version`) are compiled; the
 display-only ones (the shortcuts table) are skipped by that same test.

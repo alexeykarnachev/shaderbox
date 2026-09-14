@@ -2,9 +2,11 @@ from imgui_bundle import imgui
 
 from shaderbox.app import App, ModalId
 from shaderbox.popups import Modal
-from shaderbox.theme import COLOR, SIZE, SPACE
+from shaderbox.theme import COLOR, SIZE
 from shaderbox.ui_primitives import (
     caption_text,
+    modal_footer,
+    modal_footer_height,
     primary_button,
     standard_button,
 )
@@ -47,8 +49,9 @@ def _size(app: App) -> tuple[float, float]:
     frame_h = imgui.get_frame_height()
     # set_next_window_size sets the WINDOW rect, so the height must include the chrome the content
     # region sits inside: the title bar (== frame_h) + top & bottom window padding. The body itself
-    # is grid + desc slot + action row (frame_h) with two inter-block item_spacing.y gaps.
-    body_h = grid_h + _DESC_SLOT_H + frame_h + 2.0 * style.item_spacing.y
+    # is grid + desc slot + the footer (its spacer and its row) with one inter-block
+    # item_spacing.y gap.
+    body_h = grid_h + _DESC_SLOT_H + modal_footer_height() + style.item_spacing.y
     modal_h = body_h + frame_h + 2.0 * style.window_padding.y
     return (modal_w, modal_h)
 
@@ -69,16 +72,16 @@ def _draw_body(app: App, grid_h: float) -> bool:
     enter_open = is_selected and imgui.is_key_pressed(imgui.Key.enter, repeat=False)
 
     keep_open = True
-    imgui.dummy((0.0, float(SPACE.MD)))
-    imgui.begin_disabled(not is_selected)
-    open_clicked = primary_button("Open a copy")
-    imgui.end_disabled()
-    if (open_clicked or enter_open) and is_selected:
-        app.create_document_from_example(selected)
-        keep_open = False
-    imgui.same_line()
-    if standard_button("Close"):
-        keep_open = False
+    with modal_footer():
+        imgui.begin_disabled(not is_selected)
+        open_clicked = primary_button("Open a copy")
+        imgui.end_disabled()
+        if (open_clicked or enter_open) and is_selected:
+            app.create_document_from_example(selected)
+            keep_open = False
+        imgui.same_line()
+        if standard_button("Close"):
+            keep_open = False
     return keep_open
 
 

@@ -3,8 +3,8 @@ from imgui_bundle import imgui, imgui_ctx
 from shaderbox.app import App, ModalId
 from shaderbox.popups import Modal
 from shaderbox.popups.emoji_data import EmojiEntry, EmojiGroup, load_emoji_groups
-from shaderbox.theme import COLOR, SIZE, SPACE
-from shaderbox.ui_primitives import standard_button
+from shaderbox.theme import COLOR
+from shaderbox.ui_primitives import modal_footer, modal_footer_height, standard_button
 
 _LABEL = "Emoji##picker"
 _GRID_COLS = 12
@@ -21,10 +21,11 @@ def _draw_body(app: App) -> bool:
     query: str = app.emoji_picker_query.strip().lower()
     groups: list[EmojiGroup] = load_emoji_groups()
 
-    # Reserve room at the bottom for the action row (Close); the scroll child
-    # takes the remaining height.
+    # The grid is its own bordered scroll child, so it takes the content height directly
+    # rather than nesting inside `modal_content`; the footer's room is the same number the
+    # primitive reserves.
     avail = imgui.get_content_region_avail()
-    scroll_h = max(80.0, avail.y - SIZE.BTN_SM_H - float(SPACE.MD) * 2.0)
+    scroll_h = max(80.0, avail.y - modal_footer_height())
     any_match = False
     with imgui_ctx.begin_child(
         "emoji_scroll",
@@ -60,9 +61,9 @@ def _draw_body(app: App) -> bool:
         if not any_match:
             imgui.text_colored(COLOR.FG_DIM, "(no matches)")
 
-    imgui.dummy((0.0, float(SPACE.MD)))
-    if standard_button("Close"):
-        keep_open = False
+    with modal_footer():
+        if standard_button("Close"):
+            keep_open = False
     return keep_open
 
 

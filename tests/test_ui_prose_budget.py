@@ -122,7 +122,7 @@ _IMGUI_ROWS: list[tuple[str, str, int | None, int]] = [
     ("menu_item_simple", "label", 0, 4),
     # The confirm modal's request (093 W4), authored at each destructive verb. The title is
     # a heading naming its target and the verb a button, both at their usual budgets. The
-    # LINE is the one place § 2's "documentation belongs in the Help panel" does not apply:
+    # LINE is the one place § 2's "documentation belongs in the documentation modal" does not apply:
     # a destructive confirm is read at the moment of consequence, by a user who stopped to
     # read it, and it must say both what is lost and what survives. Hence its own budget,
     # and its exemption from the one-clause rule below -- a "what goes; what stays" line is
@@ -325,7 +325,7 @@ _OVER_BUDGET: dict[tuple[str, str, int], str] = {
     ): "a link's destination name, not a control label",
     (
         "shaderbox/popups/settings.py",
-        "_draw_body",
+        "_draw_sections",
         3,
     ): "derived: an exporter's name joined to its own unavailable reason",
     (
@@ -886,7 +886,7 @@ def test_every_copilot_limit_hint_is_within_the_help_budget() -> None:
     """The Settings limits table is reached through a loop variable, so no call-site walk can
     read it -- the same reason `_FORMATS` needs its own assertion below.
 
-    The long form of each row lives in the Help panel's copilot section, which § 2 exempts as
+    The long form of each row lives in the documentation modal's copilot section, which § 2 exempts as
     documentation. Falsifier: restore one of the old multi-clause hints.
     """
     for row in COPILOT_LIMIT_ROWS:

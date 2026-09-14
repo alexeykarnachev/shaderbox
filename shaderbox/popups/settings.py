@@ -33,6 +33,8 @@ from shaderbox.ui_primitives import (
     help_marker,
     label_row,
     labeled_text_input,
+    modal_content,
+    modal_footer,
     standard_button,
 )
 
@@ -57,6 +59,16 @@ _KEYMAPS: tuple[EditorKeymap, ...] = get_args(EditorKeymap)
 
 
 def _draw_body(app: App) -> bool:
+    keep_open: bool = True
+    with modal_content():
+        _draw_sections(app)
+    with modal_footer():
+        if standard_button("Close", width=float(SIZE.BTN_SM_W)):
+            keep_open = False
+    return keep_open
+
+
+def _draw_sections(app: App) -> None:
     ctrl_w = float(SIZE.SETTINGS_CTRL_W)
     label_w = float(SIZE.SETTINGS_LABEL_W)
 
@@ -169,14 +181,6 @@ def _draw_body(app: App) -> bool:
     imgui.dummy((0.0, SPACE.MD))
     imgui.separator_text("Keyboard")
     _draw_keybindings(app)
-
-    imgui.dummy((0.0, SPACE.MD))
-
-    keep_open: bool = True
-    if standard_button("Close", width=float(SIZE.BTN_SM_W)):
-        keep_open = False
-
-    return keep_open
 
 
 def _draw_library_reset(app: App) -> None:

@@ -463,8 +463,12 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   `close_popup`, eight `draw_*` calls in `ui.py`, a table in the chrome gate), where forgetting
   the draw call was INVISIBLE at runtime: the state was enterable, the mutex suppressed every
   other render, and nothing drew, which looks exactly like a healthy modal.
-  `tests/test_modal_chrome.py` now pins the enum against the registry, walks each row's leaf
-  bodies for the chrome, and rejects any `app.modal` write under `popups/` or `widgets/`.
+  `tests/test_modal_chrome.py` pins the enum against the registry, walks each row's leaf
+  bodies for the chrome, and rejects an `app.modal` write from any module in the package but
+  `app.py` and the registry itself. The leaf bodies come from `BY_ID`: only a row whose body
+  DISPATCHES lists its leaves by hand, and each listed function must live in the module that
+  declares the row, since a table free to name any function can point a row at another modal's
+  body and pass every clause on the wrong code.
   **The layering: `registry.py` imports `App` and every popup; no popup imports the registry
   (the shared `Modal` type lives in `popups/__init__.py`, which imports `App` alone); and
   `app.py` imports NOTHING from `shaderbox.popups` — a gate walks its `ImportFrom` nodes,
@@ -472,9 +476,16 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   are the two this repo bans.** A payload belongs in `ui_models.py`, which `app.py` already
   imports. A close is FORCED when the body returns False (a Close the user clicked cannot be
   refused by an armed rename input) and unforced on the Esc path, where `owns_esc` declines;
-  `imgui.close_current_popup()` runs only after a close that happened. `switch_project` writes
-  `self.modal = None` directly rather than calling the funnel — it runs in `_tick_frame_state`,
-  outside the draw phase, where `close_current_popup` asserts (084 D5). The command palette
+  `imgui.close_current_popup()` runs only after a close that happened. **A modal opened
+  STACKED (`App._open_modal(id, stacked=True)`) records the one it covers in
+  `App.modal_below`, which `close_modal` restores instead of writing `None`** — a confirm
+  asked from inside another modal (the lib tree's deletes are the one such caller) leaves that
+  modal's state untouched and its `on_close` unrun, and lands the user back in it. A stacked
+  open also leaves `_chat_focused_before_popup` alone: it happens mid-draw, where
+  `copilot_focused` is False by construction, so re-capturing would overwrite what the modal
+  below recorded. `_init` (which `switch_project` calls) clears a pending confirm and
+  `modal_below` by direct assignment rather than through the funnel — it runs in
+  `_tick_frame_state`, outside the draw phase, where `close_current_popup` asserts (084 D5). The command palette
   (`is_palette_open`) stays a separate bool — non-modal, coexists with any modal. No popup
   classes. Revisit if a popup grows internal state that doesn't belong on `App`.
 - **Inline editor state lives on `App`; disk is the source of truth; one libeditor instance per
@@ -592,10 +603,13 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   modal is not the mechanism's shape; revisit at a third. A tile never carries a destructive
   control: a verb on an object lives on that object's context menu.
 
-- **A right-click hint sits over a modal's or a panel's LIST (093).** The documents grid and
-  the shader-lib tree carry the dim `Right-click for actions` caption; a canvas, a strip, or a
-  card row with a visible primary click gets none — two affordances for one thing is the slop
-  signal the rulebook names. Revisit if a menu walk finds one undiscovered.
+- **No hint text: a right-click menu is discoverable by convention (093 W5).** No surface
+  carries a `Right-click for actions` caption — not a modal's list, not a panel's grid, not a
+  canvas or a strip. The rule this REVERSES put the caption over the documents grid and the
+  shader-lib tree; the maintainer's reading of it was "Which actions? What is this even
+  about?", which is what a hint that names no verb earns. The affordance a row already has is
+  the right-click itself, and two affordances for one thing is the slop signal the rulebook
+  names. Revisit if a menu walk finds one undiscovered.
 
 - **The command table IS the command system, and every surface renders it (093).** One
   category per OBJECT a verb acts on (File, Document, Pass, Editor, View, Help), in the order
@@ -604,7 +618,7 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   cheatsheet; a destructive verb needs no entry of its own, since its callback opens the
   confirm modal, so the palette offers every `in_palette` spec. The map with its reasoning is
   `ai_docs/features/093_refinement/06_command_system.md`; the bar, the palette, the
-  cheatsheet, the rebinder and the Help panel all read the table in ITS order, so a verb is
+  cheatsheet, the rebinder and the documentation modal all read the table in ITS order, so a verb is
   filed once. The menu bar is a RENDER of it: one top-level menu per `CommandCategory` in
   `CATEGORY_ORDER`, one item per spec, in table order,
   the label the spec's and the hint `chord_to_str(app.effective_bindings[id])`. `menus.py`
