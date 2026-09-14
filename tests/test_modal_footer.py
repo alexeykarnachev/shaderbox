@@ -8,12 +8,11 @@ Frame-driven, because the question is about the window imgui actually laid out: 
 says which primitives it calls (`test_modal_chrome`), never how tall the result came out.
 """
 
+from dataclasses import replace
 from typing import Any
 
 import pytest
 from imgui_bundle import imgui
-
-from dataclasses import replace
 
 from shaderbox.app import ModalId
 from shaderbox.popups import registry
