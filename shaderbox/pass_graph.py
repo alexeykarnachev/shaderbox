@@ -69,7 +69,7 @@ GraphCoord = Annotated[
 ]
 
 # A canvas dimension the render path can actually allocate. Both entry points -- the Document
-# tab's W x H fields and the copilot's set_canvas_size -- clamp through here.
+# tab's canvas combo and the copilot's set_canvas_size -- clamp through here.
 MIN_CANVAS_PX: int = 16
 MAX_CANVAS_PX: int = 4096
 

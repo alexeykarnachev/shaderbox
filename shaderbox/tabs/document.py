@@ -336,9 +336,9 @@ def _draw_script_toggle(app: App) -> None:
 
 
 def _draw_passes(app: App, document_id: str) -> None:
-    # A plain caption over the strip: the graph's summoner lives on the entry-point row beside
-    # the script's (093 W2-1), so this row names the tiles and nothing else. The add / import
-    # row sits under them, inside its own copilot-turn bracket.
+    # A plain caption over the strip: the graph's summoner is on the document's context menu
+    # (093 W8), so this row names the tiles and nothing else. The add / import row sits under
+    # them, inside its own copilot-turn bracket.
     imgui.begin_disabled(app.copilot_turn_active)
     small_caption(app.font_12, "Passes")
     imgui.end_disabled()

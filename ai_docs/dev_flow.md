@@ -421,7 +421,8 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   `details.py`, `media_ops.py`, `document_grid.py` (the project's documents as live thumbnails;
   incl. `draw_document_preview_button`, the free preview helper the document grid, the
   examples browser and the import dialog all call, and `document_menu_items` — Open script,
-  Open graph, Open folder, Reset and Delete, the last two through the confirm modal. Every item
+  Open graph, Open folder, Reset and Delete. Delete confirms and Reset does not: one moves a
+  directory to the trash, the other restarts a clock (093 W8). Every item
   takes the TILE's document id, never the current one: a right-click does not select the tile
   it opens on, so a verb routed through the current-document command would act on the wrong
   document (093 W8). The tile carries no button since 093/17, and no hint

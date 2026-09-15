@@ -1,7 +1,8 @@
 """The documents grid: one live thumbnail per document of the open project.
 
-A tile click selects; every other verb -- open it, open its folder, delete it -- is on the
-tile's context menu (`document_menu_items`), and the tile itself carries no button.
+A tile click selects; every other verb -- open its script or its graph, open its folder, reset
+it, delete it -- is on the tile's context menu (`document_menu_items`), and the tile itself
+carries no button.
 """
 
 from imgui_bundle import imgui, imgui_ctx
