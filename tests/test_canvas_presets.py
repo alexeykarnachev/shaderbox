@@ -31,7 +31,10 @@ from shaderbox.render_shape import (
     shape_to_preset,
 )
 from shaderbox.shader_lib import ShaderLibIndex, set_active
-from shaderbox.tabs.document import _canvas_presets
+from shaderbox.tabs.document import (
+    CanvasChoiceKind,
+    canvas_choice_groups,
+)
 from shaderbox.ui_models import UIDocument, load_document_from_dir
 
 _PLAIN = """#version 460 core
@@ -87,7 +90,18 @@ def _document(
 
 
 def _presets(doc: Document) -> list[tuple[str, tuple[int, int]]]:
-    return _canvas_presets(UIDocument(document=doc))
+    """Every FIXED row of the canvas popup, flattened out of its aspect groups.
+
+    The popup groups by ratio and leads each group with `Auto` (093 W8); what these tests are
+    about is the sizes it offers, which is the same set the flat list used to be.
+    """
+    groups = canvas_choice_groups(UIDocument(document=doc))
+    return [
+        (choice.label, choice.size)
+        for _caption, rows in groups
+        for choice in rows
+        if choice.kind is CanvasChoiceKind.FIXED and choice.size is not None
+    ]
 
 
 def _one_pass(gl: moderngl.Context, size: tuple[int, int] = (8, 8)) -> Document:
@@ -119,7 +133,7 @@ def test_the_square_presets_include_512(gl_ctx: moderngl.Context) -> None:
     # W-H's "Before you start" step names 512 x 512; drop 512 and that step is unperformable.
     doc = _one_pass(gl_ctx)
     presets = _presets(doc)
-    assert ("512x512 (1:1)", (512, 512)) in presets
+    assert ("512x512", (512, 512)) in presets
     sizes = [size for _, size in presets]
     for n in (256, 1024, 2048):
         assert (n, n) in sizes
@@ -153,8 +167,11 @@ def test_the_video_shapes_come_from_the_shape_table(gl_ctx: moderngl.Context) ->
             ),
             (1, 1),
         )
-        assert by_label[label] == expected, label
-        assert [lbl for lbl, _ in presets].count(label) == 1, label
+        # The row drops the ratio its own group caption already names, so the table's
+        # spelling is trimmed the same way before the lookup (093 W8).
+        row_label = label.rsplit(" (", 1)[0]
+        assert by_label[row_label] == expected, label
+        assert [lbl for lbl, _ in presets].count(row_label) == 1, label
     doc.release()
 
 
@@ -201,13 +218,19 @@ def test_building_the_presets_compiles_nothing(gl_ctx: moderngl.Context) -> None
     doc.release()
 
 
-def test_no_preset_duplicates_the_current_size(gl_ctx: moderngl.Context) -> None:
-    # Picking the current size is a no-op the early return swallows, which reads as a dead item.
-    # Both loops that can produce the current size are covered: 512x512 is a SQUARE and 1280x720
-    # is a VIDEO SHAPE, and only the square half was exercised while the shape loop was broken.
+def test_each_size_is_offered_once(gl_ctx: moderngl.Context) -> None:
+    """A size appears in exactly one group, once.
+
+    The current size IS offered now (093 W8): the rows are grouped by ratio, and hiding the one
+    the document currently sits at would leave a gap in its own group. What must not happen is
+    the same pair arriving twice -- from the squares and a video shape, or from two textures.
+    Falsifier: drop the `seen` set and 512x512 doubles for a document already at it.
+    """
     for size in ((512, 512), (1280, 720)):
         doc = _one_pass(gl_ctx, size=size)
-        assert size not in [preset for _, preset in _presets(doc)], size
+        offered = [preset for _, preset in _presets(doc)]
+        assert len(offered) == len(set(offered)), offered
+        assert size in offered, f"{size} is the current size and was hidden"
         doc.release()
 
 
@@ -215,13 +238,15 @@ def test_a_disk_loaded_document_opens_its_presets(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
     # `document.json` stores the resolution as a JSON list. Unconverted it is unhashable, so
-    # `seen = {current}` raises inside the imgui frame body and takes the app down; and being
-    # never equal to a tuple, it also lets the current size through as a dead menu entry.
+    # the builder's `seen` set raises inside the imgui frame body and takes the app down. The
+    # 4:3 group below is also where that pair belongs, which a list-shaped size cannot answer.
     ui_document = _loaded_document(tmp_path, (1280, 960))
     assert ui_document.document.resolution == (1280, 960)
     assert ui_document.document.canvas_size == (1280, 960)
-    presets = _canvas_presets(ui_document)
-    assert (1280, 960) not in [size for _, size in presets]
+    groups = dict(canvas_choice_groups(ui_document))
+    assert (1280, 960) in [
+        choice.size for choice in groups["4:3"] if choice.kind is CanvasChoiceKind.FIXED
+    ]
     ui_document.document.release()
 
 

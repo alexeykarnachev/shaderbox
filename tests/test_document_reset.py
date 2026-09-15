@@ -115,8 +115,8 @@ def test_the_command_confirms_then_reaches_the_funnel(
 ) -> None:
     """The chord and the menu item both open the confirm; the confirm's Yes is what resets.
 
-    Falsifier: point `RESET_DOCUMENT`'s callback back at `reset_current_document` -- F6 then
-    restarts the document with no question asked.
+    Falsifier: point `RESET_DOCUMENT`'s callback straight at `session.reset_document` -- F6
+    then restarts the document with no question asked.
     """
     seen: list[str] = []
     monkeypatch.setattr(

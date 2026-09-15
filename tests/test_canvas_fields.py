@@ -1,104 +1,30 @@
-"""The Document tab's W x H pair, driven through real imgui frames (069 W-A, 090 D5).
+"""The Document tab's canvas control, driven through real imgui frames (093 W8).
 
-Commit-on-deactivate needs a real focus transition across frames, so these drive
-`tabs/document.py::draw` in a headless imgui frame the way `test_lib_files.py` drives the
-picker's inline inputs, rather than asserting against the code.
+The W x H pair and the Auto-side aspect chips are gone: one combo now names both the mode and
+its value, grouped by aspect with `Auto` leading each group (the maintainer's call -- "просто в
+списке пресетов появится auto"). So what these tests pin moved with it. The row's per-document
+id scoping is still tested here, since imgui keeps an ITEM active across a document switch and
+an unscoped id would let the outgoing document's open popup land on the incoming one.
 
-The property under test is the one a post-implementation review found broken: only the field
-the user is actually in holds a pending value. The other half mirrors the document every frame,
-so a write that lands mid-edit (the copilot, a disk sync) is not reverted by a stale number the
-user never touched.
-
-What the pair WRITES is the document's stored `resolution` (090 D5), and the live canvas
-follows on the next tick through `App.pending_resolution` -- a resize inside the draw phase
-would release textures imgui is still holding. So the assertions here read `resolution`.
-
-The fields exist only under FIXED (090 revision 1): under Auto the same slot draws the aspect
-control instead, since a pair the mode never reads is a control that lies about what it does.
-Every rig here therefore puts its document in Fixed first.
+What a pick WRITES is the document's stored `resolution` (090 D5), and the live canvas follows
+on the next tick through `App.pending_resolution` -- a resize inside the draw phase would
+release textures imgui is still holding. So the assertions here read `resolution`.
 """
 
 from typing import Any
 
 from imgui_bundle import imgui
 
-from shaderbox.render_shape import ResolutionMode
+from shaderbox.render_shape import ASPECT_PRESETS, ResolutionMode
 from shaderbox.tabs import document as document_tab
+from shaderbox.tabs.document import (
+    CanvasChoiceKind,
+    _apply_aspect,
+    _apply_canvas_choice,
+    canvas_choice_groups,
+    canvas_choice_label,
+)
 from tests.conftest import seed_extra_document
-
-
-def _run_row_frames(app: Any, external_write: tuple[int, int] | None) -> None:
-    """Focus W, type into it, land an external write while it is STILL active, then leave it.
-
-    Focus index 1, not 0: the row's first submitted item is the document-name input, so index 0
-    focuses that and the keystroke never reaches the width field.
-    """
-    # One imgui context serves the whole test session, so a previous test can leave an item
-    # focused: clear it, or this row starts with a field already active and its stale half
-    # commits on the first frame.
-    imgui.set_window_focus(None)
-    app.canvas_w_editing = False
-    app.canvas_h_editing = False
-    # The W x H fields are the FIXED-mode control; under Auto the row draws aspect chips and
-    # this rig's keystrokes would land on a different widget entirely.
-    app.ui_documents[
-        app.current_document_id
-    ].document.resolution_mode = ResolutionMode.FIXED
-
-    for frame in range(9):
-        if frame == 3:
-            imgui.get_io().add_input_character(ord("8"))
-        if frame == 4 and external_write is not None:
-            app.ui_documents[
-                app.current_document_id
-            ].document.resolution = external_write
-        imgui.new_frame()
-        imgui.begin("rig")
-        # Offsets count focusable items from the cursor: 079 D7 put Reset on the caption row
-        # ABOVE the inputs, and 090 revision 1 made the mode control a two-button segment
-        # where it was one toggle -- each shifted everything after it by one.
-        if frame in (0, 1, 2):
-            imgui.set_keyboard_focus_here(4)
-        if frame == 5:
-            imgui.set_keyboard_focus_here(6)
-        document_tab.draw(app)
-        imgui.end()
-        imgui.end_frame()
-
-
-def test_a_write_during_an_active_field_survives_the_commit(app: Any) -> None:
-    # With W active and H untouched, an external 800x600 must keep its 600: the commit pair is
-    # (the pending width, the document's CURRENT height). Falsifier: a buffer whose inactive half
-    # is frozen at edit-start commits (new_w, stale_h) and reverts the write on the axis the user
-    # never edited.
-    document = app.ui_documents[app.current_document_id].document
-    document.resolution = (1280, 960)
-
-    _run_row_frames(app, external_write=(800, 600))
-
-    # The typed width clamps to 16; the height is the external write's, not the pre-edit 960.
-    assert document.resolution == (16, 600), (
-        f"the untouched height was clobbered: {document.resolution}"
-    )
-
-
-def test_the_active_field_keeps_its_own_pending_digits(app: Any) -> None:
-    # The mirror must not steal what the user is typing: the width that lands is the edited one,
-    # not the document's. Falsifier: mirroring an ACTIVE field's half every frame overwrites the
-    # digits and the commit writes the document's own width straight back.
-    document = app.ui_documents[app.current_document_id].document
-    document.resolution = (1280, 960)
-
-    _run_row_frames(app, external_write=None)
-
-    # 16 is the typed 8 clamped: the digits reached the document. The height, whose field was
-    # never touched, is the one this test's own setup put there.
-    assert document.resolution == (16, 960), (
-        f"the active field's edit never reached the document: {document.resolution}"
-    )
-    # ... and the commit is DEFERRED, not applied inside the draw (090 D4/R2): the pair the
-    # next tick will apply is parked, and the live canvas has not moved yet.
-    assert app.pending_resolution[app.current_document_id] == (16, 960)
 
 
 def test_a_document_switch_mid_edit_does_not_resize_the_new_document(app: Any) -> None:
@@ -181,7 +107,6 @@ def test_an_auto_documents_readout_is_its_live_size(app: Any, monkeypatch: Any) 
 
     captions = _captions(app, monkeypatch)
     assert captions[2] == "1214x683", captions
-    assert "Aspect" in captions, "the caption row does not name the aspect under Auto"
 
 
 def test_a_fixed_documents_readout_is_the_aspect_of_its_pair(
@@ -195,17 +120,118 @@ def test_a_fixed_documents_readout_is_the_aspect_of_its_pair(
 
     captions = _captions(app, monkeypatch)
     assert captions[2] == "16:9", captions
-    assert "Canvas" in captions, "the caption row does not name the canvas under Fixed"
+    assert "Canvas" in captions, "the caption row does not name the canvas"
 
 
-def test_the_aspect_chips_write_the_reduced_ratio(app: Any) -> None:
+def test_an_aspect_pick_writes_the_reduced_ratio(app: Any) -> None:
     # The control's whole contract with the rest of the app: whatever the user picks arrives
-    # reduced. Driven through `_apply_aspect`, the one seam every chip and both fields reach.
-    # Falsifier: store the pair as typed and a `32:18` custom ratio never lights the 16:9 chip.
-    from shaderbox.tabs.document import _apply_aspect
-
+    # reduced. Driven through `_apply_aspect`, the one seam every Auto row reaches. Falsifier:
+    # store the pair as typed and a `32:18` ratio never matches the 16:9 group.
     ui_document = app.ui_documents[app.current_document_id]
     ui_document.document.resolution_mode = ResolutionMode.AUTO
     _apply_aspect(app, ui_document, (32, 18))
     assert ui_document.ui_state.aspect == (16, 9)
     assert ui_document.document.aspect == (16, 9)
+
+
+def test_every_aspect_group_leads_with_auto(app: Any) -> None:
+    """Each group is one ratio and its first row is that ratio's `Auto` (093 W8).
+
+    Falsifier: append the Auto row instead of leading with it, or drop the group for a ratio
+    no fixed size covers -- 21:9 and 3:4 then have no Auto to pick.
+    """
+    ui_document = app.ui_documents[app.current_document_id]
+    groups = canvas_choice_groups(ui_document)
+
+    captions = [caption for caption, _ in groups]
+    for aspect in ASPECT_PRESETS:
+        assert f"{aspect[0]}:{aspect[1]}" in captions, (
+            f"{aspect} has no group, so its Auto is unreachable"
+        )
+
+    for caption, rows in groups:
+        assert rows[0].kind is CanvasChoiceKind.AUTO, (
+            f"{caption} does not lead with Auto"
+        )
+        assert rows[0].label == "Auto"
+        assert f"{rows[0].aspect[0]}:{rows[0].aspect[1]}" == caption
+        for row in rows[1:]:
+            assert row.kind is CanvasChoiceKind.FIXED
+            assert row.size is not None
+
+
+def test_a_fixed_row_sits_in_the_group_a_reader_would_name_it(app: Any) -> None:
+    """An encoder-aligned 1920x1088 groups under 16:9, not under its exact 30:17.
+
+    Falsifier: group by `aspect_of` (the exact reduction) -- the three Wide shapes then scatter
+    across three captions that name the same shape.
+    """
+    ui_document = app.ui_documents[app.current_document_id]
+    groups = dict(canvas_choice_groups(ui_document))
+    wide = {row.size for row in groups["16:9"] if row.size is not None}
+    assert (1920, 1088) in wide, "the 1080p shape left the 16:9 group"
+    assert (1280, 720) in wide and (2560, 1440) in wide
+
+
+def test_picking_auto_sets_the_mode_and_its_ratio(app: Any) -> None:
+    """An Auto row is one click: the mode AND the aspect it names.
+
+    Falsifier: set the mode and leave the aspect -- picking `4:3 Auto` from a 16:9 document
+    then renders the old shape.
+    """
+    ui_document = app.ui_documents[app.current_document_id]
+    ui_document.document.resolution_mode = ResolutionMode.FIXED
+    ui_document.document.resolution = (1280, 720)
+
+    groups = dict(canvas_choice_groups(ui_document))
+    _apply_canvas_choice(app, ui_document, groups["4:3"][0])
+
+    assert ui_document.document.resolution_mode is ResolutionMode.AUTO
+    assert ui_document.document.aspect == (4, 3)
+    assert ui_document.ui_state.aspect == (4, 3)
+
+
+def test_picking_a_size_sets_fixed_and_that_pair(app: Any) -> None:
+    """A size row is the mirror: Fixed, at exactly the pair named.
+
+    Falsifier: apply the size without the mode -- an Auto document keeps following the viewer
+    and the pair it was just given never renders.
+    """
+    ui_document = app.ui_documents[app.current_document_id]
+    ui_document.document.resolution_mode = ResolutionMode.AUTO
+
+    groups = dict(canvas_choice_groups(ui_document))
+    row = next(r for r in groups["1:1"] if r.size == (512, 512))
+    _apply_canvas_choice(app, ui_document, row)
+
+    assert ui_document.document.resolution_mode is ResolutionMode.FIXED
+    assert ui_document.document.resolution == (512, 512)
+
+
+def test_the_closed_chip_names_the_mode_and_its_value(app: Any) -> None:
+    """The chip carries what the popup would otherwise have to be opened to learn.
+
+    Falsifier: print the pair under Auto -- the chip then shows pixels the mode recomputes
+    every time the viewer resizes.
+    """
+    ui_document = app.ui_documents[app.current_document_id]
+
+    ui_document.document.resolution_mode = ResolutionMode.FIXED
+    ui_document.document.resolution = (1280, 720)
+    assert canvas_choice_label(ui_document) == "1280x720"
+
+    ui_document.document.resolution_mode = ResolutionMode.AUTO
+    ui_document.ui_state.aspect = (21, 9)
+    assert canvas_choice_label(ui_document) == "Auto 21:9"
+
+
+def test_a_row_does_not_repeat_the_ratio_its_group_names(app: Any) -> None:
+    """`Wide 720p`, not `Wide 720p (16:9)`, under a caption that already reads 16:9.
+
+    Falsifier: pass the shape table's label through unchanged -- every row then carries its
+    group's own caption in brackets.
+    """
+    ui_document = app.ui_documents[app.current_document_id]
+    for caption, rows in canvas_choice_groups(ui_document):
+        for row in rows:
+            assert not row.label.endswith(f"({caption})"), row.label

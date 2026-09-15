@@ -43,6 +43,17 @@ def menu_enabled(app: App, spec: CommandSpec) -> bool:
             assert_never(spec.scope)
 
 
+def command_hint(app: App, command_id: CommandId) -> str:
+    """A command's bound chord as a menu hint, or empty when it has none.
+
+    The binding, not the default: a rebound command must read its NEW chord everywhere it is
+    hinted, and a context menu that hard-coded the default would drift the moment one changed.
+    """
+    spec = SPEC_BY_ID[command_id]
+    chord = app.effective_bindings.get(command_id, spec.default_chord)
+    return chord_to_str(chord) if chord else ""
+
+
 def command_menu_item(app: App, command_id: CommandId) -> bool:
     """One command as a menu item: its label, its bound chord as the hint, its scope as the
     enabled test. Fires the command's callback on a click and returns whether it fired.
@@ -52,9 +63,9 @@ def command_menu_item(app: App, command_id: CommandId) -> bool:
     """
     spec = SPEC_BY_ID[command_id]
     enabled = menu_enabled(app, spec)
-    chord = app.effective_bindings.get(command_id, spec.default_chord)
-    hint = chord_to_str(chord) if chord else ""
-    fired = imgui.menu_item(spec.label, hint, False, enabled=enabled)[0]
+    fired = imgui.menu_item(
+        spec.label, command_hint(app, command_id), False, enabled=enabled
+    )[0]
     if fired:
         app.command_callbacks[command_id]()
     return fired

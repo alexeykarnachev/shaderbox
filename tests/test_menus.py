@@ -10,6 +10,7 @@ that as a library fact). The layering and one-spelling questions are pure source
 
 import ast
 from collections.abc import Callable, Iterator
+from functools import partial
 from itertools import pairwise
 from pathlib import Path
 from typing import Any
@@ -30,6 +31,8 @@ from shaderbox.commands import (
     chord_to_str,
     command_label,
 )
+from shaderbox.constants import STARTER_EXAMPLE_ID
+from shaderbox.menus import command_hint
 from shaderbox.popups.registry import BY_ID, close_modal
 from shaderbox.widgets import document_grid, pass_graph, pass_list
 
@@ -453,23 +456,111 @@ def _adjacent_pairs(order: list[str]) -> list[str]:
     return [b for a, b in pairwise(order) if a == b]
 
 
-def test_a_documents_menu_carries_open_open_folder_and_delete(
+def test_a_documents_menu_carries_every_verb_on_that_document(
     app: Any, spy: _ItemSpy, monkeypatch: Any
 ) -> None:
+    """The tile menu is where a document's own verbs live (093 W8).
+
+    The two summoners left the Document tab's panel rows for this menu, the Document menu and
+    their chords; Reset left the panel's red button for the same three. Falsifier: drop one
+    from `document_menu_items` -- the roster below names what is missing.
+    """
     document_id = app.current_document_id
-    opened: list[str] = []
     revealed: list[str] = []
-    monkeypatch.setattr(app, "select_document", lambda i: opened.append(i))
     monkeypatch.setattr(app, "open_document_dir", lambda i: revealed.append(i))
 
     spy.labels.clear()
     _frame(lambda: document_grid.document_menu_items(app, document_id))
-    assert spy.labels == ["Open folder", "Delete"], spy.labels
+    assert spy.labels == [
+        "Open script",
+        "Open graph",
+        "Open folder",
+        "Reset",
+        "Delete",
+    ], spy.labels
 
-    # The verbs each menu item calls, exercised at the seam the item fires.
-    app.select_document(document_id)
     app.open_document_dir(document_id)
-    assert opened == [document_id] and revealed == [document_id]
+    assert revealed == [document_id]
+
+
+def test_a_tile_menus_verbs_target_that_tiles_document(
+    app: Any, monkeypatch: Any
+) -> None:
+    """Every item fires on the tile's OWN document, not the current one.
+
+    A right-click does not select the tile it opens on (`document_grid.draw`), so the menu
+    cannot route through the current-document commands. Driven by firing each item inside a
+    real frame, since a source walk passes on an item wired to the wrong verb. Falsifier:
+    point any item at its current-document form -- the id below stops matching.
+    """
+    target = app.current_document_id
+    other = app.create_document_from_example(STARTER_EXAMPLE_ID)
+    app.select_document(other)
+    assert app.current_document_id == other
+
+    seen: dict[str, str] = {}
+    monkeypatch.setattr(app, "open_script_for", lambda i, **k: seen.update(script=i))
+    monkeypatch.setattr(app, "open_graph_for", lambda i, **k: seen.update(graph=i))
+    monkeypatch.setattr(app, "open_document_dir", lambda i: seen.update(folder=i))
+    monkeypatch.setattr(
+        app, "reset_document_for_confirmed", lambda i: seen.update(reset=i)
+    )
+    monkeypatch.setattr(
+        app, "reset_document_confirmed", lambda: seen.update(reset=other)
+    )
+    monkeypatch.setattr(
+        app, "delete_document_confirmed", lambda i: seen.update(delete=i)
+    )
+    monkeypatch.setattr(
+        app, "delete_current_document_confirmed", lambda: seen.update(delete=other)
+    )
+
+    for label in ("Open script", "Open graph", "Open folder", "Reset", "Delete"):
+        _frame(partial(_fire_menu_item, app, target, label))
+
+    assert seen == {
+        "script": target,
+        "graph": target,
+        "folder": target,
+        "reset": target,
+        "delete": target,
+    }, seen
+
+
+def _fire_menu_item(app: Any, document_id: str, label: str) -> None:
+    """Draw the tile menu with `label`'s item reporting a click, and nothing else."""
+    real_simple = imgui.menu_item_simple
+    real_item = imgui.menu_item
+
+    def simple(text: str, *args: Any, **kwargs: Any) -> bool:
+        real_simple(text, *args, **kwargs)
+        return text == label
+
+    def item(text: str, *args: Any, **kwargs: Any) -> tuple[bool, bool]:
+        real_item(text, *args, **kwargs)
+        return (text == label, False)
+
+    with (
+        mock.patch.object(imgui, "menu_item_simple", simple),
+        mock.patch.object(imgui, "menu_item", item),
+    ):
+        document_grid.document_menu_items(app, document_id)
+
+
+def test_a_tile_menus_chord_hints_follow_the_binding(app: Any) -> None:
+    """A hinted item shows the BOUND chord, not the registry default.
+
+    Falsifier: hard-code the default in `command_hint` -- the rebind below stops showing.
+    """
+    before = command_hint(app, CommandId.OPEN_GRAPH)
+    app.effective_bindings[CommandId.OPEN_GRAPH] = _chord_of(app, CommandId.OPEN_SCRIPT)
+    after = command_hint(app, CommandId.OPEN_GRAPH)
+    assert after != before, "the hint ignored the rebinding"
+    assert after == command_hint(app, CommandId.OPEN_SCRIPT)
+
+
+def _chord_of(app: Any, command_id: CommandId) -> int:
+    return app.effective_bindings.get(command_id, SPEC_BY_ID[command_id].default_chord)
 
 
 def test_open_document_dir_is_what_the_current_document_verb_calls(

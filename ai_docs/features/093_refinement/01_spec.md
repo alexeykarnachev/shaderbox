@@ -1,8 +1,10 @@
 # 093 — Refinement: the graph editor
 
-Status: **done 2026-09-15.** Seven waves landed (the editor's half of wave 6 re-vendored at
-`5a56ccf`), each checked by him in the running app; the last check reported nothing. Finding 4 (the
-control panel) is delegated to its own feature. The waves and what each landed are the `## Waves`
+Status: **wave 8 landed 2026-09-15; the panel's composition stays open.** Eight waves landed (the editor's half of wave 6 re-vendored at
+`5a56ccf`), each checked by him in the running app. Finding 4 (the control panel) is delegated to
+its own feature, whose mock (`ai_docs/features/094_control_panel/00_mock.html`) he read and
+answered: both options move the dead space rather than remove it, so the composition waits and
+wave 8 takes only the safe, composition-independent half. The waves and what each landed are the `## Waves`
 section below, newest first; the findings are `00_findings.md`. The maintainer's verdict on the shipped canvas ("feels
 very cheap") sent the walk into research first: `02_research_brief.md` is the brief, `research/`
 holds six area reports against primary sources, `03_graph_design.md` is the design record
@@ -389,6 +391,26 @@ Where the record's "Code" paragraphs and this spec differ, this spec wins, for t
 | G4: `GRAPH_WIRE_HIT_MIN` | S12: `GRAPH_WIRE_HIT_FLOOR` | Two floors one pixel apart under near-identical names invite a transposition nothing would catch |
 
 ## Waves
+
+**Wave 8: the safe half of the panel's density, findings 33-35 (2026-09-15).** One commit.
+His verdict on 094's mock -- "вариант Б его просто перемещают в другую сторону" -- keeps the
+panel's composition open, so this wave takes only what does not depend on it. The Document tab's
+header goes from four stacked rows to one: the name, the canvas control, and the script's
+play/stop when a script exists. `Script open` / `Graph open` and the red `Reset` leave the panel
+for the document tile's context menu (which gains Open script, Open graph, Reset beside Open
+folder and Delete), the Document menu and their chords -- each was already a registered command,
+so the panel rows were a third affordance. Every menu item takes the TILE's document id: a
+right-click does not select the tile it opens on, so `reset_document_for_confirmed` joins
+`delete_document_confirmed`'s per-document shape and `reset_current_document` is retired.
+The `Auto | Fixed` segment, the aspect chips and the W x H fields collapse into ONE combo
+grouped by aspect with that ratio's `Auto` leading each group (his shape: "просто в начале
+каждого аспекта будет auto опция"); a ratio no fixed size covers keeps its group, and a row
+drops the ratio its caption already names. 090 D1's model is untouched -- only the widget
+changes. Four dead `App` fields go with the pair (`canvas_size_buf`, `aspect_buf` and the four
+editing flags). Four breaks tried: appending `Auto` instead of leading with it, grouping by the
+exact reduction so 1920x1088 leaves 16:9, and TWO at the menu's targeting -- the first attempt's
+test called the App verb directly and stayed green through the break, so it was rewritten to
+fire the menu items inside a real frame, where it goes red.
 
 **Wave 7: two findings from his check of wave 6, 31-32 (2026-09-15).** One commit. The
 document switch stops opening a shader tab (`_on_current_document_changed` no longer calls

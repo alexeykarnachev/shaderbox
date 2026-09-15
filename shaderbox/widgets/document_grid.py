@@ -7,7 +7,9 @@ tile's context menu (`document_menu_items`), and the tile itself carries no butt
 from imgui_bundle import imgui, imgui_ctx
 
 from shaderbox.app import App
+from shaderbox.commands import CommandId
 from shaderbox.constants import STARTER_EXAMPLE_ID
+from shaderbox.menus import command_hint
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_models import UIDocument
 from shaderbox.ui_primitives import (
@@ -41,11 +43,28 @@ def draw_document_preview_button(
 
 def document_menu_items(app: App, document_id: str) -> None:
     """The items of one document's context menu. The caller owns the popup; each grid tile is
-    its own child window, so an explicit id is safe there."""
+    its own child window, so an explicit id is safe there.
+
+    Every item takes `document_id`, never the current document: a right-click does not select
+    the tile it opens on, so a verb routed through the current-document command would act on
+    the wrong document (093 W8). The chords are the hints the same verbs carry in the Document
+    menu, where they act on the current one.
+    """
+    if imgui.menu_item("Open script", command_hint(app, CommandId.OPEN_SCRIPT), False)[
+        0
+    ]:
+        app.open_script_for(document_id, focus_editor=True)
+    if imgui.menu_item("Open graph", command_hint(app, CommandId.OPEN_GRAPH), False)[0]:
+        app.open_graph_for(document_id, focus_editor=True)
+    imgui.separator()
     if imgui.menu_item_simple("Open folder"):
         app.open_document_dir(document_id)
     imgui.separator()
-    if imgui.menu_item_simple("Delete"):
+    if imgui.menu_item("Reset", command_hint(app, CommandId.RESET_DOCUMENT), False)[0]:
+        app.reset_document_for_confirmed(document_id)
+    if imgui.menu_item("Delete", command_hint(app, CommandId.DELETE_DOCUMENT), False)[
+        0
+    ]:
         app.delete_document_confirmed(document_id)
 
 

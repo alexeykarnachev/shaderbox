@@ -210,8 +210,8 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   the tile's context menu (the item set shared with the graph's node menu as
   `pass_menu_items`); the tile itself carries no button; holds no state of its own. The caption
   row and the `add pass` / `import...` row are the Document tab's (`tabs/document.py::_draw_passes`);
-  since 093 that caption row is an entry-point row like the Script one -- an accent tick, the word
-  `Passes`, and an `open` that summons the graph's editor tab -- and the strip is always what the
+  the caption is a plain `Passes` since 093 W8, when the entry-point rows and their accent tick
+  went to the document's context menu, and the strip is always what the
   Document tab draws below it. A group's consecutive tiles draw inside
   one flush outline with the name on its border (091): the fill on the parent draw list, the
   outline and label on the foreground list clipped to the strip, since the tiles are child
@@ -273,7 +273,7 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   `bundle_output`, `refuse_drop`, `cycle_edges`, and the one namespace passes and groups share
   (`namespace_error` behind `group_name_error` and the session's pass-name check). Also the canvas-dimension bounds `MIN_CANVAS_PX` /
   `MAX_CANVAS_PX` and the `clamp_canvas_size` both entry points funnel through (the Document
-  tab's fields and the copilot's `set_canvas_size`). Pure
+  tab's canvas combo and the copilot's `set_canvas_size`). Pure
   data: no GL, no imgui, importable anywhere.
 
 - **`project_session.py`** — `ProjectSession`: the headless project + copilot CORE (paths, documents,
@@ -407,9 +407,11 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   `code.py` (inline GLSL editor — main-window LEFT split), `document.py`, `uniforms.py`,
   `render.py`, `share.py` — the last four are the settings-panel tabs, in `_NODE_TABS` order.
   `uniforms.py` owns the uniform rows and the pass selector that picks whose uniforms they are;
-  `document.py` keeps the pass strip, since a pass is CHOSEN there and TUNED next door, and ONE
-  entry-point row carries both summoners side by side (Script, then Graph), with the strip under
-  a plain `Passes` caption. `code.py` is the
+  `document.py` keeps the pass strip, since a pass is CHOSEN there and TUNED next door. Its
+  header is ONE row since 093 W8 -- the name, the canvas combo, and the script's play/stop when
+  a script exists -- with the strip under a plain `Passes` caption; the Script and Graph
+  summoners and Reset moved to the document tile's context menu, the Document menu and their
+  chords. `code.py` is the
   editor pane's whole dispatch: its tab row, the text body, and -- since 093 -- a branch above the
   session fetch that hands a `graph` tab to `pass_graph.draw` and does the pane's focus bookkeeping
   for it, since that kind has no session to fetch.
@@ -418,8 +420,11 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
 - **`widgets/`** — stateless imgui-drawing functions taking `app: App`. No shared contract.
   `details.py`, `media_ops.py`, `document_grid.py` (the project's documents as live thumbnails;
   incl. `draw_document_preview_button`, the free preview helper the document grid, the
-  examples browser and the import dialog all call, and `document_menu_items` — Open, Open folder,
-  Delete through the confirm modal. The tile carries no button since 093/17, and no hint
+  examples browser and the import dialog all call, and `document_menu_items` — Open script,
+  Open graph, Open folder, Reset and Delete, the last two through the confirm modal. Every item
+  takes the TILE's document id, never the current one: a right-click does not select the tile
+  it opens on, so a verb routed through the current-document command would act on the wrong
+  document (093 W8). The tile carries no button since 093/17, and no hint
   caption since 093/22), `uniform.py`,
   `cheatsheet.py` (the floating bottom-right keyboard-cheatsheet overlay — own top-level window,
   scope-filtered rows, opt-out via `UIAppState.show_cheatsheet`).

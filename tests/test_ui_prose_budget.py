@@ -214,7 +214,6 @@ _UNMEASURABLE: dict[tuple[str, str], str] = {
         "draw_chrome",
     ): "the open file's path, tab label or error",
     ("shaderbox/tabs/uniforms.py", "_draw_auto_block"): "the uniform's live value",
-    ("shaderbox/tabs/document.py", "_entry_row_label"): "the caller's row label",
     (
         "shaderbox/tabs/document.py",
         "_draw_passes",

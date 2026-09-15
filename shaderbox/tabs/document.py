@@ -1,8 +1,10 @@
+from dataclasses import dataclass
+from enum import Enum, auto
+
 from imgui_bundle import imgui
 
 from shaderbox.app import App
 from shaderbox.commands import CommandId, command_label
-from shaderbox.editor_types import EditorTabKind
 from shaderbox.media import MediaWithTexture
 from shaderbox.pass_graph import clamp_canvas_size
 from shaderbox.render_preset import resolve_dims
@@ -22,10 +24,9 @@ from shaderbox.ui_models import (
     UIDocument,
 )
 from shaderbox.ui_primitives import (
-    chip_button,
-    danger_button,
+    ComboRow,
+    grouped_combo,
     play_stop_toggle,
-    segmented_choice,
     small_caption,
     standard_button,
 )
@@ -35,31 +36,162 @@ from shaderbox.widgets import pass_list
 _SQUARE_PRESETS: tuple[int, ...] = (256, 512, 1024, 2048)
 
 
-def _draw_canvas_presets(app: App, ui_document: UIDocument) -> None:
-    # A chip, not a combo: it names a shortcut rather than a value the row holds, so it does not
-    # read as a third canvas field. The popup is a combo's, opened off the chip.
-    label = "presets"
-    width = imgui.calc_text_size(label).x + 2.0 * float(SPACE.MD)
-    imgui.set_next_item_width(width)
-    if imgui.begin_combo("##canvas_presets", label, imgui.ComboFlags_.no_arrow_button):
-        for preset_label, size in _canvas_presets(ui_document):
-            if imgui.selectable(preset_label, False)[0]:
-                _apply_canvas_size(app, ui_document, size)
-                app.canvas_size_buf = ui_document.document.resolution
-        imgui.end_combo()
+# One entry of the canvas popup: what it sets, and how it reads. An AUTO entry carries the
+# aspect it selects and no size; a FIXED entry carries the pixel pair.
+class CanvasChoiceKind(Enum):
+    AUTO = auto()
+    FIXED = auto()
 
 
-_MODES: tuple[ResolutionMode, ...] = (ResolutionMode.AUTO, ResolutionMode.FIXED)
+@dataclass(frozen=True)
+class CanvasChoice:
+    kind: CanvasChoiceKind
+    label: str
+    aspect: tuple[int, int]
+    size: tuple[int, int] | None = None
 
 
-def _draw_resolution_mode(app: App, ui_document: UIDocument) -> None:
-    # A segmented control, not a lone toggle: the two modes are mutually exclusive positions of
-    # one setting, and a single `Fixed` button left "not Fixed" unnamed. Both words on screen
-    # also say what the other position would do.
-    current = _MODES.index(ui_document.document.resolution_mode)
-    chosen = segmented_choice("resolution_mode", ("Auto", "Fixed"), current)
-    if chosen != current:
-        _switch_resolution_mode(app, ui_document, _MODES[chosen])
+def _aspect_terms(label: str) -> tuple[int, int]:
+    width, _, height = label.partition(":")
+    return (int(width), int(height))
+
+
+def _row_label(label: str, aspect: tuple[int, int]) -> str:
+    """A size's label with the ratio its GROUP already carries taken off the end.
+
+    `Wide 720p (16:9)` and `512x512 (1:1)` both name their shape, which the caption above the
+    row repeats -- the suffixes are single-homed in `render_shape` and `get_resolution_str`
+    for the surfaces that show one size alone, so the trim lives here rather than there.
+    """
+    suffix = f" ({aspect[0]}:{aspect[1]})"
+    return label[: -len(suffix)] if label.endswith(suffix) else label
+
+
+def canvas_choice_groups(
+    ui_document: UIDocument,
+) -> list[tuple[str, list[CanvasChoice]]]:
+    """The canvas popup, grouped by aspect: one group per ratio, its first row `Auto`.
+
+    The two modes pick from ONE list because they answer the same question -- what shape is
+    this document, and does its size follow the viewer or a stored pair. `Auto` leads each
+    group because it is the mode a new document starts in, and the sizes under it are that
+    same ratio at three scales. A ratio no fixed size covers keeps its group, so every aspect
+    the model accepts stays reachable.
+
+    Reads `uniform_values`, never `get_active_uniforms()`: the latter compiles a
+    never-attempted pass (066 D1), which on the Document tab's every frame would compile the
+    whole graph.
+    """
+    by_aspect: dict[tuple[int, int], list[CanvasChoice]] = {
+        preset: [] for preset in ASPECT_PRESETS
+    }
+
+    current = ui_document.document.resolution
+    sizes: list[tuple[str, tuple[int, int]]] = [
+        (get_resolution_str(None, n, n), (n, n)) for n in _SQUARE_PRESETS
+    ]
+    for shape in MENU_SHAPES:
+        if shape is RenderShape.NATIVE:
+            continue
+        sizes.append(
+            (
+                SHAPE_TABLE[shape].menu_label,
+                resolve_dims(
+                    shape_to_preset(
+                        shape,
+                        is_video=False,
+                        fps=None,
+                        container=None,
+                        duration_max=None,
+                    ),
+                    current,
+                ),
+            )
+        )
+    for render_pass in ui_document.document.passes.values():
+        for uniform_name, value in sorted(render_pass.uniform_values.items()):
+            if not isinstance(value, MediaWithTexture):
+                continue
+            sizes.append(
+                (
+                    get_resolution_str(uniform_name, *value.texture.size),
+                    value.texture.size,
+                )
+            )
+
+    seen: set[tuple[int, int]] = set()
+    for label, size in sizes:
+        if size in seen:
+            continue
+        seen.add(size)
+        # `aspect_of` reduces exactly, spelling an encoder-aligned 1920x1088 as `30:17`. The
+        # group a size belongs to is the one a reader would name it, so the snap decides.
+        snapped = reduce_aspect(_aspect_terms(aspect_label(size)))
+        by_aspect.setdefault(snapped, []).append(
+            CanvasChoice(
+                CanvasChoiceKind.FIXED, _row_label(label, snapped), snapped, size
+            )
+        )
+
+    return [
+        (
+            f"{aspect[0]}:{aspect[1]}",
+            [CanvasChoice(CanvasChoiceKind.AUTO, "Auto", aspect), *rows],
+        )
+        for aspect, rows in by_aspect.items()
+    ]
+
+
+def canvas_choice_label(ui_document: UIDocument) -> str:
+    """What the closed chip reads: the mode, and the value that mode resolves to.
+
+    Under Auto the stored value is a RATIO and the pixels follow the viewer, so the chip names
+    the ratio and the readout line carries the live size. Under Fixed the pair IS the value.
+    """
+    document = ui_document.document
+    if document.resolution_mode is ResolutionMode.AUTO:
+        aspect = ui_document.ui_state.aspect
+        return f"Auto {aspect[0]}:{aspect[1]}"
+    width, height = document.resolution
+    return f"{width}x{height}"
+
+
+def _apply_canvas_choice(
+    app: App, ui_document: UIDocument, choice: CanvasChoice
+) -> None:
+    """Commit one popup row: the mode it names, then the value that mode reads."""
+    if choice.kind is CanvasChoiceKind.AUTO:
+        _switch_resolution_mode(app, ui_document, ResolutionMode.AUTO)
+        _apply_aspect(app, ui_document, choice.aspect)
+        return
+    assert choice.size is not None
+    _switch_resolution_mode(app, ui_document, ResolutionMode.FIXED)
+    _apply_canvas_size(app, ui_document, choice.size)
+
+
+def _draw_canvas_control(app: App, ui_document: UIDocument) -> None:
+    """The whole canvas control: one combo over every shape the document can take.
+
+    One control, not a mode toggle beside a value field: `Auto | Fixed` named a mode whose two
+    positions edited different things (a ratio, a pixel pair), so the row carried a control
+    that changed meaning under it. Here a row names both at once.
+    """
+    groups = canvas_choice_groups(ui_document)
+    flat = [choice for _, rows in groups for choice in rows]
+    current_label = canvas_choice_label(ui_document)
+    combo_groups: list[tuple[str, list[ComboRow]]] = [
+        (caption, [(choice.label, COLOR.FG_SECONDARY) for choice in rows])
+        for caption, rows in groups
+    ]
+    width = imgui.calc_text_size("Auto 16:9").x + 4.0 * float(SPACE.MD)
+    picked = grouped_combo(
+        "##canvas_choice",
+        (current_label, COLOR.FG_PRIMARY),
+        combo_groups,
+        width,
+    )
+    if picked is not None:
+        _apply_canvas_choice(app, ui_document, flat[picked])
 
 
 def _switch_resolution_mode(
@@ -76,7 +208,6 @@ def _switch_resolution_mode(
         seeded = document.clamped_size(document.canvas_size)
         ui_document.ui_state.resolution = seeded
         document.resolution = seeded
-        app.canvas_size_buf = seeded
         # The live size is already `seeded`; the deferred write is what makes the Fixed branch
         # of the next tick agree rather than resize on its first frame.
         app.pending_resolution[ui_document.id] = seeded
@@ -94,120 +225,7 @@ def _apply_aspect(app: App, ui_document: UIDocument, ratio: tuple[int, int]) -> 
         return
     ui_document.ui_state.aspect = reduced
     ui_document.document.aspect = reduced
-    app.aspect_buf = reduced
     app.notifications.push(f"Aspect: {reduced[0]}:{reduced[1]}")
-
-
-def _draw_aspect_control(app: App, ui_document: UIDocument) -> None:
-    """The whole Auto-side control: a row of preset chips plus two fields for a custom ratio.
-
-    One function on purpose -- the layout is the half still being designed, so it can be
-    rebuilt without touching the model, the seeding or the tests behind it. What it owes the
-    rest of the app is only this: whatever the user picks reaches `_apply_aspect` reduced.
-    """
-    current = ui_document.ui_state.aspect
-    for preset in ASPECT_PRESETS:
-        label = f"{preset[0]}:{preset[1]}"
-        width = imgui.calc_text_size(label).x + 2.0 * float(SPACE.MD)
-        if chip_button(
-            label, width, imgui.get_frame_height(), active=preset == current
-        ):
-            _apply_aspect(app, ui_document, preset)
-        imgui.same_line(spacing=float(SPACE.SM))
-
-    # The custom pair mirrors the document unless ITS OWN field is active, the same rule the
-    # canvas fields follow: a field the user is not in never holds a stale number.
-    if not app.aspect_w_editing:
-        app.aspect_buf = (current[0], app.aspect_buf[1])
-    if not app.aspect_h_editing:
-        app.aspect_buf = (app.aspect_buf[0], current[1])
-
-    imgui.same_line(spacing=float(SPACE.MD))
-    imgui.set_next_item_width(float(SIZE.ASPECT_FIELD_W))
-    entered_w, buf_w = imgui.input_int(
-        "##aspect_w",
-        app.aspect_buf[0],
-        step=0,
-        flags=imgui.InputTextFlags_.enter_returns_true,
-    )
-    active_w = imgui.is_item_active()
-    committed_w = entered_w or imgui.is_item_deactivated_after_edit()
-    app.aspect_buf = (buf_w, app.aspect_buf[1])
-
-    imgui.same_line(spacing=float(SPACE.SM))
-    imgui.text_colored(COLOR.FG_DIM, ":")
-    imgui.same_line(spacing=float(SPACE.SM))
-
-    imgui.set_next_item_width(float(SIZE.ASPECT_FIELD_W))
-    entered_h, buf_h = imgui.input_int(
-        "##aspect_h",
-        app.aspect_buf[1],
-        step=0,
-        flags=imgui.InputTextFlags_.enter_returns_true,
-    )
-    active_h = imgui.is_item_active()
-    committed_h = entered_h or imgui.is_item_deactivated_after_edit()
-    app.aspect_buf = (app.aspect_buf[0], buf_h)
-
-    app.aspect_w_editing = active_w
-    app.aspect_h_editing = active_h
-    if committed_w or committed_h:
-        _apply_aspect(app, ui_document, app.aspect_buf)
-        app.aspect_buf = ui_document.ui_state.aspect
-
-
-def _draw_canvas_fields(app: App, ui_document: UIDocument) -> None:
-    """The whole Fixed-side control: the W x H pair and the presets chip, exactly as before 090.
-
-    The pair is meaningful ONLY under Fixed, so it is not drawn under Auto at all -- an editable
-    number the mode does not read is a control that lies about what it does.
-    """
-    # Each half mirrors the document unless ITS OWN field is active, so a field the user is not
-    # in never holds a stale number to carry over an external write.
-    doc_w, doc_h = ui_document.document.resolution
-    if not app.canvas_w_editing:
-        app.canvas_size_buf = (doc_w, app.canvas_size_buf[1])
-    if not app.canvas_h_editing:
-        app.canvas_size_buf = (app.canvas_size_buf[0], doc_h)
-
-    imgui.set_next_item_width(float(SIZE.CANVAS_FIELD_W))
-    entered_w, buf_w = imgui.input_int(
-        "##canvas_w",
-        app.canvas_size_buf[0],
-        step=0,
-        flags=imgui.InputTextFlags_.enter_returns_true,
-    )
-    active_w = imgui.is_item_active()
-    committed_w = entered_w or imgui.is_item_deactivated_after_edit()
-    app.canvas_size_buf = (buf_w, app.canvas_size_buf[1])
-
-    imgui.same_line(spacing=float(SPACE.SM))
-    imgui.text_colored(COLOR.FG_DIM, "x")
-    imgui.same_line(spacing=float(SPACE.SM))
-
-    imgui.set_next_item_width(float(SIZE.CANVAS_FIELD_W))
-    entered_h, buf_h = imgui.input_int(
-        "##canvas_h",
-        app.canvas_size_buf[1],
-        step=0,
-        flags=imgui.InputTextFlags_.enter_returns_true,
-    )
-    active_h = imgui.is_item_active()
-    committed_h = entered_h or imgui.is_item_deactivated_after_edit()
-    app.canvas_size_buf = (app.canvas_size_buf[0], buf_h)
-
-    imgui.same_line(spacing=float(SPACE.MD))
-    _draw_canvas_presets(app, ui_document)
-
-    app.canvas_w_editing = active_w
-    app.canvas_h_editing = active_h
-
-    # The buffer IS the pair to commit: the mirror above already refreshed the half whose field
-    # is not active from the document this same frame, so an external write during the edit
-    # stands without the commit re-reading it.
-    if committed_w or committed_h:
-        _apply_canvas_size(app, ui_document, app.canvas_size_buf)
-        app.canvas_size_buf = ui_document.document.resolution
 
 
 def _draw_size_readout(app: App, ui_document: UIDocument, control_x: float) -> None:
@@ -226,26 +244,6 @@ def _draw_size_readout(app: App, ui_document: UIDocument, control_x: float) -> N
         text = f"{width}x{height}"
     imgui.set_cursor_pos_x(control_x)
     small_caption(app.font_12, text)
-
-
-def _draw_document_reset(app: App) -> None:
-    # Reset is about THIS document — its histories, clock, script and videos — so it sits on the
-    # row that names the document, at its right border, and stays live during a copilot turn as
-    # it always has. Destructive, so the danger tier (079 D7, D12).
-    label = "Reset"
-    width = imgui.calc_text_size(label).x + 2.0 * imgui.get_style().frame_padding.x
-    imgui.same_line()
-    # Right border of the panel: `get_content_region_avail` is measured from the cursor the
-    # `same_line` just left, so the remaining width minus the button's own is the offset.
-    imgui.set_cursor_pos_x(
-        imgui.get_cursor_pos_x() + imgui.get_content_region_avail().x - width
-    )
-    imgui.end_disabled()
-    if danger_button(label, width=width):
-        app.reset_document_confirmed()
-    if imgui.is_item_hovered():
-        imgui.set_tooltip("Reset document")
-    imgui.begin_disabled(app.copilot_turn_active)
 
 
 def _apply_canvas_size(
@@ -274,53 +272,6 @@ def _apply_canvas_size(
     app.notifications.push(f"{label}: {w}x{h}")
 
 
-def _canvas_presets(ui_document: UIDocument) -> list[tuple[str, tuple[int, int]]]:
-    """Squares, the named video shapes, then any bound texture's size, across ALL passes.
-
-    Reads `uniform_values`, never `get_active_uniforms()`: the latter compiles a
-    never-attempted pass (066 D1), which on the Document tab's every frame would compile
-    the whole graph.
-    """
-    # The stored pair. This list is drawn only under Fixed (revision 1), where the pair IS the
-    # live canvas, so "the current size" has exactly one meaning here.
-    current = ui_document.document.resolution
-    presets: list[tuple[str, tuple[int, int]]] = []
-    seen: set[tuple[int, int]] = {current}
-
-    for n in _SQUARE_PRESETS:
-        size = (n, n)
-        if size in seen:
-            continue
-        seen.add(size)
-        presets.append((get_resolution_str(None, n, n), size))
-
-    for shape in MENU_SHAPES:
-        if shape is RenderShape.NATIVE:
-            continue
-        size = resolve_dims(
-            shape_to_preset(
-                shape, is_video=False, fps=None, container=None, duration_max=None
-            ),
-            current,
-        )
-        if size in seen:
-            continue
-        seen.add(size)
-        presets.append((SHAPE_TABLE[shape].menu_label, size))
-
-    for render_pass in ui_document.document.passes.values():
-        for uniform_name, value in sorted(render_pass.uniform_values.items()):
-            if not isinstance(value, MediaWithTexture):
-                continue
-            size = value.texture.size
-            if size in seen:
-                continue
-            seen.add(size)
-            presets.append((get_resolution_str(uniform_name, *size), size))
-
-    return presets
-
-
 def draw(app: App) -> None:
     if not (ui_document := app.ui_documents.get(app.current_document_id)):
         return
@@ -331,19 +282,9 @@ def draw(app: App) -> None:
 
     imgui.begin_disabled(app.copilot_turn_active)
 
-    # Reset goes on the caption row at the panel's right border (079 D7), where a document-wide
-    # destructive verb reads as document-wide rather than as another canvas field.
     small_caption(app.font_12, "Document name")
     imgui.same_line(combo_offset)
-    # The two modes edit different things, so the caption names the one on screen: a pixel
-    # pair under Fixed, a ratio under Auto.
-    small_caption(
-        app.font_12,
-        "Canvas"
-        if ui_document.document.resolution_mode is ResolutionMode.FIXED
-        else "Aspect",
-    )
-    _draw_document_reset(app)
+    small_caption(app.font_12, "Canvas")
 
     imgui.set_next_item_width(SIZE.NAME_INPUT_W)
     ui_document.ui_state.ui_name = imgui.input_text_with_hint(
@@ -352,20 +293,13 @@ def draw(app: App) -> None:
 
     imgui.same_line(combo_offset)
 
-    # Per-document widget ids. Clearing the editing flags on a switch is not enough on its own:
-    # imgui keeps the ITEM active across it, so a shared `##canvas_w` would let the outgoing
-    # document's half-typed digit re-latch onto the incoming one and commit to it.
+    # Per-document widget ids: imgui keeps an ITEM active across a document switch, so a
+    # shared id would let the outgoing document's open popup land on the incoming one.
     imgui.push_id(ui_document.id)
 
-    _draw_resolution_mode(app, ui_document)
-    imgui.same_line(spacing=float(SPACE.MD))
     control_x = imgui.get_cursor_pos_x()
-
-    if ui_document.document.resolution_mode is ResolutionMode.FIXED:
-        _draw_canvas_fields(app, ui_document)
-    else:
-        _draw_aspect_control(app, ui_document)
-
+    _draw_canvas_control(app, ui_document)
+    _draw_script_toggle(app)
     _draw_size_readout(app, ui_document, control_x)
 
     imgui.pop_id()
@@ -373,95 +307,30 @@ def draw(app: App) -> None:
     imgui.end_disabled()
 
     imgui.dummy((0, SPACE.MD))
-    _draw_entry_points(app)
+    _draw_passes(app, app.current_document_id)
 
 
-# The Shader/Script label column: a tick gutter + the widest label, so both `open` buttons align.
-# The accent tick sits this far LEFT of the label, in the panel's own margin.
-_ENTRY_TICK_W = float(SPACE.SM)
+def _draw_script_toggle(app: App) -> None:
+    """The document-wide play/stop, the one script control that is genuinely live.
 
-
-def _entry_tab_active(app: App, document_id: str, kind: EditorTabKind) -> bool:
-    """Whether the editor's ACTIVE tab is this document's tab of that kind -- the rule the
-    accent tick on an entry-point row marks. One home, so the two rows cannot drift."""
-    active = app.active_tab
-    return (
-        active is not None and active.kind == kind and active.document_id == document_id
-    )
-
-
-def _entry_row_label(active: bool, label: str) -> None:
-    # An entry-point row's label. `align_text_to_frame_padding` centers the text on the button's
-    # row height (the font mix floats it high otherwise). The accent tick marking the editor's active
-    # tab is a draw-list line — presence and color only, never size (/imgui-ui §3) — drawn in the
-    # margin to the LEFT of the text, so it costs the row no indent.
-    imgui.align_text_to_frame_padding()
-    pos = imgui.get_cursor_screen_pos()
-    if active:
-        h = imgui.get_frame_height()
-        col = imgui.color_convert_float4_to_u32(COLOR.ACCENT_PRIMARY)
-        imgui.get_window_draw_list().add_line(
-            (pos.x - _ENTRY_TICK_W, pos.y + 2.0),
-            (pos.x - _ENTRY_TICK_W, pos.y + h - 2.0),
-            col,
-            2.0,
-        )
-    imgui.text_colored(COLOR.FG_DIM, label)
-    imgui.same_line(spacing=float(SPACE.MD))
-
-
-def _draw_entry_points(app: App) -> None:
-    # The document's entry-points (049, 093 W2-1): SCRIPT (CPU script) and the pass GRAPH, each
-    # with an `open` that summons its tab into the editor (the document panel is "about this
-    # document"; the tab bar is the editor's own state — `open` is a summoner, not a duplicate).
-    # One row each, the graph's directly under the script's, so the two summoners read as one
-    # group without a `same_line` that would clip at the narrow panel. The whole-document PLAY/STOP
-    # toggle lives with the script (its true owner — it freezes/resumes the script's driven
-    # uniforms; the script keeps ticking). An accent tick marks whichever entry-point is the
-    # editor's active tab. Frozen mid-copilot-turn (a write races the reload).
+    The `open` summoners it used to sit beside are gone (093 W8): opening a script or a graph
+    is a verb on the document, so it lives on the document's context menu, the Document menu
+    and its chord, where it was already registered. What cannot live there is a STATE the user
+    watches while a shader runs, so the toggle stays on the row and is absent when the
+    document has no script. The caller's copilot-turn bracket covers it (a write races the
+    reload).
+    """
     document_id = app.current_document_id
-    present = app.session.has_script(document_id)
-    error = present and app.session.script_has_error(document_id)
-    script_active = _entry_tab_active(app, document_id, "script")
-    graph_active = _entry_tab_active(app, document_id, "graph")
-
-    imgui.begin_disabled(app.copilot_turn_active)
-
-    # No section caption: a document has exactly one script (048) and one graph, so a heading
-    # over them would say the word twice and cost a line the panel cannot spare.
-    _entry_row_label(script_active, "Script")
-    open_tooltip = (
-        "Open the document script" if present else "Create the document script"
-    )
-    open_color = COLOR.STATE_ERROR if error else COLOR.FG_SECONDARY
-    if standard_button("open##entry_script", text_color=open_color):
-        app.open_script_for(document_id, focus_editor=True)
-    if imgui.is_item_hovered():
-        imgui.set_tooltip(open_tooltip)
-    if present:
-        imgui.same_line()
-        playing = not app.current_document_ui_state_or_default.all_stopped
-        if play_stop_toggle(
-            "document",
-            playing,
-            tooltip="Stop the whole script" if playing else "Resume the whole script",
-        ):
-            app.set_document_all_stopped(document_id, playing)
-
-    # Its OWN row, not a `same_line` beside the script's: at the narrow split the settings child
-    # gives the row ~194px of content and the pair needs ~276, and `same_line` clips rather than
-    # wraps -- the graph's `open` would be the first thing to vanish. The gap is the tight
-    # within-group one, since the two summoners are one group and not two sections.
-    imgui.dummy((0, float(SPACE.SM)))
-    _entry_row_label(graph_active, "Graph")
-    if standard_button("open##entry_graph"):
-        app.open_graph_for(document_id, focus_editor=True)
-    if imgui.is_item_hovered():
-        imgui.set_tooltip("Open the pass graph")
-    imgui.end_disabled()
-
-    imgui.dummy((0, float(SPACE.MD)))
-    _draw_passes(app, document_id)
+    if not app.session.has_script(document_id):
+        return
+    imgui.same_line(spacing=float(SPACE.MD))
+    playing = not app.current_document_ui_state_or_default.all_stopped
+    if play_stop_toggle(
+        "document",
+        playing,
+        tooltip="Stop the whole script" if playing else "Resume the whole script",
+    ):
+        app.set_document_all_stopped(document_id, playing)
 
 
 def _draw_passes(app: App, document_id: str) -> None:

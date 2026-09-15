@@ -21,13 +21,13 @@ from shaderbox.editor_types import TabRecord
 from shaderbox.formatting import formatter_for
 from shaderbox.pass_graph import PassSource
 from shaderbox.paths import shader_lib_root
-from shaderbox.tabs import document as document_tab
 from shaderbox.tabs.code import tab_label
 from shaderbox.theme import SIZE
 from shaderbox.ui import update_and_draw
 from shaderbox.ui_primitives import ellipsize
 from shaderbox.widgets import pass_graph, uniform
 from shaderbox.widgets.graph_state import bezier_point, wire_points
+from tests.conftest import seed_extra_document
 
 # The imgui font atlas is process-global, so every frame-driving module owns a worker
 # (`pyproject.toml`).
@@ -152,18 +152,22 @@ def test_the_uniforms_panel_opens_no_editor_over_the_graphs_own_file(app: Any) -
     assert graph_path not in app.editor_sessions
 
 
-def test_the_entry_tick_marks_this_documents_tab_of_this_kind(app: Any) -> None:
-    # T5: one predicate for the Script row's tick and the Passes row's, so the two cannot
-    # drift. Falsifier: drop the document clause -- another document's graph tab ticks this
-    # document's row. The drawn tick is the maintainer's eyes, as the Script row's is.
-    from tests.conftest import seed_extra_document
+def test_open_graph_for_opens_that_documents_tab(app: Any) -> None:
+    """The summoner names the document it opens, not whichever is current (093 W8).
 
+    The entry-point rows and their accent tick are gone -- the verb lives on the document's
+    context menu, which fires on a tile a right-click did not select. Falsifier: route the
+    menu's item through the current-document command and the second document below never gets
+    its graph tab.
+    """
     first = app.current_document_id
     second = seed_extra_document(app, "second-document")
-    app.open_graph_for(first)
-    assert document_tab._entry_tab_active(app, first, "graph") is True
-    assert document_tab._entry_tab_active(app, second, "graph") is False
-    assert document_tab._entry_tab_active(app, first, "script") is False
+    app.open_graph_for(second)
+    active = app.active_tab
+    assert active is not None
+    assert active.kind == "graph"
+    assert active.document_id == second, "the graph opened on the wrong document"
+    assert app.current_document_id == first, "opening a tab switched the document"
 
 
 # ---- the two geometry facts (093 G11, S8) ---------------------------------------------------

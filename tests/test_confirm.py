@@ -18,12 +18,12 @@ from imgui_bundle import imgui
 from shaderbox import hotkeys, ui_primitives
 from shaderbox.app import ModalId
 from shaderbox.commands import CommandId, command_label
+from shaderbox.constants import STARTER_EXAMPLE_ID
 from shaderbox.copilot.state import Message
 from shaderbox.paths import shader_lib_root
 from shaderbox.popups import confirm, lib_picker
 from shaderbox.popups.lib_picker import tree
 from shaderbox.popups.registry import BY_ID, MODALS, close_modal, draw_modal
-from shaderbox.tabs import document as document_tab
 from shaderbox.ui_models import ConfirmRequest
 from shaderbox.widgets import copilot_chat
 
@@ -209,7 +209,7 @@ def test_the_document_delete_verb_names_the_document(app: Any) -> None:
 def test_the_document_reset_verb_names_the_document(app: Any) -> None:
     ui_name = app.ui_documents[app.current_document_id].ui_state.ui_name
     with mock.patch.object(
-        app, "reset_current_document", wraps=app.reset_current_document
+        app.session, "reset_document", wraps=app.session.reset_document
     ) as verb:
         app.reset_document_confirmed()
         assert verb.call_count == 0
@@ -220,35 +220,31 @@ def test_the_document_reset_verb_names_the_document(app: Any) -> None:
     assert verb.call_count == 1
 
 
-def test_the_document_tabs_reset_button_asks_first(app: Any, monkeypatch: Any) -> None:
-    """The Document tab's own Reset control routes through the confirming verb.
+def test_the_tile_menus_reset_targets_its_own_document(app: Any) -> None:
+    """A tile's Reset restarts THAT document, not whichever one is current.
 
-    Driven through a real frame with the danger button reporting the click, since a source
-    walk would pass on a button wired to the wrong verb. Falsifier: call
-    `app.reset_current_document()` from the button -- the document restarts on one click.
+    A right-click does not select the tile it opens on (`document_grid.draw`), so a menu
+    routed through the current-document verb would restart the wrong document with the right
+    name on the confirm. Falsifier: point the menu at `reset_document_confirmed` -- the
+    non-current id below stops reaching `session.reset_document`.
     """
-    real_danger = document_tab.danger_button
+    other_id = app.create_document_from_example(STARTER_EXAMPLE_ID)
+    app.select_document(other_id)
+    target = next(i for i in app.ui_documents if i != other_id)
+    assert app.current_document_id == other_id
 
-    def clicking(label: str, *args: Any, **kwargs: Any) -> bool:
-        real_danger(label, *args, **kwargs)
-        return label.split("##", 1)[0] == "Reset"
-
-    monkeypatch.setattr(document_tab, "danger_button", clicking)
     with mock.patch.object(
         app.session, "reset_document", wraps=app.session.reset_document
     ) as verb:
-        imgui.new_frame()
-        imgui.begin("reset_rig")
-        imgui.begin_disabled(False)
-        document_tab._draw_document_reset(app)
-        imgui.end_disabled()
-        imgui.end()
-        imgui.end_frame()
-    assert verb.call_count == 0, (
-        "the Reset button restarted the document with no confirm"
+        app.reset_document_for_confirmed(target)
+        assert verb.call_count == 0, "the menu restarted the document with no confirm"
+        assert app.modal is ModalId.CONFIRM
+        assert app.confirm is not None and app.confirm.verb == "Reset"
+        app.confirm.on_confirm()
+    assert verb.call_count == 1
+    assert verb.call_args.args[:1] == (target,), (
+        "the confirm restarted the current document, not the tile's"
     )
-    assert app.modal is ModalId.CONFIRM
-    assert app.confirm is not None and app.confirm.verb == "Reset"
 
 
 def test_the_chat_clear_verb_asks_first(app: Any) -> None:

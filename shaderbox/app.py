@@ -101,7 +101,6 @@ from shaderbox.render_plan import (
     RenderPlan,
     ThrottleState,
 )
-from shaderbox.render_shape import DEFAULT_ASPECT
 from shaderbox.scripting import EXPORT_MOUSE, MouseState
 from shaderbox.shader_errors import ShaderError, next_error_line
 from shaderbox.shader_lib import ShaderLibIndex
@@ -396,19 +395,6 @@ class App:
             on_document_deleted=self._on_document_deleted,
             on_pass_renamed=self._on_pass_renamed,
         )
-
-        # The Document tab's canvas W x H pair. Each half of the buffer mirrors
-        # `document.canvas_size` on every frame in which ITS OWN field is not active, so only
-        # the field the user is actually in holds a pending value and an external write (the
-        # copilot, a disk sync) reaches the other half at once.
-        self.canvas_size_buf: tuple[int, int] = (0, 0)
-        self.canvas_w_editing: bool = False
-        self.canvas_h_editing: bool = False
-        # The same shape for the Auto side's custom ratio fields (090 revision 1): each half
-        # mirrors the document's aspect on every frame in which its own field is not active.
-        self.aspect_buf: tuple[int, int] = DEFAULT_ASPECT
-        self.aspect_w_editing: bool = False
-        self.aspect_h_editing: bool = False
 
         # The pass list's inline add input (name a new pass).
         # The pass being created in the settings modal; None outside create mode.
@@ -715,12 +701,6 @@ class App:
         # Switching documents invalidates the "user has been typing" sticky bit — the new document's
         # session starts fresh; insertions would land at (0,0) until the user clicks into it.
         self.editor_was_ever_focused = False
-        # Ctrl+Shift+N is a GLOBAL chord imgui routes through an active text input, so a switch CAN
-        # land mid-edit; re-arm both mirrors or the new document draws the old one's half-typed pair.
-        self.canvas_w_editing = False
-        self.canvas_h_editing = False
-        self.aspect_w_editing = False
-        self.aspect_h_editing = False
 
     def _on_document_source_synced(self, path: Path, source: str) -> None:
         # The mtime watcher rebuilt a pass's source on disk; push the new text into its live
@@ -1108,17 +1088,20 @@ class App:
     def delete_current_document_confirmed(self) -> None:
         self.delete_document_confirmed(self.current_document_id)
 
-    def reset_document_confirmed(self) -> None:
-        ui_document = self.ui_documents.get(self.current_document_id)
+    def reset_document_for_confirmed(self, document_id: str) -> None:
+        ui_document = self.ui_documents.get(document_id)
         if ui_document is None:
             return
         self.request_confirm(
             ConfirmRequest(
                 title=f"Reset {ui_document.ui_state.ui_name}?",
                 verb="Reset",
-                on_confirm=self.reset_current_document,
+                on_confirm=lambda: self.session.reset_document(document_id),
             )
         )
+
+    def reset_document_confirmed(self) -> None:
+        self.reset_document_for_confirmed(self.current_document_id)
 
     def copilot_clear_chat_confirmed(self) -> None:
         self.request_confirm(
@@ -2024,10 +2007,6 @@ class App:
         if self.copilot_turn_active:
             return
         self.session.set_document_all_stopped(document_id, stopped)
-
-    def reset_current_document(self) -> None:
-        # "Reset document": the session funnel restarts the current document whole.
-        self.session.reset_document(self.current_document_id)
 
     def cycle_channel_view(self) -> None:
         self.app_state.channel_view = next_channel_view(self.app_state.channel_view)

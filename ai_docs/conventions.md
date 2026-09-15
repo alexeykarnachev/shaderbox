@@ -849,7 +849,11 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
 - **Under Auto a document stores an ASPECT and no size; under Fixed it stores a size (feature
   090, revision 1).** `ResolutionMode` (`render_shape.py`, GL-free) is `AUTO` or `FIXED`.
   `UIDocumentState` carries `aspect`, a reduced integer ratio (default 16:9), and `resolution`,
-  a pair. Under AUTO the live canvas is the viewer region fitted to the aspect, for EVERY Auto
+  a pair. The two are ONE control (093 W8): the canvas combo groups every shape by aspect and
+  leads each group with that ratio's `Auto`, so a single pick names the mode and its value
+  together -- the `Auto | Fixed` segment, the aspect chips and the W x H fields are all gone,
+  and a ratio no fixed size covers still gets its group so every aspect stays reachable. Under
+  AUTO the live canvas is the viewer region fitted to the aspect, for EVERY Auto
   document whether or not it is current — one size source, the viewer; tiles show that texture
   scaled. Under FIXED the pair IS the live canvas. A mode switch seeds the other field from the
   live canvas so the picture never jumps. The viewer is a BOX whose height is the panel's
