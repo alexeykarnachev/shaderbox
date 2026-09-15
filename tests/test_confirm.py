@@ -206,27 +206,29 @@ def test_the_document_delete_verb_names_the_document(app: Any) -> None:
     assert verb.call_args.args[:1] == (document_id,)
 
 
-def test_the_document_reset_verb_names_the_document(app: Any) -> None:
-    ui_name = app.ui_documents[app.current_document_id].ui_state.ui_name
+def test_reset_asks_nothing_and_restarts_at_once(app: Any) -> None:
+    """Reset is the one document verb with NO confirm.
+
+    It destroys nothing on disk and nothing the document cannot rebuild by running again, so
+    the question had no answer worth giving. Falsifier: route it back through
+    `request_confirm` -- the call below stops reaching the funnel and leaves a modal open.
+    """
+    target = app.current_document_id
     with mock.patch.object(
         app.session, "reset_document", wraps=app.session.reset_document
     ) as verb:
-        app.reset_document_confirmed()
-        assert verb.call_count == 0
-        assert app.confirm is not None
-        assert app.confirm.title == f"Reset {ui_name}?"
-        assert app.confirm.verb == "Reset"
-        app.confirm.on_confirm()
-    assert verb.call_count == 1
+        app.reset_document(target)
+    assert verb.call_count == 1, "reset did not reach the funnel on its own"
+    assert verb.call_args.args[:1] == (target,)
+    assert app.modal is not ModalId.CONFIRM, "reset opened a confirm"
+    assert app.confirm is None
 
 
-def test_the_tile_menus_reset_targets_its_own_document(app: Any) -> None:
+def test_reset_targets_the_document_it_is_given(app: Any) -> None:
     """A tile's Reset restarts THAT document, not whichever one is current.
 
-    A right-click does not select the tile it opens on (`document_grid.draw`), so a menu
-    routed through the current-document verb would restart the wrong document with the right
-    name on the confirm. Falsifier: point the menu at `reset_document_confirmed` -- the
-    non-current id below stops reaching `session.reset_document`.
+    Falsifier: give `reset_document` the current id -- the non-current target below stops
+    reaching the funnel.
     """
     other_id = app.create_document_from_example(STARTER_EXAMPLE_ID)
     app.select_document(other_id)
@@ -236,14 +238,9 @@ def test_the_tile_menus_reset_targets_its_own_document(app: Any) -> None:
     with mock.patch.object(
         app.session, "reset_document", wraps=app.session.reset_document
     ) as verb:
-        app.reset_document_for_confirmed(target)
-        assert verb.call_count == 0, "the menu restarted the document with no confirm"
-        assert app.modal is ModalId.CONFIRM
-        assert app.confirm is not None and app.confirm.verb == "Reset"
-        app.confirm.on_confirm()
-    assert verb.call_count == 1
+        app.reset_document(target)
     assert verb.call_args.args[:1] == (target,), (
-        "the confirm restarted the current document, not the tile's"
+        "reset restarted the current document, not the one it was given"
     )
 
 

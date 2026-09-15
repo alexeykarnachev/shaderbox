@@ -502,12 +502,8 @@ def test_a_tile_menus_verbs_target_that_tiles_document(
     monkeypatch.setattr(app, "open_script_for", lambda i, **k: seen.update(script=i))
     monkeypatch.setattr(app, "open_graph_for", lambda i, **k: seen.update(graph=i))
     monkeypatch.setattr(app, "open_document_dir", lambda i: seen.update(folder=i))
-    monkeypatch.setattr(
-        app, "reset_document_for_confirmed", lambda i: seen.update(reset=i)
-    )
-    monkeypatch.setattr(
-        app, "reset_document_confirmed", lambda: seen.update(reset=other)
-    )
+    monkeypatch.setattr(app, "reset_document", lambda i: seen.update(reset=i))
+    monkeypatch.setattr(app, "reset_current_document", lambda: seen.update(reset=other))
     monkeypatch.setattr(
         app, "delete_document_confirmed", lambda i: seen.update(delete=i)
     )

@@ -48,7 +48,8 @@ def document_menu_items(app: App, document_id: str) -> None:
     Every item takes `document_id`, never the current document: a right-click does not select
     the tile it opens on, so a verb routed through the current-document command would act on
     the wrong document (093 W8). The chords are the hints the same verbs carry in the Document
-    menu, where they act on the current one.
+    menu, where they act on the current one. Delete confirms and Reset does not -- one moves a
+    directory to the trash, the other restarts a clock.
     """
     if imgui.menu_item("Open script", command_hint(app, CommandId.OPEN_SCRIPT), False)[
         0
@@ -61,7 +62,7 @@ def document_menu_items(app: App, document_id: str) -> None:
         app.open_document_dir(document_id)
     imgui.separator()
     if imgui.menu_item("Reset", command_hint(app, CommandId.RESET_DOCUMENT), False)[0]:
-        app.reset_document_for_confirmed(document_id)
+        app.reset_document(document_id)
     if imgui.menu_item("Delete", command_hint(app, CommandId.DELETE_DOCUMENT), False)[
         0
     ]:

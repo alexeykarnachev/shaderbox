@@ -407,10 +407,14 @@ grouped by aspect with that ratio's `Auto` leading each group (his shape: "пр�
 каждого аспекта будет auto опция"); a ratio no fixed size covers keeps its group, and a row
 drops the ratio its caption already names. 090 D1's model is untouched -- only the widget
 changes. Four dead `App` fields go with the pair (`canvas_size_buf`, `aspect_buf` and the four
-editing flags). Four breaks tried: appending `Auto` instead of leading with it, grouping by the
-exact reduction so 1920x1088 leaves 16:9, and TWO at the menu's targeting -- the first attempt's
-test called the App verb directly and stayed green through the break, so it was rewritten to
-fire the menu items inside a real frame, where it goes red.
+editing flags). Reset then lost its confirm too (finding 36): it restarts histories, a clock, bound videos and a
+script, all rebuilt by a re-run, and touches nothing on disk, so the verbs drop the `_confirmed`
+suffix and become `reset_document` / `reset_current_document`. Delete keeps its confirm, moving a
+directory to the trash. Five breaks tried: appending `Auto` instead of leading with it, grouping
+by the exact reduction so 1920x1088 leaves 16:9, TWO at the menu's targeting -- the first
+attempt's test called the App verb directly and stayed green through the break, so it was
+rewritten to fire the menu items inside a real frame, where it goes red -- and routing Reset back
+through `request_confirm`, which three tests catch by asserting the ABSENCE of a modal.
 
 **Wave 7: two findings from his check of wave 6, 31-32 (2026-09-15).** One commit. The
 document switch stops opening a shader tab (`_on_current_document_changed` no longer calls

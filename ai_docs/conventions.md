@@ -614,6 +614,12 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   `danger_button` rows — Projects' delete and Settings' library reset — because a modal over a
   modal is not the mechanism's shape; revisit at a third. A tile never carries a destructive
   control: a verb on an object lives on that object's context menu.
+  **Destructive means it outlives the session**: Reset is NOT, and asks nothing (093 W8). It
+  restarts a document's histories, clock, bound videos and script, every one of which a re-run
+  rebuilds, and touches nothing on disk -- so the question had no answer worth giving, and the
+  verb is plain `reset_document` without the `_confirmed` suffix its confirming siblings carry.
+  The test that says so asserts the ABSENCE of a modal, since a confirm added back would
+  otherwise pass silently.
 
 - **No hint text: a right-click menu is discoverable by convention (093 W5).** No surface
   carries a `Right-click for actions` caption — not a modal's list, not a panel's grid, not a

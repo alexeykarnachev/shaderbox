@@ -675,7 +675,7 @@ class App:
             CommandId.OPEN_PASS_SETTINGS: self.open_pass_settings_for_panel_pass,
             CommandId.ADD_PASS: self.open_add_pass,
             CommandId.IMPORT_PASSES: self.open_import_passes,
-            CommandId.RESET_DOCUMENT: self.reset_document_confirmed,
+            CommandId.RESET_DOCUMENT: self.reset_current_document,
             CommandId.CYCLE_CHANNEL_VIEW: self.cycle_channel_view,
             CommandId.NEXT_PASS: lambda: self.step_output_pass(1),
             CommandId.PREV_PASS: lambda: self.step_output_pass(-1),
@@ -1088,20 +1088,17 @@ class App:
     def delete_current_document_confirmed(self) -> None:
         self.delete_document_confirmed(self.current_document_id)
 
-    def reset_document_for_confirmed(self, document_id: str) -> None:
-        ui_document = self.ui_documents.get(document_id)
-        if ui_document is None:
-            return
-        self.request_confirm(
-            ConfirmRequest(
-                title=f"Reset {ui_document.ui_state.ui_name}?",
-                verb="Reset",
-                on_confirm=lambda: self.session.reset_document(document_id),
-            )
-        )
+    def reset_document(self, document_id: str) -> None:
+        """Restart a document: its histories, clock, bound videos and script.
 
-    def reset_document_confirmed(self) -> None:
-        self.reset_document_for_confirmed(self.current_document_id)
+        No confirm, unlike every other verb on the tile's menu: a reset destroys nothing on
+        disk and nothing the document cannot rebuild by running again, so the question had no
+        answer worth giving. The name drops the `_confirmed` suffix the confirming verbs carry.
+        """
+        self.session.reset_document(document_id)
+
+    def reset_current_document(self) -> None:
+        self.reset_document(self.current_document_id)
 
     def copilot_clear_chat_confirmed(self) -> None:
         self.request_confirm(

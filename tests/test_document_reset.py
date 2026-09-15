@@ -110,20 +110,19 @@ def test_reset_drops_the_feedback_histories(app: Any) -> None:
     assert document.time_origin > before
 
 
-def test_the_command_confirms_then_reaches_the_funnel(
+def test_the_command_reaches_the_funnel_without_asking(
     app: Any, monkeypatch: Any
 ) -> None:
-    """The chord and the menu item both open the confirm; the confirm's Yes is what resets.
+    """F6 and the menu item restart the current document on the spot.
 
-    Falsifier: point `RESET_DOCUMENT`'s callback straight at `session.reset_document` -- F6
-    then restarts the document with no question asked.
+    The confirm was removed once Reset left its red button: it destroys nothing on disk and
+    nothing a re-run does not rebuild. Falsifier: route `RESET_DOCUMENT`'s callback back
+    through `request_confirm` -- the funnel below stops being reached.
     """
     seen: list[str] = []
     monkeypatch.setattr(
         app.session, "reset_document", lambda document_id: seen.append(document_id)
     )
     app.command_callbacks[CommandId.RESET_DOCUMENT]()
-    assert seen == [], "the command reset the document with no confirm"
-    assert app.confirm is not None and app.confirm.verb == "Reset"
-    app.confirm.on_confirm()
-    assert seen == [app.current_document_id]
+    assert seen == [app.current_document_id], "the command did not reach the funnel"
+    assert app.confirm is None, "the command opened a confirm"
