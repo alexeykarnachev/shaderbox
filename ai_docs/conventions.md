@@ -251,6 +251,12 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   every field in `TargetConfig` (dtype, scale, filter, wrap) describes the canvas the history is
   a copy of.
 
+  **The same setting has a second way to go invisible: `ChannelBlit.render` copies the source
+  texture's filter onto its own canvas.** Alpha and RGB view magnify the BLIT's texture, not the
+  pass's, so a blit canvas keeping its own default made `smooth` do nothing in those two views
+  while working in Color — the setting reached a texture the blit only samples 1:1. Anything else
+  that hands the viewer a texture other than the pass's own owes the same copy.
+
 - **An unfilled pass input reads BLACK, and something must BIND that black (feature 065).** D3's
   graceful degradation is what keeps a half-built graph usable, and it is only safe because a
   source is chosen from a closed set of the document's own pass names — a sampler can never name

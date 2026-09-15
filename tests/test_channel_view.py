@@ -105,3 +105,32 @@ def test_the_alpha_and_rgb_views_are_separate_blits(app: Any) -> None:
     assert app.alpha_view is not app.rgb_view
     assert app.alpha_view.canvas is not app.rgb_view.canvas
     assert app.alpha_view.program is not app.rgb_view.program
+
+
+def test_a_view_blit_magnifies_with_the_source_pass_filter(app: Any) -> None:
+    """The blit's texture is what the viewer MAGNIFIES, so the output pass's `smooth` setting
+    has to survive the trip through it.
+
+    In Color view the viewer hands the pass texture straight to imgui and the filter is the
+    pass's own. Alpha and RGB render through a blit first, and a blit canvas that kept its own
+    default made `smooth` do nothing in those two views -- the setting was applied to a texture
+    the blit only ever samples 1:1, while the magnification happened on the blit's output.
+
+    Falsifier: drop the filter copy from `ChannelBlit.render` and the NEAREST case below comes
+    back LINEAR.
+    """
+    import moderngl
+
+    document = app.ui_documents[app.current_document_id].document
+    source = document.render_pass.canvas.texture
+    for filter_pair in (
+        (moderngl.NEAREST, moderngl.NEAREST),
+        (moderngl.LINEAR, moderngl.LINEAR),
+    ):
+        source.filter = filter_pair
+        for blit in (app.rgb_view, app.alpha_view):
+            shown = blit.render(source)
+            assert shown.filter == filter_pair, (
+                f"the blit magnifies with {shown.filter} while the pass asks for "
+                f"{filter_pair} -- `smooth` is invisible in this view"
+            )

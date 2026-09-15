@@ -73,8 +73,15 @@ class ChannelBlit:
         self.canvas = Canvas(self._gl)
 
     def render(self, source: moderngl.Texture) -> moderngl.Texture:
-        """`source` through this blit's shader, at the source's size."""
+        """`source` through this blit's shader, at the source's size and with ITS filter.
+
+        The returned texture is what the viewer magnifies, so the filter has to travel: a blit
+        canvas that kept its own default made the output pass's `smooth` setting invisible in
+        every view but COLOR, which is the one view that shows the pass texture directly.
+        """
         self.canvas.set_size(source.size)
+        if self.canvas.texture.filter != source.filter:
+            self.canvas.texture.filter = source.filter
         source.use(location=0)
         self.program["u_source"] = 0
         self.canvas.fbo.use()
