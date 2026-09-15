@@ -78,6 +78,12 @@ scanned: functions, methods, properties, attributes and module-level variables a
 reference searches; each candidate reported below was confirmed by its own search rather than
 by the tool's confidence score.
 
+**This claim was falsified once and the miss is recorded below** (the three dead `SIZE` tokens in
+`theme.py`): the class-attribute tokens inside `theme.py`'s size bag were reported by the command
+above and never triaged, so "module-level variables" over-stated what the triage actually
+covered. The tokens were deleted in the follow-up; the lesson is that a coverage line is a claim
+to be attacked, not a summary to be trusted.
+
 not scanned: enum members, type aliases and whole-module deadness — the tool does not report
 them and they were not enumerated separately; `tests/` as a target (scanned only as a
 reference source, so a dead test helper would not appear); `shaderbox/resources/`; non-Python
@@ -115,7 +121,9 @@ before/after measurements.
 ## W-F the gl_ctx fixture — DONE
 
 done-condition (written in advance): `gl_ctx` defined once; the EGL comment preserved verbatim in
-its new home; no module's `xdist_group` changed; `grep -rln "poisons the process's EGL display"
+its new home; no module's `xdist_group` changed (**this clause was vacuous** — verified afterwards
+that none of the five modules ever carried a marker, so it could not have failed; a done-condition
+that cannot fail is not one); `grep -rln "poisons the process's EGL display"
 tests/` returns only the shared definition plus any deliberate variant; `make gates` green.
 
 verification: green (check, test, smoke).
@@ -127,10 +135,17 @@ in their own xdist processes, so a session scope would share a context across fi
 apart on purpose). Ruff removed the imports the deletions orphaned.
 
 **`tests/test_profiling.py` keeps its own copy, deliberately.** Its fixture binds a
-`simple_framebuffer` after creating the context — different behavior, not duplication. Collapsing
-it into the shared one would have changed what that module runs against. This is the
-"similar shape is not shared meaning" case, and it was caught by hashing each fixture body rather
-than by reading them.
+`simple_framebuffer((512, 512))` after creating the context, which the shared one does not. The
+module measures GPU timing spans and its `_burn` helper clears that framebuffer as the workload it
+means to time, so the surface it draws against is part of what it tests. Caught by hashing each
+fixture body rather than reading them — the "similar shape is not shared meaning" case.
+
+Being exact about the evidence: collapsing it does NOT turn the module red. An adversarial review
+falsified that — it deleted the private fixture, let the module fall through to the shared one, and
+the tests passed alone and in a three-module run, because `gl.clear()` against a standalone
+context's zero-size default framebuffer silently no-ops rather than erroring. So the carve-out
+rests on what the module is timing, not on a failure the suite can show. A later session must not
+read the green as permission to collapse it.
 
 **falsifier attempted, and it did not fire.** The comment says an explicit `backend="egl"` context
 poisons the process's EGL display and segfaults the next module. Reintroducing that backend and
@@ -210,3 +225,38 @@ unbound capability.
 So the gap stands, and a later wave wanting to close it needs a resolver that follows aliases
 rather than a text scan. Recorded so the next session does not repeat the naive version and
 report its output as an inventory.
+
+## Adversarial review — one defect, fixed
+
+An opus review was run against the landed diff, anchored to the code and to its own test runs
+rather than to this file or the spec. It ran `make gates` itself (green, smoke passed rather than
+skipped), re-ran the inventory command, and probed dynamic reach independently.
+
+**Sound:** all three deletions are unreachable — no `__getattr__`/`__getattribute__` exists
+anywhere in `shaderbox/`, the copilot tool surface is a static name-to-handler list behind a
+protocol, and the scripting engine installs a custom `__import__` that refuses every `shaderbox`
+path except `shaderbox.scripting`, so a user script cannot reach `App` at all. The fixture
+consolidation preserves one context per module (`--setup-plan` shows one setup per module, not a
+shared one), and dropping the per-fixture MESA `setdefault` calls is safe because `conftest.py`
+sets both at import, before any test module is collected.
+
+**Defect found — a coverage gap, since fixed.** Three module-level tokens in `theme.py`
+(`CANVAS_FIELD_W`, `ASPECT_FIELD_W`, `CANVAS_PRESETS_W`) are reported by the recorded inventory
+command, have no Python reader and no dynamic reader, and appeared in no tier. Their readers in
+`tabs/document.py` were removed by an earlier feature. Deleted, with the comments that described
+only them; `make gates` green after.
+
+They were kept out of a RISKY "094 may re-consume them" row on purpose: 094 has a mock and no
+spec, and a feature sizes its own tokens when it lands. Dead constants held against a speculative
+consumer are the inverse of a deleted abstraction that was organizing something.
+
+**A correction to this log, not to the code:** the `test_profiling` carve-out note claimed
+collapsing that fixture "would have changed what that module runs against". The review falsified
+that and the entry above now states the real reason. The carve-out stands; its stated evidence
+was wrong.
+
+**False trails, do not re-litigate:** dynamic reach to `App` methods; an `xdist_group` regression
+(none of the five consolidated modules ever carried a marker, so that done-condition was
+vacuously satisfiable); the MESA override removal; `ACCENT_ALPHA` as an undeclared miss (it was
+triaged and deliberately kept); and the whole set of imgui-style, moderngl-attribute and
+`model_validator` candidates.
