@@ -779,8 +779,10 @@ left the cursor behind and a later edit acted off-screen.
 
 - [x] `<C-d>` `<C-u>` — half a window down / up, cursor and view together
 - [x] `<C-f>` `<C-b>` — a full window, less two lines of context
-- [x] `<C-e>` `<C-y>` — the view alone, a line at a time
-- [x] `zz` `zt` `zb` — the cursor's line to the middle / top / bottom
+- [x] `<C-e>` `<C-y>` — the view, a line at a time, dragging the cursor
+      onto the edge row when it would otherwise leave the view
+- [x] `zz` `zt` `zb` — the cursor's line to the middle / top / bottom, with
+      the view free to run past the last screenful as vim's is
 - [ ] `<C-d>`'s count PERSISTING as vim's `scroll` option
 - [ ] `zh` `zl` and horizontal scrolling
 - [ ] `scrolloff`
@@ -797,12 +799,23 @@ later bare `<C-d>` moves 2. That is a stateful option this editor does not
 otherwise have, and the oracle resets it between cases so no expectation
 depends on it.
 
-**`zt` and `zb` clamp where vim does not.** vim lets the last line sit at the
-top of the window with blank space below — `30Gzt` on a 40-line buffer reports
-topline 30. This editor clamps to `scroll_max`, the largest offset that still
-shows content, which is the rule the wheel and every jump-to-line already
-follow and which the ABI exposes as `ed_scroll_max`. Following vim for `zt`
-alone would mean changing all of them, so the divergence is deliberate.
+**The view runs to the last line at the top row, as vim's does.** `30Gzt` on
+a 40-line buffer reports topline 30, with ten filler rows below; `40Gzt` and
+`50<C-e>` both report topline 40. That is `scroll_max` here, one rule for the
+wheel, every jump-to-line and these commands, exposed as `ed_scroll_max`. An
+earlier rule clamped at the last screenful, and on any buffer shorter than the
+window that left every one of these commands requesting offset 0 -- dead,
+which is what a host whose files fit their pane reported.
+
+**`zz` leaves `(rows - 1) / 2` lines above the cursor**, measured at four
+heights: `35Gzz` reports topline 28 at 15 and at 16 rows, 26 at 20, 25 at 21.
+Halving the height put the line one row low on an even window.
+
+**`<C-e>` and `<C-y>` drag the cursor** onto the first or last visible line
+once the view would leave it behind, keeping the desired column as `j`/`k`
+do: `3<C-e>` from line 1 reports topline 4 and cursor line 4, `40G<C-y>` at 20
+rows reports topline 20 and cursor line 39, `$3<C-e>` keeps curswant at the
+line's end.
 
 The view-only commands report an offset rather than applying it, because the
 scroll offset lives in the HOST — two views of one buffer scroll independently.

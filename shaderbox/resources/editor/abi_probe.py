@@ -808,9 +808,34 @@ def main() -> int:
     # Whatever the host asks for, it reads back what actually took effect.
     lib.ed_set_scroll(h, 100000)
     lib.ed_layout(h, 0.0, 0.0, 800.0, 400.0, 16.0, True)
-    check("clamped to the last screenful", lib.ed_scroll(h), rows)
+    check("clamped to the last line at the top row", lib.ed_scroll(h), rows)
+    check("which is vim's limit, not the last screenful", rows, 99)
     lib.ed_set_scroll(h, -5)
     check("negative clamps to the top", lib.ed_scroll(h), 0)
+
+    # A buffer SHORTER than the viewport still scrolls, up to its last line at
+    # the top -- the case that made zz and Ctrl-E look dead in a host whose
+    # files fit their pane, since every request clamped to 0.
+    lib.ed_set_text(h, "\n".join(f"short {i}" for i in range(5)).encode())
+    lib.ed_set_scroll(h, 0)
+    lib.ed_layout(h, 0.0, 0.0, 800.0, 400.0, 16.0, True)
+    check("a short buffer scrolls to its last line", lib.ed_scroll_max(h), 4)
+    lib.ed_feed(h, b"3Gzt")
+    req = ctypes.c_int32(-1)
+    check("zt on a short buffer asks for a scroll", lib.ed_take_scroll_request(h, ctypes.byref(req)), True)
+    check("and puts the cursor's line on top", req.value, 2)
+    check("which took effect", lib.ed_scroll(h), 2)
+    lib.ed_layout(h, 0.0, 0.0, 800.0, 400.0, 16.0, True)
+    # Ctrl-E drags the cursor onto the first visible line once the view would
+    # leave it above, as vim does; the host's follow logic sees a cursor inside
+    # the view and leaves the scroll alone.
+    lib.ed_feed(h, b"9<C-e>")
+    lib.ed_take_scroll_request(h, ctypes.byref(req))
+    check("Ctrl-E runs to the last line at the top", req.value, 4)
+    check("and drags the cursor onto it", cursor(h), (4, 0))
+    lib.ed_set_text(h, "\n".join(f"line {i}" for i in range(100)).encode())
+    lib.ed_set_scroll(h, 0)
+    lib.ed_layout(h, 0.0, 0.0, 800.0, 400.0, 16.0, True)
 
     # Jump-to-error, which is what this exists for.
     lib.ed_set_scroll(h, 0)
@@ -823,7 +848,10 @@ def main() -> int:
     check("centring puts the line inside the view", 0 < centred < rows, True)
     lib.ed_scroll_to_line(h, 99, False)
     lib.ed_layout(h, 0.0, 0.0, 800.0, 400.0, 16.0, True)
-    check("the last line is reachable", lib.ed_scroll(h), rows)
+    at_end = lib.ed_scroll(h)
+    check("the last line is reachable", centred < at_end < rows, True)
+    lib.ed_scroll_to_line(h, 99, False)
+    check("and, once visible, leaves the view alone", lib.ed_scroll(h), at_end)
 
     print("hit testing")
     lib.ed_set_scroll(h, 0)
@@ -1669,15 +1697,17 @@ def main() -> int:
         check(f"Ctrl-{key.upper()} is consumed", took, True)
         check(f"Ctrl-{key.upper()} lands where nvim does", cursor(h)[0] + 1, want)
 
-    # Ctrl-E and Ctrl-Y move the VIEW: the cursor stays, and an offset is
-    # reported for the host to apply.
+    # Ctrl-E and Ctrl-Y move the VIEW, and an offset is reported for the host
+    # to apply. The cursor stays while the view holds it, and is dragged onto
+    # the edge row once it would not -- vim's rule, so a cursor on line 1 lands
+    # on line 2 when line 1 scrolls off the top.
     lib.ed_set_cursor(h, 0, 0)
     rows = ctypes.c_int32()
     check("nothing requested yet", lib.ed_take_scroll_request(h, ctypes.byref(rows)), False)
     lib.ed_key(h, K_CHAR, M_CTRL, ord("e"))
     check("Ctrl-E requests a scroll", lib.ed_take_scroll_request(h, ctypes.byref(rows)), True)
     check("of one row", rows.value, 1)
-    check("and the cursor did not move", cursor(h)[0], 0)
+    check("and the cursor is dragged onto the new top row", cursor(h)[0], 1)
     check("the request is consumed by reading it",
           lib.ed_take_scroll_request(h, ctypes.byref(rows)), False)
 
