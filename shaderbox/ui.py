@@ -33,7 +33,12 @@ from shaderbox.render_plan import (
     document_span_name,
     plan_render_set,
 )
-from shaderbox.render_shape import ResolutionMode, aspect_ratio, fit_to_aspect
+from shaderbox.render_shape import (
+    DEFAULT_ASPECT,
+    ResolutionMode,
+    aspect_ratio,
+    fit_to_aspect,
+)
 from shaderbox.scripting import MouseState
 from shaderbox.tabs import code as code_tab
 from shaderbox.tabs import document as document_tab
@@ -782,9 +787,10 @@ def _draw_canvas_backdrop(
 class ViewerGeometry:
     """Where the viewer drew: the BOX it always occupies and the picture fitted inside it.
 
-    The box's height depends on the panel alone, never on the document's aspect, so the
-    control panel under it holds still across an aspect change (093 W7); the picture is
-    centered in the box, and its overlays anchor to the picture.
+    The box's height is the panel's WIDTH at `VIEWER_BOX_ASPECT`, capped by the room above
+    the control panel's minimum -- so it moves only when the splitter moves, never with the
+    document's aspect (093 W7, his call); the picture is centered in the box, and its
+    overlays anchor to the picture.
     """
 
     box_min: imgui.ImVec2
@@ -792,6 +798,12 @@ class ViewerGeometry:
     image_min: imgui.ImVec2
     image_width: float
     image_height: float
+
+
+# The viewer box's shape: the width the splitter gives the panel, at this aspect, is its
+# height. The default document shape, so a new document fills the box; a taller document is
+# fitted inside it. His to tune after seeing it.
+VIEWER_BOX_ASPECT: float = aspect_ratio(DEFAULT_ASPECT)
 
 
 def _draw_document_image(app: App, control_panel_min_height: float) -> ViewerGeometry:
@@ -814,11 +826,15 @@ def _draw_document_image(app: App, control_panel_min_height: float) -> ViewerGeo
     app.script_mouse = replace(app.script_mouse, down=False)
     app.script_mouse_inside = False
 
-    # The box: the panel's width, and the height left over the control panel. Its size is
-    # the same for every document and for no document at all.
+    # The box: the panel's width, and that width at the box aspect for the height, capped by
+    # the room above the control panel. The same for every document and for no document at
+    # all; only the splitter changes it.
     avail = imgui.get_content_region_avail()
-    box_height = max(avail.y - control_panel_min_height - 10, 100)
     box_width = avail.x
+    box_height = max(
+        min(avail.y - control_panel_min_height - 10, box_width / VIEWER_BOX_ASPECT),
+        100.0,
+    )
 
     if app.current_document_id in app.ui_documents:
         ui_document = app.ui_documents[app.current_document_id]

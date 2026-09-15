@@ -843,9 +843,9 @@ def test_the_control_panel_holds_still_across_an_aspect_change(
 ) -> None:
     """The viewer's box height depends on the panel alone; the picture is fitted inside it.
 
-    Falsifier: anchor the control panel at `image_min.y + image_height` again -- a 16:9
-    picture is shorter than a 1:1 one at the same width, and the panel climbs by the
-    difference.
+    Falsifier: anchor the control panel at `image_min.y + image_height` again -- a 21:9
+    picture is shorter than a 1:1 one in the same box (the box is 16:9, so 1:1 is
+    height-bound and 21:9 width-bound), and the panel climbs by the difference.
     """
     ui_document = app.ui_documents[app.current_document_id]
     ui_document.ui_state.aspect = (1, 1)
@@ -854,11 +854,31 @@ def test_the_control_panel_holds_still_across_an_aspect_change(
     assert app.viewer_region is not None
     square_h = app.viewer_region[1]
 
-    ui_document.ui_state.aspect = (16, 9)
-    ui_document.document.aspect = (16, 9)
+    ui_document.ui_state.aspect = (21, 9)
+    ui_document.document.aspect = (21, 9)
     wide_y = _control_panel_y(app, monkeypatch)
     assert app.viewer_region is not None
     wide_h = app.viewer_region[1]
 
     assert wide_h < square_h, "the premise: the picture itself changed height"
     assert wide_y == square_y, f"the control panel moved from {square_y} to {wide_y}"
+
+
+def test_the_viewer_box_follows_the_splitter_not_the_aspect(
+    app: Any, monkeypatch: Any
+) -> None:
+    """The box's height is the panel's width at `VIEWER_BOX_ASPECT`: a narrower right side
+    hands the freed height to the panels below, and only the splitter can do that.
+
+    Falsifier: size the box from the room above the panel alone -- the two splits agree.
+    """
+    ui_document = app.ui_documents[app.current_document_id]
+    ui_document.ui_state.aspect = (1, 1)
+    ui_document.document.aspect = (1, 1)
+    app.app_state.editor_split_fraction = 0.5
+    wide_panel_y = _control_panel_y(app, monkeypatch)
+    app.app_state.editor_split_fraction = 0.7
+    narrow_panel_y = _control_panel_y(app, monkeypatch)
+    assert narrow_panel_y < wide_panel_y, (
+        f"a narrower panel left the control panel at {narrow_panel_y} (was {wide_panel_y})"
+    )

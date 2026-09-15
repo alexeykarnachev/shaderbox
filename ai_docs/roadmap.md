@@ -28,8 +28,8 @@ feature; brief points at the superseder).
 
 <!-- As of 2026-09-15, 093 wave 7 landed from his check of wave 6; the vim scroll fix is re-vendored at 5a56ccf. -->
 **Next: his review of waves 6-7 in the running app** (`make run`). Wave 7: a document tile's
-click opens no shader tab; the viewer keeps its height across an
-aspect change, the picture centered and the control panel still. Wave 6: the tile's menu
+click opens no shader tab; the viewer box's height follows the splitter's width
+alone, the picture centered in it, the control panel still across an aspect change. Wave 6: the tile's menu
 without `Open`; a confirm that is the question alone, auto-sized; the Fixed presets with three
 4:3 tiers; a single-pass tab named by its pass; Python completion with no file paths inside a
 string and no `mro`; his drawing script continuous under the throttle; in vim mode on a
@@ -38,11 +38,11 @@ cursor. Each finding is a ledger row (33+) in `00_findings.md`, fixed as wave 8 
 `01_spec.md ## How this walk runs`.
 
 **Also awaiting his eyes:** 091's outline and import dialog; 090's `Auto | Fixed`. Finding 4
-(the control panel) is the feature after this walk; the Documentation content later.
+(the control panel) is the next feature; the Documentation content after.
 
 **Open, unmeasured:** the canvas past twenty passes (the largest real document is six); no
 brake watches copilot cost or a frame going lit to flat (082); the GL thread if the throttle
-proves not enough.
+falls short.
 
 ## Features
 

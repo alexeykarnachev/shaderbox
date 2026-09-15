@@ -392,11 +392,13 @@ Where the record's "Code" paragraphs and this spec differ, this spec wins, for t
 **Wave 7: two findings from his check of wave 6, 31-32 (2026-09-15).** One commit. The
 document switch stops opening a shader tab (`_on_current_document_changed` no longer calls
 `ensure_shader_tab`; W3-3's click rule now covers the document tile too), with creation and
-the no-tabs cold start opening one explicitly and a test on each. The viewer became a fixed
-box (`ui.ViewerGeometry`): the height left over the control panel, the picture fitted and
-centered inside, the control panel anchored at the box's bottom so an aspect change moves
-nothing but the picture; a frame test reads the control panel's y at 1:1 and 16:9 (break:
-anchor it at the picture's bottom again -- the two differ).
+the no-tabs cold start opening one explicitly and a test on each. The viewer became a box
+(`ui.ViewerGeometry`) whose height is the panel's width at `VIEWER_BOX_ASPECT` (16:9, his
+call after seeing the first landing's fixed box: the boundary follows the splitter and
+nothing else), capped by the room above the control panel; the picture is fitted and
+centered inside, the control panel anchored at the box's bottom. Two frame tests: the
+control panel's y at 1:1 equals its y at 21:9 (break: anchor at the picture's bottom -- the
+two differ), and a narrower split lowers the box (break: size it from the room alone).
 
 **Wave 6: his walk of waves 3-5, findings 23-30 (2026-09-15).** Seven host fixes in one
 commit; finding 27 (the vim view-scroll commands) is the editor library's, sent to the editor
