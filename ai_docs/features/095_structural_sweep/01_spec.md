@@ -11,9 +11,19 @@ document would be a count from a shallow scan, and a shallow count is how a swee
 
 ## Status
 
-Nothing has landed. W-0 has not run. When a wave lands, its row moves to DONE in
-`02_progress.md` beside this file, with its commit sha — that file, not this one, is the record
-of how far the night got.
+**The sweep is COMPLETE.** Every wave below landed, each as its own commit with `make gates`
+green before and after, and two adversarial review rounds followed. `02_progress.md` beside this
+file is the record of what happened — read it, not this document, for where the work stopped and
+what was deliberately left alone.
+
+The waves ran W-0, W-R, W-F, W-D, W-C, then four follow-up commits closing gaps the reviews
+found. List them with:
+
+    git log --oneline --grep '^095'
+
+Nothing here is a pending instruction. Read this spec for WHY the sweep was scoped the way it
+was and, above all, for the "What looks wrong and is correct" section — that list is what a
+later sweep is most likely to re-raise.
 
 ## Goal
 

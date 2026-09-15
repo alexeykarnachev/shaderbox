@@ -7,7 +7,7 @@ about where the work stopped.
 Each entry carries its done-condition (written before the wave started), the verification
 result, what was ruled out and why, and any surprise worth the next reader's time.
 
-## W-0 inventory — DONE (no code changed)
+## W-0 inventory — DONE  `e64af20`  (no code changed)
 
 done-condition (written in advance): every kind of Python symbol enumerated across every
 directory named in the spec's wave list, sorted into the SAFE / CAREFUL / RISKY tiers, with the
@@ -89,7 +89,7 @@ them and they were not enumerated separately; `tests/` as a target (scanned only
 reference source, so a dead test helper would not appear); `shaderbox/resources/`; non-Python
 assets. A later wave wanting those must enumerate them from the language's constructs.
 
-## W-R rot removal — DONE
+## W-R rot removal — DONE  `9a2e7d7`
 
 done-condition (written in advance): no doc in the harness states a fact an unrelated commit can
 silently falsify; each one found either deleted or replaced by the command that produces it; the
@@ -118,7 +118,7 @@ live facts as a live category, which is true, but the harness turned out to carr
 than a class worth sweeping — the feature specs' numbers are nearly all correctly frozen
 before/after measurements.
 
-## W-F the gl_ctx fixture — DONE
+## W-F the gl_ctx fixture — DONE  `6f91e49`
 
 done-condition (written in advance): `gl_ctx` defined once; the EGL comment preserved verbatim in
 its new home; no module's `xdist_group` changed (**this clause was vacuous** — verified afterwards
@@ -155,7 +155,7 @@ machine has a real display. The comment stays as written; a later session should
 note as license to weaken it. What IS verified: the consolidated modules still run together in one
 process green, which is the scenario the fixture exists to survive.
 
-## W-D deletion — DONE
+## W-D deletion — DONE  `a0d9f72`
 
 done-condition (written in advance): each tier removed as its own batch with `make gates` green
 between batches; every CAREFUL candidate proved dead by search before removal; nothing removed
@@ -179,7 +179,7 @@ so removing it means editing every accent preset and breaking the trio's symmetr
 from a small finding, which is the signal for solving the wrong problem. Left alone. Do not
 re-raise it as dead code; a future reader should decide it as a theme-API question.
 
-## W-C comments — DONE (one line removed; the rest were false positives)
+## W-C comments — DONE  `7c06757`  (one line removed; the rest were false positives)
 
 done-condition (written in advance): every restating comment and verbatim duplicate removed, every
 attempt-narration compressed to its live reason with each measurement and named failure kept, and
@@ -213,7 +213,7 @@ one-line diff. The presence scan's three comment categories were all over-called
 comment convention is working, and the measurable restatement rate across `shaderbox/` is
 effectively zero once section dividers are excluded.
 
-## The enum-member gap, probed after the waves
+## The enum-member gap, probed after the waves  `d20c704`
 
 W-0's coverage line declared enum members unscanned. A follow-up scan tried to close it and
 could not, which is the useful result: a naive "is `Cls.MEMBER` referenced anywhere" walk over
@@ -226,7 +226,7 @@ So the gap stands, and a later wave wanting to close it needs a resolver that fo
 rather than a text scan. Recorded so the next session does not repeat the naive version and
 report its output as an inventory.
 
-## Adversarial review — one defect, fixed
+## Adversarial review round one — one defect, fixed  `ebd828c`
 
 An opus review was run against the landed diff, anchored to the code and to its own test runs
 rather than to this file or the spec. It ran `make gates` itself (green, smoke passed rather than
@@ -261,7 +261,7 @@ vacuously satisfiable); the MESA override removal; `ACCENT_ALPHA` as an undeclar
 triaged and deliberately kept); and the whole set of imgui-style, moderngl-attribute and
 `model_validator` candidates.
 
-## Closing two of W-0's declared gaps
+## Closing two of W-0's declared gaps  `c961f30`
 
 W-0 listed `tests/` as a target and whole-module deadness among the things it did not scan. Both
 were closed after the first review, using AST walks rather than the tool:
@@ -281,7 +281,7 @@ were closed after the first review, using AST walks rather than the tool:
 What remains unscanned from the original list: enum members (see the note above on why a naive
 walk cannot close it), type aliases, `shaderbox/resources/`, and non-Python assets.
 
-## Review round two — one defect, plus a pre-existing contradiction the move exposed
+## Review round two — one defect, plus a pre-existing contradiction the move exposed  `85ffbf8`, `243ba7f`
 
 A second opus review ran against the patched state, anchored to its own AST walks and test runs.
 
