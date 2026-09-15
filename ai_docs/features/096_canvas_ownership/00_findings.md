@@ -238,3 +238,54 @@ renders into a foreign canvas, which the accessor's own docstring anticipates.
 
 Same root as F6: a draw aimed at an external canvas leaves the pass's own canvas unwritten, and
 nothing downstream knows.
+
+## Why the suite let all three through
+
+The test audit is the part that explains the pattern, and its headline is verified here
+statically: **every `filter` and `wrap` assertion in the suite is either at pass BIRTH or inside
+one of the two tests written by this week's own bug fixes.** Nothing asserts either property
+after a resize, after a swap, or on an export canvas.
+
+    grep -rn "\.filter\b" tests/*.py | grep -v filter_linear | grep -E "assert"
+    grep -rn "repeat_x|\.wrap\b" tests/*.py | grep -E "assert"
+
+The consequence, reported from a mutation run: deleting `filter=` and `wrap=` from
+`resample_canvas` — which silently resets every canvas in the document to LINEAR and clamp on
+every resize — passes the whole suite. Same for a history born with the wrong wrap.
+
+**Coverage, by property.** Size is well covered on every canvas. Dtype is partial. Filter is
+covered only where a bug already forced a test. Wrap is covered essentially nowhere past the
+`Pass` constructor. That ordering is not a coincidence: it is the order in which bugs have been
+found, which means the suite documents history rather than the contract.
+
+**Each of the three shipped bugs is caught by exactly one test, and that test was written by the
+bug's own fix.** Reintroducing bug 3 fails one test out of the suite; the 101 tests matching
+"resize or canvas or size" all still pass.
+
+**A vacuous test, confirmed by its own comment.** `test_a_resize_moves_every_pass_together`
+renders before asserting, and `render`'s lazy fix-up repairs every non-output pass — so its
+texture-size assertions hold whether or not `set_canvas_size` touched them. Its sibling
+`test_the_ui_resize_reaches_every_pass` has the same shape. This is the trap this session already
+fell into twice while writing tests for the fixes, which is why it belongs in the spec rather
+than in a reviewer's memory.
+
+**The known-flaky bit, not to be mistaken for a regression:** `test_gl_lifetime_guards.py`'s last
+test creates a second standalone GL context and aborts the process when the suite is run
+repeatedly in one session. Reproduced on a pristine worktree of HEAD, so it predates this work.
+
+## The check this wave exists to add
+
+One post-condition over every canvas reachable from a Document, asserted immediately after each
+state-changing operation and BEFORE any subsequent render — the render is what made the existing
+tests vacuous:
+
+- for each pass: the live canvas's size, dtype, filter and wrap match what its graph entry
+  implies, with the output pass sized to the document rather than to its own scale;
+- for a pass with a history: the history matches the live canvas on all four;
+- for the blit: its canvas's filter matches its source texture.
+
+It must be driven over the NON-DEFAULT corner — `filter_linear=False`, `wrap=True`,
+`dtype="f4"`, `scale=0.5` — because `DEFAULT_FILTER_LINEAR` is True and `DEFAULT_WRAP` is False,
+so a check written with defaults cannot fail. That trap is already on record: the first test
+written for bug 1 asked for LINEAR when LINEAR was already the default, and passed with the bug
+present.
