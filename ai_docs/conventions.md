@@ -516,9 +516,10 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   acts on the ACTIVE tab: `flush_current_editor()` flushes its dirty editor before any save; the mtime
   watcher re-syncs every open session from disk on external change (disk wins). A document's editors close
   with the document (lib tabs survive); a renamed file re-keys its session in place. A document
-  SWITCH opens no tab (093 W7, the rule W3-3 set for clicks): only creation and a no-tabs cold
-  start open a shader by themselves; the context menu's `Open shader` and the Pass menu are the
-  user's ways. The vendored
+  SWITCH opens no tab (093 W7, the rule W3-3 set for clicks), and neither does the Alt-arrow pass
+  walk: only creation and a no-tabs cold start open a shader by themselves; the context menu's
+  `Open shader` and the Pass menu are the user's ways. Choosing a pass is `choose_output` alone --
+  the helper that bundled it with a tab open is gone, so the pair cannot re-form at a new surface. The vendored
   binary + rebuild procedure live in `## Known quirks`. **The open-tab SET persists (093 W2-2):
   `UIAppState.editor_tabs: list[TabRecord]` plus `active_tab_index`, mirrored by `App.save` and
   restored in `_init` through two pure functions in `editor_types.py` (`tab_records`,

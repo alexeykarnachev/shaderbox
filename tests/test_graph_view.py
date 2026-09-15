@@ -710,7 +710,7 @@ def test_three_pixels_is_a_click_and_five_is_a_drag(app: Any) -> None:
 
 def test_a_double_click_on_a_pass_leaves_the_pane_on_the_graph(app: Any) -> None:
     # W3-3: no click of any count opens a shader tab from the canvas; the context menu's
-    # `Open shader` is the gesture. Falsifier: point `_double_click` at `pick_pass`.
+    # `Open shader` is the gesture. Falsifier: add an `ensure_shader_tab` call to `_click`.
     document_id, document = _chain(app)
     view = _open_graph(app, document_id)
     picture = pass_graph._build_view(document, "", {})

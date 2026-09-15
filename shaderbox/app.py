@@ -1224,8 +1224,9 @@ class App:
                 self.notifications.push(error)
         self.pass_draft = None
         # A new pass is what the document shows: the editor tab, the viewer and the gear all
-        # follow it.
-        self.pick_pass(document_id, name, focus_editor=False)
+        # follow it. Creation is one of the two gestures that open a shader by themselves.
+        self.ensure_shader_tab(document_id, name, focus_editor=False)
+        self.choose_output(document_id, name)
         return True
 
     # ---- the import dialog (091 D10) ----
@@ -2024,12 +2025,6 @@ class App:
         if error:
             self.notifications.push(error)
 
-    def pick_pass(self, document_id: str, name: str, focus_editor: bool) -> None:
-        """What a strip tile click does: the pass becomes the output and its shader tab comes
-        to the front. `focus_editor` says whether the editor takes keyboard focus with it."""
-        self.ensure_shader_tab(document_id, name, focus_editor=focus_editor)
-        self.choose_output(document_id, name)
-
     def graph_view_for(self, document_id: str) -> GraphViewState:
         view = self.graph_views.get(document_id)
         if view is None:
@@ -2150,8 +2145,8 @@ class App:
         return error
 
     def step_output_pass(self, step: int) -> None:
-        # Next / previous pass walk the strip's drawn order and wrap. The editor keeps focus
-        # when it had it and is left alone when it did not.
+        # Next / previous pass walk the strip's drawn order and wrap, setting the output alone
+        # (the rule W3-3 set for clicks): the editor pane is left as it is.
         document_id = self.current_document_id
         ui_document = self.ui_documents.get(document_id)
         if ui_document is None:
@@ -2163,7 +2158,7 @@ class App:
             step,
         )
         if name is not None:
-            self.pick_pass(document_id, name, focus_editor=self.editor_focused)
+            self.choose_output(document_id, name)
 
     def toggle_current_document_play(self) -> None:
         # The hotkey mirror of the document-tab play/stop toggle — a no-op when the current document has no
