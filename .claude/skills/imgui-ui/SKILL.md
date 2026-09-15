@@ -476,8 +476,9 @@ list / grid actions, prefer a right-click context menu over inline buttons.**
   Two shapes were tried and both lost: an armed label that flips on a second
   open, and a `begin_menu("Delete")` holding one error-colored item. The submenu
   opens on HOVER, which means the confirm is reachable without a decision; it
-  carries no consequence text and no chord hint; and it is a shape no desktop app
-  confirms with. The modal states what is lost, names its target, and is the same
+  carries no chord hint; and it is a shape no desktop app confirms with. The
+  modal is the question naming the verb and its target (no consequence line: a
+  fact about the app's internals is noise under a question), and is the same
   question from a menu, a bar item, a button, a chord and the palette — which is
   what makes the verb, not the surface, the owner of its confirm. A verb fired
   from INSIDE a modal opens the same confirm STACKED over it (§7.2), so the

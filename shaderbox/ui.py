@@ -324,12 +324,11 @@ def _tick_frame_state(app: App) -> list[str] | None:
     )
 
     # ----------------------------------------------------------------
-    # Step 7 — the script ticks for exactly the documents that RENDER this frame (093 W6,
-    # reversing 090 D8): what a tick computes is consumed by a render, so a tick between two
-    # renders is work nothing shows, and a script pairing "previous" with "current" saw the
-    # skipped frames as a gap in its stroke. Its dt spans the gap (`session.tick`). The
-    # cursor's previous position re-anchors at the position this tick saw, so the next tick's
-    # stroke starts where this render's ended; the viewer's sampler carries the anchor.
+    # Step 7 — the script ticks for exactly the documents that RENDER this frame (093 W6):
+    # what a tick computes is consumed by a render, and its dt spans the frames between two
+    # renders (`session.tick`). The cursor's previous position re-anchors at the position
+    # this tick saw, so the next tick's stroke starts where this render's ended; the
+    # viewer's sampler carries the anchor across the skipped frames.
     ticking = _rendering_this_frame(
         app, tick_documents, examples_planned, import_project_tab
     )
