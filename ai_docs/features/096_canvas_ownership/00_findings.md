@@ -151,3 +151,42 @@ from `u_time`, not from feedback. The trace above shows `live` pinned at 0.0 for
 
 This is invisible in the app: the viewer renders without an external canvas and is correct, so
 the defect appears only in the exported file.
+
+### F7 — `Document.__init__` does not clamp `canvas_size`, though its comment says it does
+
+The comment above the field calls `__init__` and `set_canvas_size` "the field's only two
+writers" and says the value is normalized in both. `__init__` applies only the shape
+normalization, not the bounds clamp: `clamp_canvas_size((8, 8))` returns `(16, 16)` against a
+floor of 16, but a Document constructed at `(8, 8)` keeps `(8, 8)`.
+
+Reachable from `load_from_dir`, which passes the caller's size straight through. The document
+then runs below the floor until the first `set_canvas_size`, at which point every canvas jumps
+to a size the user never asked for.
+
+### F8 — the swap's `begin_frame(None)` safety comes from a different clause than the docstring claims
+
+`begin_frame`'s docstring credits idempotence to the frame identity check. That holds only when
+a frame number is passed. Under `None` there is no identity gate, `_frame` advances on every
+call, and what absorbs a duplicate call is the drawn-last-frame precondition — which costs the
+history half its rate rather than making the call a no-op. The export loops pass `None`.
+
+## Invariants worth enforcing
+
+Measured on a healthy document and probed for violation. These are the candidates for the
+structural check, not prose to add to a doc.
+
+| Invariant | Status |
+|---|---|
+| a history's dtype / filter / wrap match its pass's live canvas | violable |
+| a history's size matches its pass's live canvas | holds (re-resampled at every bind) |
+| `_feedback_generation[n] == passes[n].target_generation` | violable |
+| a pass's canvas dtype matches its own `target.dtype` | violable, and PERMANENT once broken |
+| a pass's canvas dtype matches its GRAPH entry's dtype | violable, and permanent |
+| a pass's canvas size matches what the graph implies | violable; permanent for the OUTPUT pass (F2) |
+| every name in `_feedback` is also in `passes` | violable by a delete/rename that skips `drop_feedback` |
+| every canvas texture across passes + histories is a distinct object | holds |
+
+The cheapest placement found: assert the history-vs-live agreement at the TOP of
+`_swap_feedback`. That one site catches the whole pre-swap class before a stale canvas is
+installed, rather than after — which is where the existing bind-time check sits, and why it
+repairs the pair onto the wrong side.
