@@ -122,3 +122,32 @@ Recorded so a later wave does not re-raise it.
   file is what gets uploaded; showing anything else would misrepresent it.
 - **Tiles that minify.** A `filter` pair covers min and mag both and the tiles hand over the
   pass's own texture, so they are faithful whether or not magnification happens.
+
+### F6 — a self-reading OUTPUT pass exports a frozen picture at every iteration count
+
+The most serious finding, and it ships: exporting a document whose output pass reads its own
+previous frame produces a video where the feedback chain never advances. Every exported frame
+holds the same accumulated value while the live viewer shows it evolving correctly.
+
+The mechanism is documented in a comment at the iteration loop, which explains that only the
+LAST iteration draws into the caller's canvas so the chain can advance by swapping the pass's
+own. What the comment does not notice: when the last iteration goes to the external canvas, the
+pass's OWN canvas is left unwritten, so there is nothing for the swap to advance.
+
+Verified here with an accumulator shader (`prev + 0.1`), reading the live canvas and the history
+at each frame:
+
+    iterations=1, EXPORT: ext=0.1 live=0.0 hist=0.0   -- every frame identical
+    iterations=2, EXPORT: ext=0.2 live=0.0 hist=0.1   -- every frame identical
+    iterations=1, LIVE  : 0.1, 0.2, 0.2998, 0.3997    -- advances correctly
+
+At N=1 the single draw goes external and `live` is never written. At N=2 iteration 1 fills
+`live`, the swap moves it to `hist`, and iteration 2 (the last) goes external — so `live` is
+never refilled. The chain is frozen at EVERY N, not only at N=1.
+
+Scope correction, recorded because the first report had it narrower: a swarm agent reported this
+as an N=1 defect that resolves at N>=2, having read motion in an N=2 export. That motion comes
+from `u_time`, not from feedback. The trace above shows `live` pinned at 0.0 for both counts.
+
+This is invisible in the app: the viewer renders without an external canvas and is correct, so
+the defect appears only in the exported file.
