@@ -1101,7 +1101,7 @@ class ProjectSession:
         if name not in document.passes:
             return f"no such pass '{name}'"
         document.graph = document.graph.with_target(name, target)
-        document.passes[name].set_target(target)
+        document.set_pass_target(name, target)
         self.save_ui_document(ui_document)
         return ""
 

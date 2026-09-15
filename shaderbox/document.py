@@ -50,6 +50,7 @@ from shaderbox.pass_graph import (
     PassEntry,
     PassGraph,
     PassSource,
+    TargetConfig,
     clamp_canvas_size,
     entry_points,
     plan_for_output,
@@ -548,6 +549,27 @@ class Document:
         self._feedback.clear()
         self._feedback_generation.clear()
         self._frame = -1
+
+    def set_pass_target(self, name: str, target: TargetConfig) -> None:
+        """Adopt `name`'s new target AND drop the feedback history the old one built.
+
+        The single funnel for a target change on a document, because the two halves cannot be
+        done apart: `Pass.set_target` reallocates the live canvas alone, and the next
+        `begin_frame` swaps unconditionally -- so a history built under the old config lands in
+        the live slot on the very next frame, and the pass draws into it while the viewer shows
+        it. With the pair alternating, a toggled `filter_linear` reads as NO effect rather than
+        as a flicker, since the filter is the only thing the two canvases differ in.
+
+        `_feedback_canvas` also drops a history that predates a target change, but it runs at
+        BIND time -- after the swap has already installed the stale canvas. That check stays as
+        the backstop for a `Pass.set_target` reached another way; this is what makes the change
+        take effect on the next frame rather than the one after.
+        """
+        render_pass = self.passes.get(name)
+        if render_pass is None or render_pass.target == target:
+            return
+        render_pass.set_target(target)
+        self.drop_feedback(name)
 
     def drop_feedback(self, name: str) -> None:
         """Release `name`'s feedback history. Call when a pass is deleted or renamed.

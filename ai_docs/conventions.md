@@ -239,6 +239,18 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   cancelled out. Revisit if a pass ever needs to draw more than once per frame (MRT, ping-pong
   within a frame) — then the memo key stops being the pass name.
 
+- **A target change on a document goes through `Document.set_pass_target`, which drops the
+  feedback history in the same breath.** `Pass.set_target` reallocates the LIVE canvas alone, and
+  `begin_frame` swaps unconditionally — so a history built under the old config lands in the live
+  slot on the very next frame, and the pass draws into it while the viewer shows it. The two
+  canvases then alternate, which is why a toggled `smooth` on a feedback pass read as NO effect
+  rather than as a flicker: the filter is the only thing they differ in, so the change appeared
+  simply not to work. `_feedback_canvas`'s `target_generation` check still drops a stale history,
+  but it runs at BIND time, after the swap has already installed it; it is the backstop, not the
+  fix. Revisit if a target field ever needs to change without invalidating the history — today
+  every field in `TargetConfig` (dtype, scale, filter, wrap) describes the canvas the history is
+  a copy of.
+
 - **An unfilled pass input reads BLACK, and something must BIND that black (feature 065).** D3's
   graceful degradation is what keeps a half-built graph usable, and it is only safe because a
   source is chosen from a closed set of the document's own pass names — a sampler can never name

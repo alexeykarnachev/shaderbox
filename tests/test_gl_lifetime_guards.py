@@ -219,6 +219,48 @@ def test_a_target_format_change_never_leaves_the_pair_disagreeing(
     doc.release()
 
 
+def test_a_target_change_takes_effect_on_the_very_next_frame(
+    gl: moderngl.Context,
+) -> None:
+    """The pair agreeing is not enough: it must agree on the NEW target.
+
+    `Pass.set_target` reallocates only the LIVE canvas, and `begin_frame` swaps
+    unconditionally -- so without a drop, the frame after a change draws into, and the viewer
+    shows, the history canvas built under the OLD config. With the two alternating, a toggled
+    `smooth` reads as no effect at all rather than as a flicker, because the filter is the
+    only thing the two canvases differ in.
+
+    Filter rather than dtype because it is the one a user toggles and watches, and the
+    assertion is made BEFORE `render()`: the bind-time check in `_feedback_canvas` reconciles
+    the pair, so asserting after a render passes with or without the fix and gates nothing.
+
+    Toggled to NEAREST because `DEFAULT_FILTER_LINEAR` is True -- a test that asks for LINEAR
+    here changes nothing and cannot fail.
+
+    Falsifier: drop the `drop_feedback` call from `Document.set_pass_target`.
+    """
+    doc = _feedback_document(gl)
+    nearest = (moderngl.NEAREST, moderngl.NEAREST)
+    assert doc.passes["fb"].canvas.texture.filter != nearest, (
+        "the fixture already starts NEAREST -- the toggle below would change nothing"
+    )
+
+    doc.set_pass_target("fb", TargetConfig(dtype="f1", filter_linear=False))
+    for frame in range(1, 4):
+        doc.begin_frame(frame)
+        # Before the render, which is where the bind-time backstop would hide the defect.
+        assert doc.passes["fb"].canvas.texture.filter == nearest, (
+            f"frame {frame}: the live canvas is "
+            f"{doc.passes['fb'].canvas.texture.filter}, not the NEAREST the target asks for "
+            f"-- a stale feedback canvas was swapped into the live slot"
+        )
+        doc.render()
+        assert doc.passes["fb"].canvas.texture.filter == nearest, (
+            f"frame {frame}: the live canvas lost the new filter across the render"
+        )
+    doc.release()
+
+
 def _seeded_document(gl: moderngl.Context, tmp_path: Path) -> Document:
     # A document whose history came off DISK (089), not from a render: the seed is allocated in
     # the loader, so nothing that releases a rendered history necessarily releases this one.

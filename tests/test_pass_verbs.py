@@ -60,6 +60,13 @@ def _sampler_on(source: str) -> str:
 
 _SAMPLER_ON_A = _sampler_on("a")
 
+_FEEDBACK_ONLY = """#version 460 core
+in vec2 vs_uv;
+uniform sampler2D u_prev;
+out vec4 fs_color;
+void main() { fs_color = texture(u_prev, vs_uv) + vec4(0.1, 0.0, 0.0, 1.0); }
+"""
+
 _SAMPLER_SRC_AND_PREV = """#version 460 core
 in vec2 vs_uv;
 uniform sampler2D u_src;
@@ -245,6 +252,44 @@ def test_set_output_persists_and_refuses_a_stranger(app: Any) -> None:
     assert app.ui_documents[document_id].document.graph.output == "final"
     assert _reload(app, document_id).document.graph.output == "final"
     assert "no such pass" in app.session.set_output_pass(document_id, "ghost")
+
+
+def test_a_target_change_drops_the_feedback_history(app: Any) -> None:
+    """The session verb routes through `Document.set_pass_target`, which drops the history.
+
+    Reallocating the live canvas alone leaves a history built under the old config, and the
+    next `begin_frame` swaps it into the live slot -- so the change appears to do nothing for
+    a pass that reads `u_prev`. Pinned at the SESSION verb because that is what the settings
+    modal calls; the Document-level rule has its own test in test_gl_lifetime_guards.py.
+
+    Falsifier: point the session verb back at `document.passes[name].set_target(target)` and
+    the history survives the change.
+    """
+    document_id = _document_id(app)
+    document = app.ui_documents[document_id].document
+    app.session.add_pass(document_id, "fb")
+    # The stub declares no sampler, so a pass that never reads `u_prev` grows no history.
+    path = app.session.paths.pass_shader_for(document_id, "fb")
+    path.write_text(_FEEDBACK_ONLY, encoding="utf-8")
+    document.passes["fb"].release_program(_FEEDBACK_ONLY)
+    document.passes["fb"].compile()
+    # Only the output and its ancestors draw, and only a pass that DREW grows a history.
+    assert app.session.set_output_pass(document_id, "fb") == ""
+    document.begin_frame(1)
+    document.render()
+    assert "fb" in document._feedback, (
+        "the pass grew no feedback history -- the check below would be vacuous"
+    )
+
+    assert (
+        app.session.set_pass_target(
+            document_id, "fb", TargetConfig(filter_linear=False)
+        )
+        == ""
+    )
+    assert "fb" not in document._feedback, (
+        "the history built under the old target outlived the change"
+    )
 
 
 def test_a_target_change_reallocates_the_canvas_and_persists(app: Any) -> None:
