@@ -15,7 +15,9 @@ from collections.abc import Callable, Sequence
 from imgui_bundle import imgui
 
 from shaderbox.app import App
+from shaderbox.commands import CommandId
 from shaderbox.core import Pass
+from shaderbox.menus import target_menu_item
 from shaderbox.pass_graph import (
     PassEntry,
     Wiring,
@@ -73,12 +75,15 @@ def pass_menu_items(
     anchors it with an explicit id (safe there, each tile is its own window), the canvas with
     the previous item.
 
-    `slot` draws a caller's own items after `Settings` — the graph node's `Group`, which the
-    strip has no selection to seed."""
+    `slot` draws a caller's own items after the pass-settings item — the graph node's `Group`,
+    which the strip has no selection to seed."""
     document = app.ui_documents[document_id].document
-    if imgui.menu_item_simple("Open shader"):
+    # The two items that ARE commands read their label and their chord hint from the command
+    # table (`command_hint`), so a rebind reaches this menu too. They act on the clicked pass
+    # rather than on `panel_pass`, which is why they call the verbs instead of the callbacks.
+    if target_menu_item(app, CommandId.OPEN_SHADER):
         app.ensure_shader_tab(document_id, name, focus_editor=True)
-    if imgui.menu_item_simple("Settings"):
+    if target_menu_item(app, CommandId.OPEN_PASS_SETTINGS, "Settings"):
         app.open_pass_settings(name)
     if slot is not None:
         slot()

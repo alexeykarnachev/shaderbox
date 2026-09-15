@@ -10,7 +10,7 @@ from imgui_bundle import imgui, imgui_ctx
 from shaderbox.app import App
 from shaderbox.commands import CommandId, command_label
 from shaderbox.constants import STARTER_EXAMPLE_ID
-from shaderbox.menus import command_hint
+from shaderbox.menus import target_menu_item
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_models import UIDocument
 from shaderbox.ui_primitives import (
@@ -52,21 +52,17 @@ def document_menu_items(app: App, document_id: str) -> None:
     menu, where they act on the current one. Delete confirms and Reset does not -- one moves a
     directory to the trash, the other restarts a clock.
     """
-    if imgui.menu_item("Open script", command_hint(app, CommandId.OPEN_SCRIPT), False)[
-        0
-    ]:
+    if target_menu_item(app, CommandId.OPEN_SCRIPT):
         app.open_script_for(document_id, focus_editor=True)
-    if imgui.menu_item("Open graph", command_hint(app, CommandId.OPEN_GRAPH), False)[0]:
+    if target_menu_item(app, CommandId.OPEN_GRAPH):
         app.open_graph_for(document_id, focus_editor=True)
     imgui.separator()
-    if imgui.menu_item_simple("Open folder"):
+    if target_menu_item(app, CommandId.OPEN_DOCUMENT_DIR):
         app.open_document_dir(document_id)
     imgui.separator()
-    if imgui.menu_item("Reset", command_hint(app, CommandId.RESET_DOCUMENT), False)[0]:
+    if target_menu_item(app, CommandId.RESET_DOCUMENT, "Reset"):
         app.reset_document(document_id)
-    if imgui.menu_item("Delete", command_hint(app, CommandId.DELETE_DOCUMENT), False)[
-        0
-    ]:
+    if target_menu_item(app, CommandId.DELETE_DOCUMENT, "Delete"):
         app.delete_document_confirmed(document_id)
 
 

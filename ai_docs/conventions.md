@@ -515,7 +515,18 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   label. The same file is never opened twice (`_focus_or_add_tab` focuses the existing tab). Editing
   acts on the ACTIVE tab: `flush_current_editor()` flushes its dirty editor before any save; the mtime
   watcher re-syncs every open session from disk on external change (disk wins). A document's editors close
-  with the document (lib tabs survive); a renamed file re-keys its session in place. A document
+  with the document (lib tabs survive); a renamed file re-keys its session in place. - **Picking a pass writes ONE piece of state, `UIDocumentState.panel_pass`.** A shader belongs to a
+  pass, so every surface that acts on "the pass" -- the uniforms panel, `Open shader` (Alt+C),
+  `Pass settings` (Alt+P) -- resolves through `App.panel_pass`, and every gesture that picks a pass
+  records it there: a strip tile or graph node click (`choose_output`) and opening a pass's shader
+  (`ensure_shader_tab`). Both of those used to CLEAR it instead, which left `panel_pass` falling
+  through to its second tier, the active shader TAB -- so with any shader open, `Open shader`
+  resolved to the tab already on screen and looked dead. The tiers stay (explicit pick -> active
+  tab -> output), but the first is now written by every pick rather than by the Uniforms row alone.
+  Revisit if a surface needs a pass the user did NOT pick, which wants its own argument rather than
+  a fourth tier.
+
+A document
   SWITCH opens no tab (093 W7, the rule W3-3 set for clicks), and neither does the Alt-arrow pass
   walk: only creation and a FIRST open of a project open a shader by themselves; the context menu's
   `Open shader` and the Pass menu are the user's ways. That launch fallback reads

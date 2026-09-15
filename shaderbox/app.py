@@ -661,9 +661,7 @@ class App:
             ),
             CommandId.TOGGLE_COPILOT: self.toggle_copilot,
             CommandId.CYCLE_COPILOT_LAYOUT: self.cycle_copilot_layout,
-            CommandId.OPEN_SHADER: lambda: self.ensure_shader_tab(
-                self.current_document_id, focus_editor=True
-            ),
+            CommandId.OPEN_SHADER: self.open_shader_for_panel_pass,
             CommandId.OPEN_SCRIPT: lambda: self.open_script_for(
                 self.current_document_id, focus_editor=True
             ),
@@ -1185,6 +1183,17 @@ class App:
             return
         self.open_pass_settings(pass_name_of(self.panel_pass(document_id).source.path))
 
+    def open_shader_for_panel_pass(self) -> None:
+        """The `Open shader` command: the shader of the pass being WORKED ON (`panel_pass`),
+        not the document's output. A shader belongs to a pass, so this resolves the same way
+        the way `Pass settings` does -- with the panel on `blur` while `composite` is
+        the output, both act on `blur`."""
+        document_id = self.current_document_id
+        if document_id not in self.ui_documents:
+            return
+        name = pass_name_of(self.panel_pass(document_id).source.path)
+        self.ensure_shader_tab(document_id, name, focus_editor=True)
+
     def open_add_pass(self) -> None:
         # The settings modal in create mode (078 D5): a draft the modal edits, made real only
         # by `create_pass_from_draft`; Escape and Cancel both reach `close_pass_settings`,
@@ -1678,10 +1687,9 @@ class App:
             return
         document = self.ui_documents[document_id].document
         render_pass = document.passes.get(pass_name) or document.render_pass
-        # Opening a pass in the editor is itself a pick, so it retires an older explicit one (083):
-        # the uniforms panel follows the tab again, which is the path a tile click takes and the
-        # one that has to keep working without the user knowing the override exists.
-        self.set_panel_pass(document_id, "")
+        # Opening a pass in the editor is itself a pick, so it RECORDS that pass (083) exactly as
+        # a tile click does: one piece of state behind every surface that acts on "the pass".
+        self.set_panel_pass(document_id, pass_name_of(render_pass.source.path))
         self._focus_or_add_tab(
             EditorTab(
                 path=render_pass.source.path, kind="shader", document_id=document_id
@@ -2015,11 +2023,16 @@ class App:
         """The pass becomes the document's output, and the editor pane is left alone (093 S15).
 
         The canvas's click takes this half alone: opening a shader tab there would evict the
-        graph tab the click was made on. The explicit Uniforms pick is retired with it, the
-        same rule `ensure_shader_tab` applies (083) -- without that a persisted pin would keep
-        the panel on another pass after a canvas click.
+        graph tab the click was made on.
+
+        Picking a pass IS picking it to work on, so this records the choice as the panel pass
+        (083's explicit pick). Everything that acts on "the pass" -- the uniforms panel, `Open
+        shader`, `Pass settings` -- then reads that ONE piece of state, whichever surface the
+        pick came from. Clearing it here instead would leave `panel_pass` falling through to
+        the active shader TAB, so `Open shader` would resolve to the tab already open and
+        appear to do nothing.
         """
-        self.set_panel_pass(document_id, "")
+        self.set_panel_pass(document_id, name)
         ui_document = self.ui_documents.get(document_id)
         if ui_document is None or ui_document.document.graph.output == name:
             return

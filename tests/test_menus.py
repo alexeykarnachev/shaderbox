@@ -1092,3 +1092,30 @@ def test_the_grids_new_document_button_reads_its_label_from_the_registry(
     )
     _frame(lambda: document_grid.draw_document_preview_grid(app, 400.0, 400.0))
     assert "Fresh document" in seen, seen
+
+
+def test_no_context_menu_hand_rolls_a_label_a_command_owns() -> None:
+    """A verb that has a command is drawn from the command table, so its menu item carries the
+    chord hint and its label cannot drift from the palette's.
+
+    `menu_item_simple` takes no hint, so a command-backed verb drawn with it is a shortcut the
+    user cannot discover -- which is exactly how the pass menu's `Open shader` lost its hint.
+    Falsifier: draw any of those labels with `menu_item_simple` again and it is named here.
+    """
+    owned = {spec.label for spec in COMMAND_SPECS}
+    offenders: list[tuple[str, str]] = []
+    for path in sorted(_PKG.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "menu_item_simple"
+                and node.args
+                and isinstance(node.args[0], ast.Constant)
+                and node.args[0].value in owned
+            ):
+                offenders.append((path.name, node.args[0].value))
+    assert not offenders, (
+        f"these menu items hand-roll a label a command owns, so they show no chord: {offenders}"
+    )

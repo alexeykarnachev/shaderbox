@@ -54,6 +54,27 @@ def command_hint(app: App, command_id: CommandId) -> str:
     return chord_to_str(chord) if chord else ""
 
 
+def target_menu_item(
+    app: App, command_id: CommandId, label: str = "", enabled: bool = True
+) -> bool:
+    """A command's chord hint on a menu item the CALLER acts on.
+
+    The twin of `command_menu_item`: that one fires the command's own callback, which acts on
+    the current document or `panel_pass`. A context menu opens on a specific tile, and a
+    right-click does not select it (093 W8), so those menus call their verb with that target
+    and use this to draw the item. The HINT always comes from the table, so a rebind reaches
+    every surface -- which is the half a hand-rolled item loses.
+
+    `label` overrides the table's wording for a menu whose context already supplies the noun:
+    a pass's own menu says `Settings`, where the palette must say `Pass settings` to be
+    unambiguous among every other command. Omit it to take the table's.
+    """
+    spec = SPEC_BY_ID[command_id]
+    return imgui.menu_item(
+        label or spec.label, command_hint(app, command_id), False, enabled=enabled
+    )[0]
+
+
 def command_menu_item(app: App, command_id: CommandId) -> bool:
     """One command as a menu item: its label, its bound chord as the hint, its scope as the
     enabled test. Fires the command's callback on a click and returns whether it fired.

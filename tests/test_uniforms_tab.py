@@ -62,17 +62,27 @@ def test_an_explicit_pass_pick_wins_over_the_active_tab(app: Any) -> None:
     assert app.panel_pass(document_id) is derived
 
 
-def test_opening_a_shader_tab_retires_the_pick(app: Any) -> None:
-    # The common path — click a tile, edit its uniforms — must keep working without the user
-    # knowing the override exists, so opening a pass in the editor clears it.
+def test_opening_a_shader_tab_records_its_pass_as_the_pick(app: Any) -> None:
+    """The common path -- click a tile, edit its uniforms -- keeps working, and every surface
+    that acts on "the pass" reads the one piece of state.
+
+    Opening a pass in the editor IS picking it, so it records that pass rather than clearing
+    the pick. Clearing left `panel_pass` falling through to the active TAB, which made `Open
+    shader` resolve to the shader already on screen. Falsifier: clear it again here and
+    test_pass_navigation's open-while-another-is-open case fails.
+    """
     document_id = _two_pass_document(app)
     document = app.ui_documents[document_id].document
-    name = sorted(document.passes)[-1]
-    app.set_panel_pass(document_id, name)
-    assert app.ui_documents[document_id].ui_state.panel_pass == name
+    first, second = sorted(document.passes)[0], sorted(document.passes)[-1]
 
-    app.ensure_shader_tab(document_id, name)
-    assert app.ui_documents[document_id].ui_state.panel_pass == ""
+    app.set_panel_pass(document_id, second)
+    app.ensure_shader_tab(document_id, second)
+    assert app.ui_documents[document_id].ui_state.panel_pass == second
+    assert app.panel_pass(document_id) is document.passes[second]
+
+    # Opening the OTHER pass moves the pick with it, so the panel follows the editor.
+    app.ensure_shader_tab(document_id, first)
+    assert app.panel_pass(document_id) is document.passes[first]
 
 
 def test_the_write_seam_ignores_an_unknown_document(app: Any) -> None:
