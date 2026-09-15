@@ -318,14 +318,6 @@ def test_new_project_refuses_a_bad_name_and_creates_nothing(app: Any) -> None:
     assert sorted(p.name for p in root.iterdir()) == before
 
 
-def _census(root: Path) -> list[tuple[str, int]]:
-    return sorted(
-        (p.relative_to(root).as_posix(), p.stat().st_size)
-        for p in (root / "documents").rglob("*")
-        if p.is_file()
-    )
-
-
 def _app_with_pointer_at(tmp_path: Any, monkeypatch: Any, target: Path) -> Any:
     data = tmp_path / "data"
     data.mkdir(parents=True, exist_ok=True)
@@ -471,12 +463,6 @@ def test_the_recovery_modal_is_populated_not_empty(
 # -- the `_tick_frame_state` block and the `draw_projects` call in `ui.py` -- invisible: both can
 # be deleted with the whole suite green, and both sit in files every UI feature edits. These
 # drive actual frames so the wire itself is the thing under test.
-
-
-def _select_row_for_test(app: Any, path: Path) -> None:
-    from shaderbox.popups.projects import _select_row
-
-    _select_row(app, path)
 
 
 def _pump(app: Any, frames: int = 3) -> None:

@@ -260,3 +260,23 @@ was wrong.
 vacuously satisfiable); the MESA override removal; `ACCENT_ALPHA` as an undeclared miss (it was
 triaged and deliberately kept); and the whole set of imgui-style, moderngl-attribute and
 `model_validator` candidates.
+
+## Closing two of W-0's declared gaps
+
+W-0 listed `tests/` as a target and whole-module deadness among the things it did not scan. Both
+were closed after the first review, using AST walks rather than the tool:
+
+- **Whole-module deadness: none.** Every `.py` under `shaderbox/` is named somewhere outside
+  itself.
+- **Dead private test helpers: two, removed.** `_census` and `_select_row_for_test` in
+  `tests/test_project_management.py`, each defined once and called nowhere. The second was also an
+  inline-import wrapper around `popups.projects::_select_row`, a shape the repo's own code rules
+  forbid outside the two sanctioned lazy seams.
+- **The whole theme-token class, re-checked.** After the three-token fix, an AST walk over every
+  class-attribute token in `theme.py` finds no member with fewer than two references, and the same
+  walk over every module-level constant in `shaderbox/` returns one hit, `editor/ffi.py`'s
+  `PRIM_STRIDE` — the byte size of the `Prim` struct, sitting beside it as part of the FFI ABI, so
+  binding surface rather than dead code.
+
+What remains unscanned from the original list: enum members (see the note above on why a naive
+walk cannot close it), type aliases, `shaderbox/resources/`, and non-Python assets.
