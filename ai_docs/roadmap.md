@@ -26,7 +26,7 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-15, he checked 093 wave 8 in the running app and reported nothing; 093 is done and 094 is next. -->
+<!-- As of 2026-09-15, he checked 093 wave 8 in the running app and reported nothing; 093 is done, 095's structural sweep has landed, and 094 is next. -->
 **Next: 094, the control panel's composition.** The one part of finding 4 still open: the
 documents grid reserves rows for documents that do not exist, so its lower two thirds is empty
 at every real project size. Its mock (`ai_docs/features/094_control_panel/00_mock.html`,
@@ -36,7 +36,9 @@ rejected the two that reshape the panel -- both move the dead space rather than 
 that removes it. The Documentation content follows 094.
 
 **Nothing awaits his review.** 093's eight waves are all checked in the running app, as are
-092's canvas, 091's outline and import dialog, and 090's `Auto | Fixed`.
+092's canvas, 091's outline and import dialog, and 090's `Auto | Fixed`. 095's structural sweep
+changed no behavior and needs no in-app check; what it deliberately did NOT change, and why, is in
+`ai_docs/features/095_structural_sweep/02_progress.md`.
 
 **Open, unmeasured:** the canvas past twenty passes (the largest real document is six); no
 brake watches copilot cost or a frame going lit to flat (082); the GL thread if the throttle
@@ -46,7 +48,7 @@ falls short.
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 095 | structural_sweep | pending | A repo-wide pass over the codebase's shape rather than its behavior: an inventory of dead symbols of every kind, the live facts deleted from the docs, the one test fixture duplicated across modules given a single home, and a comment-hygiene pass that leaves the why-comments alone. Relocation and file splits were surveyed and rejected. Spec: `ai_docs/features/095_structural_sweep/01_spec.md`. |
+| 095 | structural_sweep | done | A repo-wide pass over the codebase's shape rather than its behavior, run as one inventory wave plus four working waves with the gate green between each: the live facts deleted from the docs, the gl_ctx fixture given one home in conftest, the symbols that were really dead removed, and a comment pass that left every why-comment alone. Most of what the scan flagged did not survive scrutiny and the log records each rejection with its reason. Two adversarial review rounds; the first found a coverage gap that the fix closed. Spec: `ai_docs/features/095_structural_sweep/01_spec.md` + `02_progress.md`. |
 | 094 | control_panel | pending | Finding 4's remainder: the documents grid reserves rows for documents that do not exist, so the control panel's left third is mostly empty. A mock of four options was drawn and judged: the two that reshape the panel move the dead space rather than remove it, the fold was rejected for buying width only while hiding a panel wanted at rest, and the fourth (the identity row into the viewer's chrome) is untested because it adds a constant to the panel's minimum height that nobody has measured -- so the shape that REMOVES the dead space is still to be proposed. Spec: `ai_docs/features/094_control_panel/00_mock.html` (mock only; no spec yet). |
 | 093 | refinement | done | The maintainer's dogfooding of the graph view (092), fed back in batches and fixed wave by wave over eight waves (the menus and modal-registry redesigns among them, then the control panel's header down to one row with its verbs on the document tile's context menu and one aspect-grouped canvas combo), each checked by him in the running app; finding 4's panel composition is delegated to 094. Spec: `ai_docs/features/093_refinement/01_spec.md` + `00_findings.md`. |
 | 092 | graph_view | done | A second, opt-in view of a document's passes beside the strip: a node canvas hand-drawn on the imgui draw list, where a node is the pass's live picture with one port per sampler the compiled program declares, a wire is a read from the effective wiring, and a group is one box at the root whose ports are its boundary edges, opening into its own tab with the outside passes as ghosts -- so 091's convexity rule never arises. Positions live on the pass entry and are written only by a placement (a drag's release, Arrange) through one verb; every gesture lands through an App verb whose refusal (a loop by the pure planner, a media-bound port) is tested headless; passes and groups share one namespace and a rename plans before its file moves. Spec: `ai_docs/features/092_graph_view/03_spec.md` + `00_mock.html` + `01_brainstorm.md` + `02_triage.md`. |
