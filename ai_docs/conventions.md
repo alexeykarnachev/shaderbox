@@ -227,7 +227,12 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   source + program + render target + uniform values + compile + draw; `document.Document` = the
   passes, the `PassGraph` wiring them, the output choice, the script hook and export. The canvas
   travels DOWN with the pass (each needs its own target); the document owns the canvas SIZE and
-  applies each pass's `scale`, so a pass never sizes itself from a number it does not hold. Two
+  applies each pass's `scale`, so a pass never sizes itself from a number it does not hold.
+  **`set_canvas_size` resizes EVERY pass, not just the output** — `render` also corrects a pass
+  lazily, but it exempts whichever pass is the output at DRAW time, so a pass that was
+  off-output at the resize and is the output when it next draws falls through both paths and
+  keeps its old size. Clicking to another pass and back appeared to fix it, because the trip
+  through non-output is what let `render` correct it. Two
   rules a new consumer must not break: **evaluation is memoized** — a shared ancestor draws once
   per frame, never once per consuming path (`assert_plan_invariants` runs inside `evaluation_order`,
   the function that actually draws, because a duplicated pass renders the CORRECT picture N times

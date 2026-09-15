@@ -19,6 +19,7 @@ import moderngl
 import pytest
 
 from shaderbox.media import texture_to_rgba8
+from shaderbox.pass_graph import PassEntry
 from shaderbox.paths import (
     DOCUMENT_JSON_BASENAME,
     GRAPH_JSON_BASENAME,
@@ -330,3 +331,54 @@ def test_an_auto_document_opens_at_its_aspect_not_at_its_stored_pair(
     )
     assert document.canvas_size == fit_to_aspect(INITIAL_AUTO_REGION, (16, 9))
     document.release()
+
+
+def test_a_resize_reaches_a_pass_that_is_not_the_output_yet(
+    gl_ctx: moderngl.Context, tmp_path: Path
+) -> None:
+    """Every pass takes the new size at the resize, not at its next trip through non-output.
+
+    `render` resizes a pass lazily and exempts whichever pass is the OUTPUT at draw time, so a
+    pass that was off-output when the document resized and is the output when it next draws
+    falls through both paths and keeps its old size. The reported sequence: shrink the
+    document while `show` is the output, click the other pass, and it renders at the stale
+    size -- clicking away and back "fixes" it, because the trip through non-output is what
+    lets `render` correct it.
+
+    Falsifier: drop the per-pass loop from `set_canvas_size` and `trail` below stays at the
+    size it was born with.
+    """
+    ui_document = load_document_from_dir(_write_document(tmp_path / "doc"))
+    document = ui_document.document
+    other = next(name for name in document.passes if name != document.graph.output_pass)
+    # NOT `_loaded`: its four warm-up frames let `render` correct every non-output pass, which
+    # is exactly the trip through non-output that hides this defect. The reported sequence
+    # resizes a document whose other pass has not drawn since.
+    before = document.passes[other].canvas.texture.size
+
+    document.set_canvas_size((64, 64))
+    assert document.passes[other].canvas.texture.size != before or before == (64, 64), (
+        "the fixture's other pass was already at the new size -- the check is vacuous"
+    )
+    entry = document.graph.passes.get(other, PassEntry())
+    wanted = entry.target.target_size(document.canvas_size)
+    assert document.passes[other].canvas.texture.size == wanted, (
+        f"'{other}' is {document.passes[other].canvas.texture.size}, not {wanted} -- the "
+        "resize skipped a pass that was not the output"
+    )
+
+    # And it holds once that pass BECOMES the output, which is where the render-time exemption
+    # would otherwise freeze it at whatever it was. `wanted`, not the document size: this pass
+    # carries a scale, and a scaled pass keeps its scaled size until it is the output that the
+    # preview reads -- what must not happen is it keeping a size from BEFORE the resize.
+    document.graph = document.graph.with_output(other)
+    document.begin_frame(99)
+    document.render()
+    assert document.passes[other].canvas.texture.size in (
+        wanted,
+        document.canvas_size,
+    ), (
+        f"'{other}' rendered at {document.passes[other].canvas.texture.size}, which is "
+        f"neither its scaled {wanted} nor the document's {document.canvas_size} -- it kept a "
+        "size from before the resize"
+    )

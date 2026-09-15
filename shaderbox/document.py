@@ -465,6 +465,18 @@ class Document:
         self.render_pass.canvas = self.resample_canvas(
             self.render_pass.canvas, self.canvas_size
         )
+        # Every OTHER pass too, not just the output. `render` resizes a pass lazily, but it
+        # exempts whichever pass is the output at DRAW time -- so a pass that was off-output
+        # when the document resized and is the output when it next draws falls through both
+        # paths and keeps its birth size forever. Clicking away and back appeared to fix it:
+        # the trip through non-output let `render` correct it.
+        for name, render_pass in self.passes.items():
+            if name == output:
+                continue
+            entry = self.graph.passes.get(name, PassEntry())
+            wanted = entry.target.target_size(self.canvas_size)
+            if render_pass.canvas.texture.size != wanted:
+                render_pass.canvas = self.resample_canvas(render_pass.canvas, wanted)
         for name in list(self._feedback):
             entry = self.graph.passes.get(name, PassEntry())
             target = (
