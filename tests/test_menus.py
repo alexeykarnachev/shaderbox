@@ -10,6 +10,7 @@ that as a library fact). The layering and one-spelling questions are pure source
 
 import ast
 from collections.abc import Callable, Iterator
+from dataclasses import replace
 from functools import partial
 from itertools import pairwise
 from pathlib import Path
@@ -1065,3 +1066,29 @@ def test_each_registry_row_runs_its_own_cleanup(
         assert close_modal(app) is True
     assert app.modal is None
     cleaned(app, applied)
+
+
+def test_the_grids_new_document_button_reads_its_label_from_the_registry(
+    app: Any, monkeypatch: Any
+) -> None:
+    """The button shows whatever `NEW_DOCUMENT` is called, rather than its own copy.
+
+    The two strings agree today, so a hardcoded copy shows nothing until someone renames the
+    command and the button keeps the old word. Falsifier: hardcode the label again -- the
+    rename below stops reaching the button.
+    """
+    seen: list[str] = []
+    real = document_grid.standard_button
+
+    def spy(label: str, *args: Any, **kwargs: Any) -> bool:
+        seen.append(label)
+        return real(label, *args, **kwargs)
+
+    monkeypatch.setattr(document_grid, "standard_button", spy)
+    monkeypatch.setitem(
+        SPEC_BY_ID,
+        CommandId.NEW_DOCUMENT,
+        replace(SPEC_BY_ID[CommandId.NEW_DOCUMENT], label="Fresh document"),
+    )
+    _frame(lambda: document_grid.draw_document_preview_grid(app, 400.0, 400.0))
+    assert "Fresh document" in seen, seen

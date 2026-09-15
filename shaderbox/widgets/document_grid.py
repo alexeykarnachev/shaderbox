@@ -8,7 +8,7 @@ carries no button.
 from imgui_bundle import imgui, imgui_ctx
 
 from shaderbox.app import App
-from shaderbox.commands import CommandId
+from shaderbox.commands import CommandId, command_label
 from shaderbox.constants import STARTER_EXAMPLE_ID
 from shaderbox.menus import command_hint
 from shaderbox.theme import COLOR, SIZE, SPACE
@@ -80,7 +80,7 @@ def draw_document_preview_grid(app: App, width: float, height: float) -> None:
         # Document create/switch/delete are frozen while a copilot turn runs (§15 A); disable the
         # affordances so the freeze is visible (the verbs also hard-refuse, for non-grid paths).
         imgui.begin_disabled(app.copilot_turn_active)
-        if standard_button("New document"):
+        if standard_button(command_label(CommandId.NEW_DOCUMENT)):
             app.create_document_from_example(STARTER_EXAMPLE_ID)
         imgui.end_disabled()
 

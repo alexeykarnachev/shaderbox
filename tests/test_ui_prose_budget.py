@@ -220,6 +220,11 @@ _UNMEASURABLE: dict[tuple[str, str], str] = {
     ): "the command table's own label, read through `command_label`; "
     "test_every_command_label_is_within_the_menu_budget measures it directly",
     (
+        "shaderbox/widgets/document_grid.py",
+        "draw_document_preview_grid",
+    ): "the command table's own label, read through `command_label`; "
+    "test_every_command_label_is_within_the_menu_budget measures it directly",
+    (
         "shaderbox/popups/confirm.py",
         "_draw_body",
     ): "the request's own title, consequence line and verb, each authored at the App verb "
