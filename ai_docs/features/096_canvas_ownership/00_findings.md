@@ -152,6 +152,19 @@ from `u_time`, not from feedback. The trace above shows `live` pinned at 0.0 for
 This is invisible in the app: the viewer renders without an external canvas and is correct, so
 the defect appears only in the exported file.
 
+**Arbitrated through the real `render_media`, because two agents disagreed.** A second swarm
+agent returned SOUND on this, having compared the external canvas's value against a
+no-external-canvas reference WITHIN one frame — where they do match, since the per-frame value
+is computed correctly and only fails to advance ACROSS frames. The real export, decoded from the
+written video with a shader accumulating +0.05 per frame:
+
+    iterations=1: exported reds per frame -> [10, 10, 10, 10, 10, 10]
+    iterations=2: exported reds per frame -> [23, 23, 23, 23, 23, 23]
+
+A climbing accumulator, frozen. `render_media` calls `reset_feedback()` before the loop, which
+is why the values start clean; it does not help, because the freeze is per-frame from then on.
+The defect is real at every iteration count.
+
 ### F7 — `Document.__init__` does not clamp `canvas_size`, though its comment says it does
 
 The comment above the field calls `__init__` and `set_canvas_size` "the field's only two
