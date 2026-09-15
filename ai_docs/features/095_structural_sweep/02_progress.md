@@ -139,3 +139,27 @@ states the failure is module-order-dependent and it was recorded on a display-le
 machine has a real display. The comment stays as written; a later session should not read this
 note as license to weaken it. What IS verified: the consolidated modules still run together in one
 process green, which is the scenario the fixture exists to survive.
+
+## W-D deletion — DONE
+
+done-condition (written in advance): each tier removed as its own batch with `make gates` green
+between batches; every CAREFUL candidate proved dead by search before removal; nothing removed
+from a documented extension contract.
+
+verification: green after the SAFE batch, green after the CAREFUL batch.
+
+**Removed (SAFE):** `App.delete_current_document`, a one-line wrapper with no caller — the
+command routes to the confirming variant instead.
+
+**Removed (CAREFUL):** `Video._frame_period` in `media.py`, computed in `__init__` and never
+read. Proved dead first: no dynamic access, no field iteration, and its siblings `_fps` /
+`_n_frames` are read normally, so the class does use the neighbors it keeps.
+
+**`COLOR.ACCENT_ALPHA` was reclassified CAREFUL -> RISKY and NOT removed.** The search says
+nothing reads it, and that is true but misleading: it is one of three tokens in the accent
+system, `_ACCENTS` stores them as triples, `set_accent` unpacks all three for runtime accent
+swapping, and `theme.py`'s module docstring documents `ACCENT_*` as the swappable role group with
+"Adding a theme = new `_P` + `_ACCENTS` + role mapping". It is a documented extension contract,
+so removing it means editing every accent preset and breaking the trio's symmetry — a large diff
+from a small finding, which is the signal for solving the wrong problem. Left alone. Do not
+re-raise it as dead code; a future reader should decide it as a theme-API question.

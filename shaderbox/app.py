@@ -2511,9 +2511,6 @@ class App:
         # dead (the lib picker's rule, same reason).
         return self.projects_new_input.is_open
 
-    def delete_current_document(self) -> None:
-        self.delete_document(self.current_document_id)
-
     def delete_document(self, document_id: str) -> None:
         # The guarded public path (document grid / hotkeys). The copilot calls the unguarded body
         # directly — its mid-turn delete must bypass the busy gate.

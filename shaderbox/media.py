@@ -212,7 +212,6 @@ class Video(MediaWithTexture):
 
         self._fps: int = fps
         self._n_frames: int = n_frames
-        self._frame_period = 1.0 / fps
         self._last_frame_idx: int = -1
 
     def restart(self) -> None:
