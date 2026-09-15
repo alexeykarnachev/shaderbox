@@ -26,8 +26,14 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-15, he checked 093 wave 8 in the running app and reported nothing; 093 is done, 095's structural sweep has landed, and 094 is next. -->
-**Next: 094, the control panel's composition.** The one part of finding 4 still open: the
+<!-- As of 2026-09-15, 093 is done and 095's sweep has landed. Three canvas bugs he reported were fixed the same day; the hunt they triggered found six more, so 096 is specced and next, ahead of 094. -->
+**Next: 096, the canvas-ownership wave.** Six defects found in one week share one root, and
+two of them ship: a document whose output pass reads its own previous frame exports a frozen
+video, and the export's fit branch -- the one Telegram and the shared shapes take -- allocates
+its canvas with no dtype, so an ordinary `f2` document loses its float headroom. The spec's
+waves run W-0 (an invariant checker that must be proven RED first) through W-5. 094 follows.
+
+**Was next: 094, the control panel's composition.** The one part of finding 4 still open: the
 documents grid reserves rows for documents that do not exist, so its lower two thirds is empty
 at every real project size. Its mock (`ai_docs/features/094_control_panel/00_mock.html`,
 published at https://alexeykarnachev.github.io/shaderbox-mocks/) offered four options and he
@@ -48,6 +54,7 @@ falls short.
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 096 | canvas_ownership | pending | Six canvas defects in one week are one class: a canvas's configuration is decided in several places and each knows about some canvases but not all. Three are fixed; the spec carries six more, two of which ship to users -- a self-reading output pass exports a frozen video, and the export's fit branch drops the output pass's format while its sibling copies it. Every filter and wrap assertion in the suite sits at pass birth or in a test written by this week's own fixes, which is why none of it was caught. Spec: `ai_docs/features/096_canvas_ownership/01_spec.md` + `00_findings.md`. |
 | 095 | structural_sweep | done | A repo-wide pass over the codebase's shape rather than its behavior, run as one inventory wave plus four working waves with the gate green between each: the live facts deleted from the docs, the gl_ctx fixture given one home in conftest, the symbols that were really dead removed, and a comment pass that left every why-comment alone. Most of what the scan flagged did not survive scrutiny and the log records each rejection with its reason. Two adversarial review rounds; the first found a coverage gap that the fix closed. Spec: `ai_docs/features/095_structural_sweep/01_spec.md` + `02_progress.md`. |
 | 094 | control_panel | pending | Finding 4's remainder: the documents grid reserves rows for documents that do not exist, so the control panel's left third is mostly empty. A mock of four options was drawn and judged: the two that reshape the panel move the dead space rather than remove it, the fold was rejected for buying width only while hiding a panel wanted at rest, and the fourth (the identity row into the viewer's chrome) is untested because it adds a constant to the panel's minimum height that nobody has measured -- so the shape that REMOVES the dead space is still to be proposed. Spec: `ai_docs/features/094_control_panel/00_mock.html` (mock only; no spec yet). |
 | 093 | refinement | done | The maintainer's dogfooding of the graph view (092), fed back in batches and fixed wave by wave over eight waves (the menus and modal-registry redesigns among them, then the control panel's header down to one row with its verbs on the document tile's context menu and one aspect-grouped canvas combo), each checked by him in the running app; finding 4's panel composition is delegated to 094. Spec: `ai_docs/features/093_refinement/01_spec.md` + `00_findings.md`. |
