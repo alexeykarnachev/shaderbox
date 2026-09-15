@@ -1,6 +1,6 @@
 # 092 — The graph view
 
-Status: **done.** Implemented in two waves, reviewed to closure (four post-implementation rounds; each angle's final round a PASS: architecture in round 3, spec fidelity in round 2 on the code, correctness in round 4), gates green with the smoke run; the whole canvas awaits the maintainer's eyes (the manual list below). Sketches: `00_mock.html` (round 3 is the
+Status: **done.** Implemented in two waves, reviewed to closure (four post-implementation rounds; each angle's final round a PASS: architecture in round 3, spec fidelity in round 2 on the code, correctness in round 4), gates green with the smoke run; the maintainer's walk of the canvas is 093 (the manual list below was his checklist). Sketches: `00_mock.html` (round 3 is the
 picture). Record of the design conversation: `01_brainstorm.md`. The review round that produced
 the constraints and decisions below: `02_triage.md` and `reviews/brainstorm_*.md`. Every
 "Fixed" item of the brainstorm and every default of the triage is locked here; nothing is

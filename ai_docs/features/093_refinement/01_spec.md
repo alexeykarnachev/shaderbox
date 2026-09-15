@@ -1,7 +1,8 @@
 # 093 — Refinement: the graph editor
 
-Status: **waves 1-7 landed (the editor's half of wave 6 re-vendored at `5a56ccf`). Next is
-his visual review in the running app, whose findings open the next wave in the ledger.** The waves and what each landed are the `## Waves`
+Status: **done 2026-09-15.** Seven waves landed (the editor's half of wave 6 re-vendored at
+`5a56ccf`), each checked by him in the running app; the last check reported nothing. Finding 4 (the
+control panel) is delegated to its own feature. The waves and what each landed are the `## Waves`
 section below, newest first; the findings are `00_findings.md`. The maintainer's verdict on the shipped canvas ("feels
 very cheap") sent the walk into research first: `02_research_brief.md` is the brief, `research/`
 holds six area reports against primary sources, `03_graph_design.md` is the design record

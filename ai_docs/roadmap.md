@@ -26,19 +26,16 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-15, 093 wave 7 landed from his check of wave 6; the vim scroll fix is re-vendored at 5a56ccf. -->
-**Next: his review of waves 6-7 in the running app** (`make run`). Wave 7: a document tile's
-click opens no shader tab; the viewer box's height follows the splitter's width
-alone, the picture centered in it, the control panel still across an aspect change. Wave 6: the tile's menu
-without `Open`; a confirm that is the question alone, auto-sized; the Fixed presets with three
-4:3 tiers; a single-pass tab named by its pass; Python completion with no file paths inside a
-string and no `mro`; his drawing script continuous under the throttle; in vim mode on a
-short shader, zz / Ctrl+E moving the view with `~` rows below and a held Ctrl+E carrying the
-cursor. Each finding is a ledger row (33+) in `00_findings.md`, fixed as wave 8 per
-`01_spec.md ## How this walk runs`.
+<!-- As of 2026-09-15, he checked 093's waves 6-7, 091's outline and import dialog, and 090's Auto | Fixed in the running app; nothing is awaiting his eyes. -->
+**Next: finding 4 of 093 (the control panel) as its own feature.** The Document tab and the
+document grid beside it waste the graph's room on rarely used controls (`093_refinement/00_findings.md`
+row 4); it is a redesign of the panel's composition with a mock sketched first, per
+`dev_flow.md`'s feature flow. After it, the Documentation content (the Help modal renamed by 093's
+menus wave carries no content yet).
 
-**Also awaiting his eyes:** 091's outline and import dialog; 090's `Auto | Fixed`. Finding 4
-(the control panel) is the next feature; the Documentation content after.
+**Nothing awaits his review.** 093's seven waves, 092's canvas, 091's outline and import dialog,
+and 090's `Auto | Fixed` are all checked in the running app; the next refinement ledger opens
+when he reports a new batch.
 
 **Open, unmeasured:** the canvas past twenty passes (the largest real document is six); no
 brake watches copilot cost or a frame going lit to flat (082); the GL thread if the throttle
@@ -48,7 +45,7 @@ falls short.
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 093 | refinement | in progress | The maintainer's dogfooding of the graph view (092), fed back in batches and fixed wave by wave; a finding too big for a wave becomes its own feature. Spec: `ai_docs/features/093_refinement/01_spec.md` + `00_findings.md`. |
+| 093 | refinement | done | The maintainer's dogfooding of the graph view (092), fed back in batches and fixed wave by wave over seven waves (the menus and modal-registry redesigns among them), each checked by him in the running app; finding 4 (the control panel) is delegated to its own feature. Spec: `ai_docs/features/093_refinement/01_spec.md` + `00_findings.md`. |
 | 092 | graph_view | done | A second, opt-in view of a document's passes beside the strip: a node canvas hand-drawn on the imgui draw list, where a node is the pass's live picture with one port per sampler the compiled program declares, a wire is a read from the effective wiring, and a group is one box at the root whose ports are its boundary edges, opening into its own tab with the outside passes as ghosts -- so 091's convexity rule never arises. Positions live on the pass entry and are written only by a placement (a drag's release, Arrange) through one verb; every gesture lands through an App verb whose refusal (a loop by the pure planner, a media-bound port) is tested headless; passes and groups share one namespace and a rename plans before its file moves. Spec: `ai_docs/features/092_graph_view/03_spec.md` + `00_mock.html` + `01_brainstorm.md` + `02_triage.md`. |
 | 091 | presets | done | Another document's passes copied into the current one as a GROUP: one combo per entry point of the source (a pass reading no other), fed by a host pass -- whose own readers are handed to the bundle's output, with its output role when it had it -- or kept; a pure `plan_import` over the two compiled wirings materializes every wired sampler under the prefixed names, since the name rule does not survive the prefix, and rejects before anything is written. The group is one label on the pass entry, editable in the settings modal and by the copilot, drawn on the strip as a flush outline around each run of consecutive members with the name on the border; folding was rejected (a folded group must be convex in the DAG). Spec: `ai_docs/features/091_presets/01_spec.md` + `00_mock.html`. |
 | 090 | render_decoupling | done | The editor lagged behind a heavy document because one loop made the UI frame equal the document's GPU cost, and research on the maintainer's box refuted every alternative (nothing preempts a draw on his driver, so a render thread, a second process and context priority buy nothing; tiling worked but was rejected). Each document now carries a resolution mode -- Auto stores only an aspect and renders at the viewer's size fitted to it, resampling the output canvas and every feedback history on resize through a one-quad blit since `copy_framebuffer` does not rescale; Fixed stores the pair; export resolves through one seam -- and a document throttle behind a pure `plan_render_set` schedules the current document from its measured GPU cost against a shared budget and every displayed preview at a common fps, with GPU spans recorded always. The first landing kept a stored pair under Auto and opened a new document 64×64 square; revision 1 replaced it with the tab layout the maintainer picked. Spec: `ai_docs/features/090_render_decoupling/01_spec.md` + `00_research.md` + `02_throttle_and_resolution.md`. |
@@ -76,7 +73,7 @@ falls short.
 | 073 | third_walk_findings | done | The maintainer's third walk (the 070 + 072 tree): 8 findings, five decisions -- a matching-opener bracket snap and a reverse-video caret in the editor library, context-aware auto-completion and a `K` lookup popup, a three-state alpha view on the viewer, a live-tile fill instead of the dormant tint, `Alt+Left`/`Alt+Right` pass switching, Reset moved to the document row. Spec: `ai_docs/features/073_third_walk_findings/01_spec.md`. |
 | 072 | sampler_source | done | A sampler2D has ONE source, held as its value (`PassSource` / `NoSource` / `AutoSource` / a bound texture) and chosen on its own panel row; `graph.json` loses `inputs` and `layout`, the planner takes a wiring, the gear loses Reads, the copilot's sampler row says what it reads. Spec: `ai_docs/features/072_sampler_source/01_spec.md`. |
 | 070 | pass_reads | done | Each strip tile carries a row of chips naming the passes it reads (`prev` for its own previous frame), drawn from the effective graph; a six-layout brainstorm rejected the graph view the feature opened as. Spec: `ai_docs/features/070_pass_reads/01_spec.md`. |
-| 071 | second_walk_findings | done | The maintainer's second walk of the 068 tutorial: 11 findings, six decisions, six waves landed -- a document-wide Reset (histories, clock, script, videos), the code panel's cursor follow and Ctrl+Tab, sampler rows showing what they read, American spelling with a gate, four editor-library items re-vendored from `aa8c6719`, and the tutorial cut to the cascades with a drawing chapter at the end; the maintainer's hands-on pass per wave is outstanding. Spec: `ai_docs/features/071_second_walk_findings/01_spec.md`. |
+| 071 | second_walk_findings | done | The maintainer's second walk of the 068 tutorial: 11 findings, six decisions, six waves landed -- a document-wide Reset (histories, clock, script, videos), the code panel's cursor follow and Ctrl+Tab, sampler rows showing what they read, American spelling with a gate, four editor-library items re-vendored from `aa8c6719`, and the tutorial cut to the cascades with a drawing chapter at the end. Spec: `ai_docs/features/071_second_walk_findings/01_spec.md`. |
 | 069 | tutorial_walk_findings | done | The maintainer's walk of the 068 tutorial: 37 findings, eight waves, twelve locked decisions, all landed. Spec: `ai_docs/features/069_tutorial_walk_findings/01_spec.md`. |
 | — | repo_sweep | done | A ten-agent sweep over the defect classes this repo's history keeps producing (incomplete fix-sweeps, unwired mechanisms, tests that cannot fail, docs that drift from code): four blockers fixed — a crash loading a corrupt `document.json` from the per-frame sync, and three feedback-lifecycle bugs in the 068 machinery, one silently corrupting output — plus two skills that would crash a reader following them literally. What was REJECTED, and why, is in `conventions.md`. Spec: commits `70144d2..7e977bf`. |
 | 068 | radiance_cascades | done | A pass may declare `iterations` and the engine draws it N times per frame (`u_pass_iteration` / `u_pass_iterations`, per-iteration ping-pong), plus a six-pass Radiance Cascades example built on it and a tutorial rewriting both source articles for this engine. 069 W-H rewrote that tutorial to generate every pass card and code block from the example itself. Spec: `ai_docs/features/068_radiance_cascades/01_spec.md`. |
