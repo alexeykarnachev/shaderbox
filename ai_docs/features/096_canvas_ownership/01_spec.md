@@ -118,11 +118,43 @@ gates what the earlier waves fixed.
   Do NOT remove the default outright — that is a larger signature change and belongs with the
   `CanvasSpec` refactor, which is out of scope.
 
-- **W-3 — F2, F7, F10, and the sizing rule that is written out at five sites.** One function that answers "what size
-  should this pass's canvas be", used by every site that asks today (the two loops in
-  `set_canvas_size`, `_seed_feedback`, `render`'s fix-up) and by the settings modal's label,
-  which currently answers it wrongly. Promotion to output must resize. `__init__` must clamp.
-  `newest_frame` must not name the older canvas.
+- **W-3 — F2, F7, F10, and the sizing rule that is written out at five sites.** Four sub-fixes.
+  Land them as ONE commit only if the gate is green after each; otherwise split.
+
+  (a) **The sizing function. DECIDED, do not redesign:** a method on `Document`,
+
+          def canvas_size_for(self, name: str) -> tuple[int, int]:
+
+  returning `self.canvas_size` when `name` is `self.graph.output_pass`, and
+  `entry.target.target_size(self.canvas_size)` otherwise, with `PassEntry()` as the fallback for a
+  name the graph does not hold. A method on `Document` rather than a free function or a
+  `PassGraph` method because it needs BOTH the graph and `canvas_size`, and `Document` is the only
+  object holding both — the recorded rule is that the document owns the size and applies each
+  pass's scale.
+
+  Note `PassGraph.output_pass` returns `str | None` — it is None when the graph names no pass that
+  exists. Handle that explicitly rather than comparing a name against None, which would silently
+  make EVERY pass non-output and scale the whole document down.
+
+  Replace all four in-document copies with a call to it: the two loops in `set_canvas_size`,
+  `_seed_feedback`, and `render`'s fix-up. Afterwards a search for `target_size(` in
+  `shaderbox/document.py` finds no other caller.
+
+  (b) **The settings modal's label** calls the same method instead of computing
+  `canvas * scale` itself, which is why it currently shows an output pass a size it does not
+  have. It has a `Document` in scope.
+
+  (c) **F2, promotion:** a pass becoming the output must be resized to the document size. Put it
+  where the output changes so it cannot be forgotten by a future caller, not in `render`.
+
+  (d) **F7, the clamp:** `Document.__init__` applies `clamp_canvas_size` as `set_canvas_size`
+  does, so the comment claiming both writers normalize becomes true.
+
+  (e) **F10, `newest_frame`:** it must not name the older canvas after a render into an external
+  canvas. The findings file has the trace.
+
+  Done when `repro/f2_promote_scaled.py` prints `BUG: False`, a search shows one sizing site, and
+  the gate is green.
 
 - **W-4 — the gate.** Wire W-0's checker into the suite as real tests over the operation battery:
   `set_canvas_size`, `set_pass_target`, output change, `add_pass`, `rename_pass`, `delete_pass`,
