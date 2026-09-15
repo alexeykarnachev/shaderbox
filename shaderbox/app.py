@@ -721,8 +721,6 @@ class App:
         self.canvas_h_editing = False
         self.aspect_w_editing = False
         self.aspect_h_editing = False
-        if new_id:
-            self.ensure_shader_tab(new_id)
 
     def _on_document_source_synced(self, path: Path, source: str) -> None:
         # The mtime watcher rebuilt a pass's source on disk; push the new text into its live
@@ -1590,22 +1588,21 @@ class App:
             )
             self.tab_select_pending = True
 
-        # load() restores current_document_id by direct field assignment (not set_current_document_id), so
-        # _on_current_document_changed never fires for the restored document and its shader tab is never
-        # opened — the editor stays blank until a document switch. Open it here, unless the restore
-        # above already put tabs back. A stale pointer at a deleted document reselects a live one
-        # (else a permanent blank with no recovery).
+        # A project opening with no restored tabs shows its current document's shader rather
+        # than a blank editor; a stale pointer at a deleted document reselects a live one. This
+        # and document creation are the two places a shader tab opens by itself -- a document
+        # SWITCH opens nothing (093 W7, the rule W3-3 set for clicks).
         if not self.editor_tabs:
             if (
-                self.current_document_id
-                and self.current_document_id in self.ui_documents
+                not (
+                    self.current_document_id
+                    and self.current_document_id in self.ui_documents
+                )
+                and self.ui_documents
             ):
-                self.ensure_shader_tab(self.current_document_id)
-            elif self.ui_documents:
-                # No (or a stale) current document, but the project has documents: select one so the
-                # editor opens its shader tab instead of staying blank (set_current_document_id fires
-                # the tab open).
                 self.set_current_document_id(next(iter(self.ui_documents)))
+            if self.current_document_id in self.ui_documents:
+                self.ensure_shader_tab(self.current_document_id)
 
         # app_state was just replaced, so the effective binding map is recomputed per project.
         self._merge_effective_bindings()
@@ -2554,11 +2551,12 @@ class App:
         new_document.reset_id()
 
         self.ui_documents[new_document.id] = new_document
-        # SAVE BEFORE SELECTING. The document was loaded out of the read-only shipped examples
-        # dir, so until it is written every pass's `source.path` still points THERE; `save`
-        # rebinds each one to the project copy. Selecting first opens an editor tab on the
+        # SAVE BEFORE OPENING THE TAB. The document was loaded out of the read-only shipped
+        # examples dir, so until it is written every pass's `source.path` still points THERE;
+        # `save` rebinds each one to the project copy. A tab opened first would sit on the
         # resource path, and `code.py::draw_chrome` does `path.relative_to(project_dir)` on the
         # active shader tab -- which raises, out of a draw function, taking the frame down.
         self.save_ui_document(new_document)
         self.set_current_document_id(new_document.id)
+        self.ensure_shader_tab(new_document.id)
         logger.info(f"New document {new_document.id} created from example {example_id}")

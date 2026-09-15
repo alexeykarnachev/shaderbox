@@ -16,6 +16,7 @@ time and a `k = 12` document renders either 12 times or 0. Moving the increment 
 from typing import Any
 
 import pytest
+from imgui_bundle import imgui
 
 from shaderbox import ui
 from shaderbox.app import ModalId
@@ -814,3 +815,50 @@ def test_the_cursors_previous_position_anchors_at_the_documents_last_tick(
     assert (first.mouse.prev_x, first.mouse.prev_y) == (0.1, 0.1)
     assert (0.2, 0.3) in anchors
     assert all(anchor in ((0.1, 0.1), (0.2, 0.3)) for anchor in anchors)
+
+
+# ---------------------------------------------------------------------------
+# 093 W7 -- the viewer is a box; the control panel does not move with the aspect
+# ---------------------------------------------------------------------------
+
+
+def _control_panel_y(app: Any, monkeypatch: Any, frames: int = 3) -> float:
+    """The screen y the control panel child is drawn at, read where the grid draws into it."""
+    seen: list[float] = []
+    real = ui.draw_document_preview_grid
+
+    def recorded(target: Any, width: float, height: float) -> None:
+        seen.append(imgui.get_window_pos().y)
+        real(target, width, height)
+
+    monkeypatch.setattr(ui, "draw_document_preview_grid", recorded)
+    for _ in range(frames):
+        update_and_draw(app)
+    assert seen, "the control panel never drew"
+    return seen[-1]
+
+
+def test_the_control_panel_holds_still_across_an_aspect_change(
+    app: Any, monkeypatch: Any
+) -> None:
+    """The viewer's box height depends on the panel alone; the picture is fitted inside it.
+
+    Falsifier: anchor the control panel at `image_min.y + image_height` again -- a 16:9
+    picture is shorter than a 1:1 one at the same width, and the panel climbs by the
+    difference.
+    """
+    ui_document = app.ui_documents[app.current_document_id]
+    ui_document.ui_state.aspect = (1, 1)
+    ui_document.document.aspect = (1, 1)
+    square_y = _control_panel_y(app, monkeypatch)
+    assert app.viewer_region is not None
+    square_h = app.viewer_region[1]
+
+    ui_document.ui_state.aspect = (16, 9)
+    ui_document.document.aspect = (16, 9)
+    wide_y = _control_panel_y(app, monkeypatch)
+    assert app.viewer_region is not None
+    wide_h = app.viewer_region[1]
+
+    assert wide_h < square_h, "the premise: the picture itself changed height"
+    assert wide_y == square_y, f"the control panel moved from {square_y} to {wide_y}"

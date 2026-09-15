@@ -11,9 +11,11 @@ Each test here names one consumer of the active tab and pins it to the tab's PAT
 
 from typing import Any
 
+from shaderbox.constants import STARTER_EXAMPLE_ID
 from shaderbox.editor_types import EditorTab
 from shaderbox.paths import pass_shader_name, shader_lib_root
 from shaderbox.tabs.code import _pass_for_tab, tab_label
+from tests.conftest import seed_extra_document
 
 _GREEN = """#version 460 core
 in vec2 vs_uv;
@@ -237,3 +239,21 @@ def test_jumping_to_a_lib_declaration_still_opens_a_lib_tab(app: Any) -> None:
     assert tab.kind == "lib"
     assert tab_label(app, tab) == "library - jump_target"
     assert tab.document_id == ""
+
+
+def test_selecting_a_document_opens_no_shader_tab(app: Any) -> None:
+    # W3-3's rule ("no click opens a shader tab") applied to the document tile (093 W7): a
+    # switch changes the current document and leaves the editor's tabs exactly as they were.
+    # The context menu's `Open shader` and the Pass menu are the ways to a shader.
+    other = seed_extra_document(app, "other-000-4000-8000-000000000001")
+    before = [tab.path for tab in app.editor_tabs]
+    app.select_document(other)
+    assert app.current_document_id == other
+    assert [tab.path for tab in app.editor_tabs] == before
+
+
+def test_creating_a_document_opens_its_shader(app: Any) -> None:
+    # Creation is not a click: the new document is what the user is about to edit.
+    app.create_document_from_example(STARTER_EXAMPLE_ID)
+    new_id = app.current_document_id
+    assert app.active_tab.document_id == new_id and app.active_tab.kind == "shader"

@@ -1,6 +1,6 @@
 import time
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import glfw
@@ -778,14 +778,28 @@ def _draw_canvas_backdrop(
     )
 
 
-def _draw_document_image(
-    app: App, control_panel_min_height: float
-) -> tuple[imgui.ImVec2, float, float]:
+@dataclass(frozen=True)
+class ViewerGeometry:
+    """Where the viewer drew: the BOX it always occupies and the picture fitted inside it.
+
+    The box's height depends on the panel alone, never on the document's aspect, so the
+    control panel under it holds still across an aspect change (093 W7); the picture is
+    centered in the box, and its overlays anchor to the picture.
+    """
+
+    box_min: imgui.ImVec2
+    box_height: float
+    image_min: imgui.ImVec2
+    image_width: float
+    image_height: float
+
+
+def _draw_document_image(app: App, control_panel_min_height: float) -> ViewerGeometry:
     """Draw the current document's preview, or the empty-state prompt in its place.
 
-    Returns the anchor and the image size, which the FPS overlay and the control panel below
-    both need to position themselves -- that shared geometry is why this is a return rather
-    than a self-contained draw.
+    Returns the geometry the FPS overlay and the control panel below both position
+    themselves by -- that shared geometry is why this is a return rather than a
+    self-contained draw.
     """
     # ----------------------------------------------------------------
     # Current document image
@@ -800,21 +814,20 @@ def _draw_document_image(
     app.script_mouse = replace(app.script_mouse, down=False)
     app.script_mouse_inside = False
 
+    # The box: the panel's width, and the height left over the control panel. Its size is
+    # the same for every document and for no document at all.
+    avail = imgui.get_content_region_avail()
+    box_height = max(avail.y - control_panel_min_height - 10, 100)
+    box_width = avail.x
+
     if app.current_document_id in app.ui_documents:
         ui_document = app.ui_documents[app.current_document_id]
-        min_image_height = 100
-        avail = imgui.get_content_region_avail()
-        max_image_height = max(
-            min_image_height,
-            avail.y - control_panel_min_height - 10,
-        )
-        max_image_width = avail.x
         # The document's own SHAPE, never the live canvas's (090 D2): under Auto the live size
         # is derived from this region, so reading it back here would close a loop on itself and
         # let the shape drift a rounding step every frame.
         image_aspect = aspect_ratio(ui_document.document.shape_aspect())
-        image_width = min(max_image_width, max_image_height * image_aspect)
-        image_height = min(max_image_height, max_image_width / image_aspect)
+        image_width = min(box_width, box_height * image_aspect)
+        image_height = min(box_height, box_width / image_aspect)
         # This region is what EVERY Auto document renders at next frame (revision 1) -- one
         # size source rather than a per-surface map, so a document shows the same picture in
         # the viewer and in its tile, and a new one is never sized by whichever surface drew
@@ -823,7 +836,11 @@ def _draw_document_image(
 
         # On compile failure the last-good program stays bound — kept bright; the error
         # surfaces in the editor pane strip.
-        img_min = imgui.get_cursor_screen_pos()
+        img_min = imgui.ImVec2(
+            cursor_pos.x + (box_width - image_width) / 2.0,
+            cursor_pos.y + (box_height - image_height) / 2.0,
+        )
+        imgui.set_cursor_screen_pos(img_min)
         view = app.app_state.channel_view
         output_texture = ui_document.document.render_pass.canvas.texture
         if view == ChannelView.ALPHA:
@@ -878,11 +895,9 @@ def _draw_document_image(
             )
             app.script_mouse_inside = True
     else:
-        # Same height budget as the with-document branch (incl. its gap slack) — an
-        # oversized empty-state area overflows the panel into a phantom scrollbar.
-        avail = imgui.get_content_region_avail()
-        image_width = avail.x
-        image_height = max(avail.y - control_panel_min_height - 10, 100)
+        img_min = cursor_pos
+        image_width = box_width
+        image_height = box_height
 
         message = (
             f"To create a new document, press "
@@ -899,7 +914,7 @@ def _draw_document_image(
             message,
         )
 
-    return cursor_pos, image_width, image_height
+    return ViewerGeometry(cursor_pos, box_height, img_min, image_width, image_height)
 
 
 def _current_document_fps(app: App) -> int | None:
@@ -935,14 +950,12 @@ def _document_titles(app: App) -> dict[str, str]:
 def _draw_app_panel(app: App) -> None:
     control_panel_min_height = SIZE.PANEL_CTRL_MINH
 
-    cursor_pos, image_width, image_height = _draw_document_image(
-        app, control_panel_min_height
-    )
+    viewer = _draw_document_image(app, control_panel_min_height)
 
     if app.current_document_id in app.ui_documents:
         app.fps_details_open = fps_overlay(
-            anchor_x=cursor_pos.x + image_width,
-            anchor_y=cursor_pos.y,
+            anchor_x=viewer.image_min.x + viewer.image_width,
+            anchor_y=viewer.image_min.y,
             fps=round(app.global_fps),
             target_fps=app.app_state.global_target_fps,
             is_open=app.fps_details_open,
@@ -956,7 +969,7 @@ def _draw_app_panel(app: App) -> None:
         # The channel-view chip over the preview's top-LEFT — the opposite corner from the FPS
         # chip, so the two never collide whatever the canvas aspect.
         imgui.set_cursor_screen_pos(
-            (cursor_pos.x + float(SPACE.MD), cursor_pos.y + float(SPACE.MD))
+            (viewer.image_min.x + float(SPACE.MD), viewer.image_min.y + float(SPACE.MD))
         )
         view = app.app_state.channel_view
         label = CHANNEL_VIEW_LABELS[view]
@@ -967,7 +980,7 @@ def _draw_app_panel(app: App) -> None:
             imgui.set_tooltip("Channel view")
 
     imgui.set_cursor_screen_pos(
-        (cursor_pos.x, cursor_pos.y + image_height + float(SPACE.MD))
+        (viewer.box_min.x, viewer.box_min.y + viewer.box_height + float(SPACE.MD))
     )
 
     # ----------------------------------------------------------------

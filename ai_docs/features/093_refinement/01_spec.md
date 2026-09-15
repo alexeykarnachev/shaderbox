@@ -1,7 +1,7 @@
 # 093 — Refinement: the graph editor
 
-Status: **waves 1-6 landed, the editor's half of wave 6 re-vendored at `5a56ccf`. Next is his
-visual review in the running app, whose findings open the next wave in the ledger.** The waves and what each landed are the `## Waves`
+Status: **waves 1-7 landed (the editor's half of wave 6 re-vendored at `5a56ccf`). Next is
+his visual review in the running app, whose findings open the next wave in the ledger.** The waves and what each landed are the `## Waves`
 section below, newest first; the findings are `00_findings.md`. The maintainer's verdict on the shipped canvas ("feels
 very cheap") sent the walk into research first: `02_research_brief.md` is the brief, `research/`
 holds six area reports against primary sources, `03_graph_design.md` is the design record
@@ -349,7 +349,8 @@ never appears in the widget; `ui.py` applies once per frame on change and resets
 to `None`, so a test reads `app.cur_cursor` after the frame.
 
 **S15. A single click on a node chooses the output; only a double-click opens its shader tab.**
-(AMENDED by W3-3: no click of any count opens the tab; the context menu's `Open shader` does.)
+(AMENDED by W3-3: no click of any count opens the tab; the context menu's `Open shader` does.
+W7 extends it to the document tile: a document switch opens no tab either.)
 Today `_click` calls `pick_pass`, which is `ensure_shader_tab` + `set_output_pass`, and
 `ensure_shader_tab` ACTIVATES the shader tab (measured: one 3px click appends a tab and moves
 `active_tab_index`). Inside the editor pane that evicts the graph tab on every click and the
@@ -387,6 +388,15 @@ Where the record's "Code" paragraphs and this spec differ, this spec wins, for t
 | G4: `GRAPH_WIRE_HIT_MIN` | S12: `GRAPH_WIRE_HIT_FLOOR` | Two floors one pixel apart under near-identical names invite a transposition nothing would catch |
 
 ## Waves
+
+**Wave 7: two findings from his check of wave 6, 31-32 (2026-09-15).** One commit. The
+document switch stops opening a shader tab (`_on_current_document_changed` no longer calls
+`ensure_shader_tab`; W3-3's click rule now covers the document tile too), with creation and
+the no-tabs cold start opening one explicitly and a test on each. The viewer became a fixed
+box (`ui.ViewerGeometry`): the height left over the control panel, the picture fitted and
+centered inside, the control panel anchored at the box's bottom so an aspect change moves
+nothing but the picture; a frame test reads the control panel's y at 1:1 and 16:9 (break:
+anchor it at the picture's bottom again -- the two differ).
 
 **Wave 6: his walk of waves 3-5, findings 23-30 (2026-09-15).** Seven host fixes in one
 commit; finding 27 (the vim view-scroll commands) is the editor library's, sent to the editor
@@ -666,7 +676,7 @@ outside a frame `calc_text_size` segfaults the process (measured).
 | S8: the fit frames every wire | build `a -> b -> c` plus a backward read (`a` reading `c` through `app.session.set_sampler_source`, so a cycle wire is present), `_fit` with `avail = (520, 200)` -- small enough that the 1.0 clamp does not centre slack around the content (at 800x600 the break below stays green, measured); the fitted window in canvas space is `(pan.x, pan.y, pan.x + 520 / zoom, pan.y + 200 / zoom)`, and every wire's 25 sampled canvas-space curve points lie inside it. Break to try: fit the nodes alone -- 8 of 75 points land outside (measured) | app fixture, no frames |
 | `_fit`'s clamp (regression check, not a width pin) | six chained passes, `_fit` with `avail = (1225, 600)`: `view.zoom == 1.0`; with `(740, 600)`: `0.6 < view.zoom < 1.0`. Green at 108 and 136 alike; the width is pinned by the ellipsis row | app fixture, no frames |
 | G5: select a wire and Delete it | open the graph tab, frames, click `view.wire_mids[("c", "u_src")]`, assert `selected_wire == ("c", "u_src")` and `selection == set()`, release, frames, send `Key.delete`, frames, assert exactly one `set_sampler_source(..., "c", "u_src", NoSource())` and nothing else | frame-driven |
-| G5: the ✕ unwires, and the press is nothing else | select the wire as above, press at the centre of `view.x_rect`, hold two frames, release, frames: exactly the one unwire write; `band_anchor is None` and `node_drag is None` throughout; `set_output_pass` was never called and `view.selection` is unchanged. Then place a node (through `app.session.set_pass_positions`) so its body covers the selected wire's midpoint but not the port the wire ends at -- centred on the midpoint the body also covers the port at 136, so shift it 50px or more toward the producer (measured) -- and repeat: the same single write and still no `set_output_pass` -- the release-frame node click is refused because the latch clears at the end of the frame. Break to try: clear the latch at the top of the frame as today -- the covered case chooses the output | frame-driven |
+| G5: the ✕ unwires, and the press is nothing else | select the wire as above, press at the centre of `view.x_rect`, hold two frames, release, frames: exactly the one unwire write; `band_anchor is None` and `node_drag is None` throughout; `set_output_pass` was never called and `view.selection` is unchanged. Then place a node (through `app.session.set_pass_positions`) so its body covers the selected wire's midpoint but not the port the wire ends at -- centered on the midpoint the body also covers the port at 136, so shift it 50px or more toward the producer (measured) -- and repeat: the same single write and still no `set_output_pass` -- the release-frame node click is refused because the latch clears at the end of the frame. Break to try: clear the latch at the top of the frame as today -- the covered case chooses the output | frame-driven |
 | S5: Delete is refused while a press is held on the canvas | select a wire, press and hold on empty canvas, send `Key.delete`, frames: no write; release, frames, send `Key.delete`: the write. A behavior pin; the clause it exercises is `hovered` (measured: `is_window_hovered` is False for the whole held press) | frame-driven |
 | S5: the Delete gate over its whole domain | `delete_allowed` over all 32 combinations of its five booleans: True exactly when `pressed and hovered and not any_item_active and not blocked and has_wire`. The `any_item_active` clause's live scenario (a text input active in another window) is the maintainer's check | pure |
 | S5: Delete typed into the group prompt is refused | select a wire, set `view.group_prompt = True` (a one-shot the first frame consumes; do not re-assert it), frames, send `Key.delete`, frames: no write. Behaviour pin; the clause it exercises is `hovered` | frame-driven |

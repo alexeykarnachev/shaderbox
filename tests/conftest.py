@@ -62,6 +62,7 @@ def app(monkeypatch: Any, tmp_path: Path) -> Iterator[Any]:
     # No main loop in a test: run every marshalled bridge op INLINE (already on the GL thread).
     a.copilot.bridge.run_on_main = lambda fn, timeout=None, defer=False: fn()
     a.set_current_document_id(STARTER_EXAMPLE_ID)
+    a.ensure_shader_tab(STARTER_EXAMPLE_ID)
     a.ui_documents[
         STARTER_EXAMPLE_ID
     ].document.render()  # warm the GL program (matches the live loop)

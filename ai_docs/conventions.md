@@ -515,7 +515,10 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   label. The same file is never opened twice (`_focus_or_add_tab` focuses the existing tab). Editing
   acts on the ACTIVE tab: `flush_current_editor()` flushes its dirty editor before any save; the mtime
   watcher re-syncs every open session from disk on external change (disk wins). A document's editors close
-  with the document (lib tabs survive); a renamed file re-keys its session in place. The vendored
+  with the document (lib tabs survive); a renamed file re-keys its session in place. A document
+  SWITCH opens no tab (093 W7, the rule W3-3 set for clicks): only creation and a no-tabs cold
+  start open a shader by themselves; the context menu's `Open shader` and the Pass menu are the
+  user's ways. The vendored
   binary + rebuild procedure live in `## Known quirks`. **The open-tab SET persists (093 W2-2):
   `UIAppState.editor_tabs: list[TabRecord]` plus `active_tab_index`, mirrored by `App.save` and
   restored in `_init` through two pure functions in `editor_types.py` (`tab_records`,
@@ -849,7 +852,10 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   a pair. Under AUTO the live canvas is the viewer region fitted to the aspect, for EVERY Auto
   document whether or not it is current — one size source, the viewer; tiles show that texture
   scaled. Under FIXED the pair IS the live canvas. A mode switch seeds the other field from the
-  live canvas so the picture never jumps. There is no stored export size: the Render tab's own
+  live canvas so the picture never jumps. The viewer is a BOX whose height depends on the panel
+  alone (`ui.ViewerGeometry`, 093 W7): the picture is fitted and centered inside it and the
+  control panel anchors at the box's bottom, so an aspect change moves the picture and nothing
+  else. There is no stored export size: the Render tab's own
   `resolution_details` and shape presets decide exports, and `Document.export_source_size` is
   the ONE seam every export, copilot render and shape check reads — the live canvas under Auto
   (`NATIVE` means what you see), the pair under Fixed.

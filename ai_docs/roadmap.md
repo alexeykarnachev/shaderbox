@@ -26,15 +26,16 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-15, 093 wave 6 landed from his walk of waves 3-5, the editor's vim scroll fix re-vendored at 5a56ccf. -->
-**Next: his review of wave 6 in the running app** (`make run`): the document tile's menu
-without `Open`; a confirm that is the question alone, auto-sized however long its title; the
-Fixed presets with the three 4:3 tiers; a single-pass tab named by its pass; Python completion
-with no file paths inside a string and no `mro`; his drawing script under the throttle,
-continuous now that a tick is a render; and in vim mode, on a shader shorter than
-the pane, zz / zt / zb and Ctrl+E moving the view with `~` rows below, a held Ctrl+E carrying
-the cursor down with the top row and Ctrl+Y up from the bottom. Each finding is a ledger row
-(31+) in `00_findings.md`, fixed as wave 7 by `01_spec.md ## How this walk runs`.
+<!-- As of 2026-09-15, 093 wave 7 landed from his check of wave 6; the vim scroll fix is re-vendored at 5a56ccf. -->
+**Next: his review of waves 6-7 in the running app** (`make run`). Wave 7: a document tile's
+click opens no shader tab; the viewer keeps its height across an
+aspect change, the picture centered and the control panel still. Wave 6: the tile's menu
+without `Open`; a confirm that is the question alone, auto-sized; the Fixed presets with three
+4:3 tiers; a single-pass tab named by its pass; Python completion with no file paths inside a
+string and no `mro`; his drawing script continuous under the throttle; in vim mode on a
+short shader, zz / Ctrl+E moving the view with `~` rows below and a held Ctrl+E carrying the
+cursor. Each finding is a ledger row (33+) in `00_findings.md`, fixed as wave 8 per
+`01_spec.md ## How this walk runs`.
 
 **Also awaiting his eyes:** 091's outline and import dialog; 090's `Auto | Fixed`. Finding 4
 (the control panel) is the feature after this walk; the Documentation content later.
