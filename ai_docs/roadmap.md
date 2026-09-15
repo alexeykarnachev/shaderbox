@@ -26,18 +26,17 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-15, 093 wave 8 landed the safe half of the panel's density; 094's composition is open. -->
-**Next: his check of 093 wave 8 in the running app** (`make run`). The Document tab's header is
-one row -- the name, the canvas combo, the script's play/stop. `Script open` / `Graph open` and
-the red `Reset` moved to the document tile's context menu, the Document menu and their chords.
-The canvas control is ONE combo grouped by aspect, each group led by that ratio's `Auto`,
-replacing the `Auto | Fixed` segment, the aspect chips and the W x H pair.
+<!-- As of 2026-09-15, he checked 093 wave 8 in the running app and reported nothing; 093 is done and 094 is next. -->
+**Next: 094, the control panel's composition.** The one part of finding 4 still open: the
+documents grid reserves rows for documents that do not exist, so its lower two thirds is empty
+at every real project size. Its mock (`ai_docs/features/094_control_panel/00_mock.html`,
+published at https://alexeykarnachev.github.io/shaderbox-mocks/) offered four options and he
+rejected the two that reshape the panel -- both move the dead space rather than remove it -- so
+094 has a mock and a verdict but no spec yet, and the next round starts by proposing a shape
+that removes it. The Documentation content follows 094.
 
-**Then: 094, the control panel's composition.** Its mock
-(`ai_docs/features/094_control_panel/00_mock.html`, published at
-https://alexeykarnachev.github.io/shaderbox-mocks/) offered four options; his read was that A
-and B move the dead space rather than remove it, so the grid's empty lower two thirds is still
-unanswered and the next round starts from that. The Documentation content follows.
+**Nothing awaits his review.** 093's eight waves are all checked in the running app, as are
+092's canvas, 091's outline and import dialog, and 090's `Auto | Fixed`.
 
 **Open, unmeasured:** the canvas past twenty passes (the largest real document is six); no
 brake watches copilot cost or a frame going lit to flat (082); the GL thread if the throttle
@@ -47,7 +46,8 @@ falls short.
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 093 | refinement | in progress | The maintainer's dogfooding of the graph view (092), fed back in batches and fixed wave by wave over seven waves (the menus and modal-registry redesigns among them), each checked by him in the running app; finding 4 (the control panel) is delegated to its own feature. Spec: `ai_docs/features/093_refinement/01_spec.md` + `00_findings.md`. |
+| 094 | control_panel | pending | Finding 4's remainder: the documents grid reserves rows for documents that do not exist, so the control panel's left third is mostly empty. A mock of four options was drawn and judged -- the two that reshape the panel move the dead space rather than remove it -- so the shape that removes it is still to be proposed. Spec: `ai_docs/features/094_control_panel/00_mock.html` (mock only; no spec yet). |
+| 093 | refinement | done | The maintainer's dogfooding of the graph view (092), fed back in batches and fixed wave by wave over eight waves (the menus and modal-registry redesigns among them, then the control panel's header down to one row with its verbs on the document tile's context menu and one aspect-grouped canvas combo), each checked by him in the running app; finding 4's panel composition is delegated to 094. Spec: `ai_docs/features/093_refinement/01_spec.md` + `00_findings.md`. |
 | 092 | graph_view | done | A second, opt-in view of a document's passes beside the strip: a node canvas hand-drawn on the imgui draw list, where a node is the pass's live picture with one port per sampler the compiled program declares, a wire is a read from the effective wiring, and a group is one box at the root whose ports are its boundary edges, opening into its own tab with the outside passes as ghosts -- so 091's convexity rule never arises. Positions live on the pass entry and are written only by a placement (a drag's release, Arrange) through one verb; every gesture lands through an App verb whose refusal (a loop by the pure planner, a media-bound port) is tested headless; passes and groups share one namespace and a rename plans before its file moves. Spec: `ai_docs/features/092_graph_view/03_spec.md` + `00_mock.html` + `01_brainstorm.md` + `02_triage.md`. |
 | 091 | presets | done | Another document's passes copied into the current one as a GROUP: one combo per entry point of the source (a pass reading no other), fed by a host pass -- whose own readers are handed to the bundle's output, with its output role when it had it -- or kept; a pure `plan_import` over the two compiled wirings materializes every wired sampler under the prefixed names, since the name rule does not survive the prefix, and rejects before anything is written. The group is one label on the pass entry, editable in the settings modal and by the copilot, drawn on the strip as a flush outline around each run of consecutive members with the name on the border; folding was rejected (a folded group must be convex in the DAG). Spec: `ai_docs/features/091_presets/01_spec.md` + `00_mock.html`. |
 | 090 | render_decoupling | done | The editor lagged behind a heavy document because one loop made the UI frame equal the document's GPU cost, and research on the maintainer's box refuted every alternative (nothing preempts a draw on his driver, so a render thread, a second process and context priority buy nothing; tiling worked but was rejected). Each document now carries a resolution mode -- Auto stores only an aspect and renders at the viewer's size fitted to it, resampling the output canvas and every feedback history on resize through a one-quad blit since `copy_framebuffer` does not rescale; Fixed stores the pair; export resolves through one seam -- and a document throttle behind a pure `plan_render_set` schedules the current document from its measured GPU cost against a shared budget and every displayed preview at a common fps, with GPU spans recorded always. The first landing kept a stored pair under Auto and opened a new document 64×64 square; revision 1 replaced it with the tab layout the maintainer picked. Spec: `ai_docs/features/090_render_decoupling/01_spec.md` + `00_research.md` + `02_throttle_and_resolution.md`. |
