@@ -82,3 +82,32 @@ not scanned: enum members, type aliases and whole-module deadness — the tool d
 them and they were not enumerated separately; `tests/` as a target (scanned only as a
 reference source, so a dead test helper would not appear); `shaderbox/resources/`; non-Python
 assets. A later wave wanting those must enumerate them from the language's constructs.
+
+## W-R rot removal — DONE
+
+done-condition (written in advance): no doc in the harness states a fact an unrelated commit can
+silently falsify; each one found either deleted or replaced by the command that produces it; the
+stale `todo.md` pointer resolved; `make gates` green.
+
+verification: green (check, test, smoke).
+
+Two items, both in `ai_docs/dev_flow.md`. The pyright status line asserted a current error count;
+the gate already enforces it, so the doc now states the mechanism instead of the state. The
+shader-library entry described seeding "until the load mechanism lands", pointing at `todo.md` —
+the mechanism landed and `todo.md` has drained, so the entry now names `shader_lib/seed.py`.
+Checked before writing it: `sync_shipped_lib` is imported by `app.py` and runs before the first
+lib index builds.
+
+**ruled out, do not re-raise:**
+- Three "currently / at the moment" hits in `dev_flow.md` are ordinary prose ("at the moment the
+  information is lost", "at the moment you author", "as it currently is"), not status claims.
+- The 1343-glyph count in `conventions.md` is anchored to a commit ("As of `e7db554`") and
+  describes a baked artifact. Frozen history, stays.
+- Code comments carry no live facts. Searched for current-state phrasing and for count-shaped
+  comments across `shaderbox/`, `tests/` and `scripts/`; nothing. The repo's own comment
+  discipline is holding, so this wave had no code half.
+
+surprise: the wave was far smaller than the spec's survey implied. The presence scan reported
+live facts as a live category, which is true, but the harness turned out to carry two rather
+than a class worth sweeping — the feature specs' numbers are nearly all correctly frozen
+before/after measurements.
