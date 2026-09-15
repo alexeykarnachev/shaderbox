@@ -203,3 +203,38 @@ The cheapest placement found: assert the history-vs-live agreement at the TOP of
 `_swap_feedback`. That one site catches the whole pre-swap class before a stale canvas is
 installed, rather than after — which is where the existing bind-time check sits, and why it
 repairs the pair onto the wrong side.
+
+### F9 — a pass file with no graph entry is born `f1` while the graph reports `f2`
+
+`load_from_dir` constructs each pass with `target=entry.target if entry is not None else None`,
+and `Pass.__init__` maps `None` onto `Canvas`'s own defaults. Twelve lines later the same
+function backfills the graph with `PassEntry()` for exactly those passes, whose default target
+is `f2`. Its comment says "a file with no entry gets defaults" — the graph gets them, the canvas
+does not.
+
+Verified by reading both sites. This is the same `f2` vs `f1` default mismatch as F1, at a second
+place, which is what makes the mismatch a class rather than a slip.
+
+Three consequences, as reported and consistent with the code: the settings panel shows `f2` over
+an `f1` canvas; re-applying the identical displayed value repairs it, because
+`Pass.set_target`'s early-out compares against `None` and does not fire — the "I clicked
+something and it started working" signature the maintainer has now hit twice; and a save writes
+a graph claiming `f2` beside a feedback file stamped `f1`, which the next load rejects, so the
+trail is silently lost on reopen.
+
+Reachability is narrow: it needs a pass file with no entry in `graph.json`, which no shipped
+example or `projects/dev` document has today. `load_from_dir` documents that shape as supported,
+so it is a latent defect rather than a live one.
+
+### F10 — `newest_frame` returns the older canvas after a render into an external canvas
+
+`newest_frame` returns the live canvas whenever the pass has drawn. After a `render(canvas=...)`
+the draw went elsewhere, so the frame's swap moved the newer picture INTO the history and
+nothing refilled the live slot — the accessor then names the older of the two.
+
+Latent today: the only `render(canvas=...)` callers are the two export paths, and both sit under
+`render_media`, which calls `reset_feedback()` first. It fires the moment any other caller
+renders into a foreign canvas, which the accessor's own docstring anticipates.
+
+Same root as F6: a draw aimed at an external canvas leaves the pass's own canvas unwritten, and
+nothing downstream knows.
