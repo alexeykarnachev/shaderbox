@@ -1,0 +1,561 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>094 · the control panel — density options</title>
+<style>
+:root{
+  --bg0h:#161819; --bg0:#1d2021; --bg0s:#222526; --bg1:#282828;
+  --bg2:#3c3836; --bg3:#504945; --bg4:#665c54;
+  --gray:#928374; --fg4:#a89984; --fg3:#bdae93; --fg2:#d5c4a1; --fg1:#ebdbb2; --fg0:#fbf1c7;
+  --red:#fb4934; --rednorm:#cc241d; --green:#b8bb26; --yellow:#fabd2f; --yellownorm:#d79921;
+  --blue:#83a598; --purple:#d3869b; --aqua:#8ec07c; --orange:#fe8019;
+  --mono:"JetBrains Mono","DejaVu Sans Mono",ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg0h);color:var(--fg2);font:14px/1.6 var(--mono);
+     padding:0 0 80px}
+.wrap{max-width:1360px;margin:0 auto;padding:0 20px}
+h1{font-size:20px;color:var(--fg0);font-weight:600;margin:28px 0 6px}
+h2{font-size:15px;color:var(--yellow);font-weight:600;margin:0 0 2px;
+   display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+h2 .tag{font-size:11px;color:var(--bg0h);background:var(--yellow);
+        padding:1px 7px;border-radius:3px;font-weight:700;letter-spacing:.04em}
+h2 .tag.alt{background:var(--bg3);color:var(--fg2)}
+.lede{color:var(--fg4);max-width:88ch;margin:0 0 22px;font-size:13px}
+.note{color:var(--gray);font-size:12.5px;max-width:92ch;margin:10px 0 0}
+.note b{color:var(--fg3);font-weight:600}
+section{margin:0 0 46px;padding:22px 0 0;border-top:1px solid var(--bg2)}
+section:first-of-type{border-top:none}
+
+/* ---- the app frame: a faithful slice of the real window ---- */
+.app{background:var(--bg0);border:1px solid var(--bg2);border-radius:3px;
+     padding:8px;margin:16px 0 0;overflow-x:auto}
+.panel{display:flex;gap:8px;min-width:1180px}
+.col{background:var(--bg0);border:1px solid var(--bg2);border-radius:2px;padding:8px}
+.grid-col{width:38.46%;flex:0 0 38.46%}
+.set-col{flex:1;min-width:0}
+.tall{height:392px;position:relative}
+.tall-sm{height:312px;position:relative}
+
+/* ---- widgets, matched to ui_primitives ---- */
+.btn{display:inline-flex;align-items:center;gap:6px;background:var(--bg1);
+     border:1px solid var(--bg3);color:var(--fg2);border-radius:2px;
+     padding:3px 9px;font:13px var(--mono);white-space:nowrap}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--fg4)}
+.btn.accent{border-color:var(--yellow);color:var(--yellow)}
+.btn.on{background:var(--yellow);border-color:var(--yellow);color:var(--bg0h)}
+.btn.danger{border-color:var(--red);color:var(--red);background:transparent}
+.btn.sm{padding:1px 7px;font-size:12px}
+.chip{display:inline-flex;align-items:center;background:transparent;border:1px solid var(--bg3);
+      color:var(--fg3);border-radius:2px;padding:2px 8px;font-size:12.5px}
+.chip.on{background:var(--yellow);border-color:var(--yellow);color:var(--bg0h);font-weight:600}
+.inp{display:inline-flex;align-items:center;background:var(--bg1);border:1px solid var(--bg2);
+     border-radius:2px;padding:3px 8px;color:var(--fg1);font-size:13px}
+.inp.w180{width:180px}
+.inp.w56{width:56px;justify-content:flex-end}
+.inp.w36{width:36px;justify-content:flex-end}
+.cap{color:var(--gray);font-size:11.5px;letter-spacing:.02em}
+.dim{color:var(--gray)}
+.row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.row + .row{margin-top:8px}
+.rowtight + .rowtight{margin-top:4px}
+.seg{display:inline-flex;border:1px solid var(--bg3);border-radius:2px;overflow:hidden}
+.seg span{padding:2px 9px;font-size:12.5px;color:var(--fg4)}
+.seg span.on{background:var(--yellow);color:var(--bg0h);font-weight:600}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--bg2);margin:0 0 10px;padding:0 0 0 2px}
+.tabs span{padding:3px 11px;font-size:13px;color:var(--fg4);border:1px solid transparent;
+           border-bottom:none;border-radius:2px 2px 0 0}
+.tabs span.on{background:var(--bg2);color:var(--fg0);border-color:var(--bg3)}
+
+/* ---- thumbnails ---- */
+.thumb{background:#000;border:1px solid var(--bg2);border-radius:2px;position:relative;
+       overflow:hidden;display:block}
+.thumb.sel{border-color:var(--yellow)}
+.thumb.err{border-color:var(--red)}
+.tile{display:inline-flex;flex-direction:column;align-items:center;gap:3px;
+      padding:6px;border:1px solid transparent;border-radius:2px}
+.tile.sel{border-color:var(--yellow)}
+.tile .lbl{font-size:11.5px;color:var(--fg3)}
+.tile.sel .lbl{color:var(--fg0)}
+.tile .sub{font-size:10.5px;color:var(--gray);margin-top:-2px}
+.art-rc1{background:radial-gradient(circle at 34% 40%,#fb4934 0,#8b1a12 16%,#3a0b08 34%,#120404 62%,#000 100%)}
+.art-rc2{background:linear-gradient(160deg,#0a0a0a,#000)}
+.art-ff{background:linear-gradient(135deg,#101014,#000)}
+.art-paint{background:linear-gradient(135deg,#0d0d0d,#000)}
+
+/* ---- annotation marks ---- */
+.mark{position:absolute;border:1px dashed var(--red);border-radius:2px;
+      pointer-events:none}
+.mark::after{content:attr(data-l);position:absolute;bottom:-8px;left:8px;
+      background:var(--bg0h);color:var(--red);font-size:10px;padding:0 6px;
+      letter-spacing:.03em;white-space:nowrap;max-width:none}
+.mark.lbl-in::after{bottom:auto;top:4px;left:8px}
+.mark.ok{border-color:var(--green)}
+.mark.ok::after{color:var(--green)}
+
+/* ---- menus ---- */
+.menu{display:inline-block;background:var(--bg1);border:1px solid var(--bg3);
+      border-radius:2px;padding:4px 0;min-width:190px;box-shadow:0 6px 18px #000a}
+.menu div{padding:3px 12px;font-size:12.5px;color:var(--fg2);display:flex;
+          justify-content:space-between;gap:24px}
+.menu div.sep{border-top:1px solid var(--bg2);margin:4px 0;padding:0;height:0}
+.menu div .k{color:var(--gray);font-size:11.5px}
+.menu div.dngr{color:var(--red)}
+.menu .hdr{color:var(--gray);font-size:10.5px;letter-spacing:.06em;padding:2px 12px 4px}
+
+/* ---- tables ---- */
+table{border-collapse:collapse;width:100%;margin:16px 0 0;font-size:12.5px}
+th,td{border:1px solid var(--bg2);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:var(--bg1);color:var(--fg3);font-weight:600;font-size:11.5px;
+   letter-spacing:.03em}
+td.num{text-align:right;font-variant-numeric:tabular-nums;color:var(--fg1)}
+td .win{color:var(--green)} td .lose{color:var(--red)}
+.tbl-wrap{overflow-x:auto}
+code{background:var(--bg1);border:1px solid var(--bg2);border-radius:2px;
+     padding:0 4px;font-size:12px;color:var(--fg3)}
+ul{margin:8px 0 0;padding-left:20px;color:var(--fg4);font-size:13px}
+li{margin:4px 0}
+li b{color:var(--fg2);font-weight:600}
+.two{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;margin-top:14px}
+.two > div{flex:1;min-width:280px}
+.legend{font-size:12px;color:var(--gray);margin-top:10px}
+.legend b{color:var(--fg3)}
+.q{border-left:2px solid var(--yellownorm);padding:2px 0 2px 12px;margin:14px 0 0;
+   color:var(--fg4);font-size:12.5px;max-width:90ch}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>094 · the control panel — density options</h1>
+<p class="lede">
+Static mock over the 2026-09-15 screenshot. The app panel there is ~1245px wide; the documents
+grid takes <code>width / 2.6</code> = 38.46% of it, ~479px, the settings column the rest. Colors,
+spacings and widget shapes are the real tokens (gruvbox-hard, <code>SPACE.MD = 8</code>,
+<code>NAME_INPUT_W = 180</code>, <code>THUMB_LG = 150</code>). Nothing here is implemented.
+</p>
+
+<!-- ============================ TODAY ============================ -->
+<section>
+<h2><span class="tag alt">0</span> today — what the screenshot shows</h2>
+<p class="note">The four complaints marked in red. Everything below is measured off this.</p>
+
+<div class="app">
+<div class="panel">
+  <div class="col grid-col tall">
+    <div class="row"><span class="btn">New document</span>
+      <span class="dim">☐</span><span style="font-size:13px">Render all</span></div>
+    <div class="row" style="gap:4px;margin-top:8px">
+      <span class="tile"><span class="thumb art-rc1" style="width:150px;height:150px"></span>
+        <span class="lbl">RC 1</span></span>
+      <span class="tile sel"><span class="thumb art-rc2 sel" style="width:150px;height:84px"></span>
+        <span class="lbl">RC 2</span></span>
+    </div>
+    <div class="mark lbl-in" data-l="A · dead space — the lower two thirds"
+         style="left:6px;right:6px;top:196px;bottom:6px"></div>
+  </div>
+
+  <div class="col set-col tall">
+    <div class="tabs"><span class="on">Document</span><span>Uniforms</span>
+      <span>Render</span><span>Share</span></div>
+    <div class="row" style="align-items:flex-start">
+      <div>
+        <div class="cap">Document name</div>
+        <div class="inp w180" style="margin-top:4px">RC 2</div>
+      </div>
+      <div style="margin-left:16px">
+        <div class="cap">Canvas</div>
+        <div class="row" style="margin-top:4px;gap:8px">
+          <span class="seg"><span>Auto</span><span class="on">Fixed</span></span>
+          <span class="inp w56">1280</span><span class="dim">x</span>
+          <span class="inp w56">720</span>
+          <span class="btn sm">presets</span>
+        </div>
+        <div class="cap" style="margin-top:3px">16:9</div>
+      </div>
+      <span class="btn danger" style="margin-left:auto">Reset</span>
+    </div>
+    <div class="row" style="margin-top:14px"><span class="dim" style="width:46px">Script</span>
+      <span class="btn">open</span><span class="btn ghost" style="color:var(--orange)">stop</span></div>
+    <div class="row" style="margin-top:6px"><span class="dim" style="width:46px">Graph</span>
+      <span class="btn">open</span></div>
+    <div class="cap" style="margin-top:14px">Passes</div>
+    <div class="row" style="gap:6px;margin-top:4px">
+      <span class="tile sel"><span class="thumb art-ff" style="width:150px;height:84px"></span>
+        <span class="lbl">flood_fill</span></span>
+      <span class="tile"><span class="thumb art-paint" style="width:150px;height:84px"></span>
+        <span class="lbl dim">paint</span><span class="sub">prev</span></span>
+    </div>
+    <div class="row" style="margin-top:8px"><span class="btn">Add pass</span>
+      <span class="btn">Import passes</span></div>
+
+    <div class="mark" data-l="B · four stacked label rows, ~120px of chrome"
+         style="left:6px;width:314px;top:40px;height:150px"></div>
+    <div class="mark lbl-in" data-l="C · the right half of every row is empty"
+         style="left:336px;right:220px;top:108px;height:80px"></div>
+    <div class="mark lbl-in" data-l="D · loud, only resets uniforms"
+         style="right:6px;top:58px;width:200px;height:26px"></div>
+  </div>
+</div>
+</div>
+
+<div class="tbl-wrap">
+<table>
+<tr><th style="width:64px">mark</th><th>what you said</th><th>what the code does</th></tr>
+<tr><td><b>A</b></td>
+  <td>“empty space on the documents preview panel … even if a project has a lot of documents,
+      a user rarely clicks on them”</td>
+  <td><code>draw_document_preview_grid</code> is given <code>width / 2.6</code> and the panel's
+      full height, and lays 150px tiles into it. Two documents fill one row; the remaining
+      ~200px of height is empty at every project size below ~8 documents.</td></tr>
+<tr><td><b>B</b></td>
+  <td>“Script open and Graph open … maybe these should be just menu options?”</td>
+  <td>Both are already commands — <code>OPEN_SCRIPT</code> (Alt+R) and <code>OPEN_GRAPH</code>
+      (Alt+G) — in the Document menu. The panel rows are a <i>third</i> affordance for a verb
+      that already has a menu item and a chord.</td></tr>
+<tr><td><b>C</b></td>
+  <td>“the document name input field occupies a solid amount of space, but how often will a
+      user change the name? 1–2 times”</td>
+  <td><code>NAME_INPUT_W = 180</code>, always drawn, always editable, with its own caption row
+      above it.</td></tr>
+<tr><td><b>D</b></td>
+  <td>“I don't like this red Reset button. It looks scary, but it doesn't do much”</td>
+  <td><code>danger_button</code> at the panel's right border. It resets histories, clock,
+      script and videos — recoverable by re-running, and nothing on disk is touched.</td></tr>
+<tr><td><b>E</b><br><span class="dim">found</span></td>
+  <td><i>not reported by you — surfaced while reading the code</i></td>
+  <td>The panel's button is hardcoded <code>"Reset"</code> while the command it duplicates is
+      labelled <code>"Reset document"</code>, so the same verb reads as two names. The grid's
+      <code>"New document"</code> button hardcodes its label too. Both bypass
+      <code>command_label()</code>, which Add pass and Import passes do use.</td></tr>
+</table>
+</div>
+
+<p class="note" style="margin-top:14px"><b>The one structural fact behind all four:</b> every
+verb in this panel is already in the command registry with a label, a chord and a menu
+category. <code>OPEN_SCRIPT</code>, <code>OPEN_GRAPH</code>, <code>RESET_DOCUMENT</code> (F6),
+<code>DELETE_DOCUMENT</code>, <code>ADD_PASS</code>, <code>IMPORT_PASSES</code>. So every option
+below only <i>removes</i> widgets. None of them adds a mechanism.</p>
+</section>
+
+<!-- ============================ A ============================ -->
+<section>
+<h2><span class="tag">A</span> one identity row — the recommended floor</h2>
+<p class="note">
+The smallest change that answers all four marks. The name becomes <b>text</b> that turns into a
+field on double-click or via the context menu. Script and Graph leave the panel for the menu
+bar, the chord and the document tile's context menu. Reset leaves the panel for the same menu,
+where it is one word among its peers rather than a red block. The canvas row is unchanged, just
+pulled up onto the freed row.
+</p>
+
+<div class="app">
+<div class="panel">
+  <div class="col grid-col tall-sm">
+    <div class="row"><span class="btn">New document</span>
+      <span class="dim">☐</span><span style="font-size:13px">Render all</span></div>
+    <div class="row" style="gap:4px;margin-top:8px">
+      <span class="tile"><span class="thumb art-rc1" style="width:150px;height:150px"></span>
+        <span class="lbl">RC 1</span></span>
+      <span class="tile sel"><span class="thumb art-rc2 sel" style="width:150px;height:84px"></span>
+        <span class="lbl">RC 2</span></span>
+    </div>
+  </div>
+
+  <div class="col set-col tall-sm">
+    <div class="tabs"><span class="on">Document</span><span>Uniforms</span>
+      <span>Render</span><span>Share</span></div>
+
+    <div class="row">
+      <span style="color:var(--fg0);font-size:14px">RC 2</span>
+      <span class="dim" style="margin:0 2px">·</span>
+      <span class="seg"><span>Auto</span><span class="on">Fixed</span></span>
+      <span class="inp w56">1280</span><span class="dim">x</span><span class="inp w56">720</span>
+      <span class="cap">16:9</span>
+      <span class="btn sm">presets</span>
+      <span style="margin-left:auto;color:var(--green);font-size:11.5px">
+        one row replaces four · ~96px returned</span>
+    </div>
+
+    <div class="cap" style="margin-top:16px">Passes</div>
+    <div class="row" style="gap:6px;margin-top:4px">
+      <span class="tile sel"><span class="thumb art-ff" style="width:150px;height:84px"></span>
+        <span class="lbl">flood_fill</span></span>
+      <span class="tile"><span class="thumb art-paint" style="width:150px;height:84px"></span>
+        <span class="lbl dim">paint</span><span class="sub">prev</span></span>
+    </div>
+    <div class="row" style="margin-top:8px"><span class="btn">Add pass</span>
+      <span class="btn">Import passes</span></div>
+
+    
+  </div>
+</div>
+</div>
+
+<div class="two">
+<div>
+  <p class="note"><b>The document tile's context menu</b> gains the two summoners you asked
+  for, so a document's own verbs live on the document.</p>
+  <div class="menu" style="margin-top:8px">
+    <div>Open script<span class="k">Alt+R</span></div>
+    <div>Open graph<span class="k">Alt+G</span></div>
+    <div class="sep"></div>
+    <div>Rename<span class="k"></span></div>
+    <div>Open folder<span class="k"></span></div>
+    <div class="sep"></div>
+    <div>Reset document<span class="k">F6</span></div>
+    <div class="dngr">Delete<span class="k">Alt+D</span></div>
+  </div>
+</div>
+<div>
+  <p class="note"><b>The name</b> as text, not a field. Double-click edits in place; the field
+  appears only while editing, then goes back to text.</p>
+  <div style="margin-top:8px">
+    <div class="row"><span class="cap" style="width:58px">resting</span>
+      <span style="color:var(--fg0)">RC 2</span></div>
+    <div class="row"><span class="cap" style="width:58px">editing</span>
+      <span class="inp w180" style="border-color:var(--yellow)">RC 2▏</span></div>
+  </div>
+  <p class="note" style="margin-top:12px">Script state still needs a home: the <b>play/stop</b>
+  toggle is the one script control that is genuinely live, so it rides the identity row as a
+  single glyph when a script exists, and is absent when none does.</p>
+  <div class="row" style="margin-top:8px">
+    <span style="color:var(--fg0)">RC 2</span><span class="dim">·</span>
+    <span class="btn sm" style="color:var(--orange)">■</span>
+    <span class="cap">script running</span>
+  </div>
+</div>
+</div>
+
+<p class="q">Cost: a rename becomes a two-step gesture. You said 1–2 times per document, so
+that is the trade this option makes deliberately.</p>
+</section>
+
+<!-- ============================ B ============================ -->
+<section>
+<h2><span class="tag">B</span> A, plus the documents grid as a strip</h2>
+<p class="note">
+Mark A is the biggest single waste, and it is a <b>shape</b> problem, not a size one: a grid
+reserves rows for documents that do not exist. A horizontal strip reserves nothing — it is one
+tile tall and scrolls sideways when a project outgrows it. The settings column gets the whole
+width back.
+</p>
+
+<div class="app">
+<div style="min-width:1060px">
+  <div class="col" style="padding:6px 8px">
+    <div class="row" style="gap:6px">
+      <span class="btn sm">New document</span>
+      <span class="dim" style="margin:0 4px">│</span>
+      <span class="tile" style="padding:2px 4px;flex-direction:row;gap:6px">
+        <span class="thumb art-rc1" style="width:56px;height:32px"></span>
+        <span class="lbl">RC 1</span></span>
+      <span class="tile sel" style="padding:2px 4px;flex-direction:row;gap:6px">
+        <span class="thumb art-rc2 sel" style="width:56px;height:32px"></span>
+        <span class="lbl">RC 2</span></span>
+      <span class="dim" style="margin-left:auto;font-size:12px">☐ Render all</span>
+    </div>
+  </div>
+
+  <div class="col" style="margin-top:8px;height:300px;position:relative">
+    <div class="tabs"><span class="on">Document</span><span>Uniforms</span>
+      <span>Render</span><span>Share</span></div>
+    <div class="row">
+      <span style="color:var(--fg0);font-size:14px">RC 2</span>
+      <span class="dim" style="margin:0 2px">·</span>
+      <span class="seg"><span>Auto</span><span class="on">Fixed</span></span>
+      <span class="inp w56">1280</span><span class="dim">x</span><span class="inp w56">720</span>
+      <span class="cap">16:9</span><span class="btn sm">presets</span>
+    </div>
+    <div class="cap" style="margin-top:16px">Passes</div>
+    <div class="row" style="gap:6px;margin-top:4px">
+      <span class="tile sel"><span class="thumb art-ff" style="width:168px;height:94px"></span>
+        <span class="lbl">flood_fill</span></span>
+      <span class="tile"><span class="thumb art-paint" style="width:168px;height:94px"></span>
+        <span class="lbl dim">paint</span><span class="sub">prev</span></span>
+      <span class="tile"><span class="thumb" style="width:168px;height:94px;
+        border-style:dashed;background:transparent"></span>
+        <span class="lbl dim">+ add</span></span>
+    </div>
+    <div class="mark ok" data-l="the settings column is now full width"
+         style="left:6px;right:6px;top:30px;bottom:6px"></div>
+  </div>
+</div>
+</div>
+
+<p class="note"><b>What it buys:</b> the settings column goes from ~740px to ~1225px, so the
+pass strip fits three 168px tiles per row instead of two, and the Uniforms and Render tabs stop
+wrapping. <b>What it costs:</b> a document thumbnail shrinks to a 56px glance. You said users
+rarely click documents, which is the argument for the strip; if you find you read the
+thumbnails rather than the names, this is the wrong trade and option A is the floor.</p>
+</section>
+
+<!-- ============================ C ============================ -->
+<section>
+<h2><span class="tag">C</span> the identity row moves to the viewer's chrome</h2>
+<p class="note">
+The most aggressive option. The name, the resolution and the script state describe the
+<b>picture</b>, not the settings tabs, so they move onto the viewer's own bottom edge as a
+status line. The Document tab then holds passes alone and nearly disappears.
+</p>
+
+<div class="app">
+<div style="min-width:1060px">
+  <div style="background:#000;border:1px solid var(--bg2);border-radius:2px;height:150px;
+              position:relative" class="art-rc2">
+    <span class="chip" style="position:absolute;left:8px;top:8px;background:#0008">Color</span>
+    <span class="chip" style="position:absolute;right:8px;top:8px;background:#0008">60 fps</span>
+  </div>
+  <div class="col" style="border-top:none;border-radius:0 0 2px 2px;padding:5px 8px">
+    <div class="row" style="gap:8px">
+      <span style="color:var(--fg0)">RC 2</span>
+      <span class="dim">·</span>
+      <span class="seg"><span>Auto</span><span class="on">Fixed</span></span>
+      <span class="inp w56">1280</span><span class="dim">x</span><span class="inp w56">720</span>
+      <span class="cap">16:9</span>
+      <span class="btn sm" style="color:var(--orange);margin-left:auto">■ script</span>
+    </div>
+  </div>
+
+  <div class="col" style="margin-top:8px;height:264px;position:relative">
+    <div class="tabs"><span class="on">Passes</span><span>Uniforms</span>
+      <span>Render</span><span>Share</span></div>
+    <div class="row" style="gap:6px">
+      <span class="tile sel"><span class="thumb art-ff" style="width:168px;height:94px"></span>
+        <span class="lbl">flood_fill</span></span>
+      <span class="tile"><span class="thumb art-paint" style="width:168px;height:94px"></span>
+        <span class="lbl dim">paint</span><span class="sub">prev</span></span>
+      <span class="tile"><span class="thumb" style="width:168px;height:94px;
+        border-style:dashed;background:transparent"></span>
+        <span class="lbl dim">+ add</span></span>
+    </div>
+    <div class="mark ok" data-l="the Document tab is gone — it was only ever a header"
+         style="left:6px;right:6px;top:30px;bottom:6px"></div>
+  </div>
+</div>
+</div>
+
+<p class="note"><b>The tab named Document disappears</b>, replaced by Passes. That is the honest
+consequence: once the name and the canvas leave, what remained under Document <i>was</i> the
+pass strip. <b>The risk:</b> the viewer's bottom edge is fixed by 093 W7 (the viewer is a box
+whose height follows the splitter's width), so this status line adds a constant to the control
+panel's minimum — it must be measured against <code>PANEL_CTRL_MINH = 600</code> before it
+can be called free.</p>
+</section>
+
+<!-- ============================ D ============================ -->
+<section>
+<h2><span class="tag alt">D</span> the collapse button you were unsure about</h2>
+<p class="note">
+You asked whether to add a fold between the documents grid and the tabs, and then answered
+yourself: “maybe we should optimize the worst case for now and tune with these cheat collapse
+buttons only when we don't have other choices.” <b>I agree, and here is the evidence for
+skipping it.</b>
+</p>
+
+<div class="app">
+<div class="panel" style="min-width:820px">
+  <div class="col" style="width:22px;flex:0 0 22px;display:flex;align-items:center;
+       justify-content:center;color:var(--fg4)">›</div>
+  <div class="col set-col" style="height:200px;position:relative">
+    <div class="tabs"><span class="on">Document</span><span>Uniforms</span>
+      <span>Render</span><span>Share</span></div>
+    <div class="row">
+      <span style="color:var(--fg0)">RC 2</span><span class="dim">·</span>
+      <span class="seg"><span>Auto</span><span class="on">Fixed</span></span>
+      <span class="inp w56">1280</span><span class="dim">x</span><span class="inp w56">720</span>
+    </div>
+    <div class="mark" data-l="a second state to persist, test and restore"
+         style="left:6px;right:6px;top:30px;bottom:6px"></div>
+  </div>
+</div>
+</div>
+
+<p class="note">A fold buys width only in the folded state, and it buys it by hiding a panel
+you still want at rest. It also adds a persisted boolean, a restore path, and a second layout
+to verify in every frame test. Options A and B return the same width <i>unconditionally</i>,
+with no state and nothing to remember. <b>Recommendation: do not build the fold.</b> If A or B
+lands and the panel still feels tight, the fold is still available, and by then the worst case
+will have been measured rather than guessed.</p>
+</section>
+
+<!-- ============================ RESET ============================ -->
+<section>
+<h2><span class="tag alt">·</span> the Reset button, specifically</h2>
+<p class="note">
+You are right that the tier is wrong. <code>danger_button</code> is the tier for verbs that
+destroy work on disk — Delete document, Delete pass, library reset. Reset touches histories,
+the clock, the script and videos, all of which come back by running the document again. It is
+loud because it was filed under the wrong tier, not because it is dangerous.
+</p>
+<div class="two">
+<div>
+  <p class="note"><b>Today</b> — a red block at the panel's right border, always visible,
+  pulling the eye on every frame.</p>
+  <div class="row" style="margin-top:8px"><span class="btn danger">Reset</span></div>
+</div>
+<div>
+  <p class="note"><b>Proposed</b> — a normal item in the document's context menu and the
+  Document menu, where it already is, at its registered chord. No panel widget at all.</p>
+  <div class="menu" style="margin-top:8px">
+    <div>Open script<span class="k">Alt+R</span></div>
+    <div>Open graph<span class="k">Alt+G</span></div>
+    <div class="sep"></div>
+    <div>Reset document<span class="k">F6</span></div>
+    <div class="dngr">Delete<span class="k">Alt+D</span></div>
+  </div>
+</div>
+</div>
+<p class="note" style="margin-top:14px">Delete keeps the danger tier and keeps its confirm.
+Reset loses the tier and, arguably, loses its confirm too — but that is a separate call, and
+I have not changed it here.</p>
+</section>
+
+<!-- ============================ COMPARISON ============================ -->
+<section>
+<h2><span class="tag alt">·</span> what each option costs and buys</h2>
+<div class="tbl-wrap">
+<table>
+<tr><th>option</th><th class="num">rows in the header</th><th class="num">settings width</th>
+    <th>what changes in the code</th><th>the risk</th></tr>
+<tr><td>today</td><td class="num">4</td><td class="num">~740</td><td>—</td><td>—</td></tr>
+<tr><td><b>A</b> one identity row</td><td class="num"><span class="win">1</span></td>
+    <td class="num">~740</td>
+    <td><code>tabs/document.py</code>: name becomes text + edit state; the two entry rows and
+        the Reset button are deleted; <code>document_menu_items</code> gains four commands.</td>
+    <td>rename is a two-step gesture.</td></tr>
+<tr><td><b>B</b> A + strip</td><td class="num"><span class="win">1</span></td>
+    <td class="num"><span class="win">~1225</span></td>
+    <td>A, plus <code>_draw_app_panel</code> loses the <code>width / 2.6</code> split and
+        <code>document_grid.py</code> becomes a one-row horizontal strip.</td>
+    <td>a document thumbnail drops to ~56px.</td></tr>
+<tr><td><b>C</b> into the viewer chrome</td><td class="num"><span class="win">0</span></td>
+    <td class="num"><span class="win">~1225</span></td>
+    <td>B, plus the identity row moves into <code>ui.py</code>'s viewer block and the Document
+        tab is renamed Passes.</td>
+    <td>adds a constant to the panel minimum; must be measured against
+        <code>PANEL_CTRL_MINH</code>.</td></tr>
+<tr><td><b>D</b> collapse fold</td><td class="num">4</td>
+    <td class="num">~740 <span class="dim">/ ~1225 folded</span></td>
+    <td>a persisted bool, a restore path, a second layout in every frame test.</td>
+    <td><span class="lose">buys width only while hiding a panel you want.</span></td></tr>
+</table>
+</div>
+
+<p class="note" style="margin-top:16px"><b>My recommendation: A now, B next, and measure before
+C.</b> A is self-contained, answers all four of your marks, and touches one file plus a menu
+list. B is the one that actually solves mark A — the dead space is a grid shape, and only the
+strip removes it rather than shrinking it. C is attractive but its cost is a number nobody has
+measured yet, and 093 W7 just fixed the viewer's geometry, so I would not disturb it on a
+guess. D I would skip, on your own reasoning.</p>
+
+<p class="q">Open question for you, since it changes B: when you glance at the documents panel,
+are you reading the <b>picture</b> or the <b>name</b>? If the picture, the strip is wrong and
+A is the ceiling. If the name, the strip is strictly better and B should be the target.</p>
+</section>
+
+</div>
+</body>
+</html>
