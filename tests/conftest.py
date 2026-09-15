@@ -11,6 +11,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+import moderngl
 import pytest
 
 from shaderbox.constants import DOCUMENT_EXAMPLES_DIR, STARTER_EXAMPLE_ID
@@ -42,6 +43,27 @@ def seed_extra_document(app: Any, new_id: str) -> str:
     app.session.sync_documents_from_disk()
     assert new_id in app.ui_documents
     return new_id
+
+
+@pytest.fixture(scope="module")
+def gl_ctx() -> Iterator["moderngl.Context"]:
+    """A standalone GL context, one per module.
+
+    Default-backend on purpose: an EXPLICIT backend="egl" context released here poisons the
+    process's EGL display, and the NEXT module's first program compile segfaults. The failure is
+    module-order-only, so it survives a single-module run and appears in a full suite —
+    one context recipe per process is the rule.
+
+    Module-scoped rather than session-scoped because the modules that use it run in their own
+    xdist processes; a wider scope would share a context across files that were partitioned
+    apart deliberately.
+    """
+    try:
+        context = moderngl.create_standalone_context()
+    except Exception as e:
+        pytest.skip(f"no standalone GL context available: {e}")
+    yield context
+    context.release()
 
 
 @pytest.fixture

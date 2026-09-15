@@ -8,9 +8,7 @@ The GL-backed half needs a real context; the salvage half is pure and always run
 """
 
 import json
-import os
 import shutil
-from collections.abc import Iterator
 from pathlib import Path
 
 import moderngl
@@ -46,21 +44,6 @@ uniform float u_level;
 out vec4 fs_color;
 void main() { fs_color = vec4(u_level, 0.0, 0.0, 1.0); }
 """
-
-
-@pytest.fixture(scope="module")
-def gl_ctx() -> Iterator[moderngl.Context]:
-    os.environ.setdefault("MESA_GL_VERSION_OVERRIDE", "4.6")
-    os.environ.setdefault("MESA_GLSL_VERSION_OVERRIDE", "460")
-    # Default-backend like every other GL module's fixture — an EXPLICIT backend="egl" context
-    # released here poisons the process's EGL display and the NEXT module's first program
-    # compile segfaults (module-order-only; one context recipe per process is the rule).
-    try:
-        context = moderngl.create_standalone_context()
-    except Exception as e:
-        pytest.skip(f"no standalone GL context available: {e}")
-    yield context
-    context.release()
 
 
 def _write_document(

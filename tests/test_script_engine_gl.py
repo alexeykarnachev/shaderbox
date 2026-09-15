@@ -10,12 +10,10 @@ overrides (set at process top, read at context creation); skips cleanly if no co
 """
 
 import contextlib
-import os
 from collections.abc import Iterator
 from pathlib import Path
 
 import moderngl
-import pytest
 
 from shaderbox.core import Pass
 from shaderbox.document import Document
@@ -32,23 +30,6 @@ void main() {
     fs_color = vec4(u_wave, u_offset.x, u_offset.y, 1.0);
 }
 """
-
-
-@pytest.fixture(scope="module")
-def gl_ctx() -> Iterator[moderngl.Context]:
-    # The MESA overrides give the display-less box's V3D driver #version 460 — read at context
-    # creation, so set them here before create_standalone_context (no effect on a desktop driver).
-    os.environ.setdefault("MESA_GL_VERSION_OVERRIDE", "4.6")
-    os.environ.setdefault("MESA_GLSL_VERSION_OVERRIDE", "460")
-    # Default-backend like every other GL module's fixture — an EXPLICIT backend="egl" context
-    # released here poisons the process's EGL display and the NEXT module's first program
-    # compile segfaults (module-order-only; one context recipe per process is the rule).
-    try:
-        context = moderngl.create_standalone_context()
-    except Exception as e:
-        pytest.skip(f"no standalone GL context available: {e}")
-    yield context
-    context.release()
 
 
 def _document(gl: moderngl.Context, src: str = _SRC) -> Document:

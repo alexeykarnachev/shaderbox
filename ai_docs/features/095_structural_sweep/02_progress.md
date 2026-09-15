@@ -111,3 +111,31 @@ surprise: the wave was far smaller than the spec's survey implied. The presence 
 live facts as a live category, which is true, but the harness turned out to carry two rather
 than a class worth sweeping — the feature specs' numbers are nearly all correctly frozen
 before/after measurements.
+
+## W-F the gl_ctx fixture — DONE
+
+done-condition (written in advance): `gl_ctx` defined once; the EGL comment preserved verbatim in
+its new home; no module's `xdist_group` changed; `grep -rln "poisons the process's EGL display"
+tests/` returns only the shared definition plus any deliberate variant; `make gates` green.
+
+verification: green (check, test, smoke).
+
+Five of the six copies were byte-identical or differed only in an extra comment; they now use the
+shared module-scoped fixture in `tests/conftest.py`. The comment recording the EGL segfault moved
+with it, expanded into a docstring that also states why the scope is per-module (the modules run
+in their own xdist processes, so a session scope would share a context across files partitioned
+apart on purpose). Ruff removed the imports the deletions orphaned.
+
+**`tests/test_profiling.py` keeps its own copy, deliberately.** Its fixture binds a
+`simple_framebuffer` after creating the context — different behavior, not duplication. Collapsing
+it into the shared one would have changed what that module runs against. This is the
+"similar shape is not shared meaning" case, and it was caught by hashing each fixture body rather
+than by reading them.
+
+**falsifier attempted, and it did not fire.** The comment says an explicit `backend="egl"` context
+poisons the process's EGL display and segfaults the next module. Reintroducing that backend and
+running three GL modules in one process passed here. That does NOT disprove the comment — it
+states the failure is module-order-dependent and it was recorded on a display-less box, while this
+machine has a real display. The comment stays as written; a later session should not read this
+note as license to weaken it. What IS verified: the consolidated modules still run together in one
+process green, which is the scenario the fixture exists to survive.

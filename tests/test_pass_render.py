@@ -9,12 +9,9 @@ Needs a real GL context. On the display-less dev box use the EGL backend + the M
 overrides (set at process top, read at context creation); skips cleanly if no context is available.
 """
 
-import os
-from collections.abc import Iterator
 from pathlib import Path
 
 import moderngl
-import pytest
 
 from shaderbox.constants import DEFAULT_FS_FILE_PATH
 from shaderbox.core import Pass
@@ -44,21 +41,6 @@ void main() {
     fs_color = nonsense_symbol;
 }
 """
-
-
-@pytest.fixture(scope="module")
-def gl_ctx() -> Iterator[moderngl.Context]:
-    os.environ.setdefault("MESA_GL_VERSION_OVERRIDE", "4.6")
-    os.environ.setdefault("MESA_GLSL_VERSION_OVERRIDE", "460")
-    # Default-backend like every other GL module's fixture — an EXPLICIT backend="egl" context
-    # released here poisons the process's EGL display and the NEXT module's first program
-    # compile segfaults (module-order-only; one context recipe per process is the rule).
-    try:
-        context = moderngl.create_standalone_context()
-    except Exception as e:
-        pytest.skip(f"no standalone GL context available: {e}")
-    yield context
-    context.release()
 
 
 def _pass(
