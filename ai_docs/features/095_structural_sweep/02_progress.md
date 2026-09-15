@@ -163,3 +163,37 @@ swapping, and `theme.py`'s module docstring documents `ACCENT_*` as the swappabl
 so removing it means editing every accent preset and breaking the trio's symmetry — a large diff
 from a small finding, which is the signal for solving the wrong problem. Left alone. Do not
 re-raise it as dead code; a future reader should decide it as a theme-API question.
+
+## W-C comments — DONE (one line removed; the rest were false positives)
+
+done-condition (written in advance): every restating comment and verbatim duplicate removed, every
+attempt-narration compressed to its live reason with each measurement and named failure kept, and
+no comment touched that states why. `make gates` green.
+
+verification: green.
+
+**Removed:** one line, `# Process hotkeys` above `process_hotkeys(app)` in `ui.py`. Every other
+divider in that frame function carries a real explanation; this one restated its call.
+
+**The search that found it**, worth re-running rather than trusting a reading: match a short
+comment whose words are a subset of the identifiers on the next line. It returned seven
+candidates across `shaderbox/`, six of which were section dividers.
+
+**ruled out, do not re-raise:**
+- The `constants.py` labels (`# File extensions`, `# Default video settings`, …) and the
+  equivalents in `theme.py` and `commands.py` are section dividers grouping a block in a long flat
+  table. They navigate, they do not restate. Deleting them makes those files harder to scan.
+- The imgui-font-atlas comments above each `pytestmark` are NOT verbatim duplicates: two
+  phrasings, one or two lines, each directly above the `xdist_group` it explains. A local
+  one-line rationale beats a pointer to a canonical copy for a reader who opens one file.
+- Both attempt-narration comments STAY, in full. `test_script_engine.py` names the wrong rule that
+  was tried ("asked whether the key was REWRITTEN this tick") and the symptom it produced (a row
+  oscillating frame by frame), which is what makes the falsifier on the next line meaningful.
+  `test_motion_verdict.py` names the failure the same way ("used to double the first line's
+  indent", so the copilot wrote a syntax error onto the rescue path) and explains why the test
+  parses instead of pattern-matching. These are named failures, not history.
+
+surprise: the comment wave was the one the spec was most cautious about and it produced a
+one-line diff. The presence scan's three comment categories were all over-called — the repo's
+comment convention is working, and the measurable restatement rate across `shaderbox/` is
+effectively zero once section dividers are excluded.

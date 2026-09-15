@@ -564,7 +564,6 @@ def _update_and_draw(app: App) -> None:
             current_ui_document.document.render(profiler=app.profiler)
 
     # ----------------------------------------------------------------
-    # Process hotkeys
     process_hotkeys(app)
 
     # ----------------------------------------------------------------
