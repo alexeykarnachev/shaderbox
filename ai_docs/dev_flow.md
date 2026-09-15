@@ -550,6 +550,43 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   `~/.local/share/shaderbox/project_dir`; shipped examples live under `shaderbox/resources/document_examples/`.
   Exporter render-output scratch files live in `<project>/exporter_scratch/` (cleaned per export).
 
+### A design mock, and publishing it for review away from the box
+
+A UI question the maintainer must SEE is answered with a static HTML mock under the feature's
+own directory (`ai_docs/features/NNN_name/00_mock.html`), never with a half-started
+implementation. The mock uses the real tokens -- the gruvbox palette from `theme.py`, the real
+`SPACE` / `SIZE` numbers, the real widget shapes -- so what he judges is the layout rather than
+an invented look. Several options in one page, each with what it buys and what it costs, beats
+one proposal.
+
+**Verify the mock renders before handing it over.** A mock is a picture, so the check is the
+picture, not that the file was written:
+
+```
+google-chrome --headless --disable-gpu --no-sandbox --hide-scrollbars \
+  --window-size=1400,3000 --screenshot=/tmp/mock.png "file://$PWD/<path>.html"
+```
+
+Then read the PNG and look at it. Annotation boxes drawn over a dense row collide with it;
+put the label beside the row instead.
+
+**When he is away from the box** (reviewing from a phone), publish the rendered page:
+
+```
+# once: the host repo, public -- Pages on a private repo needs a paid plan
+gh repo create shaderbox-mocks --public
+gh api -X POST repos/<user>/shaderbox-mocks/pages -f "source[branch]=main" -f "source[path]=/"
+
+# per mock: copy in as index.html (or a named page), commit, push
+```
+
+Live at `https://<user>.github.io/shaderbox-mocks/`. The mock is already public the moment it
+lands in this repository, which is public too, so publishing exposes nothing new -- but a mock
+carrying anything unpublished does not go there. The rendered copy is a COPY: the source of
+truth stays in `ai_docs/features/`, and the mocks repository is regenerated from it, never
+edited in place. A gist is not a substitute: a gist's raw HTML serves as plain text, and the
+third-party proxies that render it show an interstitial instead of the page.
+
 ### Run the app
 - **Dev / personal:** `make run` (= `uv run python ./shaderbox/ui.py`). For an agent smoke-launch,
   use `timeout 12 uv run python ./shaderbox/ui.py` (exits 124 on the timeout = ran clean). Run it as
