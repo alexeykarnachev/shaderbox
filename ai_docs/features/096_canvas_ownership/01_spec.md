@@ -84,17 +84,39 @@ gates what the earlier waves fixed.
   It must FAIL on the current tree for F2 and for the `resample_canvas` mutation. A W-0 that
   passes everywhere is a W-0 that checks nothing; prove it red before proceeding.
 
-- **W-1 — F6, the frozen export.** The output pass's own canvas must be written even when the
-  draw is aimed at a caller's canvas. Decide between drawing into the pass's canvas and blitting
-  out, or drawing twice; the findings file has the trace of what each iteration writes today.
-  Done when the accumulator reproduction exports a climbing sequence at N=1 and N=2, decoded
-  from the written video rather than read off the canvas.
+- **W-1 — F6, the frozen export.** DECIDED, do not re-open: the output pass ALWAYS draws into
+  its own canvas, and when the caller supplied one, the result is blitted out afterwards.
+  `Document` already holds a `CanvasResampler` (`self._resampler`) whose `blit(source_texture,
+  target_canvas)` draws a whole texture into a target of any size, which is exactly this
+  operation and is already the resize path's tool. So the fix is: drop `draw_into` from the
+  iteration loop (every iteration goes to `render_pass.canvas`), and after the loop, if `canvas`
+  is not None and this is the output pass, blit the pass's canvas into it.
 
-- **W-2 — F1 and F9, the default mismatch.** The export's fit branch takes the output pass's
-  config like its sibling. `load_from_dir` gives a file with no graph entry the same defaults the
-  graph gets, rather than `None`. Consider making `Canvas`'s dtype default agree with
-  `TargetConfig`'s, or removing the default so a caller must state it — that single change is
-  what makes the class hard to repeat.
+  Rejected: drawing twice (doubles the output pass's cost every export frame), and keeping the
+  last iteration external while separately writing the pass's canvas (two writes of the same
+  picture, and the bug's own shape — a rule applied at one site and not its sibling).
+
+  The existing comment at that loop already argues the early iterations must hit the pass's own
+  canvas so the swap can advance; it stops one step short of the last one. Rewrite it to state
+  the rule once.
+
+  Done when `repro/f6_frozen_export.py` prints a climbing sequence at N=1 and N=2, judged on the
+  decoded video, and `make gates` is green.
+
+- **W-2 — F1 and F9, the default mismatch.** Three changes, all DECIDED:
+  (a) the export's fit branch copies `dtype`, `filter` and `wrap` from the output pass's canvas,
+  exactly as its sibling branch twelve lines up already does;
+  (b) `load_from_dir` builds a pass with no graph entry from `PassEntry().target` rather than
+  `None`, so the canvas gets the same defaults the graph is about to be backfilled with;
+  (c) `Canvas`'s own `dtype` default changes from `"f1"` to match `TargetConfig`'s `f2`.
+
+  (c) is the one that makes the class hard to repeat, and it is a real behavior change: any
+  remaining bare `Canvas(...)` becomes `f2`. Search for every construction site before doing it
+  and state in the commit which ones changed shape. If a site genuinely wants 8-bit it now says
+  so explicitly, which is the point.
+
+  Do NOT remove the default outright — that is a larger signature change and belongs with the
+  `CanvasSpec` refactor, which is out of scope.
 
 - **W-3 — F2, F7, F10, and the sizing rule that is written out at five sites.** One function that answers "what size
   should this pass's canvas be", used by every site that asks today (the two loops in
@@ -166,6 +188,43 @@ Settled, and NOT to be re-opened:
 - These are NOT defects and must not be "fixed": the blit not carrying dtype or wrap (its canvas
   is only ever sampled by imgui, where neither can show), the Share previews showing the decoded
   artifact, and minifying tiles.
+
+## Running this unattended
+
+This feature is written to be executed end to end with nobody watching. The rules below are the
+contract for that run; they matter more than any individual wave.
+
+**Carry on to the end. Do not stop to report, and do not ask.** Every decision this feature needs
+is already made — the two that were open (W-1's approach, W-2's default) are marked DECIDED above.
+If a genuinely new question appears, pick the option that keeps the tree green and the change
+smallest, write what you chose and why into `02_progress.md`, and continue. Stopping with waves
+unfinished is the failure mode; a wave finished under a stated assumption is not.
+
+**Commit each wave as it lands and push.** A local tree ahead of `origin` at the end of the night
+is a failure state — the work must survive the session. One wave, one commit, `make gates` green
+before and after each.
+
+**Never weaken a test to get green.** A failing test means the change is wrong: revert the change
+and record why in `02_progress.md`. The one legitimate edit is a test whose subject genuinely
+moved.
+
+**If the baseline gate is red with an empty source diff, stop and write that finding into
+`02_progress.md`.** That is the one legitimate early exit: the box cannot run the suite, so no
+result the night produces would be trustworthy. Do not "fix" it by skipping tests.
+
+**If a wave turns out bigger than the spec assumed**, finish the waves that are not blocked,
+and record what you left and why. Scaling the work down is fine when it is written down; silently
+narrowing it is not.
+
+**Report at the end against the milestone, not the effort.** Which waves landed, which defects
+have a passing reproduction, what the gate says, and what was left. A count of tool calls or
+agents says nothing about whether the defects are fixed.
+
+**Spawning agents during this run:** allowed for a focused review of a landed wave, on opus, one
+at a time. Every such agent is measurement-only unless it is an implementor working in its own
+wave — three agents in the investigation round left falsifier edits in the working tree despite
+being told not to, so check `git status` after any agent returns, and restore anything you did
+not change yourself.
 
 ## Coverage claim
 

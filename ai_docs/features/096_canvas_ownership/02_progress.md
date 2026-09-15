@@ -24,6 +24,17 @@ So the first action of the executing session is `make gates` on the untouched tr
   session or the machine. Do not debug it as a regression, and do not start a wave until the
   baseline is green, or every later result is unreadable.
 
+## This is an unattended run
+
+Nobody is watching. `01_spec.md` has a "Running this unattended" section and it is the contract:
+carry on to the end, never ask, commit and push each wave, never weaken a test to get green, and
+write down every choice made along the way. The one legitimate early exit is a red baseline gate
+with an empty source diff — the box cannot run the suite, so nothing the night produced could be
+trusted.
+
+Append to this file BEFORE starting the next wave, not at the end. A log written only at the end
+does not exist when it is needed.
+
 ## W-0 invariant checker — NOT STARTED
 
 done-condition (written in advance): a test helper asserts, for every canvas reachable from a
