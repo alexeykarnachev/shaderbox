@@ -270,10 +270,15 @@ class UIAppState(BaseModel):
 
     # The editor's open tabs and which was active (093 W2-2), mirrored from the live list by
     # `App.save` and restored on launch. The active tab is held by PATH, not by index: a record
-    # whose file is gone is dropped on restore, which shifts every later position. An empty
-    # list restores nothing and the launch falls back to the current document's shader tab.
+    # whose file is gone is dropped on restore, which shifts every later position.
     editor_tabs: list[TabRecord] = []
     active_tab_path: str = ""
+    # Whether `editor_tabs` above is a state this project has actually saved. An empty list is
+    # ambiguous on its own -- a project that has never been opened and one the user closed every
+    # tab in both arrive as `[]` -- and the launch fallback opens a shader for the first but must
+    # leave the second empty. `App.save` sets this true; only a state written before the flag
+    # existed, or none at all, reads false.
+    tabs_persisted: bool = False
 
     # Persisted UI layout prefs (the App holds the live copies; synced at load/save).
     # NOT copilot_focused — that one is transient-by-design.

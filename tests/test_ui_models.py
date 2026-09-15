@@ -150,3 +150,51 @@ def test_the_live_tabs_mirror_into_records_in_order() -> None:
         ("/y.json", "graph", "d2"),
         ("/z.glsl", "lib", ""),
     ]
+
+
+def test_a_closed_editor_stays_closed_across_a_restart(
+    app: Any, tmp_path: Path
+) -> None:
+    """An empty editor is a state the user chose, not an absent one.
+
+    `editor_tabs == []` reaches the launch from two different histories -- a project opened
+    for the first time, and one whose tabs the user closed -- and only the first earns the
+    fallback that opens the current document's shader. `tabs_persisted` is what tells them
+    apart. Falsifier: drop the flag from the `_init` condition and the reopened app carries a
+    shader tab.
+    """
+    from shaderbox.app import App
+
+    while app.editor_tabs:
+        app.close_tab(0)
+    app.save()
+    project_dir = app.project_dir
+    app.shutdown()
+
+    reopened = App(project_dir=project_dir)
+    try:
+        assert reopened.editor_tabs == [], "the restart reopened a shader by itself"
+    finally:
+        reopened.shutdown()
+
+
+def test_a_first_open_still_lands_on_a_shader(app: Any, tmp_path: Path) -> None:
+    # The other half of the same branch: a project with no saved tab set is the case the
+    # fallback exists for. Falsifier: drop the fallback and a first open shows a blank editor.
+    from shaderbox.app import App
+
+    project_dir = app.project_dir
+    app.save()
+    app.shutdown()
+
+    state_file = project_dir / "app_state.json"
+    raw = json.loads(state_file.read_text())
+    raw.pop("tabs_persisted", None)
+    raw["editor_tabs"] = []
+    state_file.write_text(json.dumps(raw))
+
+    reopened = App(project_dir=project_dir)
+    try:
+        assert reopened.editor_tabs, "a first open showed a blank editor"
+    finally:
+        reopened.shutdown()

@@ -517,8 +517,10 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   watcher re-syncs every open session from disk on external change (disk wins). A document's editors close
   with the document (lib tabs survive); a renamed file re-keys its session in place. A document
   SWITCH opens no tab (093 W7, the rule W3-3 set for clicks), and neither does the Alt-arrow pass
-  walk: only creation and a no-tabs cold start open a shader by themselves; the context menu's
-  `Open shader` and the Pass menu are the user's ways. Choosing a pass is `choose_output` alone --
+  walk: only creation and a FIRST open of a project open a shader by themselves; the context menu's
+  `Open shader` and the Pass menu are the user's ways. That launch fallback reads
+  `UIAppState.tabs_persisted`, not the empty list: an editor the user emptied saved `[]` on purpose
+  and reopens empty, while a project that never saved a tab set gets its current document's shader. Choosing a pass is `choose_output` alone --
   the helper that bundled it with a tab open is gone, so the pair cannot re-form at a new surface. The vendored
   binary + rebuild procedure live in `## Known quirks`. **The open-tab SET persists (093 W2-2):
   `UIAppState.editor_tabs: list[TabRecord]` plus `active_tab_index`, mirrored by `App.save` and

@@ -1569,11 +1569,13 @@ class App:
             )
             self.tab_select_pending = True
 
-        # A project opening with no restored tabs shows its current document's shader rather
+        # A project that has never saved a tab set shows its current document's shader rather
         # than a blank editor; a stale pointer at a deleted document reselects a live one. This
         # and document creation are the two places a shader tab opens by itself -- a document
-        # SWITCH opens nothing (093 W7, the rule W3-3 set for clicks).
-        if not self.editor_tabs:
+        # SWITCH opens nothing (093 W7, the rule W3-3 set for clicks). A user who closed every
+        # tab saved that empty set and gets it back: the fallback is for a first open, not for
+        # an empty editor.
+        if not self.editor_tabs and not self.app_state.tabs_persisted:
             if (
                 not (
                     self.current_document_id
@@ -2268,6 +2270,7 @@ class App:
         self.app_state.is_copilot_open = self.is_copilot_open
         self.app_state.copilot_layout = self.copilot_layout
         self.app_state.editor_tabs = tab_records(self.editor_tabs)
+        self.app_state.tabs_persisted = True
         active = self.active_tab
         self.app_state.active_tab_path = "" if active is None else str(active.path)
 
