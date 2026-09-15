@@ -410,11 +410,15 @@ changes. Four dead `App` fields go with the pair (`canvas_size_buf`, `aspect_buf
 editing flags). Reset then lost its confirm too (finding 36): it restarts histories, a clock, bound videos and a
 script, all rebuilt by a re-run, and touches nothing on disk, so the verbs drop the `_confirmed`
 suffix and become `reset_document` / `reset_current_document`. Delete keeps its confirm, moving a
-directory to the trash. Five breaks tried: appending `Auto` instead of leading with it, grouping
+directory to the trash. His check of the row then moved the aspect readout onto the `Canvas` caption (`Canvas  16:9`),
+where it reads as the caption's other half rather than as a second field, and gave the play/stop
+toggle a dim `Script` label: the bare word works on a uniform row, where it ends the row of the
+uniform it stops, but the header row left it with no subject (finding 37). Six breaks tried: appending `Auto` instead of leading with it, grouping
 by the exact reduction so 1920x1088 leaves 16:9, TWO at the menu's targeting -- the first
 attempt's test called the App verb directly and stayed green through the break, so it was
-rewritten to fire the menu items inside a real frame, where it goes red -- and routing Reset back
-through `request_confirm`, which three tests catch by asserting the ABSENCE of a modal.
+rewritten to fire the menu items inside a real frame, where it goes red -- routing Reset back
+through `request_confirm`, which three tests catch by asserting the ABSENCE of a modal, and
+dropping the `Script` label, which its own test catches.
 
 **Wave 7: two findings from his check of wave 6, 31-32 (2026-09-15).** One commit. The
 document switch stops opening a shader tab (`_on_current_document_changed` no longer calls

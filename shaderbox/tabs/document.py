@@ -228,22 +228,21 @@ def _apply_aspect(app: App, ui_document: UIDocument, ratio: tuple[int, int]) -> 
     app.notifications.push(f"Aspect: {reduced[0]}:{reduced[1]}")
 
 
-def _draw_size_readout(app: App, ui_document: UIDocument, control_x: float) -> None:
-    """The second line under the mode's control: the number the control does not carry.
+def _draw_canvas_caption(app: App, ui_document: UIDocument) -> None:
+    """The `Canvas` caption and, beside it, the number the control below does not carry.
 
-    Under Auto the control names a RATIO, so the readout is the live pixel size; under Fixed
-    the control names a SIZE, so the readout is its aspect. Each mode shows the other half of
-    the same fact, and neither repeats what is already on the row above. A plain readout, no
-    label -- the caption already said which of the two is being edited.
+    Under Auto the control names a RATIO, so this is the live pixel size; under Fixed the
+    control names a SIZE, so this is its aspect. Each mode shows the other half of the same
+    fact. It sits on the CAPTION row (his call) rather than under the control: a line below the
+    combo read as a second field, and the caption row is where a label belongs.
     """
     document = ui_document.document
     if document.resolution_mode is ResolutionMode.FIXED:
-        text = aspect_label(document.resolution)
+        detail = aspect_label(document.resolution)
     else:
         width, height = document.canvas_size
-        text = f"{width}x{height}"
-    imgui.set_cursor_pos_x(control_x)
-    small_caption(app.font_12, text)
+        detail = f"{width}x{height}"
+    small_caption(app.font_12, f"Canvas  {detail}")
 
 
 def _apply_canvas_size(
@@ -284,7 +283,7 @@ def draw(app: App) -> None:
 
     small_caption(app.font_12, "Document name")
     imgui.same_line(combo_offset)
-    small_caption(app.font_12, "Canvas")
+    _draw_canvas_caption(app, ui_document)
 
     imgui.set_next_item_width(SIZE.NAME_INPUT_W)
     ui_document.ui_state.ui_name = imgui.input_text_with_hint(
@@ -297,10 +296,8 @@ def draw(app: App) -> None:
     # shared id would let the outgoing document's open popup land on the incoming one.
     imgui.push_id(ui_document.id)
 
-    control_x = imgui.get_cursor_pos_x()
     _draw_canvas_control(app, ui_document)
     _draw_script_toggle(app)
-    _draw_size_readout(app, ui_document, control_x)
 
     imgui.pop_id()
 
@@ -311,18 +308,23 @@ def draw(app: App) -> None:
 
 
 def _draw_script_toggle(app: App) -> None:
-    """The document-wide play/stop, the one script control that is genuinely live.
+    """The document script's play/stop, under a `Script` label naming what it controls.
 
-    The `open` summoners it used to sit beside are gone (093 W8): opening a script or a graph
-    is a verb on the document, so it lives on the document's context menu, the Document menu
-    and its chord, where it was already registered. What cannot live there is a STATE the user
-    watches while a shader runs, so the toggle stays on the row and is absent when the
+    The bare word needs that label HERE and not on a uniform row: there the toggle sits at the
+    end of the row of the uniform it stops, which is its subject, while on this row it had no
+    neighbor at all and read as a loose `stop` (his finding). The `open` summoners it used to
+    sit beside are gone (093 W8) -- opening a script is a verb, and verbs live on the
+    document's context menu, the Document menu and their chords. What cannot live there is a
+    STATE the user watches while a shader runs, so the toggle stays, and is absent when the
     document has no script. The caller's copilot-turn bracket covers it (a write races the
     reload).
     """
     document_id = app.current_document_id
     if not app.session.has_script(document_id):
         return
+    imgui.same_line(spacing=float(SPACE.LG))
+    imgui.align_text_to_frame_padding()
+    imgui.text_colored(COLOR.FG_DIM, "Script")
     imgui.same_line(spacing=float(SPACE.MD))
     playing = not app.current_document_ui_state_or_default.all_stopped
     if play_stop_toggle(

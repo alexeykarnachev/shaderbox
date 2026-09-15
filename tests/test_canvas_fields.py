@@ -77,11 +77,10 @@ def _draw_tab_once(app: Any) -> None:
 def _captions(app: Any, monkeypatch: Any) -> list[str]:
     """Every `small_caption` string the tab drew, in order.
 
-    The readout is the THIRD, after the caption row's two labels -- indexed from the front,
-    never from the end: what follows it is whatever rows the tab grows next (093 retired the
-    Passes caption, which an end-relative index had silently been anchored to). Captured
-    rather than asserted against the pixels, because what this pins is the string the mode
-    decides -- a layout swap must be free, which is why the control lives in one function.
+    The readout is the SECOND, inside the `Canvas` caption itself since 093 W8 moved it off
+    the line under the combo, where it read as a second field. Indexed from the front, never
+    from the end: what follows is whatever rows the tab grows next. Captured rather than
+    asserted against the pixels, because what this pins is the string the mode decides.
     """
     seen: list[str] = []
     real = document_tab.small_caption
@@ -96,9 +95,9 @@ def _captions(app: Any, monkeypatch: Any) -> list[str]:
 
 
 def test_an_auto_documents_readout_is_its_live_size(app: Any, monkeypatch: Any) -> None:
-    # Row 2 under Auto shows the number the control does NOT carry: the control names a ratio,
-    # so the readout is the pixels. Falsifier: read `resolution` there and it reports a pair
-    # the mode never renders at.
+    # The caption under Auto carries the number the control does NOT: the control names a
+    # ratio, so the caption shows the pixels. Falsifier: read `resolution` there and it
+    # reports a pair the mode never renders at.
     document = app.ui_documents[app.current_document_id].document
     document.resolution_mode = ResolutionMode.AUTO
     document.aspect = (16, 9)
@@ -106,21 +105,20 @@ def test_an_auto_documents_readout_is_its_live_size(app: Any, monkeypatch: Any) 
     document.set_canvas_size((1214, 683))
 
     captions = _captions(app, monkeypatch)
-    assert captions[2] == "1214x683", captions
+    assert captions[1] == "Canvas  1214x683", captions
 
 
 def test_a_fixed_documents_readout_is_the_aspect_of_its_pair(
     app: Any, monkeypatch: Any
 ) -> None:
-    # The mirror: the control names a size, so the readout is the shape. Falsifier: print the
-    # size again and row 2 repeats what the row above already says.
+    # The mirror: the control names a size, so the caption is the shape. Falsifier: print the
+    # size again and the caption repeats what the combo below it already says.
     document = app.ui_documents[app.current_document_id].document
     document.resolution_mode = ResolutionMode.FIXED
     document.resolution = (1280, 720)
 
     captions = _captions(app, monkeypatch)
-    assert captions[2] == "16:9", captions
-    assert "Canvas" in captions, "the caption row does not name the canvas"
+    assert captions[1] == "Canvas  16:9", captions
 
 
 def test_an_aspect_pick_writes_the_reduced_ratio(app: Any) -> None:
@@ -235,3 +233,33 @@ def test_a_row_does_not_repeat_the_ratio_its_group_names(app: Any) -> None:
     for caption, rows in canvas_choice_groups(ui_document):
         for row in rows:
             assert not row.label.endswith(f"({caption})"), row.label
+
+
+def test_the_script_toggle_is_labelled_and_only_shown_with_a_script(
+    app: Any, monkeypatch: Any
+) -> None:
+    """The bare `stop` gets a `Script` label naming what it stops (093 W8).
+
+    On a uniform row the toggle sits at the end of the row of the uniform it stops, which is
+    its subject; on this row it had no neighbor and read as a loose word. Falsifier: drop the
+    label and the first assertion goes red; draw the pair with no script on disk and the
+    second does.
+    """
+    words: list[str] = []
+    real = document_tab.imgui.text_colored
+
+    def spy(color: Any, text: str) -> None:
+        words.append(text)
+        real(color, text)
+
+    monkeypatch.setattr(document_tab.imgui, "text_colored", spy)
+
+    assert not app.session.has_script(app.current_document_id)
+    _draw_tab_once(app)
+    assert "Script" not in words, "the label showed with no script on disk"
+
+    app.session.create_script(app.current_document_id)
+    assert app.session.has_script(app.current_document_id)
+    words.clear()
+    _draw_tab_once(app)
+    assert "Script" in words, "the toggle drew with no word naming what it stops"
