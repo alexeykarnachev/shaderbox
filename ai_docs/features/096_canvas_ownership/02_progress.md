@@ -20,9 +20,26 @@ So the first action of the executing session is `make gates` on the untouched tr
     make gates > /tmp/g.log 2>&1; echo $?
 
 - **exit 0** — good, proceed.
-- **red with an empty `git diff HEAD -- shaderbox/ tests/`** — the box, not the repo. Restart the
-  session or the machine. Do not debug it as a regression, and do not start a wave until the
-  baseline is green, or every later result is unreadable.
+- **red with an empty `git diff HEAD -- shaderbox/ tests/`** — the box, not the repo. Do not debug
+  it as a regression, and do not start a wave until the baseline is green, or every later result
+  is unreadable.
+
+**The state this spec was written in, so it is recognizable.** At the end of the investigation
+session the box was in exactly this condition, and the shape is specific:
+
+- `make gates` red at `test`, with `node down: Not properly terminated` and an xdist
+  `INTERNALERROR ... KeyError: <WorkerController gwN>`, only tens of tests run out of ~2720;
+- running serially segfaults at `tests/conftest.py`'s `app` fixture, which builds a glfw window;
+- yet the three scripts in `repro/` run fine, because each builds ONE standalone context and no
+  window.
+
+That combination means the display/driver is out of resources for new GL windows, not that the
+code is broken — verified by checking out an older commit and seeing the same failure, and by
+`git diff HEAD` being empty. The repro scripts working while the suite dies is the tell.
+
+**What to do:** try once more after a few minutes. If it persists, write that into this file and
+STOP — it is the one legitimate early exit. A night spent on a tree whose gate cannot run
+produces nothing anyone can trust, and the waves are all still here tomorrow.
 
 ## This is an unattended run
 
