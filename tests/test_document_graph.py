@@ -5,8 +5,9 @@ These are the spec's engine checks 2-6 and 8-9. Each renders real pixels through
 rather than inspecting the plan: stage 1 already asserts the ORDER, so what is left to prove is
 that the order is what actually draws and that a producer's texture reaches its consumer.
 
-Needs a real GL context. On the display-less dev box use the EGL backend + the MESA version
-overrides (set at process top, read at context creation); skips cleanly if no context is available.
+Needs a real GL context, taken from the shared `gl_ctx` fixture in `conftest.py` (default
+backend, one per module — the docstring there says why an explicit EGL one is wrong); skips
+cleanly if no context is available.
 """
 
 from collections.abc import Callable

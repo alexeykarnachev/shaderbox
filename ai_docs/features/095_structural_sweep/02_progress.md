@@ -280,3 +280,35 @@ were closed after the first review, using AST walks rather than the tool:
 
 What remains unscanned from the original list: enum members (see the note above on why a naive
 walk cannot close it), type aliases, `shaderbox/resources/`, and non-Python assets.
+
+## Review round two — one defect, plus a pre-existing contradiction the move exposed
+
+A second opus review ran against the patched state, anchored to its own AST walks and test runs.
+
+**Defect it found, and fixed: a falsifier pointing at a symbol W-D had deleted.**
+`tests/test_menus.py`'s guard on the menu bar's destructive verb told a later maintainer to point
+`DELETE_DOCUMENT`'s callback back at `App.delete_current_document`. That wrapper was dead as CODE
+— its only non-definition reference in the repo was this prose — but the prose was an instruction,
+so following it would raise `AttributeError` instead of producing the unconfirmed delete it
+promises. The docstring now names the wrapper's body, `delete_document(self.current_document_id)`;
+the test body is unchanged. Verified here rather than taken on trust: repointing the callback that
+way fails with "the bar's Delete document trashed with no confirm", and restoring it goes green.
+
+**The lesson worth carrying: a symbol with no caller can still be load-bearing as a NAME.** A
+deletion wave should search prose for the symbol it removes, not only code — a falsifier, a
+comment or a doc that names it is a reference the compiler cannot see.
+
+**A pre-existing contradiction the fixture move exposed, now corrected.** Three GL test modules
+opened with "on the display-less dev box use the EGL backend + the MESA version overrides". That
+text predates this sweep (`git show e24ca4f~1` has it verbatim) and was already wrong — the
+fixture beneath it used the default backend. With the fixture now in `conftest.py`, whose
+docstring explains that an explicit EGL context poisons the process's EGL display, a reader
+following those module docstrings would do the thing that causes the segfault. They now point at
+the shared fixture instead.
+
+**False trails from round two, do not re-litigate:** all 145 theme-bag members (the sixteen with
+no external reader each have an internal one — the `SYN_*` colors feed the kind tables, the size
+tokens feed `apply_theme`); `resources/__init__.py` and `abi_probe.py` as apparent orphans (the
+first is reached through `importlib.resources`, the second is vendored and parsed by a test);
+`_NAV_ONLY_FOCUSABLE` in `test_region_system_is_gone.py` (deliberate, self-documenting,
+pre-existing); and the `make test` MESA paragraph in `dev_flow.md`, still accurate.

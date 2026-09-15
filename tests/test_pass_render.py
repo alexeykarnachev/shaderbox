@@ -5,8 +5,9 @@ uniforms is constructible and drawable alone. Everything here builds a bare `Pas
 `Document` — so a document concern leaking back down into the pass fails these rather than passing
 because a `Document` happened to supply it.
 
-Needs a real GL context. On the display-less dev box use the EGL backend + the MESA version
-overrides (set at process top, read at context creation); skips cleanly if no context is available.
+Needs a real GL context, taken from the shared `gl_ctx` fixture in `conftest.py` (default
+backend, one per module — the docstring there says why an explicit EGL one is wrong); skips
+cleanly if no context is available.
 """
 
 from pathlib import Path

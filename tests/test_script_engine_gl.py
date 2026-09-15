@@ -5,8 +5,9 @@ values (the value reaches the GPU), that a shape-mismatch freezes + records a Sc
 uniforms reach the GPU (not popped on a failed write), and that a FRESH export instance renders cold
 (export-isolation, including render_media auto-entering it).
 
-Needs a real GL context. On the display-less dev box use the EGL backend + the MESA version
-overrides (set at process top, read at context creation); skips cleanly if no context is available.
+Needs a real GL context, taken from the shared `gl_ctx` fixture in `conftest.py` (default
+backend, one per module — the docstring there says why an explicit EGL one is wrong); skips
+cleanly if no context is available.
 """
 
 import contextlib
