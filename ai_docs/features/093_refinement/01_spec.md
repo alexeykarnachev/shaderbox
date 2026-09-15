@@ -403,14 +403,16 @@ play/stop when a script exists. `Script open` / `Graph open` and the red `Reset`
 for the document tile's context menu (which gains Open script, Open graph, Reset beside Open
 folder and Delete), the Document menu and their chords -- each was already a registered command,
 so the panel rows were a third affordance. Every menu item takes the TILE's document id: a
-right-click does not select the tile it opens on, so `reset_document_for_confirmed` joins
-`delete_document_confirmed`'s per-document shape and `reset_current_document` is retired.
+right-click does not select the tile it opens on, so a per-document reset verb joins
+`delete_document_confirmed`'s shape; what it is CALLED changed later in the same wave (below),
+when finding 36 took the confirm away -- the pair ends as `reset_document` /
+`reset_current_document`, and the name retired is `reset_document_confirmed`.
 The `Auto | Fixed` segment, the aspect chips and the W x H fields collapse into ONE combo
 grouped by aspect with that ratio's `Auto` leading each group (his shape: "просто в начале
 каждого аспекта будет auto опция"); a ratio no fixed size covers keeps its group, and a row
 drops the ratio its caption already names. 090 D1's model is untouched -- only the widget
-changes. Four dead `App` fields go with the pair (`canvas_size_buf`, `aspect_buf` and the four
-editing flags). Reset then lost its confirm too (finding 36): it restarts histories, a clock, bound videos and a
+changes. Six dead `App` fields go with the pair: `canvas_size_buf`, `aspect_buf`, and the four
+editing flags (`canvas_w_editing`, `canvas_h_editing`, `aspect_w_editing`, `aspect_h_editing`). Reset then lost its confirm too (finding 36): it restarts histories, a clock, bound videos and a
 script, all rebuilt by a re-run, and touches nothing on disk, so the verbs drop the `_confirmed`
 suffix and become `reset_document` / `reset_current_document`. Delete keeps its confirm, moving a
 directory to the trash. His check of the row then moved the aspect readout onto the `Canvas` caption (`Canvas  16:9`),
