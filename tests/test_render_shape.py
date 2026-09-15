@@ -50,6 +50,30 @@ def test_wide_is_16_9_at_its_longest_edge() -> None:
     assert w == 1280 and h == 720  # 16:9, longest edge (width) 1280
 
 
+def test_standard_is_4_3_at_its_longest_edge() -> None:
+    preset = shape_to_preset(
+        RenderShape.STANDARD_960,
+        is_video=False,
+        fps=None,
+        container=None,
+        duration_max=None,
+    )
+    assert preset.aspect == (4, 3)
+    assert resolve_dims(preset, (100, 100)) == (1280, 960)
+
+
+def test_every_group_shares_one_longest_edge_ladder() -> None:
+    # A tier name means one size whatever the aspect: the 4:3 group cannot bring its own edges.
+    ladders = {
+        spec.group: sorted(
+            s.longest_edge or 0 for s in SHAPE_TABLE.values() if s.group == spec.group
+        )
+        for spec in SHAPE_TABLE.values()
+        if spec.group != "native"
+    }
+    assert len(set(map(tuple, ladders.values()))) == 1, ladders
+
+
 def test_is_short_groups() -> None:
     assert is_short(RenderShape.SHORT_720)
     assert not is_short(RenderShape.WIDE_1080)

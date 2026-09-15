@@ -740,26 +740,37 @@ class ProjectSession:
         document_ids: list[str],
         t: float,
         dt: float,
-        frame: int,
         *,
         mouse: MouseState = EXPORT_MOUSE,
     ) -> None:
-        """The live per-frame tick over exactly the documents this frame renders.
+        """The live tick over exactly the documents this frame renders.
 
         `t` is a process-clock instant (`core.process_time()`); each document's script sees it
         on the document's own clock, `document.live_time(t)`, the zero its shaders' u_time counts
-        from. `mouse` is the live cursor App passes in; headless callers omit it (EXPORT_MOUSE,
-        deterministic) and, never resetting a document, may pass any monotonic clock as `t`.
+        from. The script's `dt` and `frame` are the DOCUMENT's: seconds since its previous tick
+        and its tick count since playback, so a throttled document integrates the whole gap
+        between two renders in one step; `dt` here serves only a first tick, which has no
+        previous one. `mouse` is the live cursor App passes in; headless callers omit it
+        (EXPORT_MOUSE, deterministic) and, never resetting a document, may pass any monotonic
+        clock as `t`.
         """
         for document_id in document_ids:
             ui_document = self.ui_documents.get(document_id)
             if ui_document is None:
                 continue
             document = ui_document.document
+            now = document.live_time(t)
+            document_dt = (
+                dt if document.script_time is None else now - document.script_time
+            )
+            document.script_time = now
+            document.script_frame += 1
             self.script_engine.tick(
                 document_id,
                 document,
-                ScriptContext(t=document.live_time(t), dt=dt, frame=frame, mouse=mouse),
+                ScriptContext(
+                    t=now, dt=document_dt, frame=document.script_frame, mouse=mouse
+                ),
                 self._stopped_for(document_id),
             )
 

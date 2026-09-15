@@ -15,10 +15,12 @@ from shaderbox.render_shape import RenderShape
 
 # The output size is a named RenderShape tier — the SAME vocabulary the Share tab exposes, so a
 # render matches what publish would emit. The agent picks a member (NATIVE = the document's authored
-# canvas size, any aspect; short_* = 9:16; wide_* = 16:9), never raw pixels (no off-aspect Short).
+# canvas size, any aspect; short_* = 9:16; wide_* = 16:9; standard_* = 4:3), never raw pixels (no
+# off-aspect Short).
 _SHAPE_DESC = (
     "output size: native (the document's canvas size, any aspect), short_720/short_1080/short_1440 "
-    "(9:16 vertical), or wide_720/wide_1080/wide_1440 (16:9). Dims snap to the codec alignment."
+    "(9:16 vertical), wide_720/wide_1080/wide_1440 (16:9), or "
+    "standard_960/standard_1440/standard_1920 (4:3). Dims snap to the codec alignment."
 )
 
 

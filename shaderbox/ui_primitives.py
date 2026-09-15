@@ -4,6 +4,7 @@ import webbrowser
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
+from enum import Enum, auto
 from pathlib import Path
 
 import moderngl
@@ -315,21 +316,38 @@ def message_bubble(
     imgui.pop_style_color(2)
 
 
+class ModalSizing(Enum):
+    """How a modal's window gets its size; every registry row declares one.
+
+    RESIZABLE: `size` seeds the window once (`Cond_.first_use_ever`) and a user resize
+    persists via imgui.ini -- for a modal whose content is a scrollable region.
+    FIXED: `size` every frame and no resize handle -- for a modal that measures its own
+    content (the Examples grid).
+    AUTO: the width is `size[0]`, pinned by a constraint (`always_auto_resize` ignores
+    `set_next_window_size`); the height follows the content up to the display, with no
+    resize handle and NO saved settings -- a persisted height would be the previous
+    content's, which is a scrollbar or a footer past the edge on the next open. For a
+    modal that is one question or one form and draws no `modal_content` region.
+    """
+
+    RESIZABLE = auto()
+    FIXED = auto()
+    AUTO = auto()
+
+
 @contextmanager
 def modal_window(
     label: str,
     size: tuple[float, float],
+    sizing: ModalSizing,
     flags: int = 0,
-    fixed_size: bool = False,
 ) -> Iterator[bool]:
     """Boilerplate-free modal-popup wrapper, called once from `popups/registry.py`: it owns
-    the imgui dance (open by label, seed size, center, enter the popup scope, yield
+    the imgui dance (open by label, size per `sizing`, center, enter the popup scope, yield
     visibility). Which modal is open lives on `App.modal`, and a modal's per-close cleanup
     is its registry row's `on_close` hook, never a write at a call site. `flags` passes
-    window flags through (e.g. `no_scrollbar` for a modal that sizes its own content).
-    `fixed_size` forces `size` every frame (`Cond_.always`) for a non-resizable modal — pair
-    it with `WindowFlags_.no_resize`; the default seeds `size` once (`Cond_.first_use_ever`)
-    so a user resize persists via imgui.ini.
+    window flags through (e.g. `no_scrollbar` for a modal that sizes its own content); the
+    flags a `sizing` needs are added here, never at a row.
 
     A modal module is a body plus one constant, and nothing else:
 
@@ -346,8 +364,21 @@ def modal_window(
     """
     if not imgui.is_popup_open(label):
         imgui.open_popup(label)
-    size_cond = imgui.Cond_.always if fixed_size else imgui.Cond_.first_use_ever
-    imgui.set_next_window_size(imgui.ImVec2(*size), size_cond)
+    if sizing is ModalSizing.AUTO:
+        display_h = imgui.get_io().display_size.y
+        imgui.set_next_window_size_constraints(
+            (size[0], 0.0), (size[0], max(1.0, display_h - float(SIZE.MODAL_MARGIN)))
+        )
+        flags |= (
+            imgui.WindowFlags_.always_auto_resize
+            | imgui.WindowFlags_.no_resize
+            | imgui.WindowFlags_.no_saved_settings
+        )
+    elif sizing is ModalSizing.FIXED:
+        imgui.set_next_window_size(imgui.ImVec2(*size), imgui.Cond_.always)
+        flags |= imgui.WindowFlags_.no_resize
+    else:
+        imgui.set_next_window_size(imgui.ImVec2(*size), imgui.Cond_.first_use_ever)
     # Center on the viewport (pivot at the window's own center). first_use_ever so a
     # user drag persists via imgui.ini.
     center = imgui.get_main_viewport().get_center()
@@ -380,9 +411,8 @@ def modal_content() -> Iterator[bool]:
     not touch the modal's edge, and the child carries no border -- the modal frame is the
     frame.
 
-    A modal that AUTO-RESIZES has no scrollable region to size (its height follows its
-    content), so it uses `modal_footer()` alone -- the pass-settings modal is the one such
-    case today.
+    A modal sized `ModalSizing.AUTO` has no scrollable region to size (its height follows
+    its content), so it uses `modal_footer()` alone; the chrome gate pins the two apart.
     """
     open_ = imgui.begin_child(
         "##modal_content",

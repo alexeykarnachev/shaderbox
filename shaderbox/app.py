@@ -1062,10 +1062,6 @@ class App:
         self.request_confirm(
             ConfirmRequest(
                 title=f'Revert "{head}"?',
-                line=(
-                    "Shaders edited since that message are restored to their state "
-                    "before it."
-                ),
                 verb="Revert",
                 on_confirm=lambda: self.revert_turn(msg),
             )
@@ -1075,7 +1071,6 @@ class App:
         self.request_confirm(
             ConfirmRequest(
                 title=f"Delete pass {name}?",
-                line="Its wiring and position are lost; the shader file stays.",
                 verb="Delete",
                 on_confirm=lambda: self.delete_pass(document_id, name),
             )
@@ -1107,7 +1102,6 @@ class App:
         self.request_confirm(
             ConfirmRequest(
                 title=f"Move {ui_document.ui_state.ui_name} to the trash?",
-                line="Nothing in the app brings it back.",
                 verb="Delete",
                 on_confirm=lambda: self.delete_document(document_id),
             )
@@ -1123,7 +1117,6 @@ class App:
         self.request_confirm(
             ConfirmRequest(
                 title=f"Reset {ui_document.ui_state.ui_name}?",
-                line="Feedback histories, the clock and the script restart.",
                 verb="Reset",
                 on_confirm=self.reset_current_document,
             )
@@ -1133,7 +1126,6 @@ class App:
         self.request_confirm(
             ConfirmRequest(
                 title="Clear the conversation?",
-                line="The transcript and its checkpoints are dropped.",
                 verb="Clear",
                 on_confirm=self.copilot_clear_chat,
             )

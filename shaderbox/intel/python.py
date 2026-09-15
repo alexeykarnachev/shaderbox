@@ -3,7 +3,9 @@ Python, in-process, synchronous. The caller decides the thread; this module only
 (text, cursor) into symbols. The context fields carry the engine's own gloss, since jedi has
 no docstring for a dataclass field."""
 
+import io
 import re
+import tokenize
 
 import jedi
 from jedi.api.classes import BaseName, Completion
@@ -49,6 +51,27 @@ def _after_dot(before_caret: str) -> bool:
     return _MEMBER_AT_END.search(before_caret) is not None
 
 
+# The tokenizer's two verdicts for a caret inside an unclosed literal; an open bracket reports
+# "EOF in multi-line statement" instead, which is not a string.
+_IN_STRING_VERDICTS = ("unterminated string literal", "EOF in multi-line string")
+
+
+def _inside_string(text: str, line: int, column: int) -> bool:
+    """Whether the caret sits inside a string literal: the source up to the caret tokenizes
+    to an unterminated string. jedi completes a literal as a FILE PATH, which a document
+    script never wants."""
+    lines = text.split("\n")
+    head = "\n".join([*lines[:line], lines[line][:column]])
+    try:
+        list(tokenize.generate_tokens(io.StringIO(head).readline))
+    except tokenize.TokenError as error:
+        return str(error.args[0]).startswith(_IN_STRING_VERDICTS)
+    return False
+
+
+_METACLASS_PREFIX = "builtins.type."
+
+
 def _gloss_for(full_name: str | None) -> str:
     if full_name and full_name.startswith(_CONTEXT_CLASS + "."):
         return context_field_gloss(full_name.rsplit(".", 1)[1])
@@ -67,17 +90,22 @@ def _signature_and_doc(name: BaseName) -> tuple[str, str]:
 
 def python_completions(text: str, line: int, column: int) -> list[Symbol]:
     """Candidates at a 0-based (line, column), jedi's order. Names starting with `_` are
-    offered only when the typed prefix starts with `_`."""
+    offered only when the typed prefix starts with `_`; a caret inside a string literal gets
+    nothing; a class object's completions are its own attributes, never `type`'s (`mro`)."""
     lines = text.split("\n")
     if not 0 <= line < len(lines):
         return []
     column = min(column, len(lines[line]))
+    if _inside_string(text, line, column):
+        return []
     before = lines[line][:column]
     after_dot = _after_dot(before)
     found: list[Symbol] = []
     for completion in _script(text).complete(line + 1, column):
         typed = completion.name[: len(completion.name) - len(completion.complete or "")]
         if completion.name.startswith("_") and not typed.startswith("_"):
+            continue
+        if (completion.full_name or "").startswith(_METACLASS_PREFIX):
             continue
         kind = _kind(completion, after_dot=after_dot)
         signature, doc = (

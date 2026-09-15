@@ -34,7 +34,6 @@ def _confirm_file_delete(app: App, path: Path) -> None:
     app.request_confirm(
         ConfirmRequest(
             title=f"Delete {path.name}?",
-            line="It moves to .trash.",
             verb="Delete",
             on_confirm=lambda: app.shader_lib_files.delete_file(path),
         )
@@ -45,7 +44,6 @@ def _confirm_dir_delete(app: App, path: Path) -> None:
     app.request_confirm(
         ConfirmRequest(
             title=f"Delete {path.name}?",
-            line="It moves to .trash.",
             verb="Delete",
             on_confirm=lambda: app.shader_lib_files.delete_dir(path),
         )

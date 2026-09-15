@@ -476,8 +476,16 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   are the two this repo bans.** A payload belongs in `ui_models.py`, which `app.py` already
   imports. A close is FORCED when the body returns False (a Close the user clicked cannot be
   refused by an armed rename input) and unforced on the Esc path, where `owns_esc` declines;
-  `imgui.close_current_popup()` runs only after a close that happened. **A modal opened
-  STACKED (`App._open_modal(id, stacked=True)`) records the one it covers in
+  `imgui.close_current_popup()` runs only after a close that happened. **A modal's size is
+  ONE declaration on its row, `Modal.sizing: ModalSizing` (093 W6)**, resolved in
+  `ui_primitives.modal_window` and nowhere else: RESIZABLE seeds `size` once and a user resize
+  persists (a modal whose content is a scrollable region); FIXED sets it every frame with no
+  handle (Examples, which measures its grid); AUTO pins the width by a constraint and lets the
+  height follow the content up to the display, no handle, no saved settings (the confirm, the
+  pass-settings modal -- a persisted height was the previous content's, which put the Reset
+  confirm's buttons under a scrollbar). The chrome gate pins the choice to the body's shape: a
+  row that lays out no content region against the window is AUTO, and only such a row is. **A
+  modal opened STACKED (`App._open_modal(id, stacked=True)`) records the one it covers in
   `App.modal_below`, which `close_modal` restores instead of writing `None`** — a confirm
   asked from inside another modal (the lib tree's deletes are the one such caller) leaves that
   modal's state untouched and its `on_close` unrun, and lands the user back in it. A stacked
@@ -499,8 +507,8 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   editor handle + its dirty baseline, one per on-disk file — the handle keeps mode + undo across tab
   switches). Dirty tracking is `ed_revision` vs `saved_undo`, and the revision RISES across
   `set_text`, so every re-baseline reads it AFTER the set. A tab's `kind` (`shader` / `script` / `lib`,
-  feature 048; `graph`, 093) drives its document-derived display label (`tab_label`: `<document> (shader)` /
-  `(script)` / `(graph)` / `library - <file>`) + the error tint; a `graph` tab is the one kind with NO
+  feature 048; `graph`, 093) drives its document-derived display label (`tab_label`: `<document> (<pass>)` /
+  `(script)` / `(graph)` / `library - <file>`; 093 W6 dropped the single-pass `(shader)` special case) + the error tint; a `graph` tab is the one kind with NO
   session at all -- its path is the document's `graph.json`, which keys every path-keyed pass-through
   while nothing edits it as text, so `is_tab_dirty`, `formatter_for` and the flush paths all answer on
   the missing session; the imgui `##id` keys on the stable path/index, never the mutable
@@ -590,15 +598,16 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   a row needs a commit rule the two (Enter, deactivate) cannot express.
 
 - **A destructive verb confirms in the confirm modal, from every surface (093 W4).** The
-  verb is an `App` method that builds a `ConfirmRequest` (title naming its target, one line of
-  consequence, the button's word, the callable) and calls `App.request_confirm`; a menu item, a
+  verb is an `App` method that builds a `ConfirmRequest` (a title that is the question, naming
+  the verb and its target; the button's word; the callable) and calls `App.request_confirm`; a menu item, a
   bar item, a button, a chord and the palette all call that one method, so the question reads
   the same wherever it is asked. `popups/confirm.py` is the modal — `ModalId.CONFIRM`, in the
   mutex like every other, one decision per frame (the `danger_button` and Enter share a single
   branch, and Enter is declined on the appearing frame, which a keyboard menu activation shares
   with the press that opened the modal). This REVERSES the submenu confirm and the arming flags
-  that preceded it: the submenu was hover-reachable, carried no consequence text and no chord
-  hint, and is a shape no desktop app confirms with. Two confirms stay INSIDE a modal as armed
+  that preceded it: the submenu was hover-reachable and is a shape no desktop app confirms with.
+  No consequence line under the question (093 W6, finding 24): "nothing brings it back" is the
+  app's business, and a question naming its target is the whole confirm. Two confirms stay INSIDE a modal as armed
   `danger_button` rows — Projects' delete and Settings' library reset — because a modal over a
   modal is not the mechanism's shape; revisit at a third. A tile never carries a destructive
   control: a verb on an object lives on that object's context menu.
@@ -818,7 +827,8 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   third *concrete* exporter lands.
 - **Render output size is ONE named vocabulary (`RenderShape`), not raw dims per caller.**
   `render_shape.py` owns the single home: a `RenderShape` StrEnum (`NATIVE` + `SHORT_720/1080/1440`
-  9:16 + `WIDE_720/1080/1440` 16:9) with the aspect BAKED into each tier, a `SHAPE_TABLE` mapping each
+  9:16 + `WIDE_720/1080/1440` 16:9 + `STANDARD_960/1440/1920` 4:3, one longest-edge ladder shared
+  by every group) with the aspect BAKED into each tier, a `SHAPE_TABLE` mapping each
   to its spec, and one `shape_to_preset(shape, *, is_video, fps, container, duration_max)` resolver
   that lowers a tier into a transient `RenderPreset`. The Share UI (`_RenderState.shape`), the copilot
   render tools (`render_image`/`render_video` take `shape: RenderShape`), and copilot publish
@@ -883,7 +893,16 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   feedback advance, and each is an independent read; one left ungated leaves the throttle inert
   on that path while the others honor it (the pass-settings modal shipped exactly that way and a
   review caught it). A throttled feedback pass steps fewer times per wall second, so a trail is a
-  coarser integration under load — accepted, with the Settings checkbox as the escape. Revisit if
+  coarser integration under load — accepted, with the Settings checkbox as the escape.
+  **The script's tick is the document's render (093 W6, reversing 090 D8).** Step 7 ticks the
+  documents `_rendering_this_frame` names -- the render block's own three-way rule (the normal
+  set, nothing behind the Examples popup, the current document behind pass settings) gated by
+  the plan -- so what a tick computes is always consumed by a render. `session.tick` derives
+  each document's `dt` (document time since ITS previous tick, `Document.script_time`) and
+  `frame` (its tick count, `Document.script_frame`, cleared with the clock by `reset`); the
+  cursor's `prev` is an anchor the tick re-bases at the position it saw and the viewer's
+  sampler carries across skipped frames, so a stroke drawn from prev to current has no gaps.
+  A tick between two renders was work nothing showed. Revisit if
   a CPU throttle is wanted: `CostRecord` already carries the field and no policy reads it.
 
 - **GPU spans record ALWAYS and are keyed by document ID (feature 090).** The profiler stopped

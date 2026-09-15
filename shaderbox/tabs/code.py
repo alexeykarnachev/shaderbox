@@ -57,15 +57,12 @@ def _is_script_tab(tab: EditorTab | None) -> bool:
 
 def tab_label(app: App, tab: EditorTab) -> str:
     # The display label for a tab (048): document-derived so two documents' tabs are distinguishable
-    # ("<document> (shader)" / "<document> (script)"), a lib by "library - <file>". The on-disk filename is
+    # ("<document> (<pass>)" / "<document> (script)"), a lib by "library - <file>". The on-disk filename is
     # the same constant for every document, so the bare name can't tell tabs apart. Falls back to a short
     # id slice when the document has no name. The imgui ##id keys on the stable path, NOT this label.
     #
-    # A MULTI-pass document names the pass instead of "shader" (065) — otherwise its tabs are all
-    # "<document> (shader)" and tell each other apart by nothing. Taken from the tab's own PATH,
-    # which is its identity, so the label cannot disagree with the file the tab opens and a rename
-    # carries it along for free. A single-pass document keeps "(shader)": there is nothing to
-    # disambiguate, and "(main)" would say less.
+    # A shader tab names its PASS, taken from the tab's own path, which is its identity: the label
+    # cannot disagree with the file the tab opens and a rename carries it along for free.
     if tab.kind == "lib":
         return f"library - {tab.path.stem}"
     ui_document = app.ui_documents.get(tab.document_id)
@@ -74,13 +71,11 @@ def tab_label(app: App, tab: EditorTab) -> str:
     ) or tab.document_id[:8]
     if tab.kind == "script":
         return f"{document_name} (script)"
-    # Before the multi-pass fallthrough: a graph tab's path is `graph.json`, on which
+    # Before the pass fallthrough: a graph tab's path is `graph.json`, on which
     # `pass_name_of` would answer a filename rather than a pass (093 T1).
     if tab.kind == "graph":
         return f"{document_name} (graph)"
-    multi_pass = ui_document is not None and len(ui_document.document.passes) > 1
-    suffix = pass_name_of(tab.path) if multi_pass else "shader"
-    return f"{document_name} ({suffix})"
+    return f"{document_name} ({pass_name_of(tab.path)})"
 
 
 def _draw_tab_row(app: App) -> None:

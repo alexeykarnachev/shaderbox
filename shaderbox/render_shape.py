@@ -133,9 +133,12 @@ class RenderShape(StrEnum):
     WIDE_720 = "wide_720"  # 16:9, longest edge 1280
     WIDE_1080 = "wide_1080"  # 16:9, longest edge 1920
     WIDE_1440 = "wide_1440"  # 16:9, longest edge 2560
+    STANDARD_960 = "standard_960"  # 4:3, longest edge 1280
+    STANDARD_1440 = "standard_1440"  # 4:3, longest edge 1920
+    STANDARD_1920 = "standard_1920"  # 4:3, longest edge 2560
 
 
-ShapeGroup = Literal["native", "short", "wide"]
+ShapeGroup = Literal["native", "short", "wide", "standard"]
 
 
 @dataclass(frozen=True)
@@ -154,9 +157,19 @@ SHAPE_TABLE: dict[RenderShape, ShapeSpec] = {
     RenderShape.WIDE_720: ShapeSpec("Wide 720p (16:9)", "wide", (16, 9), 1280),
     RenderShape.WIDE_1080: ShapeSpec("Wide 1080p (16:9)", "wide", (16, 9), 1920),
     RenderShape.WIDE_1440: ShapeSpec("Wide 1440p (16:9)", "wide", (16, 9), 2560),
+    RenderShape.STANDARD_960: ShapeSpec(
+        "Standard 960p (4:3)", "standard", (4, 3), 1280
+    ),
+    RenderShape.STANDARD_1440: ShapeSpec(
+        "Standard 1440p (4:3)", "standard", (4, 3), 1920
+    ),
+    RenderShape.STANDARD_1920: ShapeSpec(
+        "Standard 1920p (4:3)", "standard", (4, 3), 2560
+    ),
 }
 
-# Picker order for the Share-tab resolution combo (native first, then shorts, then wide).
+# Picker order for the Share-tab resolution combo (native first, then shorts, wide, standard).
+# Every group shares the three longest edges, so a tier name means one size across aspects.
 MENU_SHAPES: list[RenderShape] = [
     RenderShape.NATIVE,
     RenderShape.SHORT_720,
@@ -165,6 +178,9 @@ MENU_SHAPES: list[RenderShape] = [
     RenderShape.WIDE_720,
     RenderShape.WIDE_1080,
     RenderShape.WIDE_1440,
+    RenderShape.STANDARD_960,
+    RenderShape.STANDARD_1440,
+    RenderShape.STANDARD_1920,
 ]
 
 

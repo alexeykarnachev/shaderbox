@@ -401,7 +401,7 @@ def main() -> int:
             script_document_obj.render_pass.uniform_values["u_a"] = -999.0
             b_before = script_document_obj.render_pass.uniform_values["u_b"]
             app.session.set_uniform_stopped("script_document", "main", "u_a", True)
-            app.session.tick(["script_document"], t=1.0, dt=0.5, frame=999)
+            app.session.tick(["script_document"], t=1.0, dt=0.5)
             assert script_document_obj.render_pass.uniform_values["u_a"] == -999.0, (
                 "smoke: a stopped uniform was overwritten — the tick(stopped=) skip is unwired"
             )

@@ -166,6 +166,13 @@ two same-titled documents are two rows. The policy reads `gpu_ms` alone, so a CP
 a policy change. The record is two frames stale by design, fine for a slow signal. No record →
 `k = 1`.
 
+> **REVERSED by 093 wave 6** (`ai_docs/features/093_refinement/00_findings.md`, finding 28). The
+> maintainer's drawing script paired the previous and current cursor to stroke a line; ticking
+> every UI frame while rendering every k-th drew one frame of stroke per render and left the
+> skipped frames as gaps. A tick is now a render: `ui.py` step 7 ticks the rendered set, the
+> document owns its script's `dt` and `frame`, and the cursor's previous position anchors per
+> tick. The feedback half of this decision stands.
+
 **D8 — the script ticks once per UI frame; a throttled feedback pass integrates at the document's
 own rate, accepted.** `session.tick` keeps running over the full set at the UI rate, so integrators
 stay smooth and `ctx.frame` keeps meaning the UI frame. `begin_frame` is **not** called on a skipped

@@ -240,9 +240,9 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   `wire_state`, `revalidated_wire`, `delete_allowed`; `node_size` and `revalidated_scope` beside
   them.
 - **`popups/pass_settings.py`** — the pass-settings modal (feature 065), in the modal
-  mutex: one pass's name, group (091), run count and target controls. Opens from a tile's gear,
-  its context menu, or automatically on `add pass` — set-up-once choices live here, off the
-  strip. What a pass reads is not here since 072: that is each sampler's own row.
+  mutex: one pass's name, group (091), run count and target controls. Opens from a tile's or
+  a node's context menu, the Pass menu, or automatically on `add pass` — set-up-once choices
+  live here, off the strip. Sized AUTO: the width token, the height from its content. What a pass reads is not here since 072: that is each sampler's own row.
 - **`popups/import_passes.py`** — the import dialog (feature 091), in the modal mutex: a
   source picked from two tabs (the project's other documents, the shipped examples), the group
   name that also prefixes the passes, one combo per ENTRY POINT of the source (kept, or fed by a
@@ -432,7 +432,8 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   funnel `hotkeys.py` and every Close button reach. It imports `App` and every popup; nothing in
   `popups/` imports it, and `app.py` imports nothing from the package at all (a gate pins that).
   **`popups/__init__.py`** — the shared `Modal` dataclass alone, so the registry and the popups
-  it imports do not cycle. **`popups/confirm.py`** — the confirm modal every destructive verb
+  it imports do not cycle; its `sizing: ModalSizing` (RESIZABLE / FIXED / AUTO, from
+  `ui_primitives`) is the one place a modal's size rule is declared. **`popups/confirm.py`** — the confirm modal every destructive verb
   routes through (093 W4); its request type is `ui_models.ConfirmRequest` and its builders are
   the `App.*_confirmed` verbs.
   `examples.py` (the Examples browser — grid + description + "Open a copy"), `settings.py` (global target FPS + inline-editor visual options + the

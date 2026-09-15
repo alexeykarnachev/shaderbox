@@ -332,6 +332,11 @@ class Document:
         # read this.
         self.time_origin: float = process_time()
         self._frame: int = -1
+        # The script's own tick bookkeeping: how many ticks since playback started and the
+        # document time at the last one, from which the next tick's dt is derived. A tick is a
+        # render (093 W6), so under the throttle these run slower than the UI frame.
+        self.script_frame: int = -1
+        self.script_time: float | None = None
         self._graph_errors: list[GraphError] = []
         # Loading compiles nothing (066 D1), so the first render pays the pass compiles. The
         # live loop reads this to admit first renders one document per frame (066 D2); set on
@@ -521,6 +526,8 @@ class Document:
         """
         self.reset_feedback()
         self.time_origin = process_time()
+        self.script_frame = -1
+        self.script_time = None
 
     def live_time(self, now: float | None = None) -> float:
         """Seconds on this document's clock: the live loop's u_time and the script's context.t.

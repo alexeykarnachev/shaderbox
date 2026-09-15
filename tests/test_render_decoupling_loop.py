@@ -193,7 +193,6 @@ def test_the_confirm_modal_pauses_the_normal_render_set(
     app.request_confirm(
         ConfirmRequest(
             title="Delete pass b?",
-            line="Its wiring is lost.",
             verb="Delete",
             on_confirm=lambda: None,
         )
@@ -722,3 +721,96 @@ def test_the_import_dialog_plans_the_open_tabs_documents(
         "the project tab did not render the other document"
     )
     app.close_import_passes()
+
+
+# ---------------------------------------------------------------------------
+# 093 W6 -- the script ticks when the document renders, on the document's own clock
+# ---------------------------------------------------------------------------
+
+
+def _record_ticks(app: Any, monkeypatch: Any) -> list[tuple[str, Any]]:
+    """Every `(document_id, ScriptContext)` the engine is ticked with, in order."""
+    seen: list[tuple[str, Any]] = []
+    real = type(app.session.script_engine).tick
+
+    def recorded(
+        self: Any, document_id: str, document: Any, context: Any, *rest: Any
+    ) -> None:
+        seen.append((document_id, context))
+        real(self, document_id, document, context, *rest)
+
+    monkeypatch.setattr(type(app.session.script_engine), "tick", recorded)
+    return seen
+
+
+def test_a_throttled_documents_script_ticks_once_per_render_with_the_gap_as_dt(
+    app: Any, monkeypatch: Any
+) -> None:
+    """A tick is a render (093 W6, reversing 090 D8). The maintainer's drawing script returned
+    the previous and current cursor to stroke a line between them; ticking every UI frame while
+    rendering every twelfth drew one frame's worth of stroke per render and left gaps.
+
+    Falsifier: tick `tick_documents` instead of the rendered set in step 7 -- the k = 12
+    document ticks twelve times in twelve frames.
+    """
+    other = seed_extra_document(app, "cheap-0000-4000-8000-000000000001")
+    _freeze_costs(app, monkeypatch)
+    _plant_cost(app, app.current_document_id, 100.0)
+    _plant_cost(app, other, 0.5)
+    _drive(app, 8)
+    assert app.render_plan is not None
+    assert app.render_plan.intervals[app.current_document_id] == 12
+
+    ticks = _record_ticks(app, monkeypatch)
+    renders = _count_begin_frames(app, monkeypatch)
+    _drive(app, 24)
+    current = [ctx for doc, ctx in ticks if doc == app.current_document_id]
+    assert len(current) == renders.get(app.current_document_id, 0), (
+        f"the current document ticked {len(current)} times but rendered "
+        f"{renders.get(app.current_document_id, 0)} times"
+    )
+    assert 1 <= len(current) <= 3
+    assert len([1 for doc, _ in ticks if doc == other]) == 24, (
+        "the cheap document ticks every frame"
+    )
+    # dt is the document time elapsed since ITS previous tick, the skipped frames included,
+    # and frame counts the document's own ticks; the headless drive runs frames in
+    # microseconds, so the span is asserted against the clock rather than a wall figure.
+    if len(current) >= 2:
+        assert current[1].dt == pytest.approx(current[1].t - current[0].t)
+        assert current[1].frame == current[0].frame + 1
+
+
+def test_the_cursors_previous_position_anchors_at_the_documents_last_tick(
+    app: Any, monkeypatch: Any
+) -> None:
+    """Between two ticks the cursor keeps moving; the position the next tick reads as `prev`
+    is the one the previous tick saw, not the previous UI frame's.
+
+    Falsifier: drop the re-anchor after `session.tick` in step 7.
+    """
+    _freeze_costs(app, monkeypatch)
+    _plant_cost(app, app.current_document_id, 100.0)
+    _drive(app, 8)
+    assert app.render_plan is not None
+    assert app.render_plan.intervals[app.current_document_id] == 12
+
+    from shaderbox.scripting import MouseState
+
+    app.script_mouse = MouseState(x=0.2, y=0.3, down=True, prev_x=0.1, prev_y=0.1)
+    ticks = _record_ticks(app, monkeypatch)
+    anchors: list[tuple[float, float]] = []
+    for _ in range(13):
+        _tick_frame_state(app)
+        anchors.append((app.script_mouse.prev_x, app.script_mouse.prev_y))
+        app.frame_idx += 1
+    ticked_frames = [
+        i for i, (doc, _) in enumerate(ticks) if doc == app.current_document_id
+    ]
+    assert len(ticked_frames) >= 1
+    # The tick read the pre-tick prev, then re-anchored prev at the position it saw; the
+    # frames without a tick left the anchor alone.
+    first = next(ctx for doc, ctx in ticks if doc == app.current_document_id)
+    assert (first.mouse.prev_x, first.mouse.prev_y) == (0.1, 0.1)
+    assert (0.2, 0.3) in anchors
+    assert all(anchor in ((0.1, 0.1), (0.2, 0.3)) for anchor in anchors)

@@ -139,7 +139,6 @@ def test_cancel_closes_and_runs_nothing(app: Any, monkeypatch: Any) -> None:
 def _request(on_confirm: Any) -> ConfirmRequest:
     return ConfirmRequest(
         title="Delete pass b?",
-        line="Its wiring is lost.",
         verb="Delete",
         on_confirm=on_confirm,
     )
@@ -325,7 +324,6 @@ def test_the_lib_tree_delete_asks_through_its_menu(app: Any, monkeypatch: Any) -
         assert app.modal is ModalId.CONFIRM
         assert app.confirm is not None
         assert app.confirm.title == f"Delete {victim.name}?"
-        assert app.confirm.line == "It moves to .trash."
         app.confirm.on_confirm()
     assert verb.call_count == 1
     assert not victim.exists()
@@ -493,7 +491,6 @@ def test_the_lib_tree_dir_delete_asks_through_its_menu(app: Any) -> None:
         assert app.modal is ModalId.CONFIRM
         assert app.confirm is not None
         assert app.confirm.title == f"Delete {victim.name}?"
-        assert app.confirm.line == "It moves to .trash."
         assert app.confirm.verb == "Delete"
         app.confirm.on_confirm()
     assert verb.call_count == 1

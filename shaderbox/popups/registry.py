@@ -65,10 +65,8 @@ def draw_modal(app: App) -> None:
     modal = BY_ID.get(app.modal) if app.modal is not None else None
     if modal is None:
         return
-    if modal.before is not None:
-        modal.before(app)
     with modal_window(
-        modal.label, modal.size(app), flags=modal.flags, fixed_size=modal.fixed_size
+        modal.label, modal.size(app), modal.sizing, flags=modal.flags
     ) as visible:
         if not visible:
             return

@@ -16,6 +16,7 @@ from shaderbox.pass_graph import MAX_ITERATIONS, PassEntry, PassGraph
 from shaderbox.popups import Modal
 from shaderbox.theme import SIZE, SPACE
 from shaderbox.ui_primitives import (
+    ModalSizing,
     help_marker,
     label_row,
     modal_footer,
@@ -37,20 +38,6 @@ _FORMATS: list[tuple[str, str, str]] = [
 ]
 _FORMAT_LABELS = [label for _, label, _ in _FORMATS]
 _FORMAT_CODES = [code for code, _, _ in _FORMATS]
-
-
-def _constrain_size(app: App) -> None:
-    # `always_auto_resize` IGNORES set_next_window_size, so the width token only holds
-    # through a constraint: min and max both PASS_SETTINGS_W pins the axis the user reads
-    # across, while the height follows the content up to the display. The scrollbar is left
-    # enabled deliberately -- it can only appear once content exceeds the display, which is
-    # exactly when the user needs to be told the panel continues.
-    _ = app
-    display_h = imgui.get_io().display_size.y
-    width = float(SIZE.PASS_SETTINGS_W)
-    imgui.set_next_window_size_constraints(
-        (width, 0.0), (width, max(1.0, display_h - float(SIZE.PASS_SETTINGS_MARGIN)))
-    )
 
 
 def _size(app: App) -> tuple[float, float]:
@@ -305,7 +292,6 @@ MODAL = Modal(
     label=_LABEL,
     size=_size,
     body=_draw_modal_body,
-    flags=imgui.WindowFlags_.always_auto_resize,
-    before=_constrain_size,
+    sizing=ModalSizing.AUTO,
     on_close=lambda app: app.close_pass_settings(),
 )

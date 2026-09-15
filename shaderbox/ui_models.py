@@ -676,12 +676,11 @@ class PassDraft:
 class ConfirmRequest:
     """One destructive verb awaiting its confirm (093 W4).
 
-    `title` names the target, `line` states the consequence, `verb` labels the button that
+    `title` is the question, naming the verb and its target; `verb` labels the button that
     runs `on_confirm`. Built by the `App` verb, so the confirm reads the same from a menu,
     a bar item, a button, a chord and the palette.
     """
 
     title: str
-    line: str
     verb: str
     on_confirm: Callable[[], None]

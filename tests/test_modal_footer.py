@@ -17,6 +17,8 @@ from imgui_bundle import imgui
 from shaderbox.app import ModalId
 from shaderbox.popups import registry
 from shaderbox.popups.registry import BY_ID, draw_modal
+from shaderbox.ui_models import ConfirmRequest
+from shaderbox.ui_primitives import ModalSizing
 
 # Real frames, so its own worker: the imgui font atlas is per PROCESS and a second App that
 # renders a full frame in one interpreter dies on a texture the first released.
@@ -24,7 +26,7 @@ pytestmark = pytest.mark.xdist_group("gl_frames_modal_footer")
 
 
 def _scroll_max_of(
-    app: Any, modal_id: ModalId, monkeypatch: Any, frames: int = 3
+    app: Any, modal_id: ModalId, monkeypatch: Any, frames: int = 3, every: bool = False
 ) -> float:
     """Draw the open modal for real and report its POPUP window's vertical overflow.
 
@@ -46,7 +48,7 @@ def _scroll_max_of(
         draw_modal(app)
         imgui.end_frame()
     assert seen, "the modal never drew"
-    return seen[-1]
+    return max(seen) if every else seen[-1]
 
 
 # The modals whose content is a `modal_content` region: their own body can never be the
@@ -73,3 +75,56 @@ def test_a_modal_with_a_content_region_does_not_overflow(
     getattr(app, opener)()
     assert app.modal is modal_id
     assert _scroll_max_of(app, modal_id, monkeypatch) == 0.0
+
+
+def _open_auto_modal(app: Any, modal_id: ModalId) -> None:
+    if modal_id is ModalId.CONFIRM:
+        # A title long enough to wrap: the height a one-line confirm needs is too short for
+        # it, which is the shape the maintainer saw on the Reset confirm.
+        app.request_confirm(
+            ConfirmRequest(
+                title="Reset a document whose name is long enough to wrap the question?",
+                verb="Reset",
+                on_confirm=lambda: None,
+            )
+        )
+    elif modal_id is ModalId.PASS_SETTINGS:
+        app.open_pass_settings(
+            sorted(app.ui_documents[app.current_document_id].document.passes)[0]
+        )
+    else:
+        raise AssertionError(f"no opener for the AUTO modal {modal_id.value}")
+
+
+# The modals sized `ModalSizing.AUTO`, listed by hand and checked against the registry: a row
+# that leaves AUTO must fail here rather than drop out of the parametrization.
+_AUTO_MODALS: tuple[ModalId, ...] = (ModalId.CONFIRM, ModalId.PASS_SETTINGS)
+
+
+def test_the_auto_modal_list_is_the_registrys() -> None:
+    declared = {
+        modal.id for modal in registry.MODALS if modal.sizing is ModalSizing.AUTO
+    }
+    assert declared == set(_AUTO_MODALS), (
+        f"AUTO in the registry: {sorted(m.value for m in declared)}; "
+        f"listed here: {sorted(m.value for m in _AUTO_MODALS)}"
+    )
+
+
+@pytest.mark.parametrize("modal_id", _AUTO_MODALS, ids=[m.value for m in _AUTO_MODALS])
+def test_an_auto_sized_modal_never_overflows(
+    app: Any, monkeypatch: Any, modal_id: ModalId
+) -> None:
+    """The height of an AUTO modal follows its content on every frame, whatever size imgui.ini
+    remembers under its label: the Reset confirm opened at a persisted 132px, its wrapped
+    question pushing the buttons under a scrollbar. Measured: a RESIZABLE confirm against a
+    60px entry overflows by 32px on every frame after the first; AUTO sizes to its 92.
+
+    Falsifier: in `modal_window`'s AUTO branch, seed `size` with `Cond_.first_use_ever` in
+    place of the constraint and the auto-resize flag.
+    """
+    label = BY_ID[modal_id].label
+    imgui.load_ini_settings_from_memory(f"[Window][{label}]\nPos=10,10\nSize=381,60\n")
+    _open_auto_modal(app, modal_id)
+    assert app.modal is modal_id
+    assert _scroll_max_of(app, modal_id, monkeypatch, every=True) == 0.0

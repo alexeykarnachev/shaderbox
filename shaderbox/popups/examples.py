@@ -4,6 +4,7 @@ from shaderbox.app import App, ModalId
 from shaderbox.popups import Modal
 from shaderbox.theme import COLOR, SIZE
 from shaderbox.ui_primitives import (
+    ModalSizing,
     caption_text,
     modal_footer,
     modal_footer_height,
@@ -126,10 +127,6 @@ MODAL = Modal(
     label=_LABEL,
     size=_size,
     body=_draw_modal_body,
-    flags=(
-        imgui.WindowFlags_.no_resize
-        | imgui.WindowFlags_.no_scrollbar
-        | imgui.WindowFlags_.no_scroll_with_mouse
-    ),
-    fixed_size=True,
+    sizing=ModalSizing.FIXED,
+    flags=imgui.WindowFlags_.no_scrollbar | imgui.WindowFlags_.no_scroll_with_mouse,
 )

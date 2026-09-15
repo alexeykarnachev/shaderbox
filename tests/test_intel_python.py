@@ -60,12 +60,12 @@ def test_the_api_gloss_wins_for_an_injected_name_imported_or_not() -> None:
         s for s in python_completions(text, line, col) if s.name == "ScriptContext"
     )
     assert found.kind == SymbolKind.PY_API
-    assert found.doc.startswith("The engine state for one frame")
+    assert found.doc.startswith("The engine state for one tick")
     text, line, _col = _stub_with("c: ScriptContext = context")
     looked = python_lookup(text, line, 12)
     assert looked is not None and looked.name == "ScriptContext"
     assert looked.kind == SymbolKind.PY_API
-    assert looked.doc.startswith("The engine state for one frame")
+    assert looked.doc.startswith("The engine state for one tick")
 
 
 def test_a_member_spelled_like_an_api_name_is_a_member_under_k() -> None:
@@ -73,3 +73,21 @@ def test_a_member_spelled_like_an_api_name_is_a_member_under_k() -> None:
     looked = python_lookup(text, 3, 7)
     assert looked is not None and looked.name == "Text"
     assert looked.kind == SymbolKind.PY_MEMBER, "reached through a dot, not the API"
+
+
+def test_a_caret_inside_a_string_literal_gets_nothing() -> None:
+    # jedi completes a literal as a file path (`"u` offered `uv.lock"`), and the injected API
+    # names would otherwise leak in by prefix. A closed literal is not "inside".
+    for line in ('s = "u', "s = 'Scr", 'x = f("Scr', 's = """Scr'):
+        text, line_index, col = _stub_with(line)
+        assert python_completions(text, line_index, col) == [], line
+    text, line_index, col = _stub_with('s = "u" + Scr')
+    assert {s.name for s in python_completions(text, line_index, col)} >= {
+        "ScriptContext"
+    }
+
+
+def test_a_class_object_does_not_offer_the_metaclass_protocol() -> None:
+    text, line_index, col = _stub_with("y = Behavior.m")
+    names = {s.name for s in python_completions(text, line_index, col)}
+    assert "mro" not in names

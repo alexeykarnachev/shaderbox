@@ -1,15 +1,16 @@
 """The confirm modal: one client for every destructive verb (093 W4).
 
-`App.request_confirm` builds the request at the verb, so the confirm names its target and its
-consequence identically from a menu, a bar item, a button, a chord and the palette.
+`App.request_confirm` builds the request at the verb, so the confirm names its target
+identically from a menu, a bar item, a button, a chord and the palette.
 """
 
 from imgui_bundle import imgui
 
 from shaderbox.app import App, ModalId
 from shaderbox.popups import Modal
-from shaderbox.theme import COLOR, SPACE
+from shaderbox.theme import COLOR
 from shaderbox.ui_primitives import (
+    ModalSizing,
     danger_button,
     modal_footer,
     standard_button,
@@ -32,10 +33,8 @@ def _draw_body(app: App) -> bool:
         return False
 
     wrapped_caption(request.title, COLOR.FG_TITLE)
-    imgui.dummy((0.0, float(SPACE.XS)))
-    wrapped_caption(request.line)
 
-    # The modal auto-sizes to its own two lines, so it has no scrollable content region --
+    # The modal auto-sizes to its one question, so it has no scrollable content region --
     # the footer alone (`modal_content`'s docstring).
     with modal_footer():
         # ONE decision per frame: the button and the key cannot both fire `on_confirm`. Enter
@@ -63,5 +62,6 @@ MODAL = Modal(
     label=_LABEL,
     size=_size,
     body=_draw_body,
+    sizing=ModalSizing.AUTO,
     on_close=_on_close,
 )

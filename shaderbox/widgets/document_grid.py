@@ -42,8 +42,6 @@ def draw_document_preview_button(
 def document_menu_items(app: App, document_id: str) -> None:
     """The items of one document's context menu. The caller owns the popup; each grid tile is
     its own child window, so an explicit id is safe there."""
-    if imgui.menu_item_simple("Open"):
-        app.select_document(document_id)
     if imgui.menu_item_simple("Open folder"):
         app.open_document_dir(document_id)
     imgui.separator()

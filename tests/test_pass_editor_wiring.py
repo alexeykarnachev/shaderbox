@@ -133,8 +133,8 @@ def test_a_single_pass_document_is_unaffected(app: Any) -> None:
 
 
 def test_a_multi_pass_document_names_the_pass_in_its_tab_label(app: Any) -> None:
-    # Otherwise every tab of one document reads "<document> (shader)" and they are told apart by
-    # nothing — which is how the open-the-wrong-pass bug stayed invisible for as long as it did.
+    # Every tab of one document names its own pass, so two are told apart by the label -- which
+    # is how the open-the-wrong-pass bug would have been visible.
     document_id = _two_pass(app)
     labels: dict[str, str] = {}
     for name in ("main", "second"):
@@ -148,11 +148,11 @@ def test_a_multi_pass_document_names_the_pass_in_its_tab_label(app: Any) -> None
     assert all(label.startswith(document_name) for label in labels.values())
 
 
-def test_a_single_pass_document_keeps_the_plain_shader_label(app: Any) -> None:
-    # Nothing to disambiguate, and "(main)" would say less than "(shader)".
+def test_a_single_pass_document_names_its_pass_too(app: Any) -> None:
+    # One rule for every shader tab: the label names the pass, however many the document has.
     document_id = app.current_document_id
     app.ensure_shader_tab(document_id)
-    assert tab_label(app, app.active_tab).endswith("(shader)")
+    assert tab_label(app, app.active_tab).endswith("(main)")
 
 
 def test_the_label_follows_a_renamed_pass(app: Any) -> None:

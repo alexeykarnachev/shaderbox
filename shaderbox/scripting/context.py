@@ -17,8 +17,8 @@ class MouseState:
         x: Horizontal position, 0 at the left edge and 1 at the right.
         y: Vertical position, 0 at the bottom edge and 1 at the top.
         down: Whether the left button is held with the cursor over the canvas.
-        prev_x: Last frame's x, equal to x on the first frame and on re-entry.
-        prev_y: Last frame's y, under the same rule.
+        prev_x: The x at the previous tick, equal to x on the first tick and on re-entry.
+        prev_y: The y at the previous tick, under the same rule.
     """
 
     x: float = 0.5
@@ -37,15 +37,16 @@ EXPORT_MOUSE = MouseState(0.5, 0.5, False, 0.5, 0.5)
 
 @dataclass(frozen=True)
 class ScriptContext:
-    """The engine state for one frame, handed to `update` once per drawn frame.
+    """The engine state for one tick, handed to `update` once per rendered frame.
 
     A script's own state lives on the behavior instance (`self.*`), never here: this object is
-    rebuilt every frame and is frozen.
+    rebuilt every tick and is frozen. A tick is a render of the document: under the throttle a
+    document renders less often than the UI draws, and its script ticks at that rate.
 
     Attributes:
         t: Seconds since the document started playing.
-        dt: Seconds since the previous frame.
-        frame: The frame index, counting from 0 at the start of playback.
+        dt: Seconds since the previous tick, the whole gap when frames were skipped.
+        frame: The tick index, counting from 0 at the start of playback.
         mouse: The cursor over the canvas, as a `MouseState`.
     """
 

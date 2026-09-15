@@ -464,7 +464,7 @@ def test_a_documents_menu_carries_open_open_folder_and_delete(
 
     spy.labels.clear()
     _frame(lambda: document_grid.document_menu_items(app, document_id))
-    assert spy.labels == ["Open", "Open folder", "Delete"], spy.labels
+    assert spy.labels == ["Open folder", "Delete"], spy.labels
 
     # The verbs each menu item calls, exercised at the seam the item fires.
     app.select_document(document_id)

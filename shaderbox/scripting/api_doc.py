@@ -49,8 +49,8 @@ _EXPORT_MOUSE_AT: str = f"{EXPORT_MOUSE.x:g},{EXPORT_MOUSE.y:g}"
 # lists. Every field is in both; the completeness test walks the dataclass against each.
 _CONTEXT_GLOSS: dict[str, str] = {
     "t": "seconds since playback started",
-    "dt": "seconds since the previous frame",
-    "frame": "frame index from 0",
+    "dt": "seconds since the previous tick (a tick is a render of the document)",
+    "frame": "tick index from 0",
     "mouse": (
         f"({_MOUSE_FIELDS} -- FROZEN at {_EXPORT_MOUSE_AT} on export and in the "
         "headless probe, where down is False and prev equals x/y; x/y and prev_x/prev_y are the "
@@ -66,14 +66,17 @@ _CONTEXT_HELP: dict[str, str] = {
         "Reset along with the rest of the document's clock."
     ),
     "dt": (
-        "Seconds since the previous frame.\n"
+        "Seconds since the previous tick.\n"
         "\n"
-        "Multiply a rate by it to advance state at the same speed whatever the frame rate."
+        "A tick is a render of the document, which under the throttle happens less often\n"
+        "than the UI draws; dt then spans the whole gap. Multiply a rate by it to advance\n"
+        "state at the same speed whatever the rate."
     ),
     "frame": (
-        "The frame index, counting from 0.\n"
+        "The tick index, counting from 0.\n"
         "\n"
-        "Rises by one per drawn frame, so it counts frames rather than time."
+        "Rises by one per rendered frame of the document, so it counts renders rather\n"
+        "than time or UI frames."
     ),
     "mouse": (
         "The cursor over the canvas, as a MouseState.\n"
@@ -84,8 +87,8 @@ _CONTEXT_HELP: dict[str, str] = {
         "    x: Horizontal position, 0 at the left edge and 1 at the right.\n"
         "    y: Vertical position, 0 at the bottom edge and 1 at the top.\n"
         "    down: Whether the left button is held over the canvas.\n"
-        "    prev_x: Last frame's x, equal to x on the first frame and on re-entry.\n"
-        "    prev_y: Last frame's y, under the same rule.\n"
+        "    prev_x: The x at the previous tick, equal to x on the first tick and on re-entry.\n"
+        "    prev_y: The y at the previous tick, under the same rule.\n"
         "\n"
         f"On export and in the headless probe the cursor freezes at {_EXPORT_MOUSE_AT} with\n"
         "down False and prev equal to the position, so a script driven off the cursor reads\n"

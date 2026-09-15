@@ -50,7 +50,7 @@ def test_an_exported_frame_carries_the_scripted_value(app: Any, tmp_path: Path) 
 
     # Warm the live instance well past what one cold export tick can reach.
     for frame in range(400):
-        app.session.tick([document_id], frame / 60, 1 / 60, frame)
+        app.session.tick([document_id], frame / 60, 1 / 60)
     live_level = document.render_pass.uniform_values["u_level"]
     assert live_level > 0.5
 

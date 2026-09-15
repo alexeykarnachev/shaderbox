@@ -568,7 +568,7 @@ class DogfoodHarness:
         saved_size = document.canvas_size
         document.set_canvas_size(_fit(saved_size, size))
         try:
-            self.session.tick([target], t, 1.0 / 60.0, 0)
+            self.session.tick([target], t, 1.0 / 60.0)
             document.render(u_time=t)
             out_path = self.session.paths.renders_dir / f"{target}_t{t:.3f}.png"
             out_path.parent.mkdir(parents=True, exist_ok=True)

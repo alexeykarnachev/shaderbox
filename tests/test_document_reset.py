@@ -85,13 +85,13 @@ def test_reset_restarts_the_script_and_its_clock(app: Any) -> None:
 
     document.time_origin = 0.0  # the control: the script sees the clock it was handed
     for frame in range(5):
-        app.session.tick([document_id], 10.0 + frame / 60, 1 / 60, frame)
+        app.session.tick([document_id], 10.0 + frame / 60, 1 / 60)
     values = document.render_pass.uniform_values
     assert values["u_n"] == 5.0
     assert values["u_t"] >= 10.0
 
     app.session.reset_document(document_id)
-    app.session.tick([document_id], process_time(), 1 / 60, 5)
+    app.session.tick([document_id], process_time(), 1 / 60)
     values = document.render_pass.uniform_values
     assert values["u_n"] == 1.0, "the script instance was not re-created"
     assert values["u_t"] < 0.5, (

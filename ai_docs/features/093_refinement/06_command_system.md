@@ -103,7 +103,8 @@ Help
 - The graph canvas's `Frame all` and `Arrange` and the node menu's `Group...` / `Dissolve` /
   `Leave group`: verbs on a view or a selection that only the canvas holds; they live on the
   canvas and node menus. Revisit if a graph tab gains its own scope.
-- The pass tile's `Delete pass` and the document tile's `Open` / `Open folder` / `Delete`:
+- The pass tile's `Delete pass` and the document tile's `Open folder` / `Delete` (its `Open`
+  went in wave 6: the tile's click is the open):
   object verbs with a target the menu supplies; the bar's `Delete document` and `Open folder`
   act on the CURRENT document, which is what a bar item can mean.
 - The Document tab's resolution mode, aspect chips and canvas fields; the Uniforms tab's sort

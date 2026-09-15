@@ -389,8 +389,8 @@ class SIZE:
     SETTINGS_LABEL_W: int = 92
     SETTINGS_CTRL_W: int = 120
     PASS_SETTINGS_W: int = 440
-    # Breathing room the auto-resizing gear leaves below the display's bottom edge.
-    PASS_SETTINGS_MARGIN: int = 24
+    # Breathing room an auto-sized modal leaves below the display's bottom edge.
+    MODAL_MARGIN: int = 24
 
     SCROLLBAR_W: int = 12
     GRAB_MIN: int = 10

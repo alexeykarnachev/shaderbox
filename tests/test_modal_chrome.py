@@ -23,6 +23,7 @@ import pytest
 from shaderbox.app import ModalId
 from shaderbox.popups import examples, pass_settings, projects
 from shaderbox.popups.registry import BY_ID, MODALS
+from shaderbox.ui_primitives import ModalSizing
 
 # The leaf bodies come from the REGISTRY: every row's `Modal.body` is the leaf, except a row
 # whose body DISPATCHES (one modal, two or more modes). A dispatcher's leaves are the only
@@ -94,6 +95,17 @@ def _hand_reservations(body: ast.FunctionDef) -> list[str]:
         and isinstance(node.func, ast.Attribute)
         and node.func.attr in measured
     ]
+
+
+def _sizes_its_own_content(body: ast.FunctionDef) -> bool:
+    """Whether the body lays out a content region against the modal's height: a
+    `modal_content()` region or a child sized from `modal_footer_height()`."""
+    return any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id in {"modal_content", "modal_footer_height"}
+        for node in ast.walk(body)
+    )
 
 
 def _close_calls(body: ast.FunctionDef) -> list[ast.Call]:
@@ -244,6 +256,36 @@ def test_the_action_row_is_drawn_inside_modal_footer(
         f"{modal_id.value}::{body.__name__}'s action row is not inside `modal_footer()` "
         f"(the Close row is at offset {close.lineno} of the body)"
     )
+
+
+@pytest.mark.parametrize("modal_id", list(ModalId), ids=[m.value for m in ModalId])
+def test_sizing_follows_whether_the_body_sizes_its_own_content(
+    modal_id: ModalId,
+) -> None:
+    """A modal that lays nothing out against the window's height -- one question, one form
+    -- is `ModalSizing.AUTO`: the height follows the content, so no persisted size can leave
+    the footer past the edge (the Reset confirm opened at a stale 132px with a scrollbar).
+    A modal that sizes a content region needs a height to size it against, so it is
+    RESIZABLE or FIXED. The row's own body and a named `size` function count along with
+    the leaves: Examples measures its grid against the footer in `_size`.
+
+    Falsifier: declare the confirm row RESIZABLE, or the Help row AUTO.
+    """
+    row = BY_ID[modal_id]
+    functions = [row.body, *_BODIES[modal_id]]
+    if row.size.__name__ != "<lambda>":
+        functions.append(row.size)
+    sized = any(_sizes_its_own_content(_body_ast(body)) for body in functions)
+    if sized:
+        assert row.sizing is not ModalSizing.AUTO, (
+            f"{modal_id.value} sizes a content region against the window's height but the "
+            "row is AUTO, whose height follows the content"
+        )
+    else:
+        assert row.sizing is ModalSizing.AUTO, (
+            f"{modal_id.value} draws no content region, so its row must be "
+            f"ModalSizing.AUTO, not {row.sizing.name}"
+        )
 
 
 @pytest.mark.parametrize(("modal_id", "body"), _leaves(), ids=_leaf_ids())

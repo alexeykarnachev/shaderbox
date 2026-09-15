@@ -334,11 +334,22 @@ nothing, which is the checker-narrows-its-own-domain family.
 
 ### 7.2 Modal wrapper (kill the boilerplate)
 
-**Popup modal size: always `Cond_.first_use_ever`, never `Cond_.appearing`.**
-The first seeds the size once, then imgui.ini persists the user's manual
-resize across re-opens. `Cond_.appearing` clobbers the saved size on every
-reopen — and on return from a native file dialog — which reads as a visible
-blink / reset.
+**A modal's size is one declaration on its registry row, resolved in the
+wrapper.** Three sizings, and every modal names one (ShaderBox:
+`ui_primitives.ModalSizing` on `Modal.sizing`): RESIZABLE seeds the size once
+with `Cond_.first_use_ever` and imgui.ini persists the user's manual resize
+across re-opens (never `Cond_.appearing`, which clobbers the saved size on
+every reopen — and on return from a native file dialog — and reads as a
+blink); FIXED sets it every frame with `no_resize`, for a modal that measures
+its own content; AUTO pins the width through `set_next_window_size_constraints`
+(`always_auto_resize` IGNORES `set_next_window_size`), lets the height follow
+the content up to the display, and adds `no_resize | no_saved_settings` — a
+persisted height is the PREVIOUS content's, which is how a one-line confirm
+opened a two-line question with its buttons under a scrollbar. The rule for
+choosing: a body that lays out no content region against the window's height
+(one question, one form) is AUTO; a body with a scrollable region needs a height
+to size it against and is RESIZABLE or FIXED. Pin that with the chrome gate, so
+a new modal cannot pick the wrong one silently.
 
 Every modal otherwise repeats the same 8 lines: `is_popup_open` check →
 `open_popup` → `set_next_window_size` → `begin_popup_modal` → visibility
@@ -382,11 +393,18 @@ Reference shape (used in `ui_primitives.modal_window`):
 
 ```python
 @contextmanager
-def modal_window(label: str, size: tuple[float, float]) -> Iterator[bool]:
+def modal_window(label, size, sizing, flags=0) -> Iterator[bool]:
     if not imgui.is_popup_open(label):
         imgui.open_popup(label)
-    imgui.set_next_window_size(imgui.ImVec2(*size), imgui.Cond_.first_use_ever)
-    with imgui_ctx.begin_popup_modal(label) as popup:
+    if sizing is ModalSizing.AUTO:
+        imgui.set_next_window_size_constraints((size[0], 0.0), (size[0], display_h - margin))
+        flags |= always_auto_resize | no_resize | no_saved_settings
+    elif sizing is ModalSizing.FIXED:
+        imgui.set_next_window_size(imgui.ImVec2(*size), imgui.Cond_.always)
+        flags |= no_resize
+    else:
+        imgui.set_next_window_size(imgui.ImVec2(*size), imgui.Cond_.first_use_ever)
+    with imgui_ctx.begin_popup_modal(label, flags=flags) as popup:
         yield popup.visible
 ```
 

@@ -1,7 +1,7 @@
 # 093 — Refinement: the graph editor
 
-Status: **waves 1-5 landed and reviewed; next is his visual review in the running app, whose
-findings open the next wave in the ledger.** The waves and what each landed are the `## Waves`
+Status: **waves 1-6 landed, the editor's half of wave 6 re-vendored at `5a56ccf`. Next is his
+visual review in the running app, whose findings open the next wave in the ledger.** The waves and what each landed are the `## Waves`
 section below, newest first; the findings are `00_findings.md`. The maintainer's verdict on the shipped canvas ("feels
 very cheap") sent the walk into research first: `02_research_brief.md` is the brief, `research/`
 holds six area reports against primary sources, `03_graph_design.md` is the design record
@@ -387,6 +387,28 @@ Where the record's "Code" paragraphs and this spec differ, this spec wins, for t
 | G4: `GRAPH_WIRE_HIT_MIN` | S12: `GRAPH_WIRE_HIT_FLOOR` | Two floors one pixel apart under near-identical names invite a transposition nothing would catch |
 
 ## Waves
+
+**Wave 6: his walk of waves 3-5, findings 23-30 (2026-09-15).** Seven host fixes in one
+commit; finding 27 (the vim view-scroll commands) is the editor library's, sent to the editor
+session with the measurements the ledger row carries and re-vendored from its `5a56ccf` in a
+second commit (no export delta; `ed_scroll_max` now means the last line at the top row, and
+the editor's `ed_set_text` resets the offset to 0). Two settled decisions reversed on his call, each
+with its pointer: 090 D8 (the script ticked at the UI rate; a tick is now a render, with the
+document's own `dt` and `frame` and the cursor's previous position anchored per tick -- the
+gaps in his drawing script's stroke were the frames between renders) and 065's single-pass
+`(shader)` tab label (every shader tab names its pass). The confirm lost its consequence line
+(`ConfirmRequest.line` deleted, seven builders), the document tile its `Open` item, the Python
+completion its in-string file paths and the `type` protocol's `mro`, and the shape vocabulary
+gained the 4:3 `STANDARD_960/1440/1920` tiers on the shared longest-edge ladder. Modal sizing
+became one declaration, `Modal.sizing: ModalSizing` (RESIZABLE / FIXED / AUTO) resolved in
+`modal_window`, with `Modal.before` and `fixed_size` deleted: the confirm's persisted 132px
+was the scrollbar he saw. Gates broken and restored: the chrome clause (the confirm declared
+RESIZABLE fails it), the footer test's AUTO domain (a row leaving AUTO fails the list check)
+and its overflow read (the AUTO branch degraded to first-use seeding overflows 32px and 236px),
+the tick test (ticking `tick_documents` instead of the rendered set ticks twelve times in
+twelve frames). Docs in the same commit: `conventions.md` (the confirm, popups, tab-label,
+shape and throttle bullets), 090's D8 pointer, `06_command_system.md`'s non-command list,
+`dev_flow.md`'s module map, the repo's `/imgui-ui` §7.2, the script API glosses.
 
 **Wave 5: a stacked confirm, the modal footer, and his four items (2026-09-14).** Two halves,
 one commit. (A) Wave 4's three post-implementation reports, every finding accepted. A

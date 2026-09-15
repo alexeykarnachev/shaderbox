@@ -319,11 +319,21 @@ def _tick_frame_state(app: App) -> list[str] | None:
     )
 
     # ----------------------------------------------------------------
-    # Step 7 — the script ticks over the FULL set at the UI rate (090 D8), so integrators stay
-    # smooth and `ctx.frame` keeps meaning the UI frame. A throttled document's feedback pass
-    # integrates at its own rate, which is a coarser integration under load, accepted.
+    # Step 7 — the script ticks for exactly the documents that RENDER this frame (093 W6,
+    # reversing 090 D8): what a tick computes is consumed by a render, so a tick between two
+    # renders is work nothing shows, and a script pairing "previous" with "current" saw the
+    # skipped frames as a gap in its stroke. Its dt spans the gap (`session.tick`). The
+    # cursor's previous position re-anchors at the position this tick saw, so the next tick's
+    # stroke starts where this render's ended; the viewer's sampler carries the anchor.
+    ticking = _rendering_this_frame(
+        app, tick_documents, examples_planned, import_project_tab
+    )
     with app.profiler.cpu("script"):
-        app.session.tick(tick_documents, now, dt, app.frame_idx, mouse=app.script_mouse)
+        app.session.tick(ticking, now, dt, mouse=app.script_mouse)
+    if app.current_document_id in ticking:
+        app.script_mouse = replace(
+            app.script_mouse, prev_x=app.script_mouse.x, prev_y=app.script_mouse.y
+        )
 
     # ----------------------------------------------------------------
     # Step 8 — advance feedback history ONCE per frame, for the documents the plan admits. A
@@ -335,6 +345,33 @@ def _tick_frame_state(app: App) -> list[str] | None:
             planned[document_id].document.begin_frame(app.frame_idx)
 
     return tick_documents
+
+
+def _rendering_this_frame(
+    app: App,
+    tick_documents: list[str],
+    examples_planned: bool,
+    import_project_tab: bool,
+) -> list[str]:
+    """The session documents the render block draws this frame, by that block's own rule.
+
+    Three cases mirror its three branches: the normal set behind no popup (or the import
+    modal's project tab), nothing while the Examples popup shows its own documents (they are
+    not session documents and never tick), and the current document alone behind the
+    pass-settings modal. Each is then gated by the plan, as the block gates each render.
+    """
+    if not app.any_popup_open() or import_project_tab:
+        candidates = tick_documents
+    elif examples_planned:
+        candidates = []
+    elif (
+        app.modal is ModalId.PASS_SETTINGS
+        and app.current_document_id in app.ui_documents
+    ):
+        candidates = [app.current_document_id]
+    else:
+        candidates = []
+    return [d for d in candidates if renders_this_frame(app, d)]
 
 
 def renders_this_frame(app: App, document_id: str) -> bool:
@@ -832,11 +869,12 @@ def _draw_document_image(
                 x=hit[0],
                 y=hit[1],
                 down=imgui.is_mouse_down(0),
-                # A re-entry starts a NEW stroke: prev is the current position, so the capsule the
-                # shader stamps has zero length instead of spanning the gap the cursor travelled
-                # off-canvas.
-                prev_x=previous_mouse.x if was_inside else hit[0],
-                prev_y=previous_mouse.y if was_inside else hit[1],
+                # prev is the ANCHOR the last tick re-based (step 7), carried across the frames
+                # the throttle skips; a re-entry starts a NEW stroke at the current position, so
+                # the capsule the shader stamps has zero length instead of spanning the gap the
+                # cursor travelled off-canvas.
+                prev_x=previous_mouse.prev_x if was_inside else hit[0],
+                prev_y=previous_mouse.prev_y if was_inside else hit[1],
             )
             app.script_mouse_inside = True
     else:
