@@ -197,3 +197,16 @@ surprise: the comment wave was the one the spec was most cautious about and it p
 one-line diff. The presence scan's three comment categories were all over-called — the repo's
 comment convention is working, and the measurable restatement rate across `shaderbox/` is
 effectively zero once section dividers are excluded.
+
+## The enum-member gap, probed after the waves
+
+W-0's coverage line declared enum members unscanned. A follow-up scan tried to close it and
+could not, which is the useful result: a naive "is `Cls.MEMBER` referenced anywhere" walk over
+`shaderbox/` reports dozens of members as unreferenced, and the ones checked were all aliased or
+binding surface — `commands.py` does `C = CommandCategory` and then writes `C.FILE`, and the
+`editor/ffi.py` enums are the vendored editor's binding surface, where an unused member is an
+unbound capability.
+
+So the gap stands, and a later wave wanting to close it needs a resolver that follows aliases
+rather than a text scan. Recorded so the next session does not repeat the naive version and
+report its output as an inventory.
