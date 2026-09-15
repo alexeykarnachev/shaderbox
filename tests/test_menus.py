@@ -981,8 +981,9 @@ def test_the_bars_delete_document_is_a_plain_item_that_confirms(
     """R5: the bar's one destructive verb is a PLAIN item carrying its chord hint, and its
     click opens the confirm rather than trashing the document.
 
-    Falsifier: point `DELETE_DOCUMENT`'s callback back at `delete_current_document` -- the
-    label click then trashes the open document on one pointer slip below `New document`.
+    Falsifier: point `DELETE_DOCUMENT`'s callback at an unconfirmed
+    `delete_document(self.current_document_id)` -- the label click then trashes the open
+    document on one pointer slip below `New document`.
     """
     spec = SPEC_BY_ID[CommandId.DELETE_DOCUMENT]
     document_id = app.current_document_id
