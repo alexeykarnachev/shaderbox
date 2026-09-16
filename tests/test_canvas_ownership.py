@@ -25,9 +25,13 @@ import pytest
 from shaderbox.core import Canvas, Pass
 from shaderbox.document import Document
 from shaderbox.pass_graph import PassEntry, PassGraph, PassSource, TargetConfig
-from shaderbox.shader_lib import ShaderLibIndex, set_active
 from shaderbox.paths import shader_lib_root
-from tests.canvas_invariants import NON_DEFAULT, assert_canvases_agree, canvas_violations
+from shaderbox.shader_lib import ShaderLibIndex, set_active
+from tests.canvas_invariants import (
+    NON_DEFAULT,
+    assert_canvases_agree,
+    canvas_violations,
+)
 
 _PLAIN = """#version 460 core
 in vec2 vs_uv;
@@ -165,7 +169,9 @@ def test_a_frame_boundary_swap_keeps_the_pair_matched(gl_ctx: moderngl.Context) 
     document.release()
 
 
-def test_an_export_canvas_carries_the_output_passs_format(gl_ctx: moderngl.Context) -> None:
+def test_an_export_canvas_carries_the_output_passs_format(
+    gl_ctx: moderngl.Context,
+) -> None:
     # The export's fit branch allocated its canvas with no dtype/filter/wrap while its sibling
     # twelve lines up copied all three, and the branch that ships (Telegram, the shared shapes)
     # was the lossy one.

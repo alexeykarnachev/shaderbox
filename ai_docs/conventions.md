@@ -1339,6 +1339,29 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   Revisit: never for the judging half; the seam if a second observer needs events the trace does
   not emit.
 
+- **A canvas's configuration has ONE home per question, and the document owns the size.**
+  Four fields decide a canvas — size, dtype, filter, wrap — and each belongs to exactly one
+  writer. The SIZE is `Document.canvas_size_for(name)`: the document's own size for the output
+  pass, whose `scale` is ignored by decision, and `target.target_size(canvas_size)` for every
+  other pass; a pass never sizes itself, and no caller re-derives that rule. The FORMAT travels
+  from the pass's `TargetConfig` and must be carried by every canvas built from another —
+  `resample_canvas`, a feedback history, and any export target copy all four fields rather than
+  taking a constructor default. A canvas that is aimed at somewhere other than its own pass is
+  the shape to distrust: an output pass ALWAYS draws into its own canvas, and a caller's canvas
+  receives a blit afterwards, because the feedback swap advances the pass's own canvas and a draw
+  aimed elsewhere leaves it holding a stale frame. Where a role can change hands the resize goes
+  on the verb, not on the render: `set_output_pass` and `conform_output_canvas` exist because a
+  promotion, a delete that promotes a survivor, and an import handing over the output role are
+  three doors onto one defect. The invariant is executable —
+  `tests/canvas_invariants.canvas_violations` compares every live canvas and every history
+  against what the graph implies, driven over the non-default corner (`scale=0.5`, `f4`,
+  NEAREST, `wrap=True`) because both boolean defaults are the value a careless check cannot
+  distinguish from a bug. Revisit when a `CanvasSpec` type replaces the loose kwargs at the
+  construction sites — that is the end state this arrangement is holding the ground for, and it
+  wants the gate in place first. **Still unreconciled:** `Pass.set_target` writes the live canvas
+  and `PassGraph.with_target` writes the model, and nothing re-derives one from the other, so
+  they agree by convention rather than by structure.
+
 *(Each bullet is a generic constraint on future code + a revisit trigger — NOT a feature changelog.
 The `/sanitize` noise audit deletes bullets that narrate a one-off implementation choice; per-feature
 mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*

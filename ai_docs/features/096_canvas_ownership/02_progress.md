@@ -256,3 +256,38 @@ same class: two cases called `set_pass_target` without updating the graph entry,
 correctly reported the disagreement. `Pass.set_target` writes the live side and
 `PassGraph.with_target` writes the model — nothing reconciles them, which is F5. The tests now
 move both, but F5 itself stands: the production funnel calls both by convention, not structure.
+
+## W-5 the note that earns the type refactor — LANDED
+
+One bullet in `conventions.md ## Design decisions`, in that section's shape: a generic constraint
+plus a revisit trigger, not a feature changelog. It states which writer owns each of the four
+fields, that the document owns the SIZE and a pass never sizes itself, that a canvas built from
+another carries all four fields rather than taking a constructor default, that an output pass
+always draws into its own canvas and a caller's canvas receives a blit, and that a role which can
+change hands puts its resize on the verb. It names the executable invariant and the non-default
+corner it must be driven over. Revisit trigger: the `CanvasSpec` type refactor, which is the end
+state this holds ground for.
+
+It also records what is still UNRECONCILED rather than implying the class is closed:
+`Pass.set_target` writes the live canvas and `PassGraph.with_target` writes the model, and
+nothing re-derives one from the other (F5). Writing W-4's battery walked into exactly that.
+
+The roadmap's banner and 096's row are rewritten; the banner needed a trim to fit its own
+200-word budget, which its shape test enforces.
+
+## The feature, end to end
+
+| defect | ships? | status | evidence |
+|---|---|---|---|
+| F6 self-reading output exports frozen | yes | fixed | `repro/f6_frozen_export.py`, decoded video climbs at N=1 and N=2 |
+| F1 export fit branch drops the format | yes | fixed | measured on the branch Telegram takes: `f1` -> `f2` |
+| F2 promotion strands a scaled pass | one click | fixed | `repro/f2_promote_scaled.py`, `BUG: False`; two further doors closed |
+| F9 pass with no graph entry born `f1` | latent | fixed | born from `PassEntry().target` |
+| F7 `__init__` does not clamp | latent | fixed | `Document((8,8)).canvas_size == (16,16)` |
+| F10 `newest_frame` names the older canvas | latent | dissolved by W-1 | `live=101 hist=76 newest=101` |
+| F3 sizing rule at five sites | structural | fixed | one `target_size(` caller in `document.py` |
+| F5 nothing reconciles canvas to graph entry | structural | OPEN, recorded | `conventions.md`, and W-4's battery walked into it |
+| F4 two sizing verbs with opposite content semantics | structural | unchanged | not a defect on its own; both callers are correct today |
+
+NOT done, and deliberately: `Canvas`'s own `dtype` default stays `f1` (W-2 above says why), and
+the `CanvasSpec` refactor stays out of scope per the spec's Goal.

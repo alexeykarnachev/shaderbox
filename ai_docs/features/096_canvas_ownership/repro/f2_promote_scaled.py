@@ -19,8 +19,10 @@ doc.graph=PassGraph(output="main", passes={"helper":PassEntry(target=TargetConfi
 doc.begin_frame(1); doc.render()
 print(f"helper as scaled non-output: {doc.passes['helper'].canvas.texture.size}   (expect 128x128)")
 
-# Promote helper to output -- the user clicks its tile.
-doc.graph=doc.graph.with_output("helper")
+# Promote helper to output -- the user clicks its tile. Through the Document VERB, which is
+# what every production caller takes: the resize lives there, so assigning `graph.with_output`
+# by hand still strands the pass and is not the path a click follows.
+doc.set_output_pass("helper")
 for f in (2,3,4):
     doc.begin_frame(f); doc.render()
 print(f"helper AFTER promotion:      {doc.passes['helper'].canvas.texture.size}   (document is 256x256)")
