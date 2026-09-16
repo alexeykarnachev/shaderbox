@@ -392,3 +392,23 @@ premise is false, and the guard fired verbatim: "the fixture's other pass was al
 size -- the check is vacuous". The fixture now establishes the stale size itself, and the test
 still fails under the falsifier its docstring names (dropping `set_canvas_size`'s per-pass loop).
 That guard is the reason this was a red gate rather than a silently vacuous test.
+
+## The checker had a blind spot of its own
+
+`00_findings.md`'s "Invariants worth enforcing" table lists eight. The checker covered seven and
+silently dropped one: **every name in `_feedback` is also in `passes`.** Its per-pass loop
+iterates `document.passes`, so a history keyed under a name no pass has was unreachable by
+construction — measured, a document with a stranded `ghost` history reported CLEAN.
+
+That is the checker-narrows-its-own-domain shape, in the checker every verdict in this feature
+rests on. It matters because the stranded history holds a texture for the life of the document
+and nothing can release it: `drop_feedback` exists precisely because a history is keyed by NAME
+and owned by the Document, so releasing the pass does not release its history.
+
+Closed with a second loop over `_feedback`, outside the per-pass one that cannot see it, plus a
+test driving a delete of a pass that HAS a history. Broken by removing the `drop_feedback` call —
+the exact shape the production verbs guard against — and seen to fail.
+
+The lesson generalizes and is the one already written into `conventions.md` under mutation
+fidelity: enumerate a checker's domain from the source that DEFINES it (here, the ledger's table)
+and assert the checker reacts to every member, rather than trusting that it does.

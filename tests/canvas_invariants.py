@@ -73,6 +73,14 @@ def canvas_violations(document: Document) -> list[str]:
             violations.append(
                 f"pass '{name}': history {_config_of(history)} but live canvas {live}"
             )
+    # A history keyed under a name no pass has: a delete or rename that skipped `drop_feedback`
+    # leaves one, and it holds a texture for the life of the document with nothing to release it.
+    # Checked OUTSIDE the loop above, which iterates the passes and so can never see one.
+    for name in document._feedback:
+        if name not in document.passes:
+            violations.append(
+                f"history '{name}' has no pass -- a delete or rename stranded it"
+            )
     return violations
 
 

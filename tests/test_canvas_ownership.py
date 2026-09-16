@@ -490,6 +490,31 @@ def test_a_loaded_document_agrees_with_its_graph_before_any_render(
     document.release()
 
 
+def test_deleting_a_feedback_pass_leaves_no_stranded_history(
+    gl_ctx: moderngl.Context,
+) -> None:
+    """A history is keyed by NAME and owned by the Document, so releasing the pass does not
+    release it: a delete that skips `drop_feedback` leaves a texture nothing can free, and a
+    rename leaves one under the old key while the next render allocates a second under the new.
+
+    The checker had to grow an arm for this. Its per-pass loop iterates `passes`, so a history
+    under a name no pass has was invisible to it -- the one invariant in the ledger's table it
+    silently did not cover.
+    """
+    document = _document(gl_ctx)
+    document.passes["helper"].uniform_values["u_src"] = PassSource("helper")
+    document.begin_frame(0)
+    document.render()
+    assert "helper" in document._feedback, "the fixture built no history to strand"
+
+    document.passes.pop("helper").release()
+    document.drop_feedback("helper")
+    document.graph = document.graph.with_passes({"main": PassEntry()}, output="main")
+
+    assert_canvases_agree(document)
+    document.release()
+
+
 def test_the_checker_sees_a_resample_that_drops_filter_and_wrap(
     gl_ctx: moderngl.Context,
 ) -> None:
