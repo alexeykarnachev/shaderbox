@@ -313,6 +313,7 @@ def _tick_frame_state(app: App) -> list[str] | None:
 
     # ----------------------------------------------------------------
     # Step 6 — the plan.
+    app.planned_documents = list(planned_documents)
     app.render_plan = plan_render_set(
         costs=app.document_costs,
         current=current_planned,

@@ -99,6 +99,13 @@ class GraphViewState:
     )
     # The canvas child's screen rect this frame, for the same reason.
     canvas_rect: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
+    # And where each uniform ROW landed, keyed (pass, uniform) -- the fourth surface published for
+    # the same reason as the three above. The rows draw outside the node's layout box, so nothing
+    # else knows where they are: this is what a headless test aims a drag through, and what the
+    # row scroll reads to find which node the pointer is over.
+    row_rects: dict[tuple[str, str], tuple[float, float, float, float]] = field(
+        default_factory=dict
+    )
     # A press the copilot turn saw held down -- or the one the mid-curve unwire badge
     # consumed -- may not become any other gesture; the latch clears at the END of the frame
     # the button came up on, so the release-frame node click is refused too (093 S6).

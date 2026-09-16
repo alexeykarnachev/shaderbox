@@ -1532,6 +1532,10 @@ class App:
         self.throttle_states: dict[str, ThrottleState] = {}
         self.document_costs: dict[str, CostRecord] = {}
         self.render_plan: RenderPlan | None = None
+        # The set the frame PLANNED, published because nothing else can see it: it is otherwise a
+        # local in `_tick_frame_state`, and it is the value that says whether a surface which adds
+        # documents to the render set (094's documents dropdown) added rather than replaced.
+        self.planned_documents: list[str] = []
         # The live cursor over the current document's preview, fed into the script tick as context.mouse
         # (feature 042). Updated from the preview hit-test in ui.py; defaults to center (the
         # export value) until the preview is hovered. One frame stale by construction (tick runs
