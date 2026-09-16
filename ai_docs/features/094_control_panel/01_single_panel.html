@@ -1,0 +1,925 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>094 · one graph panel — the subtractive redesign</title>
+<style>
+:root{
+  --bg0h:#161819; --bg0:#1d2021; --bg0s:#222526; --bg1:#282828;
+  --bg2:#3c3836; --bg3:#504945; --bg4:#665c54;
+  --gray:#928374; --fg4:#a89984; --fg3:#bdae93; --fg2:#d5c4a1; --fg1:#ebdbb2; --fg0:#fbf1c7;
+  --red:#fb4934; --rednorm:#cc241d; --green:#b8bb26; --yellow:#fabd2f; --yellownorm:#d79921;
+  --blue:#83a598; --purple:#d3869b; --aqua:#8ec07c; --orange:#fe8019;
+  --mono:"JetBrains Mono","DejaVu Sans Mono",ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg0h);color:var(--fg2);font:14px/1.6 var(--mono);padding:0 0 80px}
+.wrap{max-width:1360px;margin:0 auto;padding:0 20px}
+h1{font-size:20px;color:var(--fg0);font-weight:600;margin:28px 0 6px}
+h2{font-size:15px;color:var(--yellow);font-weight:600;margin:0 0 2px;
+   display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+h2 .tag{font-size:11px;color:var(--bg0h);background:var(--yellow);
+        padding:1px 7px;border-radius:3px;font-weight:700;letter-spacing:.04em}
+h2 .tag.alt{background:var(--bg3);color:var(--fg2)}
+h2 .tag.q{background:var(--orange)}
+h3{font-size:13px;color:var(--fg1);font-weight:600;margin:22px 0 2px}
+.lede{color:var(--fg4);max-width:88ch;margin:0 0 22px;font-size:13px}
+.note{color:var(--gray);font-size:12.5px;max-width:92ch;margin:10px 0 0}
+.note b{color:var(--fg3);font-weight:600}
+section{margin:0 0 46px;padding:22px 0 0;border-top:1px solid var(--bg2)}
+section:first-of-type{border-top:none}
+
+.app{background:var(--bg0);border:1px solid var(--bg2);border-radius:3px;
+     padding:8px;margin:16px 0 0;overflow-x:auto}
+.panel{display:flex;gap:8px;min-width:1180px}
+.col{background:var(--bg0);border:1px solid var(--bg2);border-radius:2px;padding:8px}
+.ed-col{width:34%;flex:0 0 34%}
+.set-col{flex:1;min-width:0}
+.tall{height:470px;position:relative}
+
+.btn{display:inline-flex;align-items:center;gap:6px;background:var(--bg1);
+     border:1px solid var(--bg3);color:var(--fg2);border-radius:2px;
+     padding:3px 9px;font:13px var(--mono);white-space:nowrap}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--fg4)}
+.btn.accent{border-color:var(--yellow);color:var(--yellow)}
+.btn.on{background:var(--yellow);border-color:var(--yellow);color:var(--bg0h)}
+.btn.danger{border-color:var(--red);color:var(--red);background:transparent}
+.btn.sm{padding:1px 7px;font-size:12px}
+.chip{display:inline-flex;align-items:center;background:var(--bg0h);border:1px solid var(--bg3);
+      color:var(--fg3);border-radius:2px;padding:2px 8px;font-size:12.5px}
+.chip.on{background:var(--yellow);border-color:var(--yellow);color:var(--bg0h);font-weight:600}
+.inp{display:inline-flex;align-items:center;background:var(--bg1);border:1px solid var(--bg2);
+     border-radius:2px;padding:3px 8px;color:var(--fg1);font-size:13px}
+.inp.w180{width:180px}
+.inp.w56{width:56px;justify-content:flex-end}
+.cap{color:var(--gray);font-size:11.5px;letter-spacing:.02em}
+.dim{color:var(--gray)}
+.row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.row + .row{margin-top:8px}
+.seg{display:inline-flex;border:1px solid var(--bg3);border-radius:2px;overflow:hidden}
+.seg span{padding:2px 9px;font-size:12.5px;color:var(--fg4)}
+.seg span.on{background:var(--yellow);color:var(--bg0h);font-weight:600}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--bg2);margin:0 0 10px;padding:0 0 0 2px}
+.tabs span{padding:3px 11px;font-size:13px;color:var(--fg4);border:1px solid transparent;
+           border-bottom:none;border-radius:2px 2px 0 0}
+.tabs span.on{background:var(--bg2);color:var(--fg0);border-color:var(--bg3)}
+
+.thumb{background:#000;border:1px solid var(--bg2);border-radius:2px;position:relative;
+       overflow:hidden;display:block}
+.art-rc1{background:radial-gradient(circle at 34% 40%,#fb4934 0,#8b1a12 16%,#3a0b08 34%,#120404 62%,#000 100%)}
+.art-rc2{background:radial-gradient(circle at 60% 55%,#83a598 0,#1d3c3a 30%,#08100f 70%,#000 100%)}
+.art-ff{background:linear-gradient(135deg,#2a1e12,#0b0705 70%,#000)}
+.art-paint{background:linear-gradient(135deg,#1a1020,#000)}
+.art-blur{background:linear-gradient(135deg,#101820,#000)}
+.art-med{background:repeating-linear-gradient(45deg,#1a1a1a 0 6px,#111 6px 12px)}
+
+/* ---- the graph canvas ---- */
+.canvas{position:relative;background:var(--bg0h);border:1px solid var(--bg2);
+        border-radius:2px;height:100%;overflow:hidden}
+.canvas.dots{background-image:radial-gradient(var(--bg2) 1px,transparent 1px);
+             background-size:22px 22px}
+.node{position:absolute;background:var(--bg0s);border:1px solid var(--bg3);
+      border-radius:3px;padding:5px}
+.node.out{border-color:var(--yellow);border-width:2px}
+.node.sel{border-color:var(--blue);border-width:2px}
+.node .pic{display:block;border-radius:2px}
+.node .nm{font-size:11.5px;color:var(--fg1);text-align:center;margin-top:3px;font-weight:600}
+.node.dormant .nm{color:var(--gray);font-weight:400}
+.port{position:absolute;width:7px;height:7px;border-radius:50%;background:var(--fg4);
+      left:-4px}
+.port.med{background:var(--purple)}
+.oport{position:absolute;width:7px;height:7px;border-radius:50%;background:var(--fg3);right:-4px}
+.plabel{position:absolute;font-size:10px;color:var(--gray);left:8px;white-space:nowrap}
+.badge{position:absolute;font-size:9.5px;background:var(--bg1);color:var(--fg4);
+       border-radius:2px;padding:0 4px;top:7px}
+.wire{position:absolute;height:0;border-top:2px solid var(--bg4);transform-origin:0 0}
+.uni{margin-top:4px;border-top:1px solid var(--bg2);padding-top:3px}
+.uni .u{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--fg4);
+        margin-top:2px;line-height:1.3}
+.uni .u .n{color:var(--gray);width:44px;flex:0 0 44px;overflow:hidden;text-overflow:ellipsis;
+           white-space:nowrap}
+.uni .u .track{flex:1;height:4px;background:var(--bg1);border-radius:2px;position:relative}
+.uni .u .track i{position:absolute;left:0;top:0;bottom:0;background:var(--yellownorm);
+                 border-radius:2px}
+.uni .u .v{color:var(--fg3);font-variant-numeric:tabular-nums;font-size:9.5px}
+.uni .u .sw{width:22px;height:8px;border-radius:2px;border:1px solid var(--bg3)}
+
+/* ---- overlays on the canvas ---- */
+.tl{position:absolute;top:8px;left:8px;display:flex;gap:6px;align-items:center;z-index:5}
+.tr{position:absolute;top:8px;right:8px;display:flex;gap:6px;align-items:center;z-index:5}
+.bl{position:absolute;bottom:8px;left:8px;display:flex;gap:6px;align-items:flex-end;z-index:5}
+.br{position:absolute;bottom:8px;right:8px;z-index:5}
+.strip{display:flex;gap:5px;align-items:flex-end;background:#161819e8;border:1px solid var(--bg2);
+       border-radius:2px;padding:5px}
+.dtile{display:flex;flex-direction:column;align-items:center;gap:2px}
+.dtile .thumb{border-width:1px}
+.dtile.sel .thumb{border-color:var(--yellow)}
+.dtile .l{font-size:10px;color:var(--fg4);max-width:66px;overflow:hidden;
+          text-overflow:ellipsis;white-space:nowrap}
+.dtile.sel .l{color:var(--fg0)}
+.pill{background:#161819e0;border:1px solid var(--bg2);border-radius:2px;
+      padding:2px 8px;font-size:12px;color:var(--fg3)}
+.pill.act{border-color:var(--yellow);color:var(--yellow)}
+
+.menu{display:inline-block;background:var(--bg1);border:1px solid var(--bg3);
+      border-radius:2px;padding:4px 0;min-width:200px;box-shadow:0 6px 18px #000a}
+.menu div{padding:3px 12px;font-size:12.5px;color:var(--fg2);display:flex;
+          justify-content:space-between;gap:24px}
+.menu div.sep{border-top:1px solid var(--bg2);margin:4px 0;padding:0;height:0}
+.menu div .k{color:var(--gray);font-size:11.5px}
+.menu div.dngr{color:var(--red)}
+.menu div.sub::after{content:"›";color:var(--gray)}
+.menu .hdr{color:var(--gray);font-size:10.5px;letter-spacing:.06em;padding:2px 12px 4px}
+.floatmenu{position:absolute;z-index:20}
+
+.mark{position:absolute;border:1px dashed var(--red);border-radius:2px;pointer-events:none}
+.mark::after{content:attr(data-l);position:absolute;bottom:-8px;left:8px;
+      background:var(--bg0h);color:var(--red);font-size:10px;padding:0 6px;
+      letter-spacing:.03em;white-space:nowrap}
+.mark.lbl-in::after{bottom:auto;top:4px;left:8px}
+.mark.ok{border-color:var(--green)}
+.mark.ok::after{color:var(--green)}
+
+table{border-collapse:collapse;width:100%;margin:16px 0 0;font-size:12.5px}
+th,td{border:1px solid var(--bg2);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:var(--bg1);color:var(--fg3);font-weight:600;font-size:11.5px;letter-spacing:.03em}
+td .win{color:var(--green)} td .lose{color:var(--red)}
+td code{white-space:nowrap}
+.tbl-wrap{overflow-x:auto}
+@media (max-width:760px){ .tbl-wrap table{min-width:640px} .two > div{min-width:100%} }
+code{background:var(--bg1);border:1px solid var(--bg2);border-radius:2px;
+     padding:0 4px;font-size:12px;color:var(--fg3)}
+ul{margin:8px 0 0;padding-left:20px;color:var(--fg4);font-size:13px}
+li{margin:5px 0}
+li b{color:var(--fg2);font-weight:600}
+.two{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;margin-top:14px}
+.two > div{flex:1;min-width:280px}
+.legend{font-size:12px;color:var(--gray);margin-top:10px}
+.legend b{color:var(--fg3)}
+.q{border-left:2px solid var(--orange);padding:2px 0 2px 12px;margin:14px 0 0;
+   color:var(--fg4);font-size:12.5px;max-width:90ch}
+.q b{color:var(--orange)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>094 · one graph panel</h1>
+<p class="lede">
+Sketches of the subtractive redesign. <b>The layout is unchanged</b> — editor left, rendering canvas
+top-right, and under it what is today the control panel. That lower half is what changes: the
+documents grid and the four-tab settings panel collapse into <b>one graph canvas</b>, the graph comes
+back out of the editor's tab strip, uniforms move onto the node, and Render / Share become node
+context items. Tokens are the real ones (gruvbox-hard, <code>SPACE.MD&nbsp;=&nbsp;8</code>,
+<code>THUMB_LG&nbsp;=&nbsp;150</code>). Nothing here is implemented; §D, §E and §B carry the three
+open questions.
+</p>
+
+<!-- ============================ TODAY ============================ -->
+<section>
+<h2><span class="tag alt">0</span> today — what is being removed</h2>
+<p class="note">
+The right half is two stacked regions: a viewer image over a control panel that is itself two
+columns (documents grid | tabbed settings). The graph is a <b>tab in the left editor</b>, opened
+from a document's context menu. Six surfaces answer questions about one document.
+</p>
+
+<div class="app">
+<div class="panel">
+  <div class="col ed-col tall" style="display:flex;flex-direction:column">
+    <div class="tabs" style="margin-bottom:6px"><span class="on">flood_fill.frag</span>
+      <span>paint.frag</span><span>RC 2 (graph)</span></div>
+    <div style="flex:1;background:var(--bg0h);border:1px solid var(--bg2);border-radius:2px;
+                padding:8px;font-size:11px;color:var(--gray);line-height:1.5">
+      <span style="color:var(--purple)">void</span> <span style="color:var(--yellow)">main</span>(){<br>
+      &nbsp;&nbsp;<span style="color:var(--blue)">vec2</span> uv = gl_FragCoord.xy / u_resolution;<br>
+      &nbsp;&nbsp;<span style="color:var(--blue)">vec4</span> src = texture(u_prev, uv);<br>
+      &nbsp;&nbsp;fragColor = mix(src, paint(uv), u_gain);<br>}
+    </div>
+    <div class="mark" data-l="the graph lives HERE, as a tab"
+         style="left:6px;right:6px;top:6px;height:26px"></div>
+  </div>
+
+  <div class="col set-col tall" style="display:flex;flex-direction:column;gap:8px">
+    <div style="position:relative;background:var(--bg0h);border:1px solid var(--bg2);
+                border-radius:2px;height:190px;display:flex;align-items:center;
+                justify-content:center">
+      <span class="thumb art-rc2" style="width:300px;height:170px"></span>
+      <span class="pill" style="position:absolute;top:6px;left:6px">Color</span>
+      <span class="pill" style="position:absolute;top:6px;right:6px">58 fps</span>
+      <div class="mark ok lbl-in" data-l="1 · the viewer" style="left:4px;right:4px;top:4px;bottom:4px"></div>
+    </div>
+    <div style="display:flex;gap:8px;flex:1;min-height:0">
+      <div class="col" style="width:38.46%;position:relative">
+        <div class="row"><span class="btn sm">New document</span>
+          <span class="dim" style="font-size:12px">☐ Render all</span></div>
+        <div class="row" style="gap:4px;margin-top:6px">
+          <span class="dtile sel"><span class="thumb art-rc2 sel" style="width:72px;height:41px;
+                border-color:var(--yellow)"></span><span class="l">RC 2</span></span>
+          <span class="dtile"><span class="thumb art-rc1" style="width:72px;height:72px"></span>
+            <span class="l">RC 1</span></span>
+        </div>
+        <div class="mark lbl-in" data-l="2 · documents grid" style="left:4px;right:4px;top:4px;bottom:4px"></div>
+      </div>
+      <div class="col" style="flex:1;position:relative">
+        <div class="tabs"><span class="on">Document</span><span>Uniforms</span>
+          <span>Render</span><span>Share</span></div>
+        <div class="row"><span class="cap" style="width:52px">name</span>
+          <span class="inp" style="width:120px">RC 2</span>
+          <span class="seg"><span>Auto</span><span class="on">Fixed</span></span>
+          <span class="cap">1280x720</span></div>
+        <div class="cap" style="margin-top:10px">Passes</div>
+        <div class="row" style="gap:5px;margin-top:3px">
+          <span class="dtile"><span class="thumb art-ff" style="width:78px;height:44px"></span>
+            <span class="l">flood_fill</span></span>
+          <span class="dtile"><span class="thumb art-paint" style="width:78px;height:44px"></span>
+            <span class="l">paint</span></span>
+        </div>
+        <div class="mark lbl-in" data-l="3 · four tabs" style="left:4px;right:4px;top:4px;bottom:4px"></div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+<p class="note">
+What each of the four tabs holds, and where this redesign sends it:
+</p>
+<div class="tbl-wrap"><table>
+<tr><th>Tab</th><th>Holds</th><th>Goes to</th></tr>
+<tr><td><b>Document</b></td>
+    <td>name field, the grouped canvas combo (one list by aspect, each group's first row
+        <code>Auto</code>), script play/stop, the pass strip, Add pass / Import passes</td>
+    <td>canvas combo → the <b>toolbelt</b> (§C), verbatim; name and script toggle → the
+        breadcrumb's menu (§E), since both are about the document; strip → <b>the graph
+        itself</b>; Add/Import → the canvas's own right-click menu, where they already are</td></tr>
+<tr><td><b>Uniforms</b></td>
+    <td>pass selector, sort combo, the auto block, one row per uniform (slider / color / texture
+        / play-stop)</td>
+    <td><b>onto the node</b> (§B) — the pass selector dies with it, since the node IS the selection</td></tr>
+<tr><td><b>Render</b></td>
+    <td>output-file picker, resolution + duration + fps, a preview, the Render button</td>
+    <td>a mode of the node (§D)</td></tr>
+<tr><td><b>Share</b></td>
+    <td>exporter accordion (telegram), its own outlet panel, Render + Publish</td>
+    <td>a mode of the node (§D)</td></tr>
+</table></div>
+<p class="note"><b>Removed outright:</b> the tab bar and its four <code>DocumentTab</code> values,
+the <code>Ctrl+digit</code> jumps that focus a tab, the pass selector in Uniforms, the pass strip as
+a second view of the passes, the documents grid as a region of its own, the
+<code>Render all documents</code> checkbox (§E), and the graph's existence as an editor tab
+kind.</p>
+</section>
+
+<!-- ============================ A ============================ -->
+<section>
+<h2><span class="tag">A</span> the layout — unchanged; the bottom half becomes the graph</h2>
+<p class="note">
+Editor on the left, exactly as today. On the right, the rendering canvas on top and the graph
+under it, exactly as today — except the bottom half is no longer the documents grid beside a
+four-tab panel. It is <b>one graph canvas</b>, and everything the tabs held is on it or on the
+toolbelt.
+</p>
+
+<div class="app">
+<div class="panel">
+  <div class="col ed-col tall" style="display:flex;flex-direction:column;opacity:.5">
+    <div class="tabs" style="margin-bottom:6px"><span class="on">flood_fill.frag</span>
+      <span>paint.frag</span></div>
+    <div style="flex:1;background:var(--bg0h);border:1px solid var(--bg2);border-radius:2px;
+                padding:8px;font-size:11px;color:var(--gray);line-height:1.5">
+      <span style="color:var(--purple)">void</span> <span style="color:var(--yellow)">main</span>(){<br>
+      &nbsp;&nbsp;<span style="color:var(--blue)">vec2</span> uv = gl_FragCoord.xy / u_resolution;<br>
+      &nbsp;&nbsp;<span style="color:var(--blue)">vec4</span> src = texture(u_prev, uv);<br>
+      &nbsp;&nbsp;fragColor = mix(src, paint(uv), u_gain);<br>}
+    </div>
+    <div style="margin-top:6px;display:flex;gap:6px;align-items:center">
+      <span class="cap">INSERT · 12:4</span>
+      <span class="btn accent" style="margin-left:auto">Copilot</span>
+    </div>
+    <div class="cap" style="position:absolute;left:50%;top:6px;transform:translateX(-50%);
+         background:var(--bg0h);padding:0 8px;letter-spacing:.06em">EDITOR — UNCHANGED</div>
+  </div>
+
+  <div class="set-col tall" style="padding:0;display:flex;flex-direction:column;gap:6px">
+
+    <!-- the rendering canvas, on top, as today -->
+    <div style="position:relative;background:var(--bg0h);border:1px solid var(--bg2);
+                border-radius:2px;height:210px;display:flex;align-items:center;
+                justify-content:center;flex:0 0 210px">
+      <span class="thumb art-rc2" style="width:334px;height:188px"></span>
+      <div class="tr">
+        <span class="pill">58 fps</span>
+        <span class="pill act">⚙ canvas</span>
+      </div>
+      <div class="mark ok lbl-in" data-l="the rendering canvas — unchanged, minus its two chips"
+           style="left:4px;right:4px;top:4px;bottom:4px"></div>
+    </div>
+
+    <!-- the graph, under it -->
+    <div style="flex:1;min-height:0;position:relative">
+      <div class="canvas dots">
+
+        <div class="wire" style="left:130px;top:96px;width:76px"></div>
+        <div class="wire" style="left:130px;top:196px;width:40px;transform:rotate(-38deg)"></div>
+        <div class="wire" style="left:340px;top:96px;width:72px"></div>
+
+        <div class="node dormant" style="left:18px;top:168px;width:112px">
+          <span class="thumb art-med pic" style="width:102px;height:57px"></span>
+          <div class="nm">texture.png</div>
+          <div class="oport" style="top:48px"></div>
+        </div>
+
+        <div class="node" style="left:18px;top:54px;width:112px">
+          <span class="thumb art-paint pic" style="width:102px;height:57px"></span>
+          <div class="nm">paint</div>
+          <div class="oport" style="top:40px"></div>
+          <div class="uni">
+            <div class="u"><span class="n">gain</span>
+              <span class="track"><i style="width:62%"></i></span><span class="v">0.62</span></div>
+            <div class="u"><span class="n">tint</span>
+              <span class="sw" style="background:#d3869b"></span><span class="v">#d3869b</span></div>
+          </div>
+        </div>
+
+        <div class="node sel" style="left:206px;top:42px;width:134px">
+          <span class="thumb art-ff pic" style="width:124px;height:70px"></span>
+          <span class="badge" style="right:12px">x4</span>
+          <div class="nm">flood_fill</div>
+          <div class="port" style="top:52px"></div>
+          <div class="plabel" style="top:47px">u_src</div>
+          <div class="port med" style="top:70px"></div>
+          <div class="plabel" style="top:65px">u_tex</div>
+          <div class="oport" style="top:52px"></div>
+          <div class="uni">
+            <div class="u"><span class="n">steps</span>
+              <span class="track"><i style="width:40%"></i></span><span class="v">8</span></div>
+            <div class="u"><span class="n">decay</span>
+              <span class="track"><i style="width:78%"></i></span><span class="v">0.78</span></div>
+            <div class="u"><span class="n">seed</span>
+              <span class="track"><i style="width:22%"></i></span><span class="v">0.22</span></div>
+          </div>
+        </div>
+
+        <div class="node out" style="left:412px;top:48px;width:146px">
+          <span class="thumb art-rc2 pic" style="width:136px;height:76px"></span>
+          <div class="nm">composite</div>
+          <div class="port" style="top:56px"></div>
+          <div class="plabel" style="top:51px">u_fill</div>
+          <div class="uni">
+            <div class="u"><span class="n">expo</span>
+              <span class="track"><i style="width:55%"></i></span><span class="v">1.10</span></div>
+          </div>
+        </div>
+
+        <div class="tl">
+          <span class="pill act">RC 2</span>
+          <span class="cap">/</span>
+          <span class="pill">bloom</span>
+        </div>
+
+        <div class="bl">
+          <div class="strip">
+            <span class="dtile sel"><span class="thumb art-rc2" style="width:58px;height:33px;
+                  border-color:var(--yellow)"></span><span class="l">RC 2</span></span>
+            <span class="dtile"><span class="thumb art-rc1" style="width:58px;height:58px"></span>
+              <span class="l">RC 1</span></span>
+            <span class="dtile"><span class="thumb art-blur" style="width:58px;height:33px"></span>
+              <span class="l">blur test</span></span>
+            <span class="btn sm" style="align-self:center">+</span>
+          </div>
+        </div>
+
+        <div class="mark ok" data-l="documents: a strip, not a grid — content-sized, no reserved rows"
+             style="left:6px;bottom:6px;width:300px;height:58px"></div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<p class="note">
+<b>What moved onto which surface.</b> The rendering canvas keeps its size and position and loses
+only its two corner chips, which fold into the toolbelt (§C) at its top-right. The graph gains
+three overlays it did not have: the <b>scope breadcrumb</b> top-left, which it already draws as its
+tab row and which now doubles as the document's name (click to rename); the <b>documents strip</b>
+bottom-left (§E); and nothing at bottom-right, kept clear for the "Rendering…" cue and
+notifications.
+</p>
+<p class="note">
+<b>The splitter between the two halves is the one from today</b>, so the canvas/graph ratio stays
+yours to drag. What the old layout spent on the documents grid and the tab bar — roughly the panel's
+left third plus ~120px of chrome — is now graph.
+</p>
+</section>
+
+<!-- ============================ B ============================ -->
+<section>
+<h2><span class="tag">B</span> the node — three levels of detail</h2>
+<p class="note">
+A node today is a hand-drawn card: picture, name, one port row per sampler. It gains the pass's
+uniforms, and it gains a <b>level of detail driven by zoom</b>, because a node that carries controls
+cannot be drawn the same way at every scale. The exact thresholds are to be tuned in the running
+app; what the sketch fixes is the three states and what each one drops.
+</p>
+
+<div class="app" style="min-width:0">
+<div style="display:flex;gap:44px;flex-wrap:wrap;align-items:flex-start;
+            background:var(--bg0h);padding:24px;border-radius:2px">
+
+  <div style="position:relative">
+    <div class="cap" style="margin-bottom:8px">near &mdash; everything, and it is live</div>
+    <div class="node sel" style="position:relative;left:0;top:0;width:154px">
+      <span class="thumb art-ff pic" style="width:144px;height:81px"></span>
+      <span class="badge" style="right:12px">x4</span>
+      <div class="nm">flood_fill</div>
+      <div class="port" style="top:60px"></div>
+      <div class="plabel" style="top:55px">u_src</div>
+      <div class="port med" style="top:80px"></div>
+      <div class="plabel" style="top:75px">u_tex</div>
+      <div class="oport" style="top:60px"></div>
+      <div class="uni">
+        <div class="u"><span class="n">steps</span>
+          <span class="track"><i style="width:40%"></i></span><span class="v">8</span></div>
+        <div class="u"><span class="n">decay</span>
+          <span class="track"><i style="width:78%"></i></span><span class="v">0.78</span></div>
+        <div class="u"><span class="n">seed</span>
+          <span class="track"><i style="width:22%"></i></span><span class="v">0.22</span></div>
+        <div class="u"><span class="n">tint</span>
+          <span class="sw" style="background:#8ec07c"></span><span class="v">#8ec07c</span></div>
+      </div>
+    </div>
+    <div class="cap" style="margin-top:8px;max-width:160px;line-height:1.4">
+      the sliders drag, the swatch opens a picker. This is the only state that accepts input.
+    </div>
+  </div>
+
+  <div style="position:relative">
+    <div class="cap" style="margin-bottom:8px">mid &mdash; name only, at a readable size</div>
+    <div class="node" style="position:relative;left:0;top:0;width:104px;padding:4px">
+      <span class="thumb art-ff pic" style="width:96px;height:54px"></span>
+      <div class="nm" style="font-size:12px">flood_fill</div>
+      <div class="port" style="top:38px;width:6px;height:6px"></div>
+      <div class="oport" style="top:38px;width:6px;height:6px"></div>
+    </div>
+    <div class="cap" style="margin-top:8px;max-width:160px;line-height:1.4">
+      the uniforms fold away rather than shrink into unreadable slivers. The name does
+      <b>not</b> scale down with the node &mdash; it holds a legible size, which is the whole
+      reason this state exists.
+    </div>
+  </div>
+
+  <div style="position:relative">
+    <div class="cap" style="margin-bottom:8px">far &mdash; the picture, and nothing else</div>
+    <div class="node" style="position:relative;left:0;top:0;width:66px;padding:2px">
+      <span class="thumb art-ff pic" style="width:62px;height:35px"></span>
+      <div class="port" style="top:16px;width:4px;height:4px"></div>
+      <div class="oport" style="top:16px;width:4px;height:4px"></div>
+    </div>
+    <div class="cap" style="margin-top:8px;max-width:160px;line-height:1.4">
+      no name, no ports labels, no rows. At this scale text is a smudge that costs a font
+      push per node and says nothing; the picture is what you are navigating by.
+    </div>
+  </div>
+</div>
+</div>
+
+<p class="note">
+<b>The ladder is: rows &rarr; name &rarr; picture.</b> Each step drops what has stopped being
+readable rather than shrinking it. The middle state's trick is that the name keeps its size while
+the node loses its &mdash; so a zoomed-out graph reads as labelled boxes rather than as grey
+rectangles with illegible captions under them. Where the two thresholds sit is a number to find by
+using it, not by argument.
+</p>
+
+<h3>a pass with many uniforms</h3>
+<p class="note">
+<b>The rows scroll inside the node, 8&ndash;10 visible.</b> Not a cap with a &ldquo;+N more&rdquo;,
+not a per-node toggle &mdash; a scrollable list, so every uniform stays reachable without the node
+becoming a column that dominates the graph.
+</p>
+
+<div class="app" style="min-width:0">
+<div style="display:flex;gap:44px;flex-wrap:wrap;align-items:flex-start;
+            background:var(--bg0h);padding:24px;border-radius:2px">
+  <div class="node sel" style="position:relative;left:0;top:0;width:154px">
+    <span class="thumb art-ff pic" style="width:144px;height:81px"></span>
+    <div class="nm">raymarch</div>
+    <div class="port" style="top:60px"></div>
+    <div class="oport" style="top:60px"></div>
+    <div class="uni" style="position:relative">
+      <div style="max-height:112px;overflow:hidden;position:relative;padding-right:6px">
+        <div class="u"><span class="n">steps</span>
+          <span class="track"><i style="width:40%"></i></span><span class="v">64</span></div>
+        <div class="u"><span class="n">eps</span>
+          <span class="track"><i style="width:12%"></i></span><span class="v">0.001</span></div>
+        <div class="u"><span class="n">fog</span>
+          <span class="track"><i style="width:55%"></i></span><span class="v">0.55</span></div>
+        <div class="u"><span class="n">sun</span>
+          <span class="sw" style="background:#fabd2f"></span><span class="v">#fabd2f</span></div>
+        <div class="u"><span class="n">sky</span>
+          <span class="sw" style="background:#83a598"></span><span class="v">#83a598</span></div>
+        <div class="u"><span class="n">gamma</span>
+          <span class="track"><i style="width:66%"></i></span><span class="v">2.20</span></div>
+        <div class="u"><span class="n">expo</span>
+          <span class="track"><i style="width:48%"></i></span><span class="v">1.05</span></div>
+        <div class="u"><span class="n">bias</span>
+          <span class="track"><i style="width:30%"></i></span><span class="v">0.30</span></div>
+        <div class="u" style="opacity:.45"><span class="n">warp</span>
+          <span class="track"><i style="width:72%"></i></span><span class="v">0.72</span></div>
+        <span style="position:absolute;right:0;top:2px;width:3px;height:64px;
+              background:var(--bg4);border-radius:2px"></span>
+      </div>
+    </div>
+  </div>
+  <div class="cap" style="max-width:300px;line-height:1.5">
+    Nineteen uniforms, nine rows tall, its own scrollbar. The node's height therefore has a
+    <b>ceiling</b>, which is what keeps a heavy pass from being a wall on the canvas.
+    <br><br>
+    The scroll position is per pass and survives a pan or a zoom, since it belongs to the node
+    rather than to the view.
+  </div>
+</div>
+</div>
+
+<p class="note">
+<b>What a row is.</b> The uniform's existing widget, shrunk: a float is a track with its value at
+the right; a color is a swatch; a texture is the port it already has (its picture is on the wire's
+other end, so a thumbnail on the node would say it twice); a scripted uniform keeps its play/stop as
+a glyph where the value sits. The <code>auto</code> uniforms (<code>u_time</code>,
+<code>u_resolution</code>, &hellip;) are not rows at all &mdash; they are identical on every node,
+which is what the Uniforms tab's separate &ldquo;auto block&rdquo; was already saying.
+</p>
+<p class="note">
+<b>What the node cannot hold, and where it goes.</b> A uniform's <i>input-type selector</i> (slider
+vs. drag vs. script vs. media) and its min/max bounds are rarely-touched configuration, not live
+controls. They belong on the row's own right-click menu &mdash; one more context menu, no new
+surface.
+</p>
+<p class="note">
+<b>The one real risk in this whole redesign.</b> The graph is a hand-drawn draw-list canvas; these
+rows are the first <i>interactive imgui widgets</i> to live on it. A slider inside a node needs the
+overlap chain the canvas already has (<code>set_next_item_allow_overlap</code> on the background and
+on the node body, the widget submitted last) and must not start a node drag when you grab it. A
+scrolling region inside a node adds a second: the wheel over a node has to scroll the rows while the
+wheel over the canvas zooms.
+</p>
+</section>
+
+<!-- ============================ C ============================ -->
+<section>
+<h2><span class="tag">C</span> the toolbelt — one chip, top right</h2>
+<p class="note">
+Everything that is about <b>the canvas</b> — its shape and what of it you are looking at. Today
+that is two things in two places: the Document tab's combo, and a chip over the canvas's
+top-left corner. The fps chip stays where it is.
+</p>
+
+<div class="app" style="min-width:0">
+<div style="position:relative;background:var(--bg0h);border:1px solid var(--bg2);border-radius:2px;
+            height:300px;padding:8px">
+  <span class="thumb art-rc2" style="width:300px;height:169px;margin:10px auto"></span>
+  <div class="tr" style="flex-direction:column;align-items:flex-end;gap:6px">
+    <div class="row" style="gap:6px">
+      <span class="pill">58 fps</span>
+      <span class="pill act">&#9881; canvas</span>
+    </div>
+    <div class="menu" style="min-width:236px;text-align:left">
+      <div class="hdr">16:9</div>
+      <div><span>Auto</span><span class="k">&#9679;</span></div>
+      <div><span>Wide 720p</span></div>
+      <div><span>Wide 1080p</span></div>
+      <div class="sep"></div>
+      <div class="hdr">1:1</div>
+      <div><span>Auto</span></div>
+      <div><span>512x512</span></div>
+      <div><span>1024x1024</span></div>
+      <div class="sep"></div>
+      <div class="hdr">VIEW</div>
+      <div><span>Color</span><span class="k">&#9679;</span></div>
+      <div><span>Alpha</span></div>
+      <div><span>RGB</span><span class="k">Ctrl+Shift+C</span></div>
+    </div>
+  </div>
+  <div class="mark ok" data-l="the existing grouped canvas combo, verbatim — plus the channel cycle"
+       style="right:6px;top:6px;width:250px;height:282px"></div>
+</div>
+</div>
+
+<p class="note">
+<b>The canvas half is the combo that already exists</b>, not a new control. 093 removed the
+<code>Auto | Fixed</code> mode toggle for a reason the sketch's first draft forgot: a mode whose two
+positions edited different things (a ratio, a pixel pair) put a control on the row that changed
+meaning under it. What replaced it is <code>canvas_choice_groups</code> — one list grouped by
+aspect, each group's first row <code>Auto</code>, the fixed sizes of that ratio under it. Moving it
+onto the toolbelt is a change of host, not of shape, and <b>there is no <code>Mode</code> row</b>.
+</p>
+<p class="note">
+<b>Channels</b> keeps its one-key cycle, so the menu is a fallback rather than the only path. It
+leaves the canvas's top-left corner because two chips in two opposite corners is what made the image
+feel fenced in, and that corner is the one a wide document needs most.
+</p>
+<p class="note">
+<b>Two things the first draft put here and that do not belong.</b> <code>Script</code> is about the
+<i>document</i>, not its canvas — its play/stop goes on the document's own surface, which is the
+breadcrumb's menu (&sect;E), beside the document's other verbs. And <code>Render all
+documents</code> is deleted outright; &sect;E says what replaces it.
+</p>
+</section>
+
+<!-- ============================ D ============================ -->
+<section>
+<h2><span class="tag">D</span> render &amp; share &mdash; a focused node, not a modal</h2>
+<p class="note">
+<b>The node is the target and the node is the panel.</b> Picking <code>Render</code> or
+<code>Share</code> centres the view on that node, grows it to fit the controls, and dims everything
+else on the canvas. It reads as a modal &mdash; one thing in focus, the rest pushed back, click
+outside or Esc to leave &mdash; without being one: no popup, no registry row, no paused renders, and
+the rendering canvas above stays live the whole time.
+</p>
+
+<div class="app" style="min-width:0">
+<div style="position:relative;background:var(--bg0h);border:1px solid var(--bg2);
+            border-radius:2px;height:390px;overflow:hidden" class="dots">
+
+  <!-- dimmed graph behind -->
+  <div class="wire" style="left:104px;top:96px;width:70px"></div>
+  <div class="wire" style="left:470px;top:96px;width:64px"></div>
+  <div class="node" style="left:16px;top:58px;width:88px">
+    <span class="thumb art-paint pic" style="width:78px;height:44px"></span>
+    <div class="nm" style="font-size:10px">paint</div></div>
+  <div class="node" style="left:16px;top:200px;width:88px">
+    <span class="thumb art-med pic" style="width:78px;height:44px"></span>
+    <div class="nm" style="font-size:10px">texture.png</div></div>
+  <div class="node out" style="left:534px;top:58px;width:100px">
+    <span class="thumb art-rc2 pic" style="width:90px;height:51px"></span>
+    <div class="nm" style="font-size:10px">composite</div></div>
+
+  <!-- the scrim -->
+  <div style="position:absolute;inset:0;background:#0d0f10cc;z-index:8"></div>
+
+  <!-- the focused node -->
+  <div class="node sel" style="left:50%;top:26px;transform:translateX(-50%);
+       width:286px;z-index:9;box-shadow:0 10px 34px #000b">
+    <span class="thumb art-ff pic" style="width:276px;height:155px"></span>
+    <div class="nm">flood_fill</div>
+    <div class="port" style="top:100px"></div>
+    <div class="oport" style="top:100px"></div>
+    <div style="margin-top:8px">
+      <div style="display:flex;gap:6px;align-items:center">
+        <span class="btn sm">Choose file&hellip;</span>
+        <span class="cap" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          ~/out/fill.mp4 &middot; 2.1 MB</span>
+      </div>
+      <div class="u" style="margin-top:7px;font-size:11px"><span class="n"
+           style="width:52px;flex:0 0 52px">size</span>
+        <span class="inp" style="font-size:11px;padding:2px 6px;width:56px">1280</span>
+        <span class="dim">x</span>
+        <span class="inp" style="font-size:11px;padding:2px 6px;width:56px">720</span></div>
+      <div class="u" style="margin-top:4px;font-size:11px"><span class="n"
+           style="width:52px;flex:0 0 52px">length</span>
+        <span class="inp" style="font-size:11px;padding:2px 6px;width:46px">4.0</span>
+        <span class="cap">s</span>
+        <span class="inp" style="font-size:11px;padding:2px 6px;width:40px">30</span>
+        <span class="cap">fps</span></div>
+      <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
+        <span class="btn on">Render</span>
+        <span class="cap" style="margin-left:auto">Esc to close</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="mark ok lbl-in" data-l="the scrim: dims, and eats the click that dismisses"
+       style="left:6px;top:6px;right:6px;bottom:6px;z-index:10"></div>
+</div>
+</div>
+
+<p class="note">
+<b>How it is built, in the canvas's own terms.</b> The scrim is ONE translucent rect on a new
+channel between <code>_CH_OVERLAY</code> and the focused node &mdash; not an alpha pass over every
+node and wire, which would be N draws and would leak through overlapping shapes. The canvas already
+splits its draw list into ordered channels (<code>_CH_HALO</code> &hellip;
+<code>_CH_OVERLAY</code>), so this is one more, and the focused node draws above it.
+</p>
+<p class="note">
+<b>The scrim eats clicks, which is what makes it read as modal.</b> Without that, a click landed on
+a dimmed node behind it and you would be editing two things at once. A click on the scrim leaves the
+mode, so click-outside-to-dismiss comes free; Esc does the same. It is the canvas's existing
+full-area background button, refusing every gesture (pan, band, node press) while focus is on.
+</p>
+<p class="note">
+<b>The node grows in SCREEN units, not canvas units.</b> While focused it is drawn at a fixed pixel
+size and ignores the zoom; its stored position and its canvas footprint never change. This matters:
+growing it in canvas units would make the graph's layout different after you left &mdash; Arrange
+would see a giant node, and wires would route around a box that is not really there. Focus is a
+<i>view</i> state, so nothing about it survives leaving it.
+</p>
+<p class="note">
+<b>The camera is saved and restored.</b> Entering stores the current <code>pan</code> and
+<code>zoom</code>, then animates to centre the node; leaving animates back. Without the restore,
+every render would leave you somewhere you did not choose. <code>GraphViewState</code> already holds
+<code>pan</code>/<code>zoom</code> and one-shot view flags like <code>fitted</code>, so this is
+three fields on a dataclass that already has this shape: the focused pass, its mode, and the saved
+camera.
+</p>
+<p class="note">
+<b>A publish in flight holds the focus</b> until it finishes, so progress and the artifact it
+produced cannot be zoomed or panned away from. That is the one case where the mode is not purely the
+user's to leave &mdash; the same reason today's Share panel is a fixed place.
+</p>
+<p class="note">
+<b>What this settles.</b> The overlap problem from the previous draft is gone: nothing is competing
+for the space, because nothing else is in focus. The target stays structural &mdash; a mode on
+<i>this</i> node renders <i>this</i> pass &mdash; so &ldquo;render any node, not just the
+output&rdquo; still comes free. And the width is no longer a constraint to design around: the
+focused node is as wide as the panel allows, so the Share accordion has room even with a second
+exporter.
+</p>
+</section>
+
+<!-- ============================ E ============================ -->
+<section>
+<h2><span class="tag">E</span> the documents selector — a dropdown on the breadcrumb</h2>
+<p class="note">
+<b>Decided: A2, with small live previews.</b> The breadcrumb's first crumb already names the open
+document; it gains a caret. At rest it covers nothing — no grid, no strip, no reserved rows, and no
+dead space that can ever come back, because the list is a popup sized by its content.
+</p>
+
+<div class="app" style="min-width:0">
+<div style="position:relative;background:var(--bg0h);border:1px solid var(--bg2);
+            border-radius:2px;height:290px" class="dots">
+  <div class="node" style="left:60px;top:96px;width:112px">
+    <span class="thumb art-paint pic" style="width:102px;height:57px"></span>
+    <div class="nm">paint</div></div>
+  <div class="node out" style="left:250px;top:102px;width:130px">
+    <span class="thumb art-rc2 pic" style="width:120px;height:68px"></span>
+    <div class="nm">composite</div></div>
+
+  <div class="tl"><span class="pill act">RC 2 &#9662;</span><span class="cap">/</span>
+    <span class="pill">bloom</span></div>
+
+  <div class="floatmenu" style="left:8px;top:34px">
+    <div class="menu" style="min-width:218px">
+      <div class="hdr">DOCUMENTS</div>
+      <div style="align-items:center"><span style="display:flex;align-items:center;gap:8px">
+        <span class="thumb art-rc2" style="width:48px;height:27px;border-color:var(--yellow)"></span>
+        <span style="color:var(--fg0)">RC 2</span></span><span class="k">&#9679;</span></div>
+      <div style="align-items:center"><span style="display:flex;align-items:center;gap:8px">
+        <span class="thumb art-rc1" style="width:48px;height:48px"></span>
+        <span>RC 1</span></span></div>
+      <div style="align-items:center"><span style="display:flex;align-items:center;gap:8px">
+        <span class="thumb art-blur" style="width:48px;height:27px"></span>
+        <span>blur test</span></span></div>
+      <div style="align-items:center"><span style="display:flex;align-items:center;gap:8px">
+        <span class="thumb art-ff" style="width:48px;height:27px"></span>
+        <span>fire</span></span></div>
+      <div class="sep"></div>
+      <div><span>New document</span><span class="k">Ctrl+N</span></div>
+      <div><span>Projects&hellip;</span><span class="k">Alt+O</span></div>
+    </div>
+  </div>
+
+  <div class="mark ok lbl-in" data-l="48x27 previews — live only while this is open"
+       style="left:6px;top:30px;width:232px;height:150px"></div>
+</div>
+</div>
+
+<p class="note">
+<b>The previews are live, and they cost nothing at rest.</b> A document renders while the dropdown
+is open and not otherwise. That is a shape the app already has: the Examples popup plans its own set
+while it is up, one first render per frame so opening it never stalls on compiling the library at
+once. One difference, and it is the point — Examples <i>replaces</i> the normal set, this one
+<b>adds</b> to it, because the rendering canvas above stays live while you pick.
+</p>
+<p class="note">
+<b>The throttle already prioritises exactly right, with no new code.</b>
+<code>plan_render_set</code> gives <code>current</code> the budget first at
+<code>k&nbsp;=&nbsp;ceil(cost&nbsp;/&nbsp;(budget&nbsp;&times;&nbsp;period))</code>, then hands the
+others the <i>remainder</i> at one common fps. So while the dropdown is open the document you are
+working in keeps its rate and the four thumbnails share what is left — they slow down, it does not.
+Opening the list is not free, but it cannot cost you the canvas. The only wiring is that the open
+dropdown's documents join <code>planned_documents</code>; the <code>others</code> branch that serves
+them is already written and already tested.
+</p>
+<p class="note">
+<b><code>Render all documents</code> is deleted.</b> It was never about the canvas — it was the
+switch that kept the grid's thumbnails alive, and it is a hard on/off sitting in front of a
+proportional mechanism that answers the same question better. With the grid gone, a non-current
+document has no surface to be seen on, so the render set becomes <i>the current document, plus at
+most one awaiting its first render, plus the dropdown's documents while it is open</i>. The
+checkbox, its <code>app_state</code> field and the stale-wash branch that read it all go.
+</p>
+<p class="note">
+<b>What the dropdown costs us, honestly.</b> Recognising a document by picture now takes a click.
+You said you work in one document at a time and do not lean on the previews, so the trade is
+deliberate. If it turns out wrong, a thumbnail strip pinned to the graph's bottom edge restores
+the at-a-glance view without undoing any of this — the dropdown stays either way, as the path that
+scales past a handful of documents.
+</p>
+<p class="note">
+The document's own verbs live on this same menu's right-click (or on a crumb's context menu):
+<code>Rename</code>, <code>Open folder</code>, <code>Reset</code>, <code>Delete</code>, and the
+script's play/stop — <code>document_menu_items</code> as it stands today, which already takes a
+<code>document_id</code> rather than acting on the current one.
+</p>
+</section>
+
+<!-- ============================ F ============================ -->
+<section>
+<h2><span class="tag alt">F</span> what this costs, in code</h2>
+<p class="note">
+The redesign is mostly deletion. Counted off the current tree, not estimated. The rendering canvas
+and the editor are untouched.
+</p>
+<div class="tbl-wrap"><table>
+<tr><th>Move</th><th>Files</th><th>Direction</th></tr>
+<tr><td>The four tabs and their bar</td>
+    <td><code>ui.py::_draw_document_settings</code>, <code>_NODE_TABS</code>,
+        <code>ui_regions.DocumentTab</code>, the <code>FOCUS_TAB_*</code> commands</td>
+    <td class="win">deleted</td></tr>
+<tr><td>Document tab's body</td><td><code>tabs/document.py</code> (353 lines)</td>
+    <td class="win"><code>canvas_choice_groups</code> &rarr; the toolbelt, verbatim; passes &rarr;
+        the graph; name + script toggle &rarr; the breadcrumb's menu; Add/Import &rarr; the canvas
+        menu, where they already are</td></tr>
+<tr><td>Uniforms tab</td><td><code>tabs/uniforms.py</code> (121)</td>
+    <td class="win">deleted; <code>widgets/uniform.py</code> gains a compact row</td></tr>
+<tr><td>Render tab</td><td><code>tabs/render.py</code> (76)</td>
+    <td>body re-laid-out as one narrow column; hosted as a node mode</td></tr>
+<tr><td>Share tab</td><td><code>tabs/share.py</code> (192)</td>
+    <td>body re-laid-out as one narrow column; hosted as a node mode.
+        <code>RenderControl</code> seam untouched</td></tr>
+<tr><td>Documents grid</td><td><code>widgets/document_grid.py</code> (132)</td>
+    <td class="win">grid &rarr; a dropdown on the breadcrumb; <code>preview_cell</code> shrinks to a
+        48x27 row thumbnail; <code>document_menu_items</code> kept verbatim</td></tr>
+<tr><td><code>Render all documents</code></td>
+    <td><code>app_state.is_render_all_documents</code>, its checkbox, the <code>stale</code>
+        branch in the grid, the render-set branch in <code>ui.py</code></td>
+    <td class="win">deleted &mdash; the throttle already answers it (&sect;E)</td></tr>
+<tr><td>The pass strip</td><td><code>widgets/pass_list.py</code> (260)</td>
+    <td class="win">deleted as a surface &mdash; the graph is the only view of the passes;
+        <code>pass_menu_items</code> kept, it is already shared with the node</td></tr>
+<tr><td>The control panel as a region</td>
+    <td><code>ui.py::_draw_app_panel</code>'s lower half</td>
+    <td class="win">its two columns collapse into one graph child</td></tr>
+<tr><td>The rendering canvas</td><td><code>ui.py::_draw_document_image</code></td>
+    <td>unchanged; loses only its channel chip to the toolbelt</td></tr>
+<tr><td>Graph as an editor tab</td>
+    <td><code>tabs/code.py::_draw_graph_tab</code>, the <code>"graph"</code> tab kind,
+        <code>open_graph_for</code>, <code>CommandId.OPEN_GRAPH</code></td>
+    <td class="win">deleted &mdash; the graph is always on screen</td></tr>
+<tr><td>Uniforms on the node, and its zoom ladder</td>
+    <td><code>widgets/pass_graph.py::_draw_node</code></td>
+    <td class="lose">the one genuine addition</td></tr>
+<tr><td>The focus mode (scrim, camera, screen-unit node)</td>
+    <td><code>pass_graph.py</code>'s channel list + <code>_draw_canvas</code>;
+        three fields on <code>GraphViewState</code></td>
+    <td class="lose">new &mdash; one rect, one saved camera, one gesture refusal</td></tr>
+<tr><td>The dropdown's documents join the planned set</td>
+    <td><code>ui.py</code> step 2; <code>plan_render_set</code> unchanged</td>
+    <td class="lose">a few lines &mdash; the <code>others</code> branch already exists</td></tr>
+</table></div>
+
+<p class="note">
+<b>Where the risk is.</b> Two places, both in the node. The uniform rows are the first
+<i>interactive imgui widgets</i> on a hand-drawn draw-list canvas, so a slider needs the overlap
+chain (<code>set_next_item_allow_overlap</code> on the background and on the node body, the widget
+last) and must not start a node drag. The scrolling list adds a second: the wheel over a node
+scrolls its rows while the wheel over the canvas zooms. Everything else in the table is moving or
+deleting a body that already works.
+</p>
+</section>
+
+<section>
+<h2><span class="tag alt">G</span> settled, and what is left</h2>
+<p class="note"><b>Settled in this round:</b></p>
+<ul>
+<li><b>The layout stands</b> &mdash; editor left, rendering canvas top-right, graph under it. Only
+    the bottom half changes.</li>
+<li><b>Documents</b> &mdash; a dropdown on the breadcrumb, with 48x27 live previews that render
+    only while it is open and take the throttle's remainder behind the current document.
+    <code>Render all documents</code> is deleted.</li>
+<li><b>Render / Share</b> &mdash; modes of the node itself, not modals and not tabs. Entering
+    one centres the view on that node, grows it in screen units and dims the rest of the canvas:
+    contextual-modal without a popup.</li>
+<li><b>The node</b> &mdash; three levels of detail (rows &rarr; name &rarr; picture), and the rows
+    scroll at 8&ndash;10 visible.</li>
+<li><b>The canvas control</b> &mdash; the existing grouped combo, no <code>Mode</code> row.</li>
+</ul>
+<p class="note"><b>Left open:</b></p>
+<ul>
+<li><b>The focus animation</b> (&sect;D) &mdash; whether entering and leaving animate the camera
+    or cut to it, and over how long. A cut is simpler and may read as a jump; that is a
+    running-app call.</li>
+<li><b>The two zoom thresholds</b> (&sect;B) &mdash; by construction a number to find in the running
+    app, not on paper.</li>
+</ul>
+<p class="note">
+Everything here is still a sketch: the code claims in &sect;F were read off the tree today, and the
+spec re-checks each one before a line is written.
+</p>
+</section>
+
+</div>
+</body>
+</html>

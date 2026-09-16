@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>094 · canvas chips &amp; the script control — placement options</title>
+<style>
+:root{
+  --bg0h:#161819; --bg0:#1d2021; --bg0s:#222526; --bg1:#282828;
+  --bg2:#3c3836; --bg3:#504945; --bg4:#665c54;
+  --gray:#928374; --fg4:#a89984; --fg3:#bdae93; --fg2:#d5c4a1; --fg1:#ebdbb2; --fg0:#fbf1c7;
+  --red:#fb4934; --green:#b8bb26; --yellow:#fabd2f; --yellownorm:#d79921;
+  --blue:#83a598; --purple:#d3869b; --aqua:#8ec07c; --orange:#fe8019;
+  --mono:"JetBrains Mono","DejaVu Sans Mono",ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg0h);color:var(--fg2);font:14px/1.6 var(--mono);padding:0 0 70px}
+.wrap{max-width:1180px;margin:0 auto;padding:0 20px}
+h1{font-size:19px;color:var(--fg0);font-weight:600;margin:26px 0 6px}
+h2{font-size:14px;color:var(--yellow);font-weight:600;margin:0 0 3px;
+   display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+h2 .tag{font-size:10.5px;color:var(--bg0h);background:var(--yellow);
+        padding:1px 7px;border-radius:3px;font-weight:700}
+h2 .tag.alt{background:var(--bg3);color:var(--fg2)}
+h2 .tag.win{background:var(--green)}
+h3{font-size:12.5px;color:var(--fg1);font-weight:600;margin:18px 0 2px}
+.lede{color:var(--fg4);max-width:88ch;margin:0 0 20px;font-size:12.5px}
+.note{color:var(--gray);font-size:12px;max-width:90ch;margin:8px 0 0}
+.note b{color:var(--fg3);font-weight:600}
+section{margin:0 0 38px;padding:20px 0 0;border-top:1px solid var(--bg2)}
+section:first-of-type{border-top:none}
+.two{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start;margin-top:12px}
+.two > div{flex:1;min-width:300px}
+
+/* app frame */
+.frame{background:var(--bg0);border:1px solid var(--bg2);border-radius:3px;padding:7px;margin-top:10px}
+.canvasbox{position:relative;background:var(--bg0h);border:1px solid var(--bg2);
+           border-radius:2px;height:176px;display:flex;align-items:center;justify-content:center}
+.graphbox{position:relative;background:var(--bg0h);border:1px solid var(--bg2);border-radius:2px;
+          height:150px;margin-top:6px;overflow:hidden;
+          background-image:radial-gradient(var(--bg2) 1px,transparent 1px);background-size:20px 20px}
+.splitter{height:6px;margin:1px 0;display:flex;align-items:center;justify-content:center}
+.splitter i{display:block;width:34px;height:2px;background:var(--bg3);border-radius:2px}
+.art{background:radial-gradient(circle at 58% 48%,#83a598 0,#1d3c3a 30%,#08100f 70%,#000 100%);
+     border:1px solid var(--bg2);border-radius:2px;display:block}
+.art-p{background:linear-gradient(135deg,#1a1020,#000)}
+.art-f{background:linear-gradient(135deg,#2a1e12,#0b0705 70%,#000)}
+
+/* chips */
+.tr{position:absolute;top:7px;right:7px;display:flex;gap:5px;align-items:flex-start;z-index:5}
+.tl{position:absolute;top:7px;left:7px;display:flex;gap:5px;align-items:center;z-index:5}
+.brc{position:absolute;bottom:7px;right:7px;display:flex;gap:5px;z-index:5}
+.blc{position:absolute;bottom:7px;left:7px;display:flex;gap:5px;z-index:5}
+.pill{background:#161819e6;border:1px solid var(--bg3);border-radius:2px;
+      padding:1px 8px;font-size:11.5px;color:var(--fg3);white-space:nowrap;
+      display:inline-flex;align-items:center;gap:5px}
+.pill.act{border-color:var(--yellow);color:var(--yellow)}
+.pill.num{font-variant-numeric:tabular-nums}
+.pill .car{color:var(--gray);font-size:9px}
+.pill.play{color:var(--green);border-color:var(--bg3)}
+.pill.stop{color:var(--orange)}
+.gear{width:22px;justify-content:center;padding:1px 0}
+
+.menu{background:var(--bg1);border:1px solid var(--bg3);border-radius:2px;padding:3px 0;
+      min-width:150px;box-shadow:0 6px 18px #000a;font-size:11.5px}
+.menu div{padding:2px 10px;color:var(--fg2);display:flex;justify-content:space-between;gap:18px}
+.menu div.sep{border-top:1px solid var(--bg2);margin:3px 0;padding:0;height:0}
+.menu div .k{color:var(--gray);font-size:10.5px}
+.menu .hdr{color:var(--gray);font-size:9.5px;letter-spacing:.06em;padding:2px 10px 3px}
+.float{position:absolute;z-index:20}
+
+.node{position:absolute;background:var(--bg0s);border:1px solid var(--bg3);border-radius:3px;padding:4px}
+.node.out{border-color:var(--yellow);border-width:2px}
+.node .nm{font-size:9.5px;color:var(--fg1);text-align:center;margin-top:2px;font-weight:600}
+
+.mark{position:absolute;border:1px dashed var(--red);border-radius:2px;pointer-events:none;z-index:9}
+.mark::after{content:attr(data-l);position:absolute;top:-7px;left:6px;background:var(--bg0h);
+   color:var(--red);font-size:9.5px;padding:0 5px;white-space:nowrap}
+.mark.ok{border-color:var(--green)} .mark.ok::after{color:var(--green)}
+
+table{border-collapse:collapse;width:100%;margin:12px 0 0;font-size:12px}
+th,td{border:1px solid var(--bg2);padding:6px 9px;text-align:left;vertical-align:top}
+th{background:var(--bg1);color:var(--fg3);font-weight:600;font-size:11px}
+td .win{color:var(--green)} td .lose{color:var(--red)}
+code{background:var(--bg1);border:1px solid var(--bg2);border-radius:2px;padding:0 4px;
+     font-size:11.5px;color:var(--fg3)}
+ul{margin:6px 0 0;padding-left:18px;color:var(--fg4);font-size:12.5px}
+li{margin:3px 0} li b{color:var(--fg2);font-weight:600}
+.verdict{border-left:2px solid var(--green);padding:2px 0 2px 11px;margin:12px 0 0;
+   color:var(--fg4);font-size:12.5px}
+.verdict b{color:var(--green)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>094 · where the chips go</h1>
+<p class="lede">
+What is left to place after the settled cuts. <b>Target fps, throttle on/off and GPU budget stay in
+Settings</b> — they are global. <b>Render all documents is deleted.</b> So the canvas carries three
+things: the <b>fps pill</b> (with the profiler unfolding from it), the <b>resolution picker</b>, and
+the <b>channel view</b>. The <b>script play/stop</b> goes on the graph canvas. Options A–C place the
+canvas chips; D–F place the script control.
+</p>
+
+<!-- ========== canvas chips ========== -->
+<section>
+<h2><span class="tag alt">chips</span> the three canvas controls</h2>
+
+<div class="two">
+<div>
+  <h3>A · three chips, all top-right</h3>
+  <div class="frame">
+    <div class="canvasbox">
+      <span class="art" style="width:250px;height:141px"></span>
+      <div class="tr">
+        <span class="pill">Color <span class="car">▾</span></span>
+        <span class="pill">Auto 16:9 <span class="car">▾</span></span>
+        <span class="pill num act">58 | doc 30</span>
+      </div>
+    </div>
+  </div>
+  <p class="note"><b>Every value readable without a click.</b> Channel cycles on click (keeps
+  <code>Ctrl+Shift+C</code>); resolution opens the existing grouped combo; fps opens the profiler
+  below it.<br>
+  <b>Against:</b> three pills is a dense corner, and on a narrow panel <code>Auto 16:9</code> +
+  <code>58 | doc 30</code> + <code>Color</code> is ~230px of chrome over the picture.</p>
+</div>
+
+<div>
+  <h3>B · gear + fps</h3>
+  <div class="frame">
+    <div class="canvasbox">
+      <span class="art" style="width:250px;height:141px"></span>
+      <div class="tr">
+        <span class="pill act gear">⚙</span>
+        <span class="pill num">58 | doc 30</span>
+      </div>
+      <div class="float" style="top:30px;right:7px">
+        <div class="menu" style="min-width:186px">
+          <div class="hdr">16:9</div>
+          <div><span>Auto</span><span class="k">●</span></div>
+          <div><span>Wide 720p</span></div>
+          <div><span>Wide 1080p</span></div>
+          <div class="hdr">1:1</div>
+          <div><span>Auto</span></div>
+          <div><span>512x512</span></div>
+          <div class="sep"></div>
+          <div class="hdr">VIEW</div>
+          <div><span>Color</span><span class="k">●</span></div>
+          <div><span>Alpha</span></div>
+          <div><span>RGB</span><span class="k">^⇧C</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="note"><b>Quietest at rest</b> — two pills, one of them 22px.<br>
+  <b>Against:</b> the current shape and the current channel are both invisible until you open it.
+  Today the channel chip <i>shows</i> <code>Color</code>; this is a regression in what the canvas
+  tells you at a glance.</p>
+</div>
+</div>
+
+<div class="two">
+<div>
+  <h3>C · split — fps right, view chips left</h3>
+  <div class="frame">
+    <div class="canvasbox">
+      <span class="art" style="width:250px;height:141px"></span>
+      <div class="tl">
+        <span class="pill">Color <span class="car">▾</span></span>
+        <span class="pill">Auto 16:9 <span class="car">▾</span></span>
+      </div>
+      <div class="tr">
+        <span class="pill num act">58 | doc 30</span>
+      </div>
+      <div class="mark" data-l="a wide document reaches under these"
+           style="left:4px;top:4px;width:180px;height:26px"></div>
+    </div>
+  </div>
+  <p class="note"><b>Two corners, two jobs:</b> left = what am I looking at, right = how fast.
+  Closest to today (the channel chip is top-left now).<br>
+  <b>Against:</b> the top-left corner is the one a wide document needs — a 21:9 picture fills the
+  box's width and the chips sit on the image. Today only ONE chip is there; this puts two.</p>
+</div>
+
+<div>
+  <h3>C2 · two chips right, fps leftmost of them</h3>
+  <div class="frame">
+    <div class="canvasbox">
+      <span class="art" style="width:250px;height:141px"></span>
+      <div class="tr">
+        <span class="pill num">58 | doc 30</span>
+        <span class="pill act gear">⚙</span>
+      </div>
+      <div class="float" style="top:30px;right:7px">
+        <div class="menu" style="min-width:176px">
+          <div class="hdr">CANVAS</div>
+          <div><span>Auto 16:9</span><span class="k">▸</span></div>
+          <div><span>Color</span><span class="k">▸</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="note"><b>B with the two settings as submenu rows</b>, each showing its current value on
+  the row itself — so one hover reads both without leaving the menu.<br>
+  <b>Against:</b> two levels of menu for a channel cycle that is one click today.</p>
+</div>
+</div>
+
+<div class="verdict">
+<b>My pick: A.</b> All three are things you READ while tuning — the shape you are rendering at, the
+channel you are inspecting, the rate you are getting. A menu hides two of the three to save ~60px of
+a corner that is otherwise empty. B's argument only wins if the corner is genuinely crowded, and with
+the throttle knobs staying in Settings it is not.
+</div>
+</section>
+
+<!-- ========== script control ========== -->
+<section>
+<h2><span class="tag alt">script</span> the document's play/stop, on the graph</h2>
+<p class="note">
+Drawn only when the document HAS a script (today's condition, <code>session.has_script</code>). The
+chip is the state — accent while running, dim while stopped — and clicking it toggles.
+</p>
+
+<div class="two">
+<div>
+  <h3>D · beside the breadcrumb, top-left</h3>
+  <div class="frame">
+    <div class="graphbox">
+      <div class="node" style="left:20px;top:44px;width:76px">
+        <span class="art art-p" style="width:68px;height:38px"></span>
+        <div class="nm">paint</div></div>
+      <div class="node out" style="left:150px;top:48px;width:84px">
+        <span class="art" style="width:76px;height:43px"></span>
+        <div class="nm">composite</div></div>
+      <div class="tl">
+        <span class="pill act">RC 2 <span class="car">▾</span></span>
+        <span class="pill play">⏸ script</span>
+      </div>
+    </div>
+  </div>
+  <p class="note"><b>Both are about the DOCUMENT</b>, so they sit together — the breadcrumb names it,
+  the chip says whether its script runs. One corner owns one subject.<br>
+  <b>Against:</b> the breadcrumb also grows scope crumbs when you open a group, so this row can get
+  long: <code>RC 2 ▾ / bloom / inner</code> + the chip.</p>
+</div>
+
+<div>
+  <h3>E · opposite corner, top-right</h3>
+  <div class="frame">
+    <div class="graphbox">
+      <div class="node" style="left:20px;top:44px;width:76px">
+        <span class="art art-p" style="width:68px;height:38px"></span>
+        <div class="nm">paint</div></div>
+      <div class="node out" style="left:150px;top:48px;width:84px">
+        <span class="art" style="width:76px;height:43px"></span>
+        <div class="nm">composite</div></div>
+      <div class="tl"><span class="pill act">RC 2 <span class="car">▾</span></span></div>
+      <div class="tr"><span class="pill play">⏸ script</span></div>
+    </div>
+  </div>
+  <p class="note"><b>Never collides with the breadcrumb</b>, however deep the scope goes, and the
+  graph's top-right is empty today.<br>
+  <b>Against:</b> it is the corner directly under the canvas's fps pill, so the eye reads two
+  unrelated chips in a vertical stack across the splitter.</p>
+</div>
+</div>
+
+<div class="two">
+<div>
+  <h3>F · bottom-left, with the canvas verbs</h3>
+  <div class="frame">
+    <div class="graphbox">
+      <div class="node" style="left:20px;top:30px;width:76px">
+        <span class="art art-p" style="width:68px;height:38px"></span>
+        <div class="nm">paint</div></div>
+      <div class="node out" style="left:150px;top:34px;width:84px">
+        <span class="art" style="width:76px;height:43px"></span>
+        <div class="nm">composite</div></div>
+      <div class="tl"><span class="pill act">RC 2 <span class="car">▾</span></span></div>
+      <div class="blc">
+        <span class="pill play">⏸ script</span>
+        <span class="pill">⤢ frame all</span>
+      </div>
+    </div>
+  </div>
+  <p class="note"><b>A footer of graph verbs</b> — the script toggle beside Frame all / Arrange,
+  which are on the canvas's right-click menu today and have no visible affordance.<br>
+  <b>Against:</b> it invents a toolbar the maintainer did not ask for, and it puts a
+  <i>document</i> control in a row of <i>view</i> controls.</p>
+</div>
+
+<div>
+  <h3>the whole panel, with A + D</h3>
+  <div class="frame">
+    <div class="canvasbox" style="height:150px">
+      <span class="art" style="width:212px;height:119px"></span>
+      <div class="tr">
+        <span class="pill">Color <span class="car">▾</span></span>
+        <span class="pill">Auto 16:9 <span class="car">▾</span></span>
+        <span class="pill num act">58 | doc 30</span>
+      </div>
+    </div>
+    <div class="splitter"><i></i></div>
+    <div class="graphbox" style="height:132px;margin-top:0">
+      <div class="node" style="left:18px;top:36px;width:70px">
+        <span class="art art-p" style="width:62px;height:35px"></span>
+        <div class="nm">paint</div></div>
+      <div class="node" style="left:118px;top:32px;width:78px">
+        <span class="art art-f" style="width:70px;height:39px"></span>
+        <div class="nm">flood_fill</div></div>
+      <div class="node out" style="left:232px;top:36px;width:82px">
+        <span class="art" style="width:74px;height:42px"></span>
+        <div class="nm">composite</div></div>
+      <div class="tl">
+        <span class="pill act">RC 2 <span class="car">▾</span></span>
+        <span class="pill play">⏸ script</span>
+      </div>
+    </div>
+  </div>
+  <p class="note">The two halves, with the draggable splitter between them. Each surface carries only
+  chips about ITSELF: the canvas says what it is showing and how fast; the graph says which document
+  and whether its script runs.</p>
+</div>
+</div>
+
+<div class="verdict">
+<b>My pick: D.</b> The breadcrumb and the script chip answer questions about the same object, so one
+corner owning one subject is the rule that keeps scaling. The crumb-length worry is real but small —
+scope crumbs only appear inside a group, and the chip can shrink to a bare glyph when the row is
+tight.
+</div>
+</section>
+
+<section>
+<h2><span class="tag alt">note</span> what these sketches assume</h2>
+<table>
+<tr><th>Decision</th><th>Status</th></tr>
+<tr><td>Target fps / throttle on-off / GPU budget</td><td class="win">stay in Settings — global</td></tr>
+<tr><td><code>Render all documents</code></td><td class="win">deleted</td></tr>
+<tr><td>Script play/stop</td><td>moves to the graph canvas (D / E / F)</td></tr>
+<tr><td>Resolution picker</td><td>the existing grouped combo, unchanged — no <code>Mode</code> row</td></tr>
+<tr><td>Channel view</td><td>keeps its <code>Ctrl+Shift+C</code> cycle whichever option wins</td></tr>
+<tr><td>Profiler</td><td>unchanged: unfolds under the fps pill, anchored to it alone</td></tr>
+</table>
+<p class="note">
+The checker-background toggle and a frame pause were raised and are NOT in these sketches — say the
+word if either should get a chip.
+</p>
+</section>
+
+</div>
+</body>
+</html>
