@@ -532,19 +532,19 @@ class Document:
         still change it: deleting the output pass promotes an arbitrary survivor, and an import
         replaces the graph wholesale. Both reach the same defect by another door, so both land
         the rule here rather than repeating it.
+
+        Every pass, not only the one taking the role: the pass LEAVING it has been ignoring its
+        own `scale` while it was the output, and that scale applies again the moment it is not --
+        the mirror of the promotion case, and invisible for the same reason, since `render`'s
+        fix-up never reaches a pass outside the output chain.
         """
-        name = self.graph.output_pass
-        if name is None:
-            return
-        render_pass = self.passes.get(name)
-        if render_pass is None:
-            return
-        wanted = self.canvas_size_for(name)
-        if render_pass.canvas.texture.size != wanted:
-            render_pass.canvas = self.resample_canvas(render_pass.canvas, wanted)
-        history = self._feedback.get(name)
-        if history is not None and history.texture.size != wanted:
-            self._feedback[name] = self.resample_canvas(history, wanted)
+        for name, render_pass in self.passes.items():
+            wanted = self.canvas_size_for(name)
+            if render_pass.canvas.texture.size != wanted:
+                render_pass.canvas = self.resample_canvas(render_pass.canvas, wanted)
+            history = self._feedback.get(name)
+            if history is not None and history.texture.size != wanted:
+                self._feedback[name] = self.resample_canvas(history, wanted)
 
     def begin_frame(self, frame: int | None = None) -> None:
         """Advance feedback history to `frame`, at most once per frame.
@@ -642,6 +642,21 @@ class Document:
             return
         render_pass.set_target(target)
         self.drop_feedback(name)
+        # `Pass.set_target` keeps the canvas's SIZE by decision -- the document owns the size, so
+        # a pass applying `scale` itself would fight it. That leaves this verb as the one place
+        # a scale change can reach the canvas: `render`'s lazy fix-up is the only other writer,
+        # and a pass outside the output chain never reaches it, so the canvas stayed at the old
+        # size forever while the graph and the settings modal both reported the new one.
+        # The size comes from `target`, not from the graph, so this does not depend on the
+        # caller having written the entry first.
+        output = self.graph.output_pass
+        wanted = (
+            self.canvas_size
+            if output is not None and name == output
+            else target.target_size(self.canvas_size)
+        )
+        if render_pass.canvas.texture.size != wanted:
+            render_pass.canvas = self.resample_canvas(render_pass.canvas, wanted)
 
     def drop_feedback(self, name: str) -> None:
         """Release `name`'s feedback history. Call when a pass is deleted or renamed.

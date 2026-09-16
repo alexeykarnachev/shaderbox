@@ -148,6 +148,53 @@ def test_a_target_change_takes_the_history_with_it(gl_ctx: moderngl.Context) -> 
     document.release()
 
 
+def test_a_scale_change_reaches_an_off_chain_passs_canvas(
+    gl_ctx: moderngl.Context,
+) -> None:
+    """The size rule's INPUT can move, and the canvas has to follow it.
+
+    `Pass.set_target` keeps the canvas's size by decision, so the only other writer is `render`'s
+    lazy fix-up -- which a pass outside the output chain never reaches. Without the resize in
+    `set_pass_target` the canvas kept its old size forever while the graph and the settings modal
+    both reported the new one.
+    """
+    document = _document(gl_ctx)
+    # `off` is read by nothing, so no render will ever visit it.
+    off = Pass(gl=gl_ctx, canvas_size=_CANVAS, target=TargetConfig())
+    off.release_program(_PLAIN)
+    off.compile()
+    document.passes["off"] = off
+    document.graph = document.graph.with_passes(
+        {**document.graph.passes, "off": PassEntry()}
+    )
+    document.set_canvas_size(_CANVAS)
+    assert_canvases_agree(document)
+
+    scaled = TargetConfig(scale=0.5)
+    document.graph = document.graph.with_target("off", scaled)
+    document.set_pass_target("off", scaled)
+
+    assert_canvases_agree(document)
+    assert document.passes["off"].canvas.texture.size == (32, 32)
+    document.release()
+
+
+def test_demoting_the_output_applies_the_scale_it_was_ignoring(
+    gl_ctx: moderngl.Context,
+) -> None:
+    # The mirror of the promotion case: the output ignores its own scale, so the pass LEAVING the
+    # role has been full-size and that scale applies again the moment it is not the output.
+    document = _document(gl_ctx)
+    document.set_output_pass("helper")
+    assert_canvases_agree(document)
+
+    document.set_output_pass("main")
+
+    assert_canvases_agree(document)
+    assert document.passes["helper"].canvas.texture.size == (32, 32)
+    document.release()
+
+
 def test_a_render_leaves_every_canvas_agreeing(gl_ctx: moderngl.Context) -> None:
     document = _document(gl_ctx)
     for frame in range(3):
