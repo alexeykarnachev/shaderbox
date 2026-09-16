@@ -144,6 +144,23 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   the pure function underneath. State which layer a mutation was applied at when reporting it; "the
   break was caught" is a claim about a layer, not about a feature.
 
+  **And restore the ORIGINAL bug shape, not a nearby one — fidelity decides a mutation as much as
+  layer does.** 096 declared six gates "broken on purpose and seen to fail" and shipped four that
+  a verbatim reintroduction walked straight through, both user-facing defects among them. The
+  mutations chosen were coarser than the defects: deleting `filter=` from `resample_canvas` is not
+  the export branch dropping its format, and removing the post-loop blit entirely is not the
+  frozen-export bug — it makes an export produce nothing at all, which six unrelated tests notice,
+  so it reads as caught while the real shape (the last iteration drawing into the caller's canvas)
+  stays green. A coarse mutation is a strictly easier target than the bug, so passing it is no
+  evidence. Reconstruct the defect from its own description and apply THAT.
+
+  Two corollaries, both paid for. A test that builds the object under test by copying the fields
+  it then asserts is a tautology about the constructor and cannot fail — capture what the
+  production path allocates instead. And a mutation check is only evidence when the harness around
+  it is known good: one repair here configured its probe with pydantic kwargs that do not exist on
+  the model, which are dropped in silence, so the check ran against an object that was never
+  configured. `tests/test_model_kwargs.py` exists for exactly that and caught it.
+
 - **Structural impossibility over guard-piles — the first question of any validation-heavy review.**
   If you find yourself adding a SECOND wave of guards to second-guess what an actor (a model, a caller,
   a migration) MEANT, the CONTRACT is unsound — redesign so the unsafe outcome can't be EXPRESSED, then
