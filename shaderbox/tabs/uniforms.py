@@ -4,6 +4,7 @@ from shaderbox.app import App
 from shaderbox.core import Pass
 from shaderbox.glyph_tables import TABLE_UNIFORMS
 from shaderbox.pass_graph import strip_order
+from shaderbox.paths import pass_name_of
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_models import UIUniform, UniformSortKey, sort_uniform_hashes
 from shaderbox.ui_primitives import standard_button, text_tab_row
@@ -70,12 +71,13 @@ def draw(app: App) -> None:
     auto_hashes = []
     # The PANEL pass, not the output: the sliders belong to the pass being edited (065).
     panel_pass = app.panel_pass(document_id)
+    panel_pass_name = pass_name_of(panel_pass.source.path)
     for uniform in panel_pass.get_active_uniforms():
         if (
             uniform.name in TABLE_UNIFORMS
         ):  # engine glyph tables — pure machinery, no row
             continue
-        hash = get_uniform_hash(uniform)
+        hash = get_uniform_hash(uniform, panel_pass_name)
         if hash not in ui_uniforms:
             ui_uniforms[hash] = UIUniform.from_uniform(uniform)
         ui_uniforms[hash].snap_input_type()

@@ -475,8 +475,8 @@ class UIDocument(BaseModel):
         # would be nothing to prune against, and the answer would be "delete all of them".
         if live:
             live_rows = {
-                get_uniform_hash(u)
-                for render_pass in self.document.passes.values()
+                get_uniform_hash(u, name)
+                for name, render_pass in self.document.passes.items()
                 for u in render_pass.get_active_uniforms()
                 if u.name not in TABLE_UNIFORMS
             }

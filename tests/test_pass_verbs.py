@@ -837,8 +837,10 @@ def test_import_leaves_the_shipped_example_byte_identical(app: Any) -> None:
 
 
 def test_a_merged_ui_row_survives_the_save(app: Any, tmp_path: Path) -> None:
-    # Verification 7. Falsifier: re-key the merged row by the new pass name (a hash nothing
-    # computes) and the prune drops it; `get_uniform_hash` is name-and-shape only.
+    # Verification 7, re-derived for 094 D4d: the `ui_uniforms` key now carries the PASS, and an
+    # import renames passes -- so the row must be re-keyed to the HOST's pass name on the way in.
+    # Falsifier: copy the row under its source key (what `import_passes` did before D4d); it
+    # lands under a pass the host does not have and the next save's prune drops it.
     document_id = _document_id(app)
     source = _load_bloom(tmp_path)
     source.document.passes["bright"].compile()
@@ -847,16 +849,23 @@ def test_a_merged_ui_row_survives_the_save(app: Any, tmp_path: Path) -> None:
         for u in source.document.passes["bright"].get_active_uniforms()
         if u.name == "u_threshold"
     )
-    key = get_uniform_hash(threshold)
+    source_key = get_uniform_hash(threshold, "bright")
     row = UIUniform.from_uniform(threshold)
     row.input_type = "text"
-    source.ui_state.ui_uniforms[key] = row
+    source.ui_state.ui_uniforms[source_key] = row
     result = app.session.import_passes(
         document_id, source, "bloom", {"scene": "main"}, set()
     )
     assert result.error == "", result.error
     reloaded = _reload(app, document_id)
-    assert reloaded.ui_state.ui_uniforms[key].input_type == "text"
+    # The host's name for the imported pass: the one pass whose entry carries the group.
+    host_name = next(
+        name
+        for name, entry in reloaded.document.graph.passes.items()
+        if entry.group == "bloom" and name.endswith("bright")
+    )
+    host_key = get_uniform_hash(threshold, host_name)
+    assert reloaded.ui_state.ui_uniforms[host_key].input_type == "text"
 
 
 def test_a_broken_source_pass_is_imported_as_is_and_named(

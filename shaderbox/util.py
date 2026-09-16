@@ -75,11 +75,21 @@ def get_resolution_str(name: str | None, w: int, h: int) -> str:
     return label
 
 
-def get_uniform_hash(u: moderngl.Uniform | moderngl.UniformBlock) -> int:
+def get_uniform_hash(
+    u: moderngl.Uniform | moderngl.UniformBlock, pass_name: str
+) -> int:
+    """The `ui_uniforms` key for one uniform ON ONE PASS.
+
+    The pass is part of the key (094 D4d) because `UIUniform` carries the user's own
+    `input_type`: two passes both declaring `vec3 u_tint` would otherwise share one row, and
+    setting one to a color swatch would silently retype the other. Invisible while one pass's
+    rows were drawn per frame; the graph draws every visible node's at once. The uniform VALUES
+    were namespaced by pass long ago for the same reason.
+    """
     if isinstance(u, moderngl.Uniform):
-        key = f"{u.name}_{u.array_length}_{u.dimension}_{u.gl_type}"  # type: ignore
+        key = f"{pass_name}_{u.name}_{u.array_length}_{u.dimension}_{u.gl_type}"  # type: ignore
     else:
-        key = f"{u.name}_{u.size}"
+        key = f"{pass_name}_{u.name}_{u.size}"
 
     hash = hashlib.md5(key.encode()).digest()
     return int.from_bytes(hash, "big")
