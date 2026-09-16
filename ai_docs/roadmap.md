@@ -27,19 +27,12 @@ feature; brief points at the superseder).
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
 <!-- As of 2026-09-15, 093 is done and 095's sweep has landed. Three canvas bugs he reported were fixed the same day; the hunt they triggered found six more, so 096 is specced and next, ahead of 094. -->
-**Next: 096, the canvas-ownership wave.** Six defects found in one week share one root, and
-two of them ship: a document whose output pass reads its own previous frame exports a frozen
-video, and the export's fit branch -- the one Telegram and the shared shapes take -- allocates
-its canvas with no dtype, so an ordinary `f2` document loses its float headroom. The spec's
-waves run W-0 (an invariant checker that must be proven RED first) through W-5. 094 follows.
-
-**Was next: 094, the control panel's composition.** The one part of finding 4 still open: the
-documents grid reserves rows for documents that do not exist, so its lower two thirds is empty
-at every real project size. Its mock (`ai_docs/features/094_control_panel/00_mock.html`,
-published at https://alexeykarnachev.github.io/shaderbox-mocks/) offered four options and he
-rejected the two that reshape the panel -- both move the dead space rather than remove it -- so
-094 has a mock and a verdict but no spec yet, and the next round starts by proposing a shape
-that removes it. The Documentation content follows 094.
+**Next: 096, the canvas-ownership wave.** Six defects share one root -- a canvas's
+configuration is decided in several places, each knowing about some canvases but not all -- and
+two ship: a document whose output pass reads its own previous frame exports a frozen video, and
+the export's fit branch, the one Telegram takes, drops the output pass's dtype, so an ordinary
+`f2` document loses its float headroom. The spec runs W-0, an invariant checker proven RED
+before anything is fixed, through W-5, every decision made so it can run unattended. 094 follows.
 
 **Nothing awaits his review.** 093's eight waves are all checked in the running app, as are
 092's canvas, 091's outline and import dialog, and 090's `Auto | Fixed`. 095's structural sweep

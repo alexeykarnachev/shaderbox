@@ -179,16 +179,13 @@ on a canvas read — a canvas read is what made one agent report F6 as sound.
 **A changed test expectation is a defect in the change, not a test to update.** The one
 legitimate edit is a test whose subject genuinely moved.
 
-**Run the gate on a box whose GL stack is fresh.** The investigation session that produced this
-spec ended unable to run the suite at all: every pytest process segfaulted at context creation,
-including pure-logic modules, after six agents and dozens of probe scripts had each built
-standalone GL contexts. `git diff HEAD -- shaderbox/ tests/` was empty throughout, so the tree
-was provably unchanged from the last green gate.
+**The baseline was GREEN when this spec was finished** — check, test and smoke. Start by
+confirming that with `make gates` on the untouched tree; a red baseline means something changed.
 
-The first thing the executing session does is therefore `make gates` on the untouched tree, to
-establish a real baseline. If it is red with no source diff, the box is the problem, not the
-repo — restart the session or the machine rather than debugging a phantom regression. A gate that
-cannot run is not a red gate, and neither is it a green one.
+One environmental trap, documented because it cost an hour here: **the suite cannot run while the
+machine's monitor is off.** `App.__init__` reads `glfw.get_video_mode` on a NULL monitor and
+segfaults inside glfw, so every test using the `app` fixture dies with no exception. Check the
+display before touching code. Guarding that call is a real small fix and is NOT this feature.
 
 Related and genuinely pre-existing: `test_gl_lifetime_guards.py`'s last test creates a SECOND
 standalone context and aborts when contexts are scarce. Reproduced on a pristine worktree, so it
