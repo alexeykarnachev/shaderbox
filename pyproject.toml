@@ -46,6 +46,7 @@ dev = [
     "pytest>=9.1.0",
     "pytest-forked>=1.6.0",
     "pytest-xdist>=3.8.0",
+    "pytest-timeout>=2.4.0",
 ]
 
 [tool.ruff]
@@ -87,6 +88,13 @@ known-first-party = ["shaderbox"]
 # failure rather than a quiet xpass.
 addopts = "-ra"
 testpaths = ["tests"]
+# A per-test deadline, because a hung worker is otherwise UNBOUNDED: xdist waits forever on a
+# node that died, and the run sat for 12 minutes behind one defunct worker while the other seven
+# idled at 2% CPU. The slowest real test is ~6s, so 60s is ten times the worst case and can only
+# fire on a hang. `thread` rather than the signal method: the signal one fires only in the main
+# thread, which is not where a GL call blocks.
+timeout = 60
+timeout_method = "thread"
 xfail_strict = true
 # `make test` runs xdist with `--dist loadgroup`. Each module that drives real frames carries
 # its OWN `xdist_group`, so no two of them share a process: the imgui font atlas is

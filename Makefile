@@ -36,9 +36,15 @@ check:
 # is its OWN PROCESS with its own glfw window and GL context, which is what makes this
 # safe where `pytest-forked` is not: a forked child inheriting the parent's X11 socket
 # kills the connection (see test_revert_executor.py).
+# `--max-worker-restart=0`: a worker that dies is a FAILURE, reported now. Without it xdist
+# waits on the dead node forever -- one run sat 12 minutes behind a single defunct worker
+# (`[gw3] node down: Not properly terminated`) while the other seven idled at 2% CPU, and
+# nothing bounded it. With it, that same death is named in ~75s. The per-test deadline in
+# pyproject.toml is the other half: it turns a hang INTO the death this flag then reports.
 test:
 	env MESA_GL_VERSION_OVERRIDE=4.6 MESA_GLSL_VERSION_OVERRIDE=460 \
-		GLCONTEXT_LINUX_LIBGL=libGL.so.1 uv run pytest tests/ -n 8 --dist loadgroup
+		GLCONTEXT_LINUX_LIBGL=libGL.so.1 uv run pytest tests/ -n 8 --dist loadgroup \
+		--max-worker-restart=0
 
 # Headless smoke test — runs ~200 frames of update_and_draw against a THROWAWAY tmp project
 # in an invisible glfw window. Catches import errors, callback dispatch failures,

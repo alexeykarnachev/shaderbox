@@ -129,3 +129,44 @@ constraint holding (c) back is the raw-byte READERS in the tests, not the export
     after:  export fit-branch canvas dtype = f2
 
 Gate green: 2716 passed, 4 skipped, 37.6s total (check 8.2s, test 26.0s, smoke 2.6s).
+
+## Interlude: the gate could hang without limit
+
+Not a wave — an obstacle hit while running W-2, fixed because it makes every later wave's
+verdict trustworthy.
+
+**The symptom.** A `make gates` run sat for 12 minutes and had to be killed. One xdist worker was
+`<defunct>` and the other seven spun at ~2% CPU waiting for a node that would never report:
+`[gw3] node down: Not properly terminated`. Nothing bounded it — the run would have waited
+forever.
+
+**It is a hang, not slowness.** Timed separately, the gate is check 8.2s + test 26.0s (2716
+tests) + smoke 2.6s = 37.6s, and the slowest single test is 6.0s. An early guess that W-2's
+dtype change had made the suite slower was wrong and is recorded here because it was offered
+before it was measured.
+
+**Not reproduced, and not claimed to be understood.** Ten full-suite runs came back clean at
+~25s, including one under deliberate GL-context pressure (24 standalone contexts held by another
+process). `test_gl_lifetime_guards.py` remains the documented suspect — its module `gl` fixture
+`return`s instead of yielding, so its context lives to process exit, and its last test then adds
+a `stale_default_context` plus a full `app` on top — but that module passes 13/13 when run alone,
+repeatedly, so the trigger is still unnamed.
+
+**What is fixed is the failure MODE, which is what cost the time.** Two halves, and neither works
+without the other:
+
+- `timeout = 60` / `timeout_method = "thread"` in `pyproject.toml` (pytest-timeout, new dev dep).
+  Ten times the slowest real test, so it can only fire on a hang. Alone it is NOT enough: it
+  turns the hang into a hard worker death, and xdist then waits on the dead node exactly as
+  before — measured, a full-suite run with a planted hang still stalled past 300s.
+- `--max-worker-restart=0` on `make test`. This is the half that makes a dead worker a FAILURE
+  the controller reports immediately rather than a node it waits on.
+
+**Broken on purpose before being believed**, per the rule that an unbroken gate is a wish. A
+planted `time.sleep(600)` test:
+
+    before          stalled past 300s, killed from outside
+    timeout only    stalled past 300s -- `node down: Not properly terminated`
+    both halves     `make gates` RED in 84s, the hung test named, 2714 others still reported
+
+The clean tree is unchanged at 37.6s green.
