@@ -1008,7 +1008,7 @@ class ProjectSession:
         document.graph = _graph_without(document.graph, name, document.passes)
         # Deleting the OUTPUT promotes an arbitrary survivor, which may carry a scale -- the
         # same defect `set_output_pass` exists for, reached by another door.
-        document.conform_output_canvas()
+        document.conform_canvases()
         self.save_ui_document(ui_document)
         return ""
 
@@ -1260,7 +1260,7 @@ class ProjectSession:
         )
         # An import can hand the output role to a pass carrying a scale (091): same rule, same
         # home as the promotion and the delete.
-        host.conform_output_canvas()
+        host.conform_canvases()
         for host_pass, rows in plan.handovers.items():
             values = host.passes[host_pass].uniform_values
             for uniform, read in rows.items():

@@ -354,6 +354,11 @@ def test_a_resize_reaches_a_pass_that_is_not_the_output_yet(
     # NOT `_loaded`: its four warm-up frames let `render` correct every non-output pass, which
     # is exactly the trip through non-output that hides this defect. The reported sequence
     # resizes a document whose other pass has not drawn since.
+    #
+    # The stale size is established HERE rather than inherited from the load: a load now conforms
+    # every pass to its graph (096), so relying on it to leave one mis-sized made this check
+    # vacuous -- which its own guard below reported the moment that changed.
+    document.passes[other].canvas.set_size((16, 16))
     before = document.passes[other].canvas.texture.size
 
     document.set_canvas_size((64, 64))

@@ -523,10 +523,10 @@ class Document:
         promotion, which is what the user is looking at while they click.
         """
         self.graph = self.graph.with_output(name)
-        self.conform_output_canvas()
+        self.conform_canvases()
 
-    def conform_output_canvas(self) -> None:
-        """Resize whatever pass is CURRENTLY the output to the document's full size.
+    def conform_canvases(self) -> None:
+        """Resize every pass's canvas, and its history, to what the graph implies.
 
         Split from `set_output_pass` for the callers that do not set the output by name but can
         still change it: deleting the output pass promotes an arbitrary survivor, and an import
@@ -1059,6 +1059,12 @@ class Document:
                         f"'{uniform_name}' ({e})"
                     )
 
+        # Every pass is built above at the document's FULL size, since the graph is not known
+        # until it has been read. A pass the output does not reach is never visited by `render`,
+        # so without this its `scale` would never be applied -- the loaded document would sit
+        # permanently disagreeing with its own graph. Before `_seed_feedback`, which sizes each
+        # history against the live canvas this conforms.
+        document.conform_canvases()
         document._seed_feedback(document_dir, _feedback_rows(metadata))
         return document, metadata
 

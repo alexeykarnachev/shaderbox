@@ -147,7 +147,7 @@ def test_deleting_the_output_conforms_its_replacement(gl_ctx: moderngl.Context) 
         {"helper": PassEntry(target=NON_DEFAULT)}, output="helper"
     )
 
-    document.conform_output_canvas()
+    document.conform_canvases()
 
     assert_canvases_agree(document)
     assert document.render_pass.canvas.texture.size == _CANVAS
@@ -450,6 +450,44 @@ def test_the_settings_label_shows_the_size_the_canvas_has(
 
     assert displayed_target_size(scaled, (256, 256), is_output=False) == (128, 128)
     assert displayed_target_size(scaled, (256, 256), is_output=True) == (256, 256)
+
+
+def test_a_loaded_document_agrees_with_its_graph_before_any_render(
+    gl_ctx: moderngl.Context, tmp_path: Path
+) -> None:
+    """A load conforms every pass, including one the output never reaches.
+
+    `load_from_dir` builds each pass at the document's full size -- it cannot do otherwise, since
+    the graph is not read until afterwards -- and `render` applies a scale lazily only to the
+    passes it VISITS. An off-chain pass is visited by nothing, so before the conform at load its
+    canvas sat permanently disagreeing with its own graph: measured, still wrong after 30 frames.
+    """
+    document_dir = tmp_path / "doc"
+    (document_dir / PASSES_DIR_NAME).mkdir(parents=True)
+    for name in ("main", "orphan"):
+        (document_dir / PASSES_DIR_NAME / pass_shader_name(name)).write_text(_PLAIN)
+    # `orphan` is scaled and nothing reads it.
+    (document_dir / GRAPH_JSON_BASENAME).write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "output": "main",
+                "passes": {
+                    "main": {"target": {}},
+                    "orphan": {"target": {"scale": 0.5}},
+                },
+            }
+        )
+    )
+    (document_dir / DOCUMENT_JSON_BASENAME).write_text(
+        json.dumps({"uniforms": {}, "ui_state": {}})
+    )
+
+    document, _ = Document.load_from_dir(document_dir, gl=gl_ctx, canvas_size=_CANVAS)
+
+    assert_canvases_agree(document)
+    assert document.passes["orphan"].canvas.texture.size == (32, 32)
+    document.release()
 
 
 def test_the_checker_sees_a_resample_that_drops_filter_and_wrap(

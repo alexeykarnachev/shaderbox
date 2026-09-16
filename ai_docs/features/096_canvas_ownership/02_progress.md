@@ -361,3 +361,34 @@ One correction it prompted: the `conventions.md` paragraph written after round 1
 four gates a verbatim reintroduction walked straight through", which reads as a property of the
 tree rather than of one commit. The reviewer read it that way and flagged the contradiction with
 its own PASS. Reworded to say the review of `8e5b102` found them and that all six are gated now.
+
+## A load conforms every pass — found by driving a realistic document
+
+The unit battery and three reviewers all worked on documents built in memory. Driving a document
+written to DISK, with the shape a real one has — a half-scale `f4` self-reading pass feeding a
+full-size `f2` output — showed the last instance of the class:
+
+    loaded    ["pass 'acc': canvas (128,128) but graph implies (64,64)"]
+    after 5 frames    CLEAN
+
+`load_from_dir` builds every pass at the document's full size, because the graph is not read until
+afterwards, and `render` applies a scale only to the passes it VISITS. For a pass the output
+reaches, the first frame repairs it. **For an off-chain pass nothing ever does** — measured, still
+wrong after 30 frames. The live app hides this behind its first-render sweep, which is not part of
+`Document`, so the document alone was permanently disagreeing with its own graph.
+
+`load_from_dir` now calls the conform verb before `_seed_feedback` — before, so each history is
+sized against a live canvas that is already correct. The verb is renamed `conform_canvases`: it
+has conformed every pass since the demotion fix, and `conform_output_canvas` no longer described
+it.
+
+Worth recording that none of the six SHIPPED examples has a pass at any scale but 1.0, which is
+why this survived every earlier check: no real document on disk reaches the scaled paths.
+
+**One existing test's subject moved, and its own vacuity guard is what reported it.**
+`test_a_resize_reaches_a_pass_that_is_not_the_output_yet` asserted `before != after` to prove the
+resize moved something, relying on a load leaving its other pass mis-sized. With the conform that
+premise is false, and the guard fired verbatim: "the fixture's other pass was already at the new
+size -- the check is vacuous". The fixture now establishes the stale size itself, and the test
+still fails under the falsifier its docstring names (dropping `set_canvas_size`'s per-pass loop).
+That guard is the reason this was a red gate rather than a silently vacuous test.
