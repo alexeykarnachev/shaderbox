@@ -145,7 +145,9 @@ def test_the_uniforms_panel_opens_no_editor_over_the_graphs_own_file(app: Any) -
     graph_path = app.paths.graph_json_for(document_id)
     imgui.new_frame()
     imgui.begin("rig")
-    uniform._locate_uniform_declaration(app, "u_src")
+    uniform._locate_uniform_declaration(
+        app, "u_src", app.panel_pass(app.current_document_id)
+    )
     imgui.end()
     imgui.end_frame()
     assert graph_path not in app.editor_sessions
