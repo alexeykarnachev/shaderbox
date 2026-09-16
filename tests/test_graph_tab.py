@@ -15,7 +15,6 @@ from typing import Any
 import pytest
 from imgui_bundle import imgui
 
-from shaderbox.app import App
 from shaderbox.commands import CommandId
 from shaderbox.editor_types import TabRecord
 from shaderbox.formatting import formatter_for
@@ -27,7 +26,7 @@ from shaderbox.ui import update_and_draw
 from shaderbox.ui_primitives import ellipsize
 from shaderbox.widgets import pass_graph, uniform
 from shaderbox.widgets.graph_state import bezier_point, wire_points
-from tests.conftest import seed_extra_document
+from tests.conftest import restart_app, seed_extra_document
 
 # The imgui font atlas is process-global, so every frame-driving module owns a worker
 # (`pyproject.toml`).
@@ -326,9 +325,9 @@ def test_the_saved_tabs_reopen_on_a_fresh_app(app: Any, tmp_path: Any) -> None:
     """W2-2: the restore is what finding 7 asked for -- the graph tab (and every other) is
     still there after a restart.
 
-    Driven the way a restart drives it: the live tabs are mirrored by `App.save`, and a SECOND
-    `App` over the same project dir reads them back in `_init`. The records are checked against
-    what the project still holds, so the assertion is about files that genuinely exist.
+    Driven the way a restart drives it: the live tabs are mirrored by `App.save`, and a reopen
+    of the same project dir reads them back in `_init`. The records are checked against what
+    the project still holds, so the assertion is about files that genuinely exist.
 
     Falsifier: skip the restore block and the fresh app opens only the current document's
     shader tab, the pre-W2-2 behavior.
@@ -346,17 +345,12 @@ def test_the_saved_tabs_reopen_on_a_fresh_app(app: Any, tmp_path: Any) -> None:
     assert [r.path for r in records] == [str(p) for p in saved_paths]
     assert app.app_state.active_tab_path == str(shader_path)
 
-    project_dir = app.project_dir
-    app.shutdown()
-    fresh = App(project_dir=project_dir)
-    try:
-        assert [t.path for t in fresh.editor_tabs] == saved_paths, fresh.editor_tabs
-        assert [t.kind for t in fresh.editor_tabs] == saved_kinds
-        assert fresh.active_tab is not None
-        assert fresh.active_tab.path == shader_path
-        assert fresh.tab_select_pending is True
-    finally:
-        fresh.shutdown()
+    fresh = restart_app(app)
+    assert [t.path for t in fresh.editor_tabs] == saved_paths, fresh.editor_tabs
+    assert [t.kind for t in fresh.editor_tabs] == saved_kinds
+    assert fresh.active_tab is not None
+    assert fresh.active_tab.path == shader_path
+    assert fresh.tab_select_pending is True
 
 
 def test_the_active_tab_comes_back_by_path_not_by_position(
@@ -393,24 +387,19 @@ def test_the_active_tab_comes_back_by_path_not_by_position(
     app.app_state.editor_tabs = records
     app.app_state.active_tab_path = records[1].path
     app.app_state.save(app.paths.app_state_file)
-    project_dir = app.project_dir
-    app.shutdown()
     # The pass whose tab was first is deleted between the sessions, which is what makes the
     # index shift: its record is dropped and every later tab moves down one.
     doomed.unlink()
 
-    fresh = App(project_dir=project_dir)
-    try:
-        assert [t.path.name for t in fresh.editor_tabs] == [
-            "b.frag.glsl",
-            "c.frag.glsl",
-            "graph.json",
-        ], fresh.editor_tabs
-        assert fresh.active_tab is not None
-        assert fresh.active_tab.path.name == "b.frag.glsl", fresh.active_tab
-        assert fresh.active_tab_index == 0
-    finally:
-        fresh.shutdown()
+    fresh = restart_app(app)
+    assert [t.path.name for t in fresh.editor_tabs] == [
+        "b.frag.glsl",
+        "c.frag.glsl",
+        "graph.json",
+    ], fresh.editor_tabs
+    assert fresh.active_tab is not None
+    assert fresh.active_tab.path.name == "b.frag.glsl", fresh.active_tab
+    assert fresh.active_tab_index == 0
 
 
 def test_an_active_path_nothing_carries_falls_to_the_first_tab(app: Any) -> None:
@@ -432,28 +421,18 @@ def test_an_active_path_nothing_carries_falls_to_the_first_tab(app: Any) -> None
     ]
     app.app_state.active_tab_path = "/nowhere/at/all.glsl"
     app.app_state.save(app.paths.app_state_file)
-    project_dir = app.project_dir
-    app.shutdown()
-    fresh = App(project_dir=project_dir)
-    try:
-        assert fresh.active_tab_index == 0
-        assert fresh.active_tab is not None
-        assert fresh.active_tab.path.name == "b.frag.glsl"
-    finally:
-        fresh.shutdown()
+    fresh = restart_app(app)
+    assert fresh.active_tab_index == 0
+    assert fresh.active_tab is not None
+    assert fresh.active_tab.path.name == "b.frag.glsl"
 
 
 def test_a_project_with_no_saved_tabs_still_opens_its_shader(app: Any) -> None:
     # The fallback the restore must not eat: with no records, `_init` opens the current
     # document's shader tab as it always did. Falsifier: run the fallback unconditionally and a
     # restored session gains a tab it did not have; skip it and an empty state opens blank.
-    project_dir = app.project_dir
     app.app_state.editor_tabs = []
     app.save()
-    app.shutdown()
-    fresh = App(project_dir=project_dir)
-    try:
-        assert len(fresh.editor_tabs) == 1, fresh.editor_tabs
-        assert fresh.editor_tabs[0].kind == "shader"
-    finally:
-        fresh.shutdown()
+    fresh = restart_app(app)
+    assert len(fresh.editor_tabs) == 1, fresh.editor_tabs
+    assert fresh.editor_tabs[0].kind == "shader"

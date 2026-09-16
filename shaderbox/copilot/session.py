@@ -532,6 +532,10 @@ class CopilotSession:
             logger.warning(
                 "reset_conversation called mid-turn — caller bypassed the in_flight gate"
             )
+        # `release()` at the top of the switch latched this, and a latched flag makes the NEXT
+        # release's sentinel exit a worker this session still needs. The gate below is left
+        # unlatched for the same reason.
+        self._released = False
         self._drop_turn.set()  # a worker finishing an aborted turn must not commit it
         self._cancel.set()
         self.gate.cancel_all(reusable=True)

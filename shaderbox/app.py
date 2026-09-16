@@ -407,10 +407,6 @@ class App:
         # The import dialog's state (091 D10), None while it is closed.
         self.import_draft: ImportDraft | None = None
         # The pass whose tile has its delete-✕ armed (the in-cell "Delete?" wash), or "".
-        # The graph canvas's per-document view state (092 D2), created on first use and
-        # dropped with the document in forget_render_state.
-        self.graph_views: dict[str, GraphViewState] = {}
-
         # copilot_focus_pending: one-shot driving window + input focus, consumed at the input draw.
         self.is_copilot_open: bool = False
         self.copilot_defocus_requested: bool = False
@@ -1526,6 +1522,10 @@ class App:
         #   throttle_states   the hysteresis counters behind each interval
         #   document_costs    the last measured cost per document, written in step 3 alone
         #   render_plan       this frame's intervals and phases, or None before the first plan
+        #   graph_views       the graph canvas's pan/zoom/selection per document (092 D2),
+        #                     created on first use and dropped with the document in
+        #                     forget_render_state
+        self.graph_views: dict[str, GraphViewState] = {}
         self.viewer_region: tuple[float, float] | None = None
         self.pending_resolution: dict[str, tuple[int, int]] = {}
         self.auto_size_states: dict[str, AutoSizeState] = {}
@@ -2306,6 +2306,10 @@ class App:
         # op can't run against half-released documents.
         if hasattr(self, "copilot"):
             self.copilot.release()
+        # The turn that lock belonged to is gone with the worker. Left standing, it locks saving,
+        # switching and every document verb in the INCOMING project against a turn that cannot
+        # finish, and only a restart clears it.
+        self.copilot_turn_active = False
 
         self.exporter_registry.release()
 

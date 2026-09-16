@@ -5,6 +5,7 @@ document, and the example library still loads from resources regardless of the p
 test that needs a second project document calls `seed_extra_document`."""
 
 import contextlib
+import copy
 import os
 import shutil
 from collections.abc import Iterator
@@ -66,8 +67,33 @@ def gl_ctx() -> Iterator["moderngl.Context"]:
     context.release()
 
 
-@pytest.fixture
-def app(monkeypatch: Any, tmp_path: Path) -> Iterator[Any]:
+def restart_app(app: Any) -> Any:
+    """Reopen `app`'s own project the way a project switch does, and return the same App.
+
+    A test asking "does this survive a restart?" used to tear the App down and build a second
+    one, which a per-test fixture could afford and a reused one cannot — `shutdown()` destroys
+    the process's imgui context and every later test in that worker dies on it. `_init` is the
+    restore path either way: it releases the outgoing project, re-reads `app_state.json` and
+    rebuilds the tabs from the records, which is precisely what the second App was being built
+    to prove.
+    """
+    app._init(app.project_dir, persist_pointer=False)
+    app.copilot.bridge.run_on_main = lambda fn, timeout=None, defer=False: fn()
+    return app
+
+
+@pytest.fixture(scope="session")
+def _app_process(tmp_path_factory: Any) -> Iterator[Any]:
+    """ONE App per xdist worker. Its window, GL context and imgui context are built once.
+
+    The per-process constraint is the imgui font atlas: its GL texture dies with the App that
+    built it, so a second App in one interpreter inherits a dead texture (`App.shutdown`'s
+    docstring). That has always forced one App per process; what it never forced is one App per
+    TEST. `App._init` is the project-switch path the running app takes — it releases the outgoing
+    project and loads the incoming one, leaving the window and the imgui context alone — so the
+    `app` fixture below reuses this one through that path and each test still gets a project
+    nothing else has touched.
+    """
     glfw = pytest.importorskip("glfw")
     if not glfw.init():
         pytest.skip("no GL")
@@ -76,23 +102,93 @@ def app(monkeypatch: Any, tmp_path: Path) -> Iterator[Any]:
     # App.__init__ SEEDS the library there. Without the override every test that builds an App
     # writes into the developer's own ~/.local/share/shaderbox. Set before the App import, since
     # the paths are read at call time but the seed runs in the constructor.
-    monkeypatch.setenv("SHADERBOX_DATA_DIR", str(tmp_path / "data"))
+    data_dir = tmp_path_factory.mktemp("data")
+    os.environ["SHADERBOX_DATA_DIR"] = str(data_dir)
     from shaderbox.app import App
 
-    project = seed_tmp_project(tmp_path)
-    a = App(project_dir=project)
+    a = App(project_dir=seed_tmp_project(tmp_path_factory.mktemp("boot")))
+    yield a
+    with contextlib.suppress(Exception):
+        a.shutdown()
+
+
+# Fields the baseline leaves alone, for two reasons.
+#
+# `_init` rebuilds the first four for the incoming project, and a shallow copy of one is a
+# DIFFERENT object holding the boot project's contents — restoring it hands `_init` a session
+# whose documents are not the ones the App then reads.
+#
+# The rest are built once and handed to collaborators that keep the reference: replacing
+# `notifications` with a copy leaves `shader_lib_files` pushing into the object the test is no
+# longer watching. A field like this is shared by identity, so copying it breaks the sharing.
+_APP_INIT_OWNS = frozenset(
+    {
+        "session",
+        "checker_texture",
+        "alpha_view",
+        "rgb_view",
+        "notifications",
+        "shader_lib_files",
+        "exporter_registry",
+        "profiler",
+        "python_worker",
+    }
+)
+
+
+@pytest.fixture(scope="session")
+def _app_baseline(_app_process: Any) -> dict[str, Any]:
+    """The App's UI state as `__init__` left it, one shallow copy per field.
+
+    Restoring this before each test is what makes ONE App behave like a fresh one. The
+    alternative — resetting the handful of fields a failure happens to name — was tried and
+    grew: an open modal, a queued project switch, a turn marked in flight, a graph view's
+    selection, a copilot working set. They are all the same shape (state `__init__` sets and no
+    project reload clears), so the fixture restores the whole class rather than its members.
+
+    A field whose value will not copy is one of the built-once objects — the window, the fonts,
+    the renderer, the worker — and those are what the reuse EXISTS to keep, so failing to copy
+    is the right answer for them rather than an error.
+    """
+    baseline: dict[str, Any] = {}
+    for field, value in vars(_app_process).items():
+        if field in _APP_INIT_OWNS:
+            continue
+        try:
+            baseline[field] = copy.copy(value)
+        except Exception:
+            continue
+    return baseline
+
+
+@pytest.fixture
+def app(
+    _app_process: Any, _app_baseline: dict[str, Any], monkeypatch: Any, tmp_path: Path
+) -> Iterator[Any]:
+    glfw = pytest.importorskip("glfw")
+    a = _app_process
+    monkeypatch.setenv("SHADERBOX_DATA_DIR", os.environ["SHADERBOX_DATA_DIR"])
+    # A module that also takes `gl_ctx` leaves ITS standalone context current, and every GL
+    # allocation below would land there (or fail, once it is released). `App.__init__` used to
+    # re-make the window current on every build; reusing one App means the fixture does it.
+    glfw.make_context_current(a.window)
+    moderngl.init_context()
+    moderngl.get_context().gc_mode = "auto"
+    for field, value in _app_baseline.items():
+        setattr(a, field, copy.copy(value))
+    a._init(seed_tmp_project(tmp_path), persist_pointer=False)
     # No main loop in a test: run every marshalled bridge op INLINE (already on the GL thread).
     a.copilot.bridge.run_on_main = lambda fn, timeout=None, defer=False: fn()
+    # A turn opens a tool batch before its first edit; a test that calls an edit tool directly
+    # never does, so the intra-batch rewrite guard would carry one test's target into the next
+    # and refuse its rewrite as a stale duplicate.
+    a.copilot_backend.batch_begin()
     a.set_current_document_id(STARTER_EXAMPLE_ID)
     a.ensure_shader_tab(STARTER_EXAMPLE_ID)
     a.ui_documents[
         STARTER_EXAMPLE_ID
     ].document.render()  # warm the GL program (matches the live loop)
     yield a
-    with contextlib.suppress(Exception):
-        # shutdown(), not release(): the imgui context and its font atlas are per-PROCESS, and a
-        # later test's App would otherwise inherit this one's dead atlas texture.
-        a.shutdown()
 
 
 @pytest.fixture(autouse=True)

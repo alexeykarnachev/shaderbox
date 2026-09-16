@@ -21,6 +21,7 @@ from shaderbox.editor_types import (
 )
 from shaderbox.scripting import StoppedKey
 from shaderbox.ui_models import UIAppState, UIDocumentState, _load_ui_state
+from tests.conftest import restart_app
 
 
 def test_a_stale_string_stopped_set_drops_to_empty() -> None:
@@ -163,38 +164,24 @@ def test_a_closed_editor_stays_closed_across_a_restart(
     apart. Falsifier: drop the flag from the `_init` condition and the reopened app carries a
     shader tab.
     """
-    from shaderbox.app import App
-
     while app.editor_tabs:
         app.close_tab(0)
     app.save()
-    project_dir = app.project_dir
-    app.shutdown()
 
-    reopened = App(project_dir=project_dir)
-    try:
-        assert reopened.editor_tabs == [], "the restart reopened a shader by itself"
-    finally:
-        reopened.shutdown()
+    reopened = restart_app(app)
+    assert reopened.editor_tabs == [], "the restart reopened a shader by itself"
 
 
 def test_a_first_open_still_lands_on_a_shader(app: Any, tmp_path: Path) -> None:
     # The other half of the same branch: a project with no saved tab set is the case the
     # fallback exists for. Falsifier: drop the fallback and a first open shows a blank editor.
-    from shaderbox.app import App
-
-    project_dir = app.project_dir
     app.save()
-    app.shutdown()
 
-    state_file = project_dir / "app_state.json"
+    state_file = app.project_dir / "app_state.json"
     raw = json.loads(state_file.read_text())
     raw.pop("tabs_persisted", None)
     raw["editor_tabs"] = []
     state_file.write_text(json.dumps(raw))
 
-    reopened = App(project_dir=project_dir)
-    try:
-        assert reopened.editor_tabs, "a first open showed a blank editor"
-    finally:
-        reopened.shutdown()
+    reopened = restart_app(app)
+    assert reopened.editor_tabs, "a first open showed a blank editor"

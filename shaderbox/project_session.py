@@ -545,6 +545,10 @@ class ProjectSession:
         # integrations. A moderngl context must already be current (canvas + texture-asset
         # allocation) — but nothing COMPILES here: passes compile on first need (066 D1).
         self.ui_documents.clear()
+        # The working set names the OUTGOING project's documents; carried across, it hands the
+        # agent ids the incoming project does not have.
+        self._copilot_working_set.clear()
+        self._copilot_working_set_evicted.clear()
 
         self.paths = ProjectPaths.for_root(project_dir)
         self.project_dir = self.paths.root

@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum, auto
+from functools import cache
 from typing import Any
 
 from pydantic import BaseModel
@@ -37,6 +38,14 @@ ToolPrecheck = Callable[[dict[str, Any]], str | None]
 # An ALWAYS-gated tool's confirm-card text (feature 029): args -> the arg-aware prompt the
 # engine (not the model) phrases. None on the definition => build_gate's generic line.
 GatePrompt = Callable[[dict[str, Any]], str]
+
+
+@cache
+def _json_schema_for(args_model: type[ToolArgs]) -> dict[str, Any]:
+    # An args model's schema is fixed at import, and every turn rebuilt all of them. Pydantic's
+    # generator writes into state the model shares, so two copilot workers generating at once
+    # raced it hard enough to take the interpreter down.
+    return args_model.model_json_schema()
 
 
 def mask_secret(s: str) -> str:
@@ -95,5 +104,5 @@ class ToolDefinition:
         return LLMToolSpec(
             name=self.name,
             description=self.description,
-            parameters=self.args_model.model_json_schema(),
+            parameters=_json_schema_for(self.args_model),
         )
