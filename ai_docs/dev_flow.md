@@ -719,6 +719,13 @@ code for the lot. The individual targets below stay useful on their own -- reach
 want a single gate during an inner loop -- but `gates` is what a "is this green?" question is
 answered with.
 
+**ONCE per unit of work, immediately before the commit — NOT after each edit.** The full gate is
+tens of seconds; while iterating, run the ONE test file that covers the change
+(`uv run pytest tests/test_<area>.py -q -p no:randomly`, typically under two seconds) and pick it
+deliberately. A session that ran the full gate after one-line doc edits and after formatting
+autofixes burned minutes for no information, which is what this paragraph exists to stop. The
+budget itself is 097's business; the usage rule holds whatever the number is.
+
 It exists because the prose rule under `### make check` did not hold. Twice now this repo has
 announced a passing gate that was failing: once by grepping a tool's output instead of reading its
 status, once by capturing a pipe's exit code. A rule with no gate is a wish, so the rule is now a
