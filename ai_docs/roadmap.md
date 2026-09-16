@@ -26,18 +26,18 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-16, 096 has landed end to end: six waves, six commits, every defect with a runnable reproduction. 094 is next. -->
+<!-- As of 2026-09-16, 096 has landed and been reviewed: the review found four gates that did not gate and three more live defects, all fixed. 094 is next. -->
 **Next: 094, the control panel.** The documents grid reserves rows for documents that do not
 exist, so the panel's left third is mostly empty. Four mocks were judged and none removes the
 dead space -- the shape that does is still to be proposed, which is where that feature starts.
 
-**096 is done and two user-facing defects are fixed.** A document whose output pass read its own
-previous frame exported a frozen video; the export branch Telegram takes dropped the output
-pass's format, costing an `f2` document its float headroom. The sizing rule now has one home,
-`Document.canvas_size_for`, guarded by a nine-test battery broken five ways.
+**096 is done and two user-facing defects are fixed:** a self-reading output pass exported a
+frozen video, and the export branch Telegram takes dropped the output pass's format. The sizing
+rule has one home and every path that can change a canvas ends in `conform_canvases`.
+Post-implementation review earned its keep -- four of six gates did not gate, and it turned up
+three more live defects, all fixed.
 
 **Worth a look in the running app:** export a feedback document, and one through Share/Telegram.
-Everything earlier is already checked there.
 
 **Open, unmeasured:** the canvas past twenty passes (the largest real document is six); no
 brake watches copilot cost or a frame going lit to flat (082); the GL thread if the throttle
@@ -47,7 +47,7 @@ falls short.
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 096 | canvas_ownership | done | Six canvas defects in one week treated as one class: a canvas's configuration is decided in several places and each knows about some canvases but not all. The sizing rule, written at five sites in three shapes with the fifth simply wrong, becomes `Document.canvas_size_for`; an output pass always draws into its own canvas and a caller's canvas receives a blit, which fixed the frozen export and dissolved a second finding outright; the export's fit branch carries the output pass's format, as its sibling already did. Promotion, deleting the output and importing one are three doors onto the same defect and share one verb. Guarded by a nine-test battery over the non-default corner, broken five ways and seen to fail. `Canvas`'s own dtype default was left alone: changing it breaks every raw-byte texture reader, which is wider than this feature. Spec: `ai_docs/features/096_canvas_ownership/01_spec.md` + `00_findings.md` + `02_progress.md`. |
+| 096 | canvas_ownership | done | Six canvas defects in one week treated as one class: a canvas's configuration is decided in several places and each knows about some canvases but not all. The sizing rule, written at five sites in three shapes with the fifth simply wrong, becomes `Document.canvas_size_for`; an output pass always draws into its own canvas and a caller's canvas receives a blit, which fixed the frozen export and dissolved a second finding outright; the export's fit branch carries the output pass's format, as its sibling already did. Promotion, deleting the output and importing one are three doors onto the same defect and share one verb. Guarded by a battery over the non-default corner in which every test has been broken and seen to fail -- a post-implementation review found four of the original gates passing a verbatim reintroduction of the defect they named, and three further live defects (a scale change never reaching a pass the output does not touch, a demoted output keeping full size, a load leaving such a pass unconformed), all fixed. `Canvas`'s own dtype default was left alone: changing it breaks every raw-byte texture reader, which is wider than this feature. Spec: `ai_docs/features/096_canvas_ownership/01_spec.md` + `00_findings.md` + `02_progress.md`. |
 | 095 | structural_sweep | done | A repo-wide pass over the codebase's shape rather than its behavior, run as one inventory wave plus four working waves with the gate green between each: the live facts deleted from the docs, the gl_ctx fixture given one home in conftest, the symbols that were really dead removed, and a comment pass that left every why-comment alone. Most of what the scan flagged did not survive scrutiny and the log records each rejection with its reason. Two adversarial review rounds; the first found a coverage gap that the fix closed. Spec: `ai_docs/features/095_structural_sweep/01_spec.md` + `02_progress.md`. |
 | 094 | control_panel | pending | Finding 4's remainder: the documents grid reserves rows for documents that do not exist, so the control panel's left third is mostly empty. A mock of four options was drawn and judged: the two that reshape the panel move the dead space rather than remove it, the fold was rejected for buying width only while hiding a panel wanted at rest, and the fourth (the identity row into the viewer's chrome) is untested because it adds a constant to the panel's minimum height that nobody has measured -- so the shape that REMOVES the dead space is still to be proposed. Spec: `ai_docs/features/094_control_panel/00_mock.html` (mock only; no spec yet). |
 | 093 | refinement | done | The maintainer's dogfooding of the graph view (092), fed back in batches and fixed wave by wave over eight waves (the menus and modal-registry redesigns among them, then the control panel's header down to one row with its verbs on the document tile's context menu and one aspect-grouped canvas combo), each checked by him in the running app; finding 4's panel composition is delegated to 094. Spec: `ai_docs/features/093_refinement/01_spec.md` + `00_findings.md`. |
