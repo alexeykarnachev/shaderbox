@@ -215,6 +215,22 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   dogfood harness were the falsifiers — both were silently red until the eager-create). Revisit if row
   creation ever moves to an eager load-time pass (then the trap can't fire).
 
+- **State a project switch must drop lives where `_init` resets it, not in `App.__init__` (feature 097).**
+  `App.__init__` runs once per process and `_init` runs once per project, so a per-project field
+  declared in the constructor survives every switch. Four shipped that way and all four were found
+  at once, by reusing one App across tests: a copilot turn-lock that left the INCOMING project
+  refusing every document verb, the copilot working set naming documents the new project does not
+  have, the per-document graph views following a document id into the next project, and
+  `CopilotSession._released` latching so a later sentinel would exit a live worker. The tell is a
+  field keyed by document id, or one a frame consumes rather than a load. `_init`'s ephemeral block
+  is the home for the first kind; `reset_conversation` — which exists so one session serves the
+  next project — is the home for the second. Revisit if `ProjectSession` is ever rebuilt per
+  project rather than reused, which would make the whole class impossible instead of conventional.
+
+  Its verification is a probe that drives a REAL `switch_project` and reads the field afterwards,
+  not a test asserting the reset it just called: the suite cannot see this class at all while every
+  test gets a fresh App, which is exactly why it went unnoticed through four instances.
+
 - **Fail-soft persistence is PER KEY, and derived state is pruned at the SAVE funnel (feature 061).**
   Every on-disk model here degrades rather than crashes — and the app writes what it loaded back on
   quit, so "fall back to defaults" on one bad key is silent DATA LOSS, not resilience. The rule, first

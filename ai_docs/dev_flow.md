@@ -723,8 +723,11 @@ answered with.
 tens of seconds; while iterating, run the ONE test file that covers the change
 (`uv run pytest tests/test_<area>.py -q -p no:randomly`, typically under two seconds) and pick it
 deliberately. A session that ran the full gate after one-line doc edits and after formatting
-autofixes burned minutes for no information, which is what this paragraph exists to stop. The
-budget itself is 097's business; the usage rule holds whatever the number is.
+autofixes burned minutes for no information, which is what this paragraph exists to stop. The rule
+holds whatever the gate costs — it is about information, not seconds.
+
+A doc edit, a comment, a rename with no behavior in it: name the covering test and run that, or run
+nothing. An edit that cannot break a test earns no test run.
 
 It exists because the prose rule under `### make check` did not hold. Twice now this repo has
 announced a passing gate that was failing: once by grepping a tool's output instead of reading its
@@ -791,10 +794,13 @@ through `make test` rather than a bare `pytest` so you inherit them. Modules usi
 skip without a display. Not wired into `make check` (needs a GL context). On a monitor-less box,
 `xvfb-run -a` gives those modules a display -- see `### make gates`.
 
-**Why `-n 8`.** The suite is FIXTURE-bound, not assertion-bound: the `app` fixture builds a real
-App — a window, a GL context, the shipped example documents — and most of the suite's time is that
-setup rather than the assertions. Parallel workers cut it hard; worker counts were measured and the
-curve flattens at 8, so more buy nothing.
+**Why `-n 8`.** Worker counts were measured and the curve flattens at 8, so more buy nothing.
+
+The `app` fixture builds ONE App per worker process and reopens a throwaway project per test
+through `App._init`, the same path a project switch takes (097 W-1). What forces one App per
+process is the imgui font atlas, whose GL texture dies with the App that built it; nothing forces
+one per test. The fixture restores a snapshot of the App's fields first, so state `__init__` sets
+and no reload clears cannot ride from one test to the next.
 
 Each xdist worker is its own PROCESS with its own glfw window and GL context, which is what makes
 this safe where `pytest-forked` is NOT: a forked child inherits the parent's open X11 socket and
@@ -803,7 +809,12 @@ two processes on one Xlib connection kill it (`tests/test_revert_executor.py` re
 **What is NOT the fix here, so it is not re-tried.** Caching the loaded example documents across
 App instances: they hold live moderngl handles, so a shallow share lets one App's `release()` free
 another's textures (it broke `test_grep_surfaces_example_origins`), and a deepcopy raises
-`cannot pickle 'mgl.Context'`.
+`cannot pickle 'mgl.Context'`. Raising `-n` past 8 is the other one: the curve is flat there, and a
+suite that only fits because it is sprayed wider is the same suite.
+
+A test that asks "does this survive a restart?" calls `restart_app` from `conftest`, which reopens
+the same project through `_init`. Building a second App instead tears down the process's imgui
+context and every later test in that worker dies on it.
 
 ### `make smoke`
 Headless smoke test (`scripts/smoke.py`) — runs ~200 frames of `update_and_draw` against a THROWAWAY

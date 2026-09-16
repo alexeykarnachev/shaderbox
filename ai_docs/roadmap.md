@@ -26,20 +26,19 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-16, 096 has landed and been reviewed. 097, the test-suite diet, is next by the maintainer's call -- the gate is too slow to run and too weak to trust. 094 follows. -->
-**Next: 097, the test-suite diet.** `make gates` takes 45-70s and the maintainer's ceiling is
-**30s** for check + test + smoke together, at `-n 8` -- parallelism is not the lever and stays at
-8. The suite is fixture-bound: setup outweighs assertions, and 38 files build a real App per test.
-The other half is that many tests catch nothing, which 096's review demonstrated by mutation. Both
-halves are one cut. 094 follows.
+<!-- As of 2026-09-16, 097 has landed: `make gates` is 28.2s against the 30s ceiling. 094 is next. -->
+**Next: 094, the control panel.** The documents grid reserves rows for documents that do not
+exist, so the panel's left third is mostly empty. Four shapes were mocked and judged and none
+removes the dead space -- the shape that does is still to be proposed.
 
-**096 is done and two user-facing defects are fixed:** a self-reading output pass exported a
-frozen video, and the export branch Telegram takes dropped the output pass's format. The sizing
-rule has one home and every path that can change a canvas ends in `conform_canvases`.
-Post-implementation review earned its keep -- four of six gates did not gate, and it turned up
-three more live defects, all fixed.
+**097 is done: `make gates` runs 28.2s, from 45-70s.** The suite was fixture-bound (202s of 261
+CPU-seconds went to setup), and one App per worker instead of one per test carried most of it.
+That reuse surfaced four latent project-switch defects -- a lock, a working set, a per-document
+view state and a released flag all outliving the project they belonged to -- plus a crash from two
+copilot workers generating pydantic schemas at once. `-n 8` was not touched.
 
-**Worth a look in the running app:** export a feedback document, and one through Share/Telegram.
+**Worth a look in the running app:** switch projects with the copilot mid-turn, and with a graph
+tab open -- those are the paths the four fixes are on.
 
 **Open, unmeasured:** the canvas past twenty passes (the largest real document is six); no
 brake watches copilot cost or a frame going lit to flat (082); the GL thread if the throttle
@@ -49,7 +48,7 @@ falls short.
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 097 | test_suite_diet | pending | `make gates` runs 45-70s against a 30s ceiling, and the suite is fixture-bound rather than assertion-bound -- setup outweighs calls and 38 of 159 files build a real App per test. It is also weak: 096's review found four of that feature's six gates passing a verbatim reintroduction of the defect they named. One cut fixes both, because a test that cannot fail costs its full setup and buys nothing. Mutation testing decides what goes, never reading-and-judging, which is how the dead gates were written. `-n 8` stays; the budget is met by removing work. Spec: `ai_docs/features/097_test_suite_diet/01_spec.md`. |
+| 097 | test_suite_diet | done | `make gates` ran 45-70s against a 30s ceiling and now runs 28.2s, measured three times at `rc=0` unpiped. The suite was fixture-bound -- 202 of 261 CPU-seconds were setup, because the `app` fixture built a real App, window and GL context per test -- so it now builds ONE per worker and reopens a throwaway project per test through `App._init`, the project-switch path the running app already takes; what forces one App per process is the imgui font atlas, which never forced one per test. That reuse turned four latent project-switch defects into failures (a copilot turn-lock, the copilot working set, the per-document graph views and `CopilotSession._released`, each outliving the project it belonged to), all reproduced on a real switch with a probe and re-checked by removing the fix; a fifth failure was two copilot workers racing pydantic's schema generator, now computed once per model. Four tests then repeating a whole-repo scan per case were made to scan once, each re-proven against the defect it names. `-n 8` stayed at 8 and no budget check was added -- the ceiling is a habit, not a gate. `test_ui_prose_budget` and `test_modal_chrome` are 31% of the test COUNT and 0.65s of the clock, so they were measured and left alone. Spec: `ai_docs/features/097_test_suite_diet/01_spec.md` + `02_progress.md`. |
 | 096 | canvas_ownership | done | Six canvas defects in one week treated as one class: a canvas's configuration is decided in several places and each knows about some canvases but not all. The sizing rule, written at five sites in three shapes with the fifth simply wrong, becomes `Document.canvas_size_for`; an output pass always draws into its own canvas and a caller's canvas receives a blit, which fixed the frozen export and dissolved a second finding outright; the export's fit branch carries the output pass's format, as its sibling already did. Promotion, deleting the output and importing one are three doors onto the same defect and share one verb. Guarded by a battery over the non-default corner in which every test has been broken and seen to fail -- a post-implementation review found four of the original gates passing a verbatim reintroduction of the defect they named, and three further live defects (a scale change never reaching a pass the output does not touch, a demoted output keeping full size, a load leaving such a pass unconformed), all fixed. `Canvas`'s own dtype default was left alone: changing it breaks every raw-byte texture reader, which is wider than this feature. Spec: `ai_docs/features/096_canvas_ownership/01_spec.md` + `00_findings.md` + `02_progress.md`. |
 | 095 | structural_sweep | done | A repo-wide pass over the codebase's shape rather than its behavior, run as one inventory wave plus four working waves with the gate green between each: the live facts deleted from the docs, the gl_ctx fixture given one home in conftest, the symbols that were really dead removed, and a comment pass that left every why-comment alone. Most of what the scan flagged did not survive scrutiny and the log records each rejection with its reason. Two adversarial review rounds; the first found a coverage gap that the fix closed. Spec: `ai_docs/features/095_structural_sweep/01_spec.md` + `02_progress.md`. |
 | 094 | control_panel | pending | Finding 4's remainder: the documents grid reserves rows for documents that do not exist, so the control panel's left third is mostly empty. A mock of four options was drawn and judged: the two that reshape the panel move the dead space rather than remove it, the fold was rejected for buying width only while hiding a panel wanted at rest, and the fourth (the identity row into the viewer's chrome) is untested because it adds a constant to the panel's minimum height that nobody has measured -- so the shape that REMOVES the dead space is still to be proposed. Spec: `ai_docs/features/094_control_panel/00_mock.html` (mock only; no spec yet). |

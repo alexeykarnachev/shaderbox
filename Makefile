@@ -31,11 +31,11 @@ check:
 # SEGFAULTS Mesa (the "GL segfault modules" class; same overrides the dogfood
 # harness sets). GLCONTEXT_LINUX_LIBGL avoids the libGL.so dev-symlink dlopen
 # failure on boxes without libgl-dev.
-# `-n 8`: the suite is fixture-bound, not assertion-bound -- the `app` fixture builds a
-# real App per test (a window, a GL context, the shipped example documents). Each worker
-# is its OWN PROCESS with its own glfw window and GL context, which is what makes this
-# safe where `pytest-forked` is not: a forked child inheriting the parent's X11 socket
-# kills the connection (see test_revert_executor.py).
+# `-n 8`: measured, and the curve flattens there. Each worker is its OWN PROCESS with its
+# own glfw window and GL context, which is what makes this safe where `pytest-forked` is
+# not: a forked child inheriting the parent's X11 socket kills the connection (see
+# test_revert_executor.py). The `app` fixture builds one App per worker and reopens a
+# throwaway project per test through the project-switch path (097 W-1).
 # `--max-worker-restart=0`: a worker that dies is a FAILURE, reported now. Without it xdist
 # waits on the dead node forever -- one run sat 12 minutes behind a single defunct worker
 # (`[gw3] node down: Not properly terminated`) while the other seven idled at 2% CPU, and
