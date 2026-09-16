@@ -84,7 +84,7 @@ from shaderbox.pass_graph import (
     strip_order,
 )
 from shaderbox.paths import ProjectPaths, app_data_dir, pass_name_of, shader_lib_root
-from shaderbox.profiling import FrameProfile, Profiler, ProfileSmoother
+from shaderbox.profiling import FrameProfile, Profiler
 from shaderbox.project_session import (
     ProjectInfo,
     ProjectSession,
@@ -503,7 +503,6 @@ class App:
         # highlights. Set by tabs/code.py (drawn before the panel), "" when none.
         self.code_hovered_uniform: str = ""
         self.global_fps = 0.0
-        self.fps_details_open: bool = False
         # The frame profiler (088). Records ALWAYS since 090 D9a -- its GPU spans are the
         # throttle's cost input, and the measured always-on cost is a +0.005 ms p95 delta. The
         # panel's open state decides only what is DRAWN. `last_profile` holds the last COMPLETE
@@ -511,7 +510,6 @@ class App:
         self.profiler: Profiler = Profiler(enabled=True)
         self.last_profile: FrameProfile | None = None
         # The panel draws an exponential average of those, not the raw frame.
-        self.profile_smoother: ProfileSmoother = ProfileSmoother()
         # The editor↔panel splitter drag, latched in update_splitter_drag.
         self.splitter_dragging: bool = False
         self._splitter_press_on_splitter: bool = False

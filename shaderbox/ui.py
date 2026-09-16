@@ -48,7 +48,7 @@ from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_models import UIDocument
 from shaderbox.ui_primitives import (
     chip_button,
-    fps_overlay,
+    fps_chip,
     item_normalized_mouse,
     rendering_overlay,
     toggle_button,
@@ -456,12 +456,6 @@ def update_and_draw(app: App) -> None:
     with app.profiler.frame():
         _update_and_draw(app)
     app.last_profile = app.profiler.last_complete
-    # Read after the frame, so `enabled` is the value the boundary applied: a disable dropped
-    # the profiler's whole state inside `begin_frame` and the average goes with it.
-    if app.profiler.enabled:
-        app.profile_smoother.feed(app.last_profile)
-    else:
-        app.profile_smoother.reset()
 
 
 def _update_and_draw(app: App) -> None:
@@ -948,15 +942,19 @@ def _draw_document_image(app: App, box_height: float) -> ViewerGeometry:
     return ViewerGeometry(cursor_pos, box_height, img_min, image_width)
 
 
-def _current_document_fps(app: App) -> int | None:
-    """The current document's own rate for the chip, or None while it renders every frame."""
+def _current_document_fps(app: App) -> int:
+    """The current document's own rate -- always a number, never None (094 D13a).
+
+    Above interval 1 the throttle is deliberately holding the document below the frame rate, and
+    the plan's `document_fps` is that rate. At interval 1 the document draws every frame, so its
+    rate is the frame rate -- and that must be the MEASURED one: the plan's value there is
+    `target_fps / 1`, which round-trips to the SETTING, so a machine rendering at 30 with the
+    target at 60 would read `60 FPS`. That is the opposite of what a frame-rate chip is for.
+    """
     plan = app.render_plan
-    if plan is None:
-        return None
-    interval = plan.intervals.get(app.current_document_id, 1)
-    if interval <= 1:
-        return None
-    return round(plan.document_fps.get(app.current_document_id, 0.0))
+    if plan is not None and plan.intervals.get(app.current_document_id, 1) > 1:
+        return round(plan.document_fps.get(app.current_document_id, 0.0))
+    return round(app.global_fps)
 
 
 def _document_titles(app: App) -> dict[str, str]:
@@ -990,19 +988,13 @@ def _draw_app_panel(app: App) -> None:
     viewer = _draw_document_image(app, panel_height * fraction)
 
     if app.current_document_id in app.ui_documents:
-        app.fps_details_open = fps_overlay(
+        if fps_chip(
             anchor_x=viewer.image_min.x + viewer.image_width,
             anchor_y=viewer.image_min.y,
-            fps=round(app.global_fps),
-            target_fps=app.app_state.global_target_fps,
-            is_open=app.fps_details_open,
-            profile=app.profile_smoother.smoothed(),
-            number_font=app.font_12,
-            document_fps=_current_document_fps(app),
-            plan=app.render_plan,
-            titles=_document_titles(app),
-            budget=app.app_state.document_gpu_budget,
-        )
+            fps=_current_document_fps(app),
+        ):
+            # 094 C10 hangs the canvas menu (shape + channel view) off this click.
+            pass
         # The channel-view chip over the preview's top-LEFT — the opposite corner from the FPS
         # chip, so the two never collide whatever the canvas aspect.
         imgui.set_cursor_screen_pos(

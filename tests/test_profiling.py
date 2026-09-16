@@ -27,7 +27,6 @@ from shaderbox.profiling import (
     Span,
     by_cost,
 )
-from shaderbox.ui_primitives import profile_rows_plan
 
 # This module drives real frames, so it gets a worker of its own (`conventions.md ## Known
 # quirks`): two Apps that both render a full frame in one process die on the font atlas.
@@ -470,65 +469,17 @@ def _pass_settings_frames(app: Any) -> Any:
     return app.last_profile
 
 
-def _capture_the_overlays_profile(app: Any, monkeypatch: Any) -> Any:
-    """Drive one frame with the overlay spied on, and report the profile it was handed.
-
-    Which tree reaches the panel is the decision this feature makes, and only the call site
-    knows it -- the smoother alone cannot say whether anyone draws what it returns.
-    """
-    from shaderbox import ui
-
-    handed: list[Any] = []
-    real = ui.fps_overlay
-
-    def spy(**kwargs: Any) -> Any:
-        handed.append(kwargs["profile"])
-        return real(**kwargs)
-
-    monkeypatch.setattr(ui, "fps_overlay", spy)
-    try:
-        ui.update_and_draw(app)
-    finally:
-        monkeypatch.undo()
-    assert handed, "the overlay was never drawn"
-    return handed[-1]
-
-
-def _capture_the_plan_call(app: Any, monkeypatch: Any) -> Any:
-    """Drive one frame with `profile_rows_plan` spied on, and report its arguments.
-
-    The spy goes on `ui_primitives`, the module `fps_overlay` resolves the name in at call
-    time; `ui.fps_overlay` stays real, so the plan call actually runs inside a live draw.
-    """
-    from shaderbox import ui_primitives
-
-    calls: list[Any] = []
-    real = ui_primitives.profile_rows_plan
-
-    def spy(*args: Any, **kwargs: Any) -> Any:
-        calls.append((args, kwargs))
-        return real(*args, **kwargs)
-
-    monkeypatch.setattr(ui_primitives, "profile_rows_plan", spy)
-    try:
-        from shaderbox import ui
-
-        ui.update_and_draw(app)
-    finally:
-        monkeypatch.undo()
-    return calls
-
-
-def _close_the_panel(app: Any, monkeypatch: Any) -> None:
-    """Make the overlay report a closing click, which is what the live toggle is."""
-    from shaderbox import ui
-
-    monkeypatch.setattr(ui, "fps_overlay", lambda **_kwargs: False)
-
-
 def test_the_wire_and_the_abort_path(app: Any, monkeypatch: Any) -> None:
-    """`update_and_draw` with the panel open leaves a complete profile on `app.last_profile`,
-    and an aborted frame still closes its root so the next tree is flat.
+    """`update_and_draw` leaves a complete profile on `app.last_profile`, the costs the
+    throttle reads are non-empty, and an aborted frame still closes its root so the next tree
+    is flat.
+
+    094 check 19: the frame-profiler PANEL is deleted and the profiler keeps measuring.
+    `_refresh_document_costs` is the one write site for `app.document_costs`, which
+    `plan_render_set` throttles on -- so deleting the measurement with the panel would disable
+    the throttle with nothing to say so. The falsifier the spec asks for is the narrow one
+    below (cut ONE `profiler=`), not deleting `profiling.py`, which breaks too much to be
+    evidence.
 
     This is the "defined is not wired" check, and its falsifiers are: cut `profiler=app.profiler`
     at a render site in `ui.py` and that site's `document:` span is still there while its
@@ -541,7 +492,6 @@ def test_the_wire_and_the_abort_path(app: Any, monkeypatch: Any) -> None:
     """
     from shaderbox.ui import update_and_draw
 
-    app.fps_details_open = True
     for _ in range(4):
         update_and_draw(app)
 
@@ -556,6 +506,11 @@ def test_the_wire_and_the_abort_path(app: Any, monkeypatch: Any) -> None:
     assert pass_spans, f"no pass span under {document_spans[0].name}"
     assert pass_spans[0].gpu_ms is not None, "the pass span carries no GPU number"
     assert pass_spans[0].gpu_ms >= 0.0
+    # The consumer, not the producer: the costs are what the throttle plans from, and they are
+    # refreshed from these same `document:` spans.
+    assert app.document_costs, (
+        "the profile carries document spans but no cost reached the throttle"
+    )
 
     aborted = _abort_one_frame(app, monkeypatch)
     # An aborted frame is a frame: it opened no GPU span, so its profile is complete the
@@ -606,57 +561,14 @@ def test_the_wire_and_the_abort_path(app: Any, monkeypatch: Any) -> None:
     )
     assert [s for s in modal_documents[0].children if s.name.startswith("pass:")]
 
-    # The panel draws the AVERAGE, so the loop must be feeding it -- the smoothed tree
-    # carries the same shape as the raw one. Falsifier: cut the `feed` call in
-    # `update_and_draw` and the smoother stays empty while the panel is open.
-    averaged = app.profile_smoother.smoothed()
-    assert averaged is not None, "the loop never fed the smoother"
-    assert _names(averaged.children) == _names(behind.children)
-
-    # What the PANEL is handed is the average, not the raw frame. The two agree on shape, so
-    # the discriminator is identity: the smoother is seeded with a childless root at an index
-    # no live frame reaches, and the overlay is drawn BEFORE the loop's own feed, so the
-    # averaged tree still carries that seed while the raw one carries the frame. Falsifier:
-    # pass `app.last_profile` at the `fps_overlay` call and the overlay reads the live tree.
-    app.profile_smoother.feed(_profile(10_000, 500.0))
-    handed = _capture_the_overlays_profile(app, monkeypatch)
-    assert handed is not None
-    assert handed.index == 10_000 and handed.children == [], (
-        f"the overlay drew index {handed.index} with {_names(handed.children)} -- "
-        "that is the frame itself, not the average"
-    )
-
-    # V11 -- the panel draws from the PLAN, and the plan is handed the same smoothed tree
-    # and the live target. Without this seam a sort or a color inside the draw loop would be
-    # unfalsifiable: the overlay spy above sees only what goes IN. Falsifier: cut the
-    # `profile_rows_plan` call from `fps_overlay` and no call is recorded.
-    app.profile_smoother.feed(_profile(10_001, 500.0))
-    calls = _capture_the_plan_call(app, monkeypatch)
-    assert calls, "the overlay drew without planning its rows"
-    planned_args, _planned_kwargs = calls[-1]
-    planned_profile, _planned_fps, planned_target = planned_args[:3]
-    assert planned_profile is not None
-    assert planned_profile.index == 10_001 and planned_profile.children == [], (
-        f"the plan was handed index {planned_profile.index} -- that is not the average"
-    )
-    assert planned_target == app.app_state.global_target_fps
-
-    # Closing the panel stops the DRAW, never the recording (090 D9a): the GPU spans are the
-    # throttle's cost input, so they are what the plan reads on every frame whether or not
-    # anyone is looking. Falsifier: restore `app.profiler.enabled = app.fps_details_open` and
-    # both assertions go red -- the profiler disables and its ring empties.
-    _close_the_panel(app, monkeypatch)
+    # 094 C6: the panel is deleted and the RECORDING is not (090 D9a). The GPU spans are the
+    # throttle's cost input, so they are measured whether or not anything draws them.
+    # Falsifier: gate `profiler.enabled` on anything UI-side and both assertions go red.
     update_and_draw(app)
     update_and_draw(app)
-    assert app.profiler.enabled, (
-        "the panel's state must not decide whether spans record"
-    )
-    assert app.profiler._ring, (
-        "a closed panel left no query, so nothing is being measured"
-    )
-    # The smoother keeps averaging, since its feed is gated on `enabled` and that is now
-    # always true -- the panel simply stops drawing what it holds.
-    assert app.profile_smoother.smoothed() is not None
+    assert app.profiler.enabled, "a UI surface must not decide whether spans record"
+    assert app.profiler._ring, "no query in flight -- nothing is being measured"
+    assert app.document_costs, "the spans recorded but no cost reached the throttle"
 
 
 # ---------------------------------------------------------------------------
@@ -826,67 +738,3 @@ def test_by_cost_leaves_the_instrument_alone() -> None:
     sorted_children = by_cost(children)
     assert sorted_children is not children
     assert _names(children) == ["a", "b"]
-
-
-def test_the_plans_tree_is_cost_ordered_with_other_last() -> None:
-    # The order reaches the panel through the plan, which is what the draw loop walks.
-    # Falsifier: iterate `span.children` in the plan and the rows come out a, b, c.
-    root = Span("frame", cpu_ms=20.0)
-    root.children.append(Span("pass:a", cpu_ms=1.0))
-    root.children.append(Span("pass:b", cpu_ms=3.0))
-    root.children.append(Span("pass:c", cpu_ms=2.0))
-    rows = profile_rows_plan(
-        FrameProfile(root, 0, complete=True), fps=60, target_fps=60
-    )
-    names = [row.name for row in rows]
-    assert names == [
-        "frame",
-        "gpu",
-        "budget",
-        "fps",
-        "target",
-        "pass:b",
-        "pass:c",
-        "pass:a",
-        "other",
-    ]
-
-
-def test_the_plan_indents_a_child_under_its_parent() -> None:
-    # Depth is the plan's, so the draw loop only multiplies it by the spacing token.
-    # Falsifier: pass a constant depth in `_plan_tree` and the tree flattens.
-    root = Span("frame", cpu_ms=20.0)
-    outer = Span("document:one", cpu_ms=10.0)
-    outer.children.append(Span("pass:inner", cpu_ms=6.0))
-    root.children.append(outer)
-    rows = profile_rows_plan(
-        FrameProfile(root, 0, complete=True),
-        fps=60,
-        target_fps=60,
-        titles={"one": "One"},
-    )
-    depths = {row.name: row.depth for row in rows}
-    # A `document:` row carries the TITLE the id maps to (090 D7), never the span name.
-    assert depths["One"] == 0
-    assert depths["pass:inner"] == 1
-
-
-def test_the_gap_before_the_tree_is_marked_on_the_first_tree_row() -> None:
-    # The draw reads the boundary off the row, so the panel never re-derives which rows
-    # lead. Falsifier: stop setting the flag and no row carries it.
-    root = Span("frame", cpu_ms=20.0)
-    root.children.append(Span("pass:a", cpu_ms=1.0))
-    root.children.append(Span("pass:b", cpu_ms=3.0))
-    rows = profile_rows_plan(
-        FrameProfile(root, 0, complete=True), fps=60, target_fps=60
-    )
-    marked = [row.name for row in rows if row.starts_tree]
-    assert marked == ["pass:b"]
-    assert rows[[row.name for row in rows].index("pass:b") - 1].name == "target"
-
-
-def test_a_plan_without_a_profile_marks_no_row() -> None:
-    # Three static rows and no tree, so there is no boundary to mark.
-    rows = profile_rows_plan(None, fps=60, target_fps=60)
-    assert [row.name for row in rows] == ["budget", "fps", "target"]
-    assert not any(row.starts_tree for row in rows)

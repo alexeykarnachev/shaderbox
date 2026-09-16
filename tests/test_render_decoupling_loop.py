@@ -21,14 +21,12 @@ from imgui_bundle import imgui
 from shaderbox import ui
 from shaderbox.app import ModalId
 from shaderbox.constants import STARTER_EXAMPLE_ID
-from shaderbox.profiling import FrameProfile, Span
-from shaderbox.render_plan import AUTO_RESIZE_STABLE_FRAMES, CostRecord, RenderPlan
+from shaderbox.render_plan import AUTO_RESIZE_STABLE_FRAMES, CostRecord
 from shaderbox.render_shape import ResolutionMode, fit_to_aspect
 from shaderbox.tabs.document import _apply_canvas_size, _switch_resolution_mode
 from shaderbox.theme import SIZE
 from shaderbox.ui import _tick_frame_state, update_and_draw
 from shaderbox.ui_models import ConfirmRequest, UIAppState
-from shaderbox.ui_primitives import profile_rows_plan
 from tests.conftest import seed_extra_document
 
 # This module drives real frames, so it gets its own worker: the imgui font atlas is per
@@ -451,57 +449,35 @@ def test_a_throttled_example_renders_less_often_than_a_cheap_one(
 def test_the_chip_carries_the_current_documents_own_rate(
     app: Any, monkeypatch: Any
 ) -> None:
-    # Falsifier: pass `document_fps=None` unconditionally at the `fps_overlay` call -- every
-    # prose gate still passes and the chip silently never shows the second number.
-
+    # A THROTTLED document's chip reads the rate the throttle holds it to, not the frame rate.
+    # Falsifier: return `round(app.global_fps)` unconditionally and this reads the UI's rate.
     _freeze_costs(app, monkeypatch)
     _plant_cost(app, app.current_document_id, 100.0)
     _drive(app, 8)
 
-    captured: list[Any] = []
-    real = ui.fps_overlay
-
-    def spy(**kwargs: Any) -> Any:
-        captured.append(kwargs)
-        return real(**kwargs)
-
-    monkeypatch.setattr(ui, "fps_overlay", spy)
-    ui.update_and_draw(app)
-    assert captured, "the overlay was never drawn"
-    document_fps = captured[-1]["document_fps"]
-    assert document_fps is not None, "the chip was handed no document rate"
     interval = app.render_plan.intervals[app.current_document_id]
-    assert interval > 1
-    assert document_fps == round(app.app_state.global_target_fps / interval)
-
-
-def test_the_panel_rows_match_documents_by_id_not_by_title(app: Any) -> None:
-    # Two documents sharing a title are two rows with their OWN numbers. Falsifier: match a
-    # `document:` span through its title and one row takes the other's interval.
-
-    root = Span("frame", cpu_ms=20.0)
-    root.children.append(Span("document:aaa", cpu_ms=40.0, gpu_ms=40.0))
-    root.children.append(Span("document:bbb", cpu_ms=4.0, gpu_ms=4.0))
-    plan = RenderPlan(
-        intervals={"aaa": 5, "bbb": 1},
-        phases={"aaa": 0, "bbb": 1},
-        document_fps={"aaa": 12.0, "bbb": 60.0},
+    assert interval > 1, "the premise: the throttle is holding this document back"
+    assert ui._current_document_fps(app) == round(
+        app.app_state.global_target_fps / interval
     )
-    rows = profile_rows_plan(
-        FrameProfile(root, 0, complete=True),
-        fps=60,
-        target_fps=60,
-        plan=plan,
-        titles={"aaa": "Twin", "bbb": "Twin"},
-        budget=0.5,
-    )
-    twins = [row for row in rows if row.name == "Twin"]
-    assert len(twins) == 2, [row.name for row in rows]
-    # The throttled one reads as a rate and an interval; its unthrottled namesake keeps today's
-    # millisecond number, so the two rows cannot have been filled from one lookup.
-    assert "x5" in twins[0].number
-    assert twins[0].tooltip == "40.00 ms"
-    assert twins[1].number.endswith("ms")
+
+
+def test_the_chip_reads_the_measured_rate_when_nothing_throttles(app: Any) -> None:
+    """094 check 18: the chip always shows a NUMBER, and at interval 1 it is the measured one.
+
+    `_current_document_fps` used to return None whenever the document drew every frame -- the
+    common case -- and the old two-number chip fell back to `app.global_fps` there. With one
+    number the fallback must be a number too, and it must be the MEASURED rate: the plan's
+    `document_fps` at interval 1 is `target_fps / 1`, which round-trips to the SETTING, so a
+    machine rendering at 30 with the target at 60 would read `60 FPS`.
+
+    Falsifier: return the plan's value at interval 1 and this reads the target, not the measure.
+    """
+    _drive(app, 4)
+    assert app.render_plan.intervals.get(app.current_document_id, 1) == 1
+    app.global_fps = 31.4
+    app.app_state.global_target_fps = 60
+    assert ui._current_document_fps(app) == 31
 
 
 # ---------------------------------------------------------------------------
