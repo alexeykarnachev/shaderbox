@@ -12,7 +12,7 @@ panel (072).
 from imgui_bundle import imgui
 
 from shaderbox.app import App, ModalId
-from shaderbox.pass_graph import MAX_ITERATIONS, PassEntry, PassGraph
+from shaderbox.pass_graph import MAX_ITERATIONS, PassEntry, PassGraph, TargetConfig
 from shaderbox.popups import Modal
 from shaderbox.theme import SIZE, SPACE
 from shaderbox.ui_primitives import (
@@ -204,6 +204,21 @@ def _commit_pass_name(app: App, document_id: str, name: str) -> bool:
     return True
 
 
+def displayed_target_size(
+    target: TargetConfig, canvas_size: tuple[int, int], is_output: bool
+) -> tuple[int, int]:
+    """The size this pass's canvas HAS, for the label beside the scale slider.
+
+    The OUTPUT keeps full size and its `scale` is ignored, which is why that slider is disabled
+    for it -- so an output pass carrying a stored scale must not be shown the size that scale
+    would imply. This was the fifth copy of the sizing rule and the only wrong one.
+
+    A free function rather than `Document.canvas_size_for`: the label describes the entry being
+    EDITED, which for a draft is not yet in the graph that method reads.
+    """
+    return canvas_size if is_output else target.target_size(canvas_size)
+
+
 def _draw_target(
     app: App,
     name: str,
@@ -229,10 +244,7 @@ def _draw_target(
     imgui.same_line()
     help_marker(_FORMATS[_FORMAT_CODES.index(target.dtype)][2])
 
-    # The OUTPUT keeps full size and its `scale` is ignored, which is why the slider below is
-    # disabled for it -- so the label has to say the size the canvas HAS, not the one the stored
-    # scale would imply.
-    w, h = canvas_size if is_output else target.target_size(canvas_size)
+    w, h = displayed_target_size(target, canvas_size, is_output)
     label_row(app.font_12, "size", _CTRL_W, _ROW_LABEL_W)
     # The slider runs over 5-100 so `%.0f%%` formats the number a person reads; the model
     # keeps the 0-1 scale. The derived dims ride the format string, not the label column.

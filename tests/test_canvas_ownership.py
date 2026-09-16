@@ -43,6 +43,7 @@ from shaderbox.paths import (
     pass_shader_name,
     shader_lib_root,
 )
+from shaderbox.popups.pass_settings import displayed_target_size
 from shaderbox.render_preset import FitPolicy, RenderPreset, ResolutionPolicy
 from shaderbox.shader_lib import ShaderLibIndex, set_active
 from tests.canvas_invariants import (
@@ -429,6 +430,18 @@ def test_a_pass_file_with_no_graph_entry_matches_the_entry_it_gets(
     entry = document.graph.passes["solo"]
     assert document.passes["solo"].canvas.dtype == entry.target.dtype
     document.release()
+
+
+def test_the_settings_label_shows_the_size_the_canvas_has(
+    gl_ctx: moderngl.Context,
+) -> None:
+    # The fifth copy of the sizing rule, and the only one that was wrong: it applied `scale` with
+    # no output exemption, so an output pass carrying a stored scale was shown a size its texture
+    # did not have. Display-only, and still the rule this feature exists to keep in one shape.
+    scaled = TargetConfig(scale=0.5)
+
+    assert displayed_target_size(scaled, (256, 256), is_output=False) == (128, 128)
+    assert displayed_target_size(scaled, (256, 256), is_output=True) == (256, 256)
 
 
 def test_the_checker_sees_a_resample_that_drops_filter_and_wrap(
