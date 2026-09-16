@@ -963,7 +963,10 @@ class Document:
                     gl=document._gl,
                     source=ShaderSource.load(shader_path),
                     canvas_size=document.canvas_size,
-                    target=entry.target if entry is not None else None,
+                    # The same defaults the graph is backfilled with twelve lines down: a
+                    # file with no entry got PassEntry()'s f2 in the graph and Canvas's own
+                    # dtype on the canvas, so the panel showed a format the texture did not have.
+                    target=entry.target if entry is not None else PassEntry().target,
                 )
             except OSError as e:
                 logger.error(f"Skipping unreadable pass '{name}': {e}")
@@ -1153,7 +1156,13 @@ class Document:
             details.resolution_details.width = target_w
             details.resolution_details.height = target_h
 
-            target = Canvas(gl=self._gl, size=(target_w, target_h))
+            target = Canvas(
+                gl=self._gl,
+                size=(target_w, target_h),
+                dtype=self.render_pass.canvas.dtype,
+                filter=self.render_pass.canvas.filter,
+                wrap=self.render_pass.canvas.wrap,
+            )
             try:
                 return self._render_media_into(details, target)
             finally:

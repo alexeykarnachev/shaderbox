@@ -94,3 +94,38 @@ the mechanism, so it now says it RECEIVES the output's picture.
 
 Ruff reformatted `tests/canvas_invariants.py` after the W-0 commit (a hook autofix, no behavior);
 it is folded in here.
+
+## W-2 F1 and F9, the default mismatch — LANDED, with (c) REVERTED
+
+done-condition (written in advance): the export's fit branch allocates a canvas carrying the
+output pass's dtype, filter and wrap; a pass file with no graph entry is born with the same
+target the graph is backfilled with; and `make gates` is green.
+
+(a) and (b) landed. **(c), changing `Canvas`'s own dtype default from `f1` to `f2`, is reverted**
+— it is a real defect in the change rather than a stale expectation, and the spec's rule is that
+a failing test means the change is wrong.
+
+**What (c) broke: 9 tests, and not by naming the default.** Four of them read a texture with a raw
+`texture.read()` and a uint8 reshape instead of going through `texture_to_rgba8`. An `f2` texture
+returns twice the bytes, so those reads fail outright (`cannot reshape array of size 16 into shape
+(1,2,4)`) or silently return garbage — a pass that wrote pure red read back as `(0, 60, 0, 0)`.
+`01_spec.md` warns of exactly this trap, and the blast radius is wider than the spec assumed when
+it scoped (c) as "any remaining bare `Canvas(...)` becomes f2": it changes what every raw-byte
+reader in the tree sees. Two further tests argue for `f1` BY NAME with a recorded rationale, so
+(c) also reverses a decision rather than filling a gap.
+
+Doing (c) properly means first moving those readers onto `texture_to_rgba8`, which is a wider
+change than this feature scoped. Left for the maintainer's call; the defects that SHIP are (a)
+and (b), and both are fixed.
+
+Worth recording: the old rationale for `f1` — "the whole export path reads it as 8-bit" — is no
+longer accurate. `texture_to_rgba8` is dtype-driven and tonemaps a float target. So the
+constraint holding (c) back is the raw-byte READERS in the tests, not the export path.
+
+**(a) measured rather than read off the diff**, on the branch Telegram and the shared shapes take
+(`FitPolicy.RENDER_AT_TARGET`), against an `f2` output pass:
+
+    before: export fit-branch canvas dtype = f1   (output pass is f2)
+    after:  export fit-branch canvas dtype = f2
+
+Gate green: 2716 passed, 4 skipped, 37.6s total (check 8.2s, test 26.0s, smoke 2.6s).
