@@ -122,12 +122,47 @@ context current -- one flake became 367 teardown errors. And the flake was calle
 after a single green re-run before it was investigated: a re-run is not evidence, and nothing else
 was changing the tree.
 
+## W-4 — the budget check was REFUSED, deliberately
+
+The spec asks for a check that fails when the suite exceeds 30s, on the grounds that a number in
+a doc is a wish. It was not built, and the maintainer's instruction is the reason: the ceiling is
+a habit he holds, not something to gate on, and he said so in those terms while the work was
+running. So the ceiling stays a target with no enforcement, and this paragraph exists so the next
+session does not re-open it as an oversight.
+
+The spec's own argument against it also survives contact: a wall-clock assertion fails on someone
+else's hardware, and this stage's number moved three times in one day — 41.5s, then 21.5s, then
+~15.5s — so any threshold committed early would have been wrong twice.
+
+The other half of W-4 DID land: `dev_flow.md ### make gates` states the iteration loop in
+operational terms (name the covering test and run that; an edit that cannot break a test earns no
+test run), and the Makefile and dev_flow no longer claim the suite is fixture-bound, which stopped
+being true after W-1.
+
+## The method changed mid-feature, and the spec was not amended
+
+`01_spec.md` says plainly: "A test earns its place by failing… Do NOT decide a test is useless by
+reading it." That was the right instrument for W-0 through W-2, and it found real dead gates.
+
+For W-3 the maintainer overrode it: mutation sweeps were the wrong tool for deciding what to
+DELETE, and the call was to read each file and judge it. Both halves earned their keep — mutation
+found checks that cannot fail, reading found whole areas guarding tooling that does not ship —
+but a reader who takes the spec as a standing order will apply the retired method. **The spec's
+instruction is superseded from W-3 onward; this file is the authority on what was actually done.**
+
 ## What was measured and deliberately NOT cut
 
-`test_modal_chrome.py` (208) are 31% of the suite's COUNT
-and 0.65s of its wall clock — measured by deselecting both. Each parametrized case is one call site,
-and the id is what names the offending site on failure. Collapsing them would move the count without
-moving the clock, and would trade a named site for a list in one assertion message.
+`test_modal_chrome.py` stays: 208 of the suite's 1968 tests, and 0.65s of its wall clock together
+with the prose gate that W-3 later cut for a different reason. Count is not what it costs. 149 of
+its cases enumerate the package's own files rather than repeating one fact, and two different
+falsifiers turn different parameters red; each parametrized case is one call site, and the id is
+what names the offending site on failure. Collapsing them would move the count without moving the
+clock, and would trade a named site for a list in one assertion message.
+
+`test_region_system_is_gone.py` (445 lines, 3 tests) stays, against a reviewer's recommendation to
+cut its 300-line AST walk. Its own docstring concedes it guards two of five `no_nav_inputs` sites;
+the two are the ones that actually host Tab stops, and the failure it prevents — Tab walking a
+panel's sliders — is invisible until a user hits it.
 
 The remaining shape of the stage is flat: `test_graph_view`'s 27 tests each drive real imgui frames
 at ~0.3s and no single test dominates. Importing `shaderbox.app` costs 0.65s and every worker pays

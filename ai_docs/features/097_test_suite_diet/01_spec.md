@@ -33,6 +33,11 @@ deleting it is free speed AND a more honest suite.
 
 ## The method, and it is not judgement
 
+> **SUPERSEDED FROM W-3 ONWARD (see `02_progress.md`).** Mutation testing did its job for W-0..W-2
+> and found checks that genuinely cannot fail. For deciding what to DELETE the maintainer overrode
+> it: read each file and ask what a USER loses when the check goes. Do not apply the paragraph
+> below as a standing order to that question.
+
 **A test earns its place by failing.** The tool is mutation testing, and the rule 096 paid for is
 already in `conventions.md`: restore the ORIGINAL defect shape, not a nearby one, and apply it at
 the layer that DECIDES the behavior rather than one below it.

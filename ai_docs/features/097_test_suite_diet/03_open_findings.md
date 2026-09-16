@@ -80,8 +80,11 @@ next reader knows they are conventions rather than enforced:
 
 - The UI word budget (`conventions.md`, and the `/imgui-ui` skill's table).
 - American spelling across every surface a reader sees.
-- `roadmap.md`'s own "one row, one sentence" rule, which `test_roadmap_shape` held. It is
-  currently violated by several rows including 097's.
+- `roadmap.md`'s own "one row, one sentence" rule, which `test_roadmap_shape` held. Measured
+  after the cut: the median row is ~470 characters and the longest are 043 (1434), 096 (1262) and
+  089 (1182) -- so the drift predates 097 and the gate was not holding the rule anyway. 097's own
+  row was the worst offender and was shortened; the older ones were left alone, because rewriting
+  a closed feature's row is a judgement call for the maintainer, not a cleanup.
 
 ## In this repo's own source, pointing at deleted tests
 
