@@ -291,3 +291,45 @@ The roadmap's banner and 096's row are rewritten; the banner needed a trim to fi
 
 NOT done, and deliberately: `Canvas`'s own `dtype` default stays `f1` (W-2 above says why), and
 the `CanvasSpec` refactor stays out of scope per the spec's Goal.
+
+## Post-implementation review — the gates did not gate
+
+Three reviewers ran against the tree at `8e5b102`, the commit that declared the feature done.
+All three returned PARTIAL and none of their findings was a false positive. The headline is the
+one that matters for every future wave here:
+
+**Four of the six defects could be reintroduced VERBATIM with the whole suite green.**
+
+| defect | at `8e5b102` | now |
+|---|---|---|
+| F1 export format (ships to users) | passed 2712 tests | caught |
+| F3 the settings label | passed 2731 tests | caught |
+| F6 frozen export (ships to users) | passed 2728 tests | caught |
+| F7 the clamp | passed 2712 tests | caught |
+
+W-4's commit said each gate had been "broken on purpose and seen to fail", and that was true of
+the mutations chosen — which were COARSER than the defects. Deleting `filter=` from
+`resample_canvas` is not F1; removing the post-loop blit entirely is not F6 (it makes an export
+produce nothing, which six unrelated tests notice). **A gate is proven by restoring the ORIGINAL
+bug shape, not a nearby one.** That is the lesson this round paid for.
+
+The worst instance was a test that read as enforcement and enforced nothing:
+`test_an_export_canvas_carries_the_output_passs_format` constructed its own canvas by copying the
+output pass's four fields and then asserted that copy carried them — a fact about
+`Canvas.__init__`. It never called `render_media`. It has been rewritten to capture the canvas the
+real export allocates on the shipping branch.
+
+**Two live defects were also found, both now fixed** (`d96edaa`): a `scale` change never reached
+the canvas of a pass outside the output chain, since `Pass.set_target` keeps the size by decision
+and `render`'s lazy fix-up is the only other writer; and the mirror of F2, where a pass DEMOTED
+from output kept ignoring the scale it was entitled to resume. Both were pre-existing at the
+feature's baseline, not introduced by it.
+
+**Repairing the export test went wrong once more before it went right**, and it is worth the
+record: the first repair invented `RenderPreset` field names (`name`, `width`, `height`). Pydantic
+drops unknown kwargs in silence, so the preset under test was not the preset intended, and the
+"it catches F1 now" check had been run against a gutted object. `tests/test_model_kwargs.py`
+caught it. **A mutation check is only evidence if the harness around it is known good.**
+
+Every defect in the ledger now has a gate that has been broken and seen to fail: F1, F2, F3, F6,
+F7, F9. The battery is 16 tests.
