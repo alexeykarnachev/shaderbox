@@ -7,7 +7,6 @@ Escape wire is asserted through `registry.close_modal` -- the funnel the Esc dis
 rather than through a key injected into a frame.
 """
 
-from pathlib import Path
 from typing import Any
 from unittest import mock
 
@@ -17,8 +16,6 @@ from shaderbox.app import ModalId
 from shaderbox.pass_graph import group_slug
 from shaderbox.popups.registry import BY_ID, close_modal, draw_modal
 from shaderbox.ui_primitives import preview_cell
-
-_PKG = Path(__file__).resolve().parent.parent / "shaderbox"
 
 
 def _multi_pass_example(app: Any) -> str:

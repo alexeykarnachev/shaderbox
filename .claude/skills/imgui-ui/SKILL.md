@@ -110,10 +110,9 @@ filters is a verb even when it sits in a row of filter pills.
   | notification | one clause | `Canvas: 1080x1080` |
   | section title | 1-2 words | `Reads`, `Draws into` |
 
-  These budgets are enforced, not advised: ShaderBox's `tests/test_ui_prose_budget.py` walks
-  the package's AST, scores every call carrying authored copy, and fails an over-budget string
-  or one joining a second clause. A string the walk cannot read, or one that stays over budget,
-  goes into one of its two allowlists with a written reason.
+  These budgets are held by review. ShaderBox had a gate that walked the package's AST and
+  scored every call carrying authored copy; it was 644 tests for one assertion each, and was cut
+  along with the rest of the string-pinning suite. Read the table and apply it.
 
   A `help_marker` exists only where the label alone is ambiguous; a label that is clear gets no
   marker at all. It names what the control does, never why one would want it, never the

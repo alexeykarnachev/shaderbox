@@ -23,9 +23,9 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   annotations` — it's noise.
 - Imports at module top only — never inside function bodies.
 - **American spelling wherever a reader sees words: `color`.** Comments, docstrings, UI
-  strings, prompts, examples, docs, test names. `tests/test_prose_spelling.py` is the gate; it
-  walks every tracked text file except the vendored editor set, the feature records and the
-  dogfood transcripts, each excluded for the reason stated there.
+  strings, prompts, examples, docs, test names. Checked by reading, not by a gate: the test that
+  walked every tracked file for British spellings was deleted in 097 along with the rest of the
+  string-pinning suite.
 - **Default to NO comment.** A comment restating what the code plainly says (`# re-focus the input`
   over `focus_pending = True`, `# send the message` over `send(...)`) is noise — delete it. The bar:
   would a competent reader be confused WITHOUT it? Only then does it earn a line. The bias to watch:
@@ -58,17 +58,14 @@ belong in the feature spec (`ai_docs/features/NNN_*.md`). This file is not a cha
   module; an imgui+theme draw helper reused across modules goes in `ui_primitives.py`, a non-UI
   helper in `util.py` (or the relevant leaf). Same bar for `@classmethod` unless it's a genuine
   alternate constructor (`cls(...)`).
-- **Every fixed UI string has a word budget, and `tests/test_ui_prose_budget.py` is its gate.**
-  A control label is 1-2 words (a button's action phrase up to 3); an icon or button tooltip is
-  the control's NAME, at most 5 words; a `help_marker` is ONE clause of at most 8 words and only
-  where the label is ambiguous; an empty-state line is at most 4. A derived value goes in the
-  CONTROL, never the label — a label column is fixed-width, so a `label_row` label carrying an
-  interpolation is rejected outright. Anything longer is documentation and belongs in the Help
-  panel or the tutorial, where a reader chose to read. The gate derives its domain from
-  `ui_primitives` signatures by reflection, so a new copy-bearing helper defaults INTO it; a
-  string it cannot read, or one that stays over budget, needs a written entry with a reason and
-  cannot rot (an entry whose site is gone turns the suite red). Revisit a budget only by changing
-  it in one place — the number in the test — not by exempting sites one at a time.
+- **Every fixed UI string has a word budget.** A control label is 1-2 words (a button's action
+  phrase up to 3); an icon or button tooltip is the control's NAME, at most 5 words; a
+  `help_marker` is ONE clause of at most 8 words and only where the label is ambiguous; an
+  empty-state line is at most 4. A derived value goes in the CONTROL, never the label — a label
+  column is fixed-width. Anything longer is documentation and belongs in the Help panel or the
+  tutorial, where a reader chose to read. Held by review rather than by a gate: the AST walk that
+  scored every call site was 644 of the suite's tests and 0.65s of its wall clock, and 097 cut it
+  with the rest of the string-pinning suite.
 
 - **UI authoring rules live in the `/imgui-ui` skill, not here.** Button tiers, jitter-free
   overlays, "don't repeat a widget", the SetCursorPos assert, modal chrome, context menus,
