@@ -31,6 +31,7 @@ from shaderbox.render_shape import (
     aspect_of,
     shape_to_preset,
 )
+from shaderbox.shader_source import ShaderSource
 from shaderbox.ui_models import UIDocument
 
 
@@ -178,9 +179,14 @@ def _record_source_sizes(monkeypatch: pytest.MonkeyPatch) -> None:
     _SOURCE_SIZES.clear()
     real = Document._render_media_into
 
-    def spy(self: Document, details: MediaDetails, canvas: Any) -> MediaDetails:
+    def spy(
+        self: Document,
+        details: MediaDetails,
+        canvas: Any,
+        target_pass: str | None = None,
+    ) -> MediaDetails:
         _SOURCE_SIZES.append(canvas.texture.size)
-        return real(self, details, canvas)
+        return real(self, details, canvas, target_pass)
 
     monkeypatch.setattr(Document, "_render_media_into", spy)
 
@@ -381,3 +387,116 @@ def test_a_scaled_feedback_pass_survives_an_off_size_export(
     assert document.passes["trail"].canvas.texture.size == (32, 32)
     assert document.passes["show"].canvas.texture.size == (64, 64)
     document.release()
+
+
+# ---------------------------------------------------------------------------
+# 094 D12 -- an export can aim at a pass that is NOT the output. `Document.render`'s blit was
+# gated on the graph output, so `render(canvas=..., target=...)` drew the target's chain and
+# blitted nothing: a blank file. These pin the two halves of the fix, and the third pins that
+# the export takes that route WITHOUT touching the document's output.
+# ---------------------------------------------------------------------------
+
+
+_CYAN = """#version 460 core
+in vec2 vs_uv;
+out vec4 fs_color;
+void main() { fs_color = vec4(0.0, 1.0, 1.0, 1.0); }
+"""
+
+
+def _two_pass_document(gl_ctx: moderngl.Context, tmp_path: Path) -> Document:
+    """A document whose OUTPUT is magenta and whose other pass is cyan.
+
+    The two passes are deliberately UNWIRED: the target pass is then outside the output's
+    chain, which is the case where the old blit condition could never fire.
+    """
+    document = Document(gl=gl_ctx)
+    document.render_pass.release_program(_MAGENTA)
+    document.render_pass.compile()
+    other_path = tmp_path / "passes" / "other.frag.glsl"
+    other_path.parent.mkdir(parents=True, exist_ok=True)
+    other_path.write_text(_CYAN, encoding="utf-8")
+    other = Pass(
+        source=ShaderSource.load(other_path),
+        gl=gl_ctx,
+        canvas_size=document.canvas_size,
+    )
+    other.compile()
+    document.passes["other"] = other
+    document.graph = PassGraph(
+        output=DEFAULT_PASS_NAME,
+        passes={DEFAULT_PASS_NAME: PassEntry(), "other": PassEntry()},
+    )
+    document.render()
+    return document
+
+
+def test_an_export_aimed_at_a_pass_writes_that_passs_picture(
+    gl_ctx: moderngl.Context, tmp_path: Path
+) -> None:
+    # The falsifier is the pre-094 blit condition (`name == output`): the target pass is not in
+    # the output's chain, so nothing is blitted and the file is the scratch's initial state.
+    # Comparing PIXELS, not a size -- both passes share a canvas shape, so a size assert would
+    # pass for the wrong pass.
+    document = _two_pass_document(gl_ctx, tmp_path)
+    try:
+        path = tmp_path / "other.png"
+        document.render_media(_image_details(document, path), target_pass="other")
+        assert PILImage.open(path).convert("RGBA").getpixel((0, 0)) == (
+            0,
+            255,
+            255,
+            255,
+        )
+    finally:
+        with contextlib.suppress(Exception):
+            document.release()
+
+
+def test_an_export_with_no_target_still_writes_the_output(
+    gl_ctx: moderngl.Context, tmp_path: Path
+) -> None:
+    # The other half: `target_pass=None` must stay byte-for-byte today's behaviour, since
+    # `resolved` IS the output there.
+    document = _two_pass_document(gl_ctx, tmp_path)
+    try:
+        path = tmp_path / "output.png"
+        document.render_media(_image_details(document, path))
+        assert PILImage.open(path).convert("RGBA").getpixel((0, 0)) == (
+            255,
+            0,
+            255,
+            255,
+        )
+    finally:
+        with contextlib.suppress(Exception):
+            document.release()
+
+
+def test_a_targeted_export_never_writes_the_documents_output(
+    gl_ctx: moderngl.Context, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # D12 rejects the temporary-output-switch implementation, and a correct restore is
+    # indistinguishable from no write by VALUE alone -- so the spy is what makes this
+    # falsifiable. Implement the switch and this goes red even though the output reads right.
+    document = _two_pass_document(gl_ctx, tmp_path)
+    try:
+        calls: list[str] = []
+        original = Document.set_output_pass
+        monkeypatch.setattr(
+            Document,
+            "set_output_pass",
+            lambda self, name, *a, **k: (
+                calls.append(name),
+                original(self, name, *a, **k),
+            )[1],
+        )
+        before = document.graph.output
+        document.render_media(
+            _image_details(document, tmp_path / "t.png"), target_pass="other"
+        )
+        assert calls == []
+        assert document.graph.output == before
+    finally:
+        with contextlib.suppress(Exception):
+            document.release()
