@@ -224,3 +224,35 @@ only stable because `__init__` skipped the clamp. Lifted to `(32, 32)` / `_SCALE
 A fifth test then corrupted the stored size to a literal `[16, 16]` to force a mismatch, which
 had become the CORRECT size; it now doubles `_SCALED` so it disagrees whatever the fixture is.
 Falsified afterwards: making it agree again turns that test red, so it still discriminates.
+
+## W-4 the gate — LANDED
+
+done-condition (written in advance): W-0's checker runs as real tests over the operation
+battery, every one of them broken on purpose and SEEN to fail, and `make gates` is green.
+
+`tests/test_canvas_ownership.py`, nine tests over a two-pass document where `helper` carries the
+non-default corner off-output and `main` reads it: the agreeing baseline, `set_canvas_size`, a
+promotion, a delete that promotes a survivor, a target change, a render, four frames of
+self-reading swaps, an export canvas built from the output pass's format, and the
+`resample_canvas` falsifier.
+
+**Broken five ways before being believed.** A gate that has not been broken is a wish, and this
+one guards a class where three of the six defects were introduced by the fix for an earlier one.
+
+| break | caught by |
+|---|---|
+| promotion no longer resizes | `test_promoting_a_scaled_pass_resizes_it_to_full` |
+| `set_canvas_size` skips non-output passes | `test_a_resize_takes_every_canvas_with_it` |
+| `canvas_size_for` loses the output exemption | `test_deleting_the_output_conforms_its_replacement` |
+| a history born with the wrong `wrap` | `test_a_frame_boundary_swap_keeps_the_pair_matched` |
+| `resample_canvas` drops `filter` and `wrap` | `test_the_checker_sees_a_resample...` |
+
+The last is the mutation `00_findings.md` reports the whole suite used to survive. Each break was
+run alone, so no test is riding on a sibling's failure — the resize break was checked against the
+resize test by itself after it first surfaced through the falsifier.
+
+**One bug found in the tests themselves while writing them**, worth recording because it is the
+same class: two cases called `set_pass_target` without updating the graph entry, and the checker
+correctly reported the disagreement. `Pass.set_target` writes the live side and
+`PassGraph.with_target` writes the model — nothing reconciles them, which is F5. The tests now
+move both, but F5 itself stands: the production funnel calls both by convention, not structure.
