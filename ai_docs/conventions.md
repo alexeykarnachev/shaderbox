@@ -160,6 +160,22 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   the model, which are dropped in silence, so the check ran against an object that was never
   configured. `tests/test_model_kwargs.py` exists for exactly that and caught it.
 
+  **Four more shapes of the same family, each found by reading the suite in 097 and each
+  verified at its own site.** A test whose expected value IS the field's default cannot see
+  whether anything set it — `test_credential_redaction` carried, until 097 removed it, an
+  `gate_input == ""` assertion under the message "the typed-secret buffer was not cleared",
+  while its fixture never set the field and the default is already `""`. A test whose FAKE is
+  kinder than production is green about a path that cannot happen — `test_document_ops` stubs a
+  resolver accepting the empty handle that the real one rejects on purpose. An assertion that is
+  a PREDICATE where the code promises a VALUE (`0 <= i < n`, `is not None`, `len(x) > 0`) passes for a whole class of wrong answers —
+  `test_editor_tab_anchoring` checks the tab index is in range, where the function's own
+  docstring says a bare clamp addresses the WRONG FILE. And where N identical paths exist and
+  one is pinned, the siblings fail silently — `ffi.get_text`'s buffer-growth loop is covered,
+  `get_selection_text`'s and `get_register`'s are not.
+
+  The tell in every case: the assertion is weaker than the promise stated in the comment or
+  docstring beside the code. Read the two together.
+
 - **Structural impossibility over guard-piles — the first question of any validation-heavy review.**
   If you find yourself adding a SECOND wave of guards to second-guess what an actor (a model, a caller,
   a migration) MEANT, the CONTRACT is unsound — redesign so the unsafe outcome can't be EXPRESSED, then
