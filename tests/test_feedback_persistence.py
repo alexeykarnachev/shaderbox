@@ -58,8 +58,11 @@ _BROKEN = """#version 460 core
 this is not glsl
 """
 
-_CANVAS = (8, 8)
-_SCALED = (4, 4)
+# At or above MIN_CANVAS_PX: `Document.__init__` clamps like `set_canvas_size` does (096 F7),
+# so a document written below the floor is stored AT the floor and the scaled pass no longer
+# halves the number this file asserts.
+_CANVAS = (32, 32)
+_SCALED = (16, 16)
 
 
 @pytest.fixture(scope="module")
@@ -284,7 +287,9 @@ def test_a_feedback_entry_that_does_not_match_is_ignored(
     ui_document.save(dir.parent, dir.name)
 
     metadata = _metadata(dir)
-    metadata["feedback"]["trail"]["size"] = [16, 16]
+    # A size that DISAGREES with the graph's, whatever _SCALED is -- the literal that used to
+    # sit here became the correct size when the fixture moved above MIN_CANVAS_PX.
+    metadata["feedback"]["trail"]["size"] = [_SCALED[0] * 2, _SCALED[1] * 2]
     (dir / DOCUMENT_JSON_BASENAME).write_text(json.dumps(metadata))
 
     reloaded = load_document_from_dir(dir)

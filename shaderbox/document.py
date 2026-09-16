@@ -301,7 +301,7 @@ class Document:
         self._gl = gl or moderngl.get_context()
         # Normalized here and in `set_canvas_size` -- the field's only two writers -- so every
         # reader downstream gets a hashable, comparable pair whatever the loader handed in.
-        self.canvas_size: tuple[int, int] = (
+        self.canvas_size: tuple[int, int] = clamp_canvas_size(
             as_canvas_size(canvas_size) or DEFAULT_CANVAS_SIZE
         )
         # What the loader and the Document tab set (090 D1, revision 1). Under AUTO the document
@@ -421,6 +421,24 @@ class Document:
             as_canvas_size(size) or DEFAULT_CANVAS_SIZE, self.shape_aspect()
         )
 
+    def canvas_size_for(self, name: str) -> tuple[int, int]:
+        """The size pass `name`'s canvas must have: the document's own, or its scale applied.
+
+        The OUTPUT pass keeps full size and its `scale` is ignored -- it is what the preview and
+        every export read. The rule used to be spelled out at four sites in three syntactic
+        shapes, and the bug that started this feature was the rule existing at one site and
+        missing at its sibling.
+
+        On `Document` rather than `PassGraph` because it needs BOTH the graph and `canvas_size`,
+        and this is the only object holding both: the document owns the size and applies each
+        pass's scale, a pass never sizes itself.
+        """
+        output = self.graph.output_pass
+        if output is not None and name == output:
+            return self.canvas_size
+        entry = self.graph.passes.get(name, PassEntry())
+        return entry.target.target_size(self.canvas_size)
+
     def resample_canvas(self, old: Canvas, size: tuple[int, int]) -> Canvas:
         """`old`'s content at `size`, as a NEW canvas; `old` is released. Allocate, blit, release.
 
@@ -482,18 +500,51 @@ class Document:
         for name, render_pass in self.passes.items():
             if name == output:
                 continue
-            entry = self.graph.passes.get(name, PassEntry())
-            wanted = entry.target.target_size(self.canvas_size)
+            wanted = self.canvas_size_for(name)
             if render_pass.canvas.texture.size != wanted:
                 render_pass.canvas = self.resample_canvas(render_pass.canvas, wanted)
         for name in list(self._feedback):
-            entry = self.graph.passes.get(name, PassEntry())
-            target = (
-                self.canvas_size
-                if name == output
-                else entry.target.target_size(self.canvas_size)
+            self._feedback[name] = self.resample_canvas(
+                self._feedback[name], self.canvas_size_for(name)
             )
-            self._feedback[name] = self.resample_canvas(self._feedback[name], target)
+
+    def set_output_pass(self, name: str) -> None:
+        """Make `name` the output, resizing it to the document's full size.
+
+        The resize is the point. A pass carrying `scale < 1.0` is correctly small while it is
+        off-output, and `render`'s lazy fix-up EXEMPTS whichever pass is the output -- so without
+        this the exemption starts protecting the scaled size and no later frame corrects it: the
+        viewer and every export read a half-size canvas for a full-size document, forever, after
+        one click on a tile.
+
+        Here rather than in `render` so a future caller cannot reach the output through some
+        other path and skip it -- the whole class this feature fixes is a rule living at one site
+        and missing at its sibling. `resample_canvas`, not `set_size`: the picture survives the
+        promotion, which is what the user is looking at while they click.
+        """
+        self.graph = self.graph.with_output(name)
+        self.conform_output_canvas()
+
+    def conform_output_canvas(self) -> None:
+        """Resize whatever pass is CURRENTLY the output to the document's full size.
+
+        Split from `set_output_pass` for the callers that do not set the output by name but can
+        still change it: deleting the output pass promotes an arbitrary survivor, and an import
+        replaces the graph wholesale. Both reach the same defect by another door, so both land
+        the rule here rather than repeating it.
+        """
+        name = self.graph.output_pass
+        if name is None:
+            return
+        render_pass = self.passes.get(name)
+        if render_pass is None:
+            return
+        wanted = self.canvas_size_for(name)
+        if render_pass.canvas.texture.size != wanted:
+            render_pass.canvas = self.resample_canvas(render_pass.canvas, wanted)
+        history = self._feedback.get(name)
+        if history is not None and history.texture.size != wanted:
+            self._feedback[name] = self.resample_canvas(history, wanted)
 
     def begin_frame(self, frame: int | None = None) -> None:
         """Advance feedback history to `frame`, at most once per frame.
@@ -618,18 +669,12 @@ class Document:
         format, and nothing can rescale a format. A file that will not read costs that pass its
         history and nothing else.
         """
-        output = self.graph.output_pass
         for name, row in rows.items():
             render_pass = self.passes.get(name)
             if render_pass is None:
                 continue
             live = render_pass.canvas
-            entry = self.graph.passes.get(name, PassEntry())
-            expected_size = (
-                self.canvas_size
-                if name == output
-                else entry.target.target_size(self.canvas_size)
-            )
+            expected_size = self.canvas_size_for(name)
             stored_size = as_canvas_size(row.get("size"))
             file_path = row.get("file_path")
             if (
@@ -883,7 +928,7 @@ class Document:
             # size itself from a number it does not hold, and doing it in both places would fight.
             # The OUTPUT keeps full size: it is what the preview and export read.
             if name != output:
-                wanted = entry.target.target_size(self.canvas_size)
+                wanted = self.canvas_size_for(name)
                 if render_pass.canvas.texture.size != wanted:
                     render_pass.canvas.set_size(wanted)
             # An iterated pass draws N times HERE, inside its one turn in the order (068 D1) --

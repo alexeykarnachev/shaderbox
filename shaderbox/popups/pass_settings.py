@@ -229,9 +229,10 @@ def _draw_target(
     imgui.same_line()
     help_marker(_FORMATS[_FORMAT_CODES.index(target.dtype)][2])
 
-    canvas_w, canvas_h = canvas_size
-    w = max(1, round(canvas_w * target.scale))
-    h = max(1, round(canvas_h * target.scale))
+    # The OUTPUT keeps full size and its `scale` is ignored, which is why the slider below is
+    # disabled for it -- so the label has to say the size the canvas HAS, not the one the stored
+    # scale would imply.
+    w, h = canvas_size if is_output else target.target_size(canvas_size)
     label_row(app.font_12, "size", _CTRL_W, _ROW_LABEL_W)
     # The slider runs over 5-100 so `%.0f%%` formats the number a person reads; the model
     # keeps the 0-1 scale. The derived dims ride the format string, not the label column.

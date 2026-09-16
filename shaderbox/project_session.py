@@ -1006,6 +1006,9 @@ class ProjectSession:
         # that behind.
         document.forget_pass_sources(name)
         document.graph = _graph_without(document.graph, name, document.passes)
+        # Deleting the OUTPUT promotes an arbitrary survivor, which may carry a scale -- the
+        # same defect `set_output_pass` exists for, reached by another door.
+        document.conform_output_canvas()
         self.save_ui_document(ui_document)
         return ""
 
@@ -1060,7 +1063,7 @@ class ProjectSession:
         document = ui_document.document
         if name not in document.passes:
             return f"no such pass '{name}'"
-        document.graph = document.graph.with_output(name)
+        document.set_output_pass(name)
         self.save_ui_document(ui_document)
         return ""
 
@@ -1255,6 +1258,9 @@ class ProjectSession:
             {**host.graph.passes, **entries},
             output=plan.output if plan.becomes_output else None,
         )
+        # An import can hand the output role to a pass carrying a scale (091): same rule, same
+        # home as the promotion and the delete.
+        host.conform_output_canvas()
         for host_pass, rows in plan.handovers.items():
             values = host.passes[host_pass].uniform_values
             for uniform, read in rows.items():

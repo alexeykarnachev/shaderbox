@@ -170,3 +170,57 @@ planted `time.sleep(600)` test:
     both halves     `make gates` RED in 84s, the hung test named, 2714 others still reported
 
 The clean tree is unchanged at 37.6s green.
+
+## W-3 F2, F7, the sizing rule at five sites — LANDED. F10 had already dissolved.
+
+done-condition (written in advance): `repro/f2_promote_scaled.py` prints `BUG: False`, a search
+for `target_size(` in `shaderbox/document.py` finds one caller, and `make gates` is green.
+
+All three met. `grep -c "target_size(" shaderbox/document.py` returns 1, and that one is inside
+`canvas_size_for` itself.
+
+**(a) The sizing function.** `Document.canvas_size_for(name)` — the document's own size for the
+output, `entry.target.target_size(canvas_size)` for everyone else, `PassEntry()` for a name the
+graph does not hold, and `output_pass` handled as the `str | None` it is. The four in-document
+copies (both loops in `set_canvas_size`, `_seed_feedback`, `render`'s fix-up) call it. A dead
+`output` local in `_seed_feedback` went with them.
+
+**(b) The modal's fifth copy**, which was the WRONG one — it applied `scale` with no output
+exemption, so an output pass carrying a stored scale displayed a size it did not have. It now
+reads `canvas_size if is_output else target.target_size(canvas_size)`, reusing the model's own
+method rather than re-deriving the arithmetic.
+
+**(c) F2, promotion — and TWO more doors found while closing it.** `Document.set_output_pass`
+sets the output and resizes it to full; `project_session.set_output_pass` routes through it. The
+probe that assigns `graph.with_output(...)` directly still shows the old size, which is the fix
+working as designed rather than a gap — but that prompted a search for other ways the output
+changes, and two were real:
+
+- **deleting the output pass** promotes an arbitrary survivor through `_graph_without`, which
+  may carry a scale. Verified broken: `helper after: (128, 128)` under a 256x256 document,
+  `BUG: True`.
+- **an import** can hand the output role to a scaled pass (`plan.becomes_output`).
+
+Both are the same defect by another door, so `conform_output_canvas` was split out of
+`set_output_pass` — it resizes whatever is CURRENTLY the output — and both paths call it.
+Re-verified through the delete path: `(256, 256)`, `BUG: False`. `load_from_dir` was checked and
+needs nothing: every pass is born at full `canvas_size`, so a scaled output loads correct.
+
+**(d) F7, the clamp.** `__init__` now applies `clamp_canvas_size` as `set_canvas_size` does, so
+the comment calling them "the field's only two writers" with both normalizing is true.
+`Document(canvas_size=(8, 8)).canvas_size` is `(16, 16)`.
+
+**(e) F10 no longer exists — W-1 dissolved it.** The findings file names its root as F6's: "a
+draw aimed at an external canvas leaves the pass's own canvas unwritten". W-1 made every
+iteration draw into the pass's own canvas, so after a foreign render the live canvas holds the
+NEWER frame and `newest_frame` names it correctly. Traced: `foreign: live=101 hist=76
+newest=101`. An edit was drafted, measured to fix nothing, and reverted — no production change
+here.
+
+**One test's subject genuinely moved** (the spec's one legitimate edit). The F7 clamp broke four
+tests in `test_feedback_persistence.py`, whose fixture document is `(8, 8)` — BELOW the 16px
+floor. `set_canvas_size((8,8))` already returned `(16,16)` before this wave, so the fixture was
+only stable because `__init__` skipped the clamp. Lifted to `(32, 32)` / `_SCALED = (16, 16)`.
+A fifth test then corrupted the stored size to a literal `[16, 16]` to force a mismatch, which
+had become the CORRECT size; it now doubles `_SCALED` so it disagrees whatever the fixture is.
+Falsified afterwards: making it agree again turns that test red, so it still discriminates.
