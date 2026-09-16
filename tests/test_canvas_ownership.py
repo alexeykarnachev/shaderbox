@@ -17,9 +17,11 @@ change a canvas, and the two rules below are what keep it from going vacuous:
   False, so a check built on defaults cannot fail. `NON_DEFAULT` is the opposite of each.
 """
 
+import json
 from collections.abc import Iterator
 from pathlib import Path
 
+import imageio.v3 as iio
 import moderngl
 import pytest
 
@@ -34,7 +36,13 @@ from shaderbox.pass_graph import (
     TargetConfig,
     clamp_canvas_size,
 )
-from shaderbox.paths import shader_lib_root
+from shaderbox.paths import (
+    DOCUMENT_JSON_BASENAME,
+    GRAPH_JSON_BASENAME,
+    PASSES_DIR_NAME,
+    pass_shader_name,
+    shader_lib_root,
+)
 from shaderbox.render_preset import FitPolicy, RenderPreset, ResolutionPolicy
 from shaderbox.shader_lib import ShaderLibIndex, set_active
 from tests.canvas_invariants import (
@@ -169,6 +177,39 @@ def test_a_document_built_below_the_floor_is_clamped_like_a_resize(
 
     assert document.canvas_size == clamp_canvas_size((8, 8))
     assert document.canvas_size == (MIN_CANVAS_PX, MIN_CANVAS_PX)
+    document.release()
+
+
+def test_adding_and_renaming_a_pass_keeps_every_canvas_agreeing(
+    gl_ctx: moderngl.Context,
+) -> None:
+    # Both are named in W-4's operation battery. They hold for a structural reason rather than by
+    # a rule either one applies -- a new pass is built at the document's size with a default
+    # target, and a rename re-keys the same Pass object -- so this pins that reason rather than
+    # leaving the two operations untested on the assumption it stays true.
+    document = _document(gl_ctx)
+
+    fresh = Pass(gl=gl_ctx, canvas_size=_CANVAS, target=TargetConfig())
+    fresh.release_program(_PLAIN)
+    fresh.compile()
+    document.passes["added"] = fresh
+    document.graph = document.graph.with_passes(
+        {**document.graph.passes, "added": PassEntry()}
+    )
+    assert_canvases_agree(document)
+
+    # Rename the OUTPUT, the case where the size rule's answer depends on the name.
+    renamed = document.passes.pop("main")
+    document.passes["shown"] = renamed
+    entries = {
+        name: entry for name, entry in document.graph.passes.items() if name != "main"
+    }
+    document.graph = document.graph.with_passes(
+        {**entries, "shown": PassEntry()}, output="shown"
+    )
+
+    assert_canvases_agree(document)
+    assert document.render_pass.canvas.texture.size == _CANVAS
     document.release()
 
 
@@ -307,6 +348,86 @@ def test_an_export_canvas_carries_the_output_passs_format(
         "filter": output.filter,
         "wrap": output.wrap,
     }, "the export's fit branch did not carry the output pass's format"
+    document.release()
+
+
+def test_a_self_reading_output_exports_a_chain_that_advances(
+    gl_ctx: moderngl.Context, tmp_path: Path
+) -> None:
+    """The frozen export (F6), judged on the DECODED VIDEO.
+
+    An output pass reading its own previous frame advanced correctly in the viewer and exported
+    a video where every frame held the same accumulated value. The last iteration drew into the
+    caller's canvas, which left the pass's own canvas unwritten, so the frame-boundary swap had
+    nothing to advance.
+
+    The decoding is load-bearing and is why this is not a canvas assertion: within a single frame
+    the external canvas holds a CORRECT value, and comparing it against a no-external-canvas
+    reference is what led one investigation agent to report this defect as sound. The failure is
+    only visible ACROSS frames, in the file that was written.
+
+    Both iteration counts: the chain is frozen at every N, not only at N=1.
+    """
+    accumulate = """#version 460 core
+in vec2 vs_uv;
+uniform sampler2D u_prev;
+out vec4 fs_color;
+void main() { fs_color = texture(u_prev, vs_uv) + vec4(0.05, 0.0, 0.0, 1.0); }
+"""
+    for iterations in (1, 2):
+        document = Document(gl=gl_ctx, canvas_size=(32, 32))
+        for render_pass in list(document.passes.values()):
+            render_pass.release()
+        document.passes = {}
+        accumulator = Pass(gl=gl_ctx, canvas_size=(32, 32), target=TargetConfig())
+        accumulator.release_program(accumulate)
+        accumulator.compile()
+        document.passes["acc"] = accumulator
+        accumulator.uniform_values["u_prev"] = PassSource("acc")
+        document.graph = PassGraph(
+            output="acc", passes={"acc": PassEntry(iterations=iterations)}
+        )
+
+        out = tmp_path / f"acc_{iterations}.mp4"
+        document.render_media(
+            MediaDetails(
+                is_video=True,
+                file_details=FileDetails(path=str(out), size=0),
+                resolution_details=ResolutionDetails(width=32, height=32),
+                fps=10,
+                duration=0.6,
+            )
+        )
+        reds = [int(frame[:, :, 0].max()) for frame in iio.imread(out)]
+        assert len(set(reds)) > 1, (
+            f"iterations={iterations}: every exported frame is {reds[0]} -- "
+            f"the feedback chain never advanced ({reds})"
+        )
+        assert reds == sorted(reds), f"iterations={iterations}: not climbing ({reds})"
+        document.release()
+
+
+def test_a_pass_file_with_no_graph_entry_matches_the_entry_it_gets(
+    gl_ctx: moderngl.Context, tmp_path: Path
+) -> None:
+    # `load_from_dir` backfills the graph with PassEntry() for a file with no entry, whose target
+    # is f2 -- while the canvas was built from None and took Canvas's own f1. The panel then
+    # showed f2 over an f1 canvas, and a save wrote a graph its own reload rejects.
+    document_dir = tmp_path / "doc"
+    (document_dir / PASSES_DIR_NAME).mkdir(parents=True)
+    (document_dir / PASSES_DIR_NAME / pass_shader_name("solo")).write_text(_PLAIN)
+    (document_dir / GRAPH_JSON_BASENAME).write_text(
+        json.dumps({"output": "solo", "passes": {}})
+    )
+    (document_dir / DOCUMENT_JSON_BASENAME).write_text(
+        json.dumps({"uniforms": {}, "ui_state": {}})
+    )
+
+    document, _ = Document.load_from_dir(document_dir, gl=gl_ctx, canvas_size=_CANVAS)
+
+    assert_canvases_agree(document)
+    entry = document.graph.passes["solo"]
+    assert document.passes["solo"].canvas.dtype == entry.target.dtype
     document.release()
 
 
