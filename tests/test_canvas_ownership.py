@@ -29,6 +29,7 @@ from shaderbox.core import Canvas, Pass
 from shaderbox.document import Document
 from shaderbox.media import FileDetails, MediaDetails, ResolutionDetails
 from shaderbox.pass_graph import (
+    MAX_CANVAS_PX,
     MIN_CANVAS_PX,
     PassEntry,
     PassGraph,
@@ -167,18 +168,25 @@ def test_a_target_change_takes_the_history_with_it(gl_ctx: moderngl.Context) -> 
     document.release()
 
 
-def test_a_document_built_below_the_floor_is_clamped_like_a_resize(
+def test_a_document_built_outside_the_bounds_is_clamped_like_a_resize(
     gl_ctx: moderngl.Context,
 ) -> None:
     # `__init__` and `set_canvas_size` are the field's only two writers and the comment above it
-    # says both normalize. Only the second one did: a Document built below MIN_CANVAS_PX kept the
-    # under-floor size until the first resize, at which point every canvas jumped to a size
+    # says both normalize. Only the second one did: a Document built outside the bounds kept the
+    # out-of-range size until the first resize, at which point every canvas jumped to a size
     # nobody asked for. `load_from_dir` passes the caller's size straight through.
-    document = Document(gl=gl_ctx, canvas_size=(8, 8))
+    under = Document(gl=gl_ctx, canvas_size=(8, 8))
+    assert under.canvas_size == clamp_canvas_size((8, 8))
+    assert under.canvas_size == (MIN_CANVAS_PX, MIN_CANVAS_PX)
+    under.release()
 
-    assert document.canvas_size == clamp_canvas_size((8, 8))
-    assert document.canvas_size == (MIN_CANVAS_PX, MIN_CANVAS_PX)
-    document.release()
+    # BOTH sides: `clamp_canvas_size` is a two-sided bound, so a test pinned to the floor alone
+    # leaves half of this writer's domain unguarded -- and the ceiling is the half that allocates
+    # a framebuffer big enough to matter.
+    over = Document(gl=gl_ctx, canvas_size=(9000, 9000))
+    assert over.canvas_size == clamp_canvas_size((9000, 9000))
+    assert over.canvas_size == (MAX_CANVAS_PX, MAX_CANVAS_PX)
+    over.release()
 
 
 def test_adding_and_renaming_a_pass_keeps_every_canvas_agreeing(

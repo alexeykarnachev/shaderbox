@@ -333,3 +333,31 @@ caught it. **A mutation check is only evidence if the harness around it is known
 
 Every defect in the ledger now has a gate that has been broken and seen to fail: F1, F2, F3, F6,
 F7, F9. The battery is 16 tests.
+
+## Round 2 — PASS, with one coverage hole closed
+
+An independent reviewer reconstructed each defect from `00_findings.md`'s prose rather than from
+any commit message, applied it, and ran the whole suite. **Every one of F1, F2, F3, F6, F7, F9 was
+caught, each by the test named for it.** It also reconstructed F6 line-for-line from the ledger
+before checking history, which is the strongest evidence the gate matches the real bug.
+
+It went further than asked and applied a VARIANT of each — a subtly different break, to ask
+whether a test is pinned to the one mutation someone thought of or to the behavior. Five of six
+were caught, including an ordering bug rather than a deletion (F2), an inverted rather than
+deleted exemption (F3), and a half-fix covering only `iterations == 1` (F6).
+
+**The sixth variant found a real hole.** `Document.__init__`'s clamp was guarded on the FLOOR
+only: dropping the ceiling while keeping the floor passed all 2732 tests. `clamp_canvas_size` is a
+two-sided bound, so half of that writer's domain was unchecked — the checker-that-narrows-its-own-
+domain shape. The test now drives both ends and is renamed accordingly; the ceiling variant fails
+it. The ceiling itself was never broken, so this closed a gap in a gate rather than a defect.
+
+It also probed the nine tests that no primary mutation had touched, against the mechanism each one
+names, and broke all nine. **Sixteen of sixteen tests in the battery have now been seen to fail.**
+Notably, "a history born with the wrong `wrap`" — which `00_findings.md` records as passing the
+entire suite before this feature — now fails, and on that test alone.
+
+One correction it prompted: the `conventions.md` paragraph written after round 1 said 096 "shipped
+four gates a verbatim reintroduction walked straight through", which reads as a property of the
+tree rather than of one commit. The reviewer read it that way and flagged the contradiction with
+its own PASS. Reworded to say the review of `8e5b102` found them and that all six are gated now.

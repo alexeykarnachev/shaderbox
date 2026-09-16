@@ -145,8 +145,10 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   break was caught" is a claim about a layer, not about a feature.
 
   **And restore the ORIGINAL bug shape, not a nearby one — fidelity decides a mutation as much as
-  layer does.** 096 declared six gates "broken on purpose and seen to fail" and shipped four that
-  a verbatim reintroduction walked straight through, both user-facing defects among them. The
+  layer does.** 096 declared six gates "broken on purpose and seen to fail"; a review of that
+  commit found four of them that a verbatim reintroduction walked straight through, both
+  user-facing defects among them. All six are gated now, each re-proven against the original
+  shape — the lesson is how the first attempt passed its own check, not the state of the tree. The
   mutations chosen were coarser than the defects: deleting `filter=` from `resample_canvas` is not
   the export branch dropping its format, and removing the post-loop blit entirely is not the
   frozen-export bug — it makes an export produce nothing at all, which six unrelated tests notice,
