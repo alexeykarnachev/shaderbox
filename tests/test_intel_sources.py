@@ -238,7 +238,7 @@ def test_the_engine_types_a_key_whose_value_is_a_variable(tmp_path: Path) -> Non
     scripts.mkdir()
     (scripts / DOCUMENT_SCRIPT_BASENAME).write_text(source)
     engine = ScriptEngine()
-    engine.reload("doc", scripts, None)
+    engine.reload("doc", scripts)
     # The static reader sees no shape here...
     assert returned_uniforms(source)[0].glsl_type is None
     # ...and the tick that produced the value does.
@@ -265,7 +265,7 @@ def test_a_branching_script_does_not_type_one_pass_from_another(tmp_path: Path) 
     scripts.mkdir()
     (scripts / DOCUMENT_SCRIPT_BASENAME).write_text(source)
     engine = ScriptEngine()
-    engine.reload("doc", scripts, None)
+    engine.reload("doc", scripts)
     runtime = engine.returned_value_types("doc")
     # Frame 0 took the broadcast branch, so the paint-scoped key has no entry at all.
     assert runtime == {("", "u_x"): "vec2"}

@@ -4,28 +4,31 @@ from pydantic import Field
 
 from shaderbox.copilot.capabilities import CopilotCapabilities
 from shaderbox.copilot.error_render import format_compile_errors
-from shaderbox.copilot.tools.base import GatePolicy, ToolArgs, ToolDefinition
+from shaderbox.copilot.tools.base import (
+    DOCUMENT_ARG_DESC,
+    GatePolicy,
+    ToolArgs,
+    ToolDefinition,
+)
 
 # Document file-management tools (feature 052 slice 3): rename / resize-canvas / duplicate. All mutate
 # document.json (checkpoint-revertable via the backend's _capture_document / mark_created), handle-addressed
 # by document id, no gate.
 
-_NODE_DESC = "document id (from the project map)"
-
 
 class _RenameDocumentArgs(ToolArgs):
     new_name: str = Field(description="the document's new display name")
-    document: str = Field(default="", description=_NODE_DESC)
+    document: str = Field(default="", description=DOCUMENT_ARG_DESC)
 
 
 class _SetCanvasSizeArgs(ToolArgs):
     width: int = Field(description="canvas width in pixels (16-4096)")
     height: int = Field(description="canvas height in pixels (16-4096)")
-    document: str = Field(default="", description=_NODE_DESC)
+    document: str = Field(default="", description=DOCUMENT_ARG_DESC)
 
 
 class _DuplicateDocumentArgs(ToolArgs):
-    document: str = Field(default="", description=_NODE_DESC)
+    document: str = Field(default="", description=DOCUMENT_ARG_DESC)
     new_name: str = Field(
         default="", description="name for the copy; empty = '<original> copy'"
     )

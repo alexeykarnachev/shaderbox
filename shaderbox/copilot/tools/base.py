@@ -14,6 +14,11 @@ from shaderbox.copilot.llm.api import LLMToolSpec
 # cycling through the registry (which imports those modules to build the catalog).
 
 
+# One spelling of the document handle, shared by every tool taking one: four private copies had
+# drifted into three wordings, one of which omitted the empty case the resolver implements.
+DOCUMENT_ARG_DESC = "document id (from the project map); empty = the current document"
+
+
 class ToolArgs(BaseModel):
     # Every tool args model subclasses this. The forbid is load-bearing: without it pydantic
     # silently swallows hallucinated arg keys at registry.execute (pinned by the registry

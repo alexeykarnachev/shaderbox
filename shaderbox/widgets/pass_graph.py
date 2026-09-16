@@ -921,7 +921,7 @@ def draw(app: App, document_id: str) -> None:
     )
     imgui.pop_style_color(1)
     if child_open:
-        _draw_canvas(app, document_id, document, view, wiring, groups)
+        _draw_canvas(app, document_id, document, view)
     imgui.end_child()
     imgui.end_disabled()
 
@@ -931,8 +931,6 @@ def _draw_canvas(
     document_id: str,
     document: Document,
     view: GraphViewState,
-    wiring: Wiring,
-    groups: dict[str, str],
 ) -> None:
     origin = imgui.get_cursor_screen_pos()
     avail = imgui.get_content_region_avail()
@@ -1277,7 +1275,7 @@ def _draw_canvas(
         view.node_drag.update(
             io.mouse_delta.x / view.zoom, io.mouse_delta.y / view.zoom
         )
-        view.guides = _snap(view, picture, nodes)
+        view.guides = _snap(view, nodes)
         if imgui.is_mouse_released(imgui.MouseButton_.left):
             app.commit_node_drag(document_id)
     if panning:
@@ -1390,9 +1388,7 @@ def _drag_names(view: GraphViewState, node: _Node) -> list[str]:
     return [node.name]
 
 
-def _snap(
-    view: GraphViewState, picture: _View, nodes: Sequence[_Node]
-) -> list[tuple[str, float]]:
+def _snap(view: GraphViewState, nodes: Sequence[_Node]) -> list[tuple[str, float]]:
     """Set the drag's snap offset and return the guides to draw (092 D13).
 
     The offset aligns the first dragged node's left or top edge to a still node's when within

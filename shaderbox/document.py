@@ -29,7 +29,6 @@ from shaderbox.constants import (
     MP4_CRF_VALUES,
     MP4_PRESETS,
     TEXTURES_DIR_NAME,
-    VIDEO_RESOLUTION_ALIGNMENT,
     WEBM_CPU_USED_VALUES,
     WEBM_CRF_VALUES,
 )
@@ -66,7 +65,12 @@ from shaderbox.paths import (
     pass_name_of,
 )
 from shaderbox.profiling import NULL_PROFILER, Profiler
-from shaderbox.render_preset import FitPolicy, RenderPreset, resolve_dims
+from shaderbox.render_preset import (
+    FitPolicy,
+    RenderPreset,
+    align_for_codec,
+    resolve_dims,
+)
 from shaderbox.render_shape import ResolutionMode, aspect_of, aspect_ratio
 from shaderbox.shader_source import ShaderSource
 
@@ -424,10 +428,9 @@ class Document:
     def canvas_size_for(self, name: str) -> tuple[int, int]:
         """The size pass `name`'s canvas must have: the document's own, or its scale applied.
 
-        The OUTPUT pass keeps full size and its `scale` is ignored -- it is what the preview and
-        every export read. The rule used to be spelled out at four sites in three syntactic
-        shapes, and the bug that started this feature was the rule existing at one site and
-        missing at its sibling.
+        The one home for the rule, so a caller cannot apply a different one. The OUTPUT pass
+        keeps full size and its `scale` is ignored -- it is what the preview and every export
+        read.
 
         On `Document` rather than `PassGraph` because it needs BOTH the graph and `canvas_size`,
         and this is the only object holding both: the document owns the size and applies each
@@ -1102,10 +1105,8 @@ class Document:
         width = details.resolution_details.width
         height = details.resolution_details.height
 
-        # Ensure resolution is divisible by alignment for codec compatibility
-        alignment = VIDEO_RESOLUTION_ALIGNMENT
-        width = (width + alignment - 1) // alignment * alignment
-        height = (height + alignment - 1) // alignment * alignment
+        width = align_for_codec(width)
+        height = align_for_codec(height)
 
         # Canvas already at the requested size → let ffmpeg copy 1:1, no -s rescale.
         scale_params: list[str] = (

@@ -26,7 +26,7 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-16, 097 has landed and the suite is a third smaller. 094 is next. -->
+<!-- As of 2026-09-16, 097's open findings are drained. 094 is next. -->
 **Next: 094, the control panel.** The documents grid reserves rows for documents that do not
 exist, so the panel's left third is mostly empty. Four shapes were mocked and judged and none
 removes the dead space -- the shape that does is still to be proposed.
@@ -37,13 +37,14 @@ one per worker. The size came from reading every file and asking what a USER los
 goes -- which cut the tests that pinned strings, the tests of tooling that does not ship, and four
 checks that could not fail. `-n 8` was not touched and no budget gate was added.
 
-**Open defects nobody has fixed: `ai_docs/features/097_test_suite_diet/03_open_findings.md`.**
-Found while cutting, left alone because changing behaviour is a different job from cutting tests.
-Two are real: a command's scope is answered one way by the menus and another by the hotkeys,
-against the contract stated in the enum's own comment; and three copilot tools default an argument
-their resolver rejects on purpose, with the test green only because its stub is kinder than
-production. Plus dead files, a `.gitignore` pattern covering part of its domain (two regenerable
-caches are committed, which `dev_flow.md` forbids), and six doc claims the code contradicts.
+**097's open findings are drained** (`ai_docs/features/097_test_suite_diet/03_open_findings.md`,
+now a record of what was fixed and what was not). The copilot's three document-file tools no
+longer default a handle their resolver refuses, and their test stub binds the real resolver so it
+cannot be kinder than production again; the codec-alignment rule and the dtype tuple each have one
+home; `projects/**/media/` ignores both depths and the two committed caches are untracked. One
+finding was reclassified: the menus and the hotkeys read `CommandScope` differently ON PURPOSE
+(093 M2), and the enum's comment now says so. The exporters' duplicated `status`/`update` were
+left alone -- the reason is in the ledger.
 
 **Worth a look in the running app:** switch projects with the copilot mid-turn, and with a graph
 tab open -- those are the paths the four project-switch fixes are on.

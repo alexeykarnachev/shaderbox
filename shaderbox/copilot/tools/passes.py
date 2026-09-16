@@ -3,7 +3,12 @@ from typing import Any
 from pydantic import Field
 
 from shaderbox.copilot.capabilities import CopilotCapabilities
-from shaderbox.copilot.tools.base import GatePolicy, ToolArgs, ToolDefinition
+from shaderbox.copilot.tools.base import (
+    DOCUMENT_ARG_DESC,
+    GatePolicy,
+    ToolArgs,
+    ToolDefinition,
+)
 from shaderbox.pass_graph import MAX_ITERATIONS
 
 # The pass list's verbs for the copilot (feature 076): add / configure / delete a pass of a
@@ -11,7 +16,6 @@ from shaderbox.pass_graph import MAX_ITERATIONS
 # document id; delete is gated. A pass's SOURCE is edited through the ordinary edit tools at its
 # `<id>#<name>` address — these tools only shape the graph around it.
 
-_NODE_DESC = "document id (from the project map); empty = the current document"
 _NAME_DESC = "pass name: starts with a letter, letters/digits/underscores"
 _RUNS_DESC = (
     f"how many times the pass draws per frame (1-{MAX_ITERATIONS}); the shader reads "
@@ -27,7 +31,7 @@ _OUTPUT_DESC = "make this pass the document's output (what the viewer and export
 
 class _AddPassArgs(ToolArgs):
     name: str = Field(description=_NAME_DESC)
-    document: str = Field(default="", description=_NODE_DESC)
+    document: str = Field(default="", description=DOCUMENT_ARG_DESC)
     runs: int | None = Field(default=None, description=_RUNS_DESC)
     dtype: str | None = Field(default=None, description=_DTYPE_DESC)
     scale: float | None = Field(default=None, description=_SCALE_DESC)
@@ -38,7 +42,7 @@ class _AddPassArgs(ToolArgs):
 
 class _SetPassArgs(ToolArgs):
     name: str = Field(description="the pass to configure")
-    document: str = Field(default="", description=_NODE_DESC)
+    document: str = Field(default="", description=DOCUMENT_ARG_DESC)
     runs: int | None = Field(default=None, description=_RUNS_DESC)
     dtype: str | None = Field(default=None, description=_DTYPE_DESC)
     scale: float | None = Field(default=None, description=_SCALE_DESC)
@@ -54,7 +58,7 @@ class _SetPassArgs(ToolArgs):
 
 class _DeletePassArgs(ToolArgs):
     name: str = Field(description="the pass to delete")
-    document: str = Field(default="", description=_NODE_DESC)
+    document: str = Field(default="", description=DOCUMENT_ARG_DESC)
 
 
 def pass_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:

@@ -605,8 +605,9 @@ third-party proxies that render it show an interstitial instead of the page.
 
 State lives in `app_data_dir()` (default `~/.local/share/shaderbox/`, overridable via
 `SHADERBOX_DATA_DIR` — see `conventions.md ## Design decisions`) + the active project's files. The
-repo's `projects/dev/` is the maintainer's dev sandbox (**tracked** — `scripts/smoke.py` needs it as
-a fixture). It's where features get tested, so its `app_state.json` / `documents/*/document.json` drift
+repo's `projects/dev/` is the maintainer's dev sandbox (**tracked** — it is the state his running
+app opens, carried between machines; `scripts/smoke.py` seeds its own throwaway project from the
+shipped examples instead, and must never read or mutate this one). It's where features get tested, so its `app_state.json` / `documents/*/document.json` drift
 between runs every time the app runs. **The rule is binary: the working tree must never sit with
 unstaged `projects/dev/` changes.** Either it's gitignored or it's committed — no "leave it
 uncommitted, it's fine" middle state (that just re-surfaces as staging noise next time). So:

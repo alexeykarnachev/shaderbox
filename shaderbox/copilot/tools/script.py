@@ -8,16 +8,19 @@ from shaderbox.copilot.capabilities import (
     ScriptWriteResult,
 )
 from shaderbox.copilot.error_render import format_compile_errors
-from shaderbox.copilot.tools.base import GatePolicy, ToolArgs, ToolDefinition
+from shaderbox.copilot.tools.base import (
+    DOCUMENT_ARG_DESC,
+    GatePolicy,
+    ToolArgs,
+    ToolDefinition,
+)
 
 # The document script authoring surface (feature 043): read_script / write_script. Mirrors shader_tools —
 # thin handlers calling a capability closure that owns the bridge round-trip + the dry-run probe.
 
-_NODE_DESC = "document id (from the project map); empty = the document you are currently working on"
-
 
 class _ReadScriptArgs(ToolArgs):
-    document: str = Field(default="", description=_NODE_DESC)
+    document: str = Field(default="", description=DOCUMENT_ARG_DESC)
 
 
 class _WriteScriptArgs(ToolArgs):
@@ -26,7 +29,7 @@ class _WriteScriptArgs(ToolArgs):
         "(a `class Behavior(ScriptBehavior)` with `update(self, context) -> dict`). Anything "
         "omitted is gone."
     )
-    document: str = Field(default="", description=_NODE_DESC)
+    document: str = Field(default="", description=DOCUMENT_ARG_DESC)
 
 
 class _EditScriptArgs(ToolArgs):
@@ -39,7 +42,7 @@ class _EditScriptArgs(ToolArgs):
         default=False,
         description="replace every occurrence (resolves a non-unique old_str)",
     )
-    document: str = Field(default="", description=_NODE_DESC)
+    document: str = Field(default="", description=DOCUMENT_ARG_DESC)
 
 
 _READ_SCRIPT_DESC = (

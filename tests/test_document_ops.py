@@ -104,9 +104,8 @@ def _stub_with_starter(project: Path) -> tuple[types.SimpleNamespace, str]:
             run_on_main=lambda fn, timeout=None, defer=False: fn()
         ),
         _get_ui_documents=lambda: documents,
-        _copilot_resolve_document_id=lambda h: (
-            current["id"] if h == "" else (h if h in documents else None)
-        ),
+        _copilot_resolve_document_id=lambda h: h if h in documents else None,
+        _get_current_document_id=lambda: current["id"],
         _copilot_short_ids=lambda: {i: i for i in documents},
         _capture_document=lambda nid: None,
         _save_ui_document=lambda un: un.save(project),
@@ -115,6 +114,10 @@ def _stub_with_starter(project: Path) -> tuple[types.SimpleNamespace, str]:
         _working_set_add=lambda nid: None,
         _render_facts_for=lambda document, motion=False, cache_key="": "facts",
         _last_clean={},
+    )
+    stub._copilot_resolve_source = CopilotBackend._copilot_resolve_source.__get__(stub)
+    stub._resolve_document_or_current = (
+        CopilotBackend._resolve_document_or_current.__get__(stub)
     )
     return stub, document.id
 

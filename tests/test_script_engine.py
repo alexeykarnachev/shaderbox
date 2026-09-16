@@ -95,7 +95,7 @@ def _engine(
     tmp: Path, document: _FakeDocument, document_id: str = "n0"
 ) -> ScriptEngine:
     eng = ScriptEngine()
-    eng.reload(document_id, tmp / "scripts", document)
+    eng.reload(document_id, tmp / "scripts")
     return eng
 
 
@@ -286,7 +286,7 @@ def test_state_resets_on_edit(tmp_path: Path) -> None:
 
     time.sleep(0.01)
     path.write_text(_INTEGRATOR + "        # edited\n", encoding="utf-8")
-    eng.reload("n0", tmp_path / "scripts", document)
+    eng.reload("n0", tmp_path / "scripts")
     eng.tick("n0", document, _ctx(0.0, dt=1.0, frame=0))
     assert document.uniform_values["u_x"] == 1.0  # fresh instance: self.v was 0, +1 dt
 
@@ -525,7 +525,7 @@ def test_raw_runtime_throw_freezes_all_at_last_good(tmp_path: Path) -> None:
         "        raise ValueError('boom')\n",  # 1-based line 4, 0-based 3
         encoding="utf-8",
     )
-    eng.reload("n0", tmp_path / "scripts", document)
+    eng.reload("n0", tmp_path / "scripts")
     eng.tick("n0", document, _ctx(0.1))
     assert (
         document.uniform_values["u_x"] == 0.3 and document.uniform_values["u_y"] == 0.6
@@ -635,7 +635,7 @@ def test_a_none_value_hands_the_uniform_back_to_the_user(tmp_path: Path) -> None
     path.write_text(
         _script(update_body="        return {'u_x': None}\n"), encoding="utf-8"
     )
-    eng.reload("n0", tmp_path / "scripts", document)
+    eng.reload("n0", tmp_path / "scripts")
     eng.tick("n0", document, _ctx(0.1))
     assert document.uniform_values["u_x"] == 0.4  # the last value stands
     assert ("n0", "main", "u_x") not in eng.errors
@@ -690,7 +690,7 @@ def test_nan_inf_freezes_and_records(tmp_path: Path) -> None:
     path.write_text(
         _script(update_body="        return {'u_x': float('inf')}\n"), encoding="utf-8"
     )
-    eng.reload("n0", tmp_path / "scripts", document)
+    eng.reload("n0", tmp_path / "scripts")
     eng.tick("n0", document, _ctx(0.1))
     assert document.uniform_values["u_x"] == 0.3  # frozen at last-good, NOT inf
     err = eng.errors[("n0", "main", "u_x")]
@@ -833,7 +833,7 @@ def test_a_pass_name_error_clears_when_the_key_becomes_a_bare_one(
     path.write_text(
         _script(update_body="        return {'blur': 1.0}\n"), encoding="utf-8"
     )
-    eng.reload("n0", tmp_path / "scripts", document)
+    eng.reload("n0", tmp_path / "scripts")
     eng.tick("n0", document, _ctx(0.1))
     assert ("n0", "", "blur") not in eng.errors, (
         "the pass-name error outlived the pass block"
@@ -856,7 +856,7 @@ def test_a_bad_key_error_clears_when_the_key_is_fixed(tmp_path: Path) -> None:
     path.write_text(
         _script(update_body="        return {'u_a': 0.5}\n"), encoding="utf-8"
     )
-    eng.reload("n0", tmp_path / "scripts", document)
+    eng.reload("n0", tmp_path / "scripts")
     eng.tick("n0", document, _ctx(0.1))
     assert ("n0", "main", "u_tex") not in eng.errors  # zombie cleared
 
@@ -875,7 +875,7 @@ def test_engine_owned_key_dropped_silently(tmp_path: Path) -> None:
     document = _FakeDocument([_u("u_a"), _u("u_time")])
     document.uniform_values["u_time"] = 1.23  # the renderer's value
     eng = ScriptEngine(engine_driven=frozenset({"u_time"}))
-    eng.reload("n0", tmp_path / "scripts", document)
+    eng.reload("n0", tmp_path / "scripts")
     eng.tick("n0", document, _ctx(0.0))
     assert document.uniform_values["u_a"] == 0.5
     assert ("main", "u_time") not in eng.script_driven_uniforms(
@@ -893,7 +893,7 @@ def test_cache_no_recompile_when_mtime_unchanged(tmp_path: Path) -> None:
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
     first = eng._documents["n0"].behavior
-    eng.reload("n0", tmp_path / "scripts", document)  # nothing changed
+    eng.reload("n0", tmp_path / "scripts")  # nothing changed
     # Falsifier: a fresh script object means an unnecessary recompile.
     assert eng._documents["n0"].behavior is first
 
@@ -905,7 +905,7 @@ def test_cache_recompiles_on_mtime_change(tmp_path: Path) -> None:
     first = eng._documents["n0"].behavior
     time.sleep(0.01)
     path.write_text(_SCALAR + "        # changed\n", encoding="utf-8")
-    eng.reload("n0", tmp_path / "scripts", document)
+    eng.reload("n0", tmp_path / "scripts")
     assert eng._documents["n0"].behavior is not first  # recompiled
 
 
@@ -929,7 +929,7 @@ def test_removed_script_drops_script(tmp_path: Path) -> None:
     eng.tick("n0", document, _ctx(0.0))
     assert ("main", "u_x") in eng.script_driven_uniforms("n0")
     path.unlink()
-    eng.reload("n0", tmp_path / "scripts", document)
+    eng.reload("n0", tmp_path / "scripts")
     assert not eng.has_script("n0")
     assert ("main", "u_x") not in eng.script_driven_uniforms("n0")
 
@@ -982,8 +982,8 @@ def test_integrator_diverges_by_design(tmp_path: Path) -> None:
     document_a = _FakeDocument([_u("u_x")])
     document_b = _FakeDocument([_u("u_x")])
     eng = ScriptEngine()
-    eng.reload("a", tmp_path / "scripts", document_a)
-    eng.reload("b", tmp_path / "scripts", document_b)
+    eng.reload("a", tmp_path / "scripts")
+    eng.reload("b", tmp_path / "scripts")
 
     for _i in range(2):  # two steps of dt=0.5 (variable-dt live path) over 1.0s
         eng.tick("a", document_a, ScriptContext(t=0.0, dt=0.5, frame=0))
@@ -1058,9 +1058,8 @@ def test_non_utf8_file_does_not_crash_reload(tmp_path: Path) -> None:
     scripts_dir = tmp_path / "scripts"
     scripts_dir.mkdir()
     (scripts_dir / "script.py").write_bytes(b"\xff\xfe not utf-8")
-    document = _FakeDocument([_u("u_x")])
     eng = ScriptEngine()
-    eng.reload("n0", scripts_dir, document)  # must NOT raise
+    eng.reload("n0", scripts_dir)  # must NOT raise
     assert ("main", "u_x") not in eng.script_driven_uniforms("n0")
 
 
@@ -1074,7 +1073,7 @@ def test_unreadable_rewrite_mid_edit_keeps_cached_script(tmp_path: Path) -> None
     assert first is not None
     time.sleep(0.01)
     path.write_bytes(b"\xff\xfe still here but unreadable")
-    eng.reload("n0", tmp_path / "scripts", document)  # must NOT raise
+    eng.reload("n0", tmp_path / "scripts")  # must NOT raise
     assert eng._documents["n0"].behavior is first  # cached script kept
 
 
@@ -1414,7 +1413,7 @@ def test_coerce_one_rejects_a_dict(tmp_path: Path) -> None:
         _script(update_body="        return {'paint': {'u_a': {'x': 0.5}}}\n"),
         encoding="utf-8",
     )
-    eng.reload("n0", tmp_path / "scripts", document)
+    eng.reload("n0", tmp_path / "scripts")
     eng.tick("n0", document, _ctx(0.1))
     assert "PASS BLOCK" in eng.errors[("n0", "paint", "u_a")].message
     assert document.passes["paint"].uniform_values["u_a"] == 1.0  # frozen at last-good

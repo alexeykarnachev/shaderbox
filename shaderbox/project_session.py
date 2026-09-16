@@ -588,7 +588,6 @@ class ProjectSession:
             self.script_engine.reload(
                 document_id,
                 self.paths.scripts_dir_for(document_id),
-                ui_document.document,
             )
             self._wire_document_hooks(document_id, ui_document.document)
 
@@ -669,7 +668,6 @@ class ProjectSession:
         self.script_engine.reload(
             document_id,
             self.paths.scripts_dir_for(document_id),
-            ui_document.document,
         )
         self._wire_document_hooks(document_id, ui_document.document)
         for render_pass in ui_document.document.passes.values():
@@ -735,7 +733,6 @@ class ProjectSession:
             self.script_engine.reload(
                 document_id,
                 self.paths.scripts_dir_for(document_id),
-                ui_document.document,
             )
             self._wire_document_hooks(document_id, ui_document.document)
 
@@ -868,7 +865,6 @@ class ProjectSession:
         self.script_engine.reload(
             document_id,
             self.paths.scripts_dir_for(document_id),
-            ui_document.document,
         )
         return self.script_engine.dry_run(
             document_id,

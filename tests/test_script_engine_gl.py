@@ -81,7 +81,7 @@ def test_script_value_reaches_gpu(gl_ctx: moderngl.Context, tmp_path: Path) -> N
     _write_script(scripts_dir, _WAVE_SCRIPT)
     document = _document(gl_ctx)
     eng = ScriptEngine()
-    eng.reload("n", scripts_dir, document)
+    eng.reload("n", scripts_dir)
 
     eng.tick("n", document, ScriptContext(t=0.0, dt=0.0, frame=0))
     assert abs(document.render_pass.uniform_values["u_wave"] - 0.5) < 1e-6
@@ -144,7 +144,7 @@ def test_script_shape_mismatch_freezes_and_records(
     document.render_pass.seed_uniform_values()
     seeded = document.render_pass.uniform_values.get("u_wave")
     eng = ScriptEngine()
-    eng.reload("n", scripts_dir, document)
+    eng.reload("n", scripts_dir)
     eng.tick("n", document, ScriptContext(t=0.0, dt=0.0, frame=0))
     assert (
         document.render_pass.uniform_values.get("u_wave") == seeded
@@ -168,7 +168,7 @@ def test_render_media_auto_enters_export_isolation(
     _write_script(scripts_dir, _RAMP_SCRIPT)
     document = _document(gl_ctx)
     eng = ScriptEngine()
-    eng.reload("n", scripts_dir, document)
+    eng.reload("n", scripts_dir)
 
     entered = {"count": 0}
 
@@ -242,7 +242,7 @@ def test_script_int_uniforms_reach_gpu_not_popped(
     document.render_pass.compile()
     document.render(u_time=0.0)
     eng = ScriptEngine()
-    eng.reload("n", scripts_dir, document)
+    eng.reload("n", scripts_dir)
     eng.tick("n", document, ScriptContext(t=0.0, dt=0.0, frame=0))
     document.render(u_time=0.0)
     # If a write raised, render's except pops the value — these reads would be missing.
@@ -269,7 +269,7 @@ def test_script_drives_two_uniforms_to_gpu_and_export_clean(
     _write_script(scripts_dir, _RAMP_SCRIPT)
     document = _document(gl_ctx)
     eng = ScriptEngine()
-    eng.reload("n", scripts_dir, document)
+    eng.reload("n", scripts_dir)
 
     # Cold-start reference: a fresh instance, one tick at frame 0.
     cold = eng.fresh_behavior_for("n")
@@ -355,7 +355,7 @@ def test_a_broadcast_reaches_both_passes_on_the_gpu(
     document.graph = graph
 
     eng = ScriptEngine()
-    eng.reload("n", scripts_dir, document)
+    eng.reload("n", scripts_dir)
 
     # An ABSOLUTE read per t, never a diff between two: an unrendered `seed` canvas reads 0, which
     # a "these two differ" assertion would satisfy for the wrong reason at t=0. Both sample times

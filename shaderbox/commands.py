@@ -74,12 +74,19 @@ CATEGORY_ORDER: list["CommandCategory"] = list(CommandCategory)
 
 
 class CommandScope(StrEnum):
+    # A scope names the surface a command belongs to; each surface then reads it with the
+    # test its own input model allows, so the two gates differ ON PURPOSE (093 M2). A CHORD
+    # fires on focus (hotkeys.spec_eligible), which the keyboard has. A MENU ITEM enables on
+    # the surface merely being open (menus.menu_enabled), because the click that opened the
+    # menu has already cleared the focus a chord reads -- so the focus test would grey out
+    # every scoped item exactly when it is clicked.
+    #
     # Fires anywhere EXCEPT while a modal popup is open (the dispatcher applies
     # the explicit any_popup_open() gate — routing alone does not suppress it).
     GLOBAL = auto()
-    # Fires only when the code editor child is focused (app.editor_focused gate).
+    # The code editor: a chord needs app.editor_focused, a menu item an open tab.
     EDITOR = auto()
-    # Fires only when the copilot chat is focused (app.copilot_focused gate). Lets the
+    # The copilot chat: a chord needs app.copilot_focused, a menu item an open chat. Lets the
     # same chord mean one thing in the editor (EDITOR) and another in the chat (COPILOT).
     COPILOT = auto()
 

@@ -30,7 +30,11 @@ class RenderPreset(BaseModel):
     fit: FitPolicy = FitPolicy.SCALE_DISTORT
 
 
-def _align(value: int, alignment: int = VIDEO_RESOLUTION_ALIGNMENT) -> int:
+def align_for_codec(value: int, alignment: int = VIDEO_RESOLUTION_ALIGNMENT) -> int:
+    """`value` rounded up to a codec-safe multiple, never below one full block.
+
+    The floor is what keeps a sub-block dimension from aligning to 0, which no encoder accepts.
+    """
     return max(alignment, (value + alignment - 1) // alignment * alignment)
 
 
@@ -68,4 +72,4 @@ def resolve_dims(preset: RenderPreset, source_size: tuple[int, int]) -> tuple[in
     else:
         w, h = src_w, src_h
 
-    return _align(w), _align(h)
+    return align_for_codec(w), align_for_codec(h)

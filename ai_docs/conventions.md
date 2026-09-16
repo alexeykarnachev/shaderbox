@@ -1130,7 +1130,7 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   exactly `Args:` / `Returns:` / `Raises:` / `Attributes:`. Anything a person reads under `K`
   obeys this too. `tests/test_script_api_doc.py` gates the shape and the spelling. Revisit if a
   second docstring consumer needs a different rendering — the prompt block already gets one
-  (`_CTX_GLOSS` terse for tokens, `_CTX_HELP` prose for the reader).
+  (`_CONTEXT_GLOSS` terse for tokens, `_CONTEXT_HELP` prose for the reader).
 
 - **Four button tiers, and two gates that keep it at four (079 D12).** `standard_button` (an
   ordinary verb — transparent fill, a 1 px `BORDER` frame, secondary text), `primary_button` (a
@@ -1204,15 +1204,16 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   so releasing them there leaves imgui rendering freed GL names. The modal sets
   `pending_project_switch` and `_tick_frame_state` consumes it before any drawing. Revisit if a
   switch ever needs to happen mid-frame.
-- **A project is forked by copying the DIRECTORY, never the live objects, and it lands via a staging
+- **A project is COPIED as a directory, never as live objects, and a copy lands via a staging
   sibling** (feature 084). Documents hold live moderngl handles: a shallow share lets one App's
-  `release()` free another's textures and a deepcopy cannot pickle the context, so a fork is
-  `copytree` + `_init`, reloading everything from files. The copy goes to `<name>.creating` and is
-  renamed only once complete — a half-copied directory that already looked like a project would be
-  offered by the switcher — mirroring `copilot/revert.py::_swap_in_snapshot`. What travels is one
-  predicate, `_copy_into_fork`, so changing the policy is a one-line edit rather than a hunt; today
-  it says yes to everything. Deleting a project MOVES it to `app_data_dir()/trash/<name>` (a
-  millisecond suffix only on collision, the `_delete_document_unguarded` scheme) and refuses the
+  `release()` free another's textures and a deepcopy cannot pickle the context, so any whole-project
+  copy is `copytree` + `_init`, reloading everything from files. A copy in progress must not already
+  look like a project — the switcher would offer a half-copied directory — so it is staged under a
+  name the switcher ignores and renamed only once complete; `copilot/revert.py::_swap_in_snapshot`
+  is the live instance of the pattern. The project verbs today are `create_project` (an empty
+  layout) and `trash_project`; there is no project-fork verb, so the rule binds the next one
+  written rather than existing code. Deleting a project MOVES it to `app_data_dir()/trash/<name>`
+  (a millisecond suffix only on collision, the `_delete_document_unguarded` scheme) and refuses the
   OPEN project in the model, not merely in the draw code — a guard living only in a disabled button
   is one no headless test can reach.
 - **On-disk artifacts split by lifetime: durable-portable → the project dir; disposable-local →
@@ -1246,7 +1247,7 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   uniform without a guaranteed prior render — `UIDocument.save` does. A new persist/serialize path that
   swaps source then reads `uniform_values` MUST call `seed_uniform_values()` first (else it KeyErrors on
   an unseeded uniform; a naive `.get(name, uniform.value)` is WRONG for samplers — their GL default is
-  an int texture-unit). `ENGINE_DRIVEN_UNIFORMS` (in `core.py`) is the one home for the
+  an int texture-unit). `ENGINE_DRIVEN_UNIFORMS` (in `engine_uniforms.py`) is the one home for the
   `u_time/u_aspect/u_resolution` skip set — never re-list the three names. Revisit if uniform defaulting
   needs a value the GL default can't express.
 - **Thread/GL affinity is enforced by METHOD ownership, not import boundaries; cross-thread reactions
@@ -1436,10 +1437,10 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   another's, which is a latent version of the same crash rather than a safe default — add the
   mark when you add the module. **Nothing enforces the mark**: a module that drives frames
   without one is a latent crash that surfaces only when the scheduler happens to pair it with a
-  sibling, so the mark goes in with the module rather than after the first red run. The modules
-  carrying one today are `test_code_panel.py`, `test_project_management.py`, `test_profiling.py`
-  and `test_render_decoupling_loop.py`. (`app`-fixture tests that never call `update_and_draw`
-  are unaffected — most of the suite.)
+  sibling, so the mark goes in with the module rather than after the first red run. Which modules
+  carry one is `grep -rl xdist_group tests/`, never a list written here — a roster in a doc drifts
+  the moment a module is added. (`app`-fixture tests that never call `update_and_draw` are
+  unaffected — most of the suite.)
 
 - **`moderngl`'s `copy_framebuffer` does not RESCALE — it copies 1:1 into a corner.** Between two
   differently-sized framebuffers it returns `GL_NO_ERROR` and leaves a plausible picture that is

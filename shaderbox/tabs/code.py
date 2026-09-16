@@ -492,7 +492,6 @@ def _typed_script_returns(
 
 
 def _python_request(
-    app: App,
     editor: Editor,
     tab: EditorTab,
     kind: PythonRequestKind,
@@ -524,7 +523,7 @@ def _python_candidates(
     last = app.python_last_request
     if last is None or not last.matches(tab.path, revision, cursor.line, cursor.column):
         request = _python_request(
-            app, editor, tab, PythonRequestKind.COMPLETE, explicit=explicit
+            editor, tab, PythonRequestKind.COMPLETE, explicit=explicit
         )
         app.python_last_request = request
         app.ensure_python_worker().submit(request)
@@ -626,7 +625,7 @@ def _consume_lookup_request(app: App, editor: Editor, tab: EditorTab) -> None:
     if tab.kind == "script":
         # Answered by the worker; `_pump_python` opens the note when it lands.
         app.ensure_python_worker().submit(
-            _python_request(app, editor, tab, PythonRequestKind.LOOKUP)
+            _python_request(editor, tab, PythonRequestKind.LOOKUP)
         )
         return
     cursor = editor.get_current_cursor_position()

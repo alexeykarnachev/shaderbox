@@ -340,9 +340,7 @@ class ScriptEngine:
         document = self._documents.get(document_id)
         return document is not None and document.behavior is not None
 
-    def reload(
-        self, document_id: str, scripts_dir: Path, document: ScriptTarget
-    ) -> None:
+    def reload(self, document_id: str, scripts_dir: Path) -> None:
         # Discover + (re)compile the document's `script.py` if its mtime changed (a recompile makes a
         # FRESH instance — state resets on edit), drop it if the file vanished. The script binds by
         # EXISTENCE (048 — no active flag; the file IS the binding). Cheap when nothing changed: a stat.

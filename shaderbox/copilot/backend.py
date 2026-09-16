@@ -1222,8 +1222,8 @@ class CopilotBackend:
 
     def rename_document(self, document: str, new_name: str) -> DocumentOpResult:
         def _on_main() -> DocumentOpResult:
-            document_id = self._copilot_resolve_document_id(document)
-            if document_id is None or document_id not in self._get_ui_documents():
+            document_id = self._resolve_document_or_current(document)
+            if document_id is None:
                 return DocumentOpResult(
                     ok=False,
                     error=f"no such document '{document}' — check the project map for ids",
@@ -1246,8 +1246,8 @@ class CopilotBackend:
         self, document: str, width: int, height: int
     ) -> DocumentOpResult:
         def _on_main() -> DocumentOpResult:
-            document_id = self._copilot_resolve_document_id(document)
-            if document_id is None or document_id not in self._get_ui_documents():
+            document_id = self._resolve_document_or_current(document)
+            if document_id is None:
                 return DocumentOpResult(
                     ok=False,
                     error=f"no such document '{document}' — check the project map for ids",
@@ -1457,8 +1457,8 @@ class CopilotBackend:
         # Fork a document: persist the live source, load its dir as an independent document (deep copy incl.
         # media/ + script), give it a fresh id, compile, save + insert. Mirrors create_document's tail.
         def _on_main() -> tuple[str, list[CompileErrorInfo], str]:
-            document_id = self._copilot_resolve_document_id(document)
-            if document_id is None or document_id not in self._get_ui_documents():
+            document_id = self._resolve_document_or_current(document)
+            if document_id is None:
                 raise RuntimeError(f"no such document '{document}'")
             source_document = self._get_ui_documents()[document_id]
             self._save_ui_document(

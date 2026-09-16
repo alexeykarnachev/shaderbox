@@ -33,17 +33,16 @@ import re
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from itertools import pairwise
-from typing import Annotated, Literal
+from typing import Annotated, Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-
-DTYPES: tuple[str, ...] = ("f1", "f2", "f4")
 
 # f2, not f1: 063 measured f1 saturating at 255 on the FIRST accumulate pass where f2 reached
 # exactly 7.0, so the safe value is the default and f1 is the opt-in. clamp inverts moderngl's
 # repeat_x/y=True, which is wrong for a feedback border.
 TargetDtype = Literal["f1", "f2", "f4"]
-TARGET_DTYPES: tuple[TargetDtype, ...] = ("f1", "f2", "f4")
+TARGET_DTYPES: tuple[TargetDtype, ...] = get_args(TargetDtype)
+DTYPES: tuple[str, ...] = TARGET_DTYPES
 DEFAULT_DTYPE: TargetDtype = "f2"
 DEFAULT_FILTER_LINEAR = True
 DEFAULT_WRAP = False

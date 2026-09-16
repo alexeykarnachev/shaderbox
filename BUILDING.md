@@ -31,5 +31,5 @@ runners may lack a usable GL context — so **runtime is verified by hand on a r
 2. `uv sync`
 3. Run `scripts\run.bat` (or `uv run python ./shaderbox/ui.py`).
 4. Exercise the manual checklist: the starter "UV Mango" shader renders; edit + Ctrl+S hot-reloads;
-   a uniform slider drives the image; New (Ctrl+N) creates a node from a template; export to image
-   and video produces files; "Open dir" opens the node folder in Explorer.
+   a uniform slider drives the image; New document (Ctrl+Shift+N) creates one from a template;
+   export to image and video produces files; "Open folder" opens the document's folder in Explorer.

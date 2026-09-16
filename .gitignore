@@ -13,7 +13,7 @@ trash/
 exporter_scratch/
 tg_state.json
 
-projects/*/media/
+projects/**/media/
 projects/*/renders/
 projects/*/copilot/archive/
 projects/*/copilot/checkpoints/

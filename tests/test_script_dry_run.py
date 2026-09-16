@@ -72,7 +72,7 @@ def _script(*, update_body: str, init_body: str = "") -> str:
 
 def _engine(tmp: Path, document: _FakeDocument) -> ScriptEngine:
     eng = ScriptEngine()
-    eng.reload("n0", tmp / "scripts", document)
+    eng.reload("n0", tmp / "scripts")
     return eng
 
 

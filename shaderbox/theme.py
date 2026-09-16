@@ -300,7 +300,7 @@ class SIZE:
     TAB_MIN_W: int = 72
     NAME_INPUT_W: int = 180
     # The Document tab's engine-uniform block: a fixed name column so the rows read as a
-    # block. 128 fits the longest engine name in the 12px face (tests/test_ui_prose_budget.py).
+    # block. 128 fits the longest engine name in the 12px face.
     AUTO_NAME_W: int = 128
 
     LABEL_W: int = 64

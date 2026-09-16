@@ -795,7 +795,6 @@ class ViewerGeometry:
     box_height: float
     image_min: imgui.ImVec2
     image_width: float
-    image_height: float
 
 
 # The viewer box's shape: the width the splitter gives the panel, at this aspect, is its
@@ -928,7 +927,7 @@ def _draw_document_image(app: App, control_panel_min_height: float) -> ViewerGeo
             message,
         )
 
-    return ViewerGeometry(cursor_pos, box_height, img_min, image_width, image_height)
+    return ViewerGeometry(cursor_pos, box_height, img_min, image_width)
 
 
 def _current_document_fps(app: App) -> int | None:

@@ -3,20 +3,22 @@ from typing import Any
 from pydantic import Field
 
 from shaderbox.copilot.capabilities import CopilotCapabilities
-from shaderbox.copilot.tools.base import GatePolicy, ToolArgs, ToolDefinition
+from shaderbox.copilot.tools.base import (
+    DOCUMENT_ARG_DESC,
+    GatePolicy,
+    ToolArgs,
+    ToolDefinition,
+)
 
 # Texture/media tools (feature 052 slice 2). bind_media opens the USER's OS file picker (its own FILE
 # gate — the model never types a path); unbind_media resets a sampler to the default image.
 
 _UNIFORM_DESC = "the sampler2D uniform's name (e.g. u_tex) — see the working-set row"
-_NODE_DESC = (
-    "document id (from the project map); empty = the document you're working on"
-)
 
 
 class _BindMediaArgs(ToolArgs):
     uniform: str = Field(description=_UNIFORM_DESC)
-    document: str = Field(default="", description=_NODE_DESC)
+    document: str = Field(default="", description=DOCUMENT_ARG_DESC)
 
 
 def media_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:

@@ -1669,8 +1669,8 @@ def _profile_number(
     """The number half of a profiler row: right-aligned at the panel edge, in `number_font`.
 
     Separate from the label so every authored string in this panel stays one word -- a
-    label-plus-number-plus-unit string is six, over the caption budget the prose gate scores
-    (`tests/test_ui_prose_budget.py`).
+    label-plus-number-plus-unit string is six, over the caption budget in
+    `ai_docs/conventions.md`.
     """
     imgui.push_font(number_font, number_font.legacy_size)
     width = imgui.calc_text_size(value).x
