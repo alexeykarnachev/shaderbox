@@ -1369,9 +1369,11 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   the shape to distrust: an output pass ALWAYS draws into its own canvas, and a caller's canvas
   receives a blit afterwards, because the feedback swap advances the pass's own canvas and a draw
   aimed elsewhere leaves it holding a stale frame. Where a role can change hands the resize goes
-  on the verb, not on the render: `set_output_pass` and `conform_output_canvas` exist because a
-  promotion, a delete that promotes a survivor, and an import handing over the output role are
-  three doors onto one defect. The invariant is executable —
+  on the verb, not on the render: `set_output_pass` and `conform_canvases` exist because a
+  promotion, a demotion, a delete that promotes a survivor, an import handing over the output
+  role, a scale change on a pass the output never reaches, and a LOAD are all doors onto one
+  defect -- `render` repairs only the passes it visits, so nothing else reaches an off-chain one.
+  The invariant is executable —
   `tests/canvas_invariants.canvas_violations` compares every live canvas and every history
   against what the graph implies, driven over the non-default corner (`scale=0.5`, `f4`,
   NEAREST, `wrap=True`) because both boolean defaults are the value a careless check cannot
