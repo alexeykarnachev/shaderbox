@@ -1594,23 +1594,34 @@ def test_every_documented_builtin_draws_in_the_builtin_slot() -> None:
     assert kind_slot(SymbolKind.GLSL_BUILTIN) == 6
     assert kind_slot(SymbolKind.GLSL_VARIABLE) == 6
 
-    wrong: list[str] = []
-    for name in list(BUILTINS) + list(VARIABLES):
-        e = Editor(f"{name}\nx")
-        e.set_language(Language.GLSL)
-        e.set_palette(palette)
-        # The caret recolors the glyph under it (reverse video), so park it off the line.
+    # One editor holding every name on its own line, laid out tall enough that no row is
+    # scrolled out: 171 names asked one editor each, and building them dominated the file.
+    names = list(BUILTINS) + list(VARIABLES)
+    e = Editor("\n".join(names) + "\nx")
+    e.set_language(Language.GLSL)
+    e.set_palette(palette)
+    # The caret recolors the glyph under it (reverse video), so park it past the last name.
+    for _ in range(len(names)):
         e.feed("j")
-        e.layout((900.0, 300.0), 16.0)
-        first_row_bottom = e.get_text_origin()[1] + e.get_cell_size()[1]
-        colors = {
-            (round(p.r, 2), round(p.g, 2), round(p.b, 2))
-            for p in e.prims_list()
-            if p.kind == int(Kind.GLYPH) and p.y0 < first_row_bottom
-        }
-        e.close()
-        if colors != {builtin}:
-            wrong.append(name)
+    cell_h = e.get_cell_size()[1]
+    e.layout((900.0, (len(names) + 4) * cell_h * 4.0), 16.0)
+    origin_y = e.get_text_origin()[1]
+    cell_h = e.get_cell_size()[1]
+    by_row: dict[int, set[tuple[float, float, float]]] = {}
+    for prim in e.prims_list():
+        if prim.kind != int(Kind.GLYPH):
+            continue
+        row = int((prim.y0 - origin_y) // cell_h)
+        by_row.setdefault(row, set()).add(
+            (round(prim.r, 2), round(prim.g, 2), round(prim.b, 2))
+        )
+    e.close()
+
+    assert len(by_row) >= len(names), (
+        f"only {len(by_row)} rows laid out for {len(names)} names — the viewport clipped some, "
+        "so a name could pass by never being drawn"
+    )
+    wrong = [n for i, n in enumerate(names) if by_row.get(i) != {builtin}]
 
     total = len(BUILTINS) + len(VARIABLES)
     assert not wrong, (

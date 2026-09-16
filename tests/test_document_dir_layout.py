@@ -10,6 +10,7 @@ These pin the single home and prove every reader agrees with it.
 """
 
 import ast
+from functools import cache
 from pathlib import Path
 
 import pytest
@@ -29,16 +30,24 @@ _PKG = Path(__file__).resolve().parent.parent / "shaderbox"
 _HOME = _PKG / "paths.py"
 
 
-def _modules_with_literal(literal: str) -> list[str]:
-    hits: list[str] = []
+@cache
+def _string_constants() -> dict[str, list[str]]:
+    # One parse of the package, shared by every literal the parametrize asks about — the scan
+    # does not depend on which literal is being looked up, so it ran four times over.
+    found: dict[str, list[str]] = {}
     for path in sorted(_PKG.rglob("*.py")):
         if path == _HOME:
             continue
         tree = ast.parse(path.read_text(), filename=str(path))
         for node in ast.walk(tree):
-            if isinstance(node, ast.Constant) and node.value == literal:
-                hits.append(f"{path.relative_to(_PKG.parent).as_posix()}:{node.lineno}")
-    return hits
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                site = f"{path.relative_to(_PKG.parent).as_posix()}:{node.lineno}"
+                found.setdefault(node.value, []).append(site)
+    return found
+
+
+def _modules_with_literal(literal: str) -> list[str]:
+    return _string_constants().get(literal, [])
 
 
 @pytest.mark.parametrize(

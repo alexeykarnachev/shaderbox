@@ -12,6 +12,7 @@ test whose name still promised "and persists". Both read as correct and did noth
 import ast
 import importlib
 import pkgutil
+from functools import cache
 from pathlib import Path
 
 from pydantic import BaseModel
@@ -43,8 +44,11 @@ def _models() -> dict[str, type[BaseModel]]:
     return found
 
 
-def _construction_sites() -> list[tuple[Path, str, str, int]]:
-    """(file, model name, keyword, line) for every `Model(field=...)` call we can read."""
+@cache
+def _construction_sites() -> tuple[tuple[Path, str, str, int], ...]:
+    """(file, model name, keyword, line) for every `Model(field=...)` call we can read.
+
+    Cached: both tests in this file ask for the same sweep over the same tree."""
     models = _models()
     sites: list[tuple[Path, str, str, int]] = []
     for root in _SEARCHED:
@@ -64,7 +68,7 @@ def _construction_sites() -> list[tuple[Path, str, str, int]]:
                 for keyword in node.keywords:
                     if keyword.arg is not None:
                         sites.append((path, name, keyword.arg, node.lineno))
-    return sites
+    return tuple(sites)
 
 
 def test_the_sweep_finds_construction_sites_to_check() -> None:

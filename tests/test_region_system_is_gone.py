@@ -149,10 +149,21 @@ def _module_imports(tree: ast.Module) -> dict[str, str]:
     return out
 
 
+_FUNCTIONS_BY_TREE: dict[int, dict[str, ast.FunctionDef]] = {}
+
+
 def _functions(tree: ast.Module) -> dict[str, ast.FunctionDef]:
-    return {
-        node.name: node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)
-    }
+    # A module's functions do not change once parsed, and the scans below ask per container.
+    # Walking afresh each time ran the whole tree 1560 times.
+    cached = _FUNCTIONS_BY_TREE.get(id(tree))
+    if cached is None:
+        cached = {
+            node.name: node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef)
+        }
+        _FUNCTIONS_BY_TREE[id(tree)] = cached
+    return cached
 
 
 def _ui_primitives_focusables() -> set[str]:
