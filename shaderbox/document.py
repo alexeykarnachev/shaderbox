@@ -431,8 +431,6 @@ class Document:
         """
         if old.texture.size == size:
             return old
-        if self._resampler is None:
-            self._resampler = CanvasResampler(self._gl)
         new = Canvas(
             gl=self._gl,
             size=size,
@@ -440,9 +438,20 @@ class Document:
             filter=old.filter,
             wrap=old.wrap,
         )
-        self._resampler.blit(old.texture, new)
+        self._blit_into(old, new)
         old.release()
         return new
+
+    def _blit_into(self, source: Canvas, target: Canvas) -> None:
+        """`source`'s whole picture drawn into `target`, whatever the two sizes are.
+
+        The resampler is built on first use and lives for the document: both callers -- a resize
+        and an export serving a caller's canvas -- are rare enough that allocating one per
+        document at open would cost every document a program it may never draw with.
+        """
+        if self._resampler is None:
+            self._resampler = CanvasResampler(self._gl)
+        self._resampler.blit(source.texture, target)
 
     def set_canvas_size(self, size: tuple[int, int]) -> None:
         """Resize the document: its output target and every feedback history, now.
@@ -829,8 +838,9 @@ class Document:
     ) -> None:
         """Draw the document: every pass the output needs, in order, each exactly once.
 
-        `canvas` overrides the OUTPUT pass's target only — intermediate passes always draw into
-        their own, since that is what the next pass samples.
+        `canvas` RECEIVES the output pass's picture; every pass, the output included, still draws
+        into its own canvas, since that is what the next pass samples and what the feedback swap
+        advances.
 
         `target` draws that pass and its ancestor chain instead of the graph output's, skipping
         whatever already drew this frame. The graph output still decides which pass keeps full
@@ -880,15 +890,14 @@ class Document:
             # never by appearing N times in `order`, which would mean weakening the draw-once
             # invariant that exists to catch a bug reading as slow rather than wrong.
             #
-            # An ITERATED OUTPUT pass draws its early iterations into its OWN canvas and only the
-            # last one into `canvas`: the chain advances by swapping `render_pass.canvas`, so
-            # aiming every iteration at the external target would write somewhere the swap never
-            # touches and the chain would silently not advance. RC's final cascade is exactly
-            # this shape.
+            # EVERY iteration draws into the pass's OWN canvas, the output's included: the chain
+            # advances by swapping `render_pass.canvas`, so an iteration aimed at `canvas` writes
+            # somewhere the swap never touches and leaves the pass's own canvas holding a stale
+            # frame. An external `canvas` is served after the loop, by blitting what the pass
+            # drew -- one rule for every iteration rather than one for the last.
             with profiler.gpu(f"pass:{name}", count=entry.iterations):
                 for iteration in range(entry.iterations):
                     last = iteration + 1 == entry.iterations
-                    draw_into = canvas if (name == output and last) else None
                     # The textures the wiring fills: a pass's live canvas, or the consumer's own
                     # feedback history for a self-read. A sampler the wiring does not fill keeps its
                     # own value -- a texture the user bound, or a source, which `Pass.render` binds
@@ -901,7 +910,6 @@ class Document:
                             inputs[uniform] = self.passes[source_name].canvas.texture
                     render_pass.render(
                         u_time=u_time,
-                        canvas=draw_into,
                         inputs=inputs,
                         iteration=iteration,
                         iterations=entry.iterations,
@@ -913,6 +921,8 @@ class Document:
                         # stale texture -- the chain would never advance. No-op unless this pass
                         # actually reads itself.
                         self._swap_feedback(name)
+            if canvas is not None and name == output:
+                self._blit_into(render_pass.canvas, canvas)
 
     @classmethod
     def load_from_dir(

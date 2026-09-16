@@ -21,9 +21,7 @@ from shaderbox.pass_graph import PassEntry, TargetConfig
 
 # The corner every default is the opposite of: NEAREST against a LINEAR default, wrap against
 # clamp, f4 against f2, a half-size scale against 1.0.
-NON_DEFAULT = TargetConfig(
-    scale=0.5, dtype="f4", filter_linear=False, wrap=True
-)
+NON_DEFAULT = TargetConfig(scale=0.5, dtype="f4", filter_linear=False, wrap=True)
 
 _NEAREST = (moderngl.NEAREST, moderngl.NEAREST)
 _LINEAR = (moderngl.LINEAR, moderngl.LINEAR)
@@ -63,7 +61,9 @@ def canvas_violations(document: Document) -> list[str]:
         live = _config_of(render_pass.canvas)
         implied = _implied(document, name)
         if live != implied:
-            violations.append(f"pass '{name}': canvas {live} but graph implies {implied}")
+            violations.append(
+                f"pass '{name}': canvas {live} but graph implies {implied}"
+            )
         history = document._feedback.get(name)
         if history is not None and _config_of(history) != live:
             violations.append(
@@ -74,8 +74,8 @@ def canvas_violations(document: Document) -> list[str]:
 
 def assert_canvases_agree(document: Document) -> None:
     violations = canvas_violations(document)
-    assert not violations, "canvas configuration disagrees with the graph:\n" + "\n".join(
-        violations
+    assert not violations, (
+        "canvas configuration disagrees with the graph:\n" + "\n".join(violations)
     )
 
 

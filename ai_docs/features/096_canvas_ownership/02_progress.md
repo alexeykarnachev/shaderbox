@@ -69,3 +69,28 @@ exemption asserting itself rather than a gap.
 No file under `shaderbox/` was touched. Returned `assert_canvases_agree` alongside the list
 form -- the list is what lets a report name every violation at once, since these defects arrive
 in groups.
+
+## W-1 F6, the frozen export — LANDED
+
+done-condition (written in advance): `repro/f6_frozen_export.py` prints a CLIMBING sequence at
+both `iterations=1` and `iterations=2`, judged on the decoded video rather than on a canvas read,
+and `make gates` is green.
+
+**Reproduced first, on this tree**, since every finding was verified at a commit now behind us:
+`[10, 10, 10, 10, 10, 10]` and `[23, 23, 23, 23, 23, 23]` — frozen at both counts, exactly as
+`00_findings.md` records. After the fix: `[10, 23, 38, 50, 62, 75]` and
+`[23, 50, 75, 100, 127, 151]`.
+
+The fix is the one the spec decided. `draw_into` is gone: every iteration draws into
+`render_pass.canvas`, and after the loop an external `canvas` receives the output pass's picture
+through a blit. `Document` already held a `CanvasResampler` for the resize path, so the blit is
+that same tool — factored out of `resample_canvas` into `_blit_into(source, target)` so the two
+callers share one home rather than each building a resampler.
+
+`Pass.render`'s `canvas=` argument is no longer passed from this loop at all: it was constant
+`None` after the change, and a constant argument reads as a choice that is still being made.
+`render`'s own docstring said `canvas` "overrides the OUTPUT pass's target"; that is no longer
+the mechanism, so it now says it RECEIVES the output's picture.
+
+Ruff reformatted `tests/canvas_invariants.py` after the W-0 commit (a hook autofix, no behavior);
+it is folded in here.
