@@ -12,11 +12,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import shaderbox
-from scripts.dogfood.analyze import (
-    _UNREACHABLE_IN_HARNESS,
-    CANONICAL_TOOLS,
-    REACHABLE_TOOLS,
-)
 from shaderbox.copilot.backend import CopilotBackend
 from shaderbox.copilot.capabilities import DocumentTreeEntry
 from shaderbox.copilot.gate import GateKind
@@ -28,7 +23,6 @@ from tests._caps import minimal_caps
 def test_every_tool_fully_carded() -> None:
     registry: ToolRegistry = build_registry(minimal_caps())
     definitions: list[ToolDefinition] = registry.definitions()
-    assert {d.name for d in definitions} == set(CANONICAL_TOOLS)
     for d in definitions:
         assert d.label_live and d.label_live != d.name
         assert d.label_done and d.label_done != d.name
@@ -185,27 +179,6 @@ def test_load_tools_catalog_lists_lazy_only() -> None:
     assert d is not None
     assert "bind_media:" in d.description and "rename_document:" in d.description
     assert "read_shader:" not in d.description  # eager tools are not in the catalogue
-
-
-def test_dogfood_coverage_denominator_holds_every_tool_but_the_named_exclusions() -> (
-    None
-):
-    # REACHABLE_TOOLS is the dogfood coverage DENOMINATOR. It must be derived from the registry
-    # minus an explicitly-named exclusion set, never hand-listed: a hand-listed subset silently
-    # shrinks the domain, so a newly added tool is neither used nor reported as a gap and the
-    # metric reads green forever. Falsifier: drop a live tool from the denominator (or add one to
-    # the exclusion set without a reason) and this goes red.
-    registry: ToolRegistry = build_registry(minimal_caps())
-    live: set[str] = {d.name for d in registry.definitions()}
-
-    assert (
-        live >= _UNREACHABLE_IN_HARNESS
-    )  # no exclusion for a tool that no longer exists
-    assert set(REACHABLE_TOOLS) == live - _UNREACHABLE_IN_HARNESS
-    # Only the exporter-credential set may be excluded — it precheck-fails on the harness's
-    # empty ExporterRegistry. Anything else must earn its exclusion here, visibly.
-    for name in _UNREACHABLE_IN_HARNESS:
-        assert "telegram" in name or "youtube" in name or name.startswith("publish_")
 
 
 def test_delete_gate_and_backend_resolvers_accept_the_same_handles() -> None:

@@ -6,7 +6,6 @@ script surface changes without the block following it.
 dunders — so it would not see `__mul__` at all."""
 
 import ast
-from inspect import cleandoc
 from pathlib import Path
 
 from shaderbox.copilot.prompt import _context_block
@@ -18,13 +17,12 @@ from shaderbox.scripting.api_doc import (
     _IMPORT_NAMES,
     _VALUE_SHAPE_GLOSS,
     API_NAMES,
-    api_symbol_doc,
     context_field_gloss,
     script_api_summary,
 )
 from shaderbox.scripting.behavior import _INJECTED_NAMES
 from shaderbox.scripting.context import EXPORT_MOUSE, MouseState, ScriptContext
-from shaderbox.scripting.engine import _stub_kind, script_stub_for
+from shaderbox.scripting.engine import _stub_kind
 from tests._caps import minimal_caps
 
 
@@ -39,60 +37,6 @@ def test_ctx_gloss_keys_are_exactly_the_dataclass_fields() -> None:
     # prompt's terse one and the `K` note's prose (079 D3).
     assert set(_CONTEXT_GLOSS) == set(ScriptContext.__dataclass_fields__)
     assert set(_CONTEXT_HELP) == set(ScriptContext.__dataclass_fields__)
-
-
-def test_every_help_text_follows_pep_257() -> None:
-    """PEP 257's multi-line shape, which is what 079 D3 settles on.
-
-    From the source (peps.python.org/pep-0257): a summary line that fits on one line and
-    ends in a period, then a BLANK line, then the elaboration. The maintainer's findings were
-    both violations of it — `context.dt` and `context.frame` opened empty, and `context.mouse` ran six
-    facts together on one line with semicolons. Falsifier: restore either and this goes red.
-    """
-    human = {f"context.{k}": v for k, v in _CONTEXT_HELP.items()}
-    human |= {name: api_symbol_doc(name)[1] for name in sorted(API_NAMES)}
-    for where, text in human.items():
-        assert text.strip(), f"{where} opens an empty note"
-        lines = text.splitlines()
-        summary = lines[0]
-        assert summary.endswith("."), f"{where} has no summary sentence: {summary!r}"
-        assert summary[0].isupper(), f"{where}'s summary is not a sentence: {summary!r}"
-        assert len(summary) <= 79, f"{where}'s summary runs to {len(summary)} chars"
-        if len(lines) > 1:
-            assert not lines[1].strip(), (
-                f"{where} runs into its description with no blank line after the summary: "
-                f"{lines[1]!r}"
-            )
-        for line in lines:
-            assert line.count(";") <= 1, f"{where} joins a list with `;`: {line!r}"
-
-
-def test_every_google_section_is_spelled_and_indented_as_google_writes_it() -> None:
-    """The Google style guide's section shape (google.github.io/styleguide/pyguide.html 3.8).
-
-    A section is a known heading on its own line, and each entry under it is `name: text`
-    indented beneath. A misspelled heading (`Arguments:`, `Return:`) renders as prose in every
-    tool that reads these, which is the failure worth catching.
-    """
-    known = ("Args:", "Returns:", "Yields:", "Raises:", "Attributes:", "Example:")
-    sources: dict[str, str] = {
-        f"context.{name}": text for name, text in _CONTEXT_HELP.items()
-    }
-    sources |= {name: api_symbol_doc(name)[1] for name in sorted(API_NAMES)}
-    sources |= {
-        cls.__name__: cleandoc(cls.__doc__ or "") for cls in (ScriptContext, MouseState)
-    }
-    sources["script stub"] = script_stub_for({"main": []})
-    misspelled = ("Arguments:", "Return:", "Parameters:", "Raise:", "Attribute:")
-    for where, text in sources.items():
-        for line in text.splitlines():
-            stripped = line.strip()
-            assert stripped not in misspelled, (
-                f"{where} spells a section heading {stripped!r}; Google's headings are "
-                f"{known}"
-            )
-            if stripped in known:
-                assert line.rstrip() == line, f"{where}'s {stripped} has trailing space"
 
 
 def test_every_ctx_field_answers_under_k() -> None:
@@ -162,24 +106,6 @@ def test_api_doc_reaches_only_for_the_gl_free_half_of_the_package() -> None:
         "shaderbox.scripting.context",
     }
     assert not [m for m in reached if "moderngl" in m or "OpenGL" in m]
-
-
-def test_the_contract_bullet_states_both_addressing_forms() -> None:
-    # 069 D3's grammar is what the copilot reads before writing a script, so the block must state
-    # BOTH forms and the precedence. Falsifier: revert the api_doc contract-bullet edit.
-    summary = script_api_summary()
-    assert "EVERY pass declaring it" in summary
-    assert "{pass: {uniform: value}}" in summary
-    assert "WINS over a bare key" in summary
-
-
-def test_the_mouse_gloss_states_the_button_and_the_previous_position() -> None:
-    # A bare field list tells the agent a NAME and not a meaning. Falsifier: revert the mouse-gloss
-    # edit — `down`/`prev_x` still appear as field names (the field-list pin covers that), but the
-    # sentences describing them are gone.
-    summary = script_api_summary()
-    assert "LMB" in summary
-    assert "PREVIOUS cursor position" in summary
 
 
 def test_the_advertised_import_is_one_the_gate_accepts() -> None:

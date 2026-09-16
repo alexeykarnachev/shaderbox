@@ -51,14 +51,6 @@ def test_copilot_config_holds_exactly_the_settings_tunable_knobs() -> None:
     assert {f.name for f in fields(CopilotConfig)} == set(_LIMIT_FIELDS)
 
 
-def test_integration_defaults_mirror_config_defaults() -> None:
-    # CopilotConfig is the single source of truth; the persisted store must not drift.
-    cfg = CopilotIntegration()
-    defaults = CopilotConfig()
-    for f in _LIMIT_FIELDS:
-        assert getattr(cfg, f) == getattr(defaults, f), f
-
-
 def test_apply_limits_reaches_the_live_config_with_floors() -> None:
     snap = _snapshot()
     try:

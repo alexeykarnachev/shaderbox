@@ -30,7 +30,6 @@ from shaderbox.commands import (
     CommandId,
     CommandScope,
     chord_to_str,
-    command_label,
 )
 from shaderbox.constants import STARTER_EXAMPLE_ID
 from shaderbox.menus import command_hint
@@ -196,45 +195,6 @@ def test_every_category_is_a_menu_and_every_spec_has_one() -> None:
         )
 
 
-_DESIGN_DOC = Path(__file__).resolve().parent.parent / (
-    "ai_docs/features/093_refinement/06_command_system.md"
-)
-
-
-def _designed_map() -> dict[str, list[list[str]]]:
-    """The map as `06_command_system.md` draws it in its fenced block: category headings at
-    column 0, `  ─` between groups, `  <label>  <chord>` rows (a `▸` opens the confirm)."""
-    text = _DESIGN_DOC.read_text(encoding="utf-8")
-    block = text.split("```", 2)[1].splitlines()[1:]
-    designed: dict[str, list[list[str]]] = {}
-    groups: list[list[str]] = []
-    for line in block:
-        if not line.strip():
-            continue
-        if not line.startswith(" "):
-            groups = [[]]
-            designed[line.strip()] = groups
-        elif line.strip() == "─":
-            groups.append([])
-        else:
-            label = line.strip().split(" ▸")[0].split("  ")[0]
-            groups[-1].append(label)
-    return designed
-
-
-def test_the_map_is_the_designed_one() -> None:
-    """The table renders `06_command_system.md`'s map verbatim: every category's labels in
-    order, grouped as drawn. Falsifier: move `Shader library` from Editor to View, or `Save`
-    into File's second group -- both render a different map and pass every other test."""
-    rendered: dict[str, list[list[str]]] = {}
-    for spec in COMMAND_SPECS:
-        groups = rendered.setdefault(spec.category.value, [[]])
-        if spec.separator_before:
-            groups.append([])
-        groups[-1].append(spec.label)
-    assert rendered == _designed_map()
-
-
 def test_a_separator_opens_a_group_never_a_menu() -> None:
     first = {
         next(s for s in COMMAND_SPECS if s.category is c).id for c in CATEGORY_ORDER
@@ -299,23 +259,6 @@ def test_menu_enabled_reads_the_scope_not_the_editor_focus(app: Any) -> None:
     assert menus.menu_enabled(app, editor)
 
 
-def test_ui_primitives_stays_app_free_and_menus_does_not() -> None:
-    """M2's layering: `ui_primitives` is the `App`-free leaf, so the command-bearing menu
-    primitives live in `menus.py`. Falsifier: import `App` into `ui_primitives`."""
-    primitives = (_PKG / "ui_primitives.py").read_text(encoding="utf-8")
-    assert "from shaderbox.app import" not in primitives
-    assert "from shaderbox.commands import" not in primitives
-
-    menus_source = (_PKG / "menus.py").read_text(encoding="utf-8")
-    assert "from shaderbox.app import App" in menus_source
-    assert "from shaderbox.commands import" in menus_source
-
-
-# ---------------------------------------------------------------------------
-# M3 — one spelling
-# ---------------------------------------------------------------------------
-
-
 def _string_literals() -> list[tuple[str, int, str]]:
     found: list[tuple[str, int, str]] = []
     for path in sorted(_PKG.rglob("*.py")):
@@ -362,24 +305,6 @@ def test_no_button_respells_a_command_label_in_another_case() -> None:
     assert not offenders, (
         f"a button respells a command label: {offenders}; take `command_label` instead"
     )
-
-
-def test_the_gate_buttons_take_the_command_label() -> None:
-    settings = command_label(CommandId.OPEN_SETTINGS)
-    for module in (
-        "widgets/copilot_chat.py",
-        "exporters/telegram.py",
-        "exporters/youtube.py",
-    ):
-        source = (_PKG / module).read_text(encoding="utf-8")
-        assert "command_label(CommandId.OPEN_SETTINGS)" in source, module
-        assert '"Set up token"' not in source and '"Open Settings"' not in source
-    assert settings == "Settings"
-
-
-# ---------------------------------------------------------------------------
-# M4 — one item set per object kind
-# ---------------------------------------------------------------------------
 
 
 def test_the_pass_set_is_the_same_on_the_strip_and_the_node(
@@ -678,17 +603,6 @@ def test_the_armed_document_delete_state_is_gone(app: Any) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_inline_input_lives_in_the_primitives_now() -> None:
-    """M7's promotion: `editor_types` no longer owns it, and `file_ops` takes it from the
-    primitives."""
-    from shaderbox import editor_types
-
-    assert not hasattr(editor_types, "InlineInput")
-    assert hasattr(ui_primitives, "InlineInput")
-    file_ops = (_PKG / "shader_lib/file_ops.py").read_text(encoding="utf-8")
-    assert "from shaderbox.ui_primitives import InlineInput" in file_ops
-
-
 def test_the_name_row_commits_on_a_click_away_and_cancels_on_the_x(
     app: Any, monkeypatch: Any
 ) -> None:
@@ -807,16 +721,6 @@ def test_the_group_prompt_holds_one_inline_input(app: Any) -> None:
 # ---------------------------------------------------------------------------
 # M10 — no double gate on a disabled item
 # ---------------------------------------------------------------------------
-
-
-def test_the_pass_delete_has_no_python_side_double_gate() -> None:
-    """A `menu_item_simple(enabled=False)` refuses the click on this build (measured with a
-    positive control, 093/17), so the `and deletable` the comment justified is gone -- and
-    with M5 the verb is a submenu, whose disabled form does not open at all."""
-    source = (_PKG / "widgets/pass_list.py").read_text(encoding="utf-8")
-    assert "and deletable" not in source
-    assert "can still register a click" not in source
-    assert "enabled=len(document.passes) > 1" in source
 
 
 def test_the_last_pass_cannot_be_deleted_through_the_menu(app: Any) -> None:

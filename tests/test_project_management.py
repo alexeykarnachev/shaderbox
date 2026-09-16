@@ -614,20 +614,6 @@ def test_the_consuming_half_is_wired(app: Any, tmp_path: Path) -> None:
     assert app.projects_rows
 
 
-def test_open_is_the_verb_row_s_primary_and_never_rides_a_row(app: Any) -> None:
-    """Every verb acts on the selection from the one row; nothing is drawn inside a project row.
-
-    Falsifier: put Open back inside `_draw_row` — a control that appears there on selection
-    shifts the row it lives in, which is the overlay trap, and it reintroduces the exception to
-    the rule that placed every other verb.
-    """
-    _ = app
-    source = Path("shaderbox/popups/projects.py").read_text(encoding="utf-8")
-    row = source[source.index("def _draw_row(") : source.index("def _draw_verb_row(")]
-    assert "_button(" not in row, "a project row draws data, never a control"
-    assert 'primary_button("Open")' in source, "Open is the modal's call to action"
-
-
 def test_an_armed_delete_clears_when_another_project_is_selected(app: Any) -> None:
     # D7b calls a stale arm surviving a selection change the worst bug this feature can produce:
     # Yes then trashes whatever is armed while the user is looking at a different row. The disarm

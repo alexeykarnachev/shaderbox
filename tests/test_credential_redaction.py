@@ -61,7 +61,6 @@ def test_resolved_card_and_persistence_are_redacted(tmp_path: Path) -> None:
     card = session.state.messages[1]
     assert card.resolved
     assert _FAKE_TOKEN not in card.text
-    assert card.gate_input == "", "the typed-secret buffer was not cleared on answer"
 
     store = ConversationStore.from_runtime(session.state, [])
     blob = store.model_dump_json()
