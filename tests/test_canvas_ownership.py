@@ -18,14 +18,24 @@ change a canvas, and the two rules below are what keep it from going vacuous:
 """
 
 from collections.abc import Iterator
+from pathlib import Path
 
 import moderngl
 import pytest
 
 from shaderbox.core import Canvas, Pass
 from shaderbox.document import Document
-from shaderbox.pass_graph import PassEntry, PassGraph, PassSource, TargetConfig
+from shaderbox.media import FileDetails, MediaDetails, ResolutionDetails
+from shaderbox.pass_graph import (
+    MIN_CANVAS_PX,
+    PassEntry,
+    PassGraph,
+    PassSource,
+    TargetConfig,
+    clamp_canvas_size,
+)
 from shaderbox.paths import shader_lib_root
+from shaderbox.render_preset import FitPolicy, RenderPreset, ResolutionPolicy
 from shaderbox.shader_lib import ShaderLibIndex, set_active
 from tests.canvas_invariants import (
     NON_DEFAULT,
@@ -148,6 +158,20 @@ def test_a_target_change_takes_the_history_with_it(gl_ctx: moderngl.Context) -> 
     document.release()
 
 
+def test_a_document_built_below_the_floor_is_clamped_like_a_resize(
+    gl_ctx: moderngl.Context,
+) -> None:
+    # `__init__` and `set_canvas_size` are the field's only two writers and the comment above it
+    # says both normalize. Only the second one did: a Document built below MIN_CANVAS_PX kept the
+    # under-floor size until the first resize, at which point every canvas jumped to a size
+    # nobody asked for. `load_from_dir` passes the caller's size straight through.
+    document = Document(gl=gl_ctx, canvas_size=(8, 8))
+
+    assert document.canvas_size == clamp_canvas_size((8, 8))
+    assert document.canvas_size == (MIN_CANVAS_PX, MIN_CANVAS_PX)
+    document.release()
+
+
 def test_a_scale_change_reaches_an_off_chain_passs_canvas(
     gl_ctx: moderngl.Context,
 ) -> None:
@@ -195,12 +219,28 @@ def test_demoting_the_output_applies_the_scale_it_was_ignoring(
     document.release()
 
 
-def test_a_render_leaves_every_canvas_agreeing(gl_ctx: moderngl.Context) -> None:
+def test_a_render_repairs_a_pass_born_at_the_wrong_size(
+    gl_ctx: moderngl.Context,
+) -> None:
+    """`render`'s lazy fix-up, driven through the one state that actually needs it.
+
+    A pass IN the output chain whose canvas disagrees with its entry: nothing else has conformed
+    it, so the fix-up branch is the only thing that can. Asserting after a render on an already
+    conformed document exercises nothing -- a canary raised inside that branch was never reached
+    by the earlier shape of this test.
+    """
     document = _document(gl_ctx)
-    for frame in range(3):
-        document.begin_frame(frame)
-        document.render()
-        assert_canvases_agree(document)
+    # Put `helper` back at full size behind the document's back, as a birth would.
+    document.passes["helper"].canvas.set_size(_CANVAS)
+    assert canvas_violations(document), (
+        "the setup did not create the disagreement it needs"
+    )
+
+    document.begin_frame(0)
+    document.render()
+
+    assert_canvases_agree(document)
+    assert document.passes["helper"].canvas.texture.size == (32, 32)
     document.release()
 
 
@@ -217,33 +257,56 @@ def test_a_frame_boundary_swap_keeps_the_pair_matched(gl_ctx: moderngl.Context) 
 
 
 def test_an_export_canvas_carries_the_output_passs_format(
-    gl_ctx: moderngl.Context,
+    gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
-    # The export's fit branch allocated its canvas with no dtype/filter/wrap while its sibling
-    # twelve lines up copied all three, and the branch that ships (Telegram, the shared shapes)
-    # was the lossy one.
+    """The canvas `render_media` ALLOCATES, on the branch that ships.
+
+    `FitPolicy.RENDER_AT_TARGET` is what `render_shape.py` and `exporters/telegram.py` take,
+    and its canvas is handed to the output pass as its draw target -- so the canvas's format IS
+    the pass's format for the whole export, and the loss is at WRITE time. Inspecting the output
+    file finds nothing, since the readback tonemaps a float target to 8-bit either way.
+
+    The canvas is captured from inside the real call rather than rebuilt here: a test that
+    constructs its own copy asserts a fact about `Canvas.__init__` and passes with the defect
+    present -- measured, F1 reintroduced verbatim survived exactly that shape.
+    """
     document = _document(gl_ctx)
     loud = TargetConfig(dtype="f4", filter_linear=False, wrap=True)
     document.graph = document.graph.with_target("main", loud)
     document.set_pass_target("main", loud)
-    assert_canvases_agree(document)
     output = document.render_pass.canvas
 
-    scratch = Canvas(
-        gl=gl_ctx,
-        size=(32, 32),
-        dtype=output.dtype,
-        filter=output.filter,
-        wrap=output.wrap,
+    seen: dict[str, object] = {}
+    original = Document._render_media_into
+
+    def capture(self: Document, details: MediaDetails, canvas: Canvas) -> MediaDetails:
+        seen["dtype"] = canvas.dtype
+        seen["filter"] = canvas.filter
+        seen["wrap"] = canvas.wrap
+        return details
+
+    details = MediaDetails(
+        is_video=False,
+        file_details=FileDetails(path=str(tmp_path / "out.png"), size=0),
+        resolution_details=ResolutionDetails(width=32, height=32),
+    )
+    preset = RenderPreset(
+        resolution_policy=ResolutionPolicy.FIXED_DIMS,
+        target_w=32,
+        target_h=32,
+        fit=FitPolicy.RENDER_AT_TARGET,
     )
     try:
-        assert (scratch.dtype, scratch.filter, scratch.wrap) == (
-            output.dtype,
-            output.filter,
-            output.wrap,
-        )
+        Document._render_media_into = capture  # type: ignore[method-assign]
+        document.render_media(details, preset)
     finally:
-        scratch.release()
+        Document._render_media_into = original  # type: ignore[method-assign]
+
+    assert seen == {
+        "dtype": output.dtype,
+        "filter": output.filter,
+        "wrap": output.wrap,
+    }, "the export's fit branch did not carry the output pass's format"
     document.release()
 
 

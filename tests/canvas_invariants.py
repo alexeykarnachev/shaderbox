@@ -11,6 +11,10 @@ Two rules the callers must keep, both learned the hard way:
   test that renders first passes whether or not the operation under test did anything.
 - **Drive it over the NON-DEFAULT corner.** `DEFAULT_FILTER_LINEAR` is True and `DEFAULT_WRAP` is
   False, so a check built on defaults cannot fail. `NON_DEFAULT` below is that corner.
+
+The blit's own invariant -- a view canvas carrying its source texture's filter -- is not here:
+it belongs to `ChannelBlit`, not to a Document's graph, and
+`test_channel_view.test_a_view_blit_magnifies_with_the_source_pass_filter` guards it.
 """
 
 import moderngl
@@ -76,15 +80,4 @@ def assert_canvases_agree(document: Document) -> None:
     violations = canvas_violations(document)
     assert not violations, (
         "canvas configuration disagrees with the graph:\n" + "\n".join(violations)
-    )
-
-
-def assert_blit_filter_follows(blit_canvas: Canvas, source: moderngl.Texture) -> None:
-    """A channel blit's canvas carries the filter of the texture it shows.
-
-    The viewer magnifies the BLIT's texture, so a blit that keeps its own default makes the
-    output pass's `smooth` setting invisible in every view but COLOR.
-    """
-    assert blit_canvas.texture.filter == source.filter, (
-        f"blit filter {blit_canvas.texture.filter} does not follow source {source.filter}"
     )
