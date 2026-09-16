@@ -173,7 +173,15 @@ def app(
     # re-make the window current on every build; reusing one App means the fixture does it.
     glfw.make_context_current(a.window)
     moderngl.init_context()
-    moderngl.get_context().gc_mode = "auto"
+    # NOT "auto", which the app uses. Under auto, moderngl frees a dropped GL object from its
+    # `__del__`, so the release runs on whatever thread Python happens to collect on. The app
+    # only ever collects on its GL thread; here one App outlives every test in the worker, so
+    # its objects survive until a collection that xdist's receiver thread can trigger -- and
+    # freeing a GL object there, with no current context, segfaults the worker mid-test,
+    # including in tests that touch no GL at all. `context_gc` queues the drops instead, and
+    # the `gc()` below frees the queue on this thread, where the context is current.
+    moderngl.get_context().gc_mode = "context_gc"
+    moderngl.get_context().gc()
     for field, value in _app_baseline.items():
         setattr(a, field, copy.copy(value))
     a._init(seed_tmp_project(tmp_path), persist_pointer=False)
