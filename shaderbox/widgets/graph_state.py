@@ -78,6 +78,9 @@ class GraphViewState:
     # One-shot: the first canvas frame at a nonzero size fits the view; a scope change
     # clears it so the new scope fits once too.
     fitted: bool = False
+    # The region size the last fit was made against, so a resize can re-fit (094 D1c). (0, 0)
+    # until the first fit, which is what keeps the initial frame from re-fitting itself.
+    fitted_size: tuple[float, float] = (0.0, 0.0)
     node_drag: NodeDrag | None = None
     wire_drag: WireDrag | None = None
     # The snap guides the current drag aligned to, in canvas units: ("v", x) or ("h", y).

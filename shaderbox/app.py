@@ -1536,6 +1536,10 @@ class App:
         # local in `_tick_frame_state`, and it is the value that says whether a surface which adds
         # documents to the render set (094's documents dropdown) added rather than replaced.
         self.planned_documents: list[str] = []
+        # The canvas/graph splitter's in-flight fraction: None unless a drag is live. The
+        # committed value is `app_state.canvas_split_fraction`; this is what the drag moves, so
+        # the resize lands once on release rather than every frame of the sweep (094 D1a).
+        self.canvas_split_drag: float | None = None
         # The live cursor over the current document's preview, fed into the script tick as context.mouse
         # (feature 042). Updated from the preview hit-test in ui.py; defaults to center (the
         # export value) until the preview is hovered. One frame stale by construction (tick runs

@@ -34,7 +34,6 @@ from shaderbox.render_plan import (
     plan_render_set,
 )
 from shaderbox.render_shape import (
-    DEFAULT_ASPECT,
     ResolutionMode,
     aspect_ratio,
     fit_to_aspect,
@@ -763,6 +762,35 @@ def _draw_splitter(app: App, total_width: float, height: float) -> None:
             app.app_state.editor_split_fraction = max(0.15, min(0.85, fraction))
 
 
+def _draw_canvas_splitter(app: App, width: float, total_height: float) -> None:
+    """The app panel's horizontal splitter: the rendering canvas above, the graph below (094 D1a).
+
+    Mirrors `_draw_splitter` on the other axis, with one addition it does not need. This
+    boundary is also the size every AUTO document renders at (`app.viewer_region`), so a drag is
+    a continuous stream of render-resolution changes -- and `apply_damping` only damps a NOISY
+    change: past its 5% dead band it applies every frame, resizing the canvas and resampling
+    every feedback history. So the fraction is latched while the drag is live and applied on
+    release, which is the shape `App.update_splitter_drag` already uses for the vertical one.
+    """
+    imgui.invisible_button("##canvas_splitter", imgui.ImVec2(width, _SPLITTER_W))
+    if imgui.is_item_hovered() or imgui.is_item_active():
+        app.want_cursor = app.resize_ns_cursor
+    if imgui.is_item_active():
+        delta_y = imgui.get_io().mouse_delta.y
+        if delta_y and total_height > 0.0:
+            base = (
+                app.canvas_split_drag
+                if app.canvas_split_drag is not None
+                else app.app_state.canvas_split_fraction
+            )
+            app.canvas_split_drag = max(0.15, min(0.85, base + delta_y / total_height))
+    elif app.canvas_split_drag is not None:
+        # Released: commit once, so the resize happens at the size the user chose rather than at
+        # every size they passed through.
+        app.app_state.canvas_split_fraction = app.canvas_split_drag
+        app.canvas_split_drag = None
+
+
 def _draw_canvas_backdrop(
     checker: moderngl.Texture, origin: imgui.ImVec2, width: float, height: float
 ) -> None:
@@ -786,10 +814,9 @@ def _draw_canvas_backdrop(
 class ViewerGeometry:
     """Where the viewer drew: the BOX it always occupies and the picture fitted inside it.
 
-    The box's height is the panel's WIDTH at `VIEWER_BOX_ASPECT`, capped by the room above
-    the control panel's minimum -- so it moves only when the splitter moves, never with the
-    document's aspect (093 W7, his call); the picture is centered in the box, and its
-    overlays anchor to the picture.
+    The box's height is the HORIZONTAL SPLITTER's share of the panel (094 D1a) -- so it moves
+    when either splitter moves, never with the document's aspect (093 W7, his call); the
+    picture is centered in the box, and its overlays anchor to the picture.
     """
 
     box_min: imgui.ImVec2
@@ -798,13 +825,7 @@ class ViewerGeometry:
     image_width: float
 
 
-# The viewer box's shape: the width the splitter gives the panel, at this aspect, is its
-# height. The default document shape, so a new document fills the box; a taller document is
-# fitted inside it. His to tune after seeing it.
-VIEWER_BOX_ASPECT: float = aspect_ratio(DEFAULT_ASPECT)
-
-
-def _draw_document_image(app: App, control_panel_min_height: float) -> ViewerGeometry:
+def _draw_document_image(app: App, box_height: float) -> ViewerGeometry:
     """Draw the current document's preview, or the empty-state prompt in its place.
 
     Returns the geometry the FPS overlay and the control panel below both position
@@ -824,15 +845,11 @@ def _draw_document_image(app: App, control_panel_min_height: float) -> ViewerGeo
     app.script_mouse = replace(app.script_mouse, down=False)
     app.script_mouse_inside = False
 
-    # The box: the panel's width, and that width at the box aspect for the height, capped by
-    # the room above the control panel. The same for every document and for no document at
-    # all; only the splitter changes it.
+    # The box: the panel's width, and the height the horizontal splitter gives it (094 D1a).
+    # The same for every document and for no document at all.
     avail = imgui.get_content_region_avail()
     box_width = avail.x
-    box_height = max(
-        min(avail.y - control_panel_min_height - 10, box_width / VIEWER_BOX_ASPECT),
-        100.0,
-    )
+    box_height = max(min(box_height, avail.y - _SPLITTER_W), 100.0)
 
     if app.current_document_id in app.ui_documents:
         ui_document = app.ui_documents[app.current_document_id]
@@ -962,9 +979,15 @@ def _document_titles(app: App) -> dict[str, str]:
 
 
 def _draw_app_panel(app: App) -> None:
-    control_panel_min_height = SIZE.PANEL_CTRL_MINH
-
-    viewer = _draw_document_image(app, control_panel_min_height)
+    panel_height = imgui.get_content_region_avail().y
+    # The in-flight drag wins while it is live, so the boundary tracks the cursor even though
+    # the render size only moves on release (094 D1a).
+    fraction = (
+        app.canvas_split_drag
+        if app.canvas_split_drag is not None
+        else app.app_state.canvas_split_fraction
+    )
+    viewer = _draw_document_image(app, panel_height * fraction)
 
     if app.current_document_id in app.ui_documents:
         app.fps_details_open = fps_overlay(
@@ -993,14 +1016,17 @@ def _draw_app_panel(app: App) -> None:
         if imgui.is_item_hovered():
             imgui.set_tooltip("Channel view")
 
+    # The splitter sits ON the boundary: the canvas box ends here and the region below is the
+    # control panel's (the graph's, from 094 C10).
     imgui.set_cursor_screen_pos(
-        (viewer.box_min.x, viewer.box_min.y + viewer.box_height + float(SPACE.MD))
+        (viewer.box_min.x, viewer.box_min.y + viewer.box_height)
     )
+    _draw_canvas_splitter(app, imgui.get_content_region_avail().x, panel_height)
 
     # ----------------------------------------------------------------
     # Control panel
     region = imgui.get_content_region_avail()
-    control_panel_height = max(control_panel_min_height, region.y)
+    control_panel_height = max(float(SIZE.PANEL_CTRL_MINH), region.y)
     control_panel_width = region.x
     with imgui_ctx.begin_child(
         "control_panel",

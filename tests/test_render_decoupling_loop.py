@@ -27,7 +27,7 @@ from shaderbox.render_shape import ResolutionMode, fit_to_aspect
 from shaderbox.tabs.document import _apply_canvas_size, _switch_resolution_mode
 from shaderbox.theme import SIZE
 from shaderbox.ui import _tick_frame_state, update_and_draw
-from shaderbox.ui_models import ConfirmRequest
+from shaderbox.ui_models import ConfirmRequest, UIAppState
 from shaderbox.ui_primitives import profile_rows_plan
 from tests.conftest import seed_extra_document
 
@@ -864,21 +864,57 @@ def test_the_control_panel_holds_still_across_an_aspect_change(
     assert wide_y == square_y, f"the control panel moved from {square_y} to {wide_y}"
 
 
-def test_the_viewer_box_follows_the_splitter_not_the_aspect(
+def test_the_viewer_box_follows_the_horizontal_splitter_not_the_aspect(
     app: Any, monkeypatch: Any
 ) -> None:
-    """The box's height is the panel's width at `VIEWER_BOX_ASPECT`: a narrower right side
-    hands the freed height to the panels below, and only the splitter can do that.
+    """The box's height is the HORIZONTAL splitter's share of the panel (094 D1a).
 
-    Falsifier: size the box from the room above the panel alone -- the two splits agree.
+    Before 094 it was the panel's WIDTH at a fixed aspect, so the only way to move the boundary
+    was to drag the vertical splitter and hope. Now it is dragged directly, and the document's
+    aspect still does not move it -- which is the half of 093 W7 that survives.
+
+    Falsifier: read the height from the old derivation and the two fractions agree.
     """
     ui_document = app.ui_documents[app.current_document_id]
     ui_document.ui_state.aspect = (1, 1)
     ui_document.document.aspect = (1, 1)
-    app.app_state.editor_split_fraction = 0.5
-    wide_panel_y = _control_panel_y(app, monkeypatch)
-    app.app_state.editor_split_fraction = 0.7
-    narrow_panel_y = _control_panel_y(app, monkeypatch)
-    assert narrow_panel_y < wide_panel_y, (
-        f"a narrower panel left the control panel at {narrow_panel_y} (was {wide_panel_y})"
+    app.app_state.canvas_split_fraction = 0.3
+    short_panel_y = _control_panel_y(app, monkeypatch)
+    app.app_state.canvas_split_fraction = 0.6
+    tall_panel_y = _control_panel_y(app, monkeypatch)
+    assert tall_panel_y > short_panel_y, (
+        f"a taller canvas left the control panel at {tall_panel_y} (was {short_panel_y})"
+    )
+
+
+def test_the_split_fraction_survives_a_restart(app: Any) -> None:
+    """094 check 16: the fraction is persisted state, not a session value.
+
+    Falsifier: omit the field from `UIAppState` and the reload reverts to the default.
+    """
+    app.app_state.canvas_split_fraction = 0.72
+    app.app_state.save(app.paths.app_state_file)
+    reloaded = UIAppState.load(app.paths.app_state_file)
+    assert reloaded.canvas_split_fraction == 0.72
+
+
+def test_the_splitter_moves_what_every_auto_document_renders_at(
+    app: Any, monkeypatch: Any
+) -> None:
+    """094 check 17: the splitter is wired to the render size, not only to the layout.
+
+    `app.viewer_region` is what every AUTO document renders at next frame, and it is derived
+    from the box the splitter sizes -- so this is the check that proves the drag reaches the
+    thing it actually controls.
+
+    Falsifier: derive `viewer_region` from the old fixed-aspect box; the region does not move.
+    """
+    app.app_state.canvas_split_fraction = 0.3
+    _control_panel_y(app, monkeypatch)
+    short_region = app.viewer_region
+    app.app_state.canvas_split_fraction = 0.6
+    _control_panel_y(app, monkeypatch)
+    tall_region = app.viewer_region
+    assert tall_region[1] > short_region[1], (
+        f"the render height did not follow the splitter: {short_region} -> {tall_region}"
     )

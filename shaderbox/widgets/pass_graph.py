@@ -88,6 +88,9 @@ _CYCLE_PREFIX = "passes form a cycle"
 # numeric suffix is appended until no group carries it, so the label is always distinct.
 _ROOT_LABEL = "document"
 _FIT_MARGIN = float(SPACE.LG)
+# How far the canvas region may move before the camera re-fits (094 D1c). Wide enough that a
+# one-pixel layout jitter does not re-frame the graph under the user's hands.
+_REFIT_PX = 24.0
 _ZOOM_STEP = 1.1
 # The port dot's inner shapes, as fractions of its radius: the NoSource center, the media
 # square's half side.
@@ -979,8 +982,18 @@ def _draw_canvas(
     view.selected_wire = revalidated_wire(
         view.selected_wire, {edge.wire_id for edge in picture.edges}
     )
+    # A REGION resize re-fits (094 D1c). `fitted` is a one-shot, which was right while the graph
+    # was an editor tab whose pane only moved with the vertical splitter -- hosted in the app
+    # panel its height is a dragged control, so a camera that never re-fits leaves the graph
+    # cropped with no cue and no recovery but `Frame all`.
+    if view.fitted_size != (0.0, 0.0) and (
+        abs(avail.x - view.fitted_size[0]) > _REFIT_PX
+        or abs(avail.y - view.fitted_size[1]) > _REFIT_PX
+    ):
+        view.fitted = False
     if not view.fitted:
         _fit(view, nodes, picture, avail)
+        view.fitted_size = (avail.x, avail.y)
     xf = _Xf(origin, view.pan, view.zoom)
     dl = imgui.get_window_draw_list()
     output = document.graph.output

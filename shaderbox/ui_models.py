@@ -263,6 +263,11 @@ class UIAppState(BaseModel):
     document_gpu_budget: float = Field(default=0.5, ge=0.1, le=1.0)
 
     editor_split_fraction: float = Field(default=0.5, ge=0.0, le=1.0)
+    # The app panel's horizontal split: the rendering canvas above, the graph below (094 D1b).
+    # Before this the canvas height was DERIVED (the panel's width at a fixed aspect, capped by
+    # the control panel's minimum) and could not be set on purpose. The default reproduces that
+    # derivation at a typical window size, so the first launch after 094 looks unchanged.
+    canvas_split_fraction: float = Field(default=0.46, ge=0.15, le=0.85)
     editor_settings: EditorSettings = EditorSettings()
     # Chat input height in px, set by the feed/input splitter (the input keeps this height on
     # window resize; the feed above flexes). Clamped at draw.
