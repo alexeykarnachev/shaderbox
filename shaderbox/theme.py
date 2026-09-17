@@ -329,9 +329,14 @@ class SIZE:
     # names (an `ellipsize` cuts anything longer), its picture, one port row, the dot and the
     # screen-pixel floor its hit box keeps under zoom; the layout's gaps; the snap distance;
     # the zoom clamp.
-    GRAPH_NODE_W: int = 240
+    GRAPH_NODE_W: int = 560
     GRAPH_BOX_EXTRA_W: int = 24
-    GRAPH_THUMB: int = 220
+    GRAPH_THUMB: int = 540
+    # The picture's HEIGHT. It used to be `GRAPH_THUMB` on both axes -- a square the document
+    # letterboxed into -- which was fine at 116px and absurd once the card widened to hold a
+    # full uniform row: a 540px square makes a 600px card. 16:9 is the default document shape,
+    # and a taller document still fits inside by the same letterbox.
+    GRAPH_THUMB_H: int = 304
     # The picture sits this far inside the card's top and both sides; the invariant below
     # keeps the width the sum. `GRAPH_PAD` is the gap the name row keeps under it.
     GRAPH_THUMB_INSET: int = 10
@@ -363,6 +368,10 @@ class SIZE:
     GRAPH_ROW_NAME_W: int = 62
     GRAPH_ROW_H: int = 16
     GRAPH_ROWS_VISIBLE: int = 9
+    # The focused node's body panel (094 D9c): big enough for the Render controls beside a
+    # preview and for the Share outlet, capped by the canvas at draw time.
+    GRAPH_FOCUS_W: int = 620
+    GRAPH_FOCUS_H: int = 420
     GRAPH_LOD_ROWS_PX: float = 200.0
     GRAPH_LOD_NAME_PX: float = 96.0
     GRAPH_ZOOM_MIN: float = 0.25

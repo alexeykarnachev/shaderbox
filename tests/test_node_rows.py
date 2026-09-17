@@ -95,7 +95,7 @@ def test_node_size_is_the_cards_own_geometry_and_nothing_else(app: Any) -> None:
     Falsifier: add anything to `node_size` and this names it.
     """
     expected_h = (
-        SIZE.GRAPH_THUMB_INSET + SIZE.GRAPH_THUMB + SIZE.GRAPH_NAME_H + SIZE.GRAPH_PAD
+        SIZE.GRAPH_THUMB_INSET + SIZE.GRAPH_THUMB_H + SIZE.GRAPH_NAME_H + SIZE.GRAPH_PAD
     )
     assert node_size(0, False) == (float(SIZE.GRAPH_NODE_W), float(expected_h))
     with_ports = (

@@ -83,7 +83,7 @@ def test_a_node_grows_one_row_per_port_and_a_box_is_wider() -> None:
     assert node_size(0, True)[0] == w0 + SIZE.GRAPH_BOX_EXTRA_W
     # A card with NO ports pays neither.
     assert h0 == float(
-        SIZE.GRAPH_THUMB_INSET + SIZE.GRAPH_THUMB + SIZE.GRAPH_NAME_H + SIZE.GRAPH_PAD
+        SIZE.GRAPH_THUMB_INSET + SIZE.GRAPH_THUMB_H + SIZE.GRAPH_NAME_H + SIZE.GRAPH_PAD
     )
 
 

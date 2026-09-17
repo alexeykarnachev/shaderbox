@@ -155,3 +155,34 @@ def test_the_focus_saves_the_camera_once_across_a_mode_change(app: Any) -> None:
 
     assert view.pan == (5.0, 6.0)
     assert view.zoom == 0.8
+
+
+def test_a_focus_mode_draws_a_body_not_just_a_scrim(app: Any) -> None:
+    """The mode must DRAW something. It shipped drawing nothing.
+
+    `focused_mode` was written by `focus_node` and read by nobody: picking Render or Share
+    dimmed the canvas and produced no panel, which is the "defined is not wired" shape -- and
+    none of the feature's 26 checks would have caught it, because every one of them asserts
+    STATE. This asserts the reader exists and runs.
+
+    Falsifier: delete the `_draw_focus_body` call from `_draw_canvas` and the render body's
+    draw is never reached.
+    """
+    from unittest import mock
+
+    from shaderbox.tabs import render as render_tab
+    from shaderbox.ui import update_and_draw
+    from shaderbox.widgets import pass_graph
+
+    document_id = app.current_document_id
+    output = app.ui_documents[document_id].document.graph.output
+    app.focus_node(document_id, output, "render")
+
+    with mock.patch.object(render_tab, "draw", wraps=render_tab.draw) as body:
+        for _ in range(3):
+            update_and_draw(app)
+
+    assert body.call_count > 0, (
+        "the render mode dimmed the canvas and drew no body -- `focused_mode` has no reader"
+    )
+    assert pass_graph._draw_focus_body is not None
