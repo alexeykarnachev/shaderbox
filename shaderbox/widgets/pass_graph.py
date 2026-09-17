@@ -600,11 +600,20 @@ def _dashed_rect(
 
 
 # The five channels one canvas frame splits into (093 G12), lowest first.
+# The canvas's draw-list channels, low to high. The WRITE order is not this order -- the
+# in-flight wire and the overlays are written after the node loop -- so a new channel means
+# renumbering here AND bumping the split count below, which `_CH_COUNT` now derives.
 _CH_HALO = 0
 _CH_WIRE = 1
 _CH_NODE = 2
-_CH_INFLIGHT = 3
-_CH_OVERLAY = 4
+# The focus scrim: one rect over everything above, under the focused node alone (094 D10). One
+# rect rather than an alpha pass over every node and wire -- that would be N draws and would
+# leak through overlapping shapes.
+_CH_SCRIM = 3
+_CH_FOCUS = 4
+_CH_INFLIGHT = 5
+_CH_OVERLAY = 6
+_CH_COUNT = _CH_OVERLAY + 1
 
 
 def _draw_wire(
@@ -912,6 +921,15 @@ def draw(app: App, document_id: str) -> None:
     group_names = group_names_in_order(order, groups)
     view.scope = revalidated_scope(view.scope, set(group_names))
     view.selection &= set(document.passes)
+    # The focused pass is revalidated like every other name the view holds (094 D9a). Without
+    # it, deleting or renaming the focused pass -- reachable from its own context menu -- leaves
+    # a scrim over a canvas with no node to click. A scope change drops it too: a focused pass
+    # outside the open group has no card under the scrim.
+    if view.focused_pass is not None and (
+        view.focused_pass not in document.passes
+        or entries.get(view.focused_pass, PassEntry()).group != view.scope
+    ):
+        app.leave_focused_node()
 
     imgui.begin_disabled(app.copilot_turn_active)
     _tab_row(app, document_id, view, group_names)
@@ -949,12 +967,21 @@ def _draw_canvas(
     released_elsewhere = not mouse_down and not imgui.is_mouse_released(
         imgui.MouseButton_.left
     )
-    frozen = app.copilot_turn_active
+    # A focused node refuses every background gesture the same way a copilot turn does (094
+    # D10): the scrim is modal, so a press on a dimmed node must not select it and a press on
+    # the background must not pan or band. `frozen` is the precedent and `blocked` the one
+    # latch every gesture branch already reads, so the refusal rides both rather than being
+    # repeated per branch.
+    focused = view.focused_pass is not None
+    frozen = app.copilot_turn_active or focused
     if mouse_down and frozen:
         # A press held across a turn stays no gesture after it: the item is still active
         # when the turn ends, and the start branches would otherwise rebuild the drag.
         view.press_blocked = True
     if released_elsewhere or frozen:
+        # Entering focus cancels any live gesture for the same reason a turn does: a drag whose
+        # release lands behind the scrim would commit a position the user cannot see, and the
+        # node written is whichever was under the hand, not the focused one (094 D9b).
         view.node_drag = None
         view.wire_drag = None
         view.band_anchor = None
@@ -1019,7 +1046,7 @@ def _draw_canvas(
     # ---- the picture: halos, wires, nodes, then the overlays ----
     # Five channels, and paint order follows the channel index rather than the call order, so
     # one wire's halo can never cover a neighbor's crisp stroke.
-    dl.channels_split(5)
+    dl.channels_split(_CH_COUNT)
     edge_col = _u32(COLOR.GRAPH_EDGE)
     dim_col = _u32(fade(COLOR.GRAPH_EDGE, COLOR.GRAPH_DIM_ALPHA))
     err_col = _u32(COLOR.STATE_ERROR)
@@ -1071,8 +1098,24 @@ def _draw_canvas(
     # over a merely selected one, since it is the card the hand is on.
     nodes.sort(key=lambda n: (dragged_of[n.key], selected_of[n.key]))
     view.node_order = [node.key for node in nodes]
+    # The scrim: ONE rect over the whole canvas, between the nodes and the focused one. Drawn
+    # before the node loop so the loop can put the focused card on the channel above it.
+    if focused:
+        dl.channels_set_current(_CH_SCRIM)
+        dl.add_rect_filled(
+            (origin.x, origin.y),
+            (origin.x + avail.x, origin.y + avail.y),
+            _u32(fade(COLOR.BG_APP, COLOR.GRAPH_SCRIM_ALPHA)),
+        )
     dl.channels_set_current(_CH_NODE)
     for node in nodes:
+        # The focused card draws above the scrim; every other node stays under it. Written as
+        # two explicit calls rather than one conditional index: the layering gate greps for the
+        # call form, and a channel set only through an expression reads as unused.
+        if focused and node.name == view.focused_pass:
+            dl.channels_set_current(_CH_FOCUS)
+        else:
+            dl.channels_set_current(_CH_NODE)
         is_output = (
             node.name == output if node.kind != "box" else output in node.members
         )
@@ -1277,6 +1320,14 @@ def _draw_canvas(
     view.hovered_node = None if dot else node_hovered
     view.hovered_wire = None if (dot or node_hovered) else wire_hovered
 
+    # ---- the scrim's own click: leave the mode on RELEASE (094 D10) ----
+    # On release rather than on press: a press-time exit leaves the button still down on the
+    # next frame with the focus cleared, where the freshly-hovered background starts a rubber
+    # band from a click the user made on a scrim. The latch is what refuses that.
+    if focused and hovered and imgui.is_mouse_released(imgui.MouseButton_.left):
+        view.press_blocked = True
+        app.leave_focused_node()
+
     # ---- the background press, decided against this frame's hover (093 S4) ----
     if bg_pressed and not blocked:
         if view.hovered_wire is not None:
@@ -1441,9 +1492,14 @@ def _draw_uniform_rows(
         if not value_hashes:
             continue
         shown = value_hashes[: compact_row_count(value_hashes)]
+        # A DIMMED node's rows draw but take no input (094 D10, check 5b): refusing the canvas's
+        # GESTURES does not reach an imgui widget, so without this a drag on a row behind the
+        # scrim still moves its value -- the scrim would be modal to the eye and not to the hand.
+        dimmed = view.focused_pass is not None and node.name != view.focused_pass
         p0 = xf.to_screen(node.pos)
         p1 = xf.to_screen((node.pos[0] + node.size[0], node.pos[1] + node.size[1]))
         width = p1[0] - p0[0]
+        imgui.begin_disabled(dimmed)
         with imgui_ctx.push_id(f"rows_{node.key}"):
             for index, hash_key in enumerate(shown):
                 y = p1[1] + index * row_h
@@ -1460,6 +1516,7 @@ def _draw_uniform_rows(
                     p1[0],
                     y + row_h,
                 )
+        imgui.end_disabled()
 
 
 def _touches(node: _Node, names: set[str]) -> bool:
@@ -1593,6 +1650,15 @@ def _node_menu(app: App, document_id: str, view: GraphViewState, node: _Node) ->
                         view.group_input.open(Path(node.name), buf="")
 
                 pass_menu_items(app, document_id, node.name, slot=group_item)
+                imgui.separator()
+                # The three focus modes (094 D8): the node IS the target, so no item names one.
+                for label, mode in (
+                    ("Uniforms...", "uniforms"),
+                    ("Render...", "render"),
+                    ("Share document...", "share"),
+                ):
+                    if imgui.menu_item_simple(label):
+                        app.focus_node(document_id, node.name, mode)
             imgui.end_popup()
 
 

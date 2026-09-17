@@ -74,3 +74,86 @@ def test_hotkeys_exposes_the_escape_handler(app: Any) -> None:
     # The wire, not the behaviour: `_handle_escape` is what `process_hotkeys` calls, and a
     # branch in a function nothing calls is the "defined is not wired" shape.
     assert callable(hotkeys._handle_escape)
+
+
+def test_a_focused_node_refuses_a_background_press(app: Any) -> None:
+    """094 check 5(a): the scrim is modal to the HAND, not only to the eye.
+
+    Driven as a real press on the canvas background, because the state-only version of this
+    test was green against its own falsifier -- asserting what entry cleared says nothing about
+    whether a LATER press can rebuild it, which is the thing the scrim exists to stop.
+
+    Falsifier: drop `focused` from `frozen` and the press below starts a rubber band.
+    """
+    from imgui_bundle import imgui
+
+    from shaderbox.ui import update_and_draw
+
+    document_id = app.current_document_id
+    app.open_graph_for(document_id)
+    for _ in range(4):
+        update_and_draw(app)
+    view = app.graph_view_for(document_id)
+    assert view.canvas_rect[2] > view.canvas_rect[0], "the canvas never drew"
+
+    app.focus_node(
+        document_id, app.ui_documents[document_id].document.graph.output, "render"
+    )
+
+    io = imgui.get_io()
+    cx1, cy1 = view.canvas_rect[2], view.canvas_rect[3]
+    io.add_mouse_pos_event(cx1 - 8.0, cy1 - 8.0)
+    for _ in range(2):
+        update_and_draw(app)
+    io.add_mouse_button_event(0, True)
+    for _ in range(2):
+        update_and_draw(app)
+    io.add_mouse_pos_event(cx1 - 60.0, cy1 - 60.0)
+    for _ in range(2):
+        update_and_draw(app)
+
+    assert view.band_anchor is None, "a press behind the scrim started a rubber band"
+    assert view.node_drag is None
+    assert view.wire_drag is None
+
+    io.add_mouse_button_event(0, False)
+    for _ in range(2):
+        update_and_draw(app)
+    app.close_editor_for_path(app.paths.graph_json_for(document_id))
+    update_and_draw(app)
+
+
+def test_entering_a_focus_cancels_a_live_drag(app: Any) -> None:
+    """094 D9b: a drag surviving into focus commits a position behind the scrim.
+
+    The node written would be whichever was under the hand, not the focused one -- so D7's
+    footprint check would not catch it. Falsifier: drop the cancel from `focus_node`.
+    """
+    document_id = app.current_document_id
+    view = app.graph_view_for(document_id)
+    view.band_anchor = (10.0, 10.0)
+    view.guides = [("v", 1.0)]
+
+    app.focus_node(document_id, "main", "render")
+
+    assert view.band_anchor is None
+    assert view.guides == []
+
+
+def test_the_focus_saves_the_camera_once_across_a_mode_change(app: Any) -> None:
+    """Switching modes must not overwrite the saved camera with the FOCUSED one.
+
+    Falsifier: drop the `if view.focused_pass is None` guard in `focus_node` and leaving after a
+    mode switch restores the focus camera instead of the one the user had.
+    """
+    document_id = app.current_document_id
+    view = app.graph_view_for(document_id)
+    view.pan, view.zoom = (5.0, 6.0), 0.8
+
+    app.focus_node(document_id, "main", "render")
+    view.pan, view.zoom = (99.0, 99.0), 2.5  # the focus camera
+    app.focus_node(document_id, "main", "share")
+    app.leave_focused_node()
+
+    assert view.pan == (5.0, 6.0)
+    assert view.zoom == 0.8

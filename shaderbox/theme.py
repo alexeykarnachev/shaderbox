@@ -196,6 +196,9 @@ class _ColorBag:
     GRAPH_GHOST_ALPHA: float = 0.45
     GRAPH_STALE_ALPHA: float = 0.5
     GRAPH_DIM_ALPHA: float = 0.35
+    # The focus scrim's own alpha (094 D10). Distinct from GRAPH_DIM_ALPHA, which is a FADE
+    # applied to a wire's color rather than the opacity of a rect drawn over the canvas.
+    GRAPH_SCRIM_ALPHA: float = 0.72
     GRAPH_BAND_FILL_ALPHA: float = 0.12
     GRAPH_BAND_EDGE_ALPHA: float = 0.8
     GRAPH_GUIDE_ALPHA: float = 0.7

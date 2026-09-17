@@ -628,6 +628,27 @@ class App:
         """Whether any document's graph view is in a focus mode (094 D8a)."""
         return any(view.focused_pass is not None for view in self.graph_views.values())
 
+    def focus_node(self, document_id: str, pass_name: str, mode: str) -> None:
+        """Enter a focus mode on one node: save the camera, centre on it, cancel every gesture.
+
+        The camera is WRITTEN rather than fitted (094 D9b): `_fit` clamps at 1.0 so it cannot
+        zoom in, and it frames every node rather than one. The saved triple carries `fitted`
+        because `_fit` re-runs on it -- a restore that cleared it would re-frame the graph on
+        the next frame, which is a different bug wearing the same symptom.
+        """
+        view = self.graph_view_for(document_id)
+        if view.focused_pass is None:
+            view.saved_pan = view.pan
+            view.saved_zoom = view.zoom
+            view.saved_fitted = view.fitted
+        view.focused_pass = pass_name
+        view.focused_mode = mode
+        # A gesture surviving into focus would run its release branch behind the scrim.
+        view.node_drag = None
+        view.wire_drag = None
+        view.band_anchor = None
+        view.guides = []
+
     def leave_focused_node(self) -> None:
         """Leave every focus mode, restoring the camera each one replaced (094 D9b)."""
         for view in self.graph_views.values():
