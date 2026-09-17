@@ -410,3 +410,20 @@ rather than escalated:
 would delete is real, but the maintainer's stated shape is "a contextual modal without the actual
 modal", and D9's camera write plus D10's scrim are what deliver it. Recorded so it is not
 re-proposed.
+
+
+---
+
+## Implementation notes (things found while building, not in any review round)
+
+- **C8a: the thumb is SQUARE, so widening the card doubled its height.** `_thumb_rect` makes the
+  picture `GRAPH_THUMB` on both axes and letterboxes the document inside it, which was harmless at
+  116px and costly at 220: the card went 150 -> 283px tall, and that height is what drives the
+  fitted zoom (a 6-pass chain fits at 0.50). A 16:9 thumb would bring the card to 187px and is the
+  obvious follow-up, but it changes what the node LOOKS like beyond what the spec settled, and not
+  every document is 16:9. **Left as-is and flagged for the maintainer**, because the LOD thresholds
+  are keyed on screen WIDTH, so the tall card costs vertical space rather than hiding the rows.
+  *Trigger:* he reports the graph feels vertically cramped, or a document set that is mostly wide.
+
+- **D4b holds under measurement:** rows draw outside `node_size`, so a pass gaining uniforms never
+  changes the layout box and never shrinks the fit. Checked at 0, 3 and 6 rows.

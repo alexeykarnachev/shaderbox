@@ -32,7 +32,7 @@ from itertools import pairwise
 from pathlib import Path
 from typing import Literal
 
-from imgui_bundle import imgui
+from imgui_bundle import imgui, imgui_ctx
 
 from shaderbox.app import App
 from shaderbox.commands import CommandId
@@ -80,6 +80,11 @@ from shaderbox.widgets.graph_state import (
     wire_state,
 )
 from shaderbox.widgets.pass_list import pass_menu_items
+from shaderbox.widgets.uniform_rows import (
+    compact_row_count,
+    draw_compact_row,
+    pass_rows,
+)
 
 NodeKind = Literal["pass", "box", "ghost"]
 
@@ -1355,6 +1360,13 @@ def _draw_canvas(
             )
     dl.channels_merge()
 
+    # ---- the uniform rows: real imgui widgets, so AFTER the merge (094 D4b) ----
+    # A `drag_float` emits into `get_window_draw_list()` -- the same list that was split -- so a
+    # row submitted between the split and the merge lands in whatever channel was current and is
+    # re-ordered by the merge, tearing the widget. The node PICTURES are draw-list calls and
+    # belong inside; the rows are items and belong here, with the hit-test buttons.
+    _draw_uniform_rows(app, document_id, document, view, xf, nodes)
+
     # ---- Delete unwires the selected wire, read HERE and once (093 S5) ----
     # The position is the decision: on a release frame `is_any_item_active` is True at the top
     # of this function and False here, and `is_window_hovered` the reverse, so a read at the
@@ -1384,6 +1396,70 @@ def _draw_canvas(
     # node click of S4 is refused too; the next frame is clean (093 S6).
     if not mouse_down:
         view.press_blocked = False
+
+
+def _draw_uniform_rows(
+    app: App,
+    document_id: str,
+    document: Document,
+    view: GraphViewState,
+    xf: _Xf,
+    nodes: Sequence[_Node],
+) -> None:
+    """Each pass node's uniform rows, under its card and OUTSIDE its layout box (094 D4/D4b).
+
+    Outside the box on purpose: `node_size` is what the rank layout, `Arrange`, `_bbox` and the
+    two port-point helpers all derive from independently, and a row block inside it would make
+    the canvas footprint depend on the zoom -- which is D7's own prohibition applied to an
+    ordinary node.
+
+    Drawn only at the NEAR level of detail, which is keyed on the node's screen width rather
+    than on the zoom: `_fit` clamps at 1.0 and never zooms in, so a six-pass chain sits at 0.50
+    and a zoom-keyed threshold would hide the rows for every document but a short chain.
+    """
+    view.row_rects.clear()
+    if view.zoom * SIZE.GRAPH_NODE_W < SIZE.GRAPH_LOD_ROWS_PX:
+        return
+    ui_document = app.ui_documents.get(document_id)
+    if ui_document is None:
+        return
+    ui_uniforms = ui_document.ui_state.ui_uniforms
+    row_h = SIZE.GRAPH_ROW_H * view.zoom
+    for node in nodes:
+        if node.kind != "pass":
+            continue
+        render_pass = document.passes.get(node.name)
+        if render_pass is None or render_pass.program is None:
+            continue
+        value_hashes, _auto = pass_rows(
+            render_pass,
+            node.name,
+            ui_uniforms,
+            app.uniform_sort_key,
+            app.uniform_sort_desc,
+        )
+        if not value_hashes:
+            continue
+        shown = value_hashes[: compact_row_count(value_hashes)]
+        p0 = xf.to_screen(node.pos)
+        p1 = xf.to_screen((node.pos[0] + node.size[0], node.pos[1] + node.size[1]))
+        width = p1[0] - p0[0]
+        with imgui_ctx.push_id(f"rows_{node.key}"):
+            for index, hash_key in enumerate(shown):
+                y = p1[1] + index * row_h
+                imgui.set_cursor_screen_pos((p0[0], y))
+                draw_compact_row(
+                    ui_uniforms[hash_key],
+                    render_pass,
+                    width,
+                    f"r{index}",
+                )
+                view.row_rects[(node.name, ui_uniforms[hash_key].name)] = (
+                    p0[0],
+                    y,
+                    p1[0],
+                    y + row_h,
+                )
 
 
 def _touches(node: _Node, names: set[str]) -> bool:

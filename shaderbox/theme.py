@@ -351,6 +351,11 @@ class SIZE:
     # every document but a short chain. What decides a row is whether its control can be read,
     # which is `GRAPH_NODE_W * zoom`. At 200px a vec4 component gets ~38px, which is the width
     # of "0.000"; below 96px the name is a smudge that costs a font push per node.
+    # A compact uniform row on a node: its name column, its height, and how many the scroll
+    # window shows before the rest scroll (094 D6 -- 8-10 visible, so the node has a ceiling).
+    GRAPH_ROW_NAME_W: int = 62
+    GRAPH_ROW_H: int = 16
+    GRAPH_ROWS_VISIBLE: int = 9
     GRAPH_LOD_ROWS_PX: float = 200.0
     GRAPH_LOD_NAME_PX: float = 96.0
     GRAPH_ZOOM_MIN: float = 0.25

@@ -119,6 +119,7 @@ from shaderbox.ui_models import (
     UIAppState,
     UIDocument,
     UIDocumentState,
+    UniformSortKey,
     load_document_from_dir,
 )
 from shaderbox.ui_primitives import InlineInput
@@ -1557,6 +1558,11 @@ class App:
         # committed value is `app_state.canvas_split_fraction`; this is what the drag moves, so
         # the resize lands once on release rather than every frame of the sweep (094 D1a).
         self.canvas_split_drag: float | None = None
+        # The node cards' uniform ordering (094 D4c). On App rather than on the per-document
+        # graph view because D18 makes it per-SESSION: one ordering for every node, cycled by
+        # the card's sort glyph, persisted nowhere.
+        self.uniform_sort_key: UniformSortKey = "code"
+        self.uniform_sort_desc: bool = False
         # The live cursor over the current document's preview, fed into the script tick as context.mouse
         # (feature 042). Updated from the preview hit-test in ui.py; defaults to center (the
         # export value) until the preview is hovered. One frame stale by construction (tick runs

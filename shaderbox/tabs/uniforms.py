@@ -2,14 +2,14 @@ from imgui_bundle import imgui, imgui_ctx
 
 from shaderbox.app import App
 from shaderbox.core import Pass
-from shaderbox.glyph_tables import TABLE_UNIFORMS
 from shaderbox.pass_graph import strip_order
 from shaderbox.paths import pass_name_of
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_models import UIUniform, UniformSortKey, sort_uniform_hashes
 from shaderbox.ui_primitives import standard_button, text_tab_row
-from shaderbox.util import format_auto_value, get_uniform_hash
+from shaderbox.util import format_auto_value
 from shaderbox.widgets.uniform import draw_ui_uniform, uniform_name_label
+from shaderbox.widgets.uniform_rows import pass_rows
 
 # The uniforms panel, its own tab since 083: on the Document tab it shared the space with the pass
 # strip and had too little of it. What a pass IS stays on the Document tab (the strip, its six
@@ -67,24 +67,18 @@ def draw(app: App) -> None:
     document_ui_state = app.ui_documents[document_id].ui_state
     ui_uniforms = document_ui_state.ui_uniforms
 
-    active_uniform_hashes = []
-    auto_hashes = []
-    # The PANEL pass, not the output: the sliders belong to the pass being edited (065).
+    # The PANEL pass, not the output: the sliders belong to the pass being edited (065). The
+    # row-building loop is shared with the graph node's rows (094 D10a) -- it is the only site
+    # that creates a `UIUniform`, so it cannot live in a surface that gets deleted.
     panel_pass = app.panel_pass(document_id)
     panel_pass_name = pass_name_of(panel_pass.source.path)
-    for uniform in panel_pass.get_active_uniforms():
-        if (
-            uniform.name in TABLE_UNIFORMS
-        ):  # engine glyph tables — pure machinery, no row
-            continue
-        hash = get_uniform_hash(uniform, panel_pass_name)
-        if hash not in ui_uniforms:
-            ui_uniforms[hash] = UIUniform.from_uniform(uniform)
-        ui_uniforms[hash].snap_input_type()
-        if ui_uniforms[hash].input_type == "auto":
-            auto_hashes.append(hash)
-        else:
-            active_uniform_hashes.append(hash)
+    active_uniform_hashes, auto_hashes = pass_rows(
+        panel_pass,
+        panel_pass_name,
+        ui_uniforms,
+        document_ui_state.uniform_sort_key,
+        document_ui_state.uniform_sort_desc,
+    )
 
     sort_keys: list[UniformSortKey] = ["code", "name", "type"]
     imgui.set_next_item_width(SIZE.SORT_COMBO_W)
