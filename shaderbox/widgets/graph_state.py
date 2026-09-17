@@ -78,6 +78,19 @@ class GraphViewState:
     # One-shot: the first canvas frame at a nonzero size fits the view; a scope change
     # clears it so the new scope fits once too.
     fitted: bool = False
+    # The node a focus mode is centred on, and which mode (094 D9). Transient like everything
+    # here: focus is a VIEW state, so nothing about it survives a restart or a project switch.
+    focused_pass: str | None = None
+    focused_mode: str = ""
+    # The camera the focus replaced, restored on leave (094 D9b). `fitted` is part of it because
+    # `_fit` re-runs on it: a restored pan and zoom with `fitted` cleared would be re-framed on
+    # the next frame.
+    saved_pan: Position | None = None
+    saved_zoom: float = 1.0
+    saved_fitted: bool = False
+    # Each pass's uniform-row scroll offset (094 D6), per pass because it belongs to the node
+    # rather than to the camera -- it survives a pan, a zoom and a scope change.
+    row_scroll: dict[str, float] = field(default_factory=dict)
     # The region size the last fit was made against, so a resize can re-fit (094 D1c). (0, 0)
     # until the first fit, which is what keeps the initial frame from re-fitting itself.
     fitted_size: tuple[float, float] = (0.0, 0.0)

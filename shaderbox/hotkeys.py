@@ -370,6 +370,14 @@ def _handle_escape(app: App) -> None:
         close_modal(app)
     elif app.is_palette_open:
         app.is_palette_open = False
+    elif app.has_focused_node() and not imgui.is_popup_open(
+        "", imgui.PopupFlags_.any_popup.value
+    ):
+        # After the modal and palette branches: a confirm opened from a focused node's own menu
+        # must answer Esc first. And gated on imgui's popups too (094 D8a) -- `any_popup_open`
+        # knows only about MODALS, while the node menu and the documents dropdown are imgui
+        # popups, so without this one press would dismiss the popup AND leave the focus.
+        app.leave_focused_node()
     elif app.copilot_focused:
         # Esc defocuses the chat but leaves it open.
         app.copilot_defocus_requested = True

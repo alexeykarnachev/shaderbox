@@ -612,14 +612,33 @@ class App:
         glfw.set_char_callback(self.window, char_callback)
 
     def escape_has_job(self) -> bool:
-        # Esc is meaningful only to dismiss a popup/palette, drop the editor caret, or
-        # defocus the chat. Otherwise it's swallowed before imgui sees it.
+        # Esc is meaningful only to dismiss a popup/palette, drop the editor caret, defocus the
+        # chat, or leave a focused node. Otherwise it's swallowed before imgui sees it -- which
+        # is why a focus mode that did not appear here would simply never close on Esc (094 D8a).
         return (
             self.any_popup_open()
             or self.is_palette_open
             or self.editor_focused
             or self.copilot_focused
+            or self.has_focused_node()
         )
+
+    def has_focused_node(self) -> bool:
+        """Whether any document's graph view is in a focus mode (094 D8a)."""
+        return any(view.focused_pass is not None for view in self.graph_views.values())
+
+    def leave_focused_node(self) -> None:
+        """Leave every focus mode, restoring the camera each one replaced (094 D9b)."""
+        for view in self.graph_views.values():
+            if view.focused_pass is None:
+                continue
+            view.focused_pass = None
+            view.focused_mode = ""
+            if view.saved_pan is not None:
+                view.pan = view.saved_pan
+                view.zoom = view.saved_zoom
+                view.fitted = view.saved_fitted
+                view.saved_pan = None
 
     def _build_command_callbacks(self) -> None:
         self.command_callbacks = {
