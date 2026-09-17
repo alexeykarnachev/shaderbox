@@ -1467,7 +1467,7 @@ def _draw_canvas(
     # row submitted between the split and the merge lands in whatever channel was current and is
     # re-ordered by the merge, tearing the widget. The node PICTURES are draw-list calls and
     # belong inside; the rows are items and belong here, with the hit-test buttons.
-    _draw_uniform_rows(app, document_id, document, view, xf, nodes)
+    _draw_uniform_rows(app, document_id, document, view, xf, nodes, dl)
 
     # ---- Delete unwires the selected wire, read HERE and once (093 S5) ----
     # The position is the decision: on a release frame `is_any_item_active` is True at the top
@@ -1507,6 +1507,7 @@ def _draw_uniform_rows(
     view: GraphViewState,
     xf: _Xf,
     nodes: Sequence[_Node],
+    dl: imgui.ImDrawList,
 ) -> None:
     """Each pass node's uniform rows, under its card and OUTSIDE its layout box (094 D4/D4b).
 
@@ -1550,15 +1551,37 @@ def _draw_uniform_rows(
         p0 = xf.to_screen(node.pos)
         p1 = xf.to_screen((node.pos[0] + node.size[0], node.pos[1] + node.size[1]))
         width = p1[0] - p0[0]
+        # The rows read as part of the CARD, not as loose text under it: one rounded panel in
+        # the card's own surface color, drawn on the same channel the node used so it sits under
+        # nothing the node draws. Without it the rows float on the canvas background and the
+        # node stops looking like one object.
+        pad = SIZE.GRAPH_PAD * view.zoom
+        block_h = len(shown) * row_h + 2 * pad
+        dl.add_rect_filled(
+            (p0[0], p1[1]),
+            (p1[0], p1[1] + block_h),
+            _u32(COLOR.BG_SURFACE),
+            SIZE.GRAPH_ROUNDING * view.zoom,
+        )
+        dl.add_rect(
+            (p0[0], p1[1]),
+            (p1[0], p1[1] + block_h),
+            _u32(COLOR.BORDER),
+            SIZE.GRAPH_ROUNDING * view.zoom,
+        )
         imgui.begin_disabled(dimmed)
+        # The small face, the one the port labels already use: a uniform name is long
+        # (`u_flicker_speed` is 16 characters) and the row has ~220px for a name AND a control,
+        # so at the body face every name truncates to `u_flicke...` whatever the split.
+        imgui.push_font(app.font_12, max(4.0, app.font_12.legacy_size * view.zoom))
         with imgui_ctx.push_id(f"rows_{node.key}"):
             for index, hash_key in enumerate(shown):
-                y = p1[1] + index * row_h
-                imgui.set_cursor_screen_pos((p0[0], y))
+                y = p1[1] + pad + index * row_h
                 draw_compact_row(
                     ui_uniforms[hash_key],
                     render_pass,
-                    width,
+                    (p0[0] + SIZE.GRAPH_THUMB_INSET * view.zoom, y),
+                    width - 2 * SIZE.GRAPH_THUMB_INSET * view.zoom,
                     f"r{index}",
                 )
                 view.row_rects[(node.name, ui_uniforms[hash_key].name)] = (
@@ -1567,6 +1590,7 @@ def _draw_uniform_rows(
                     p1[0],
                     y + row_h,
                 )
+        imgui.pop_font()
         imgui.end_disabled()
 
 

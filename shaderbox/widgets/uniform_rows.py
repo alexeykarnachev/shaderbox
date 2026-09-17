@@ -12,7 +12,7 @@ and neither owns the other:
   focusing the node.
 """
 
-from imgui_bundle import imgui
+from imgui_bundle import imgui, imgui_ctx
 
 from shaderbox.core import Pass
 from shaderbox.glyph_tables import TABLE_UNIFORMS
@@ -22,6 +22,7 @@ from shaderbox.ui_models import (
     UniformSortKey,
     sort_uniform_hashes,
 )
+from shaderbox.ui_primitives import ellipsize
 from shaderbox.util import format_auto_value, get_uniform_hash
 
 
@@ -50,7 +51,7 @@ def pass_rows(
         ui_uniforms[hash_key].snap_input_type()
         if ui_uniforms[hash_key].input_type == "auto":
             auto_hashes.append(hash_key)
-        else:
+        elif ui_uniforms[hash_key].input_type in node_row_types():
             value_hashes.append(hash_key)
     return (
         sort_uniform_hashes(value_hashes, ui_uniforms, sort_key, sort_desc),
@@ -63,32 +64,61 @@ def compact_row_count(value_hashes: list[int]) -> int:
     return min(len(value_hashes), SIZE.GRAPH_ROWS_VISIBLE)
 
 
+def node_row_types() -> frozenset[str]:
+    """The input types that get a row ON THE NODE.
+
+    `texture` is absent because a sampler is already a PORT with the source on the wire's other
+    end; drawing its value too would say it twice, and it is what filled the canvas with
+    `AutoSource()` in the first cut. `buffer`, `array` and `text` need a control the card has no
+    room for, so they are reached by focusing the node.
+    """
+    return frozenset({"drag", "color"})
+
+
 def draw_compact_row(
     ui_uniform: UIUniform,
     render_pass: Pass,
+    origin: tuple[float, float],
     width: float,
     row_id: str,
 ) -> bool:
-    """One uniform's compact row. Returns True when the value changed.
+    """One uniform's compact row, drawn at `origin` in SCREEN space.
 
-    Four of the seven input types carry no control here: a `texture` is already a PORT on the
-    node and drawing its picture would say it twice, while `buffer`, `array` and `text` need a
-    control the card has no room for (a randomize button, a comma list, a 72px box). Those draw
-    DIM with their name and state, so the node tells the truth about what the pass declares, and
-    the control is one right-click away on the focused node.
+    Positioned absolutely, never flowed: the canvas is a pannable draw list with no layout
+    cursor of its own, so `same_line` measures from the child's content origin and every row
+    lands in the same left column whatever node it belongs to. That is what the first cut did.
     """
     name = ui_uniform.name
     value = render_pass.uniform_values.get(name)
-    label_w = min(width * 0.34, float(SIZE.GRAPH_ROW_NAME_W))
-    imgui.text_colored(COLOR.FG_MUTED, "")
-    imgui.same_line(0.0, 0.0)
-    imgui.set_next_item_width(label_w)
-    imgui.text_colored(COLOR.FG_DIM, name[: max(1, int(label_w / 6))])
-    imgui.same_line(label_w)
+    # A FRACTION of the row, not a fixed cap: the cap was sized against the 136px card and
+    # survived D4e's widening to 240, which truncated every name to `u_de...` on a card with
+    # room for all of it. The floor keeps a name readable when the row is narrow.
+    label_w = max(float(SIZE.GRAPH_ROW_NAME_W), width * 0.55)
+    control_w = max(24.0, width - label_w - 4.0)
 
-    control_w = max(24.0, width - label_w)
+    imgui.set_cursor_screen_pos(origin)
+    imgui.text_colored(COLOR.FG_DIM, ellipsize(name, label_w))
+
+    imgui.set_cursor_screen_pos((origin[0] + label_w + 4.0, origin[1]))
     imgui.set_next_item_width(control_w)
     imgui.set_next_item_allow_overlap()
+    # The control's own frame is transparent: the row already sits on the card's panel, and a
+    # second filled rect inside it reads as a separate box rather than as a value in a row.
+    # The hover and active fills stay, so the control still says it is one.
+    with imgui_ctx.push_style_color(
+        imgui.Col_.frame_bg, imgui.ImVec4(0.0, 0.0, 0.0, 0.0)
+    ):
+        return _draw_control(ui_uniform, render_pass, value, row_id)
+
+
+def _draw_control(
+    ui_uniform: UIUniform,
+    render_pass: Pass,
+    value: object,
+    row_id: str,
+) -> bool:
+    """The row's value control, inside the caller's transparent-frame scope."""
+    name = ui_uniform.name
 
     if ui_uniform.input_type == "drag":
         if isinstance(value, float | int) and not isinstance(value, bool):
@@ -112,6 +142,7 @@ def draw_compact_row(
                 render_pass.uniform_values[name] = new
             return changed
 
-    # Every other type: the state, no control.
-    imgui.text_colored(COLOR.FG_DORMANT, format_auto_value(value)[:24])
+    # A type with no control never reaches here (`node_row_types` filters the list), so this is
+    # the "declared a shape the row cannot draw" tail rather than a fallthrough.
+    imgui.text_colored(COLOR.FG_DORMANT, format_auto_value(value)[:18])
     return False
