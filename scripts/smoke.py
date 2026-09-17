@@ -369,7 +369,12 @@ def main() -> int:
                 if frame_idx == 113:
                     app.modal = None
                     app.is_copilot_open = False
-            # Canary (048): the script must have BOUND + ticked (binding is by `script.py` existence).
+            # Canary (048): the script must have BOUND + ticked (binding is by `script.py`
+            # existence). Select it first: a script ticks for the documents that RENDER, and
+            # since 094 C12 deleted `Render all documents` only the current one does at rest.
+            app.select_document("script_document")
+            for _ in range(4):
+                update_and_draw(app)
             engine = app.session.script_engine
             driven = engine.script_driven_uniforms("script_document")
             assert ("main", "u_a") in driven and ("main", "u_b") in driven, (

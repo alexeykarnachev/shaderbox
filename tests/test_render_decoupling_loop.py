@@ -673,7 +673,6 @@ def test_the_import_dialog_plans_the_open_tabs_documents(
     # the current document, so a never-rendered card stays black; or leave the render chain's
     # `elif EXAMPLES` untouched and the Examples tab renders nothing at all.
     other = seed_extra_document(app, "other-0000-4000-8000-000000000002")
-    app.app_state.is_render_all_documents = True
     _freeze_costs(app, monkeypatch)
     app.open_import_passes()
     assert app.import_draft is not None
@@ -891,3 +890,54 @@ def test_the_splitter_moves_what_every_auto_document_renders_at(
     assert tall_region[1] > short_region[1], (
         f"the render height did not follow the splitter: {short_region} -> {tall_region}"
     )
+
+
+# ---------------------------------------------------------------------------
+# 094 D15/D16 -- `Render all documents` is deleted, and the dropdown is what admits a
+# non-current document to the set instead.
+# ---------------------------------------------------------------------------
+
+
+def test_at_rest_only_the_current_document_ticks(app: Any, monkeypatch: Any) -> None:
+    """094 check 2. The falsifier is INERT without a warmed second document.
+
+    The deleted branch only ever admitted documents whose `first_render_done` was already
+    True, so a test on the one-document fixture would pass whether or not the branch came
+    back -- it would have nothing to admit. Seeding and warming is what makes it bite.
+
+    Falsifier: restore `if app.app_state.is_render_all_documents:` and `other` joins the set.
+    """
+    other = seed_extra_document(app, "resting-0000-4000-8000-00000000000a")
+    _freeze_costs(app, monkeypatch)
+    # Warm it: the branch this guards admitted only already-rendered documents.
+    for _ in range(6):
+        update_and_draw(app)
+    assert app.ui_documents[other].document.first_render_done, "the premise: it warmed"
+
+    app.documents_dropdown_open = False
+    ticking = _tick_frame_state(app)
+
+    assert ticking == [app.current_document_id], (
+        f"a non-current document ticked at rest: {ticking}"
+    )
+
+
+def test_the_open_dropdown_adds_to_the_set_rather_than_replacing_it(
+    app: Any, monkeypatch: Any
+) -> None:
+    """094 check 3: ADDS, never replaces -- the canvas above stays live while you pick.
+
+    Read through `App.planned_documents` (D19's seam), which is otherwise a local nothing can
+    see. Falsifier: make the dropdown replace the set the way the Examples popup does, and the
+    current document drops out.
+    """
+    other = seed_extra_document(app, "dropdown-0000-4000-8000-00000000000b")
+    _freeze_costs(app, monkeypatch)
+    for _ in range(6):
+        update_and_draw(app)
+
+    app.documents_dropdown_open = True
+    _tick_frame_state(app)
+
+    assert app.current_document_id in app.planned_documents
+    assert other in app.planned_documents, app.planned_documents

@@ -21,6 +21,5 @@
     "is_copilot_open": false,
     "copilot_layout": "corner",
     "key_bindings": {},
-    "show_cheatsheet": true,
-    "is_render_all_documents": true
+    "show_cheatsheet": true
 }

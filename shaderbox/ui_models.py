@@ -246,7 +246,6 @@ class EditorSettings(BaseModel):
 class UIAppState(BaseModel):
     current_document_id: str = ""
     selected_example_id: str = ""
-    is_render_all_documents: bool = True
 
     exporter_settings: dict[str, dict[str, Any]] = {}
     active_exporter_id: str = "telegram"

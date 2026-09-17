@@ -262,11 +262,17 @@ def _tick_frame_state(app: App) -> list[str] | None:
     )
     examples_planned, import_project_tab = planned_set_mode(app)
     if not app.any_popup_open() or import_project_tab:
-        # The dropdown's documents render while it is open and not otherwise (094 D16). They
-        # join BOTH lists: the render loop and `_rendering_this_frame` iterate `tick_documents`
-        # while the plan and the `begin_frame` advance take `planned_documents`, so admitting
-        # them to only the latter would advance a feedback history with no render behind it.
-        if app.app_state.is_render_all_documents or app.documents_dropdown_open:
+        # The dropdown's documents render while it is open and NOT OTHERWISE (094 D15/D16).
+        # `Render all documents` is deleted: it was a hard on/off in front of a proportional
+        # mechanism that answers the same question better -- `plan_render_set` gives the current
+        # document the budget first and hands the rest the remainder. With the grid gone a
+        # non-current document has no surface to be seen on, so nothing renders it at rest.
+        #
+        # They join BOTH lists: the render loop and `_rendering_this_frame` iterate
+        # `tick_documents` while the plan and the `begin_frame` advance take
+        # `planned_documents`, so admitting them to only the latter would advance a feedback
+        # history with no render behind it.
+        if app.documents_dropdown_open:
             tick_documents += [
                 document_id
                 for document_id, ui_document in app.ui_documents.items()
