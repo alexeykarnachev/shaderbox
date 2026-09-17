@@ -1,5 +1,4 @@
 import time
-from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -40,23 +39,25 @@ from shaderbox.render_shape import (
 )
 from shaderbox.scripting import MouseState
 from shaderbox.tabs import code as code_tab
-from shaderbox.tabs import document as document_tab
-from shaderbox.tabs import render as render_tab
 from shaderbox.tabs import share as share_tab
-from shaderbox.tabs import uniforms as uniforms_tab
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_models import UIDocument
 from shaderbox.ui_primitives import (
-    chip_button,
+    context_menu_style,
     fps_chip,
     item_normalized_mouse,
     rendering_overlay,
+    small_caption,
     toggle_button,
 )
-from shaderbox.ui_regions import CHANNEL_VIEW_LABELS, ChannelView, DocumentTab
+from shaderbox.ui_regions import CHANNEL_VIEW_LABELS, ChannelView
 from shaderbox.watch import maybe_rebuild_lib_index, reload_document_if_changed
-from shaderbox.widgets import cheatsheet, copilot_chat
-from shaderbox.widgets.document_grid import draw_document_preview_grid
+from shaderbox.widgets import cheatsheet, copilot_chat, pass_graph
+from shaderbox.widgets.canvas_control import (
+    apply_canvas_choice,
+    canvas_caption,
+    canvas_choice_groups,
+)
 
 _FONT_14_SIZE = 14.0
 _FONT_18_SIZE = 18.0
@@ -261,7 +262,11 @@ def _tick_frame_state(app: App) -> list[str] | None:
     )
     examples_planned, import_project_tab = planned_set_mode(app)
     if not app.any_popup_open() or import_project_tab:
-        if app.app_state.is_render_all_documents:
+        # The dropdown's documents render while it is open and not otherwise (094 D16). They
+        # join BOTH lists: the render loop and `_rendering_this_frame` iterate `tick_documents`
+        # while the plan and the `begin_frame` advance take `planned_documents`, so admitting
+        # them to only the latter would advance a feedback history with no render behind it.
+        if app.app_state.is_render_all_documents or app.documents_dropdown_open:
             tick_documents += [
                 document_id
                 for document_id, ui_document in app.ui_documents.items()
@@ -636,12 +641,15 @@ def _update_and_draw(app: App) -> None:
             imgui.same_line(spacing=0.0)
 
             with imgui_ctx.begin_child(
-                "app_panel", size=imgui.ImVec2(0, split_region.y)
+                "app_panel",
+                size=imgui.ImVec2(0, split_region.y),
+                window_flags=imgui.WindowFlags_.no_nav_inputs,
             ):
-                # Freeze the panel (uniform sliders, tab controls, share) while a copilot turn
-                # runs — its inputs would race the values the worker reads. The editor has its own
-                # read-only lock; the chat (Stop) stays live in its own window.
-                imgui.begin_disabled(app.copilot_turn_active)
+                # The copilot-turn freeze brackets PER REGION inside `_draw_app_panel` (094 D2a),
+                # not the whole panel. A nested `begin_disabled` cannot re-enable -- imgui's own
+                # binding says one True in the stack keeps everything disabled -- so a panel-wide
+                # bracket would leave the graph's breadcrumb dead for the length of every turn,
+                # and 094 makes that breadcrumb the only way to switch documents.
                 try:
                     _draw_app_panel(app)
                 except Exception as e:
@@ -649,8 +657,6 @@ def _update_and_draw(app: App) -> None:
                     app.notifications.push(
                         f"Error in app panel: {e!s}", COLOR.STATE_ERROR[:3]
                     )
-                finally:
-                    imgui.end_disabled()
 
             # ------------------------------------------------------------
             # Popups and notifications
@@ -877,10 +883,13 @@ def _draw_document_image(app: App, box_height: float) -> ViewerGeometry:
         else:
             shown_texture = output_texture
         backdrop = app.checker_texture
-        # The panel runs inside `begin_disabled` during a copilot turn, which scales the style
-        # alpha for every widget in it. `image_with_bg` is a widget and the checker under it is a
-        # raw draw-list image, so a scaled tint would composite the render over a full-alpha
-        # checker. The preview is a view, not a control: it draws at alpha 1 either way.
+        # `image_with_bg` is a widget and the checker under it is a raw draw-list image, so any
+        # scaled style alpha would composite the render over a full-alpha checker. The preview is
+        # a view, not a control: it draws at alpha 1 whatever the frame around it is doing.
+        #
+        # 094 C10 moved the copilot-turn bracket off this panel and into the regions, so nothing
+        # scales alpha here TODAY -- the push stays because it is what makes that true by
+        # construction rather than by the current bracket placement.
         with imgui_ctx.push_style_var(imgui.StyleVar_.alpha, 1.0):
             _draw_canvas_backdrop(backdrop, img_min, image_width, image_height)
             imgui.image_with_bg(
@@ -976,6 +985,39 @@ def _document_titles(app: App) -> dict[str, str]:
     return titles
 
 
+def _draw_canvas_menu(app: App) -> None:
+    """The fps chip's menu: the canvas shape, then what of it the viewer shows (094 D13/D13c).
+
+    Everything the canvas carries is here, so the canvas has exactly ONE affordance. The
+    resolution half is the grouped combo the deleted Document tab held, unchanged; the header
+    above it is that tab's caption, which under Auto is the only place the live pixel size
+    appears -- and D1a's splitter moves that number, so it is more load-bearing than before.
+
+    Target fps, the throttle and the GPU budget are NOT here: they are global settings and stay
+    in the Settings modal.
+    """
+    ui_document = app.ui_documents.get(app.current_document_id)
+    if ui_document is None:
+        return
+    with context_menu_style():
+        if not imgui.begin_popup("##canvas_menu"):
+            return
+        small_caption(app.font_12, canvas_caption(ui_document))
+        imgui.separator()
+        for caption, choices in canvas_choice_groups(ui_document):
+            imgui.text_colored(COLOR.FG_DIM, caption)
+            for choice in choices:
+                if imgui.menu_item_simple(f"  {choice.label}"):
+                    apply_canvas_choice(app, ui_document, choice)
+        imgui.separator()
+        imgui.text_colored(COLOR.FG_DIM, "VIEW")
+        for value in ChannelView:
+            marked = "*" if value is app.app_state.channel_view else " "
+            if imgui.menu_item_simple(f" {marked} {CHANNEL_VIEW_LABELS[value]}"):
+                app.app_state.channel_view = value
+        imgui.end_popup()
+
+
 def _draw_app_panel(app: App) -> None:
     panel_height = imgui.get_content_region_avail().y
     # The in-flight drag wins while it is live, so the boundary tracks the cursor even though
@@ -993,20 +1035,8 @@ def _draw_app_panel(app: App) -> None:
             anchor_y=viewer.image_min.y,
             fps=_current_document_fps(app),
         ):
-            # 094 C10 hangs the canvas menu (shape + channel view) off this click.
-            pass
-        # The channel-view chip over the preview's top-LEFT — the opposite corner from the FPS
-        # chip, so the two never collide whatever the canvas aspect.
-        imgui.set_cursor_screen_pos(
-            (viewer.image_min.x + float(SPACE.MD), viewer.image_min.y + float(SPACE.MD))
-        )
-        view = app.app_state.channel_view
-        label = CHANNEL_VIEW_LABELS[view]
-        chip_w = imgui.calc_text_size(label).x + 2.0 * float(SPACE.MD)
-        if chip_button(label, chip_w, imgui.get_frame_height(), faded=True):
-            app.cycle_channel_view()
-        if imgui.is_item_hovered():
-            imgui.set_tooltip("Channel view")
+            imgui.open_popup("##canvas_menu")
+        _draw_canvas_menu(app)
 
     # The splitter sits ON the boundary: the canvas box ends here and the region below is the
     # control panel's (the graph's, from 094 C10).
@@ -1016,66 +1046,28 @@ def _draw_app_panel(app: App) -> None:
     _draw_canvas_splitter(app, imgui.get_content_region_avail().x, panel_height)
 
     # ----------------------------------------------------------------
-    # Control panel
-    region = imgui.get_content_region_avail()
-    control_panel_height = max(float(SIZE.PANEL_CTRL_MINH), region.y)
-    control_panel_width = region.x
+    # The graph fills what the splitter leaves (094 D2). One child, one widget: the grid and
+    # the four-tab settings panel are gone, and `pass_graph.draw` already fills the host's
+    # content region without positioning a sibling or measuring one.
+    #
+    # NO `begin_disabled` here (094 D2a): the widget brackets its own canvas, so the
+    # breadcrumb's document switcher stays live through a copilot turn. A bracket at this level
+    # would disable it, and there is no other way to switch documents.
+    # `no_nav_inputs`: the node's uniform rows are real focusable widgets (094 D4b), and this
+    # repo runs with nav-off, where imgui still runs basic Tab regardless -- so a container
+    # hosting one must block Tab or the key traverses the canvas.
     with imgui_ctx.begin_child(
-        "control_panel",
-        size=imgui.ImVec2(control_panel_width, control_panel_height),
+        "graph_panel",
+        size=imgui.ImVec2(0, 0),
+        window_flags=imgui.WindowFlags_.no_nav_inputs,
     ):
-        document_preview_width = control_panel_width / 2.6
-        draw_document_preview_grid(app, document_preview_width, control_panel_height)
-        imgui.same_line()
         try:
-            _draw_document_settings(app)
+            pass_graph.draw(app, app.current_document_id)
         except Exception as e:
-            logger.error(f"Error in document settings: {e}")
+            logger.error(f"Error in graph panel: {e}")
             app.notifications.push(
-                f"Error in document settings: {e!s}", COLOR.STATE_ERROR[:3]
+                f"Error in graph panel: {e!s}", COLOR.STATE_ERROR[:3]
             )
-
-
-_NODE_TABS: list[tuple[str, DocumentTab, Callable[[App], None]]] = [
-    ("Document", DocumentTab.DOCUMENT, document_tab.draw),
-    ("Uniforms", DocumentTab.UNIFORMS, uniforms_tab.draw),
-    ("Render", DocumentTab.RENDER, render_tab.draw),
-    ("Share", DocumentTab.SHARE, share_tab.draw),
-]
-
-
-def _draw_document_settings(app: App) -> None:
-    # Capture the jump target NOW — the loop rewrites active_document_tab from the visible tab,
-    # which would clobber the target before set_selected reads it (takes effect next frame).
-    tab_select_target = (
-        app.active_document_tab if app.document_tab_select_pending else None
-    )
-    app.document_tab_select_pending = False
-
-    with (
-        imgui_ctx.begin_child(
-            "document_settings",
-            child_flags=imgui.ChildFlags_.borders,
-            window_flags=imgui.WindowFlags_.no_nav_inputs,
-        ),
-        imgui_ctx.begin_tab_bar("document_settings_tabs") as bar,
-    ):
-        if bar:
-            visible_tab = app.active_document_tab
-            for label, tab_id, draw_tab in _NODE_TABS:
-                # set_selected drives the tab the frame after a Ctrl+digit jump.
-                flags = (
-                    imgui.TabItemFlags_.set_selected
-                    if tab_select_target == tab_id
-                    else imgui.TabItemFlags_.none
-                )
-                with imgui_ctx.begin_tab_item(label, flags=flags) as tab:
-                    if tab:
-                        visible_tab = tab_id
-                        draw_tab(app)
-            # Commit the visible tab after the loop so the mid-loop write can't
-            # clobber the jump target read above.
-            app.active_document_tab = visible_tab
 
 
 def main() -> None:

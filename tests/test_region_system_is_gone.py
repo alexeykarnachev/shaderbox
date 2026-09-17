@@ -78,7 +78,10 @@ _NAV_ONLY_FOCUSABLE = ("checkbox", "combo", "selectable", "button")
 _PKG = Path("shaderbox")
 _MODULES = ("ui.py", "widgets/copilot_chat.py", "widgets/document_grid.py")
 _CONTAINERS = ("begin_child", "begin")
-_MIN_CONTAINERS = 8
+# The floor exists so the walk cannot quietly narrow its own domain -- a refactor that hid the
+# containers would otherwise pass by finding none. Re-derived at 094 C10, which deleted the
+# settings panel's own child and the grid's: 7 is what the three modules carry now.
+_MIN_CONTAINERS = 7
 
 
 def test_no_source_file_mentions_the_region_system() -> None:

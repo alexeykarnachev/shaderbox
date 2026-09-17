@@ -700,9 +700,6 @@ class App:
             CommandId.OPEN_SCRIPT: lambda: self.open_script_for(
                 self.current_document_id, focus_editor=True
             ),
-            CommandId.OPEN_GRAPH: lambda: self.open_graph_for(
-                self.current_document_id, focus_editor=True
-            ),
             CommandId.CYCLE_CODE_TAB: self.cycle_code_tab,
             CommandId.CLOSE_CODE_TAB: self.close_active_tab,
             CommandId.OPEN_PASS_SETTINGS: self.open_pass_settings_for_panel_pass,
@@ -1579,6 +1576,10 @@ class App:
         # committed value is `app_state.canvas_split_fraction`; this is what the drag moves, so
         # the resize lands once on release rather than every frame of the sweep (094 D1a).
         self.canvas_split_drag: float | None = None
+        # Whether the breadcrumb's documents list is open (094 D16). An App field rather than
+        # imgui's popup state because the render set is computed before `imgui.new_frame()`,
+        # so the planning path cannot read a popup. One frame stale in both directions.
+        self.documents_dropdown_open: bool = False
         # The node cards' uniform ordering (094 D4c). On App rather than on the per-document
         # graph view because D18 makes it per-SESSION: one ordering for every node, cycled by
         # the card's sort glyph, persisted nowhere.
@@ -1834,22 +1835,6 @@ class App:
         self.ensure_python_worker()
         self._focus_or_add_tab(
             EditorTab(path=path, kind="script", document_id=document_id),
-            focus_editor=focus_editor,
-        )
-
-    def open_graph_for(self, document_id: str, focus_editor: bool = False) -> None:
-        # Summon the document's pass graph into the editor pane as its own tab (093 T1, T4).
-        # The path is the document's `graph.json`, so every path-keyed pass-through works
-        # unchanged; the tab has NO EditorSession and nothing here creates one. Frozen
-        # mid-copilot-turn like its `open_script_for` sibling.
-        if self.copilot_turn_active or document_id not in self.ui_documents:
-            return
-        self._focus_or_add_tab(
-            EditorTab(
-                path=self.paths.graph_json_for(document_id),
-                kind="graph",
-                document_id=document_id,
-            ),
             focus_editor=focus_editor,
         )
 

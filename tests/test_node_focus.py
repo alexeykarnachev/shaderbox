@@ -90,7 +90,6 @@ def test_a_focused_node_refuses_a_background_press(app: Any) -> None:
     from shaderbox.ui import update_and_draw
 
     document_id = app.current_document_id
-    app.open_graph_for(document_id)
     for _ in range(4):
         update_and_draw(app)
     view = app.graph_view_for(document_id)
@@ -119,7 +118,6 @@ def test_a_focused_node_refuses_a_background_press(app: Any) -> None:
     io.add_mouse_button_event(0, False)
     for _ in range(2):
         update_and_draw(app)
-    app.close_editor_for_path(app.paths.graph_json_for(document_id))
     update_and_draw(app)
 
 

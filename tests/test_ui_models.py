@@ -75,7 +75,7 @@ def test_the_open_tabs_round_trip_through_the_app_state(tmp_path: Path) -> None:
     state.editor_tabs = [
         TabRecord(path="/p/doc/passes/main.frag.glsl", kind="shader", document_id="d1"),
         TabRecord(path="/p/doc/scripts/script.py", kind="script", document_id="d1"),
-        TabRecord(path="/p/doc/graph.json", kind="graph", document_id="d1"),
+        TabRecord(path="/p/doc/script.py", kind="script", document_id="d1"),
         TabRecord(path="/lib/sdf.glsl", kind="lib"),
     ]
     state.active_tab_path = "/p/doc/graph.json"
@@ -84,7 +84,7 @@ def test_the_open_tabs_round_trip_through_the_app_state(tmp_path: Path) -> None:
     assert [(r.path, r.kind, r.document_id) for r in loaded.editor_tabs] == [
         ("/p/doc/passes/main.frag.glsl", "shader", "d1"),
         ("/p/doc/scripts/script.py", "script", "d1"),
-        ("/p/doc/graph.json", "graph", "d1"),
+        ("/p/doc/script.py", "script", "d1"),
         ("/lib/sdf.glsl", "lib", ""),
     ]
     assert loaded.active_tab_path == "/p/doc/graph.json"
@@ -143,12 +143,12 @@ def test_the_live_tabs_mirror_into_records_in_order() -> None:
     # The save half. Falsifier: mirror a set -- the order the user arranged is lost.
     tabs = [
         EditorTab(path=Path("/x.glsl"), kind="shader", document_id="d1"),
-        EditorTab(path=Path("/y.json"), kind="graph", document_id="d2"),
+        EditorTab(path=Path("/y.py"), kind="script", document_id="d2"),
         EditorTab(path=Path("/z.glsl"), kind="lib"),
     ]
     assert [(r.path, r.kind, r.document_id) for r in tab_records(tabs)] == [
         ("/x.glsl", "shader", "d1"),
-        ("/y.json", "graph", "d2"),
+        ("/y.py", "script", "d2"),
         ("/z.glsl", "lib", ""),
     ]
 

@@ -16,17 +16,16 @@ time and a `k = 12` document renders either 12 times or 0. Moving the increment 
 from typing import Any
 
 import pytest
-from imgui_bundle import imgui
 
 from shaderbox import ui
 from shaderbox.app import ModalId
 from shaderbox.constants import STARTER_EXAMPLE_ID
 from shaderbox.render_plan import AUTO_RESIZE_STABLE_FRAMES, CostRecord
 from shaderbox.render_shape import ResolutionMode, fit_to_aspect
-from shaderbox.tabs.document import _apply_canvas_size, _switch_resolution_mode
 from shaderbox.theme import SIZE
 from shaderbox.ui import _tick_frame_state, update_and_draw
 from shaderbox.ui_models import ConfirmRequest, UIAppState
+from shaderbox.widgets.canvas_control import _apply_canvas_size, _switch_resolution_mode
 from tests.conftest import seed_extra_document
 
 # This module drives real frames, so it gets its own worker: the imgui font atlas is per
@@ -799,19 +798,17 @@ def test_the_cursors_previous_position_anchors_at_the_documents_last_tick(
 
 
 def _control_panel_y(app: Any, monkeypatch: Any, frames: int = 3) -> float:
-    """The screen y the control panel child is drawn at, read where the grid draws into it."""
-    seen: list[float] = []
-    real = ui.draw_document_preview_grid
+    """The screen y the lower region starts at -- the boundary the splitter moves.
 
-    def recorded(target: Any, width: float, height: float) -> None:
-        seen.append(imgui.get_window_pos().y)
-        real(target, width, height)
-
-    monkeypatch.setattr(ui, "draw_document_preview_grid", recorded)
+    Read off the graph canvas's own published rect (094 C10): the grid this used to spy on is
+    gone, and the graph is what fills the region now. `monkeypatch` is kept in the signature
+    because every caller passes it and the helper may need a spy again.
+    """
     for _ in range(frames):
         update_and_draw(app)
-    assert seen, "the control panel never drew"
-    return seen[-1]
+    view = app.graph_view_for(app.current_document_id)
+    assert view.canvas_rect[3] > view.canvas_rect[1], "the lower region never drew"
+    return view.canvas_rect[1]
 
 
 def test_the_control_panel_holds_still_across_an_aspect_change(

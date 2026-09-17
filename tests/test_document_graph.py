@@ -30,8 +30,8 @@ from shaderbox.pass_graph import (
     plan_passes,
 )
 from shaderbox.shader_source import ShaderSource
-from shaderbox.tabs.document import _apply_canvas_size
 from shaderbox.ui_models import UIDocument
+from shaderbox.widgets.canvas_control import _apply_canvas_size
 
 # Writes a constant so a consumer's arithmetic on it is unambiguous.
 _CONST = """#version 460 core

@@ -34,7 +34,7 @@ from shaderbox.commands import (
 from shaderbox.constants import STARTER_EXAMPLE_ID
 from shaderbox.menus import command_hint
 from shaderbox.popups.registry import BY_ID, close_modal
-from shaderbox.widgets import document_grid, pass_graph, pass_list
+from shaderbox.widgets import document_grid, pass_graph, pass_menu
 
 # The imgui font atlas is process-global, so every frame-driving module owns a worker.
 pytestmark = pytest.mark.xdist_group("gl_frames_menus")
@@ -319,12 +319,12 @@ def test_the_pass_set_is_the_same_on_the_strip_and_the_node(
     assert app.session.add_pass(document_id, "other") == ""
 
     spy.labels.clear()
-    _frame(lambda: pass_list.pass_menu_items(app, document_id, name))
+    _frame(lambda: pass_menu.pass_menu_items(app, document_id, name))
     shared = list(spy.labels)
 
     spy.labels.clear()
     _frame(
-        lambda: pass_list.pass_menu_items(
+        lambda: pass_menu.pass_menu_items(
             app, document_id, name, slot=lambda: imgui.menu_item_simple("Group")
         )
     )
@@ -359,11 +359,11 @@ def test_an_ungrouped_pass_draws_one_separator_before_delete(app: Any) -> None:
     imgui.separator = separator
     imgui.menu_item_simple = simple
     try:
-        _frame(lambda: pass_list.pass_menu_items(app, document_id, name))
+        _frame(lambda: pass_menu.pass_menu_items(app, document_id, name))
         ungrouped = list(order)
         order.clear()
         app.session.set_pass_group(document_id, name, "g")
-        _frame(lambda: pass_list.pass_menu_items(app, document_id, name))
+        _frame(lambda: pass_menu.pass_menu_items(app, document_id, name))
         grouped = list(order)
     finally:
         imgui.separator = real_separator
@@ -399,7 +399,6 @@ def test_a_documents_menu_carries_every_verb_on_that_document(
     _frame(lambda: document_grid.document_menu_items(app, document_id))
     assert spy.labels == [
         "Open script",
-        "Open graph",
         "Open folder",
         "Reset",
         "Delete",
@@ -426,7 +425,6 @@ def test_a_tile_menus_verbs_target_that_tiles_document(
 
     seen: dict[str, str] = {}
     monkeypatch.setattr(app, "open_script_for", lambda i, **k: seen.update(script=i))
-    monkeypatch.setattr(app, "open_graph_for", lambda i, **k: seen.update(graph=i))
     monkeypatch.setattr(app, "open_document_dir", lambda i: seen.update(folder=i))
     monkeypatch.setattr(app, "reset_document", lambda i: seen.update(reset=i))
     monkeypatch.setattr(app, "reset_current_document", lambda: seen.update(reset=other))
@@ -437,12 +435,11 @@ def test_a_tile_menus_verbs_target_that_tiles_document(
         app, "delete_current_document_confirmed", lambda: seen.update(delete=other)
     )
 
-    for label in ("Open script", "Open graph", "Open folder", "Reset", "Delete"):
+    for label in ("Open script", "Open folder", "Reset", "Delete"):
         _frame(partial(_fire_menu_item, app, target, label))
 
     assert seen == {
         "script": target,
-        "graph": target,
         "folder": target,
         "reset": target,
         "delete": target,
@@ -474,11 +471,15 @@ def test_a_tile_menus_chord_hints_follow_the_binding(app: Any) -> None:
 
     Falsifier: hard-code the default in `command_hint` -- the rebind below stops showing.
     """
-    before = command_hint(app, CommandId.OPEN_GRAPH)
-    app.effective_bindings[CommandId.OPEN_GRAPH] = _chord_of(app, CommandId.OPEN_SCRIPT)
-    after = command_hint(app, CommandId.OPEN_GRAPH)
+    # Rebind one command to ANOTHER's chord, so the hint must change for the rebind to show.
+    # (094 C10 deleted `OPEN_GRAPH`, which this used to move; the claim is about the lookup.)
+    before = command_hint(app, CommandId.OPEN_SCRIPT)
+    app.effective_bindings[CommandId.OPEN_SCRIPT] = _chord_of(
+        app, CommandId.OPEN_PASS_SETTINGS
+    )
+    after = command_hint(app, CommandId.OPEN_SCRIPT)
     assert after != before, "the hint ignored the rebinding"
-    assert after == command_hint(app, CommandId.OPEN_SCRIPT)
+    assert after == command_hint(app, CommandId.OPEN_PASS_SETTINGS)
 
 
 def _chord_of(app: Any, command_id: CommandId) -> int:
@@ -818,7 +819,7 @@ def test_the_pass_delete_item_opens_the_confirm_rather_than_deleting(
     name = next(iter(app.ui_documents[document_id].document.passes))
     assert app.session.add_pass(document_id, "other") == ""
     driver = _MenuDriver(
-        lambda: pass_list.pass_menu_items(app, document_id, name), monkeypatch
+        lambda: pass_menu.pass_menu_items(app, document_id, name), monkeypatch
     )
     driver.open_menu()
     with mock.patch.object(

@@ -54,8 +54,6 @@ def document_menu_items(app: App, document_id: str) -> None:
     """
     if target_menu_item(app, CommandId.OPEN_SCRIPT):
         app.open_script_for(document_id, focus_editor=True)
-    if target_menu_item(app, CommandId.OPEN_GRAPH):
-        app.open_graph_for(document_id, focus_editor=True)
     imgui.separator()
     if target_menu_item(app, CommandId.OPEN_DOCUMENT_DIR):
         app.open_document_dir(document_id)

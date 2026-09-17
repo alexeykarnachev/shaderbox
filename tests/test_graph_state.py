@@ -8,6 +8,7 @@ import itertools
 import math
 from pathlib import Path
 
+from shaderbox.pass_graph import group_runs
 from shaderbox.theme import SIZE
 from shaderbox.widgets import pass_graph
 from shaderbox.widgets.graph_state import (
@@ -305,3 +306,19 @@ def test_the_channels_carry_the_layers_in_order() -> None:
     for name in ("HALO", "WIRE", "NODE", "SCRIM", "FOCUS", "INFLIGHT", "OVERLAY"):
         assert f"channels_set_current(_CH_{name})" in source, name
     assert f"channels_set_current({pass_graph._CH_COUNT}" not in source
+
+
+# ---- 094 C10: the pass strip is deleted; `group_runs` is `pass_graph`'s and outlives it ----
+
+
+def test_group_runs_cut_by_adjacency_not_by_name() -> None:
+    # 091 D7. Falsifier: a `defaultdict(list)` keyed by group name merges the split run.
+    groups = {"a": "", "b": "g", "c": "g", "d": "", "e": "g"}
+    assert group_runs(["a", "b", "c", "d", "e"], groups) == [
+        ["a"],
+        ["b", "c"],
+        ["d"],
+        ["e"],
+    ]
+    assert group_runs(["b", "c"], groups) == [["b", "c"]]
+    assert group_runs(["a", "d"], groups) == [["a"], ["d"]]

@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from shaderbox.editor.ffi import Editor
 from shaderbox.shader_source import ShaderSource
 
-EditorTabKind = Literal["shader", "script", "lib", "graph"]
+EditorTabKind = Literal["shader", "script", "lib"]
 
 
 @dataclass(frozen=True)

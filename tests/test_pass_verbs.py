@@ -44,7 +44,6 @@ from shaderbox.project_session import ProjectSession, compile_pending_passes
 from shaderbox.shader_source import ShaderSource
 from shaderbox.ui_models import UIUniform, load_document_from_dir
 from shaderbox.util import get_uniform_hash
-from shaderbox.widgets import pass_list
 
 _SAMPLER_ON = """#version 460 core
 in vec2 vs_uv;
@@ -552,92 +551,6 @@ def test_closing_the_gear_on_a_retired_pass_stays_silent(app: Any) -> None:
 
 # ----------------------------------------------------------------
 # The strip: what a tile shows, and which graph it plans (069 W-D).
-
-
-def test_the_strip_draws_a_picture_a_name_and_its_reads(
-    app: Any, monkeypatch: Any
-) -> None:
-    # Under the name, a chip per pass the tile reads (070): never the uniform, never an
-    # arrow -- the `u_x <- y` sublines 069 #19 rejected were cut at the tile's width. A
-    # stored edge on a sampler the program no longer declares (`u_old`, the shape a rename
-    # leaves behind) binds nothing, so it is no chip.
-    document_id = _document_id(app)
-    document = app.ui_documents[document_id].document
-    app.session.add_pass(document_id, "src")
-    app.session.add_pass(document_id, "sink")
-    document.passes["sink"].release_program(_SAMPLER_SRC_AND_PREV)
-    document.passes["sink"].compile()
-    assert document.passes["sink"].compile_unit.errors == []
-    for uniform, source in (
-        ("u_src", "src"),
-        ("u_again", "src"),
-        ("u_prev", "sink"),
-        ("u_old", "main"),
-    ):
-        app.session.set_sampler_source(document_id, "sink", uniform, PassSource(source))
-
-    captured: dict[str, dict[str, Any]] = {}
-    real = pass_list.preview_cell
-
-    def spy(*a: Any, **kw: Any) -> Any:
-        captured[kw["footer"]] = dict(kw)
-        return real(*a, **kw)
-
-    monkeypatch.setattr(pass_list, "preview_cell", spy)
-    _imgui_frame(lambda: pass_list.draw(app, document_id))
-    assert set(captured) == {"main", "src", "sink"}
-    assert captured["sink"]["chips"] == ["src", pass_list.FEEDBACK_CHIP], captured
-    assert captured["src"]["chips"] == [], captured
-    for kwargs in captured.values():
-        assert "sublines" not in kwargs, kwargs
-        assert kwargs["chip_font"] is app.font_12
-
-
-def test_the_chips_follow_the_wiring() -> None:
-    # The wiring already excludes a missing source and an undeclared sampler (072); the chips
-    # add strip order, one chip per source, and `prev` last.
-    wiring = {"a": {}, "b": {"u_a": "a", "u_again": "a", "u_prev": "b"}}
-    reads = pass_list._reads
-    assert reads("b", wiring, ["a", "b"]) == ["a", pass_list.FEEDBACK_CHIP]
-    assert reads("b", {"a": {}, "b": {"u_prev": "b"}}, ["a", "b"]) == [
-        pass_list.FEEDBACK_CHIP
-    ]
-    assert reads("a", wiring, ["a", "b"]) == []
-    assert reads("zzz", wiring, ["a", "b"]) == []
-
-
-def test_an_auto_wired_ancestor_is_not_washed_stale(app: Any, monkeypatch: Any) -> None:
-    # The wash says "the renderer is not drawing this". Planning the RAW graph makes it lie about
-    # every pass a name default feeds, because a name-wired document has no stored edges at all.
-    document_id = _document_id(app)
-    document = app.ui_documents[document_id].document
-    app.session.rename_pass(document_id, next(iter(document.passes)), "a")
-    app.session.add_pass(document_id, "b")
-    document.passes["b"].release_program(_SAMPLER_ON_A)
-    document.passes["b"].compile()
-    app.session.set_output_pass(document_id, "b")
-    for frame in range(4):
-        document.begin_frame(frame)
-        document.render()
-
-    stale_by_name: dict[str, bool] = {}
-    real = pass_list._draw_pass_tile
-
-    def spy(
-        app_: Any,
-        document_id_: str,
-        name: str,
-        render_pass: Any,
-        stale: bool,
-        reads: Any,
-        group: str = "",
-    ) -> None:
-        stale_by_name[name] = stale
-        real(app_, document_id_, name, render_pass, stale, reads, group)
-
-    monkeypatch.setattr(pass_list, "_draw_pass_tile", spy)
-    _imgui_frame(lambda: pass_list.draw(app, document_id))
-    assert stale_by_name["a"] is False, stale_by_name
 
 
 def test_the_strip_orders_a_name_wired_document_topologically(app: Any) -> None:

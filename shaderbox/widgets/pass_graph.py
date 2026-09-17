@@ -57,8 +57,10 @@ from shaderbox.ui_primitives import (
     ellipsize,
     name_input_row,
     primary_button,
+    standard_button,
     text_tab_row,
 )
+from shaderbox.widgets.document_grid import document_menu_items
 from shaderbox.widgets.graph_state import (
     GraphViewState,
     NodeDrag,
@@ -79,7 +81,7 @@ from shaderbox.widgets.graph_state import (
     wire_points,
     wire_state,
 )
-from shaderbox.widgets.pass_list import pass_menu_items
+from shaderbox.widgets.pass_menu import pass_menu_items
 from shaderbox.widgets.uniform_rows import (
     compact_row_count,
     draw_compact_row,
@@ -881,12 +883,61 @@ def _tab_row(
     labels = [root_label, *groups]
     scopes = ["", *groups]
     active = labels[scopes.index(view.scope)] if view.scope in scopes else root_label
-    clicked = text_tab_row("graph_scope", labels, active)
-    if clicked is not None:
-        index = labels.index(clicked)
-        if scopes[index] != view.scope:
-            view.scope = scopes[index]
-            view.fitted = False
+
+    # The first crumb is the DOCUMENT, so it carries the document's own affordances (094 D14):
+    # a left click opens the documents list, a right click that document's verbs. Drawn before
+    # the scope row and outside the canvas's copilot-turn bracket, so switching documents stays
+    # possible during a turn -- it is now the only way.
+    if standard_button(f"{root_label} v##documents"):
+        app.documents_dropdown_open = True
+        imgui.open_popup("##documents_menu")
+    with context_menu_style():
+        if imgui.begin_popup_context_item("##document_verbs"):
+            document_menu_items(app, document_id)
+            imgui.end_popup()
+    _documents_dropdown(app)
+    if groups:
+        imgui.same_line()
+        clicked = text_tab_row("graph_scope", labels, active)
+        if clicked is not None:
+            index = labels.index(clicked)
+            if scopes[index] != view.scope:
+                view.scope = scopes[index]
+                view.fitted = False
+
+
+def _documents_dropdown(app: App) -> None:
+    """The documents list, with a live preview per row (094 D16).
+
+    The open state is an APP field, not imgui's: the whole render-set computation runs before
+    `imgui.new_frame()`, so nothing in the planning path could read a popup's state. The set is
+    therefore one frame stale in both directions, which is the same lag the throttle already has.
+    """
+    with context_menu_style():
+        if not imgui.begin_popup("##documents_menu"):
+            app.documents_dropdown_open = False
+            return
+        for document_id, ui_document in app.ui_documents.items():
+            current = document_id == app.current_document_id
+            texture = ui_document.document.render_pass.canvas.texture
+            imgui.image(
+                imgui.ImTextureRef(texture.glo),
+                imgui.ImVec2(float(SIZE.DOC_ROW_THUMB_W), float(SIZE.DOC_ROW_THUMB_H)),
+                imgui.ImVec2(0, 1),
+                imgui.ImVec2(1, 0),
+            )
+            imgui.same_line()
+            marked = "*" if current else " "
+            if imgui.menu_item_simple(f"{marked} {ui_document.ui_state.ui_name}"):
+                app.select_document(document_id)
+            with context_menu_style():
+                if imgui.begin_popup_context_item(f"##doc_verbs_{document_id}"):
+                    document_menu_items(app, document_id)
+                    imgui.end_popup()
+        imgui.separator()
+        command_menu_item(app, CommandId.NEW_DOCUMENT)
+        command_menu_item(app, CommandId.OPEN_PROJECTS)
+        imgui.end_popup()
 
 
 def _canvas_menu(app: App, document_id: str, view: GraphViewState) -> None:

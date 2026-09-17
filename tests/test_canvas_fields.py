@@ -13,85 +13,15 @@ release textures imgui is still holding. So the assertions here read `resolution
 
 from typing import Any
 
-from imgui_bundle import imgui
-
 from shaderbox.render_shape import ASPECT_PRESETS, ResolutionMode
-from shaderbox.tabs import document as document_tab
-from shaderbox.tabs.document import (
+from shaderbox.widgets.canvas_control import (
     CanvasChoiceKind,
     _apply_aspect,
-    _apply_canvas_choice,
+    apply_canvas_choice,
+    canvas_caption,
     canvas_choice_groups,
     canvas_choice_label,
 )
-from tests.conftest import seed_extra_document
-
-
-def test_a_document_switch_mid_edit_does_not_resize_the_new_document(app: Any) -> None:
-    # Clearing the editing flags is not enough on its own: imgui keeps the ITEM active across the
-    # switch, so an unscoped `##canvas_w` id lets the outgoing document's half-typed digit re-latch
-    # onto the incoming one and commit to it on click-away. The row's ids are scoped per document,
-    # so the new document's field is a different item and cannot inherit that activeness.
-    other_id = seed_extra_document(app, "bbbbbbbb-0000-4000-8000-00000000beef")
-    original_id = app.current_document_id
-    app.ui_documents[original_id].document.resolution = (1280, 960)
-    app.ui_documents[other_id].document.resolution = (333, 444)
-
-    imgui.set_window_focus(None)
-    app.canvas_w_editing = False
-    app.canvas_h_editing = False
-    for document_id in (original_id, other_id):
-        app.ui_documents[document_id].document.resolution_mode = ResolutionMode.FIXED
-
-    for frame in range(9):
-        if frame == 3:
-            imgui.get_io().add_input_character(ord("5"))
-        if frame == 4:
-            app.set_current_document_id(other_id)
-        imgui.new_frame()
-        imgui.begin("rig")
-        if frame in (0, 1, 2):
-            imgui.set_keyboard_focus_here(3)
-        if frame == 6:
-            imgui.set_keyboard_focus_here(5)
-        document_tab.draw(app)
-        imgui.end()
-        imgui.end_frame()
-
-    assert app.ui_documents[other_id].document.resolution == (333, 444), (
-        "a digit typed into another document resized this one"
-    )
-    assert app.ui_documents[original_id].document.resolution == (1280, 960), (
-        "the document being edited was resized by a switch that should have discarded the edit"
-    )
-
-
-def _draw_tab_once(app: Any) -> None:
-    imgui.new_frame()
-    imgui.begin("rig")
-    document_tab.draw(app)
-    imgui.end()
-    imgui.end_frame()
-
-
-def _captions(app: Any, monkeypatch: Any) -> list[str]:
-    """Every `small_caption` string the tab drew, in order.
-
-    The readout is the SECOND, inside the `Canvas` caption itself since 093 W8 moved it off
-    the line under the combo, where it read as a second field. Indexed from the front, never
-    from the end: what follows is whatever rows the tab grows next. Captured rather than
-    asserted against the pixels, because what this pins is the string the mode decides.
-    """
-    seen: list[str] = []
-    real = document_tab.small_caption
-
-    def spy(font: Any, text: str) -> None:
-        seen.append(text)
-        real(font, text)
-
-    monkeypatch.setattr(document_tab, "small_caption", spy)
-    _draw_tab_once(app)
-    return seen
 
 
 def test_an_auto_documents_readout_is_its_live_size(app: Any, monkeypatch: Any) -> None:
@@ -104,8 +34,9 @@ def test_an_auto_documents_readout_is_its_live_size(app: Any, monkeypatch: Any) 
     document.resolution = (111, 222)  # a stale pair the readout must not show
     document.set_canvas_size((1214, 683))
 
-    captions = _captions(app, monkeypatch)
-    assert captions[1] == "Canvas  1214x683", captions
+    assert (
+        canvas_caption(app.ui_documents[app.current_document_id]) == "Canvas  1214x683"
+    )
 
 
 def test_a_fixed_documents_readout_is_the_aspect_of_its_pair(
@@ -117,8 +48,7 @@ def test_a_fixed_documents_readout_is_the_aspect_of_its_pair(
     document.resolution_mode = ResolutionMode.FIXED
     document.resolution = (1280, 720)
 
-    captions = _captions(app, monkeypatch)
-    assert captions[1] == "Canvas  16:9", captions
+    assert canvas_caption(app.ui_documents[app.current_document_id]) == "Canvas  16:9"
 
 
 def test_an_aspect_pick_writes_the_reduced_ratio(app: Any) -> None:
@@ -182,7 +112,7 @@ def test_picking_auto_sets_the_mode_and_its_ratio(app: Any) -> None:
     ui_document.document.resolution = (1280, 720)
 
     groups = dict(canvas_choice_groups(ui_document))
-    _apply_canvas_choice(app, ui_document, groups["4:3"][0])
+    apply_canvas_choice(app, ui_document, groups["4:3"][0])
 
     assert ui_document.document.resolution_mode is ResolutionMode.AUTO
     assert ui_document.document.aspect == (4, 3)
@@ -200,7 +130,7 @@ def test_picking_a_size_sets_fixed_and_that_pair(app: Any) -> None:
 
     groups = dict(canvas_choice_groups(ui_document))
     row = next(r for r in groups["1:1"] if r.size == (512, 512))
-    _apply_canvas_choice(app, ui_document, row)
+    apply_canvas_choice(app, ui_document, row)
 
     assert ui_document.document.resolution_mode is ResolutionMode.FIXED
     assert ui_document.document.resolution == (512, 512)
@@ -233,33 +163,3 @@ def test_a_row_does_not_repeat_the_ratio_its_group_names(app: Any) -> None:
     for caption, rows in canvas_choice_groups(ui_document):
         for row in rows:
             assert not row.label.endswith(f"({caption})"), row.label
-
-
-def test_the_script_toggle_is_labelled_and_only_shown_with_a_script(
-    app: Any, monkeypatch: Any
-) -> None:
-    """The bare `stop` gets a `Script` label naming what it stops (093 W8).
-
-    On a uniform row the toggle sits at the end of the row of the uniform it stops, which is
-    its subject; on this row it had no neighbor and read as a loose word. Falsifier: drop the
-    label and the first assertion goes red; draw the pair with no script on disk and the
-    second does.
-    """
-    words: list[str] = []
-    real = document_tab.imgui.text_colored
-
-    def spy(color: Any, text: str) -> None:
-        words.append(text)
-        real(color, text)
-
-    monkeypatch.setattr(document_tab.imgui, "text_colored", spy)
-
-    assert not app.session.has_script(app.current_document_id)
-    _draw_tab_once(app)
-    assert "Script" not in words, "the label showed with no script on disk"
-
-    app.session.create_script(app.current_document_id)
-    assert app.session.has_script(app.current_document_id)
-    words.clear()
-    _draw_tab_once(app)
-    assert "Script" in words, "the toggle drew with no word naming what it stops"

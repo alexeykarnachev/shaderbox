@@ -22,7 +22,6 @@ class CommandId(StrEnum):
     QUIT = auto()
     # Document
     OPEN_SCRIPT = auto()
-    OPEN_GRAPH = auto()
     OPEN_DOCUMENT_DIR = auto()
     TOGGLE_DOCUMENT_PLAY = auto()
     RESET_DOCUMENT = auto()
@@ -146,7 +145,6 @@ COMMAND_SPECS: list[CommandSpec] = [
     CommandSpec(
         CommandId.OPEN_SCRIPT, "Open script", _chord(K.r, K.mod_alt), C.DOCUMENT
     ),
-    CommandSpec(CommandId.OPEN_GRAPH, "Open graph", _chord(K.g, K.mod_alt), C.DOCUMENT),
     CommandSpec(
         CommandId.OPEN_DOCUMENT_DIR, "Open folder", 0, C.DOCUMENT, separator_before=True
     ),

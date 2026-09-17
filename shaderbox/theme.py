@@ -356,6 +356,10 @@ class SIZE:
     # of "0.000"; below 96px the name is a smudge that costs a font push per node.
     # A compact uniform row on a node: its name column, its height, and how many the scroll
     # window shows before the rest scroll (094 D6 -- 8-10 visible, so the node has a ceiling).
+    # A documents-dropdown row's preview (094 D16): small enough to be a recognition cue, large
+    # enough to read as a picture rather than a coloured smudge.
+    DOC_ROW_THUMB_W: int = 48
+    DOC_ROW_THUMB_H: int = 27
     GRAPH_ROW_NAME_W: int = 62
     GRAPH_ROW_H: int = 16
     GRAPH_ROWS_VISIBLE: int = 9

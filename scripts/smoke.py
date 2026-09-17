@@ -34,7 +34,6 @@ from shaderbox.logging_setup import configure_logging
 from shaderbox.pass_graph import PassEntry, PassGraph
 from shaderbox.paths import PASSES_DIR_NAME, pass_shader_name
 from shaderbox.ui import update_and_draw
-from shaderbox.ui_regions import DocumentTab
 
 N_FRAMES: int = 200
 
@@ -129,13 +128,6 @@ def _seed_tmp_project(root: Path) -> Path:
     return project
 
 
-# One DocumentTab member per focus frame, spaced so each has two frames to land before the next is
-# requested. Derived from the enum, so a new member joins the sweep instead of being forgotten.
-_TAB_FOCUS_FRAMES: dict[int, DocumentTab] = {
-    56 + 4 * i: tab for i, tab in enumerate(DocumentTab)
-}
-
-
 def _check_invariants(app: App, frame_idx: int) -> None:
     # The "at most one modal open" mutex is structural — `app.modal` is one ModalId or None,
     # so two modals can't be open at once by construction (feature 023, reshaped by 093 W4).
@@ -151,8 +143,12 @@ def _check_invariants(app: App, frame_idx: int) -> None:
     # Feature 018: the registry must be populated + dispatched every frame (the
     # cheatsheet overlay draws here too, exercising its no-assert path headlessly).
     assert app.effective_bindings, f"frame {frame_idx}: effective_bindings empty"
-    assert app.active_document_tab in DocumentTab, (
-        f"frame {frame_idx}: bad active_document_tab={app.active_document_tab!r}"
+    # 094 C10: the graph IS the lower panel, so the frame that drew must have drawn it -- the
+    # canvas publishes its own screen rect every frame it runs. A panel that silently stopped
+    # drawing is exactly what the deleted tab-focus sweep used to catch for the tabs.
+    view = app.graph_view_for(app.current_document_id)
+    assert view.canvas_rect[2] > view.canvas_rect[0], (
+        f"frame {frame_idx}: the graph panel drew no canvas"
     )
 
 
@@ -282,7 +278,7 @@ def main() -> int:
                 if frame_idx == 43:
                     app.modal = None
                     app.pass_settings_name = ""
-                    app.open_graph_for(multi)
+                    app.select_document(multi)
                     # 092 D6: opening the view must WRITE NOTHING. Falsifier: a canvas that
                     # stores the rank layout on first sight.
                     graph_before = json.dumps(
@@ -344,20 +340,6 @@ def main() -> int:
                 if frame_idx == 48:
                     # Back to the feedback canary's document, whose accumulation the tail asserts.
                     app.set_current_document_id(canary_id)
-                # Every settings tab is focused and then CHECKED two frames on (083). imgui owns
-                # the tab selection and honors `set_selected` the frame AFTER the request, so a
-                # same-frame assert reads the previous tab and passes whatever happened. Asserting
-                # the tab that actually DREW (ui.py commits it from the drawn item) is what catches
-                # a DocumentTab member with no `_NODE_TABS` row -- it would never become visible.
-                if frame_idx in _TAB_FOCUS_FRAMES:
-                    app.focus_document_tab(_TAB_FOCUS_FRAMES[frame_idx])
-                if frame_idx - 2 in _TAB_FOCUS_FRAMES:
-                    want = _TAB_FOCUS_FRAMES[frame_idx - 2]
-                    assert app.active_document_tab == want, (
-                        f"frame {frame_idx}: focused {want} but "
-                        f"{app.active_document_tab} drew — a DocumentTab member whose "
-                        "_NODE_TABS row is missing never becomes visible"
-                    )
                 # Open the Examples browser for a stretch so its draw path (grid + desc slot +
                 # action row sizing) is exercised — it never opens on its own in the loop.
                 if frame_idx == 70:

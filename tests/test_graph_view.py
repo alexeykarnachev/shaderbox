@@ -15,7 +15,7 @@ from imgui_bundle import imgui
 
 from shaderbox.pass_graph import NoSource, PassSource
 from shaderbox.ui import update_and_draw
-from shaderbox.widgets import pass_graph, pass_list
+from shaderbox.widgets import pass_graph, pass_menu
 from shaderbox.widgets.graph_state import (
     GraphViewState,
     NodeDrag,
@@ -172,7 +172,7 @@ def test_dissolve_of_nothing_and_leave_group_write_as_they_should(app: Any) -> N
 def test_the_widget_makes_no_session_write_of_its_own() -> None:
     # 092 D12: every write goes through an App verb, so its refusal is testable here. The
     # strip's menu is shared with the canvas, so it is held to the same rule.
-    for module in (pass_graph, pass_list):
+    for module in (pass_graph, pass_menu):
         source = Path(module.__file__).read_text(encoding="utf-8")
         for forbidden in (
             "set_sampler_source",
@@ -198,7 +198,6 @@ def test_a_wire_dropped_on_a_drawn_port_writes_that_port(app: Any) -> None:
     # the flag costs the LAST rung its own hover, `drop_target` never sets, and the drop
     # writes nothing at any zoom.
     document_id, document = _chain(app)
-    app.open_graph_for(document_id)
     _frames(app, 4)
     view = app.graph_view_for(document_id)
     assert ("c", "u_src") in view.port_rects, sorted(view.port_rects)
@@ -220,7 +219,6 @@ def test_a_wire_dropped_on_a_drawn_port_writes_that_port(app: Any) -> None:
     _frames(app, 2)
     assert document.passes["c"].uniform_values["u_src"] == PassSource("a")
     assert view.wire_drag is None
-    app.close_editor_for_path(app.paths.graph_json_for(document_id))
     _frames(app, 1)
 
 
@@ -231,7 +229,6 @@ def test_a_press_that_spans_a_copilot_turn_never_becomes_a_gesture(app: Any) -> 
     # latch -- the release after the turn drops the wire on whatever is under the cursor.
     # The wire starts at an OUTPUT dot: an input pin is not a drag source (093 W2-4).
     document_id, document = _chain(app)
-    app.open_graph_for(document_id)
     _frames(app, 4)
     view = app.graph_view_for(document_id)
     x0, y0, x1, y1 = view.out_rects[("p:a", 0)]
@@ -268,7 +265,6 @@ def test_a_press_that_spans_a_copilot_turn_never_becomes_a_gesture(app: Any) -> 
     assert view.wire_drag is not None
     io.add_mouse_button_event(0, False)
     _frames(app, 2)
-    app.close_editor_for_path(app.paths.graph_json_for(document_id))
     _frames(app, 1)
 
 
@@ -282,7 +278,6 @@ def test_a_press_that_spans_a_copilot_turn_never_becomes_a_gesture(app: Any) -> 
 
 
 def _open_graph(app: Any, document_id: str) -> Any:
-    app.open_graph_for(document_id)
     _frames(app, 4)
     view = app.graph_view_for(document_id)
     assert view.canvas_rect != (0.0, 0.0, 0.0, 0.0), "the canvas never drew"
@@ -345,12 +340,6 @@ def test_a_wire_is_selected_by_a_click_and_deleted_by_the_key(app: Any) -> None:
         write.call_args.args[2],
     ) == (document_id, "c", "u_src")
     assert document.passes["c"].uniform_values["u_src"] == NoSource()
-    _close_graph(app, document_id)
-
-
-def _close_graph(app: Any, document_id: str) -> None:
-    app.close_editor_for_path(app.paths.graph_json_for(document_id))
-    _frames(app, 1)
 
 
 def test_the_wires_own_badge_unwires_it_and_the_press_is_nothing_else(app: Any) -> None:
@@ -391,7 +380,6 @@ def test_the_wires_own_badge_unwires_it_and_the_press_is_nothing_else(app: Any) 
     assert view.band_anchor is None and view.node_drag is None
     assert view.selection == selection_before
     assert document.passes["b"].uniform_values["u_src"] == NoSource()
-    _close_graph(app, document_id)
 
 
 def test_the_badge_wins_over_a_card_that_covers_the_wire(app: Any) -> None:
@@ -442,7 +430,6 @@ def test_the_badge_wins_over_a_card_that_covers_the_wire(app: Any) -> None:
         "the release-frame node click fired through the latch"
     )
     assert document.passes["b"].uniform_values["u_src"] == NoSource()
-    _close_graph(app, document_id)
 
 
 def test_delete_is_refused_while_a_press_is_held_on_the_canvas(app: Any) -> None:
@@ -473,7 +460,6 @@ def test_delete_is_refused_while_a_press_is_held_on_the_canvas(app: Any) -> None
         _press_key(app, imgui.Key.delete)
     assert write.call_count == 1
     assert document.passes["c"].uniform_values["u_src"] == NoSource()
-    _close_graph(app, document_id)
 
 
 def test_delete_typed_into_the_group_prompt_is_refused(app: Any) -> None:
@@ -494,7 +480,6 @@ def test_delete_typed_into_the_group_prompt_is_refused(app: Any) -> None:
         _press_key(app, imgui.Key.delete)
     assert write.call_count == 0
     assert document.passes["c"].uniform_values["u_src"] == PassSource("b")
-    _close_graph(app, document_id)
 
 
 def test_delete_is_refused_during_a_copilot_turn(app: Any) -> None:
@@ -513,7 +498,6 @@ def test_delete_is_refused_during_a_copilot_turn(app: Any) -> None:
     app.copilot.state.in_flight = False
     _frames(app, 3)
     assert document.passes["c"].uniform_values["u_src"] == PassSource("b")
-    _close_graph(app, document_id)
 
 
 def _hover_fields(view: Any) -> tuple[Any, Any, Any, Any]:
@@ -587,7 +571,6 @@ def test_exactly_one_thing_is_hovered_and_the_rungs_are_in_order(app: Any) -> No
     # (e) off the canvas: every field written, every one None.
     _park(app, (view.canvas_rect[0] - 40.0, view.canvas_rect[1] - 40.0))
     assert _hover_fields(view) == (None, None, None, None)
-    _close_graph(app, document_id)
 
 
 def test_the_hover_fields_are_exactly_the_four_that_are_written(app: Any) -> None:
@@ -632,7 +615,6 @@ def test_a_wire_selection_and_a_node_selection_are_exclusive(app: Any) -> None:
     imgui.get_io().add_mouse_button_event(0, False)
     _frames(app, 2)
     assert view.selected_wire is None
-    _close_graph(app, document_id)
 
 
 def _drag_node(app: Any, view: Any, start: tuple[float, float], dx: float) -> None:
@@ -680,9 +662,7 @@ def test_three_pixels_is_a_click_and_five_is_a_drag(app: Any) -> None:
         _drag_node(app, view, start, 3.0)
     assert output.call_count == 1, "3px did not read as a click"
     assert placed.call_count == 0, "3px wrote a position"
-    assert app.active_tab is not None and app.active_tab.kind == "graph", (
-        "the click opened a shader tab and evicted the canvas it was made on"
-    )
+    # 094 C10: the canvas cannot be evicted by a click any more -- it is the panel, not a tab.
 
     # A fresh node, so the 3px case's own position write cannot decide this one.
     node_b = pass_graph._build_view(document, "", {}).nodes["p:b"]
@@ -705,7 +685,6 @@ def test_three_pixels_is_a_click_and_five_is_a_drag(app: Any) -> None:
         _drag_node(app, view, start_b, 5.0)
     assert placed.call_count == 1, "5px did not read as a drag"
     assert output.call_count == 0, "5px chose an output as well"
-    _close_graph(app, document_id)
 
 
 def test_a_double_click_on_a_pass_leaves_the_pane_on_the_graph(app: Any) -> None:
@@ -730,10 +709,9 @@ def test_a_double_click_on_a_pass_leaves_the_pane_on_the_graph(app: Any) -> None
         imgui.get_io().add_mouse_button_event(0, False)
         _frames(app, 1)
     _frames(app, 2)
-    tab = app.active_tab
-    assert tab is not None and tab.kind == "graph", tab
+    # A double click used to be able to swap the pane out from under the canvas; the canvas is
+    # now the panel, so what this pins is that the double click still chose the output.
     assert document.graph.output == "a"
-    _close_graph(app, document_id)
 
 
 def test_the_selected_card_draws_and_hit_tests_last(app: Any) -> None:
@@ -745,7 +723,6 @@ def test_the_selected_card_draws_and_hit_tests_last(app: Any) -> None:
     view.selection = {"a"}
     _frames(app, 2)
     assert view.node_order[-1] == "p:a", view.node_order
-    _close_graph(app, document_id)
 
 
 def test_the_card_in_flight_outranks_a_merely_selected_one(app: Any) -> None:
@@ -775,7 +752,6 @@ def test_the_card_in_flight_outranks_a_merely_selected_one(app: Any) -> None:
     assert view.node_order[-1] == "p:a", view.node_order
     imgui.get_io().add_mouse_button_event(0, False)
     _frames(app, 3)
-    _close_graph(app, document_id)
 
 
 def test_the_cursor_follows_the_gesture(app: Any) -> None:
@@ -826,7 +802,6 @@ def test_the_cursor_follows_the_gesture(app: Any) -> None:
     io.add_mouse_button_event(0, False)
     _frames(app, 3)
     assert app.cur_cursor is None
-    _close_graph(app, document_id)
 
 
 def test_an_input_pin_moves_the_node_and_never_carries_its_wire(app: Any) -> None:
@@ -857,7 +832,6 @@ def test_an_input_pin_moves_the_node_and_never_carries_its_wire(app: Any) -> Non
         _frames(app, 3)
     assert write.call_count == 0, [c.args for c in write.call_args_list]
     assert document.passes["c"].uniform_values["u_src"] == PassSource("b")
-    _close_graph(app, document_id)
 
 
 def test_a_wire_dropped_on_a_filled_port_overwrites_its_source(app: Any) -> None:
@@ -877,7 +851,6 @@ def test_a_wire_dropped_on_a_filled_port_overwrites_its_source(app: Any) -> None
     imgui.get_io().add_mouse_button_event(0, False)
     _frames(app, 3)
     assert document.passes["c"].uniform_values["u_src"] == PassSource("a")
-    _close_graph(app, document_id)
 
 
 def test_the_group_prompt_keeps_one_width_across_frames(app: Any) -> None:
@@ -902,4 +875,3 @@ def test_the_group_prompt_keeps_one_width_across_frames(app: Any) -> None:
         _frames(app, 12)
     assert len(widths) >= 10, widths
     assert widths[9] == widths[2], widths
-    _close_graph(app, document_id)
