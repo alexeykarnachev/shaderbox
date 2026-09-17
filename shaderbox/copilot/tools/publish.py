@@ -13,7 +13,7 @@ from shaderbox.render_shape import RenderShape
 # Render tools marshal GL via the bridge; all are GatePolicy.ALWAYS (render freezes the UI,
 # publish is external + irreversible). Publish tools precheck (handoff) before the gate.
 
-# The output size is a named RenderShape tier — the SAME vocabulary the Share tab exposes, so a
+# The output size is a named RenderShape tier — the SAME vocabulary the node's Share mode exposes, so a
 # render matches what publish would emit. The agent picks a member (NATIVE = the document's authored
 # canvas size, any aspect; short_* = 9:16; wide_* = 16:9; standard_* = 4:3), never raw pixels (no
 # off-aspect Short).
@@ -165,7 +165,7 @@ def publish_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
             return (
                 "No Telegram pack is selected. YOU handle it: list_telegram_packs to see what "
                 "exists and select_telegram_pack, or create_telegram_pack to make a new one — "
-                "do NOT send the user to the Share tab."
+                "do NOT send the user to the node's Share mode."
             )
         return None
 

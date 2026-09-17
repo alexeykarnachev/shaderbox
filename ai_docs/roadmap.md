@@ -26,32 +26,28 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-16, 097's open findings are drained. 094 is next. -->
-**Next: 094, the control panel.** The documents grid reserves rows for documents that do not
-exist, so the panel's left third is mostly empty. Four shapes were mocked and judged and none
-removes the dead space -- the shape that does is still to be proposed.
+<!-- As of 2026-09-17, 094 is landed through C12; C14 closes it out. -->
+**094 is the graph becoming the panel.** The documents grid, the four-tab settings panel and the
+pass strip are gone; the app panel's lower region is the graph, always on screen. A node carries
+its pass's uniform rows, Render / Share / Uniforms are focus modes on a node (the view centres,
+the card grows, a scrim dims the rest), the documents live in a dropdown on the breadcrumb, and
+the canvas has one chip -- the document's fps -- whose menu holds the shape and the channel view.
 
-**097 is done: `make gates` runs 27.2s, from 45-70s, and the suite is 1968 tests against 2734.**
-Two halves. The budget came from the `app` fixture, which built a real App per test: it now builds
-one per worker. The size came from reading every file and asking what a USER loses when a check
-goes -- which cut the tests that pinned strings, the tests of tooling that does not ship, and four
-checks that could not fail. `-n 8` was not touched and no budget gate was added.
+**What is worth looking at in the running app**, since none of it has a headless signal: the LOD
+ladder while wheeling (rows -> name -> picture, keyed on the node's screen width, not zoom); the
+scrim's depth, that the focused card sits above it; whether a compact row is readable at zoom 1;
+the focused Render/Share body at its fixed size; and whether the fps and script chips crowd the
+breadcrumb when several group crumbs are open.
 
-**097's open findings are drained** (`ai_docs/features/097_test_suite_diet/03_open_findings.md`,
-now a record of what was fixed and what was not). The copilot's three document-file tools no
-longer default a handle their resolver refuses, and their test stub binds the real resolver so it
-cannot be kinder than production again; the codec-alignment rule and the dtype tuple each have one
-home; `projects/**/media/` ignores both depths and the two committed caches are untracked. One
-finding was reclassified: the menus and the hotkeys read `CommandScope` differently ON PURPOSE
-(093 M2), and the enum's comment now says so. The exporters' duplicated `status`/`update` were
-left alone -- the reason is in the ledger.
+**Two calls taken during implementation that were not in the spec.** `GRAPH_NODE_W` went 136 ->
+240 because a vec4 component had 22px against 38px of text; the thumb is still SQUARE, so the
+card is now 283px tall and a six-pass chain fits at zoom 0.50 -- a 16:9 thumb would bring it to
+187 and is the obvious follow-up, left alone because it changes what a node looks like. And the
+LOD thresholds are in screen pixels rather than zoom, because `_fit` clamps at 1.0 and never
+zooms in, so a zoom-keyed threshold would have hidden the rows for everything but a short chain.
 
-**Worth a look in the running app:** switch projects with the copilot mid-turn, and with a graph
-tab open -- those are the paths the four project-switch fixes are on.
-
-**Open, unmeasured:** the canvas past twenty passes (the largest real document is six); no
-brake watches copilot cost or a frame going lit to flat (082); the GL thread if the throttle
-falls short.
+**Open, unmeasured:** the canvas past twenty passes; no brake watches copilot cost or a frame
+going lit to flat (082); the GL thread if the throttle falls short.
 
 ## Features
 
@@ -60,7 +56,7 @@ falls short.
 | 097 | test_suite_diet | done | `make gates` ran 45-70s against a 30s ceiling and now runs 27s, while the suite went 2734 tests to 1968. The budget came from the `app` fixture, which built a real App and GL context per test and was 202 of the stage's 261 CPU-seconds; it now builds one per worker, which surfaced four latent project-switch defects and later a GL race of its own. The size came from reading each file against one question -- what a user loses when the check goes -- which cut the tests that pinned strings, the tests of tooling that does not ship, and four checks that could not fail. Spec: `ai_docs/features/097_test_suite_diet/01_spec.md` + `02_progress.md` + `03_open_findings.md`. |
 | 096 | canvas_ownership | done | Six canvas defects in one week treated as one class: a canvas's configuration is decided in several places and each knows about some canvases but not all. The sizing rule, written at five sites in three shapes with the fifth simply wrong, becomes `Document.canvas_size_for`; an output pass always draws into its own canvas and a caller's canvas receives a blit, which fixed the frozen export and dissolved a second finding outright; the export's fit branch carries the output pass's format, as its sibling already did. Promotion, deleting the output and importing one are three doors onto the same defect and share one verb. Guarded by a battery over the non-default corner in which every test has been broken and seen to fail -- a post-implementation review found four of the original gates passing a verbatim reintroduction of the defect they named, and three further live defects (a scale change never reaching a pass the output does not touch, a demoted output keeping full size, a load leaving such a pass unconformed), all fixed. `Canvas`'s own dtype default was left alone: changing it breaks every raw-byte texture reader, which is wider than this feature. Spec: `ai_docs/features/096_canvas_ownership/01_spec.md` + `00_findings.md` + `02_progress.md`. |
 | 095 | structural_sweep | done | A repo-wide pass over the codebase's shape rather than its behavior, run as one inventory wave plus four working waves with the gate green between each: the live facts deleted from the docs, the gl_ctx fixture given one home in conftest, the symbols that were really dead removed, and a comment pass that left every why-comment alone. Most of what the scan flagged did not survive scrutiny and the log records each rejection with its reason. Two adversarial review rounds; the first found a coverage gap that the fix closed. Spec: `ai_docs/features/095_structural_sweep/01_spec.md` + `02_progress.md`. |
-| 094 | control_panel | pending | Finding 4's remainder: the documents grid reserves rows for documents that do not exist, so the control panel's left third is mostly empty. A mock of four options was drawn and judged: the two that reshape the panel move the dead space rather than remove it, the fold was rejected for buying width only while hiding a panel wanted at rest, and the fourth (the identity row into the viewer's chrome) is untested because it adds a constant to the panel's minimum height that nobody has measured -- so the shape that REMOVES the dead space is still to be proposed. Spec: `ai_docs/features/094_control_panel/00_mock.html` (mock only; no spec yet). |
+| 094 | control_panel | done | The app panel's lower region becomes the graph: the documents grid, the four-tab settings panel and the pass strip are deleted, a node carries its pass's uniform rows, and Render / Share / Uniforms are focus modes on a node -- the view centres on it, the card grows in screen units, and one scrim rect on its own draw channel dims the rest. The documents move to a dropdown on the breadcrumb rendering previews only while it is open, the canvas keeps one chip (the document's fps) whose menu holds the shape and the channel view, `Render all documents` is deleted for the throttle that already answered it, and a horizontal splitter finally makes the canvas/graph boundary draggable. Four review rounds caught what paper could not: round 3 found that per-pass export would have written BLACK files, because `Document.render`'s blit was gated on the graph output rather than the resolved target. Spec: `ai_docs/features/094_control_panel/01_spec.md` + `02_review_log.md` + `03_work_order.md`. |
 | 093 | refinement | done | The maintainer's dogfooding of the graph view (092), fed back in batches and fixed wave by wave over eight waves (the menus and modal-registry redesigns among them, then the control panel's header down to one row with its verbs on the document tile's context menu and one aspect-grouped canvas combo), each checked by him in the running app; finding 4's panel composition is delegated to 094. Spec: `ai_docs/features/093_refinement/01_spec.md` + `00_findings.md`. |
 | 092 | graph_view | done | A second, opt-in view of a document's passes beside the strip: a node canvas hand-drawn on the imgui draw list, where a node is the pass's live picture with one port per sampler the compiled program declares, a wire is a read from the effective wiring, and a group is one box at the root whose ports are its boundary edges, opening into its own tab with the outside passes as ghosts -- so 091's convexity rule never arises. Positions live on the pass entry and are written only by a placement (a drag's release, Arrange) through one verb; every gesture lands through an App verb whose refusal (a loop by the pure planner, a media-bound port) is tested headless; passes and groups share one namespace and a rename plans before its file moves. Spec: `ai_docs/features/092_graph_view/03_spec.md` + `00_mock.html` + `01_brainstorm.md` + `02_triage.md`. |
 | 091 | presets | done | Another document's passes copied into the current one as a GROUP: one combo per entry point of the source (a pass reading no other), fed by a host pass -- whose own readers are handed to the bundle's output, with its output role when it had it -- or kept; a pure `plan_import` over the two compiled wirings materializes every wired sampler under the prefixed names, since the name rule does not survive the prefix, and rejects before anything is written. The group is one label on the pass entry, editable in the settings modal and by the copilot, drawn on the strip as a flush outline around each run of consecutive members with the name on the border; folding was rejected (a folded group must be convex in the DAG). Spec: `ai_docs/features/091_presets/01_spec.md` + `00_mock.html`. |

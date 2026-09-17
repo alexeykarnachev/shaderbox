@@ -422,7 +422,7 @@ def _resolve_resolutions(
 ) -> None:
     """Bring every planned document to the size its mode asks for, resampling what changes.
 
-    Fixed takes `resolution`, consuming any `pending_resolution` the Document tab's picker
+    Fixed takes `resolution`, consuming any `pending_resolution` the canvas menu's picker
     committed inside the previous frame's draw first. Auto fits its own ASPECT into the viewer
     region the previous frame drew (revision 1), then damps, so a window drag reallocates a
     handful of times rather than every frame.

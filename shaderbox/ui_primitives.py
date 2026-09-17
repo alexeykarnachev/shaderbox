@@ -1693,7 +1693,7 @@ def clickable_label(
 
 
 def text_tab_row(id_: str, names: Sequence[str], active: str) -> str | None:
-    """A row of clickable names selecting one of them (the Uniforms tab's pass pick).
+    """A row of clickable names selecting one of them (a pass pick).
 
     A selector, not a verb: each name is a frameless `selectable` sized to its own text,
     and the state is carried by color alone — `active` in the accent, the rest dim, brighter

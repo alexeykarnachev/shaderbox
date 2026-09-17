@@ -28,7 +28,7 @@ class ResolutionMode(StrEnum):
 # be looked at and then posted, and both ends of that are wide.
 DEFAULT_ASPECT: tuple[int, int] = (16, 9)
 
-# The aspects the Document tab offers as chips, in the order they are drawn: wide to tall, with
+# The aspects the canvas menu offers, in the order they are drawn: wide to tall, with
 # square in the middle, so the row reads as one axis rather than a set.
 ASPECT_PRESETS: tuple[tuple[int, int], ...] = (
     (21, 9),

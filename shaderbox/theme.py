@@ -302,7 +302,7 @@ class SIZE:
     SORT_COMBO_W: int = 150
     TAB_MIN_W: int = 72
     NAME_INPUT_W: int = 180
-    # The Document tab's engine-uniform block: a fixed name column so the rows read as a
+    # The focused node's engine-uniform block: a fixed name column so the rows read as a
     # block. 128 fits the longest engine name in the 12px face.
     AUTO_NAME_W: int = 128
 
@@ -317,7 +317,7 @@ class SIZE:
     SMOOTHING_DRAG_W: int = 90  # the Window/Sigma drags beside a video thumbnail
 
     THUMB_LG: int = 150
-    # A sampler row's picture on the Uniforms tab: big enough to read what it reads.
+    # A sampler row's picture on a focused node: big enough to read what it reads.
     PASS_THUMB: int = 112
     # One pass's tile in the horizontal pass strip; the strip wraps when a document's
     # passes outgrow the panel width.

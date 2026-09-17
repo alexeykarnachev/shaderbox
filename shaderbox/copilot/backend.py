@@ -1852,7 +1852,7 @@ class CopilotBackend:
                 return PublishResult(ok=True, url=prog.url or "")
         return PublishResult(
             ok=False,
-            error="the upload is taking too long — check the Share tab for progress",
+            error="the upload is taking too long — check the node's Share mode for progress",
         )
 
     def publish_telegram(self, emoji: str) -> PublishResult:
@@ -2061,7 +2061,7 @@ class CopilotBackend:
                     return TelegramOpResult(ok=False, error=prog.message)
                 return TelegramOpResult(ok=True, set_name=set_name)
         return TelegramOpResult(
-            ok=False, error="delete is taking too long — check the Share tab"
+            ok=False, error="delete is taking too long — check the node's Share mode"
         )
 
     # ---- edit / compile-feedback (target-addressable: document or lib: file, 020·16) ----
