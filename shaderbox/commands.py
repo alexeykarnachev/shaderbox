@@ -40,10 +40,6 @@ class CommandId(StrEnum):
     CLOSE_CODE_TAB = auto()
     OPEN_LIB_PICKER = auto()
     # View
-    FOCUS_TAB_DOCUMENT = auto()
-    FOCUS_TAB_UNIFORMS = auto()
-    FOCUS_TAB_RENDER = auto()
-    FOCUS_TAB_SHARE = auto()
     CYCLE_CHANNEL_VIEW = auto()
     TOGGLE_COPILOT = auto()
     CYCLE_COPILOT_LAYOUT = auto()
@@ -228,23 +224,10 @@ COMMAND_SPECS: list[CommandSpec] = [
     ),
     # -- View: what is shown -------------------------------------------------------------
     CommandSpec(
-        CommandId.FOCUS_TAB_DOCUMENT, "Document panel", _chord(K._1, K.mod_ctrl), C.VIEW
-    ),
-    CommandSpec(
-        CommandId.FOCUS_TAB_UNIFORMS, "Uniforms panel", _chord(K._2, K.mod_ctrl), C.VIEW
-    ),
-    CommandSpec(
-        CommandId.FOCUS_TAB_RENDER, "Render panel", _chord(K._3, K.mod_ctrl), C.VIEW
-    ),
-    CommandSpec(
-        CommandId.FOCUS_TAB_SHARE, "Share panel", _chord(K._4, K.mod_ctrl), C.VIEW
-    ),
-    CommandSpec(
         CommandId.CYCLE_CHANNEL_VIEW,
         "Next channel view",
         _chord(K.v, K.mod_alt),
         C.VIEW,
-        separator_before=True,
     ),
     CommandSpec(
         CommandId.TOGGLE_COPILOT,

@@ -123,7 +123,7 @@ from shaderbox.ui_models import (
     load_document_from_dir,
 )
 from shaderbox.ui_primitives import InlineInput
-from shaderbox.ui_regions import DocumentTab, next_channel_view
+from shaderbox.ui_regions import next_channel_view
 from shaderbox.util import (
     open_in_file_manager,
     pfd_block,
@@ -467,10 +467,8 @@ class App:
         self.settings_focus: str = ""
         # (field, monotonic deadline): the field a jump pointed at stays outlined until then.
         self.settings_mark: tuple[str, float] = ("", 0.0)
-        self.active_document_tab: DocumentTab = DocumentTab.DOCUMENT
         # One-shot: a tab-jump requested this frame. The panel's draw fn drives the tab
         # (set_selected), then clears the flag.
-        self.document_tab_select_pending: bool = False
         self.emoji_picker_query: str = ""
         # Where a picked emoji is delivered (set by whoever opens the picker).
         self.emoji_pick_target: Callable[[str], None] | None = None
@@ -682,18 +680,6 @@ class App:
             CommandId.JUMP_NEXT_ERROR: self.jump_to_next_error,
             CommandId.FORMAT_BUFFER: self.format_current_editor,
             CommandId.TOGGLE_CHEATSHEET: self.toggle_cheatsheet,
-            CommandId.FOCUS_TAB_DOCUMENT: lambda: self.focus_document_tab(
-                DocumentTab.DOCUMENT
-            ),
-            CommandId.FOCUS_TAB_UNIFORMS: lambda: self.focus_document_tab(
-                DocumentTab.UNIFORMS
-            ),
-            CommandId.FOCUS_TAB_RENDER: lambda: self.focus_document_tab(
-                DocumentTab.RENDER
-            ),
-            CommandId.FOCUS_TAB_SHARE: lambda: self.focus_document_tab(
-                DocumentTab.SHARE
-            ),
             CommandId.TOGGLE_COPILOT: self.toggle_copilot,
             CommandId.CYCLE_COPILOT_LAYOUT: self.cycle_copilot_layout,
             CommandId.OPEN_SHADER: self.open_shader_for_panel_pass,
@@ -986,10 +972,6 @@ class App:
         # active tab, since a menu click has already taken the focus away.
         if self.editor_tabs:
             self.close_tab(self.active_tab_index)
-
-    def focus_document_tab(self, tab: DocumentTab) -> None:
-        self.active_document_tab = tab
-        self.document_tab_select_pending = True
 
     def select_document(self, document_id: str) -> None:
         if self._copilot_busy_blocked("Switching documents"):
@@ -1660,7 +1642,6 @@ class App:
             # only one of them can win.
             self.open_examples()
         # Restore persisted layout prefs into the live attrs (save() mirrors them back).
-        self.active_document_tab = self.app_state.active_document_tab
         self.is_copilot_open = self.app_state.is_copilot_open
         if self.is_copilot_open:
             self.focus_copilot()
@@ -1673,7 +1654,6 @@ class App:
         self.modal_below = None
         # Drive imgui's tab bar to the restored tab on the first frame — set_selected only
         # fires while this one-shot is set (else imgui defaults to the first tab).
-        self.document_tab_select_pending = True
 
         self._rewire_exporters()
 
@@ -2316,7 +2296,6 @@ class App:
             self.app_state.telegram_default_pack = telegram.current_default_pack()
 
         # Mirror the live layout prefs back into app_state before writing.
-        self.app_state.active_document_tab = self.active_document_tab
         self.app_state.is_copilot_open = self.is_copilot_open
         self.app_state.copilot_layout = self.copilot_layout
         self.app_state.editor_tabs = tab_records(self.editor_tabs)

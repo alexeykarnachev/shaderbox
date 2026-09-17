@@ -1,18 +1,13 @@
-"""The settings-panel tab enum shared by the command registry, the persisted UI state and the
-draw layer. A leaf on purpose: `DocumentTab` is a plain name with no imgui in it, and
-`ui_models.py` persists `active_document_tab` — so keeping it beside the imgui-evaluating
-command table would drag imgui into the headless model layer (`commands.py` builds `K = imgui.Key`
-at module scope, so importing it really does load the library)."""
+"""What the viewer shows of the output texture, as a plain name with no imgui in it.
+
+A leaf on purpose: `ui_models.py` persists `channel_view`, so keeping this beside the
+imgui-evaluating command table would drag imgui into the headless model layer (`commands.py`
+builds `K = imgui.Key` at module scope, so importing it really does load the library).
+
+It used to share this file with `DocumentTab`, the settings panel's inner tabs; 094 deleted
+that panel and the enum with it."""
 
 from enum import StrEnum, auto
-
-
-class DocumentTab(StrEnum):
-    # The settings-panel inner tabs; FOCUS_TAB_* jump to one directly.
-    DOCUMENT = auto()
-    UNIFORMS = auto()
-    RENDER = auto()
-    SHARE = auto()
 
 
 class ChannelView(StrEnum):
