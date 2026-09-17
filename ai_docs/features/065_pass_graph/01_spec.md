@@ -1,9 +1,10 @@
 # 065 — The pass graph: specification
 
-**Status: LANDED — all nine stages; checks 13-16 owed (a display, and a dogfood run).**
+**Status: LANDED — all nine stages; check 15's headless half is a gate, and 13, 14, 16 plus the
+browser are manual-only by nature (a display, and a dogfood run).**
 Plan-locked before implementation and reviewed by three agents (completeness, adversarial design, cold-start);
 D10b, D11, D12, D15 and D16 were added or corrected in response, and the verification list was made
-falsifiable. ALL NINE STAGES ARE LANDED; checks 13-16 need a display and a dogfood run. Anchor for facts: `00_facts.md` (six-agent round, verified by
+falsifiable. ALL NINE STAGES ARE LANDED; checks 13, 14 and the browser half of 15 need a display, and 16 a dogfood run. Anchor for facts: `00_facts.md` (six-agent round, verified by
 hand where load-bearing). Predecessor: `064_multistep/` — built, reverted (`34f6d19`), kept for the
 record of what was tried and what it cost.
 
@@ -511,10 +512,10 @@ Nothing below has been looked at by a human. Ask before assuming any of it is fi
 - **The 112px tiles at real panel widths** — whether the strip wraps sensibly and whether a long
   pass name truncates badly in a tile footer. `SIZE.PASS_THUMB` has exactly two consumers, both
   in `pass_list.py`, so a correction is one token edit.
-- **Spec checks 13-15**, which need a display: an error in pass 2 landing in the strip with pass
-  2's file and line and click-to-jump working; a rename re-pointing an open tab (the engine half
-  is tested, the TAB half only smoke-verified); the seven shipped examples loading with the browser
-  populated.
+- **Spec checks 13-15**, what is left of them after the gates: an error in pass 2 landing in the
+  strip with pass 2's file and line and click-to-jump working; a rename re-pointing an open tab
+  (the engine half is tested, the TAB half only smoke-verified); the examples BROWSER being
+  populated -- the examples themselves loading and rendering is now gated headless.
 - **Check 16**, which needs `/dogfood` and real API cost: the copilot authoring a two-pass
   document and seeing per-pass errors.
 
@@ -564,8 +565,11 @@ Each check fails for exactly one reason, and each names its falsifier.
 13. **An error in pass 2 lands in the strip with pass 2's file and line**, and click-to-jump works.
 14. **Rename rewrites every edge**, renames the file, and re-points an open tab. Falsifier: an edge
     still names the old pass, and per D3 it silently reads black.
-15. **The seven shipped examples still load and render**, and the examples browser is populated. This
-    is the highest-probability breakage of the whole wave.
+15. **Every shipped example still loads and renders**, and the examples browser is populated. This
+    is the highest-probability breakage of the whole wave, so the headless half is now a GATE
+    rather than a manual check: `tests/test_example_library.py` drives `EXAMPLE_ORDER` through
+    load, compile, render and a row-preserving save. What is left for a display is the browser
+    being POPULATED, which is the only half a headless run cannot see.
 
 **Copilot (needs the dogfood harness and real API cost — not a green-tree check):**
 

@@ -546,3 +546,72 @@ def test_the_checker_sees_a_resample_that_drops_filter_and_wrap(
         "a resize that dropped filter and wrap went unnoticed -- the battery is vacuous"
     )
     document.release()
+
+
+def test_a_canvas_receives_the_targeted_pass_not_the_graph_output(
+    gl_ctx: moderngl.Context,
+) -> None:
+    # `canvas=` and `target=` compose: the caller gets whichever pass the call rendered. The blit
+    # used to be gated on the GRAPH output, so asking for any other pass handed back an untouched
+    # canvas and no error -- which a blank-canvas assert alone would not catch, since a canvas
+    # that received nothing and one that received a black picture read the same. So the canvas is
+    # PRE-FILLED with a colour no pass draws, and the received picture is then compared against
+    # both passes: it must be the helper's and not the output's.
+    document = _document(gl_ctx)
+    document.begin_frame(0)
+    received = Canvas(gl=gl_ctx, size=_CANVAS)
+    received.fbo.clear(1.0, 0.0, 1.0, 1.0)
+    untouched = bytes(received.texture.read())
+
+    document.render(u_time=0.0, canvas=received, target="helper")
+    got = bytes(received.texture.read())
+    assert got != untouched, "the canvas was never written"
+
+    # What each pass draws, at the receiving canvas's own size and format, via the same blit.
+    def _as_received(source: Canvas) -> bytes:
+        probe = Canvas(gl=gl_ctx, size=_CANVAS)
+        document._blit_into(source, probe)
+        picture = bytes(probe.texture.read())
+        probe.release()
+        return picture
+
+    assert got == _as_received(document.passes["helper"].canvas), (
+        "the canvas must hold the TARGETED pass's picture"
+    )
+    assert got != _as_received(document.passes["main"].canvas), (
+        "the graph output's picture must not be what a targeted render hands back"
+    )
+    received.release()
+    document.release()
+
+
+def test_a_targeted_render_into_a_canvas_still_draws_the_chain_once(
+    gl_ctx: moderngl.Context,
+) -> None:
+    # The draw-once guard was gated on `canvas is None`, so passing both re-drew every pass that
+    # had already drawn this frame -- the cost the guard exists to prevent. Counted at the pass's
+    # own `render`, because `drawn_frame` is re-stamped with the value it already holds: a second
+    # draw leaves it identical, so it cannot witness the repeat.
+    document = _document(gl_ctx)
+    document.begin_frame(0)
+    received = Canvas(gl=gl_ctx, size=_CANVAS)
+
+    helper = document.passes["helper"]
+    draws: list[float] = []
+    real_render = helper.render
+    helper.render = lambda **kwargs: (  # type: ignore[method-assign]
+        draws.append(kwargs["u_time"]),
+        real_render(**kwargs),
+    )[1]
+
+    document.render(u_time=0.0, target="main")
+    assert len(draws) == 1, (
+        f"the first render must draw the chain once, drew {len(draws)}"
+    )
+    document.render(u_time=0.0, canvas=received, target="main")
+
+    assert len(draws) == 1, (
+        f"a pass that already drew this frame must not draw again, drew {len(draws)}"
+    )
+    received.release()
+    document.release()

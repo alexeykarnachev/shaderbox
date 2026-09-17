@@ -85,7 +85,7 @@ from shaderbox.ui_models import (
     load_document_from_dir,
     load_documents_from_dir,
 )
-from shaderbox.util import select_next_value, try_to_release
+from shaderbox.util import get_uniform_hash, select_next_value, try_to_release
 
 # Prepended to the engine stub when the COPILOT reads a script-less document (feature 043). The actor
 # copies verbatim, so a no-op commented stub teaches the binding but not MOTION — this gives one
@@ -1265,8 +1265,22 @@ class ProjectSession:
             values = host.passes[host_pass].uniform_values
             for uniform, read in rows.items():
                 values[uniform] = PassSource(read)
-        for key, row in source.ui_state.ui_uniforms.items():
-            ui_document.ui_state.ui_uniforms.setdefault(key, row.model_copy())
+        # A row's key carries the PASS that declares the uniform, and the import renames every
+        # pass it brings — so the rows are re-keyed under the host names rather than copied. A
+        # source row keyed to a pass this import did not take belongs to no imported pass and is
+        # left behind.
+        for source_name, host_name in plan.renames.items():
+            render_pass = host.passes.get(host_name)
+            if render_pass is None:
+                continue
+            for uniform in render_pass.get_active_uniforms():
+                row = source.ui_state.ui_uniforms.get(
+                    get_uniform_hash(uniform, source_name)
+                )
+                if row is not None:
+                    ui_document.ui_state.ui_uniforms.setdefault(
+                        get_uniform_hash(uniform, host_name), row.model_copy()
+                    )
         self.save_ui_document(ui_document)
         logger.info(
             f"Imported {len(plan.renames)} pass(es) from {document_dir_of(source_document).name} "

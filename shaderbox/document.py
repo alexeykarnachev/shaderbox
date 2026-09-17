@@ -901,13 +901,14 @@ class Document:
     ) -> None:
         """Draw the document: every pass the output needs, in order, each exactly once.
 
-        `canvas` RECEIVES the output pass's picture; every pass, the output included, still draws
-        into its own canvas, since that is what the next pass samples and what the feedback swap
-        advances.
+        `canvas` RECEIVES the rendered pass's picture, resampled to whatever size `canvas` has;
+        every pass, that one included, still draws into its own canvas, since that is what the
+        next pass samples and what the feedback swap advances.
 
         `target` draws that pass and its ancestor chain instead of the graph output's, skipping
-        whatever already drew this frame. The graph output still decides which pass keeps full
-        size and which one may receive `canvas`.
+        whatever already drew this frame. The two compose: `canvas` receives whichever pass this
+        call rendered. The graph output still decides which pass keeps full size, so a `target`
+        below it is served at its own scaled size and the blit resamples.
 
         `profiler` decides what this render reports to (088 D3): the live loop passes its own,
         every other caller takes the null default, so an export's passes never land in whatever
@@ -933,8 +934,7 @@ class Document:
         for name in order:
             render_pass = self.passes[name]
             if (
-                canvas is None
-                and target is not None
+                target is not None
                 and render_pass.drawn_frame == self._frame
                 and self._frame >= 0
             ):
@@ -984,7 +984,7 @@ class Document:
                         # stale texture -- the chain would never advance. No-op unless this pass
                         # actually reads itself.
                         self._swap_feedback(name)
-            if canvas is not None and name == output:
+            if canvas is not None and name == resolved:
                 self._blit_into(render_pass.canvas, canvas)
 
     @classmethod

@@ -837,8 +837,8 @@ def test_import_leaves_the_shipped_example_byte_identical(app: Any) -> None:
 
 
 def test_a_merged_ui_row_survives_the_save(app: Any, tmp_path: Path) -> None:
-    # Verification 7. Falsifier: re-key the merged row by the new pass name (a hash nothing
-    # computes) and the prune drops it; `get_uniform_hash` is name-and-shape only.
+    # Verification 7. A row's key names the pass that declares the uniform, so the import must
+    # RE-KEY it under the host name; copying the source key verbatim leaves a row the prune drops.
     document_id = _document_id(app)
     source = _load_bloom(tmp_path)
     source.document.passes["bright"].compile()
@@ -847,15 +847,21 @@ def test_a_merged_ui_row_survives_the_save(app: Any, tmp_path: Path) -> None:
         for u in source.document.passes["bright"].get_active_uniforms()
         if u.name == "u_threshold"
     )
-    key = get_uniform_hash(threshold)
     row = UIUniform.from_uniform(threshold)
     row.input_type = "text"
-    source.ui_state.ui_uniforms[key] = row
+    source.ui_state.ui_uniforms[get_uniform_hash(threshold, "bright")] = row
     result = app.session.import_passes(
         document_id, source, "bloom", {"scene": "main"}, set()
     )
     assert result.error == "", result.error
     reloaded = _reload(app, document_id)
+    host_name = next(n for n in reloaded.document.passes if n.endswith("bright"))
+    host_uniform = next(
+        u
+        for u in reloaded.document.passes[host_name].get_active_uniforms()
+        if u.name == "u_threshold"
+    )
+    key = get_uniform_hash(host_uniform, host_name)
     assert reloaded.ui_state.ui_uniforms[key].input_type == "text"
 
 

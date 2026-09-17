@@ -76,7 +76,7 @@ def test_a_retype_does_not_strand_the_old_row(gl, tmp_path: Path) -> None:
     # Stand in for the uniform draw loop, which is where rows are actually born.
     for uniform in ui_document.document.render_pass.get_active_uniforms():
         ui_document.ui_state.ui_uniforms.setdefault(
-            get_uniform_hash(uniform), UIUniform.from_uniform(uniform)
+            get_uniform_hash(uniform, "main"), UIUniform.from_uniform(uniform)
         )
     ui_document.save(document_dir.parent, document_dir.name)
 
@@ -189,3 +189,67 @@ def test_a_bound_sampler_keeps_its_file(gl, tmp_path: Path) -> None:
     assert [p.name for p in (document_dir / "media" / "main").iterdir()] == [
         "u_tex.png"
     ]
+
+
+# A vec3, so the row has TWO valid input types ("drag", "color") and a retype is observable --
+# a scalar float has only "drag", and every row would agree no matter which pass it belonged to.
+_SHARED_NAME_SHADER = """#version 460 core
+in vec2 vs_uv;
+uniform vec3 u_gain = vec3(1.0);
+out vec4 fs_color;
+void main() { fs_color = vec4(vs_uv * u_gain.xy, u_gain.z, 1.0); }
+"""
+
+
+def test_two_passes_sharing_a_uniform_name_get_a_row_each(gl, tmp_path: Path) -> None:
+    # A row holds the USER's chosen input type, and each pass owns its uniforms (D4). With the key
+    # built from the name and shape alone, `u_gain` in two passes was ONE row: setting one pass's
+    # to a slider retyped the other's, with nothing in the UI saying why.
+    document_dir = tmp_path / "document"
+    (document_dir / PASSES_DIR_NAME).mkdir(parents=True)
+    for name in ("first", "second"):
+        (document_dir / PASSES_DIR_NAME / pass_shader_name(name)).write_text(
+            _SHARED_NAME_SHADER
+        )
+    (document_dir / DOCUMENT_JSON_BASENAME).write_text(
+        json.dumps(
+            {
+                "uniforms": {},
+                "ui_state": {"resolution_mode": "fixed", "resolution": [64, 64]},
+            }
+        )
+    )
+    ui_document = load_document_from_dir(document_dir)
+    keys = {}
+    for name in ("first", "second"):
+        render_pass = ui_document.document.passes[name]
+        render_pass.compile()
+        uniform = next(
+            u for u in render_pass.get_active_uniforms() if u.name == "u_gain"
+        )
+        keys[name] = get_uniform_hash(uniform, name)
+
+    assert keys["first"] != keys["second"], (
+        "each pass's u_gain must key its own row, not share one"
+    )
+
+    # And the row the user set survives its own pass's save rather than being pruned as stale.
+    rows = ui_document.ui_state.ui_uniforms
+    for name, key in keys.items():
+        uniform = next(
+            u
+            for u in ui_document.document.passes[name].get_active_uniforms()
+            if u.name == "u_gain"
+        )
+        rows[key] = UIUniform.from_uniform(uniform)
+    rows[keys["first"]].input_type = "color"
+    ui_document.save(document_dir.parent, document_dir.name)
+
+    saved = _rows(document_dir)
+    assert set(saved) == {str(k) for k in keys.values()}, (
+        f"both rows must survive the prune: {sorted(saved)}"
+    )
+    assert saved[str(keys["first"])]["input_type"] == "color"
+    assert saved[str(keys["second"])]["input_type"] == "drag", (
+        "setting one pass's input type must not retype the other's"
+    )

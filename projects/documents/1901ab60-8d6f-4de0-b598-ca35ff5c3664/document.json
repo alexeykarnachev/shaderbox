@@ -64,47 +64,7 @@
             "duration": 6.0
         },
         "ui_uniforms": {
-            "260085533400259490348506664942395818974": {
-                "name": "u_aspect",
-                "is_ubo": false,
-                "gl_type": 5126,
-                "dimension": 1,
-                "array_length": 1,
-                "input_type": "auto"
-            },
-            "118748950039766157048912482671480717066": {
-                "name": "u_blob_size",
-                "is_ubo": false,
-                "gl_type": 5126,
-                "dimension": 1,
-                "array_length": 1,
-                "input_type": "drag"
-            },
-            "190418052708361393041418839811417982652": {
-                "name": "u_orbit_speed",
-                "is_ubo": false,
-                "gl_type": 5126,
-                "dimension": 1,
-                "array_length": 1,
-                "input_type": "drag"
-            },
-            "37154164850612245702881750831795076973": {
-                "name": "u_time",
-                "is_ubo": false,
-                "gl_type": 5126,
-                "dimension": 1,
-                "array_length": 1,
-                "input_type": "auto"
-            },
-            "47398512205945539727202590728374603498": {
-                "name": "u_src",
-                "is_ubo": false,
-                "gl_type": 35678,
-                "dimension": 1,
-                "array_length": 1,
-                "input_type": "texture"
-            },
-            "99439937269710942332933964605809354368": {
+            "156130380572279112621400538336342612517": {
                 "name": "u_radius",
                 "is_ubo": false,
                 "gl_type": 5126,
@@ -112,31 +72,23 @@
                 "array_length": 1,
                 "input_type": "drag"
             },
-            "164059647401518007231791680240136046117": {
-                "name": "u_decay",
-                "is_ubo": false,
-                "gl_type": 5126,
-                "dimension": 1,
-                "array_length": 1,
-                "input_type": "drag"
-            },
-            "223343709862356025909614278256380256175": {
-                "name": "u_gain",
-                "is_ubo": false,
-                "gl_type": 5126,
-                "dimension": 1,
-                "array_length": 1,
-                "input_type": "drag"
-            },
-            "281754846088676335594954004605598837092": {
-                "name": "u_prev",
+            "75275181499805294714957458937213263291": {
+                "name": "u_src",
                 "is_ubo": false,
                 "gl_type": 35678,
                 "dimension": 1,
                 "array_length": 1,
                 "input_type": "texture"
             },
-            "186739805002824748247691636963146881870": {
+            "1115137684950045778962422969387682852": {
+                "name": "u_src",
+                "is_ubo": false,
+                "gl_type": 35678,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "texture"
+            },
+            "297028422851920969877213369592002733512": {
                 "name": "u_bloom",
                 "is_ubo": false,
                 "gl_type": 5126,
@@ -144,7 +96,7 @@
                 "array_length": 1,
                 "input_type": "drag"
             },
-            "63626187625819056674108660439084375667": {
+            "130289889197610395818907752907213593415": {
                 "name": "u_glow",
                 "is_ubo": false,
                 "gl_type": 35678,
@@ -152,7 +104,7 @@
                 "array_length": 1,
                 "input_type": "texture"
             },
-            "83400449315144860120754342278542602166": {
+            "104211593248859952813407668973456082449": {
                 "name": "u_lit",
                 "is_ubo": false,
                 "gl_type": 35678,
@@ -160,7 +112,7 @@
                 "array_length": 1,
                 "input_type": "texture"
             },
-            "104355082697127653013080493525903289470": {
+            "55873571577372683377791455746722386767": {
                 "name": "u_trail",
                 "is_ubo": false,
                 "gl_type": 35678,
@@ -168,13 +120,77 @@
                 "array_length": 1,
                 "input_type": "texture"
             },
-            "81499196138579870697011097508634929303": {
+            "27203939212958448719880600374867812253": {
                 "name": "u_trail_mix",
                 "is_ubo": false,
                 "gl_type": 5126,
                 "dimension": 1,
                 "array_length": 1,
                 "input_type": "drag"
+            },
+            "318402383547060491053989046036175863809": {
+                "name": "u_aspect",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "auto"
+            },
+            "334150825494916310344487565306778388985": {
+                "name": "u_blob_size",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "115488085035911854482448907909396062557": {
+                "name": "u_orbit_speed",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "229021608900845969522251897211876269744": {
+                "name": "u_time",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "auto"
+            },
+            "148660030984107433229059843835320588874": {
+                "name": "u_decay",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "84876750842185301797129608637505758388": {
+                "name": "u_gain",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "drag"
+            },
+            "68588039891511819516895905428220650594": {
+                "name": "u_prev",
+                "is_ubo": false,
+                "gl_type": 35678,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "texture"
+            },
+            "183764531149296326218288437350597261932": {
+                "name": "u_src",
+                "is_ubo": false,
+                "gl_type": 35678,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "texture"
             }
         },
         "uniform_sort_key": "code",

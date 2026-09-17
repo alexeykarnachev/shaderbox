@@ -75,11 +75,19 @@ def get_resolution_str(name: str | None, w: int, h: int) -> str:
     return label
 
 
-def get_uniform_hash(u: moderngl.Uniform | moderngl.UniformBlock) -> int:
+def get_uniform_hash(
+    u: moderngl.Uniform | moderngl.UniformBlock, pass_name: str
+) -> int:
+    """The key of `u`'s UI row, scoped to the pass that declares it.
+
+    `pass_name` is part of the key because each pass owns its uniforms (D4) while the rows live
+    in ONE dict per document: without it, two passes declaring the same name and shape share a
+    row, so setting one pass's `u_gain` to a color picker retypes the other's.
+    """
     if isinstance(u, moderngl.Uniform):
-        key = f"{u.name}_{u.array_length}_{u.dimension}_{u.gl_type}"  # type: ignore
+        key = f"{pass_name}_{u.name}_{u.array_length}_{u.dimension}_{u.gl_type}"  # type: ignore
     else:
-        key = f"{u.name}_{u.size}"
+        key = f"{pass_name}_{u.name}_{u.size}"
 
     hash = hashlib.md5(key.encode()).digest()
     return int.from_bytes(hash, "big")

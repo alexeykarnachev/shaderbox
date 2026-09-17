@@ -26,43 +26,26 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-17, 094 is withdrawn and nothing is queued. -->
-**Nothing is queued.** The control-panel feature (094) was implemented, shipped broken and
-reverted whole (`9d9e817`), and its number is now withdrawn: no spec, no mock, no row. The
-panel's density question it was opened for is unanswered and stays unqueued until it is asked
-again from scratch.
+<!-- As of 2026-09-17, nothing is queued and nothing is deferred. -->
+**Nothing is queued and nothing is owed.** The tree is clean, `make gates` is green, `todo.md`
+holds zero entries, and no feature carries an open finding. The rows still marked `partial` are
+parked SCOPE (a decision nobody has needed yet) or a check only a display can make -- read them
+as history, not as a backlog.
 
-**What the attempt established**, worth having before a second one starts: a uniform row is
-imgui widgets, so it does not scale with a canvas zoom and cannot share a canvas child -- it
-needs a child of its own, at 1:1. A full row is ~524px wide, which is what makes a node that
-hosts one stop being square. Both facts are in `9d9e817`'s message, at more length.
+**The two engine bugs the 094 revert left live are fixed.** `Document.render` now composes
+`canvas=` with `target=` -- the blit was keyed on the graph output, so asking for any other pass
+returned an untouched canvas and no error -- and a uniform row's key names the pass that declares
+it, where two passes sharing a uniform name had shared one row and one user-set input type. The
+stored rows were re-keyed by hand, which split a live collision: one document had three passes
+declaring `u_src` under a single row.
 
-**Two engine bugs the revert left live**, each independent of any panel design and each worth
-fixing on its own: `Document.render(canvas=, target=)` does not compose (the blit is gated on
-the graph output), and `get_uniform_hash` has no pass in its key, so two passes sharing a
-uniform name share one row's user-set input type.
+**094 itself is withdrawn**: implemented, shipped broken, reverted whole, its number retired with
+no spec, mock or row. What it established about uniform rows on a node lives in `9d9e817`'s
+message, and nothing follows from it until the panel's density question is asked again.
 
-**097 is done: `make gates` runs 27.2s, from 45-70s, and the suite is 1968 tests against 2734.**
-Two halves. The budget came from the `app` fixture, which built a real App per test: it now builds
-one per worker. The size came from reading every file and asking what a USER loses when a check
-goes -- which cut the tests that pinned strings, the tests of tooling that does not ship, and four
-checks that could not fail. `-n 8` was not touched and no budget gate was added.
-
-**097's open findings are drained** (`ai_docs/features/097_test_suite_diet/03_open_findings.md`,
-now a record of what was fixed and what was not). The copilot's three document-file tools no
-longer default a handle their resolver refuses, and their test stub binds the real resolver so it
-cannot be kinder than production again; the codec-alignment rule and the dtype tuple each have one
-home; `projects/**/media/` ignores both depths and the two committed caches are untracked. One
-finding was reclassified: the menus and the hotkeys read `CommandScope` differently ON PURPOSE
-(093 M2), and the enum's comment now says so. The exporters' duplicated `status`/`update` were
-left alone -- the reason is in the ledger.
-
-**Worth a look in the running app:** switch projects with the copilot mid-turn, and with a graph
-tab open -- those are the paths the four project-switch fixes are on.
-
-**Open, unmeasured:** the canvas past twenty passes (the largest real document is six); no
-brake watches copilot cost or a frame going lit to flat (082); the GL thread if the throttle
-falls short.
+**Unmeasured, and owed to nobody:** the canvas past twenty passes (the largest real document is
+six); no brake watches copilot cost or a frame going lit to flat (082); the GL thread if the
+throttle falls short.
 
 ## Features
 
@@ -105,7 +88,7 @@ falls short.
 | 068 | radiance_cascades | done | A pass may declare `iterations` and the engine draws it N times per frame (`u_pass_iteration` / `u_pass_iterations`, per-iteration ping-pong), plus a six-pass Radiance Cascades example built on it and a tutorial rewriting both source articles for this engine. 069 W-H rewrote that tutorial to generate every pass card and code block from the example itself. Spec: `ai_docs/features/068_radiance_cascades/01_spec.md`. |
 | 066 | perf_and_test_diet | done | Lazy pass compilation (no load-time warm-up; compile+seed on first need; one first-render per frame in the live loop), lazy openai/google seams, starter-only test fixture, and an 18-test falsifier-criterion cull — startup 3.66s -> 0.67s, suite 39.2s -> ~16s / 925 tests. Spec: `ai_docs/features/066_perf_and_test_diet/01_spec.md`. |
 | 067 | custom_editor | done | The code panel runs the maintainer's own vim-modal editor (vendored `libeditor.so`, C ABI, host-rendered MTSDF primitives) instead of imgui's TextEditor — modal keymap with vim-reserved hotkeys, register-unified clipboard, host-drawn chrome, host-fed completion, host-served ex commands. Spec: `ai_docs/features/067_custom_editor.md`. |
-| 065 | pass_graph | partial | A document holds several passes forming a DAG, each pass its own `.glsl` file with its own `main()` and render target; "node" is retired for `document` + `pass`. All nine stages landed: the GL-free graph model + planner, the `Pass`/`Document` split, chain evaluation with feedback and cold exports, the `passes/` + `graph.json` + per-pass-asset layout, the `node` -> `document` rename across the package and on-disk paths, per-pass hot reload, the pass-list panel with D15's six verbs, the copilot's `<id>#<pass>` address with a pass-aware working set, and a five-pass "Bloom Chain" example. Checks 13-16 need a display and a dogfood run; its D12 (one script per pass) is superseded by 069 D3 -- one document script returning `{pass: {uniform: value}}`, landed in W-G. Spec: `ai_docs/features/065_pass_graph/01_spec.md`. |
+| 065 | pass_graph | partial | A document holds several passes forming a DAG, each pass its own `.glsl` file with its own `main()` and render target; "node" is retired for `document` + `pass`. All nine stages landed: the GL-free graph model + planner, the `Pass`/`Document` split, chain evaluation with feedback and cold exports, the `passes/` + `graph.json` + per-pass-asset layout, the `node` -> `document` rename across the package and on-disk paths, per-pass hot reload, the pass-list panel with D15's six verbs, the copilot's `<id>#<pass>` address with a pass-aware working set, and a five-pass "Bloom Chain" example. Check 15's headless half is now gated over `EXAMPLE_ORDER`; 13, 14, the examples browser and 16 are manual by nature (a display, a dogfood run); its D12 (one script per pass) is superseded by 069 D3 -- one document script returning `{pass: {uniform: value}}`, landed in W-G. Spec: `ai_docs/features/065_pass_graph/01_spec.md`. |
 | 064 | multistep | superseded | Multi-pass steps as functions inside ONE shader file. Built, reviewed to convergence, then REVERTED (`34f6d19`) when the maintainer used it: separate shader files per pass are what every surveyed tool does. Nine bug fixes it surfaced were kept. Superseder: `ai_docs/features/065_pass_graph/`. Spec: `ai_docs/features/064_multistep/02_decision.md`. |
 | 063 | radiance_cascades_gaps | done | Research-only wave (no code): can ShaderBox host radiance cascades, and what is actually missing — GPU capability all present and measured, the script-GL route proven unusable, the seam decision handed to 064. Spec: `ai_docs/features/063_radiance_cascades_gaps/README.md`. |
 | — | copilot_engine_tuning | done | reasoning effort=none engine knob (+30k turn budget: effort flag is ignored on compound asks — measured), user/engine config split with slots enforcement, final-reply token cap. Spec: commits 289c12f + 6ed3c4d + 779d4b2 + this wave. |

@@ -6,10 +6,18 @@ the bridge patched to execute inline (the worker->main marshalling is what a rea
 the loop).
 """
 
+import json
+from collections.abc import Iterator
 from typing import Any
 
-from shaderbox.constants import EXAMPLE_ORDER
+import moderngl
+import pytest
+
+from shaderbox.constants import DOCUMENT_EXAMPLES_DIR, EXAMPLE_ORDER
 from shaderbox.copilot.capabilities import EditResult
+from shaderbox.paths import DOCUMENT_JSON_BASENAME, shader_lib_root
+from shaderbox.shader_lib import ShaderLibIndex, set_active
+from shaderbox.ui_models import load_document_from_dir
 
 
 def _text_handle(app: Any) -> str:
@@ -116,3 +124,67 @@ def test_opening_an_example_leaves_no_tab_outside_the_project(app: Any) -> None:
         assert render_pass.source.path.is_relative_to(app.project_dir), (
             f"pass '{name}' still points outside the project: {render_pass.source.path}"
         )
+
+
+@pytest.fixture(scope="module")
+def gl_ctx() -> Iterator[moderngl.Context]:
+    try:
+        context = moderngl.create_standalone_context(require=460)
+    except Exception as e:
+        pytest.skip(f"no standalone GL context available: {e}")
+    set_active(ShaderLibIndex.build(shader_lib_root()))
+    yield context
+    context.release()
+
+
+@pytest.mark.parametrize("example_id", EXAMPLE_ORDER)
+def test_every_shipped_example_loads_compiles_and_renders(
+    gl_ctx: moderngl.Context, example_id: str
+) -> None:
+    """065 check 15, the half that does not need a display: the shipped set is what a new user
+    opens first, and it is the highest-probability breakage of any change to loading or the graph.
+
+    Driven from `EXAMPLE_ORDER` rather than a listdir, so an example added to the roster and not
+    to disk fails here instead of going unchecked.
+    """
+    document_dir = DOCUMENT_EXAMPLES_DIR / example_id
+    ui_document = load_document_from_dir(document_dir)
+    for name, render_pass in ui_document.document.passes.items():
+        if render_pass.program is None:
+            render_pass.compile()
+        assert render_pass.program is not None, f"{example_id}/{name} does not compile"
+
+    ui_document.document.begin_frame(0)
+    ui_document.document.render(u_time=0.0)
+    assert len(ui_document.document.render_pass.canvas.texture.read()) > 0
+    ui_document.document.release()
+
+
+@pytest.mark.parametrize("example_id", EXAMPLE_ORDER)
+def test_a_shipped_example_keeps_every_uniform_row_through_a_save(
+    gl_ctx: moderngl.Context, example_id: str, tmp_path: Any
+) -> None:
+    """The save prunes rows no live uniform claims, and a row's key names its declaring pass --
+    so a key that disagrees with what the shaders declare silently empties the panel. Saved to a
+    COPY, because the assert is about the rows and not about rewriting the shipped tree.
+    """
+    import shutil
+
+    document_dir = tmp_path / example_id
+    shutil.copytree(DOCUMENT_EXAMPLES_DIR / example_id, document_dir)
+    before = set(
+        json.loads((document_dir / DOCUMENT_JSON_BASENAME).read_text())["ui_state"].get(
+            "ui_uniforms", {}
+        )
+    )
+
+    ui_document = load_document_from_dir(document_dir)
+    ui_document.save(document_dir.parent, document_dir.name)
+
+    after = set(
+        json.loads((document_dir / DOCUMENT_JSON_BASENAME).read_text())["ui_state"].get(
+            "ui_uniforms", {}
+        )
+    )
+    assert after == before, f"the save dropped {len(before - after)} row(s)"
+    ui_document.document.release()

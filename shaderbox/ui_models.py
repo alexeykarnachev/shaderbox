@@ -467,7 +467,7 @@ class UIDocument(BaseModel):
 
         # ----------------------------------------------------------------
         # Drop UI rows for uniforms no shader has any more. The row key is a hash of the
-        # uniform's NAME AND SHAPE, and rows are created lazily in the uniform draw loop, so
+        # uniform's PASS, NAME AND SHAPE, and rows are created lazily in the uniform draw loop, so
         # every rename and every retype strands its predecessor — the dict only ever grew
         # (shipped examples carry rows for uniforms their shader dropped long ago). Pruned
         # here rather than in the draw loop because save is the funnel every path reaches,
@@ -475,8 +475,8 @@ class UIDocument(BaseModel):
         # would be nothing to prune against, and the answer would be "delete all of them".
         if live:
             live_rows = {
-                get_uniform_hash(u)
-                for render_pass in self.document.passes.values()
+                get_uniform_hash(u, pass_name)
+                for pass_name, render_pass in self.document.passes.items()
                 for u in render_pass.get_active_uniforms()
                 if u.name not in TABLE_UNIFORMS
             }

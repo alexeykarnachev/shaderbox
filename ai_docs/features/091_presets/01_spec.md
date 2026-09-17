@@ -203,6 +203,12 @@ source's row under the same hash with no re-keying, and where the host already h
 that name and shape the HOST's row wins: the source's input type and range are lost in that one
 case, which is the right precedence and the limit of the merge.
 
+> **SUPERSEDED.** `get_uniform_hash` now takes the declaring pass, because two passes sharing a
+> uniform name shared one row and one user-set input type. The import re-keys each merged row
+> from the source name to the host name; the host-wins precedence above is unchanged, but it now
+> applies per pass rather than across the document, so the loss this paragraph describes no
+> longer happens on a name two different passes declare.
+
 **D6 — the bundle's output takes over the role of the pass that feeds it.** Feeding an entry
 point with host pass `scene` is an INSERTION: every host sampler that read `scene` now reads the
 bundle's output, and if `scene` was the document's output, the bundle's output becomes the
@@ -464,11 +470,11 @@ fixture items build a real headless App; item 4 uses `test_document_graph.py`'s 
    source `UIDocument` and the shipped example is rewritten in the working tree.
 7. **A merged row survives the save** (`tests/test_pass_verbs.py`): give the source a uniform
    with a non-default input type in its `ui_state.ui_uniforms`, import, reload, and assert the
-   row is present on the host with that input type. Falsifier: re-key the merged row by the
-   new pass name (a hash nothing computes) and the prune drops it; `get_uniform_hash` is
-   name-and-shape only, so the row must be copied under its own key. (Skipping the copies'
-   compile is NOT a falsifier: `UIDocument.save` compiles a program-less pass itself before it
-   prunes, measured in review round 2.)
+   row is present on the host with that input type. (Falsifier as landed: the key names the
+   declaring pass, so copying the source key verbatim leaves a row the prune drops -- the
+   opposite of what this item originally said, and the reason is above at D5.) (Skipping the
+   copies' compile is NOT a falsifier: `UIDocument.save` compiles a program-less pass itself
+   before it prunes, measured in review round 2.)
 8. **A source pass that does not compile** (`tests/test_pass_verbs.py`): a source dir one of
    whose pass files does not compile still imports its other passes, `ImportResult.notes`
    names the broken pass, and the broken pass is NOT among the entry points offered (D3).

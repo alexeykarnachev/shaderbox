@@ -724,11 +724,16 @@ class App:
             self.pass_settings_name = new_name
             self.pass_settings_name_buf = new_name
 
-    def panel_pass(self, document_id: str) -> Pass:
-        """The pass whose uniforms the Document tab edits: the active shader tab's own pass when
-        it belongs to this document, else the output. Distinct from the viewer on purpose — the
-        viewer follows the output, while the panel stays on the pass being worked on (open
-        another pass's tab to tweak it while the output is on screen)."""
+    def panel_pass_name(self, document_id: str) -> str:
+        """The NAME of the pass whose uniforms the Document tab edits: the active shader tab's own
+        pass when it belongs to this document, else the output. Distinct from the viewer on
+        purpose — the viewer follows the output, while the panel stays on the pass being worked on
+        (open another pass's tab to tweak it while the output is on screen).
+
+        The name rather than the object is what this resolves, because a uniform row is keyed by
+        it (`get_uniform_hash`) and a document's passes cannot be reverse-looked-up by identity
+        without re-deriving the same answer at the call site.
+        """
         ui_document = self.ui_documents[document_id]
         document = ui_document.document
         # An explicit pick on the Uniforms tab wins (083): without it the panel could only ever
@@ -736,13 +741,23 @@ class App:
         # opening its tab first. A stale name (a rename, a deleted pass) falls through.
         chosen = ui_document.ui_state.panel_pass
         if chosen and chosen in document.passes:
-            return document.passes[chosen]
+            return chosen
         tab = self.active_tab
         if tab is not None and tab.kind == "shader" and tab.document_id == document_id:
-            for render_pass in document.passes.values():
+            for name, render_pass in document.passes.items():
                 if render_pass.source.path == tab.path:
-                    return render_pass
-        return document.render_pass
+                    return name
+        # The same fallback `Document.render_pass` makes, resolved to its NAME: a stale output
+        # names no live pass, and the two must agree on which one stands in for it.
+        output = document.graph.output_pass
+        if output is not None and output in document.passes:
+            return output
+        return next(iter(document.passes))
+
+    def panel_pass(self, document_id: str) -> Pass:
+        """The pass `panel_pass_name` names."""
+        document = self.ui_documents[document_id].document
+        return document.passes[self.panel_pass_name(document_id)]
 
     def set_panel_pass(self, document_id: str, name: str) -> None:
         """The Uniforms tab's pass pick; "" restores the follow-the-active-tab default.
@@ -1177,7 +1192,7 @@ class App:
         document_id = self.current_document_id
         if document_id not in self.ui_documents:
             return
-        self.open_pass_settings(pass_name_of(self.panel_pass(document_id).source.path))
+        self.open_pass_settings(self.panel_pass_name(document_id))
 
     def open_shader_for_panel_pass(self) -> None:
         """The `Open shader` command: the shader of the pass being WORKED ON (`panel_pass`),
@@ -1187,7 +1202,7 @@ class App:
         document_id = self.current_document_id
         if document_id not in self.ui_documents:
             return
-        name = pass_name_of(self.panel_pass(document_id).source.path)
+        name = self.panel_pass_name(document_id)
         self.ensure_shader_tab(document_id, name, focus_editor=True)
 
     def open_add_pass(self) -> None:

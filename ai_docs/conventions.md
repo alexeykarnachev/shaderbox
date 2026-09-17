@@ -255,7 +255,7 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   only on the widget that edits it: a hand-edited or half-written file never passes a widget, and the
   frame loop divides by `global_target_fps`.
   The mirror rule for derived state: a dict/list keyed by something the user can RENAME or RETYPE
-  (`ui_uniforms` is keyed by a hash of name AND shape) accumulates forever unless something prunes it,
+  (`ui_uniforms` is keyed by a hash of the declaring PASS, name AND shape) accumulates forever unless something prunes it,
   and the prune belongs in `UIDocument.save` — the funnel every path reaches, including headless ones that
   never draw — never in the draw loop that lazily CREATES the rows (that is the lazy-row trap two
   bullets down). Same for on-disk assets: sweep by "what does the freshly built metadata reference",
@@ -596,7 +596,9 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   resolved to the tab already on screen and looked dead. The tiers stay (explicit pick -> active
   tab -> output), but the first is now written by every pick rather than by the Uniforms row alone.
   Revisit if a surface needs a pass the user did NOT pick, which wants its own argument rather than
-  a fourth tier.
+  a fourth tier. The tiers resolve to a NAME (`App.panel_pass_name`) and `App.panel_pass` is the
+  lookup on top of it: a uniform row is keyed by the declaring pass's name, and a caller that had
+  only the object was re-deriving the name from its shader path or by identity search.
 
   A document SWITCH opens no tab (093 W7, the rule W3-3 set for clicks), and neither does the
   Alt-arrow pass walk: only creation and a FIRST open of a project open a shader by themselves;

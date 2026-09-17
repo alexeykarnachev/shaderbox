@@ -44,11 +44,7 @@ def _draw_pass_selector(app: App, document_id: str) -> None:
     names = strip_order(document.passes, document.effective_wiring())
     if len(names) < 2:
         return
-    current = app.panel_pass(document_id)
-    current_name = next(
-        (n for n in names if document.passes[n] is current), names[0] if names else ""
-    )
-    picked = text_tab_row("uniforms_pass", names, current_name)
+    picked = text_tab_row("uniforms_pass", names, app.panel_pass_name(document_id))
     if picked is not None:
         app.set_panel_pass(document_id, picked)
     imgui.dummy((0, SPACE.MD))
@@ -68,12 +64,13 @@ def draw(app: App) -> None:
     active_uniform_hashes = []
     auto_hashes = []
     # The PANEL pass, not the output: the sliders belong to the pass being edited (065).
+    panel_pass_name = app.panel_pass_name(document_id)
     for uniform in app.panel_pass(document_id).get_active_uniforms():
         if (
             uniform.name in TABLE_UNIFORMS
         ):  # engine glyph tables — pure machinery, no row
             continue
-        hash = get_uniform_hash(uniform)
+        hash = get_uniform_hash(uniform, panel_pass_name)
         if hash not in ui_uniforms:
             ui_uniforms[hash] = UIUniform.from_uniform(uniform)
         ui_uniforms[hash].snap_input_type()
