@@ -9,6 +9,45 @@ skipped smoke is not a pass.
 
 ---
 
+## Progress
+
+**C1-C9 are landed and green** (ten commits from `91a24ce`, each `make gates` exit 0 with smoke
+PASSED, not skipped). The tree is shippable at HEAD: the graph is still an editor tab, so nothing
+the maintainer uses has moved yet -- what has landed is the whole prerequisite half.
+
+| Commit | What | Falsifier tried |
+|---|---|---|
+| C1 `089c972` | per-pass export composes | blit back to `name == output` -> red |
+| C2 `2b0e19f` | the two observation seams | n/a (no writer yet) |
+| C3 `8668598` | the pass is an argument | n/a (pure refactor, zero behaviour delta) |
+| C4 `a6c2af3` | the row key carries its pass | drop the pass -> reds the collision AND the clean-example test |
+| C5 `effb513` | the horizontal splitter | old derivation -> reds both splitter checks |
+| C6 `742c549` | one fps number, panel deleted | drop ONE `profiler=` -> red |
+| C7 `f654f5d` | Esc learns the focus mode | drop the clause -> reds 12(a) only |
+| C8a `014215b` | node 136->240, LOD in screen px | two width-anchored tests re-derived |
+| C8b `2f37433` | the rows themselves | drop the pass from the row key -> red |
+| C9 `5a954ee` | scrim, camera, widget refusal | drop `focused` from `frozen` -> red |
+
+**Next: C10**, the atomic one. Nothing about it has been started.
+
+### Three corrections to the plan, found while building
+
+1. **`make test` is `-n 8 --dist loadgroup`.** A bare `uv run pytest tests/` is single-process and
+   takes ~45s against the gate's ~20s. Measure with the Makefile target, never with bare pytest.
+2. **`imgui_ctx` has no `begin_disabled`.** Use the plain `imgui.begin_disabled` / `end_disabled`
+   pair; the context-manager form unbalances the window stack and reds 74 tests at once.
+3. **`copilot/backend.py` mentions `tabs/document.py` in a COMMENT only** -- not an import, so it
+   is a reword in C14, not a dependency for C10.
+
+### Two gates that were green against their own falsifiers
+
+Both caught by running the mutation rather than trusting the test, and both now rewritten:
+
+- `node_size` invariance asserted "more ports is taller", which a constant row block does not
+  violate. Now asserts the closed form.
+- The focus gesture refusal asserted the state entry leaves behind, which says nothing about a
+  LATER press. Now drives a real press through the canvas.
+
 ## The sequence
 
 | # | What | Files | Spec | Checks it makes passable |
