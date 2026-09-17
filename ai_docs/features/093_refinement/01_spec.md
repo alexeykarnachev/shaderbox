@@ -2,10 +2,10 @@
 
 Status: **done 2026-09-15.** Eight waves landed (the editor's half of wave 6 re-vendored at
 `5a56ccf`), each checked by him in the running app; his check of wave 8 reported nothing, so no
-wave 9 opens. Finding 4 (the control panel) is delegated to 094, whose mock
-(`ai_docs/features/094_control_panel/00_mock.html`) he read and answered: both panel-reshaping
-options move the dead space rather than remove it, so 094 still owes a shape that removes it and
-wave 8 took only the safe, composition-independent half. The waves and what each landed are the `## Waves`
+wave 9 opens. Finding 4 (the control panel) was delegated to 094, which was later implemented,
+reverted whole (`9d9e817`) and withdrawn -- its mock is gone with it. Both panel-reshaping
+options in that mock moved the dead space rather than removing it, so the finding still owes a
+shape that removes it and wave 8 took only the safe, composition-independent half. The waves and what each landed are the `## Waves`
 section below, newest first; the findings are `00_findings.md`. The maintainer's verdict on the shipped canvas ("feels
 very cheap") sent the walk into research first: `02_research_brief.md` is the brief, `research/`
 holds six area reports against primary sources, `03_graph_design.md` is the design record
@@ -51,12 +51,12 @@ delegated (below).
 
 ## Out of scope
 
-- **Finding 4, the control panel's composition** (the document grid's dead space). Now 094,
-  which holds the mock and his verdict on it. The STACKED ROWS half of this finding was not
-  deferred with it: wave 8 took the header down to one row, since the rows it removed were verbs
-  that already existed as commands and so did not depend on the panel's composition. What 094
-  still owes is a shape that REMOVES the grid's dead space rather than moving it, both mock
-  options having been rejected for doing the latter.
+- **Finding 4, the control panel's composition** (the document grid's dead space). Went to 094,
+  which was reverted and withdrawn; the finding is open again and unqueued. The STACKED ROWS
+  half of it was not deferred with it: wave 8 took the header down to one row, since the rows it
+  removed were verbs that already existed as commands and so did not depend on the panel's
+  composition. What is still owed is a shape that REMOVES the grid's dead space rather than
+  moving it, both mock options having been rejected for doing the latter.
 - **Reroute / waypoint nodes** (G16). Trigger: he reports a wire he cannot read on a real
   document AFTER this wave lands, i.e. after the bus and the cusp are gone.
 - **Routing around nodes, edge bundling** (G15): none of the references does it; z-order and the
