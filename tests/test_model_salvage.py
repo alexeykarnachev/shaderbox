@@ -47,7 +47,7 @@ def test_a_populated_file_round_trips(tmp_path: Path) -> None:
     "bad_key,bad_value",
     [
         ("global_target_fps", "sixty"),  # wrong type
-        ("channel_view", "retired_view"),  # a value the enum no longer carries
+        ("active_document_tab", "retired_tab"),  # retired enum member
         ("copilot_layout", "retired_layout"),
         ("editor_split_fraction", "half"),
         ("key_bindings", "not-a-mapping"),

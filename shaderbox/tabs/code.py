@@ -46,6 +46,7 @@ from shaderbox.ui_primitives import (
     standard_button,
 )
 from shaderbox.util import format_auto_value
+from shaderbox.widgets import pass_graph
 
 _MAX_ERROR_ROWS = 3
 
@@ -70,6 +71,10 @@ def tab_label(app: App, tab: EditorTab) -> str:
     ) or tab.document_id[:8]
     if tab.kind == "script":
         return f"{document_name} (script)"
+    # Before the pass fallthrough: a graph tab's path is `graph.json`, on which
+    # `pass_name_of` would answer a filename rather than a pass (093 T1).
+    if tab.kind == "graph":
+        return f"{document_name} (graph)"
     return f"{document_name} ({pass_name_of(tab.path)})"
 
 
@@ -862,6 +867,30 @@ def layout_following_cursor(
     return cursor
 
 
+def _draw_graph_tab(app: App, tab: EditorTab) -> None:
+    """A graph tab's body: the pane's focus bookkeeping, then the canvas (093 T2).
+
+    Setting `editor_focused` is what makes `Ctrl+W` close this tab and `Ctrl+Tab` cycle onto
+    it. The error list is cleared because a graph tab has none, and a stale one from the
+    previous tab would otherwise drive `F8`.
+    """
+    if app.editor_focus_requested and not app.any_popup_open():
+        # ui.py has already issued the `set_next_window_focus` before the child; the latch
+        # has done its job.
+        app.editor_focus_requested = False
+        app.editor_was_ever_focused = True
+    app.editor_errors = []
+    app.editor_focused = imgui.is_window_focused(imgui.FocusedFlags_.child_windows)
+    if app.editor_focused:
+        app.editor_was_ever_focused = True
+    if app.editor_defocus_requested:
+        imgui.set_window_focus(None)
+        app.editor_defocus_requested = False
+        app.editor_focused = False
+        app.editor_was_ever_focused = False
+    pass_graph.draw(app, tab.document_id)
+
+
 def draw(app: App) -> None:
     app.code_hovered_uniform = ""
     ui_document = app.ui_documents.get(app.current_document_id)
@@ -869,6 +898,11 @@ def draw(app: App) -> None:
     _draw_tab_row(app)
 
     tab = app.active_tab
+    # Before the `ui_document is None` guard: a graph tab of a NON-current document must
+    # still draw, and it needs no editor session at all (093 T2).
+    if tab is not None and tab.kind == "graph":
+        _draw_graph_tab(app, tab)
+        return
 
     current_path = app.current_editor_path
     if tab is None or current_path is None or ui_document is None:

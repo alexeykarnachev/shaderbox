@@ -31,11 +31,11 @@ from shaderbox.render_shape import (
     shape_to_preset,
 )
 from shaderbox.shader_lib import ShaderLibIndex, set_active
-from shaderbox.ui_models import UIDocument, load_document_from_dir
-from shaderbox.widgets.canvas_control import (
+from shaderbox.tabs.document import (
     CanvasChoiceKind,
     canvas_choice_groups,
 )
+from shaderbox.ui_models import UIDocument, load_document_from_dir
 
 _PLAIN = """#version 460 core
 in vec2 vs_uv;

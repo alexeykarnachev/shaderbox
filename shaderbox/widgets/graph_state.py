@@ -78,22 +78,6 @@ class GraphViewState:
     # One-shot: the first canvas frame at a nonzero size fits the view; a scope change
     # clears it so the new scope fits once too.
     fitted: bool = False
-    # The node a focus mode is centred on, and which mode (094 D9). Transient like everything
-    # here: focus is a VIEW state, so nothing about it survives a restart or a project switch.
-    focused_pass: str | None = None
-    focused_mode: str = ""
-    # The camera the focus replaced, restored on leave (094 D9b). `fitted` is part of it because
-    # `_fit` re-runs on it: a restored pan and zoom with `fitted` cleared would be re-framed on
-    # the next frame.
-    saved_pan: Position | None = None
-    saved_zoom: float = 1.0
-    saved_fitted: bool = False
-    # Each pass's uniform-row scroll offset (094 D6), per pass because it belongs to the node
-    # rather than to the camera -- it survives a pan, a zoom and a scope change.
-    row_scroll: dict[str, float] = field(default_factory=dict)
-    # The region size the last fit was made against, so a resize can re-fit (094 D1c). (0, 0)
-    # until the first fit, which is what keeps the initial frame from re-fitting itself.
-    fitted_size: tuple[float, float] = (0.0, 0.0)
     node_drag: NodeDrag | None = None
     wire_drag: WireDrag | None = None
     # The snap guides the current drag aligned to, in canvas units: ("v", x) or ("h", y).
@@ -115,13 +99,6 @@ class GraphViewState:
     )
     # The canvas child's screen rect this frame, for the same reason.
     canvas_rect: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
-    # And where each uniform ROW landed, keyed (pass, uniform) -- the fourth surface published for
-    # the same reason as the three above. The rows draw outside the node's layout box, so nothing
-    # else knows where they are: this is what a headless test aims a drag through, and what the
-    # row scroll reads to find which node the pointer is over.
-    row_rects: dict[tuple[str, str], tuple[float, float, float, float]] = field(
-        default_factory=dict
-    )
     # A press the copilot turn saw held down -- or the one the mid-curve unwire badge
     # consumed -- may not become any other gesture; the latch clears at the END of the frame
     # the button came up on, so the release-frame node click is refused too (093 S6).
@@ -156,7 +133,7 @@ def node_size(port_count: int, box: bool) -> tuple[float, float]:
     """A node's canvas-space size at zoom 1: the picture, the name, and one row per port."""
     width = float(SIZE.GRAPH_NODE_W + (SIZE.GRAPH_BOX_EXTRA_W if box else 0))
     height = float(
-        SIZE.GRAPH_THUMB_INSET + SIZE.GRAPH_THUMB_H + SIZE.GRAPH_NAME_H + SIZE.GRAPH_PAD
+        SIZE.GRAPH_THUMB_INSET + SIZE.GRAPH_THUMB + SIZE.GRAPH_NAME_H + SIZE.GRAPH_PAD
     )
     if port_count:
         height += (

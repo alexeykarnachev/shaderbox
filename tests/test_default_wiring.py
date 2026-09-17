@@ -300,9 +300,7 @@ def test_the_row_shows_three_distinct_states(
     seen = _combo_capture(monkeypatch)
 
     def draw() -> None:
-        uniform_widget.draw_ui_uniform(
-            app, ui_uniform, app.panel_pass(app.current_document_id)
-        )
+        uniform_widget.draw_ui_uniform(app, ui_uniform)
 
     # Undecided: shown as the pass the name rule wires it to, with no rule row in the list.
     _frame(draw)

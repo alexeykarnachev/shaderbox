@@ -62,7 +62,7 @@ def _engine_uniform_section() -> HelpSection:
             "Declare any of these and ShaderBox writes it every frame. They get no slider — the "
             "engine owns them. Declare only the ones you use; an unused uniform is compiled away.\n"
             "\n"
-            "Everything else you declare becomes a control on its pass's node instead."
+            "Everything else you declare becomes a control in the Document tab instead."
         ),
         snippet=rows,
     )
@@ -148,7 +148,7 @@ def help_sections() -> list[HelpSection]:
                 "\n"
                 "For a value that needs memory between frames (a physics step, an integrator), a "
                 "document can carry one Python script that drives its uniforms; `Alt+R` creates "
-                "and opens it, or use the script chip beside the graph's breadcrumb. A script "
+                "and opens it, or use the Script row's open button in the Document tab. A script "
                 "drives a uniform on every pass that declares it, or names a pass to drive only "
                 "that one."
             ),

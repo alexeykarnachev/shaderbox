@@ -1,21 +1,10 @@
-"""The canvas control: every shape a document can take, as one grouped combo (094 D13).
-
-Lifted out of the deleted Document tab unchanged. The combo is ONE list rather than a mode
-toggle beside a value field -- `Auto | Fixed` named a mode whose two positions edited different
-things (a ratio, a pixel pair), so the row carried a control that changed meaning under it. Here
-a row names both at once, grouped by aspect with each group's first row `Auto`.
-
-The caption beside it carries the half of the fact the combo does not: under Auto the combo
-names a RATIO so the caption is the live pixel size -- which after 094 D1a moves whenever the
-canvas splitter is dragged, making it the only place the number appears.
-"""
-
 from dataclasses import dataclass
 from enum import Enum, auto
 
 from imgui_bundle import imgui
 
 from shaderbox.app import App
+from shaderbox.commands import CommandId, command_label
 from shaderbox.media import MediaWithTexture
 from shaderbox.pass_graph import clamp_canvas_size
 from shaderbox.render_preset import resolve_dims
@@ -30,10 +19,19 @@ from shaderbox.render_shape import (
     reduce_aspect,
     shape_to_preset,
 )
-from shaderbox.theme import COLOR, SPACE
-from shaderbox.ui_models import UIDocument
-from shaderbox.ui_primitives import ComboRow, grouped_combo
+from shaderbox.theme import COLOR, SIZE, SPACE
+from shaderbox.ui_models import (
+    UIDocument,
+)
+from shaderbox.ui_primitives import (
+    ComboRow,
+    grouped_combo,
+    play_stop_toggle,
+    small_caption,
+    standard_button,
+)
 from shaderbox.util import get_resolution_str
+from shaderbox.widgets import pass_list
 
 _SQUARE_PRESETS: tuple[int, ...] = (256, 512, 1024, 2048)
 
@@ -158,7 +156,7 @@ def canvas_choice_label(ui_document: UIDocument) -> str:
     return f"{width}x{height}"
 
 
-def apply_canvas_choice(
+def _apply_canvas_choice(
     app: App, ui_document: UIDocument, choice: CanvasChoice
 ) -> None:
     """Commit one popup row: the mode it names, then the value that mode reads."""
@@ -193,7 +191,7 @@ def _draw_canvas_control(app: App, ui_document: UIDocument) -> None:
         width,
     )
     if picked is not None:
-        apply_canvas_choice(app, ui_document, flat[picked])
+        _apply_canvas_choice(app, ui_document, flat[picked])
 
 
 def _switch_resolution_mode(
@@ -230,13 +228,13 @@ def _apply_aspect(app: App, ui_document: UIDocument, ratio: tuple[int, int]) -> 
     app.notifications.push(f"Aspect: {reduced[0]}:{reduced[1]}")
 
 
-def canvas_caption(ui_document: UIDocument) -> str:
-    """The `Canvas` caption: the number the control itself does not carry.
+def _draw_canvas_caption(app: App, ui_document: UIDocument) -> None:
+    """The `Canvas` caption and, beside it, the number the control below does not carry.
 
     Under Auto the control names a RATIO, so this is the live pixel size; under Fixed the
     control names a SIZE, so this is its aspect. Each mode shows the other half of the same
-    fact. Pure, so the menu that heads with it can be read without a frame -- and under Auto it
-    is the ONLY place the live size appears, which 094 D1a's splitter makes it move.
+    fact. It sits on the CAPTION row (his call) rather than under the control: a line below the
+    combo read as a second field, and the caption row is where a label belongs.
     """
     document = ui_document.document
     if document.resolution_mode is ResolutionMode.FIXED:
@@ -244,7 +242,7 @@ def canvas_caption(ui_document: UIDocument) -> str:
     else:
         width, height = document.canvas_size
         detail = f"{width}x{height}"
-    return f"Canvas  {detail}"
+    small_caption(app.font_12, f"Canvas  {detail}")
 
 
 def _apply_canvas_size(
@@ -271,3 +269,85 @@ def _apply_canvas_size(
         else "Export"
     )
     app.notifications.push(f"{label}: {w}x{h}")
+
+
+def draw(app: App) -> None:
+    if not (ui_document := app.ui_documents.get(app.current_document_id)):
+        return
+
+    imgui.spacing()
+
+    combo_offset = SIZE.NAME_INPUT_W + SPACE.XL
+
+    imgui.begin_disabled(app.copilot_turn_active)
+
+    small_caption(app.font_12, "Document name")
+    imgui.same_line(combo_offset)
+    _draw_canvas_caption(app, ui_document)
+
+    imgui.set_next_item_width(SIZE.NAME_INPUT_W)
+    ui_document.ui_state.ui_name = imgui.input_text_with_hint(
+        "##document_name", "document name", ui_document.ui_state.ui_name
+    )[1]
+
+    imgui.same_line(combo_offset)
+
+    # Per-document widget ids: imgui keeps an ITEM active across a document switch, so a
+    # shared id would let the outgoing document's open popup land on the incoming one.
+    imgui.push_id(ui_document.id)
+
+    _draw_canvas_control(app, ui_document)
+    _draw_script_toggle(app)
+
+    imgui.pop_id()
+
+    imgui.end_disabled()
+
+    imgui.dummy((0, SPACE.MD))
+    _draw_passes(app, app.current_document_id)
+
+
+def _draw_script_toggle(app: App) -> None:
+    """The document script's play/stop, under a `Script` label naming what it controls.
+
+    The bare word needs that label HERE and not on a uniform row: there the toggle sits at the
+    end of the row of the uniform it stops, which is its subject, while on this row it had no
+    neighbor at all and read as a loose `stop` (his finding). The `open` summoners it used to
+    sit beside are gone (093 W8) -- opening a script is a verb, and verbs live on the
+    document's context menu, the Document menu and their chords. What cannot live there is a
+    STATE the user watches while a shader runs, so the toggle stays, and is absent when the
+    document has no script. The caller's copilot-turn bracket covers it (a write races the
+    reload).
+    """
+    document_id = app.current_document_id
+    if not app.session.has_script(document_id):
+        return
+    imgui.same_line(spacing=float(SPACE.LG))
+    imgui.align_text_to_frame_padding()
+    imgui.text_colored(COLOR.FG_DIM, "Script")
+    imgui.same_line(spacing=float(SPACE.MD))
+    playing = not app.current_document_ui_state_or_default.all_stopped
+    if play_stop_toggle(
+        "document",
+        playing,
+        tooltip="Stop the whole script" if playing else "Resume the whole script",
+    ):
+        app.set_document_all_stopped(document_id, playing)
+
+
+def _draw_passes(app: App, document_id: str) -> None:
+    # A plain caption over the strip: the graph's summoner is on the document's context menu
+    # (093 W8), so this row names the tiles and nothing else. The add / import row sits under
+    # them, inside its own copilot-turn bracket.
+    imgui.begin_disabled(app.copilot_turn_active)
+    small_caption(app.font_12, "Passes")
+    imgui.end_disabled()
+    pass_list.draw(app, document_id)
+    imgui.begin_disabled(app.copilot_turn_active)
+    imgui.dummy((0, float(SPACE.SM)))
+    if standard_button(command_label(CommandId.ADD_PASS)):
+        app.open_add_pass()
+    imgui.same_line()
+    if standard_button(command_label(CommandId.IMPORT_PASSES)):
+        app.open_import_passes()
+    imgui.end_disabled()

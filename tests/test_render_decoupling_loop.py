@@ -16,16 +16,19 @@ time and a `k = 12` document renders either 12 times or 0. Moving the increment 
 from typing import Any
 
 import pytest
+from imgui_bundle import imgui
 
 from shaderbox import ui
 from shaderbox.app import ModalId
 from shaderbox.constants import STARTER_EXAMPLE_ID
-from shaderbox.render_plan import AUTO_RESIZE_STABLE_FRAMES, CostRecord
+from shaderbox.profiling import FrameProfile, Span
+from shaderbox.render_plan import AUTO_RESIZE_STABLE_FRAMES, CostRecord, RenderPlan
 from shaderbox.render_shape import ResolutionMode, fit_to_aspect
+from shaderbox.tabs.document import _apply_canvas_size, _switch_resolution_mode
 from shaderbox.theme import SIZE
 from shaderbox.ui import _tick_frame_state, update_and_draw
-from shaderbox.ui_models import ConfirmRequest, UIAppState
-from shaderbox.widgets.canvas_control import _apply_canvas_size, _switch_resolution_mode
+from shaderbox.ui_models import ConfirmRequest
+from shaderbox.ui_primitives import profile_rows_plan
 from tests.conftest import seed_extra_document
 
 # This module drives real frames, so it gets its own worker: the imgui font atlas is per
@@ -448,35 +451,57 @@ def test_a_throttled_example_renders_less_often_than_a_cheap_one(
 def test_the_chip_carries_the_current_documents_own_rate(
     app: Any, monkeypatch: Any
 ) -> None:
-    # A THROTTLED document's chip reads the rate the throttle holds it to, not the frame rate.
-    # Falsifier: return `round(app.global_fps)` unconditionally and this reads the UI's rate.
+    # Falsifier: pass `document_fps=None` unconditionally at the `fps_overlay` call -- every
+    # prose gate still passes and the chip silently never shows the second number.
+
     _freeze_costs(app, monkeypatch)
     _plant_cost(app, app.current_document_id, 100.0)
     _drive(app, 8)
 
+    captured: list[Any] = []
+    real = ui.fps_overlay
+
+    def spy(**kwargs: Any) -> Any:
+        captured.append(kwargs)
+        return real(**kwargs)
+
+    monkeypatch.setattr(ui, "fps_overlay", spy)
+    ui.update_and_draw(app)
+    assert captured, "the overlay was never drawn"
+    document_fps = captured[-1]["document_fps"]
+    assert document_fps is not None, "the chip was handed no document rate"
     interval = app.render_plan.intervals[app.current_document_id]
-    assert interval > 1, "the premise: the throttle is holding this document back"
-    assert ui._current_document_fps(app) == round(
-        app.app_state.global_target_fps / interval
+    assert interval > 1
+    assert document_fps == round(app.app_state.global_target_fps / interval)
+
+
+def test_the_panel_rows_match_documents_by_id_not_by_title(app: Any) -> None:
+    # Two documents sharing a title are two rows with their OWN numbers. Falsifier: match a
+    # `document:` span through its title and one row takes the other's interval.
+
+    root = Span("frame", cpu_ms=20.0)
+    root.children.append(Span("document:aaa", cpu_ms=40.0, gpu_ms=40.0))
+    root.children.append(Span("document:bbb", cpu_ms=4.0, gpu_ms=4.0))
+    plan = RenderPlan(
+        intervals={"aaa": 5, "bbb": 1},
+        phases={"aaa": 0, "bbb": 1},
+        document_fps={"aaa": 12.0, "bbb": 60.0},
     )
-
-
-def test_the_chip_reads_the_measured_rate_when_nothing_throttles(app: Any) -> None:
-    """094 check 18: the chip always shows a NUMBER, and at interval 1 it is the measured one.
-
-    `_current_document_fps` used to return None whenever the document drew every frame -- the
-    common case -- and the old two-number chip fell back to `app.global_fps` there. With one
-    number the fallback must be a number too, and it must be the MEASURED rate: the plan's
-    `document_fps` at interval 1 is `target_fps / 1`, which round-trips to the SETTING, so a
-    machine rendering at 30 with the target at 60 would read `60 FPS`.
-
-    Falsifier: return the plan's value at interval 1 and this reads the target, not the measure.
-    """
-    _drive(app, 4)
-    assert app.render_plan.intervals.get(app.current_document_id, 1) == 1
-    app.global_fps = 31.4
-    app.app_state.global_target_fps = 60
-    assert ui._current_document_fps(app) == 31
+    rows = profile_rows_plan(
+        FrameProfile(root, 0, complete=True),
+        fps=60,
+        target_fps=60,
+        plan=plan,
+        titles={"aaa": "Twin", "bbb": "Twin"},
+        budget=0.5,
+    )
+    twins = [row for row in rows if row.name == "Twin"]
+    assert len(twins) == 2, [row.name for row in rows]
+    # The throttled one reads as a rate and an interval; its unthrottled namesake keeps today's
+    # millisecond number, so the two rows cannot have been filled from one lookup.
+    assert "x5" in twins[0].number
+    assert twins[0].tooltip == "40.00 ms"
+    assert twins[1].number.endswith("ms")
 
 
 # ---------------------------------------------------------------------------
@@ -673,6 +698,7 @@ def test_the_import_dialog_plans_the_open_tabs_documents(
     # the current document, so a never-rendered card stays black; or leave the render chain's
     # `elif EXAMPLES` untouched and the Examples tab renders nothing at all.
     other = seed_extra_document(app, "other-0000-4000-8000-000000000002")
+    app.app_state.is_render_all_documents = True
     _freeze_costs(app, monkeypatch)
     app.open_import_passes()
     assert app.import_draft is not None
@@ -797,17 +823,19 @@ def test_the_cursors_previous_position_anchors_at_the_documents_last_tick(
 
 
 def _control_panel_y(app: Any, monkeypatch: Any, frames: int = 3) -> float:
-    """The screen y the lower region starts at -- the boundary the splitter moves.
+    """The screen y the control panel child is drawn at, read where the grid draws into it."""
+    seen: list[float] = []
+    real = ui.draw_document_preview_grid
 
-    Read off the graph canvas's own published rect (094 C10): the grid this used to spy on is
-    gone, and the graph is what fills the region now. `monkeypatch` is kept in the signature
-    because every caller passes it and the helper may need a spy again.
-    """
+    def recorded(target: Any, width: float, height: float) -> None:
+        seen.append(imgui.get_window_pos().y)
+        real(target, width, height)
+
+    monkeypatch.setattr(ui, "draw_document_preview_grid", recorded)
     for _ in range(frames):
         update_and_draw(app)
-    view = app.graph_view_for(app.current_document_id)
-    assert view.canvas_rect[3] > view.canvas_rect[1], "the lower region never drew"
-    return view.canvas_rect[1]
+    assert seen, "the control panel never drew"
+    return seen[-1]
 
 
 def test_the_control_panel_holds_still_across_an_aspect_change(
@@ -836,108 +864,21 @@ def test_the_control_panel_holds_still_across_an_aspect_change(
     assert wide_y == square_y, f"the control panel moved from {square_y} to {wide_y}"
 
 
-def test_the_viewer_box_follows_the_horizontal_splitter_not_the_aspect(
+def test_the_viewer_box_follows_the_splitter_not_the_aspect(
     app: Any, monkeypatch: Any
 ) -> None:
-    """The box's height is the HORIZONTAL splitter's share of the panel (094 D1a).
+    """The box's height is the panel's width at `VIEWER_BOX_ASPECT`: a narrower right side
+    hands the freed height to the panels below, and only the splitter can do that.
 
-    Before 094 it was the panel's WIDTH at a fixed aspect, so the only way to move the boundary
-    was to drag the vertical splitter and hope. Now it is dragged directly, and the document's
-    aspect still does not move it -- which is the half of 093 W7 that survives.
-
-    Falsifier: read the height from the old derivation and the two fractions agree.
+    Falsifier: size the box from the room above the panel alone -- the two splits agree.
     """
     ui_document = app.ui_documents[app.current_document_id]
     ui_document.ui_state.aspect = (1, 1)
     ui_document.document.aspect = (1, 1)
-    app.app_state.canvas_split_fraction = 0.3
-    short_panel_y = _control_panel_y(app, monkeypatch)
-    app.app_state.canvas_split_fraction = 0.6
-    tall_panel_y = _control_panel_y(app, monkeypatch)
-    assert tall_panel_y > short_panel_y, (
-        f"a taller canvas left the control panel at {tall_panel_y} (was {short_panel_y})"
+    app.app_state.editor_split_fraction = 0.5
+    wide_panel_y = _control_panel_y(app, monkeypatch)
+    app.app_state.editor_split_fraction = 0.7
+    narrow_panel_y = _control_panel_y(app, monkeypatch)
+    assert narrow_panel_y < wide_panel_y, (
+        f"a narrower panel left the control panel at {narrow_panel_y} (was {wide_panel_y})"
     )
-
-
-def test_the_split_fraction_survives_a_restart(app: Any) -> None:
-    """094 check 16: the fraction is persisted state, not a session value.
-
-    Falsifier: omit the field from `UIAppState` and the reload reverts to the default.
-    """
-    app.app_state.canvas_split_fraction = 0.72
-    app.app_state.save(app.paths.app_state_file)
-    reloaded = UIAppState.load(app.paths.app_state_file)
-    assert reloaded.canvas_split_fraction == 0.72
-
-
-def test_the_splitter_moves_what_every_auto_document_renders_at(
-    app: Any, monkeypatch: Any
-) -> None:
-    """094 check 17: the splitter is wired to the render size, not only to the layout.
-
-    `app.viewer_region` is what every AUTO document renders at next frame, and it is derived
-    from the box the splitter sizes -- so this is the check that proves the drag reaches the
-    thing it actually controls.
-
-    Falsifier: derive `viewer_region` from the old fixed-aspect box; the region does not move.
-    """
-    app.app_state.canvas_split_fraction = 0.3
-    _control_panel_y(app, monkeypatch)
-    short_region = app.viewer_region
-    app.app_state.canvas_split_fraction = 0.6
-    _control_panel_y(app, monkeypatch)
-    tall_region = app.viewer_region
-    assert tall_region[1] > short_region[1], (
-        f"the render height did not follow the splitter: {short_region} -> {tall_region}"
-    )
-
-
-# ---------------------------------------------------------------------------
-# 094 D15/D16 -- `Render all documents` is deleted, and the dropdown is what admits a
-# non-current document to the set instead.
-# ---------------------------------------------------------------------------
-
-
-def test_at_rest_only_the_current_document_ticks(app: Any, monkeypatch: Any) -> None:
-    """094 check 2. The falsifier is INERT without a warmed second document.
-
-    The deleted branch only ever admitted documents whose `first_render_done` was already
-    True, so a test on the one-document fixture would pass whether or not the branch came
-    back -- it would have nothing to admit. Seeding and warming is what makes it bite.
-
-    Falsifier: restore `if app.app_state.is_render_all_documents:` and `other` joins the set.
-    """
-    other = seed_extra_document(app, "resting-0000-4000-8000-00000000000a")
-    _freeze_costs(app, monkeypatch)
-    # Warm it: the branch this guards admitted only already-rendered documents.
-    for _ in range(6):
-        update_and_draw(app)
-    assert app.ui_documents[other].document.first_render_done, "the premise: it warmed"
-
-    app.documents_dropdown_open = False
-    ticking = _tick_frame_state(app)
-
-    assert ticking == [app.current_document_id], (
-        f"a non-current document ticked at rest: {ticking}"
-    )
-
-
-def test_the_open_dropdown_adds_to_the_set_rather_than_replacing_it(
-    app: Any, monkeypatch: Any
-) -> None:
-    """094 check 3: ADDS, never replaces -- the canvas above stays live while you pick.
-
-    Read through `App.planned_documents` (D19's seam), which is otherwise a local nothing can
-    see. Falsifier: make the dropdown replace the set the way the Examples popup does, and the
-    current document drops out.
-    """
-    other = seed_extra_document(app, "dropdown-0000-4000-8000-00000000000b")
-    _freeze_costs(app, monkeypatch)
-    for _ in range(6):
-        update_and_draw(app)
-
-    app.documents_dropdown_open = True
-    _tick_frame_state(app)
-
-    assert app.current_document_id in app.planned_documents
-    assert other in app.planned_documents, app.planned_documents

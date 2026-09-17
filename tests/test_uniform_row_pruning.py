@@ -74,10 +74,9 @@ def test_a_retype_does_not_strand_the_old_row(gl, tmp_path: Path) -> None:
     )
     ui_document = load_document_from_dir(document_dir)
     # Stand in for the uniform draw loop, which is where rows are actually born.
-    output_name = ui_document.document.graph.output
     for uniform in ui_document.document.render_pass.get_active_uniforms():
         ui_document.ui_state.ui_uniforms.setdefault(
-            get_uniform_hash(uniform, output_name), UIUniform.from_uniform(uniform)
+            get_uniform_hash(uniform), UIUniform.from_uniform(uniform)
         )
     ui_document.save(document_dir.parent, document_dir.name)
 
@@ -190,26 +189,3 @@ def test_a_bound_sampler_keeps_its_file(gl, tmp_path: Path) -> None:
     assert [p.name for p in (document_dir / "media" / "main").iterdir()] == [
         "u_tex.png"
     ]
-
-
-def test_two_passes_declaring_one_uniform_get_their_own_rows(
-    gl, tmp_path: Path
-) -> None:
-    """094 D4d: the row key carries the PASS, so a uniform declared by two passes is two rows.
-
-    `UIUniform` holds the user's own `input_type`, so a shared key means setting one pass's
-    `vec3 u_tint` to a color swatch silently retypes the other's. Invisible while one pass's rows
-    were drawn per frame; the graph draws every visible node's at once.
-
-    Falsifier: drop the pass from the hash and the two keys collide, which this asserts they do
-    not.
-    """
-    document_dir = _copy(tmp_path, _TEXT_EXAMPLE)
-    ui_document = load_document_from_dir(document_dir)
-    render_pass = ui_document.document.render_pass
-    render_pass.compile()
-    uniform = next(iter(render_pass.get_active_uniforms()))
-
-    assert get_uniform_hash(uniform, "blur") != get_uniform_hash(uniform, "composite")
-    # And the same pass keeps a stable key, or every save would strand every row.
-    assert get_uniform_hash(uniform, "blur") == get_uniform_hash(uniform, "blur")

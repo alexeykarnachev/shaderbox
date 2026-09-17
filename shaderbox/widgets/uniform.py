@@ -10,7 +10,7 @@ from OpenGL.GL import GL_FLOAT, GL_UNSIGNED_INT
 
 from shaderbox.app import App
 from shaderbox.constants import MEDIA_EXTENSIONS
-from shaderbox.core import Pass, UniformValue
+from shaderbox.core import UniformValue
 from shaderbox.editor_types import HoverMark, JumpRequest
 from shaderbox.intel.symbols import SymbolKind
 from shaderbox.media import MediaWithTexture, Video, media_class_for
@@ -48,7 +48,6 @@ def uniform_name_label(
     app: App,
     name: str,
     width: float,
-    render_pass: Pass,
     *,
     text_color: tuple[float, float, float, float] | None = None,
     accent: tuple[float, float, float, float] | None = None,
@@ -67,7 +66,7 @@ def uniform_name_label(
     )
     if not (clicked or imgui.is_item_hovered()):
         return
-    located = _locate_uniform_declaration(app, name, render_pass)
+    located = _locate_uniform_declaration(app, name)
     if located is None:
         return
     path, line = located
@@ -80,9 +79,7 @@ def uniform_name_label(
         app.editor_hover_line = HoverMark(path, line)
 
 
-def _locate_uniform_declaration(
-    app: App, name: str, render_pass: Pass
-) -> tuple[Path, int] | None:
+def _locate_uniform_declaration(app: App, name: str) -> tuple[Path, int] | None:
     # The active editor first (it carries unsaved edits); then every file in the document's
     # compile unit, so a uniform declared in a resolved lib file is jump-reachable. The
     # NON-creating getter: this is reachable while a session-less tab (the graph) is active,
@@ -94,7 +91,7 @@ def _locate_uniform_declaration(
             return session.source.path, line
     if app.current_document_id in app.ui_documents:
         active_path = session.source.path if session is not None else None
-        for source in render_pass.compile_unit.sources:
+        for source in app.panel_pass(app.current_document_id).compile_unit.sources:
             if source.path == active_path:
                 continue
             line = find_uniform_declaration_line(source.text, name)
@@ -104,12 +101,7 @@ def _locate_uniform_declaration(
 
 
 def _begin_ctrl(
-    app: App,
-    name: str,
-    render_pass: Pass,
-    count_suffix: str = "",
-    *,
-    playing: bool = False,
+    app: App, name: str, count_suffix: str = "", *, playing: bool = False
 ) -> None:
     """Lay out a uniform row: chip (already drawn) -> clickable name -> control.
 
@@ -122,12 +114,7 @@ def _begin_ctrl(
     imgui.same_line(_NAME_X)
     name_color = COLOR.STATE_INFO if playing else None
     uniform_name_label(
-        app,
-        name,
-        SIZE.UNIFORM_NAME_W,
-        render_pass,
-        text_color=name_color,
-        accent=name_color,
+        app, name, SIZE.UNIFORM_NAME_W, text_color=name_color, accent=name_color
     )
     if count_suffix:
         # Right-anchor the caption against the control column (047 F13), so it never overlaps the
@@ -228,17 +215,11 @@ def _pick_media_file() -> Path:
     return Path(results[0]) if results else Path()
 
 
-def draw_ui_uniform(app: App, ui_uniform: UIUniform, render_pass: Pass) -> None:
-    """One uniform's row, for `render_pass` -- the pass the caller is drawing.
-
-    The pass is an ARGUMENT rather than `App.panel_pass` (094 D4a): a surface that draws several
-    passes' rows in one frame names its own pass, and the chord-time resolver cannot answer for
-    more than one. `panel_pass` survives for the commands, which must infer a pass from nothing.
-    """
+def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
     if app.current_document_id not in app.ui_documents:
         return
 
-    panel_pass = render_pass
+    panel_pass = app.panel_pass(app.current_document_id)
     # The script drives a uniform ON A PASS (069 D3), so every driven/stopped question is asked
     # about the pass the panel is showing; `Pass` carries its source path, not its name.
     panel_pass_name = pass_name_of(panel_pass.source.path)
@@ -257,13 +238,7 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform, render_pass: Pass) -> None:
     )
 
     draw_input_type_selector(ui_uniform)
-    _begin_ctrl(
-        app,
-        name,
-        render_pass,
-        _count_suffix(ui_uniform, current_value),
-        playing=playing,
-    )
+    _begin_ctrl(app, name, _count_suffix(ui_uniform, current_value), playing=playing)
 
     if ui_uniform.input_type == "auto":
         clipped_caption(format_auto_value(current_value), SIZE.UNIFORM_CTRL_W)

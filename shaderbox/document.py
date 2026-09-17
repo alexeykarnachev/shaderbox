@@ -984,9 +984,7 @@ class Document:
                         # stale texture -- the chain would never advance. No-op unless this pass
                         # actually reads itself.
                         self._swap_feedback(name)
-            # `resolved`, not `output`: an export aimed at a non-output pass passes a canvas and
-            # would otherwise receive nothing, since the output is not in that pass's chain.
-            if canvas is not None and name == resolved:
+            if canvas is not None and name == output:
                 self._blit_into(render_pass.canvas, canvas)
 
     @classmethod
@@ -1073,31 +1071,15 @@ class Document:
         document._seed_feedback(document_dir, _feedback_rows(metadata))
         return document, metadata
 
-    def _export_chain(self, target_pass: str | None) -> list[str]:
-        """The passes an export of `target_pass` draws, in order -- the output's chain when None.
-
-        One home for the question, so the video restart and any later per-chain step cannot
-        disagree with what `render` actually draws.
-        """
-        resolved = target_pass if target_pass is not None else self.graph.output_pass
-        if resolved is None or resolved not in self.passes:
-            return []
-        order, _ = plan_for_output(self.effective_wiring(), resolved)
-        return [name for name in order if name in self.passes]
-
     def _render_image(
-        self,
-        details: MediaDetails,
-        canvas: "Canvas",
-        target_pass: str | None = None,
-        u_time: float | None = 0.0,
+        self, details: MediaDetails, canvas: "Canvas", u_time: float | None = 0.0
     ) -> MediaDetails:
         file_path = Path(details.file_details.path)
         t = u_time if u_time is not None else 0.0
         if self.on_pre_render is not None:
             self.on_pre_render(t, 0.0, 0)
         self.begin_frame()
-        self.render(u_time=t, canvas=canvas, target=target_pass)
+        self.render(u_time=t, canvas=canvas)
 
         pil_image = texture_to_pil(canvas.texture)
         if canvas.texture.size != (
@@ -1117,9 +1099,7 @@ class Document:
 
         return rendered_details
 
-    def _render_video(
-        self, details: MediaDetails, canvas: "Canvas", target_pass: str | None = None
-    ) -> MediaDetails:
+    def _render_video(self, details: MediaDetails, canvas: "Canvas") -> MediaDetails:
         file_path = Path(details.file_details.path)
         extension = file_path.suffix
         width = details.resolution_details.width
@@ -1181,11 +1161,7 @@ class Document:
             output_params=scale_params,
         )
 
-        # Every pass the export DRAWS, not just the output: a target export renders another
-        # chain, and a video bound to one of its passes would otherwise start wherever the live
-        # preview left the clip -- non-deterministic, and invisible in a still frame.
-        for name in self._export_chain(target_pass):
-            self.passes[name].restart_video_uniforms()
+        self.render_pass.restart_video_uniforms()
         n_frames = int(details.duration * details.fps)
         dt = 1.0 / details.fps
         try:
@@ -1193,7 +1169,7 @@ class Document:
                 if self.on_pre_render is not None:
                     self.on_pre_render(i / details.fps, dt, i)
                 self.begin_frame()
-                self.render(i / details.fps, canvas=canvas, target=target_pass)
+                self.render(i / details.fps, canvas=canvas)
 
                 frame = np.flipud(texture_to_rgba8(canvas.texture))
                 writer.append_data(frame)
@@ -1215,18 +1191,8 @@ class Document:
         return rendered_details
 
     def render_media(
-        self,
-        details: MediaDetails,
-        preset: RenderPreset | None = None,
-        target_pass: str | None = None,
+        self, details: MediaDetails, preset: RenderPreset | None = None
     ) -> MediaDetails:
-        """Export the document, or `target_pass` alone, to the file `details` names.
-
-        `target_pass` renders that pass and its ancestor chain instead of the output's, at the
-        size the document gives it (`canvas_size_for`) and with its own canvas format -- a
-        scaled pass exports scaled rather than letterboxed into the output's box. `None` is the
-        output, which is what every caller before 094 meant.
-        """
         # Every export funnels through here (Render tab / Share scratch / copilot tools), so the
         # script-isolation bracket lives here ONCE — no export caller can bypass it (feature 041).
         with self.export_isolation():
@@ -1238,29 +1204,17 @@ class Document:
             # canvas under Auto, where the document has no pair to read.
             # `resolution_details` is untouched either way: the Render tab's W x H still
             # decides what lands on disk, through the PIL resize and ffmpeg's -s.
-            # The source pass decides both the size and the canvas FORMAT: a scaled pass carries
-            # its own size, and reading the output's dtype/filter/wrap for it would export a
-            # float pass through a byte scratch.
-            source_pass = (
-                self.passes[target_pass]
-                if target_pass is not None and target_pass in self.passes
-                else self.render_pass
-            )
-            source_size = (
-                self.canvas_size_for(target_pass)
-                if target_pass is not None and target_pass in self.passes
-                else self.export_source_size()
-            )
+            source_size = self.export_source_size()
             if preset is None or preset.fit is FitPolicy.SCALE_DISTORT:
                 scratch = Canvas(
                     gl=self._gl,
                     size=source_size,
-                    dtype=source_pass.canvas.dtype,
-                    filter=source_pass.canvas.filter,
-                    wrap=source_pass.canvas.wrap,
+                    dtype=self.render_pass.canvas.dtype,
+                    filter=self.render_pass.canvas.filter,
+                    wrap=self.render_pass.canvas.wrap,
                 )
                 try:
-                    return self._render_media_into(details, scratch, target_pass)
+                    return self._render_media_into(details, scratch)
                 finally:
                     scratch.release()
 
@@ -1269,25 +1223,25 @@ class Document:
             details.resolution_details.width = target_w
             details.resolution_details.height = target_h
 
-            fitted = Canvas(
+            target = Canvas(
                 gl=self._gl,
                 size=(target_w, target_h),
-                dtype=source_pass.canvas.dtype,
-                filter=source_pass.canvas.filter,
-                wrap=source_pass.canvas.wrap,
+                dtype=self.render_pass.canvas.dtype,
+                filter=self.render_pass.canvas.filter,
+                wrap=self.render_pass.canvas.wrap,
             )
             try:
-                return self._render_media_into(details, fitted, target_pass)
+                return self._render_media_into(details, target)
             finally:
-                fitted.release()
+                target.release()
 
     def _render_media_into(
-        self, details: MediaDetails, canvas: "Canvas", target_pass: str | None = None
+        self, details: MediaDetails, canvas: "Canvas"
     ) -> MediaDetails:
         if details.is_video:
-            return self._render_video(details, canvas, target_pass)
+            return self._render_video(details, canvas)
         else:
-            return self._render_image(details, canvas, target_pass)
+            return self._render_image(details, canvas)
 
 
 def offered_entry_points(document: Document) -> list[str]:

@@ -196,9 +196,6 @@ class _ColorBag:
     GRAPH_GHOST_ALPHA: float = 0.45
     GRAPH_STALE_ALPHA: float = 0.5
     GRAPH_DIM_ALPHA: float = 0.35
-    # The focus scrim's own alpha (094 D10). Distinct from GRAPH_DIM_ALPHA, which is a FADE
-    # applied to a wire's color rather than the opacity of a rect drawn over the canvas.
-    GRAPH_SCRIM_ALPHA: float = 0.72
     GRAPH_BAND_FILL_ALPHA: float = 0.12
     GRAPH_BAND_EDGE_ALPHA: float = 0.8
     GRAPH_GUIDE_ALPHA: float = 0.7
@@ -302,7 +299,7 @@ class SIZE:
     SORT_COMBO_W: int = 150
     TAB_MIN_W: int = 72
     NAME_INPUT_W: int = 180
-    # The focused node's engine-uniform block: a fixed name column so the rows read as a
+    # The Document tab's engine-uniform block: a fixed name column so the rows read as a
     # block. 128 fits the longest engine name in the 12px face.
     AUTO_NAME_W: int = 128
 
@@ -317,7 +314,7 @@ class SIZE:
     SMOOTHING_DRAG_W: int = 90  # the Window/Sigma drags beside a video thumbnail
 
     THUMB_LG: int = 150
-    # A sampler row's picture on a focused node: big enough to read what it reads.
+    # A sampler row's picture on the Uniforms tab: big enough to read what it reads.
     PASS_THUMB: int = 112
     # One pass's tile in the horizontal pass strip; the strip wraps when a document's
     # passes outgrow the panel width.
@@ -329,14 +326,9 @@ class SIZE:
     # names (an `ellipsize` cuts anything longer), its picture, one port row, the dot and the
     # screen-pixel floor its hit box keeps under zoom; the layout's gaps; the snap distance;
     # the zoom clamp.
-    GRAPH_NODE_W: int = 560
-    GRAPH_BOX_EXTRA_W: int = 24
-    GRAPH_THUMB: int = 540
-    # The picture's HEIGHT. It used to be `GRAPH_THUMB` on both axes -- a square the document
-    # letterboxed into -- which was fine at 116px and absurd once the card widened to hold a
-    # full uniform row: a 540px square makes a 600px card. 16:9 is the default document shape,
-    # and a taller document still fits inside by the same letterbox.
-    GRAPH_THUMB_H: int = 304
+    GRAPH_NODE_W: int = 136
+    GRAPH_BOX_EXTRA_W: int = 40
+    GRAPH_THUMB: int = 116
     # The picture sits this far inside the card's top and both sides; the invariant below
     # keeps the width the sum. `GRAPH_PAD` is the gap the name row keeps under it.
     GRAPH_THUMB_INSET: int = 10
@@ -353,27 +345,6 @@ class SIZE:
     GRAPH_GAP_X: int = 64
     GRAPH_GAP_Y: int = 20
     GRAPH_SNAP_PX: int = 6
-    # The node's levels of detail, in SCREEN px of node width rather than in zoom (094 D5/D5a).
-    # Zoom was the obvious key and the wrong one: `_fit` clamps at 1.0 and never zooms in, so a
-    # six-pass chain lands at 0.50 and a threshold expressed in zoom would hide the rows for
-    # every document but a short chain. What decides a row is whether its control can be read,
-    # which is `GRAPH_NODE_W * zoom`. At 200px a vec4 component gets ~38px, which is the width
-    # of "0.000"; below 96px the name is a smudge that costs a font push per node.
-    # A compact uniform row on a node: its name column, its height, and how many the scroll
-    # window shows before the rest scroll (094 D6 -- 8-10 visible, so the node has a ceiling).
-    # A documents-dropdown row's preview (094 D16): small enough to be a recognition cue, large
-    # enough to read as a picture rather than a coloured smudge.
-    DOC_ROW_THUMB_W: int = 48
-    DOC_ROW_THUMB_H: int = 27
-    GRAPH_ROW_NAME_W: int = 62
-    GRAPH_ROW_H: int = 16
-    GRAPH_ROWS_VISIBLE: int = 9
-    # The focused node's body panel (094 D9c): big enough for the Render controls beside a
-    # preview and for the Share outlet, capped by the canvas at draw time.
-    GRAPH_FOCUS_W: int = 620
-    GRAPH_FOCUS_H: int = 420
-    GRAPH_LOD_ROWS_PX: float = 200.0
-    GRAPH_LOD_NAME_PX: float = 96.0
     GRAPH_ZOOM_MIN: float = 0.25
     GRAPH_ZOOM_MAX: float = 2.5
     GRAPH_ROUNDING: int = 6
@@ -406,6 +377,7 @@ class SIZE:
     SHARE_PREVIEW_W: int = 200
     SHARE_PREVIEW_H: int = 335
 
+    FPS_PANEL_W: int = 280
     SETTINGS_W: int = 780
     SETTINGS_H: int = 968
     SETTINGS_LABEL_W: int = 92

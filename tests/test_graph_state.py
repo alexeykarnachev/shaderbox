@@ -8,7 +8,6 @@ import itertools
 import math
 from pathlib import Path
 
-from shaderbox.pass_graph import group_runs
 from shaderbox.theme import SIZE
 from shaderbox.widgets import pass_graph
 from shaderbox.widgets.graph_state import (
@@ -83,7 +82,7 @@ def test_a_node_grows_one_row_per_port_and_a_box_is_wider() -> None:
     assert node_size(0, True)[0] == w0 + SIZE.GRAPH_BOX_EXTRA_W
     # A card with NO ports pays neither.
     assert h0 == float(
-        SIZE.GRAPH_THUMB_INSET + SIZE.GRAPH_THUMB_H + SIZE.GRAPH_NAME_H + SIZE.GRAPH_PAD
+        SIZE.GRAPH_THUMB_INSET + SIZE.GRAPH_THUMB + SIZE.GRAPH_NAME_H + SIZE.GRAPH_PAD
     )
 
 
@@ -272,53 +271,26 @@ def test_the_drag_lock_is_passed_at_every_site() -> None:
         )
 
 
-def test_the_channels_carry_the_layers_in_order() -> None:
+def test_the_five_channels_carry_the_layers_in_order() -> None:
     """G12: paint order follows the CHANNEL INDEX rather than the call order, so the index a
     layer is assigned is the whole layering decision -- halos under strokes under nodes under
-    the focus scrim under the focused card under the wire in flight under the overlays.
+    the wire in flight under the overlays.
 
-    094 D10 inserted the scrim and the focused card in the middle, which shifted two constants
-    whose `channels_set_current` calls happen AFTER the node loop. The count is derived from
-    the constants (`_CH_COUNT`) rather than written twice, so the split can no longer disagree
-    with them -- an off-by-one there paints the scrim over the card it is meant to sit under,
-    which has no headless signal of its own.
-
-    Falsifier: swap two constants and the ordering assert flips; drop one from `_CH_COUNT`'s
-    reach and the contiguity assert fires.
+    Falsifier: swap two of the five constants and the pairs below flip. The split and the
+    merge are counted because an unmatched either leaves the canvas' draw list broken.
     """
     source = _widget_source()
-    assert source.count("channels_split(_CH_COUNT)") == 1
+    assert source.count("channels_split(5)") == 1
     assert source.count("channels_merge()") == 1
     layers = [
         pass_graph._CH_HALO,
         pass_graph._CH_WIRE,
         pass_graph._CH_NODE,
-        pass_graph._CH_SCRIM,
-        pass_graph._CH_FOCUS,
         pass_graph._CH_INFLIGHT,
         pass_graph._CH_OVERLAY,
     ]
-    assert layers == list(range(len(layers))), layers
-    # The split must make exactly the channels the constants name: a contiguous range whose
-    # count is one past the topmost.
-    assert len(layers) == pass_graph._CH_COUNT
-    # Every channel is actually used, and nothing reaches for one the split never made.
-    for name in ("HALO", "WIRE", "NODE", "SCRIM", "FOCUS", "INFLIGHT", "OVERLAY"):
+    assert layers == [0, 1, 2, 3, 4], layers
+    # Every channel is actually used, and nothing reaches for a sixth the split never made.
+    for name in ("HALO", "WIRE", "NODE", "INFLIGHT", "OVERLAY"):
         assert f"channels_set_current(_CH_{name})" in source, name
-    assert f"channels_set_current({pass_graph._CH_COUNT}" not in source
-
-
-# ---- 094 C10: the pass strip is deleted; `group_runs` is `pass_graph`'s and outlives it ----
-
-
-def test_group_runs_cut_by_adjacency_not_by_name() -> None:
-    # 091 D7. Falsifier: a `defaultdict(list)` keyed by group name merges the split run.
-    groups = {"a": "", "b": "g", "c": "g", "d": "", "e": "g"}
-    assert group_runs(["a", "b", "c", "d", "e"], groups) == [
-        ["a"],
-        ["b", "c"],
-        ["d"],
-        ["e"],
-    ]
-    assert group_runs(["b", "c"], groups) == [["b", "c"]]
-    assert group_runs(["a", "d"], groups) == [["a"], ["d"]]
+    assert "channels_set_current(5" not in source

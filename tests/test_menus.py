@@ -10,6 +10,7 @@ that as a library fact). The layering and one-spelling questions are pure source
 
 import ast
 from collections.abc import Callable, Iterator
+from dataclasses import replace
 from functools import partial
 from itertools import pairwise
 from pathlib import Path
@@ -33,7 +34,7 @@ from shaderbox.commands import (
 from shaderbox.constants import STARTER_EXAMPLE_ID
 from shaderbox.menus import command_hint
 from shaderbox.popups.registry import BY_ID, close_modal
-from shaderbox.widgets import document_grid, pass_graph, pass_menu
+from shaderbox.widgets import document_grid, pass_graph, pass_list
 
 # The imgui font atlas is process-global, so every frame-driving module owns a worker.
 pytestmark = pytest.mark.xdist_group("gl_frames_menus")
@@ -318,12 +319,12 @@ def test_the_pass_set_is_the_same_on_the_strip_and_the_node(
     assert app.session.add_pass(document_id, "other") == ""
 
     spy.labels.clear()
-    _frame(lambda: pass_menu.pass_menu_items(app, document_id, name))
+    _frame(lambda: pass_list.pass_menu_items(app, document_id, name))
     shared = list(spy.labels)
 
     spy.labels.clear()
     _frame(
-        lambda: pass_menu.pass_menu_items(
+        lambda: pass_list.pass_menu_items(
             app, document_id, name, slot=lambda: imgui.menu_item_simple("Group")
         )
     )
@@ -358,11 +359,11 @@ def test_an_ungrouped_pass_draws_one_separator_before_delete(app: Any) -> None:
     imgui.separator = separator
     imgui.menu_item_simple = simple
     try:
-        _frame(lambda: pass_menu.pass_menu_items(app, document_id, name))
+        _frame(lambda: pass_list.pass_menu_items(app, document_id, name))
         ungrouped = list(order)
         order.clear()
         app.session.set_pass_group(document_id, name, "g")
-        _frame(lambda: pass_menu.pass_menu_items(app, document_id, name))
+        _frame(lambda: pass_list.pass_menu_items(app, document_id, name))
         grouped = list(order)
     finally:
         imgui.separator = real_separator
@@ -398,6 +399,7 @@ def test_a_documents_menu_carries_every_verb_on_that_document(
     _frame(lambda: document_grid.document_menu_items(app, document_id))
     assert spy.labels == [
         "Open script",
+        "Open graph",
         "Open folder",
         "Reset",
         "Delete",
@@ -424,6 +426,7 @@ def test_a_tile_menus_verbs_target_that_tiles_document(
 
     seen: dict[str, str] = {}
     monkeypatch.setattr(app, "open_script_for", lambda i, **k: seen.update(script=i))
+    monkeypatch.setattr(app, "open_graph_for", lambda i, **k: seen.update(graph=i))
     monkeypatch.setattr(app, "open_document_dir", lambda i: seen.update(folder=i))
     monkeypatch.setattr(app, "reset_document", lambda i: seen.update(reset=i))
     monkeypatch.setattr(app, "reset_current_document", lambda: seen.update(reset=other))
@@ -434,11 +437,12 @@ def test_a_tile_menus_verbs_target_that_tiles_document(
         app, "delete_current_document_confirmed", lambda: seen.update(delete=other)
     )
 
-    for label in ("Open script", "Open folder", "Reset", "Delete"):
+    for label in ("Open script", "Open graph", "Open folder", "Reset", "Delete"):
         _frame(partial(_fire_menu_item, app, target, label))
 
     assert seen == {
         "script": target,
+        "graph": target,
         "folder": target,
         "reset": target,
         "delete": target,
@@ -470,15 +474,11 @@ def test_a_tile_menus_chord_hints_follow_the_binding(app: Any) -> None:
 
     Falsifier: hard-code the default in `command_hint` -- the rebind below stops showing.
     """
-    # Rebind one command to ANOTHER's chord, so the hint must change for the rebind to show.
-    # (094 C10 deleted `OPEN_GRAPH`, which this used to move; the claim is about the lookup.)
-    before = command_hint(app, CommandId.OPEN_SCRIPT)
-    app.effective_bindings[CommandId.OPEN_SCRIPT] = _chord_of(
-        app, CommandId.OPEN_PASS_SETTINGS
-    )
-    after = command_hint(app, CommandId.OPEN_SCRIPT)
+    before = command_hint(app, CommandId.OPEN_GRAPH)
+    app.effective_bindings[CommandId.OPEN_GRAPH] = _chord_of(app, CommandId.OPEN_SCRIPT)
+    after = command_hint(app, CommandId.OPEN_GRAPH)
     assert after != before, "the hint ignored the rebinding"
-    assert after == command_hint(app, CommandId.OPEN_PASS_SETTINGS)
+    assert after == command_hint(app, CommandId.OPEN_SCRIPT)
 
 
 def _chord_of(app: Any, command_id: CommandId) -> int:
@@ -576,6 +576,21 @@ def test_the_lib_delete_still_trashes_and_toasts(app: Any) -> None:
 # ---------------------------------------------------------------------------
 # M6 — the document tile carries no button
 # ---------------------------------------------------------------------------
+
+
+def test_the_document_tile_draws_no_delete_cross(app: Any, monkeypatch: Any) -> None:
+    """M6: the grid passes `deletable=False`, so `preview_cell` submits no `del_document_*`
+    item at all. Falsifier: flip it back -- the cross button is submitted again."""
+    crosses: list[str] = []
+    real = ui_primitives.close_cross_button
+
+    def spy(id_: str, side: float) -> bool:
+        crosses.append(id_)
+        return real(id_, side)
+
+    monkeypatch.setattr(ui_primitives, "close_cross_button", spy)
+    _frame(lambda: document_grid.draw_document_preview_grid(app, 600.0, 400.0))
+    assert crosses == [], f"the grid still draws a delete cross: {crosses}"
 
 
 def test_the_armed_document_delete_state_is_gone(app: Any) -> None:
@@ -803,7 +818,7 @@ def test_the_pass_delete_item_opens_the_confirm_rather_than_deleting(
     name = next(iter(app.ui_documents[document_id].document.passes))
     assert app.session.add_pass(document_id, "other") == ""
     driver = _MenuDriver(
-        lambda: pass_menu.pass_menu_items(app, document_id, name), monkeypatch
+        lambda: pass_list.pass_menu_items(app, document_id, name), monkeypatch
     )
     driver.open_menu()
     with mock.patch.object(
@@ -956,6 +971,32 @@ def test_each_registry_row_runs_its_own_cleanup(
         assert close_modal(app) is True
     assert app.modal is None
     cleaned(app, applied)
+
+
+def test_the_grids_new_document_button_reads_its_label_from_the_registry(
+    app: Any, monkeypatch: Any
+) -> None:
+    """The button shows whatever `NEW_DOCUMENT` is called, rather than its own copy.
+
+    The two strings agree today, so a hardcoded copy shows nothing until someone renames the
+    command and the button keeps the old word. Falsifier: hardcode the label again -- the
+    rename below stops reaching the button.
+    """
+    seen: list[str] = []
+    real = document_grid.standard_button
+
+    def spy(label: str, *args: Any, **kwargs: Any) -> bool:
+        seen.append(label)
+        return real(label, *args, **kwargs)
+
+    monkeypatch.setattr(document_grid, "standard_button", spy)
+    monkeypatch.setitem(
+        SPEC_BY_ID,
+        CommandId.NEW_DOCUMENT,
+        replace(SPEC_BY_ID[CommandId.NEW_DOCUMENT], label="Fresh document"),
+    )
+    _frame(lambda: document_grid.draw_document_preview_grid(app, 400.0, 400.0))
+    assert "Fresh document" in seen, seen
 
 
 def test_no_context_menu_hand_rolls_a_label_a_command_owns() -> None:

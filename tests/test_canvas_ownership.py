@@ -329,12 +329,7 @@ def test_an_export_canvas_carries_the_output_passs_format(
     seen: dict[str, object] = {}
     original = Document._render_media_into
 
-    def capture(
-        self: Document,
-        details: MediaDetails,
-        canvas: Canvas,
-        target_pass: str | None = None,
-    ) -> MediaDetails:
+    def capture(self: Document, details: MediaDetails, canvas: Canvas) -> MediaDetails:
         seen["dtype"] = canvas.dtype
         seen["filter"] = canvas.filter
         seen["wrap"] = canvas.wrap

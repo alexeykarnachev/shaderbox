@@ -32,8 +32,7 @@ from itertools import pairwise
 from pathlib import Path
 from typing import Literal
 
-from imgui_bundle import imgui, imgui_ctx
-from loguru import logger
+from imgui_bundle import imgui
 
 from shaderbox.app import App
 from shaderbox.commands import CommandId
@@ -52,18 +51,14 @@ from shaderbox.pass_graph import (
     strip_order,
 )
 from shaderbox.project_session import compile_pending_passes
-from shaderbox.tabs import render as render_tab
-from shaderbox.tabs import share as share_tab
 from shaderbox.theme import COLOR, SIZE, SPACE, fade, group_tint
 from shaderbox.ui_primitives import (
     context_menu_style,
     ellipsize,
     name_input_row,
     primary_button,
-    standard_button,
     text_tab_row,
 )
-from shaderbox.widgets.document_grid import document_menu_items
 from shaderbox.widgets.graph_state import (
     GraphViewState,
     NodeDrag,
@@ -84,9 +79,7 @@ from shaderbox.widgets.graph_state import (
     wire_points,
     wire_state,
 )
-from shaderbox.widgets.pass_menu import pass_menu_items
-from shaderbox.widgets.uniform import draw_ui_uniform
-from shaderbox.widgets.uniform_rows import compact_row_count, pass_rows
+from shaderbox.widgets.pass_list import pass_menu_items
 
 NodeKind = Literal["pass", "box", "ghost"]
 
@@ -95,9 +88,6 @@ _CYCLE_PREFIX = "passes form a cycle"
 # numeric suffix is appended until no group carries it, so the label is always distinct.
 _ROOT_LABEL = "document"
 _FIT_MARGIN = float(SPACE.LG)
-# How far the canvas region may move before the camera re-fits (094 D1c). Wide enough that a
-# one-pixel layout jitter does not re-frame the graph under the user's hands.
-_REFIT_PX = 24.0
 _ZOOM_STEP = 1.1
 # The port dot's inner shapes, as fractions of its radius: the NoSource center, the media
 # square's half side.
@@ -481,7 +471,7 @@ class _Xf:
 def _thumb_rect(node: _Node) -> tuple[float, float, float, float]:
     x = node.pos[0] + (node.size[0] - SIZE.GRAPH_THUMB) / 2.0
     y = node.pos[1] + SIZE.GRAPH_THUMB_INSET
-    return x, y, x + SIZE.GRAPH_THUMB, y + SIZE.GRAPH_THUMB_H
+    return x, y, x + SIZE.GRAPH_THUMB, y + SIZE.GRAPH_THUMB
 
 
 def _port_point(node: _Node, slot: int) -> tuple[float, float]:
@@ -602,20 +592,11 @@ def _dashed_rect(
 
 
 # The five channels one canvas frame splits into (093 G12), lowest first.
-# The canvas's draw-list channels, low to high. The WRITE order is not this order -- the
-# in-flight wire and the overlays are written after the node loop -- so a new channel means
-# renumbering here AND bumping the split count below, which `_CH_COUNT` now derives.
 _CH_HALO = 0
 _CH_WIRE = 1
 _CH_NODE = 2
-# The focus scrim: one rect over everything above, under the focused node alone (094 D10). One
-# rect rather than an alpha pass over every node and wire -- that would be N draws and would
-# leak through overlapping shapes.
-_CH_SCRIM = 3
-_CH_FOCUS = 4
-_CH_INFLIGHT = 5
-_CH_OVERLAY = 6
-_CH_COUNT = _CH_OVERLAY + 1
+_CH_INFLIGHT = 3
+_CH_OVERLAY = 4
 
 
 def _draw_wire(
@@ -883,61 +864,12 @@ def _tab_row(
     labels = [root_label, *groups]
     scopes = ["", *groups]
     active = labels[scopes.index(view.scope)] if view.scope in scopes else root_label
-
-    # The first crumb is the DOCUMENT, so it carries the document's own affordances (094 D14):
-    # a left click opens the documents list, a right click that document's verbs. Drawn before
-    # the scope row and outside the canvas's copilot-turn bracket, so switching documents stays
-    # possible during a turn -- it is now the only way.
-    if standard_button(f"{root_label} v##documents"):
-        app.documents_dropdown_open = True
-        imgui.open_popup("##documents_menu")
-    with context_menu_style():
-        if imgui.begin_popup_context_item("##document_verbs"):
-            document_menu_items(app, document_id)
-            imgui.end_popup()
-    _documents_dropdown(app)
-    if groups:
-        imgui.same_line()
-        clicked = text_tab_row("graph_scope", labels, active)
-        if clicked is not None:
-            index = labels.index(clicked)
-            if scopes[index] != view.scope:
-                view.scope = scopes[index]
-                view.fitted = False
-
-
-def _documents_dropdown(app: App) -> None:
-    """The documents list, with a live preview per row (094 D16).
-
-    The open state is an APP field, not imgui's: the whole render-set computation runs before
-    `imgui.new_frame()`, so nothing in the planning path could read a popup's state. The set is
-    therefore one frame stale in both directions, which is the same lag the throttle already has.
-    """
-    with context_menu_style():
-        if not imgui.begin_popup("##documents_menu"):
-            app.documents_dropdown_open = False
-            return
-        for document_id, ui_document in app.ui_documents.items():
-            current = document_id == app.current_document_id
-            texture = ui_document.document.render_pass.canvas.texture
-            imgui.image(
-                imgui.ImTextureRef(texture.glo),
-                imgui.ImVec2(float(SIZE.DOC_ROW_THUMB_W), float(SIZE.DOC_ROW_THUMB_H)),
-                imgui.ImVec2(0, 1),
-                imgui.ImVec2(1, 0),
-            )
-            imgui.same_line()
-            marked = "*" if current else " "
-            if imgui.menu_item_simple(f"{marked} {ui_document.ui_state.ui_name}"):
-                app.select_document(document_id)
-            with context_menu_style():
-                if imgui.begin_popup_context_item(f"##doc_verbs_{document_id}"):
-                    document_menu_items(app, document_id)
-                    imgui.end_popup()
-        imgui.separator()
-        command_menu_item(app, CommandId.NEW_DOCUMENT)
-        command_menu_item(app, CommandId.OPEN_PROJECTS)
-        imgui.end_popup()
+    clicked = text_tab_row("graph_scope", labels, active)
+    if clicked is not None:
+        index = labels.index(clicked)
+        if scopes[index] != view.scope:
+            view.scope = scopes[index]
+            view.fitted = False
 
 
 def _canvas_menu(app: App, document_id: str, view: GraphViewState) -> None:
@@ -972,15 +904,6 @@ def draw(app: App, document_id: str) -> None:
     group_names = group_names_in_order(order, groups)
     view.scope = revalidated_scope(view.scope, set(group_names))
     view.selection &= set(document.passes)
-    # The focused pass is revalidated like every other name the view holds (094 D9a). Without
-    # it, deleting or renaming the focused pass -- reachable from its own context menu -- leaves
-    # a scrim over a canvas with no node to click. A scope change drops it too: a focused pass
-    # outside the open group has no card under the scrim.
-    if view.focused_pass is not None and (
-        view.focused_pass not in document.passes
-        or entries.get(view.focused_pass, PassEntry()).group != view.scope
-    ):
-        app.leave_focused_node()
 
     imgui.begin_disabled(app.copilot_turn_active)
     _tab_row(app, document_id, view, group_names)
@@ -1018,21 +941,12 @@ def _draw_canvas(
     released_elsewhere = not mouse_down and not imgui.is_mouse_released(
         imgui.MouseButton_.left
     )
-    # A focused node refuses every background gesture the same way a copilot turn does (094
-    # D10): the scrim is modal, so a press on a dimmed node must not select it and a press on
-    # the background must not pan or band. `frozen` is the precedent and `blocked` the one
-    # latch every gesture branch already reads, so the refusal rides both rather than being
-    # repeated per branch.
-    focused = view.focused_pass is not None
-    frozen = app.copilot_turn_active or focused
+    frozen = app.copilot_turn_active
     if mouse_down and frozen:
         # A press held across a turn stays no gesture after it: the item is still active
         # when the turn ends, and the start branches would otherwise rebuild the drag.
         view.press_blocked = True
     if released_elsewhere or frozen:
-        # Entering focus cancels any live gesture for the same reason a turn does: a drag whose
-        # release lands behind the scrim would commit a position the user cannot see, and the
-        # node written is whichever was under the hand, not the focused one (094 D9b).
         view.node_drag = None
         view.wire_drag = None
         view.band_anchor = None
@@ -1065,18 +979,8 @@ def _draw_canvas(
     view.selected_wire = revalidated_wire(
         view.selected_wire, {edge.wire_id for edge in picture.edges}
     )
-    # A REGION resize re-fits (094 D1c). `fitted` is a one-shot, which was right while the graph
-    # was an editor tab whose pane only moved with the vertical splitter -- hosted in the app
-    # panel its height is a dragged control, so a camera that never re-fits leaves the graph
-    # cropped with no cue and no recovery but `Frame all`.
-    if view.fitted_size != (0.0, 0.0) and (
-        abs(avail.x - view.fitted_size[0]) > _REFIT_PX
-        or abs(avail.y - view.fitted_size[1]) > _REFIT_PX
-    ):
-        view.fitted = False
     if not view.fitted:
         _fit(view, nodes, picture, avail)
-        view.fitted_size = (avail.x, avail.y)
     xf = _Xf(origin, view.pan, view.zoom)
     dl = imgui.get_window_draw_list()
     output = document.graph.output
@@ -1097,7 +1001,7 @@ def _draw_canvas(
     # ---- the picture: halos, wires, nodes, then the overlays ----
     # Five channels, and paint order follows the channel index rather than the call order, so
     # one wire's halo can never cover a neighbor's crisp stroke.
-    dl.channels_split(_CH_COUNT)
+    dl.channels_split(5)
     edge_col = _u32(COLOR.GRAPH_EDGE)
     dim_col = _u32(fade(COLOR.GRAPH_EDGE, COLOR.GRAPH_DIM_ALPHA))
     err_col = _u32(COLOR.STATE_ERROR)
@@ -1149,24 +1053,8 @@ def _draw_canvas(
     # over a merely selected one, since it is the card the hand is on.
     nodes.sort(key=lambda n: (dragged_of[n.key], selected_of[n.key]))
     view.node_order = [node.key for node in nodes]
-    # The scrim: ONE rect over the whole canvas, between the nodes and the focused one. Drawn
-    # before the node loop so the loop can put the focused card on the channel above it.
-    if focused:
-        dl.channels_set_current(_CH_SCRIM)
-        dl.add_rect_filled(
-            (origin.x, origin.y),
-            (origin.x + avail.x, origin.y + avail.y),
-            _u32(fade(COLOR.BG_APP, COLOR.GRAPH_SCRIM_ALPHA)),
-        )
     dl.channels_set_current(_CH_NODE)
     for node in nodes:
-        # The focused card draws above the scrim; every other node stays under it. Written as
-        # two explicit calls rather than one conditional index: the layering gate greps for the
-        # call form, and a channel set only through an expression reads as unused.
-        if focused and node.name == view.focused_pass:
-            dl.channels_set_current(_CH_FOCUS)
-        else:
-            dl.channels_set_current(_CH_NODE)
         is_output = (
             node.name == output if node.kind != "box" else output in node.members
         )
@@ -1371,14 +1259,6 @@ def _draw_canvas(
     view.hovered_node = None if dot else node_hovered
     view.hovered_wire = None if (dot or node_hovered) else wire_hovered
 
-    # ---- the scrim's own click: leave the mode on RELEASE (094 D10) ----
-    # On release rather than on press: a press-time exit leaves the button still down on the
-    # next frame with the focus cleared, where the freshly-hovered background starts a rubber
-    # band from a click the user made on a scrim. The latch is what refuses that.
-    if focused and hovered and imgui.is_mouse_released(imgui.MouseButton_.left):
-        view.press_blocked = True
-        app.leave_focused_node()
-
     # ---- the background press, decided against this frame's hover (093 S4) ----
     if bg_pressed and not blocked:
         if view.hovered_wire is not None:
@@ -1462,14 +1342,6 @@ def _draw_canvas(
             )
     dl.channels_merge()
 
-    # ---- the uniform rows: real imgui widgets, so AFTER the merge (094 D4b) ----
-    # A `drag_float` emits into `get_window_draw_list()` -- the same list that was split -- so a
-    # row submitted between the split and the merge lands in whatever channel was current and is
-    # re-ordered by the merge, tearing the widget. The node PICTURES are draw-list calls and
-    # belong inside; the rows are items and belong here, with the hit-test buttons.
-    _draw_uniform_rows(app, document_id, document, view, xf, nodes, dl)
-    _draw_focus_body(app, view, origin, avail)
-
     # ---- Delete unwires the selected wire, read HERE and once (093 S5) ----
     # The position is the decision: on a release frame `is_any_item_active` is True at the top
     # of this function and False here, and `is_window_hovered` the reverse, so a read at the
@@ -1499,142 +1371,6 @@ def _draw_canvas(
     # node click of S4 is refused too; the next frame is clean (093 S6).
     if not mouse_down:
         view.press_blocked = False
-
-
-def _draw_uniform_rows(
-    app: App,
-    document_id: str,
-    document: Document,
-    view: GraphViewState,
-    xf: _Xf,
-    nodes: Sequence[_Node],
-    dl: imgui.ImDrawList,
-) -> None:
-    """Each pass node's uniform rows, under its card and OUTSIDE its layout box (094 D4/D4b).
-
-    Outside the box on purpose: `node_size` is what the rank layout, `Arrange`, `_bbox` and the
-    two port-point helpers all derive from independently, and a row block inside it would make
-    the canvas footprint depend on the zoom -- which is D7's own prohibition applied to an
-    ordinary node.
-
-    Drawn only at the NEAR level of detail, which is keyed on the node's screen width rather
-    than on the zoom: `_fit` clamps at 1.0 and never zooms in, so a six-pass chain sits at 0.50
-    and a zoom-keyed threshold would hide the rows for every document but a short chain.
-    """
-    view.row_rects.clear()
-    if view.zoom * SIZE.GRAPH_NODE_W < SIZE.GRAPH_LOD_ROWS_PX:
-        return
-    ui_document = app.ui_documents.get(document_id)
-    if ui_document is None:
-        return
-    ui_uniforms = ui_document.ui_state.ui_uniforms
-    row_h = SIZE.GRAPH_ROW_H * view.zoom
-    for node in nodes:
-        if node.kind != "pass":
-            continue
-        render_pass = document.passes.get(node.name)
-        if render_pass is None or render_pass.program is None:
-            continue
-        value_hashes, _auto = pass_rows(
-            render_pass,
-            node.name,
-            ui_uniforms,
-            app.uniform_sort_key,
-            app.uniform_sort_desc,
-        )
-        if not value_hashes:
-            continue
-        shown = value_hashes[: compact_row_count(value_hashes)]
-        # A DIMMED node's rows draw but take no input (094 D10, check 5b): refusing the canvas's
-        # GESTURES does not reach an imgui widget, so without this a drag on a row behind the
-        # scrim still moves its value -- the scrim would be modal to the eye and not to the hand.
-        dimmed = view.focused_pass is not None and node.name != view.focused_pass
-        p0 = xf.to_screen(node.pos)
-        p1 = xf.to_screen((node.pos[0] + node.size[0], node.pos[1] + node.size[1]))
-        # The rows read as part of the CARD, not as loose text under it: one rounded panel in
-        # the card's own surface color, drawn on the same channel the node used so it sits under
-        # nothing the node draws. Without it the rows float on the canvas background and the
-        # node stops looking like one object.
-        pad = SIZE.GRAPH_PAD * view.zoom
-        block_h = len(shown) * row_h + 2 * pad
-        dl.add_rect_filled(
-            (p0[0], p1[1]),
-            (p1[0], p1[1] + block_h),
-            _u32(COLOR.BG_SURFACE),
-            SIZE.GRAPH_ROUNDING * view.zoom,
-        )
-        dl.add_rect(
-            (p0[0], p1[1]),
-            (p1[0], p1[1] + block_h),
-            _u32(COLOR.BORDER),
-            SIZE.GRAPH_ROUNDING * view.zoom,
-        )
-        imgui.begin_disabled(dimmed)
-        # The small face, the one the port labels already use: a uniform name is long
-        with imgui_ctx.push_id(f"rows_{node.key}"):
-            for index, hash_key in enumerate(shown):
-                y = p1[1] + pad + index * row_h
-                # The REAL row, unchanged: the chip, the blue name while a script drives it, the
-                # jump bridge, the play/stop, every input type's own control. It flows from the
-                # cursor, so the cursor is placed and the row lays itself out from there.
-                imgui.set_cursor_screen_pos(
-                    (p0[0] + SIZE.GRAPH_THUMB_INSET * view.zoom, y)
-                )
-                draw_ui_uniform(app, ui_uniforms[hash_key], render_pass)
-                view.row_rects[(node.name, ui_uniforms[hash_key].name)] = (
-                    p0[0],
-                    y,
-                    p1[0],
-                    y + row_h,
-                )
-        imgui.end_disabled()
-
-
-def _draw_focus_body(
-    app: App, view: GraphViewState, origin: imgui.ImVec2, avail: imgui.ImVec2
-) -> None:
-    """The focused node's panel: the Render or Share body, over the scrim (094 D11).
-
-    Without this the mode was a scrim and nothing else -- the state was written, the canvas
-    dimmed, and no body ever drew. "Defined is not wired", and the check list had no item that
-    would have caught it, which is why one lands with this.
-
-    The body is the REUSED tab body, bracketed: it runs inside the canvas child, and an escape
-    from it would unwind past the child's own `end_child`.
-    """
-    if view.focused_pass is None or view.focused_mode not in ("render", "share"):
-        return
-    width = min(float(SIZE.GRAPH_FOCUS_W), avail.x - 2 * float(SPACE.LG))
-    height = min(float(SIZE.GRAPH_FOCUS_H), avail.y - 2 * float(SPACE.LG))
-    imgui.set_cursor_screen_pos(
-        (
-            origin.x + (avail.x - width) / 2.0,
-            origin.y + (avail.y - height) / 2.0,
-        )
-    )
-    imgui.push_style_color(imgui.Col_.child_bg, COLOR.BG_POPUP)
-    child_open = imgui.begin_child(
-        "##focus_body",
-        size=imgui.ImVec2(width, height),
-        child_flags=imgui.ChildFlags_.borders,
-        window_flags=imgui.WindowFlags_.no_nav_inputs,
-    )
-    imgui.pop_style_color(1)
-    if child_open:
-        title = "Render" if view.focused_mode == "render" else "Share"
-        imgui.text_colored(COLOR.FG_TITLE, f"{title}  {view.focused_pass}")
-        imgui.dummy((0.0, float(SPACE.MD)))
-        try:
-            if view.focused_mode == "render":
-                render_tab.draw(app)
-            else:
-                share_tab.draw(app)
-        except Exception as e:
-            logger.error(f"Error in the focused node's {view.focused_mode} body: {e}")
-            app.notifications.push(
-                f"{title} panel failed: {e!s}", COLOR.STATE_ERROR[:3]
-            )
-    imgui.end_child()
 
 
 def _touches(node: _Node, names: set[str]) -> bool:
@@ -1768,15 +1504,6 @@ def _node_menu(app: App, document_id: str, view: GraphViewState, node: _Node) ->
                         view.group_input.open(Path(node.name), buf="")
 
                 pass_menu_items(app, document_id, node.name, slot=group_item)
-                imgui.separator()
-                # Two modes, not three: the node already SHOWS its uniforms, so a menu item
-                # opening them said nothing the card was not already saying.
-                for label, mode in (
-                    ("Render...", "render"),
-                    ("Share document...", "share"),
-                ):
-                    if imgui.menu_item_simple(label):
-                        app.focus_node(document_id, node.name, mode)
             imgui.end_popup()
 
 

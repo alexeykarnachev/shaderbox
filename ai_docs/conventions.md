@@ -587,13 +587,9 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   acts on the ACTIVE tab: `flush_current_editor()` flushes its dirty editor before any save; the mtime
   watcher re-syncs every open session from disk on external change (disk wins). A document's editors close
   with the document (lib tabs survive); a renamed file re-keys its session in place.
-- **A surface that NAMES its own pass takes it as an argument; a chord that must infer one
-  resolves through `App.panel_pass` (094 D4a).** The revisit clause below fired: a graph node IS
-  a pass the user did not "pick", and several nodes draw their rows in one frame, which one
-  piece of global state cannot answer for. So `draw_ui_uniform`, `uniform_name_label`,
-  `_locate_uniform_declaration` and `_draw_auto_block` each take a `render_pass`, while
-  `Open shader` (Alt+C) and `Pass settings` (Alt+P) -- fired from a chord with no node under the
-  cursor -- still resolve through `App.panel_pass`, and every gesture that picks a pass
+- **Picking a pass writes ONE piece of state, `UIDocumentState.panel_pass`.** A shader belongs to a
+  pass, so every surface that acts on "the pass" -- the uniforms panel, `Open shader` (Alt+C),
+  `Pass settings` (Alt+P) -- resolves through `App.panel_pass`, and every gesture that picks a pass
   records it there: a strip tile or graph node click (`choose_output`) and opening a pass's shader
   (`ensure_shader_tab`). Both of those used to CLEAR it instead, which left `panel_pass` falling
   through to its second tier, the active shader TAB -- so with any shader open, `Open shader`
@@ -953,13 +949,11 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   AUTO the live canvas is the viewer region fitted to the aspect, for EVERY Auto
   document whether or not it is current — one size source, the viewer; tiles show that texture
   scaled. Under FIXED the pair IS the live canvas. A mode switch seeds the other field from the
-  live canvas so the picture never jumps. The viewer is a BOX whose height is the
-  HORIZONTAL SPLITTER's share of the panel (`app_state.canvas_split_fraction`, 094 D1a): the
-  picture is fitted and centered inside it and the graph fills what is left, so either splitter
-  moves that boundary and an aspect change moves the picture alone. Before 094 the height was
-  DERIVED -- the panel's width at a fixed aspect, capped by the control panel's minimum -- and
-  could not be set on purpose. The boundary is also a writer of the size every Auto document
-  renders at, so the applied value is latched to the drag and committed on release. There is no stored export size: the Render tab's own
+  live canvas so the picture never jumps. The viewer is a BOX whose height is the panel's
+  WIDTH at `ui.VIEWER_BOX_ASPECT` (the default 16:9), capped by the room above the control
+  panel's minimum (`ui.ViewerGeometry`, 093 W7): the picture is fitted and centered inside it
+  and the control panel anchors at the box's bottom, so only the splitter moves that
+  boundary and an aspect change moves the picture alone. There is no stored export size: the Render tab's own
   `resolution_details` and shape presets decide exports, and `Document.export_source_size` is
   the ONE seam every export, copilot render and shape check reads — the live canvas under Auto
   (`NATIVE` means what you see), the pair under Fixed.
@@ -1042,12 +1036,11 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   node the planner orders, convexity is not a rule there either. Revisit if a group-level fact
   appears that no member can hold (an exposed parameter set, a description) -- then it becomes
   an entity.
-- **The graph view IS the app panel's lower region, and it stores one thing (features 092, 093;
-  094 moved it).** `widgets/pass_graph.py` draws a document's passes as nodes on one imgui draw
-  list, filling the region under the rendering canvas -- always on screen for the current
-  document, sized by the horizontal splitter. It was an editor tab until 094, which deleted the
-  tab kind along with the pass strip that was the list view of the same wiring: one surface now
-  answers what two did, and a node carries its pass's uniform rows. A wire
+- **The graph view is a second picture of the same wiring, it lives in the editor pane, and it
+  stores one thing (features 092, 093).** `widgets/pass_graph.py` draws a document's passes as
+  nodes on one imgui draw list, in its OWN editor tab -- one per document, `EditorTab(kind=
+  "graph")` keyed on the document's `graph.json` -- so it gets the pane's whole height and the
+  Document tab keeps the strip with an `open` beside it, the way the Script row works. A wire
   is ONE cubic bezier for every pair of endpoints, forward
   or backward, whose control offset is a `max` of two non-negative terms: a fold needs
   `2 * offset <= dx`, so it is unreachable while `dx < 0`, which makes the S-curve structural
@@ -1072,10 +1065,9 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   the pass's context menu (`pass_menu_items`, one item set for the tile and the node) carries
   `Open shader` with the other verbs. Each object kind has exactly one item-set function in
   the widget module that owns it and every surface showing that object draws it, the caller
-  owning only the popup: `pass_menu.pass_menu_items` (the node, plus its own `Group` and
-  its three focus modes -- it lives in its own module because its former home was the deleted
-  pass strip, and an item set should outlive a surface), `pass_graph._box_menu_items` (a group
-  box), `document_grid.document_menu_items` (the breadcrumb's first crumb and every dropdown row), and `pass_graph._canvas_menu` for the canvas background, whose two creation
+  owning only the popup: `pass_list.pass_menu_items` (the tile and the node, plus the node's
+  own `Group`), `pass_graph._box_menu_items` (a group box), `document_grid.document_menu_items`
+  (a grid tile), and `pass_graph._canvas_menu` for the canvas background, whose two creation
   verbs render through `menus.command_menu_item`. Ports come from the COMPILED program
   (`sampler_names`, through `pass_graph.node_ports`, which skips a self-read: `u_prev` is
   feedback, not an input, and has no pin) and edges from `effective_wiring()`, two

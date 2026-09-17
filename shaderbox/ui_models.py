@@ -38,7 +38,7 @@ from shaderbox.paths import (
 )
 from shaderbox.render_shape import DEFAULT_ASPECT, ResolutionMode, fit_to_aspect
 from shaderbox.scripting.keys import StoppedKey
-from shaderbox.ui_regions import ChannelView
+from shaderbox.ui_regions import ChannelView, DocumentTab
 from shaderbox.util import get_uniform_hash
 
 # The region an Auto document is fitted to before any frame has drawn: a typical viewer at a
@@ -246,6 +246,7 @@ class EditorSettings(BaseModel):
 class UIAppState(BaseModel):
     current_document_id: str = ""
     selected_example_id: str = ""
+    is_render_all_documents: bool = True
 
     exporter_settings: dict[str, dict[str, Any]] = {}
     active_exporter_id: str = "telegram"
@@ -262,11 +263,6 @@ class UIAppState(BaseModel):
     document_gpu_budget: float = Field(default=0.5, ge=0.1, le=1.0)
 
     editor_split_fraction: float = Field(default=0.5, ge=0.0, le=1.0)
-    # The app panel's horizontal split: the rendering canvas above, the graph below (094 D1b).
-    # Before this the canvas height was DERIVED (the panel's width at a fixed aspect, capped by
-    # the control panel's minimum) and could not be set on purpose. The default reproduces that
-    # derivation at a typical window size, so the first launch after 094 looks unchanged.
-    canvas_split_fraction: float = Field(default=0.46, ge=0.15, le=0.85)
     editor_settings: EditorSettings = EditorSettings()
     # Chat input height in px, set by the feed/input splitter (the input keeps this height on
     # window resize; the feed above flexes). Clamped at draw.
@@ -286,6 +282,7 @@ class UIAppState(BaseModel):
 
     # Persisted UI layout prefs (the App holds the live copies; synced at load/save).
     # NOT copilot_focused — that one is transient-by-design.
+    active_document_tab: DocumentTab = DocumentTab.DOCUMENT
     channel_view: ChannelView = ChannelView.COLOR
     is_copilot_open: bool = False
     copilot_layout: CopilotLayout = CopilotLayout.CORNER
@@ -478,8 +475,8 @@ class UIDocument(BaseModel):
         # would be nothing to prune against, and the answer would be "delete all of them".
         if live:
             live_rows = {
-                get_uniform_hash(u, name)
-                for name, render_pass in self.document.passes.items()
+                get_uniform_hash(u)
+                for render_pass in self.document.passes.values()
                 for u in render_pass.get_active_uniforms()
                 if u.name not in TABLE_UNIFORMS
             }

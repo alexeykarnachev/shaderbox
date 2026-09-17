@@ -84,7 +84,7 @@ from shaderbox.pass_graph import (
     strip_order,
 )
 from shaderbox.paths import ProjectPaths, app_data_dir, pass_name_of, shader_lib_root
-from shaderbox.profiling import FrameProfile, Profiler
+from shaderbox.profiling import FrameProfile, Profiler, ProfileSmoother
 from shaderbox.project_session import (
     ProjectInfo,
     ProjectSession,
@@ -119,11 +119,10 @@ from shaderbox.ui_models import (
     UIAppState,
     UIDocument,
     UIDocumentState,
-    UniformSortKey,
     load_document_from_dir,
 )
 from shaderbox.ui_primitives import InlineInput
-from shaderbox.ui_regions import next_channel_view
+from shaderbox.ui_regions import DocumentTab, next_channel_view
 from shaderbox.util import (
     open_in_file_manager,
     pfd_block,
@@ -467,8 +466,10 @@ class App:
         self.settings_focus: str = ""
         # (field, monotonic deadline): the field a jump pointed at stays outlined until then.
         self.settings_mark: tuple[str, float] = ("", 0.0)
+        self.active_document_tab: DocumentTab = DocumentTab.DOCUMENT
         # One-shot: a tab-jump requested this frame. The panel's draw fn drives the tab
         # (set_selected), then clears the flag.
+        self.document_tab_select_pending: bool = False
         self.emoji_picker_query: str = ""
         # Where a picked emoji is delivered (set by whoever opens the picker).
         self.emoji_pick_target: Callable[[str], None] | None = None
@@ -502,6 +503,7 @@ class App:
         # highlights. Set by tabs/code.py (drawn before the panel), "" when none.
         self.code_hovered_uniform: str = ""
         self.global_fps = 0.0
+        self.fps_details_open: bool = False
         # The frame profiler (088). Records ALWAYS since 090 D9a -- its GPU spans are the
         # throttle's cost input, and the measured always-on cost is a +0.005 ms p95 delta. The
         # panel's open state decides only what is DRAWN. `last_profile` holds the last COMPLETE
@@ -509,6 +511,7 @@ class App:
         self.profiler: Profiler = Profiler(enabled=True)
         self.last_profile: FrameProfile | None = None
         # The panel draws an exponential average of those, not the raw frame.
+        self.profile_smoother: ProfileSmoother = ProfileSmoother()
         # The editor↔panel splitter drag, latched in update_splitter_drag.
         self.splitter_dragging: bool = False
         self._splitter_press_on_splitter: bool = False
@@ -611,54 +614,14 @@ class App:
         glfw.set_char_callback(self.window, char_callback)
 
     def escape_has_job(self) -> bool:
-        # Esc is meaningful only to dismiss a popup/palette, drop the editor caret, defocus the
-        # chat, or leave a focused node. Otherwise it's swallowed before imgui sees it -- which
-        # is why a focus mode that did not appear here would simply never close on Esc (094 D8a).
+        # Esc is meaningful only to dismiss a popup/palette, drop the editor caret, or
+        # defocus the chat. Otherwise it's swallowed before imgui sees it.
         return (
             self.any_popup_open()
             or self.is_palette_open
             or self.editor_focused
             or self.copilot_focused
-            or self.has_focused_node()
         )
-
-    def has_focused_node(self) -> bool:
-        """Whether any document's graph view is in a focus mode (094 D8a)."""
-        return any(view.focused_pass is not None for view in self.graph_views.values())
-
-    def focus_node(self, document_id: str, pass_name: str, mode: str) -> None:
-        """Enter a focus mode on one node: save the camera, centre on it, cancel every gesture.
-
-        The camera is WRITTEN rather than fitted (094 D9b): `_fit` clamps at 1.0 so it cannot
-        zoom in, and it frames every node rather than one. The saved triple carries `fitted`
-        because `_fit` re-runs on it -- a restore that cleared it would re-frame the graph on
-        the next frame, which is a different bug wearing the same symptom.
-        """
-        view = self.graph_view_for(document_id)
-        if view.focused_pass is None:
-            view.saved_pan = view.pan
-            view.saved_zoom = view.zoom
-            view.saved_fitted = view.fitted
-        view.focused_pass = pass_name
-        view.focused_mode = mode
-        # A gesture surviving into focus would run its release branch behind the scrim.
-        view.node_drag = None
-        view.wire_drag = None
-        view.band_anchor = None
-        view.guides = []
-
-    def leave_focused_node(self) -> None:
-        """Leave every focus mode, restoring the camera each one replaced (094 D9b)."""
-        for view in self.graph_views.values():
-            if view.focused_pass is None:
-                continue
-            view.focused_pass = None
-            view.focused_mode = ""
-            if view.saved_pan is not None:
-                view.pan = view.saved_pan
-                view.zoom = view.saved_zoom
-                view.fitted = view.saved_fitted
-                view.saved_pan = None
 
     def _build_command_callbacks(self) -> None:
         self.command_callbacks = {
@@ -680,10 +643,25 @@ class App:
             CommandId.JUMP_NEXT_ERROR: self.jump_to_next_error,
             CommandId.FORMAT_BUFFER: self.format_current_editor,
             CommandId.TOGGLE_CHEATSHEET: self.toggle_cheatsheet,
+            CommandId.FOCUS_TAB_DOCUMENT: lambda: self.focus_document_tab(
+                DocumentTab.DOCUMENT
+            ),
+            CommandId.FOCUS_TAB_UNIFORMS: lambda: self.focus_document_tab(
+                DocumentTab.UNIFORMS
+            ),
+            CommandId.FOCUS_TAB_RENDER: lambda: self.focus_document_tab(
+                DocumentTab.RENDER
+            ),
+            CommandId.FOCUS_TAB_SHARE: lambda: self.focus_document_tab(
+                DocumentTab.SHARE
+            ),
             CommandId.TOGGLE_COPILOT: self.toggle_copilot,
             CommandId.CYCLE_COPILOT_LAYOUT: self.cycle_copilot_layout,
             CommandId.OPEN_SHADER: self.open_shader_for_panel_pass,
             CommandId.OPEN_SCRIPT: lambda: self.open_script_for(
+                self.current_document_id, focus_editor=True
+            ),
+            CommandId.OPEN_GRAPH: lambda: self.open_graph_for(
                 self.current_document_id, focus_editor=True
             ),
             CommandId.CYCLE_CODE_TAB: self.cycle_code_tab,
@@ -972,6 +950,10 @@ class App:
         # active tab, since a menu click has already taken the focus away.
         if self.editor_tabs:
             self.close_tab(self.active_tab_index)
+
+    def focus_document_tab(self, tab: DocumentTab) -> None:
+        self.active_document_tab = tab
+        self.document_tab_select_pending = True
 
     def select_document(self, document_id: str) -> None:
         if self._copilot_busy_blocked("Switching documents"):
@@ -1550,23 +1532,6 @@ class App:
         self.throttle_states: dict[str, ThrottleState] = {}
         self.document_costs: dict[str, CostRecord] = {}
         self.render_plan: RenderPlan | None = None
-        # The set the frame PLANNED, published because nothing else can see it: it is otherwise a
-        # local in `_tick_frame_state`, and it is the value that says whether a surface which adds
-        # documents to the render set (094's documents dropdown) added rather than replaced.
-        self.planned_documents: list[str] = []
-        # The canvas/graph splitter's in-flight fraction: None unless a drag is live. The
-        # committed value is `app_state.canvas_split_fraction`; this is what the drag moves, so
-        # the resize lands once on release rather than every frame of the sweep (094 D1a).
-        self.canvas_split_drag: float | None = None
-        # Whether the breadcrumb's documents list is open (094 D16). An App field rather than
-        # imgui's popup state because the render set is computed before `imgui.new_frame()`,
-        # so the planning path cannot read a popup. One frame stale in both directions.
-        self.documents_dropdown_open: bool = False
-        # The node cards' uniform ordering (094 D4c). On App rather than on the per-document
-        # graph view because D18 makes it per-SESSION: one ordering for every node, cycled by
-        # the card's sort glyph, persisted nowhere.
-        self.uniform_sort_key: UniformSortKey = "code"
-        self.uniform_sort_desc: bool = False
         # The live cursor over the current document's preview, fed into the script tick as context.mouse
         # (feature 042). Updated from the preview hit-test in ui.py; defaults to center (the
         # export value) until the preview is hovered. One frame stale by construction (tick runs
@@ -1642,6 +1607,7 @@ class App:
             # only one of them can win.
             self.open_examples()
         # Restore persisted layout prefs into the live attrs (save() mirrors them back).
+        self.active_document_tab = self.app_state.active_document_tab
         self.is_copilot_open = self.app_state.is_copilot_open
         if self.is_copilot_open:
             self.focus_copilot()
@@ -1654,6 +1620,7 @@ class App:
         self.modal_below = None
         # Drive imgui's tab bar to the restored tab on the first frame — set_selected only
         # fires while this one-shot is set (else imgui defaults to the first tab).
+        self.document_tab_select_pending = True
 
         self._rewire_exporters()
 
@@ -1815,6 +1782,22 @@ class App:
         self.ensure_python_worker()
         self._focus_or_add_tab(
             EditorTab(path=path, kind="script", document_id=document_id),
+            focus_editor=focus_editor,
+        )
+
+    def open_graph_for(self, document_id: str, focus_editor: bool = False) -> None:
+        # Summon the document's pass graph into the editor pane as its own tab (093 T1, T4).
+        # The path is the document's `graph.json`, so every path-keyed pass-through works
+        # unchanged; the tab has NO EditorSession and nothing here creates one. Frozen
+        # mid-copilot-turn like its `open_script_for` sibling.
+        if self.copilot_turn_active or document_id not in self.ui_documents:
+            return
+        self._focus_or_add_tab(
+            EditorTab(
+                path=self.paths.graph_json_for(document_id),
+                kind="graph",
+                document_id=document_id,
+            ),
             focus_editor=focus_editor,
         )
 
@@ -2296,6 +2279,7 @@ class App:
             self.app_state.telegram_default_pack = telegram.current_default_pack()
 
         # Mirror the live layout prefs back into app_state before writing.
+        self.app_state.active_document_tab = self.active_document_tab
         self.app_state.is_copilot_open = self.is_copilot_open
         self.app_state.copilot_layout = self.copilot_layout
         self.app_state.editor_tabs = tab_records(self.editor_tabs)

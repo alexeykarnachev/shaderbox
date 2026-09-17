@@ -15,14 +15,18 @@ from typing import Any
 import pytest
 from imgui_bundle import imgui
 
+from shaderbox.commands import CommandId
 from shaderbox.editor_types import TabRecord
+from shaderbox.formatting import formatter_for
 from shaderbox.pass_graph import PassSource
-from shaderbox.theme import SIZE, SPACE
+from shaderbox.paths import shader_lib_root
+from shaderbox.tabs.code import tab_label
+from shaderbox.theme import SIZE
 from shaderbox.ui import update_and_draw
 from shaderbox.ui_primitives import ellipsize
 from shaderbox.widgets import pass_graph, uniform
-from shaderbox.widgets.graph_state import bezier_point, node_size, wire_points
-from tests.conftest import restart_app
+from shaderbox.widgets.graph_state import bezier_point, wire_points
+from tests.conftest import restart_app, seed_extra_document
 
 # The imgui font atlas is process-global, so every frame-driving module owns a worker
 # (`pyproject.toml`).
@@ -55,12 +59,71 @@ def _frames(app: Any, n: int) -> None:
         update_and_draw(app)
 
 
+def test_a_graph_tab_names_its_document_rather_than_a_pass_file(app: Any) -> None:
+    # T1: `graph.json` is the tab's PATH, so the multi-pass fallthrough would run
+    # `pass_name_of` on it and label the tab after a filename. Falsifier: drop the branch.
+    document_id, _document = _chain(app)
+    app.ui_documents[document_id].ui_state.ui_name = "Chain"
+    app.open_graph_for(document_id)
+    tab = app.active_tab
+    assert tab is not None and tab.kind == "graph"
+    assert tab_label(app, tab) == "Chain (graph)"
+
+
+def test_opening_the_graph_twice_focuses_one_tab_and_it_is_session_less(
+    app: Any,
+) -> None:
+    # T1, T4: the path is the tab's identity, so the second open re-focuses the first. Nothing
+    # on the session-shaped paths may raise on a tab that has none. Falsifier: give the tab a
+    # session-bearing path -- `is_tab_dirty` starts answering the wrong file's state.
+    document_id, _document = _chain(app)
+    app.open_graph_for(document_id)
+    app.open_graph_for(document_id)
+    graph_path = app.paths.graph_json_for(document_id)
+    assert [t.path for t in app.editor_tabs].count(graph_path) == 1
+    tab = app.active_tab
+    assert tab is not None and tab.path == graph_path
+    assert app.is_tab_dirty(tab) is False
+    assert app.is_current_editor_dirty() is False
+    assert formatter_for("graph") is None
+    assert graph_path not in app.editor_sessions
+    # Neither returns anything; what is asserted is that neither raises on the absent session.
+    app.format_current_editor()
+    app.jump_to_next_error()
+    assert graph_path not in app.editor_sessions
+
+
+def test_the_graph_tab_closes_and_dies_with_its_document(app: Any) -> None:
+    # T1: `close_editor_for_path` is the pass-delete verb's own teardown, and
+    # `_on_document_deleted` filters by document while keeping lib tabs. Falsifier: key the
+    # deletion filter on the session instead -- a session-less tab outlives its document.
+    document_id, _document = _chain(app)
+    app.open_graph_for(document_id)
+    graph_path = app.paths.graph_json_for(document_id)
+    app.close_editor_for_path(graph_path)
+    assert not any(t.kind == "graph" for t in app.editor_tabs)
+
+    app.open_graph_for(document_id)
+    lib_path = sorted(shader_lib_root().rglob("*.glsl"))[0]
+    app.open_shader_lib_file(lib_path)
+    app._on_document_deleted(document_id, app.paths.document_json_for(document_id))
+    assert not any(t.kind == "graph" for t in app.editor_tabs)
+    assert any(t.kind == "lib" for t in app.editor_tabs), "a lib tab was swept with it"
+
+
+def test_the_open_graph_command_is_registered(app: Any) -> None:
+    # T4. Falsifier: add the spec without the callback -- the registry coverage test catches
+    # the reverse, an id with no spec, but not a spec with no handler.
+    assert CommandId.OPEN_GRAPH in app.command_callbacks
+
+
 def test_the_graph_tab_draws_and_leaves_the_error_list_empty(app: Any) -> None:
     # T2: the branch runs before the session fetch, fits on its first sized frame, and clears
     # a previous tab's errors so a stale list cannot drive `F8`. Falsifier: return before the
     # `editor_errors` write and an error from the shader tab survives onto the graph tab.
     document_id, _document = _chain(app)
     app.editor_errors = ["stale"]
+    app.open_graph_for(document_id)
     _frames(app, 3)
     view = app.graph_view_for(document_id)
     assert view.canvas_rect != (0.0, 0.0, 0.0, 0.0)
@@ -77,16 +140,36 @@ def test_the_uniforms_panel_opens_no_editor_over_the_graphs_own_file(app: Any) -
     `get_current_session()` -- a session appears at the graph path.
     """
     document_id, _document = _chain(app)
+    app.open_graph_for(document_id)
     _frames(app, 2)
-    graph_path = app.paths.document_script_for(document_id)
+    graph_path = app.paths.graph_json_for(document_id)
     imgui.new_frame()
     imgui.begin("rig")
-    uniform._locate_uniform_declaration(
-        app, "u_src", app.panel_pass(app.current_document_id)
-    )
+    uniform._locate_uniform_declaration(app, "u_src")
     imgui.end()
     imgui.end_frame()
     assert graph_path not in app.editor_sessions
+
+
+def test_open_graph_for_opens_that_documents_tab(app: Any) -> None:
+    """The summoner names the document it opens, not whichever is current (093 W8).
+
+    The entry-point rows and their accent tick are gone -- the verb lives on the document's
+    context menu, which fires on a tile a right-click did not select. Falsifier: route the
+    menu's item through the current-document command and the second document below never gets
+    its graph tab.
+    """
+    first = app.current_document_id
+    second = seed_extra_document(app, "second-document")
+    app.open_graph_for(second)
+    active = app.active_tab
+    assert active is not None
+    assert active.kind == "graph"
+    assert active.document_id == second, "the graph opened on the wrong document"
+    assert app.current_document_id == first, "opening a tab switched the document"
+
+
+# ---- the two geometry facts (093 G11, S8) ---------------------------------------------------
 
 
 def test_the_card_is_wide_enough_for_the_maintainers_own_longest_names(
@@ -97,12 +180,8 @@ def test_the_card_is_wide_enough_for_the_maintainers_own_longest_names(
     faces -- outside a frame `calc_text_size` segfaults the process, and an em-ratio estimate
     is what once shipped a truncating check in `tests/test_pass_settings_layout.py`.
 
-    This is the width decision's pin. It was anchored at the old 136px card by a hard-coded
-    110px budget; 094 D4e widened the card to 240 and that literal stopped pinning anything.
-    The cut point is a property of the TEXT, not a fraction of the card, so the narrow case is
-    now derived from the measured name itself: one pixel under its own width is the widest
-    budget that must still ellipsize. Falsifier: hand the narrow case the full budget and it
-    stops finding an ellipsis.
+    This is the width decision's pin: red at 128 (112px of name against a 112px budget with
+    zero slack, and 112px of port label against 110), green at 136.
     """
     name_budget = float(SIZE.GRAPH_NODE_W - 2 * SIZE.GRAPH_PAD)
     label_budget = float(SIZE.GRAPH_NODE_W - 2 * SIZE.GRAPH_PORT_R - 2 - SIZE.GRAPH_PAD)
@@ -111,9 +190,8 @@ def test_the_card_is_wide_enough_for_the_maintainers_own_longest_names(
     imgui.push_font(app.font_12, app.font_12.legacy_size)
     label_width = imgui.calc_text_size("u_distance_field").x
     label_kept = ellipsize("u_distance_field", label_budget)
-    # One pixel under the name's own width: the widest budget that must still cut. Measured
-    # here rather than written down, so the row keeps pinning whatever the card becomes.
-    narrow_kept = ellipsize("u_distance_field", label_width - 1.0)
+    # The card 128 would have given: the same port label ellipsizes there.
+    narrow_kept = ellipsize("u_distance_field", 110.0)
     imgui.pop_font()
     imgui.push_font(app.font_14_bold, app.font_14_bold.legacy_size)
     name_width = imgui.calc_text_size("distance_field").x
@@ -202,12 +280,10 @@ def test_the_fit_frames_every_wire_not_only_the_cards(app: Any) -> None:
 
 
 def test_the_fit_never_zooms_past_one_and_shrinks_for_a_narrow_pane(app: Any) -> None:
-    # A regression check on `_fit`'s clamp, not a width pin: the width is pinned by the
-    # ellipsis row above. Six columns, each reading the one before, so the chain is genuinely
-    # as wide as the six-column arithmetic says. The two pane widths are DERIVED from
-    # `node_size` rather than written down, so 094's 136 -> 240 does not silently turn this
-    # into a test of nothing. Falsifier: drop the `min(1.0, ...)` and a small graph in a wide
-    # pane is magnified.
+    # A regression check on `_fit`'s clamp, not a width pin: it is green at 108 and 136 alike,
+    # and the width is pinned by the ellipsis row above. Six columns, each reading the one
+    # before, so the chain is genuinely as wide as the six-column arithmetic says. Falsifier:
+    # drop the `min(1.0, ...)` and a small graph in a wide pane is magnified.
     document_id = app.current_document_id
     document = app.ui_documents[document_id].document
     chain = ["a", "b", "c", "d", "e", "f"]
@@ -222,10 +298,9 @@ def test_the_fit_never_zooms_past_one_and_shrinks_for_a_narrow_pane(app: Any) ->
     view = app.graph_view_for(document_id)
     picture = pass_graph._build_view(document, "", {})
     nodes = list(picture.nodes.values())
-    chain_w = 6 * node_size(1, False)[0] + 5 * SIZE.GRAPH_GAP_X + 2 * float(SPACE.LG)
-    pass_graph._fit(view, nodes, picture, imgui.ImVec2(chain_w + 40.0, 900.0))
+    pass_graph._fit(view, nodes, picture, imgui.ImVec2(1225.0, 600.0))
     assert view.zoom == 1.0
-    pass_graph._fit(view, nodes, picture, imgui.ImVec2(chain_w * 0.75, 900.0))
+    pass_graph._fit(view, nodes, picture, imgui.ImVec2(740.0, 600.0))
     assert 0.6 < view.zoom < 1.0, view.zoom
 
 
@@ -246,20 +321,9 @@ def test_a_wires_canvas_points_are_its_screen_points_divided_by_the_zoom(
             assert math.isclose(got[1], want[1] * zoom, abs_tol=1e-9), (zoom, got, want)
 
 
-def test_a_project_with_no_saved_tabs_still_opens_its_shader(app: Any) -> None:
-    # The fallback the restore must not eat: with no records, `_init` opens the current
-    # document's shader tab as it always did. Falsifier: run the fallback unconditionally and a
-    # restored session gains a tab it did not have; skip it and an empty state opens blank.
-    app.app_state.editor_tabs = []
-    app.save()
-    fresh = restart_app(app)
-    assert len(fresh.editor_tabs) == 1, fresh.editor_tabs
-    assert fresh.editor_tabs[0].kind == "shader"
-
-
 def test_the_saved_tabs_reopen_on_a_fresh_app(app: Any, tmp_path: Any) -> None:
-    """W2-2: the restore is what finding 7 asked for -- every open tab is still there after a
-    restart. (094 C10 deleted the graph TAB; the claim was never about that kind.)
+    """W2-2: the restore is what finding 7 asked for -- the graph tab (and every other) is
+    still there after a restart.
 
     Driven the way a restart drives it: the live tabs are mirrored by `App.save`, and a reopen
     of the same project dir reads them back in `_init`. The records are checked against what
@@ -270,11 +334,12 @@ def test_the_saved_tabs_reopen_on_a_fresh_app(app: Any, tmp_path: Any) -> None:
     """
     document_id, document = _chain(app)
     app.open_script_for(document_id)
+    app.open_graph_for(document_id)
     shader_path = document.passes["b"].source.path
     app.ensure_shader_tab(document_id, "b")
     saved_paths = [t.path for t in app.editor_tabs]
     saved_kinds = [t.kind for t in app.editor_tabs]
-    assert "script" in saved_kinds and "shader" in saved_kinds, saved_kinds
+    assert "graph" in saved_kinds and "script" in saved_kinds, saved_kinds
     app.save()
     records = app.app_state.editor_tabs
     assert [r.path for r in records] == [str(p) for p in saved_paths]
@@ -313,6 +378,11 @@ def test_the_active_tab_comes_back_by_path_not_by_position(
             kind="shader",
             document_id=document_id,
         ),
+        TabRecord(
+            path=str(app.paths.graph_json_for(document_id)),
+            kind="graph",
+            document_id=document_id,
+        ),
     ]
     app.app_state.editor_tabs = records
     app.app_state.active_tab_path = records[1].path
@@ -325,6 +395,7 @@ def test_the_active_tab_comes_back_by_path_not_by_position(
     assert [t.path.name for t in fresh.editor_tabs] == [
         "b.frag.glsl",
         "c.frag.glsl",
+        "graph.json",
     ], fresh.editor_tabs
     assert fresh.active_tab is not None
     assert fresh.active_tab.path.name == "b.frag.glsl", fresh.active_tab
@@ -342,6 +413,11 @@ def test_an_active_path_nothing_carries_falls_to_the_first_tab(app: Any) -> None
             kind="shader",
             document_id=document_id,
         ),
+        TabRecord(
+            path=str(app.paths.graph_json_for(document_id)),
+            kind="graph",
+            document_id=document_id,
+        ),
     ]
     app.app_state.active_tab_path = "/nowhere/at/all.glsl"
     app.app_state.save(app.paths.app_state_file)
@@ -349,3 +425,14 @@ def test_an_active_path_nothing_carries_falls_to_the_first_tab(app: Any) -> None
     assert fresh.active_tab_index == 0
     assert fresh.active_tab is not None
     assert fresh.active_tab.path.name == "b.frag.glsl"
+
+
+def test_a_project_with_no_saved_tabs_still_opens_its_shader(app: Any) -> None:
+    # The fallback the restore must not eat: with no records, `_init` opens the current
+    # document's shader tab as it always did. Falsifier: run the fallback unconditionally and a
+    # restored session gains a tab it did not have; skip it and an empty state opens blank.
+    app.app_state.editor_tabs = []
+    app.save()
+    fresh = restart_app(app)
+    assert len(fresh.editor_tabs) == 1, fresh.editor_tabs
+    assert fresh.editor_tabs[0].kind == "shader"

@@ -82,11 +82,10 @@ from shaderbox.shader_source import ShaderSource
 from shaderbox.ui_models import (
     UIAppState,
     UIDocument,
-    UIUniform,
     load_document_from_dir,
     load_documents_from_dir,
 )
-from shaderbox.util import get_uniform_hash, select_next_value, try_to_release
+from shaderbox.util import select_next_value, try_to_release
 
 # Prepended to the engine stub when the COPILOT reads a script-less document (feature 043). The actor
 # copies verbatim, so a no-op commented stub teaches the binding but not MOTION — this gives one
@@ -1266,26 +1265,8 @@ class ProjectSession:
             values = host.passes[host_pass].uniform_values
             for uniform, read in rows.items():
                 values[uniform] = PassSource(read)
-        # The ui_uniforms key carries the PASS (094 D4d), and an import renames passes -- so a
-        # row copied under its source key lands under a pass the host does not have and the next
-        # save's prune drops it. Re-key each row through the rename map, by rebuilding the hash
-        # from the host pass's own live uniform.
-        renamed_rows: dict[int, UIUniform] = {}
-        for source_name, host_name in plan.renames.items():
-            host_pass = host.passes.get(host_name)
-            source_pass = source_document.passes.get(source_name)
-            if host_pass is None or source_pass is None:
-                continue
-            for uniform in host_pass.get_active_uniforms():
-                old = source.ui_state.ui_uniforms.get(
-                    get_uniform_hash(uniform, source_name)
-                )
-                if old is not None:
-                    renamed_rows[get_uniform_hash(uniform, host_name)] = (
-                        old.model_copy()
-                    )
-        for key, row in renamed_rows.items():
-            ui_document.ui_state.ui_uniforms.setdefault(key, row)
+        for key, row in source.ui_state.ui_uniforms.items():
+            ui_document.ui_state.ui_uniforms.setdefault(key, row.model_copy())
         self.save_ui_document(ui_document)
         logger.info(
             f"Imported {len(plan.renames)} pass(es) from {document_dir_of(source_document).name} "

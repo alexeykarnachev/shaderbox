@@ -28,7 +28,16 @@
             "fps": 30,
             "duration": 1.0
         },
-        "ui_uniforms": {},
+        "ui_uniforms": {
+            "37154164850612245702881750831795076973": {
+                "name": "u_time",
+                "is_ubo": false,
+                "gl_type": 5126,
+                "dimension": 1,
+                "array_length": 1,
+                "input_type": "auto"
+            }
+        },
         "uniform_sort_key": "code",
         "uniform_sort_desc": false,
         "video_to_video_smoothing_window": 5,

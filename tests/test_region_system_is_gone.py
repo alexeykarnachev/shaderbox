@@ -78,10 +78,7 @@ _NAV_ONLY_FOCUSABLE = ("checkbox", "combo", "selectable", "button")
 _PKG = Path("shaderbox")
 _MODULES = ("ui.py", "widgets/copilot_chat.py", "widgets/document_grid.py")
 _CONTAINERS = ("begin_child", "begin")
-# The floor exists so the walk cannot quietly narrow its own domain -- a refactor that hid the
-# containers would otherwise pass by finding none. Re-derived at 094 C10, which deleted the
-# settings panel's own child, and C12 the grid's: 6 is what the three modules carry now.
-_MIN_CONTAINERS = 6
+_MIN_CONTAINERS = 8
 
 
 def test_no_source_file_mentions_the_region_system() -> None:
@@ -212,14 +209,11 @@ def _resolve_flags(
 
 
 def _table_callees(tree: ast.Module) -> dict[str, set[str]]:
-    """Table name -> the function references parked in it.
-
-    A table of draw functions invoked through an unpacked name is a route the walk cannot
-    resolve by itself -- `ui.py`'s `_NODE_TABS` was the case this was written for, and 094
-    deleted it with the settings panel. Kept because the SHAPE recurs (a registry of draw
-    callables is how this repo hosts several surfaces in one container), and a walk that lost
-    the ability to follow one would narrow its own domain silently. Keyed by table so a
-    container inherits only the tables it actually iterates."""
+    """Table name -> the function references parked in it. `ui.py`'s `_NODE_TABS` holds one
+    `<tab>.draw` per `DocumentTab` member, which the panel invokes as `draw_tab(app)` after
+    unpacking the table -- a name the walk can never resolve by itself, and the only route from
+    `document_settings` to the uniform sliders (`uniforms_tab.draw` since 083). Keyed by table so
+    a container inherits only the tables it actually iterates."""
     out: dict[str, set[str]] = {}
     for node in ast.walk(tree):
         if not isinstance(node, (ast.Assign, ast.AnnAssign)):
