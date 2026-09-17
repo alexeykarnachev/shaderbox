@@ -1155,9 +1155,14 @@ Every check below is one the repo can run; none asks the maintainer to go and lo
 
 ## Open questions for the user
 
-1. **The two LOD thresholds** (near→mid, mid→far). By construction these are found by using the
-   app, not decided on paper. Proposal: ship with the rows hidden below zoom 0.75 and the name
-   hidden below 0.4, both as `SIZE` tokens, and tune in the first session.
+1. **The two LOD thresholds** — RESOLVED at implementation time, and the proposal was wrong.
+   Keyed on ZOOM (the draft's 0.75 / 0.4) the rows would never appear for anything but a short
+   chain: measured after D4e, a 3-pass chain fits at zoom 1.00, a 6-pass at **0.50** and a
+   10-pass at **0.30**, because `_fit` clamps at 1.0 and never zooms in. What decides a row is
+   whether its control is readable, which is `GRAPH_NODE_W × zoom` — so the thresholds are
+   SCREEN-WIDTH tokens: `GRAPH_LOD_ROWS_PX = 200` (a vec4 component gets ~38px there, the width
+   of "0.000") and `GRAPH_LOD_NAME_PX = 96`. A 6-pass chain then reads as `mid` rather than
+   losing its rows silently.
 
 2. **Does entering focus animate the camera or cut to it?** A cut is less code and may read as a
    jump. Proposal: cut for the first implementation, add easing only if it reads badly.

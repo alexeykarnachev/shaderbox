@@ -326,9 +326,9 @@ class SIZE:
     # names (an `ellipsize` cuts anything longer), its picture, one port row, the dot and the
     # screen-pixel floor its hit box keeps under zoom; the layout's gaps; the snap distance;
     # the zoom clamp.
-    GRAPH_NODE_W: int = 136
-    GRAPH_BOX_EXTRA_W: int = 40
-    GRAPH_THUMB: int = 116
+    GRAPH_NODE_W: int = 240
+    GRAPH_BOX_EXTRA_W: int = 24
+    GRAPH_THUMB: int = 220
     # The picture sits this far inside the card's top and both sides; the invariant below
     # keeps the width the sum. `GRAPH_PAD` is the gap the name row keeps under it.
     GRAPH_THUMB_INSET: int = 10
@@ -345,6 +345,14 @@ class SIZE:
     GRAPH_GAP_X: int = 64
     GRAPH_GAP_Y: int = 20
     GRAPH_SNAP_PX: int = 6
+    # The node's levels of detail, in SCREEN px of node width rather than in zoom (094 D5/D5a).
+    # Zoom was the obvious key and the wrong one: `_fit` clamps at 1.0 and never zooms in, so a
+    # six-pass chain lands at 0.50 and a threshold expressed in zoom would hide the rows for
+    # every document but a short chain. What decides a row is whether its control can be read,
+    # which is `GRAPH_NODE_W * zoom`. At 200px a vec4 component gets ~38px, which is the width
+    # of "0.000"; below 96px the name is a smudge that costs a font push per node.
+    GRAPH_LOD_ROWS_PX: float = 200.0
+    GRAPH_LOD_NAME_PX: float = 96.0
     GRAPH_ZOOM_MIN: float = 0.25
     GRAPH_ZOOM_MAX: float = 2.5
     GRAPH_ROUNDING: int = 6

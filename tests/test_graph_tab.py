@@ -21,11 +21,11 @@ from shaderbox.formatting import formatter_for
 from shaderbox.pass_graph import PassSource
 from shaderbox.paths import shader_lib_root
 from shaderbox.tabs.code import tab_label
-from shaderbox.theme import SIZE
+from shaderbox.theme import SIZE, SPACE
 from shaderbox.ui import update_and_draw
 from shaderbox.ui_primitives import ellipsize
 from shaderbox.widgets import pass_graph, uniform
-from shaderbox.widgets.graph_state import bezier_point, wire_points
+from shaderbox.widgets.graph_state import bezier_point, node_size, wire_points
 from tests.conftest import restart_app, seed_extra_document
 
 # The imgui font atlas is process-global, so every frame-driving module owns a worker
@@ -182,8 +182,12 @@ def test_the_card_is_wide_enough_for_the_maintainers_own_longest_names(
     faces -- outside a frame `calc_text_size` segfaults the process, and an em-ratio estimate
     is what once shipped a truncating check in `tests/test_pass_settings_layout.py`.
 
-    This is the width decision's pin: red at 128 (112px of name against a 112px budget with
-    zero slack, and 112px of port label against 110), green at 136.
+    This is the width decision's pin. It was anchored at the old 136px card by a hard-coded
+    110px budget; 094 D4e widened the card to 240 and that literal stopped pinning anything.
+    The cut point is a property of the TEXT, not a fraction of the card, so the narrow case is
+    now derived from the measured name itself: one pixel under its own width is the widest
+    budget that must still ellipsize. Falsifier: hand the narrow case the full budget and it
+    stops finding an ellipsis.
     """
     name_budget = float(SIZE.GRAPH_NODE_W - 2 * SIZE.GRAPH_PAD)
     label_budget = float(SIZE.GRAPH_NODE_W - 2 * SIZE.GRAPH_PORT_R - 2 - SIZE.GRAPH_PAD)
@@ -192,8 +196,9 @@ def test_the_card_is_wide_enough_for_the_maintainers_own_longest_names(
     imgui.push_font(app.font_12, app.font_12.legacy_size)
     label_width = imgui.calc_text_size("u_distance_field").x
     label_kept = ellipsize("u_distance_field", label_budget)
-    # The card 128 would have given: the same port label ellipsizes there.
-    narrow_kept = ellipsize("u_distance_field", 110.0)
+    # One pixel under the name's own width: the widest budget that must still cut. Measured
+    # here rather than written down, so the row keeps pinning whatever the card becomes.
+    narrow_kept = ellipsize("u_distance_field", label_width - 1.0)
     imgui.pop_font()
     imgui.push_font(app.font_14_bold, app.font_14_bold.legacy_size)
     name_width = imgui.calc_text_size("distance_field").x
@@ -282,10 +287,12 @@ def test_the_fit_frames_every_wire_not_only_the_cards(app: Any) -> None:
 
 
 def test_the_fit_never_zooms_past_one_and_shrinks_for_a_narrow_pane(app: Any) -> None:
-    # A regression check on `_fit`'s clamp, not a width pin: it is green at 108 and 136 alike,
-    # and the width is pinned by the ellipsis row above. Six columns, each reading the one
-    # before, so the chain is genuinely as wide as the six-column arithmetic says. Falsifier:
-    # drop the `min(1.0, ...)` and a small graph in a wide pane is magnified.
+    # A regression check on `_fit`'s clamp, not a width pin: the width is pinned by the
+    # ellipsis row above. Six columns, each reading the one before, so the chain is genuinely
+    # as wide as the six-column arithmetic says. The two pane widths are DERIVED from
+    # `node_size` rather than written down, so 094's 136 -> 240 does not silently turn this
+    # into a test of nothing. Falsifier: drop the `min(1.0, ...)` and a small graph in a wide
+    # pane is magnified.
     document_id = app.current_document_id
     document = app.ui_documents[document_id].document
     chain = ["a", "b", "c", "d", "e", "f"]
@@ -300,9 +307,10 @@ def test_the_fit_never_zooms_past_one_and_shrinks_for_a_narrow_pane(app: Any) ->
     view = app.graph_view_for(document_id)
     picture = pass_graph._build_view(document, "", {})
     nodes = list(picture.nodes.values())
-    pass_graph._fit(view, nodes, picture, imgui.ImVec2(1225.0, 600.0))
+    chain_w = 6 * node_size(1, False)[0] + 5 * SIZE.GRAPH_GAP_X + 2 * float(SPACE.LG)
+    pass_graph._fit(view, nodes, picture, imgui.ImVec2(chain_w + 40.0, 900.0))
     assert view.zoom == 1.0
-    pass_graph._fit(view, nodes, picture, imgui.ImVec2(740.0, 600.0))
+    pass_graph._fit(view, nodes, picture, imgui.ImVec2(chain_w * 0.75, 900.0))
     assert 0.6 < view.zoom < 1.0, view.zoom
 
 
