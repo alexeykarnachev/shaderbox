@@ -110,11 +110,12 @@ now answers.
   loads, `gc_atlas_distance_range` returns 8.0.
 - Both reference shaders compile unmodified under moderngl 3.3 core, and a
   four-node shaderbox-shaped graph renders correctly — nodes, pins, bezier wires,
-  MTSDF text, grid. 900 shapes, 552 glyphs, 3 runs.
-- A shape run can start at a non-zero `first` (measured: `first=876`), so the
-  renderer must honour the run offset; moderngl has no base-instance parameter, so
-  the offset is applied by binding the attribute arrays at a byte offset. Reported
-  upstream.
+  MTSDF text, grid.
+- A shape run can start at a non-zero `first`, so the renderer must honour the run
+  offset; moderngl has no base-instance parameter, so the offset is applied by
+  binding the attribute arrays at a byte offset. Reported upstream, and gated —
+  `test_a_shape_run_resumes_after_a_glyph_run_at_a_nonzero_offset` asserts the case
+  exists rather than restating a count, which moves with the scene and the build.
 
 ## Open questions for the user
 

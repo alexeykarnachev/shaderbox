@@ -134,6 +134,17 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   rather than relying on clearing the cache between rounds; a mutation run OUTSIDE that target
   still clears it by hand.
 
+- **A measurement written into prose beside code that can emit it is not documentation, it is a
+  copy with no gate — delete it and let the code print.** Every figure in 098's docs that had a
+  test under it survived the wave unchanged; every figure that did not had drifted by the end of
+  it. The spec cited "900 shapes, 552 glyphs" and `first=876` from a build vendored before the
+  library was rebuilt (the same scene now gives 1207 and 1183), and the ledger and the roadmap
+  both said `pass_graph.py` ended at 368 lines when restoring the node menus had put it at 423.
+  All three were REAL measurements of a state that no longer existed, which is what makes them
+  expensive: a number in a doc reads as established, so nobody re-derives it and re-reading it
+  cannot catch it. Where the number is the point, gate it and let the failure print it; where it
+  is illustration, cite the gate's name instead of its output.
+
 - **Assert an ABSOLUTE value, not an equality between two measurements — a comparison cannot
   DECIDE that the two readings came from different places.** This is a claim about what the form
   can establish, not a prediction that it will miss any particular bug. 098 measured a cost two

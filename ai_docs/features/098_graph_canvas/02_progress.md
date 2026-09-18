@@ -19,8 +19,9 @@ them that way.
 
 ## Measured
 
-- `widgets/pass_graph.py` 1537 -> 368 lines; `widgets/graph_state.py` 296 ->
-  116; net −2067 lines including tests.
+- `widgets/pass_graph.py` 1537 -> 423 lines; `widgets/graph_state.py` 296 ->
+  94. (The retirement commit reached 368 and 116; restoring the node menus and
+  the Group prompt, which were real verbs, put some back.)
 - The real app, driven headless to the graph tab on the six-pass
   radiance-cascade document, draws six node cards with their live rendered
   pictures, labelled ports and wires following the wiring.
