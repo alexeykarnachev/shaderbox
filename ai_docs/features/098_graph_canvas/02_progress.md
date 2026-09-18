@@ -116,13 +116,27 @@ and the gate carries a break for it.
 The window, the tab row, the context menus and the Group prompt. Moving those
 is the next surface, not this one.
 
-## A control row cannot be coloured
+## An engine uniform is a CONTROL, and the kind is what shows
 
-The library's `Attribute` carries a label and a pin style and no LABEL
-colour, so a `Control` -- a body row with no pin -- has nothing tintable on
-it. Engine uniforms are therefore drawn as inputs with a hollow square pin in
-`SYN_UNIFORM`, the shape no wirable port uses; the library refuses a wire onto
-them anyway, which is gated. Reported upstream.
+The library picks a row's background from its ATTRIBUTE KIND -- input,
+output, control, both -- in `attribute_role_color`. So a control is drawn in
+the neutral control tone where an input is green, measured at
+(0.33, 0.34, 0.42) against (0.29, 0.45, 0.35), and that is what makes a
+builtin read as a builtin.
+
+The first attempt packed them as inputs with a refusing pin, on the belief
+that a control could not be tinted at all. That belief was half right and the
+conclusion was wrong: an attribute has no LABEL colour, so the pin is the only
+tintable thing on a row -- but the row's own fill comes from the kind for
+free, and it is the fill a reader actually sees. Packing them as inputs made
+`u_aspect` and `u_resolution` look like free green ports, which the maintainer
+caught immediately.
+
+Also measured while chasing it: a HOLLOW pin draws its tone shaded by -0.45,
+so a muted token arrives at 55% strength and reads as another dim port. Cored
+keeps a centre at full strength. It does not matter here, since a control
+carries no pin, but it is the reason the intermediate attempt still looked
+wrong after the colour was "applied".
 
 ## Parity notes
 

@@ -216,20 +216,25 @@ def pack_nodes(
         output_slot[name] = len(specs)
         specs.append(PortSpec(label="out", is_input=False))
 
-        # An engine uniform gets a PIN that refuses connection rather than a
-        # control row, and the reason is a library limit worth knowing: a
-        # control carries no pin, and an attribute has no label colour, so a
-        # control cannot be tinted at all. The pin is the only coloured thing
-        # on the row. It is drawn hollow and square -- the shape no wirable
-        # port uses -- and the node refuses the wire gesture anyway where
-        # every port is one of these.
+        # An engine uniform is a CONTROL, which is what the library's own
+        # model calls a row the user cannot wire. That is not only semantics:
+        # the row's background comes from its KIND, so a control is drawn in
+        # the neutral control tone where an input is drawn green -- measured,
+        # (0.33, 0.34, 0.42) against (0.29, 0.45, 0.35). Packing these as
+        # inputs made a builtin look like a free port, which is exactly what
+        # they are not.
+        #
+        # The pin colour is still handed over. A control carries no pin today,
+        # so it has no effect; it costs nothing and lands the moment the
+        # library gives a control something tintable.
         for label in (engine or {}).get(name, ()):
             specs.append(
                 PortSpec(
                     label=label,
                     is_input=True,
+                    control=True,
                     pin_shape=PinShape.SQUARE,
-                    pin_fill=PinFill.HOLLOW,
+                    pin_fill=PinFill.CORED,
                     color=colors.engine_uniform,
                 )
             )

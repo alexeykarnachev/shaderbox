@@ -25,6 +25,7 @@ from shaderbox.graph_canvas.adapter import (
     pack_nodes,
     read_events,
 )
+from shaderbox.graph_canvas.render import shapes_array
 from shaderbox.pass_graph import Port, strip_order
 from shaderbox.widgets.graph_state import ports_of
 
@@ -257,9 +258,17 @@ def test_a_wire_points_at_an_output_and_engine_rows_follow_it() -> None:
     assert attributes[packed.edges[0].from_attr].is_input is False
 
 
-def test_an_engine_uniform_is_a_row_that_takes_no_wire() -> None:
+def test_an_engine_uniform_is_a_control_and_not_an_input() -> None:
     """`u_time` and its siblings are written by the engine, so the document
-    cannot express a wire into one. They are shown, and they refuse."""
+    cannot express a wire into one.
+
+    The KIND is what makes them look different, not the pin: the library
+    picks a row's background from its kind, so a control is drawn in the
+    neutral control tone where an input is green. Packing these as inputs --
+    even with a refusing pin -- made a builtin read as a free port, which is
+    exactly the thing they are not. Measured, the two tones are
+    (0.33, 0.34, 0.42) and (0.29, 0.45, 0.35).
+    """
     packed = pack_nodes(
         ["a", "b"],
         {"a": [], "b": [Port("u_src", "unfilled")]},
@@ -268,34 +277,50 @@ def test_an_engine_uniform_is_a_row_that_takes_no_wire() -> None:
         output="b",
         engine={"a": [], "b": ["u_time"]},
     )
-    labels = [spec.label for spec in packed.nodes[1].ports]
-    assert "u_time" in labels
+    by_label = {spec.label: spec for spec in packed.nodes[1].ports}
+    assert "u_time" in by_label
+    assert by_label["u_time"].control is True
+    # And a real sampler on the same node is NOT a control, or the check
+    # would pass on a node where everything happened to be one.
+    assert by_label["u_src"].control is False
 
-    canvas = ffi.Canvas()
-    canvas.load_atlas()
-    size = (900.0, 640.0)
-    canvas.frame(packed.nodes, packed.edges, size, ffi.View(), ffi.PointerState())
-    engine_slot = labels.index("u_time")
-    source = canvas.pin_point(0, 0, output=True)
-    target = canvas.pin_point(1, engine_slot, output=False)
-    assert source is not None and target is not None
 
-    down = int(ffi.Pointer.DOWN)
-    view = ffi.View()
-    events: list[object] = []
-    for pointer in (
-        ffi.PointerState(
-            x=source[0], y=source[1], flags=down | int(ffi.Pointer.PRESSED)
-        ),
-        ffi.PointerState(x=(source[0] + target[0]) / 2, y=source[1], flags=down),
-        ffi.PointerState(x=target[0], y=target[1], flags=down),
-        ffi.PointerState(x=target[0], y=target[1], flags=0),
-    ):
-        result = canvas.frame(packed.nodes, packed.edges, size, view, pointer)
-        view = ffi.View(result.pan_x, result.pan_y, result.zoom)
-        events.extend(read_events(result, packed))
-    assert not any(isinstance(event, Wired) for event in events), events
-    canvas.release()
+def test_a_control_row_is_drawn_in_a_different_tone_from_an_input() -> None:
+    """The reason the kind matters, asserted against the geometry rather than
+    against the intent: the same label packed as an input and as a control
+    produces different row colours."""
+
+    def row_tones(control: bool) -> set[tuple[float, float, float]]:
+        canvas = ffi.Canvas()
+        canvas.load_atlas()
+        node = ffi.NodeSpec(
+            id=1,
+            title="t",
+            x=0,
+            y=0,
+            ports=[
+                ffi.PortSpec("u_src", True),
+                ffi.PortSpec("u_res", True, control=control),
+                ffi.PortSpec("out", False),
+            ],
+        )
+        result = canvas.frame(
+            [node], [], (500.0, 460.0), ffi.View(), ffi.PointerState()
+        )
+        shapes = shapes_array(result)
+        tones = {
+            (round(float(row[4]), 3), round(float(row[5]), 3), round(float(row[6]), 3))
+            for row in shapes
+            if row[2] > 90 and 10 < row[3] < 26 and row[7] > 0.9
+        }
+        canvas.release()
+        return tones
+
+    as_input = row_tones(False)
+    as_control = row_tones(True)
+    assert as_input != as_control, (
+        f"a control row is drawn the same as an input: {as_input}"
+    )
 
 
 def test_hover_and_selection_change_the_border_and_not_the_size() -> None:
