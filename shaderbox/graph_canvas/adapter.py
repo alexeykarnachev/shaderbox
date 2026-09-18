@@ -26,6 +26,7 @@ from shaderbox.graph_canvas.ffi import (
     PortSpec,
     PreviewFit,
     Result,
+    Widget,
 )
 from shaderbox.pass_graph import Port
 
@@ -89,6 +90,19 @@ _NEUTRAL_PALETTE: NodePalette = NodePalette(
     select=(1.0, 1.0, 1.0, 1.0),
     engine_uniform=(1.0, 1.0, 1.0, 1.0),
 )
+
+
+def _widget_for(value: tuple[float, ...]) -> Widget:
+    """What draws a read-only engine value.
+
+    Measured: a `LABEL` renders `value_text_component(value, 0)` and nothing
+    else, so a two-component value loses its second half silently. A `DRAG`
+    renders one field per component and, with `read_only`, never takes the
+    pointer -- which is the library's own stated reason for that flag.
+    """
+    if not value:
+        return Widget.NONE
+    return Widget.LABEL if len(value) == 1 else Widget.DRAG
 
 
 def _border_of(
@@ -165,7 +179,7 @@ def pack_nodes(
     previews: Mapping[str, tuple[int, int, int]],
     output: str,
     ghosts: frozenset[str] = frozenset(),
-    engine: Mapping[str, Sequence[str]] | None = None,
+    engine: Mapping[str, Sequence[tuple[str, tuple[float, ...]]]] | None = None,
     hovered: str = "",
     selected: frozenset[str] = frozenset(),
     palette: NodePalette | None = None,
@@ -181,10 +195,12 @@ def pack_nodes(
     dashed, and refusing every gesture, so a press falls through to the canvas
     rather than being swallowed by something that does nothing.
 
-    `engine` names each pass's engine-driven uniforms (`u_time` and its
-    siblings). They are CONTROL rows -- a label in the node's body with no pin
-    -- because the engine writes them and no wire can: giving them a pin would
-    offer a connection the document cannot express.
+    `engine` gives each pass's engine-driven uniforms as (name, value)
+    pairs -- `u_time` and its siblings. They are CONTROL rows carrying a
+    read-only LABEL widget, which is the case the library's `read_only` field
+    says it exists for: the engine writes them and no wire can, so a pin would
+    offer a connection the document cannot express, and an editable widget
+    would offer an edit the engine overwrites next frame.
 
     `hovered` and `selected` decide the border. Hover has to be visible
     without moving anything, so it recolours and thickens the border rather
@@ -227,10 +243,17 @@ def pack_nodes(
         # The pin colour is still handed over. A control carries no pin today,
         # so it has no effect; it costs nothing and lands the moment the
         # library gives a control something tintable.
-        for label in (engine or {}).get(name, ()):
+        for label, value in (engine or {}).get(name, ()):
             specs.append(
                 PortSpec(
                     label=label,
+                    # A LABEL draws component 0 ONLY, so a vec2 like
+                    # `u_resolution` would show half of itself. A read-only
+                    # DRAG draws one field per component and takes no input,
+                    # which is the same display without the lie.
+                    widget=_widget_for(value),
+                    value=value,
+                    read_only=True,
                     is_input=True,
                     control=True,
                     pin_shape=PinShape.SQUARE,

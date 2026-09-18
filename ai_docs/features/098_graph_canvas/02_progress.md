@@ -138,6 +138,26 @@ keeps a centre at full strength. It does not matter here, since a control
 carries no pin, but it is the reason the intermediate attempt still looked
 wrong after the colour was "applied".
 
+## Engine uniforms show their live values
+
+A control row carries a read-only widget and the number the engine wrote this
+frame, read from `Pass.uniform_values` after the render. The widget is chosen
+by component count: a `LABEL` draws component 0 and nothing else, so a vec2
+would show half of itself, and a read-only `DRAG` draws one field per
+component while taking no pointer.
+
+`FFI_Attribute.value` was declared and never read until ABI 3 -- reported
+upstream with the measurement (a Label with a value gave the same glyph count
+as one without, at every zoom, so it was not the LOD gate).
+
+**Still not blue, and it cannot be from here.** A row's background comes from
+`attribute_role_color` reading the THEME, text colour comes from three fixed
+theme roles, and no FFI export sets the theme -- `gc_new` installs the default
+and nothing writes it again. `pin_color` is the only host-settable colour, and
+a control has no pin. Reported upstream as the root cause; until a theme
+export exists the rows are distinguished by KIND (the neutral control tone
+against the input green) and not by shaderbox's palette.
+
 ## Parity notes
 
 - **Panning is the HOST's.** The library zooms itself from the wheel and uses

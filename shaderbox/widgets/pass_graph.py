@@ -225,6 +225,23 @@ def _canvas_menu(app: App, document_id: str, view: GraphViewState) -> None:
             imgui.end_popup()
 
 
+def _as_components(value: object) -> tuple[float, ...]:
+    """An engine uniform's value as up to four floats, or empty.
+
+    The engine writes a float for a scalar and a tuple for a vector, and the
+    glyph tables are bytes that no row can show. Anything that is not a number
+    or a short sequence of them reads as no value, which draws the name alone.
+    """
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return (float(value),)
+    if isinstance(value, (tuple, list)) and 0 < len(value) <= 4:
+        try:
+            return tuple(float(v) for v in value)
+        except (TypeError, ValueError):
+            return ()
+    return ()
+
+
 def _library_canvas(
     app: App,
     document_id: str,
@@ -276,10 +293,21 @@ def _library_canvas(
     # The engine's own uniforms (`u_time` and its siblings), shown as body rows
     # in the syntax colour the editor already gives them. They take no wire --
     # the engine writes them -- so they are controls rather than ports.
-    engine: dict[str, list[str]] = {}
+    engine: dict[str, list[tuple[str, tuple[float, ...]]]] = {}
     for name in order:
-        declared = {u.name for u in document.passes[name].get_active_uniforms()}
-        engine[name] = [u for u in sorted(ENGINE_DRIVEN_UNIFORMS) if u in declared]
+        render_pass = document.passes[name]
+        declared = {u.name for u in render_pass.get_active_uniforms()}
+        rows: list[tuple[str, tuple[float, ...]]] = []
+        for uniform in sorted(ENGINE_DRIVEN_UNIFORMS):
+            if uniform not in declared:
+                continue
+            # The LIVE value, which `Pass.render` writes back into
+            # `uniform_values` every frame. A pass that has not rendered yet
+            # has no entry and shows the name alone.
+            rows.append(
+                (uniform, _as_components(render_pass.uniform_values.get(uniform)))
+            )
+        engine[name] = rows
 
     packed = pack_nodes(
         order,

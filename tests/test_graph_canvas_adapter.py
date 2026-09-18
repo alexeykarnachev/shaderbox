@@ -247,7 +247,7 @@ def test_a_wire_points_at_an_output_and_engine_rows_follow_it() -> None:
         {},
         {},
         output="b",
-        engine={"a": ["u_time", "u_resolution"], "b": []},
+        engine={"a": [("u_time", (1.0,)), ("u_resolution", (64.0, 64.0))], "b": []},
     )
     attributes = packed.nodes[0].ports
     outputs = [i for i, spec in enumerate(attributes) if not spec.is_input]
@@ -275,7 +275,7 @@ def test_an_engine_uniform_is_a_control_and_not_an_input() -> None:
         {"a": (0.0, 0.0), "b": (300.0, 0.0)},
         {},
         output="b",
-        engine={"a": [], "b": ["u_time"]},
+        engine={"a": [], "b": [("u_time", (1.0,))]},
     )
     by_label = {spec.label: spec for spec in packed.nodes[1].ports}
     assert "u_time" in by_label
@@ -358,3 +358,70 @@ def test_hover_and_selection_change_the_border_and_not_the_size() -> None:
     # Thicker, and the unhovered sibling untouched.
     assert hovered.nodes[0].border_scale > plain.nodes[0].border_scale
     assert hovered.nodes[1].border == plain.nodes[1].border
+
+
+def test_a_multi_component_engine_value_shows_every_component() -> None:
+    """A `LABEL` renders component 0 and nothing else, so a vec2 like
+    `u_resolution` would show half of itself with no sign that it had. A
+    read-only `DRAG` draws one field per component and takes no pointer.
+
+    Asserted against the GEOMETRY, because the widget choice is only a means:
+    what matters is that a two-component value puts more on the node than a
+    one-component value does, which a Label does not.
+    """
+
+    def glyphs(value: tuple[float, ...]) -> int:
+        canvas = ffi.Canvas()
+        canvas.load_atlas()
+        packed = pack_nodes(
+            ["a"],
+            {"a": []},
+            {"a": (0.0, 0.0)},
+            {},
+            output="a",
+            engine={"a": [("u_res", value)]},
+        )
+        result = canvas.frame(
+            packed.nodes, packed.edges, (900.0, 700.0), ffi.View(), ffi.PointerState()
+        )
+        count = result.glyph_count
+        canvas.release()
+        return count
+
+    one = glyphs((64.0,))
+    two = glyphs((64.0, 64.0))
+    assert two > one, f"a vec2 drew no more than a scalar: {two} against {one}"
+
+
+def test_an_engine_row_with_no_value_yet_shows_its_name_alone() -> None:
+    """A pass that has not rendered has no value to show. The row is still
+    worth drawing -- the uniform exists and the user should see it -- so the
+    widget goes to NONE rather than the row disappearing."""
+    packed = pack_nodes(
+        ["a"],
+        {"a": []},
+        {"a": (0.0, 0.0)},
+        {},
+        output="a",
+        engine={"a": [("u_time", ())]},
+    )
+    row = next(spec for spec in packed.nodes[0].ports if spec.label == "u_time")
+    assert row.control is True
+    assert row.widget is ffi.Widget.NONE
+    assert row.value == ()
+
+
+def test_an_engine_value_is_read_only() -> None:
+    """The engine overwrites it every frame, so an editable widget would offer
+    an edit that reverts -- which the library's own contract calls out."""
+    packed = pack_nodes(
+        ["a"],
+        {"a": []},
+        {"a": (0.0, 0.0)},
+        {},
+        output="a",
+        engine={"a": [("u_time", (1.0,)), ("u_res", (64.0, 64.0))]},
+    )
+    for spec in packed.nodes[0].ports:
+        if spec.label.startswith("u_"):
+            assert spec.read_only is True, spec.label

@@ -30,7 +30,7 @@ ATLAS_JSON_PATH: Path = GRAPH_CANVAS_RESOURCES_DIR / "atlas.json"
 ATLAS_PNG_PATH: Path = GRAPH_CANVAS_RESOURCES_DIR / "atlas.png"
 SHADERS_DIR: Path = GRAPH_CANVAS_RESOURCES_DIR / "shaders"
 
-ABI_VERSION: int = 2
+ABI_VERSION: int = 3
 
 _LIB: ctypes.CDLL | None = None
 
@@ -199,10 +199,15 @@ class Event(ctypes.Structure):
         ("y", ctypes.c_float),
         ("error", ctypes.c_int32),
         ("id", ctypes.c_uint64),
+        # On a Value_Changed, the attribute's number after the edit; zero on
+        # every other kind.
+        ("value", ctypes.c_float * 4),
+        ("value_count", ctypes.c_int32),
         ("extend", ctypes.c_uint8),
         ("_pad0", ctypes.c_uint8),
         ("_pad1", ctypes.c_uint8),
         ("_pad2", ctypes.c_uint8),
+        ("_pad3", ctypes.c_int32),
     ]
 
 
@@ -250,6 +255,7 @@ class EventKind(IntEnum):
     EDGE_ADDED = 5
     EDGE_REMOVED = 6
     EDGE_REFUSED = 7
+    VALUE_CHANGED = 8
 
 
 class ConnectError(IntEnum):
@@ -281,6 +287,20 @@ class PinFill(IntEnum):
     FILLED = 1
     HOLLOW = 2
     CORED = 3
+
+
+class Widget(IntEnum):
+    """What an attribute draws in its row, in the library's own order."""
+
+    NONE = 0
+    DRAG = 1
+    SLIDER = 2
+    CHECKBOX = 3
+    BUTTON = 4
+    LABEL = 5
+    TEXT = 6
+    COLOR = 7
+    ENUM = 8
 
 
 class PreviewFit(IntEnum):
@@ -348,7 +368,7 @@ _STRUCTS: list[tuple[str, type[ctypes.Structure]]] = [
 # every size check and then hands a value nothing here has a name for.
 _ENUMS: list[tuple[str, int]] = [
     ("Event_Kind", len(EventKind)),
-    ("Widget", 9),
+    ("Widget", len(Widget)),
     ("Connect_Error", len(ConnectError)),
     ("Preview_Fit", len(PreviewFit)),
     ("Attribute_Kind", 3),
@@ -528,6 +548,13 @@ class PortSpec:
     pin_fill: PinFill = PinFill.UNSET
     color: tuple[float, float, float, float] | None = None
     control: bool = False
+    widget: Widget = Widget.NONE
+    # Up to four components; the library shows as many as are given. A LABEL
+    # renders them read-only, which is what the library's `read_only` comment
+    # names as its reason for existing: engine-driven values.
+    value: tuple[float, ...] = ()
+    text: str = ""
+    read_only: bool = True
 
 
 @dataclass(slots=True)
@@ -665,10 +692,17 @@ class Canvas:
                     a.kinds = ATTR_CONTROL
                 else:
                     a.kinds = ATTR_INPUT if port.is_input else ATTR_OUTPUT
-                a.widget = 0
-                a.value_count = 0
-                a.value_is_text = 0
-                a.text = Str(0, 0)
+                a.widget = int(port.widget)
+                count = min(len(port.value), 4)
+                a.value_count = count
+                for component in range(count):
+                    a.value[component] = port.value[component]
+                if port.text:
+                    a.value_is_text = 1
+                    a.text = self._blob.add(port.text)
+                else:
+                    a.value_is_text = 0
+                    a.text = Str(0, 0)
                 a.opt_first = 0
                 a.opt_count = 0
                 a.height = 0.0
@@ -677,7 +711,7 @@ class Canvas:
                 a.max = 0.0
                 a.pin_shape = int(port.pin_shape)
                 a.pin_fill = int(port.pin_fill)
-                a.read_only = 1
+                a.read_only = 1 if port.read_only else 0
                 a.pin_on_preview = 0
                 if port.color is None:
                     a.pin_color_set = 0
