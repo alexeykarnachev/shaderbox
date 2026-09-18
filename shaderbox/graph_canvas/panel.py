@@ -42,9 +42,19 @@ def refusal_text(code: int) -> str:
 
 
 def pointer_from_io(
-    canvas_origin: tuple[float, float], hovered: bool, cancelled: bool = False
+    canvas_origin: tuple[float, float],
+    hovered: bool,
+    cancelled: bool = False,
+    claimed: bool = False,
 ) -> ffi.PointerState:
     """imgui's mouse this frame, in the canvas's own coordinates.
+
+    `claimed` is last frame's answer to "does the library have the pointer" --
+    a node, a pin or a wire under it. It decides whether a plain left-drag
+    pans: over the background nothing else wants that press, over a node the
+    library is dragging the node and a pan would fight it. Last frame's is the
+    right one to use, because the press that starts a drag is delivered on the
+    same frame the hit is resolved.
 
     `cancelled` is how the pointer is taken back mid-gesture -- a view switch,
     a modal, a copilot turn. Without it a button release and a pre-empted
@@ -69,8 +79,15 @@ def pointer_from_io(
         flags |= int(ffi.Pointer.FINE)
     if io.key_alt:
         flags |= int(ffi.Pointer.ALT_PRESSED)
-    if imgui.is_mouse_down(imgui.MouseButton_.middle) or (
-        io.key_alt and imgui.is_mouse_down(imgui.MouseButton_.left)
+    # A pan is the middle button, Alt with the left, or a plain left-drag the
+    # library did not claim -- which is every press on empty canvas. The old
+    # imgui canvas reserved that last one for a rubber band; with no rubber
+    # band here it would otherwise do nothing, and "drag the background"
+    # is the first thing a hand reaches for.
+    if (
+        imgui.is_mouse_down(imgui.MouseButton_.middle)
+        or (io.key_alt and imgui.is_mouse_down(imgui.MouseButton_.left))
+        or (imgui.is_mouse_down(imgui.MouseButton_.left) and not claimed)
     ):
         flags |= int(ffi.Pointer.VIEW_MOVING)
     return ffi.PointerState(
@@ -110,6 +127,14 @@ class GraphCanvasState:
     # The node the last context-menu event named, so the popup that opens on
     # one frame still knows what it is about on the next.
     menu_node: str = ""
+    # Last frame's pointer, for the pan delta. `None` until the first frame,
+    # so a pan that begins on the frame the canvas appears has no delta to
+    # apply rather than a jump from the origin.
+    last_pointer: tuple[float, float] | None = None
+    # Whether the library held the pointer on the PREVIOUS frame, which is what
+    # decides if a plain left-drag pans. A press is delivered on the same frame
+    # its hit is resolved, so this frame's answer is not available in time.
+    claimed: bool = False
     fitted: bool = False
 
     def ensure(self, renderer: CanvasRenderer) -> tuple[ffi.Canvas, CanvasPanel]:
@@ -178,6 +203,22 @@ def render_to_texture(
         )
         state.fitted = True
 
+    # The library ZOOMS itself (from `wheel`) and does not pan: `view_moving`
+    # only tells it to suppress hover. Panning is the host's, as it is in the
+    # library's own demo, and it is applied BEFORE the frame so the picture
+    # and the hit-testing agree about where the pointer is this frame.
+    #
+    # `pan` is a canvas-space position that is SUBTRACTED, so dragging the
+    # canvas right moves `pan` LEFT, and the distance is divided by the zoom.
+    if pointer.flags & int(ffi.Pointer.VIEW_MOVING) and state.last_pointer is not None:
+        dx = pointer.x - state.last_pointer[0]
+        dy = pointer.y - state.last_pointer[1]
+        zoom = max(state.view.zoom, 1e-6)
+        state.view = ffi.View(
+            state.view.pan_x - dx / zoom, state.view.pan_y - dy / zoom, state.view.zoom
+        )
+    state.last_pointer = (pointer.x, pointer.y)
+
     result = canvas.frame(
         packed.nodes,
         packed.edges,
@@ -185,11 +226,16 @@ def render_to_texture(
         state.view,
         pointer,
     )
-    # The library pans and zooms itself; storing what it returns is what makes
-    # the next frame continue the gesture rather than fight it.
+    # The zoom the library applied comes back on the result; storing it is what
+    # makes the next frame continue the gesture rather than fight it.
     state.view = ffi.View(result.pan_x, result.pan_y, result.zoom)
     state.packed = packed
 
     events = read_events(result, packed)
     texture = panel.render(result, size, canvas.distance_range, clear_color)
-    return texture, events, pointer_is_claimed(result)
+    # Latched while the button is held: a drag that began on a node must keep
+    # counting as the library's for its whole life, or the frame the pointer
+    # wanders onto empty canvas starts panning underneath it.
+    if not (pointer.flags & int(ffi.Pointer.DOWN)):
+        state.claimed = pointer_is_claimed(result)
+    return texture, events, state.claimed

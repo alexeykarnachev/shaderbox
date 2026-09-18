@@ -282,7 +282,9 @@ def _library_canvas(
     # a stray later release must not commit a wire or a move.
     hovered = imgui.is_window_hovered(imgui.HoveredFlags_.child_windows)
     frozen = app.copilot_turn_active
-    pointer = pointer_from_io((origin.x, origin.y), hovered, cancelled=frozen)
+    pointer = pointer_from_io(
+        (origin.x, origin.y), hovered, cancelled=frozen, claimed=state.claimed
+    )
     if not view.fitted:
         state.fitted = False
         view.fitted = True

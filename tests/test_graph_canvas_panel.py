@@ -60,8 +60,9 @@ def test_an_empty_graph_frames_without_dividing_by_a_zero_span() -> None:
 def test_the_view_the_library_returns_is_carried_into_the_next_frame(
     gl_ctx: moderngl.Context,
 ) -> None:
-    """The library owns the pan and the zoom; a host that pushes its own back
-    every frame fights the gesture instead of continuing it."""
+    """The library owns the ZOOM; a host that pushes its own back every frame
+    fights the gesture instead of continuing it. (The pan is the host's --
+    see the pan test below.)"""
     renderer = CanvasRenderer(gl=gl_ctx)
     state = GraphCanvasState()
     packed = _packed()
@@ -134,3 +135,103 @@ def test_every_refusal_code_the_binding_declares_has_a_sentence() -> None:
         if error is ffi.ConnectError.NONE:
             continue
         assert not refusal_text(int(error)).startswith("refused ("), error.name
+
+
+def test_a_view_moving_drag_pans_and_a_plain_move_does_not(
+    gl_ctx: moderngl.Context,
+) -> None:
+    """The library does NOT pan -- it zooms from the wheel and uses
+    `view_moving` only to suppress hover -- so panning is the host's, as it is
+    in the library's own demo. This went missing entirely in the switchover:
+    every gesture test drove wires and nodes, and nothing dragged the canvas.
+
+    `pan` is a canvas-space position that is SUBTRACTED, so dragging right
+    moves `pan` left and the distance is divided by the zoom.
+    """
+    renderer = CanvasRenderer(gl=gl_ctx)
+    packed = _packed()
+
+    def drag(flags: int) -> float:
+        state = GraphCanvasState()
+        render_to_texture(
+            state,
+            renderer,
+            packed,
+            (800, 600),
+            (0, 0, 0, 1),
+            ffi.PointerState(x=700.0, y=560.0),
+        )
+        before = state.view.pan_x
+        for x in (700.0, 640.0, 580.0):
+            render_to_texture(
+                state,
+                renderer,
+                packed,
+                (800, 600),
+                (0, 0, 0, 1),
+                ffi.PointerState(x=x, y=560.0, flags=flags),
+            )
+        moved = state.view.pan_x - before
+        state.release()
+        return moved
+
+    down = int(ffi.Pointer.DOWN)
+    panned = drag(down | int(ffi.Pointer.VIEW_MOVING))
+    # Dragging 120px LEFT at zoom z raises pan.x by 120/z.
+    assert panned > 0.0, f"a view-moving drag did not pan: {panned}"
+
+    assert drag(down) == 0.0, "a drag without view_moving panned"
+    assert drag(0) == 0.0, "a pointer with no button down panned"
+    renderer.release()
+
+
+def test_a_pan_does_not_jump_on_the_first_frame(gl_ctx: moderngl.Context) -> None:
+    """There is no previous pointer to take a delta from on the frame the
+    canvas appears, and treating its absence as the origin would slam the view
+    by the pointer's full distance from (0, 0).
+
+    The FIRST frame has to carry the pan flag: a fixture that settles the view
+    first has already recorded a pointer, so the guard it is meant to test is
+    never reached and the check passes with the guard deleted.
+    """
+    renderer = CanvasRenderer(gl=gl_ctx)
+    packed = _packed()
+    moving = int(ffi.Pointer.DOWN) | int(ffi.Pointer.VIEW_MOVING)
+    far = ffi.PointerState(x=700.0, y=560.0, flags=moving)
+
+    # Cold: the very first frame this state ever sees is a pan, from a pointer
+    # far from the origin.
+    cold = GraphCanvasState()
+    render_to_texture(cold, renderer, packed, (800, 600), (0, 0, 0, 1), far)
+    panned_cold = cold.view
+
+    # The same view, fitted with no pan flag at all.
+    still = GraphCanvasState()
+    render_to_texture(
+        still,
+        renderer,
+        packed,
+        (800, 600),
+        (0, 0, 0, 1),
+        ffi.PointerState(x=700.0, y=560.0),
+    )
+    assert panned_cold.pan_x == still.view.pan_x, (
+        "the first frame panned by the pointer's distance from the origin"
+    )
+    assert panned_cold.pan_y == still.view.pan_y
+
+    # And the SECOND frame of the same drag does pan, so the guard is a
+    # one-frame delay rather than a suppression.
+    render_to_texture(
+        cold,
+        renderer,
+        packed,
+        (800, 600),
+        (0, 0, 0, 1),
+        ffi.PointerState(x=580.0, y=560.0, flags=moving),
+    )
+    assert cold.view.pan_x != panned_cold.pan_x
+
+    cold.release()
+    still.release()
+    renderer.release()

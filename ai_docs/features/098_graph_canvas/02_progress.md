@@ -118,6 +118,13 @@ is the next surface, not this one.
 
 ## Parity notes
 
+- **Panning is the HOST's.** The library zooms itself from the wheel and uses
+  `view_moving` only to suppress hover, so a host that sets the flag and never
+  moves the view has no pan at all -- which is what shipped, because every
+  gesture test drove wires and nodes and none dragged the canvas. Middle-drag,
+  Alt+left-drag, and now a plain left-drag the library did not claim: the old
+  canvas reserved that last one for the rubber band, and with no rubber band
+  here it would otherwise do nothing.
 - Ghosts are `fade` + `dashed` + `accepts = NONE`, so a press falls through.
 - The rubber band, the snap guides and the mid-curve unwire badge are not
   re-expressed: the library has no primitive for them. A wire is removed by
