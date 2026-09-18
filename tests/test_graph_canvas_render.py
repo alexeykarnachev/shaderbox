@@ -183,12 +183,33 @@ def test_the_streams_are_uploaded_at_the_library_s_own_widths(
     canvas.release()
 
 
-def test_the_glyph_atlas_and_a_preview_do_not_share_a_texture_unit() -> None:
+def test_the_glyph_atlas_and_a_preview_do_not_share_a_texture_unit(
+    gl_ctx: moderngl.Context,
+) -> None:
     """A preview bound where the atlas lives is sampled as glyph coverage by
-    the next text run."""
-    from shaderbox.graph_canvas.render import _ATLAS_UNIT, _IMAGE_UNIT
+    the next text run.
 
-    assert _ATLAS_UNIT != _IMAGE_UNIT
+    Read from the LIVE bindings after a real frame, not from the two
+    constants three lines apart in the source. The first version asserted
+    `_ATLAS_UNIT != _IMAGE_UNIT` and stayed green when the binding calls were
+    changed to put a preview on the atlas's unit -- the exact defect it
+    names. A constant the source also defines cannot witness how it is used.
+    """
+    renderer = CanvasRenderer(gl=gl_ctx)
+    panel = CanvasPanel(renderer)
+    canvas = ffi.Canvas()
+    canvas.load_atlas()
+    result = _one_node_frame(canvas, (400.0, 400.0))
+    panel.render(result, (400, 400), canvas.distance_range, (0.0, 0.0, 0.0, 1.0))
+
+    atlas_unit = renderer.glyph_program["u_atlas"].value
+    image_unit = renderer.shape_program["u_image"].value
+    assert atlas_unit != image_unit, (
+        f"the atlas and a preview share texture unit {atlas_unit}"
+    )
+    canvas.release()
+    panel.release()
+    renderer.release()
 
 
 def test_an_empty_frame_clears_without_drawing(gl_ctx: moderngl.Context) -> None:

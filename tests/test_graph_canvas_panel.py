@@ -9,15 +9,21 @@ import moderngl
 import pytest
 
 from shaderbox.graph_canvas import ffi
-from shaderbox.graph_canvas.adapter import pack_nodes
+from shaderbox.graph_canvas.adapter import Moved, pack_nodes
 from shaderbox.graph_canvas.panel import (
     GraphCanvasState,
     frame_all,
+    pointer_flags,
     refusal_text,
     render_to_texture,
 )
 from shaderbox.graph_canvas.render import CanvasRenderer
 from shaderbox.pass_graph import Port
+
+# A canvas point the library does NOT claim, so a press there begins a pan.
+# Load-bearing rather than arbitrary: a pan is decided at the press, so a
+# fixture aiming at a node gets no pan at all -- correctly.
+_EMPTY = (40.0, 560.0)
 
 
 def _packed() -> object:
@@ -137,21 +143,25 @@ def test_every_refusal_code_the_binding_declares_has_a_sentence() -> None:
         assert not refusal_text(int(error)).startswith("refused ("), error.name
 
 
-def test_a_view_moving_drag_pans_and_a_plain_move_does_not(
-    gl_ctx: moderngl.Context,
-) -> None:
+def test_a_view_moving_drag_pans_at_the_right_rate(gl_ctx: moderngl.Context) -> None:
     """The library does NOT pan -- it zooms from the wheel and uses
-    `view_moving` only to suppress hover -- so panning is the host's, as it is
-    in the library's own demo. This went missing entirely in the switchover:
-    every gesture test drove wires and nodes, and nothing dragged the canvas.
+    `view_moving` only to suppress hover -- so panning is the host's.
 
-    `pan` is a canvas-space position that is SUBTRACTED, so dragging right
-    moves `pan` left and the distance is divided by the zoom.
+    The RATE is asserted, not merely the direction: `pan` is canvas space, so
+    a 120px drag moves it 120/zoom, and the fixture's zoom is not 1. An
+    earlier version asserted `> 0` and stayed green with the division
+    dropped, which would pan at the wrong speed under the hand and error
+    nowhere.
+
+    The press must land where the library does NOT claim the pointer, because
+    a pan is decided at the press now. A fixture aiming at a node gets no pan
+    at all -- correctly -- so `_EMPTY` is load-bearing rather than arbitrary.
     """
     renderer = CanvasRenderer(gl=gl_ctx)
     packed = _packed()
+    travel = 120.0
 
-    def drag(flags: int) -> float:
+    def drag(flags: int) -> tuple[float, float]:
         state = GraphCanvasState()
         render_to_texture(
             state,
@@ -159,29 +169,83 @@ def test_a_view_moving_drag_pans_and_a_plain_move_does_not(
             packed,
             (800, 600),
             (0, 0, 0, 1),
-            ffi.PointerState(x=700.0, y=560.0),
+            ffi.PointerState(x=_EMPTY[0], y=_EMPTY[1]),
         )
         before = state.view.pan_x
-        for x in (700.0, 640.0, 580.0):
+        for index, offset in enumerate((0.0, travel / 2, travel)):
+            carried = flags | (int(ffi.Pointer.PRESSED) if index == 0 and flags else 0)
             render_to_texture(
                 state,
                 renderer,
                 packed,
                 (800, 600),
                 (0, 0, 0, 1),
-                ffi.PointerState(x=x, y=560.0, flags=flags),
+                ffi.PointerState(x=_EMPTY[0] - offset, y=_EMPTY[1], flags=carried),
             )
         moved = state.view.pan_x - before
+        zoom = state.view.zoom
         state.release()
-        return moved
+        return moved, zoom
 
     down = int(ffi.Pointer.DOWN)
-    panned = drag(down | int(ffi.Pointer.VIEW_MOVING))
-    # Dragging 120px LEFT at zoom z raises pan.x by 120/z.
-    assert panned > 0.0, f"a view-moving drag did not pan: {panned}"
+    panned, zoom = drag(down | int(ffi.Pointer.VIEW_MOVING))
+    assert panned == pytest.approx(travel / zoom, rel=0.05), (
+        f"panned {panned} at zoom {zoom}; expected {travel / zoom}"
+    )
 
-    assert drag(down) == 0.0, "a drag without view_moving panned"
-    assert drag(0) == 0.0, "a pointer with no button down panned"
+    assert drag(down)[0] == 0.0, "a drag without view_moving panned"
+    assert drag(0)[0] == 0.0, "a pointer with no button down panned"
+    renderer.release()
+
+
+def test_a_press_the_library_claims_never_becomes_a_pan(
+    gl_ctx: moderngl.Context,
+) -> None:
+    """A press that lands in the same frame the pointer arrives on a node.
+
+    `VIEW_MOVING` is computed from the PREVIOUS frame's claim, so on a fast
+    mouse move the flag says background while the press is really on a node.
+    Deciding the pan per frame from that flag panned by the whole cursor jump
+    -- measured at 820x535 px -- and the node never dragged. The press now
+    asks the library first, once, and the answer holds until release.
+    """
+    renderer = CanvasRenderer(gl=gl_ctx)
+    packed = _packed()
+    state = GraphCanvasState()
+    render_to_texture(
+        state,
+        renderer,
+        packed,
+        (800, 600),
+        (0, 0, 0, 1),
+        ffi.PointerState(x=_EMPTY[0], y=_EMPTY[1]),
+    )
+    probe = state.canvas.frame(
+        packed.nodes, packed.edges, (800.0, 600.0), state.view, ffi.PointerState()
+    )
+    box = probe.node_rects[0]
+    on_node = (box.x + box.w / 2, box.y + box.h / 3)
+
+    before = state.view.pan_x
+    moving = int(ffi.Pointer.DOWN) | int(ffi.Pointer.VIEW_MOVING)
+    events: list[object] = []
+    for index, step in enumerate((0.0, 40.0, 80.0)):
+        carried = moving | (int(ffi.Pointer.PRESSED) if index == 0 else 0)
+        _texture, frame_events, _claimed = render_to_texture(
+            state,
+            renderer,
+            packed,
+            (800, 600),
+            (0, 0, 0, 1),
+            ffi.PointerState(x=on_node[0] + step, y=on_node[1] + step, flags=carried),
+        )
+        events.extend(frame_events)
+
+    assert state.view.pan_x == pytest.approx(before), (
+        f"a press on a node panned the canvas by {state.view.pan_x - before}"
+    )
+    assert any(isinstance(event, Moved) for event in events), "the node did not drag"
+    state.release()
     renderer.release()
 
 
@@ -197,12 +261,18 @@ def test_a_pan_does_not_jump_on_the_first_frame(gl_ctx: moderngl.Context) -> Non
     renderer = CanvasRenderer(gl=gl_ctx)
     packed = _packed()
     moving = int(ffi.Pointer.DOWN) | int(ffi.Pointer.VIEW_MOVING)
-    far = ffi.PointerState(x=700.0, y=560.0, flags=moving)
 
     # Cold: the very first frame this state ever sees is a pan, from a pointer
     # far from the origin.
     cold = GraphCanvasState()
-    render_to_texture(cold, renderer, packed, (800, 600), (0, 0, 0, 1), far)
+    render_to_texture(
+        cold,
+        renderer,
+        packed,
+        (800, 600),
+        (0, 0, 0, 1),
+        ffi.PointerState(x=700.0, y=560.0, flags=moving | int(ffi.Pointer.PRESSED)),
+    )
     panned_cold = cold.view
 
     # The same view, fitted with no pan flag at all.
@@ -235,3 +305,31 @@ def test_a_pan_does_not_jump_on_the_first_frame(gl_ctx: moderngl.Context) -> Non
     cold.release()
     still.release()
     renderer.release()
+
+
+def test_a_button_the_canvas_is_not_under_never_reaches_the_library() -> None:
+    """A click on a context-menu item drawn OVER the canvas is not a node
+    click, and a drag elsewhere in the app is not a pan.
+
+    This is the sharpest bug the review found: a `Clicked` runs
+    `App.choose_output`, which writes the document -- so every use of the
+    node context menu persisted a change to the graph. Coordinates are
+    canvas-local, so a pointer outside the region still lands on a node.
+
+    `holding` is what makes the gate safe for a real drag: a gesture the
+    canvas BEGAN keeps its buttons while the pointer wanders off, and one
+    that began elsewhere never arrives. Checking "the button is down"
+    instead lets the menu click straight back in, which is the hole the
+    first version of this gate had.
+    """
+    flags = pointer_flags(hovered=False, left_down=True, left_click=True)
+    assert flags & int(ffi.Pointer.DOWN) == 0, "an off-canvas press reached the library"
+    assert flags & int(ffi.Pointer.PRESSED) == 0
+
+    # The same press, from a gesture this canvas started: it must arrive.
+    carried = pointer_flags(hovered=False, left_down=True, holding=True)
+    assert carried & int(ffi.Pointer.DOWN), "an in-flight drag lost its button"
+
+    # And over the canvas, everything arrives as normal.
+    over = pointer_flags(hovered=True, left_down=True, left_click=True)
+    assert over & int(ffi.Pointer.DOWN) and over & int(ffi.Pointer.PRESSED)

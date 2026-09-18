@@ -38,6 +38,7 @@ from shaderbox.graph_canvas.adapter import (
     Unwired,
     Wired,
     pack_nodes,
+    theme_from,
 )
 from shaderbox.graph_canvas.panel import (
     GraphCanvasState,
@@ -330,7 +331,11 @@ def _library_canvas(
     hovered = imgui.is_window_hovered(imgui.HoveredFlags_.child_windows)
     frozen = app.copilot_turn_active
     pointer = pointer_from_io(
-        (origin.x, origin.y), hovered, cancelled=frozen, claimed=state.claimed
+        (origin.x, origin.y),
+        hovered,
+        cancelled=frozen,
+        claimed=state.claimed,
+        holding=state.holding,
     )
     if not view.fitted:
         state.fitted = False
@@ -343,6 +348,20 @@ def _library_canvas(
         (width, height),
         fade(COLOR.BG_APP, 1.0),
         pointer,
+        theme=theme_from(
+            canvas=COLOR.BG_APP,
+            surface=COLOR.BG_SURFACE,
+            grid=COLOR.BG_SURFACE,
+            border=COLOR.BORDER,
+            text=COLOR.FG_PRIMARY,
+            text_dim=COLOR.FG_MUTED,
+            text_bright=COLOR.FG_TITLE,
+            accent=COLOR.ACCENT_PRIMARY,
+            wire=COLOR.GRAPH_EDGE,
+            wire_invalid=COLOR.STATE_ERROR,
+            port=COLOR.BG_SURFACE,
+            control=COLOR.SYN_UNIFORM,
+        ),
     )
     imgui.image(
         imgui.ImTextureRef(texture.glo),

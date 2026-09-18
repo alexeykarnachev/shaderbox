@@ -41,65 +41,111 @@ def refusal_text(code: int) -> str:
     return _REFUSALS.get(code, f"refused (code {code})")
 
 
+def pointer_flags(
+    hovered: bool,
+    left_down: bool = False,
+    left_click: bool = False,
+    right_click: bool = False,
+    double: bool = False,
+    shift: bool = False,
+    ctrl: bool = False,
+    middle: bool = False,
+    alt: bool = False,
+    claimed: bool = False,
+    holding: bool = False,
+    cancelled: bool = False,
+) -> int:
+    """The pointer flags for one frame, from plain booleans.
+
+    Split out of `pointer_from_io` so the gate is testable without an imgui
+    frame: the io read is three lines and the RULE is the part that has been
+    wrong twice.
+    """
+    flags = int(ffi.Pointer.CANCELLED) if cancelled else 0
+    if not hovered and not holding:
+        return flags
+    if left_down:
+        flags |= int(ffi.Pointer.DOWN)
+    if left_click:
+        flags |= int(ffi.Pointer.PRESSED)
+    if double:
+        flags |= int(ffi.Pointer.DOUBLE)
+    if shift:
+        flags |= int(ffi.Pointer.EXTEND)
+    if ctrl:
+        flags |= int(ffi.Pointer.FINE)
+    # `ALT_PRESSED` is the library's name for THE SECONDARY BUTTON going
+    # down, not for the Alt key -- its own comment says so, and it answers
+    # the flag with a Context_Menu event. Mapping the Alt key onto it opened
+    # the menu whenever Alt was held, which costs the user alt-tab.
+    if right_click:
+        flags |= int(ffi.Pointer.ALT_PRESSED)
+    if middle or (alt and left_down) or (left_down and not claimed):
+        flags |= int(ffi.Pointer.VIEW_MOVING)
+    return flags
+
+
 def pointer_from_io(
     canvas_origin: tuple[float, float],
     hovered: bool,
     cancelled: bool = False,
     claimed: bool = False,
+    holding: bool = False,
 ) -> ffi.PointerState:
     """imgui's mouse this frame, in the canvas's own coordinates.
 
-    `claimed` is last frame's answer to "does the library have the pointer" --
-    a node, a pin or a wire under it. It decides whether a plain left-drag
-    pans: over the background nothing else wants that press, over a node the
-    library is dragging the node and a pan would fight it. Last frame's is the
-    right one to use, because the press that starts a drag is delivered on the
-    same frame the hit is resolved.
-
-    `cancelled` is how the pointer is taken back mid-gesture -- a view switch,
-    a modal, a copilot turn. Without it a button release and a pre-empted
-    gesture look identical, and a wire in flight commits wherever the cursor
-    happened to be.
+    The flag RULE lives in `pointer_flags`, which takes plain booleans and is
+    the part that has been wrong twice; this reads io and applies it.
 
     The double click is imgui's, and so the platform's: the library does not
     time one, because an interval decided there would disagree with every
     other double click on the machine.
     """
     io = imgui.get_io()
-    flags = int(ffi.Pointer.CANCELLED) if cancelled else 0
-    if imgui.is_mouse_down(imgui.MouseButton_.left):
-        flags |= int(ffi.Pointer.DOWN)
-    if imgui.is_mouse_clicked(imgui.MouseButton_.left):
-        flags |= int(ffi.Pointer.PRESSED)
-    if imgui.is_mouse_double_clicked(imgui.MouseButton_.left):
-        flags |= int(ffi.Pointer.DOUBLE)
-    if io.key_shift:
-        flags |= int(ffi.Pointer.EXTEND)
-    if io.key_ctrl:
-        flags |= int(ffi.Pointer.FINE)
-    # `ALT_PRESSED` is the library's name for THE SECONDARY BUTTON GOING DOWN,
-    # not for the Alt key -- its own comment says so, and it answers the flag
-    # with a Context_Menu event. Mapping the Alt key onto it opened the menu
-    # whenever Alt was held, which costs the user alt-tab.
-    if imgui.is_mouse_clicked(imgui.MouseButton_.right):
-        flags |= int(ffi.Pointer.ALT_PRESSED)
-    # A pan is the middle button, Alt with the left, or a plain left-drag the
-    # library did not claim -- which is every press on empty canvas. The old
-    # imgui canvas reserved that last one for a rubber band; with no rubber
-    # band here it would otherwise do nothing, and "drag the background"
-    # is the first thing a hand reaches for.
-    if (
-        imgui.is_mouse_down(imgui.MouseButton_.middle)
-        or (io.key_alt and imgui.is_mouse_down(imgui.MouseButton_.left))
-        or (imgui.is_mouse_down(imgui.MouseButton_.left) and not claimed)
-    ):
-        flags |= int(ffi.Pointer.VIEW_MOVING)
+    flags = pointer_flags(
+        hovered=hovered,
+        left_down=imgui.is_mouse_down(imgui.MouseButton_.left),
+        left_click=imgui.is_mouse_clicked(imgui.MouseButton_.left),
+        right_click=imgui.is_mouse_clicked(imgui.MouseButton_.right),
+        double=imgui.is_mouse_double_clicked(imgui.MouseButton_.left),
+        shift=io.key_shift,
+        ctrl=io.key_ctrl,
+        alt=io.key_alt,
+        middle=imgui.is_mouse_down(imgui.MouseButton_.middle),
+        claimed=claimed,
+        holding=holding,
+        cancelled=cancelled,
+    )
     return ffi.PointerState(
         x=io.mouse_pos.x - canvas_origin[0],
         y=io.mouse_pos.y - canvas_origin[1],
         wheel=io.mouse_wheel if hovered else 0.0,
         flags=flags,
     )
+
+
+def result_claims_pointer(
+    canvas: ffi.Canvas,
+    packed: Packed,
+    size: tuple[int, int],
+    view: ffi.View,
+    pointer: ffi.PointerState,
+) -> bool:
+    """Whether the library wants THIS frame's pointer, asked before the frame.
+
+    A probe rather than last frame's answer, because the press that starts a
+    gesture arrives in the same frame its hit is resolved. It pushes a
+    pointer with no buttons, so it resolves hover and starts nothing; the
+    real frame follows immediately and overwrites the result either way.
+    """
+    probe = canvas.frame(
+        packed.nodes,
+        packed.edges,
+        (float(size[0]), float(size[1])),
+        view,
+        ffi.PointerState(x=pointer.x, y=pointer.y),
+    )
+    return pointer_is_claimed(probe)
 
 
 def _hovered_name(result: ffi.Result, packed: Packed) -> str:
@@ -139,6 +185,9 @@ class GraphCanvasState:
     """
 
     canvas: ffi.Canvas | None = None
+    # Pushed once: `gc_frame` treats a null theme as KEEP, so re-sending it
+    # every frame would be work with no effect.
+    themed: bool = False
     panel: CanvasPanel | None = None
     view: ffi.View = field(default_factory=ffi.View)
     packed: Packed | None = None
@@ -160,6 +209,13 @@ class GraphCanvasState:
     # late -- the same latency the imgui canvas had, for the same reason, and
     # invisible at any rate a hand can outrun.
     hovered: str = ""
+    # Whether the CURRENT press is a pan. Decided once, when the button goes
+    # down, and held until it comes up.
+    panning: bool = False
+    # A gesture this canvas began is in flight. Set on a press the canvas
+    # received, cleared when the button comes up -- so a press that started
+    # on someone else's widget never reaches the library at all.
+    holding: bool = False
     # Where the canvas sits in the window this frame. The library answers in
     # canvas-local coordinates, so anything the host draws OVER the canvas --
     # a tooltip, a menu, a test aiming a click -- needs this to get back.
@@ -221,6 +277,7 @@ def render_to_texture(
     size: tuple[int, int],
     clear_color: tuple[float, float, float, float],
     pointer: ffi.PointerState,
+    theme: ffi.Theme | None = None,
 ) -> tuple[moderngl.Texture, list[GraphEvent], bool]:
     """Push one frame and draw it. Returns the texture, the events, and whether
     the library claimed the pointer — a host must not treat a claimed press as
@@ -239,7 +296,27 @@ def render_to_texture(
     #
     # `pan` is a canvas-space position that is SUBTRACTED, so dragging the
     # canvas right moves `pan` LEFT, and the distance is divided by the zoom.
-    if pointer.flags & int(ffi.Pointer.VIEW_MOVING) and state.last_pointer is not None:
+    #
+    # A pan is a GESTURE with a beginning, not a per-frame decision. Deciding
+    # it each frame from `VIEW_MOVING` alone was wrong in the case that
+    # matters: the flag is computed from LAST frame's claim, so a press that
+    # lands in the same frame the pointer arrives on a node -- any fast mouse
+    # move -- reads as a background press and pans by the whole cursor jump
+    # (measured: 820x535 px) while the node never drags at all.
+    #
+    # So the press decides, once, and the decision holds until release: the
+    # library gets first refusal on the frame the button goes down, and a pan
+    # only starts where it declined.
+    down = bool(pointer.flags & int(ffi.Pointer.DOWN))
+    pressed = bool(pointer.flags & int(ffi.Pointer.PRESSED))
+    if pressed:
+        state.panning = bool(pointer.flags & int(ffi.Pointer.VIEW_MOVING)) and not (
+            result_claims_pointer(canvas, packed, size, state.view, pointer)
+        )
+    elif not down:
+        state.panning = False
+
+    if state.panning and down and state.last_pointer is not None:
         dx = pointer.x - state.last_pointer[0]
         dy = pointer.y - state.last_pointer[1]
         zoom = max(state.view.zoom, 1e-6)
@@ -254,7 +331,10 @@ def render_to_texture(
         (float(size[0]), float(size[1])),
         state.view,
         pointer,
+        theme=None if state.themed else theme,
     )
+    if theme is not None:
+        state.themed = True
     # The zoom the library applied comes back on the result; storing it is what
     # makes the next frame continue the gesture rather than fight it.
     state.view = ffi.View(result.pan_x, result.pan_y, result.zoom)
@@ -266,6 +346,9 @@ def render_to_texture(
     # Latched while the button is held: a drag that began on a node must keep
     # counting as the library's for its whole life, or the frame the pointer
     # wanders onto empty canvas starts panning underneath it.
+    if pointer.flags & int(ffi.Pointer.PRESSED):
+        state.holding = True
     if not (pointer.flags & int(ffi.Pointer.DOWN)):
         state.claimed = pointer_is_claimed(result)
+        state.holding = False
     return texture, events, state.claimed

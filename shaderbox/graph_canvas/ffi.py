@@ -30,7 +30,7 @@ ATLAS_JSON_PATH: Path = GRAPH_CANVAS_RESOURCES_DIR / "atlas.json"
 ATLAS_PNG_PATH: Path = GRAPH_CANVAS_RESOURCES_DIR / "atlas.png"
 SHADERS_DIR: Path = GRAPH_CANVAS_RESOURCES_DIR / "shaders"
 
-ABI_VERSION: int = 3
+ABI_VERSION: int = 4
 
 _LIB: ctypes.CDLL | None = None
 
@@ -102,6 +102,57 @@ class Attribute(ctypes.Structure):
     ]
 
 
+_RGBA = ctypes.c_float * 4
+
+
+class Theme(ctypes.Structure):
+    """The library's palette, as its own `Theme` rather than a mirror of it.
+
+    Every field is a colour (four floats) or a scalar, so the struct is
+    already what the boundary needs and the layout proof walks it like any
+    other. A hand-written mirror would agree by inspection until one field
+    did not.
+    """
+
+    _fields_ = [
+        ("canvas", _RGBA),
+        ("surface", _RGBA),
+        ("grid", _RGBA),
+        ("step", ctypes.c_float),
+        ("hover_lift", ctypes.c_float),
+        ("active_lift", ctypes.c_float),
+        ("border", _RGBA),
+        ("edge_width", ctypes.c_float),
+        ("edge_inner", ctypes.c_float),
+        ("edge_light", ctypes.c_float),
+        ("edge_dark", ctypes.c_float),
+        ("edge_outer", ctypes.c_float),
+        ("edge_bounce", ctypes.c_float),
+        ("text", _RGBA),
+        ("text_dim", _RGBA),
+        ("text_bright", _RGBA),
+        ("accent", _RGBA),
+        ("input", _RGBA),
+        ("output", _RGBA),
+        ("control", _RGBA),
+        ("both", _RGBA),
+        ("pin", _RGBA),
+        ("shadow", ctypes.c_float),
+        ("shadow_stack", ctypes.c_float),
+        ("pin_ring", _RGBA),
+        ("pin_hollow", ctypes.c_float),
+        ("bar_edge", ctypes.c_float),
+        ("inner_shadow", ctypes.c_float),
+        ("rim_light", ctypes.c_float),
+        ("rim_dark", ctypes.c_float),
+        ("gradient", ctypes.c_float),
+        ("text_shadow", ctypes.c_float),
+        ("wire_outline", _RGBA),
+        ("wire_invalid", _RGBA),
+        ("wire_lift", ctypes.c_float),
+    ]
+
+
 class Edge(ctypes.Structure):
     _fields_ = [
         ("from_node", ctypes.c_int32),
@@ -152,6 +203,10 @@ class Frame(ctypes.Structure):
         ("pointer_flags", ctypes.c_uint32),
         ("text_codepoint", ctypes.c_int32),
         ("key", ctypes.c_int32),
+        ("_pad6", ctypes.c_int32),
+        # Null is not "no theme": it LEAVES the handle's current one alone, so
+        # a host sets it once and then passes null forever after.
+        ("theme", ctypes.POINTER(Theme)),
     ]
 
 
@@ -361,6 +416,7 @@ _STRUCTS: list[tuple[str, type[ctypes.Structure]]] = [
     ("Shape", ShapeInstance),
     ("Glyph", GlyphVertex),
     ("Node_Rect", NodeRect),
+    ("Theme", Theme),
 ]
 
 # `gc_enum_count` ids, in the library's Enum_Query order. The COUNT is what is
@@ -485,6 +541,10 @@ def _declare(lib: ctypes.CDLL) -> None:
         ctypes.POINTER(ctypes.c_float),
         ctypes.POINTER(ctypes.c_float),
     ]
+    lib.gc_default_theme.restype = None
+    lib.gc_default_theme.argtypes = [ctypes.POINTER(Theme)]
+    lib.gc_get_theme.restype = None
+    lib.gc_get_theme.argtypes = [ctypes.c_void_p, ctypes.POINTER(Theme)]
     lib.gc_pin_point.restype = ctypes.c_int32
     lib.gc_pin_point.argtypes = [
         ctypes.c_void_p,
@@ -500,6 +560,20 @@ def _declare(lib: ctypes.CDLL) -> None:
         ctypes.POINTER(Frame),
         ctypes.POINTER(Result),
     ]
+
+
+def default_theme() -> Theme:
+    """The library's own palette, to override rather than to restate.
+
+    A `Theme()` a host builds is ZEROED, and the shading scalars at zero are
+    not "leave alone" -- they flatten every chamfer, lift and shadow
+    (measured upstream: one distinct fill where an inherited theme paints
+    seven). Inheriting also means a later retune upstream arrives for free,
+    where a copied set of constants would silently fight it.
+    """
+    theme = Theme()
+    ensure_loaded().gc_default_theme(ctypes.byref(theme))
+    return theme
 
 
 def ensure_loaded() -> ctypes.CDLL:
@@ -640,6 +714,7 @@ class Canvas:
         self._attrs: ctypes.Array[Attribute] = (Attribute * 0)()
         self._edges: ctypes.Array[Edge] = (Edge * 0)()
         self._strings: ctypes.Array[ctypes.c_uint8] = (ctypes.c_uint8 * 1)()
+        self._theme: Theme | None = None
         self.atlas_loaded: bool = False
         self.distance_range: float = 0.0
 
@@ -670,6 +745,7 @@ class Canvas:
         view: View,
         pointer: PointerState,
         origin: tuple[float, float] = (0.0, 0.0),
+        theme: Theme | None = None,
     ) -> Result:
         """Push one frame and get back geometry plus what the user did.
 
@@ -785,6 +861,14 @@ class Canvas:
         f.pointer_x, f.pointer_y = pointer.x, pointer.y
         f.wheel = pointer.wheel
         f.pointer_flags = pointer.flags
+        # Null is KEEP, not reset: the theme is pushed once and the handle
+        # holds it. Kept alive on `self` because ctypes drops the reference
+        # the moment the expression ends.
+        if theme is not None:
+            self._theme = theme
+            f.theme = ctypes.pointer(self._theme)
+        else:
+            f.theme = ctypes.POINTER(Theme)()
 
         # Gate on the return: on a refusal the out-parameter is left UNTOUCHED
         # rather than zeroed, so reading it anyway serves the previous frame.

@@ -17,6 +17,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from shaderbox.graph_canvas.ffi import (
+    _RGBA,
     EdgeSpec,
     EventKind,
     Gesture,
@@ -26,7 +27,9 @@ from shaderbox.graph_canvas.ffi import (
     PortSpec,
     PreviewFit,
     Result,
+    Theme,
     Widget,
+    default_theme,
 )
 from shaderbox.pass_graph import Port
 
@@ -67,6 +70,56 @@ _PIN_BY_KIND: dict[str, tuple[PinShape, PinFill]] = {
 
 
 RGBA = tuple[float, float, float, float]
+
+
+def theme_from(
+    canvas: RGBA,
+    surface: RGBA,
+    grid: RGBA,
+    border: RGBA,
+    text: RGBA,
+    text_dim: RGBA,
+    text_bright: RGBA,
+    accent: RGBA,
+    wire: RGBA,
+    wire_invalid: RGBA,
+    port: RGBA,
+    control: RGBA,
+) -> Theme:
+    """The library's palette with a host's colours over it.
+
+    INHERITED, not built: the 16 shading scalars -- how far a depth level
+    lifts, how a chamfer catches light, how a shadow falls -- are tuned
+    against a dark canvas, which shaderbox also is, and a theme constructed
+    from zero sets every one of them to 0 and flattens the canvas. Taking
+    them from `default_theme()` also means an upstream retune arrives here
+    for free, where copied constants would silently fight it.
+
+    Only the colours an application has an opinion about are replaced. The
+    four ROLE colours take `port` and the pin takes `wire`: a wire is drawn
+    from its port's colour, so a single hue for both made every row the same
+    tan as the wires and a control stopped standing out from an input. They
+    are separate arguments rather than four, because shaderbox has one idea
+    of a port and one of a wire, and four fields would let one signal drift
+    into several hues by accident.
+    """
+    theme = default_theme()
+    theme.canvas = _RGBA(*canvas)
+    theme.surface = _RGBA(*surface)
+    theme.grid = _RGBA(*grid)
+    theme.border = _RGBA(*border)
+    theme.text = _RGBA(*text)
+    theme.text_dim = _RGBA(*text_dim)
+    theme.text_bright = _RGBA(*text_bright)
+    theme.accent = _RGBA(*accent)
+    theme.input = _RGBA(*port)
+    theme.output = _RGBA(*port)
+    theme.both = _RGBA(*port)
+    theme.pin = _RGBA(*wire)
+    theme.control = _RGBA(*control)
+    theme.wire_outline = _RGBA(*border)
+    theme.wire_invalid = _RGBA(*wire_invalid)
+    return theme
 
 
 @dataclass(frozen=True, slots=True)
