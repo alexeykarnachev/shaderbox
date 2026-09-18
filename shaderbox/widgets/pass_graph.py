@@ -26,12 +26,14 @@ from imgui_bundle import imgui
 from shaderbox.app import App
 from shaderbox.commands import CommandId
 from shaderbox.document import Document
+from shaderbox.engine_uniforms import ENGINE_DRIVEN_UNIFORMS
 from shaderbox.graph_canvas.adapter import (
     Activated,
     Clicked,
     GraphEvent,
     MenuRequested,
     Moved,
+    NodePalette,
     Refused,
     Unwired,
     Wired,
@@ -245,6 +247,7 @@ def _library_canvas(
     height = max(int(avail.y), 1)
 
     state = app.graph_canvas_for(document_id)
+    state.origin = (origin.x, origin.y)
     if app.graph_renderer is None:
         app.graph_renderer = CanvasRenderer()
 
@@ -270,12 +273,28 @@ def _library_canvas(
         texture = canvas.texture
         previews[name] = (texture.glo, texture.size[0], texture.size[1])
 
+    # The engine's own uniforms (`u_time` and its siblings), shown as body rows
+    # in the syntax colour the editor already gives them. They take no wire --
+    # the engine writes them -- so they are controls rather than ports.
+    engine: dict[str, list[str]] = {}
+    for name in order:
+        declared = {u.name for u in document.passes[name].get_active_uniforms()}
+        engine[name] = [u for u in sorted(ENGINE_DRIVEN_UNIFORMS) if u in declared]
+
     packed = pack_nodes(
         order,
         ports,
         positions,
         previews,
         output=document.graph.output_pass or "",
+        engine=engine,
+        hovered=state.hovered,
+        selected=frozenset(view.selection),
+        palette=NodePalette(
+            hover=COLOR.GRAPH_HOVER,
+            select=COLOR.SELECT,
+            engine_uniform=COLOR.SYN_UNIFORM,
+        ),
     )
 
     # A gesture the canvas did not see the end of is CANCELLED, never resumed:

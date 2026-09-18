@@ -77,7 +77,11 @@ def pointer_from_io(
         flags |= int(ffi.Pointer.EXTEND)
     if io.key_ctrl:
         flags |= int(ffi.Pointer.FINE)
-    if io.key_alt:
+    # `ALT_PRESSED` is the library's name for THE SECONDARY BUTTON GOING DOWN,
+    # not for the Alt key -- its own comment says so, and it answers the flag
+    # with a Context_Menu event. Mapping the Alt key onto it opened the menu
+    # whenever Alt was held, which costs the user alt-tab.
+    if imgui.is_mouse_clicked(imgui.MouseButton_.right):
         flags |= int(ffi.Pointer.ALT_PRESSED)
     # A pan is the middle button, Alt with the left, or a plain left-drag the
     # library did not claim -- which is every press on empty canvas. The old
@@ -96,6 +100,22 @@ def pointer_from_io(
         wheel=io.mouse_wheel if hovered else 0.0,
         flags=flags,
     )
+
+
+def _hovered_name(result: ffi.Result, packed: Packed) -> str:
+    """The pass the pointer is over, or `""`.
+
+    Read from the PER-NODE flag rather than from the result's own hover bit:
+    that one says something is hovered, this one says which.
+    """
+    for index in range(result.rect_count):
+        if result.node_rects[index].flags & _NODE_HOVERED:
+            return packed.name_of(index) or ""
+    return ""
+
+
+# `FFI_Node_Rect.flags` bit 0: the pointer is over this node.
+_NODE_HOVERED: int = 1 << 0
 
 
 def pointer_is_claimed(result: ffi.Result) -> bool:
@@ -135,6 +155,15 @@ class GraphCanvasState:
     # decides if a plain left-drag pans. A press is delivered on the same frame
     # its hit is resolved, so this frame's answer is not available in time.
     claimed: bool = False
+    # The node the library reported hovered on the PREVIOUS frame. The hover is
+    # resolved inside `gc_frame`, so a highlight packed from it is one frame
+    # late -- the same latency the imgui canvas had, for the same reason, and
+    # invisible at any rate a hand can outrun.
+    hovered: str = ""
+    # Where the canvas sits in the window this frame. The library answers in
+    # canvas-local coordinates, so anything the host draws OVER the canvas --
+    # a tooltip, a menu, a test aiming a click -- needs this to get back.
+    origin: tuple[float, float] = (0.0, 0.0)
     fitted: bool = False
 
     def ensure(self, renderer: CanvasRenderer) -> tuple[ffi.Canvas, CanvasPanel]:
@@ -232,6 +261,7 @@ def render_to_texture(
     state.packed = packed
 
     events = read_events(result, packed)
+    state.hovered = _hovered_name(result, packed)
     texture = panel.render(result, size, canvas.distance_range, clear_color)
     # Latched while the button is held: a drag that began on a node must keep
     # counting as the library's for its whole life, or the frame the pointer

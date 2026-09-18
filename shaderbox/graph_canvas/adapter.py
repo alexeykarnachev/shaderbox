@@ -65,6 +65,67 @@ _PIN_BY_KIND: dict[str, tuple[PinShape, PinFill]] = {
 }
 
 
+RGBA = tuple[float, float, float, float]
+
+
+@dataclass(frozen=True, slots=True)
+class NodePalette:
+    """The three colours the node's chrome needs, handed in by the caller.
+
+    The adapter knows the document and the library; it does not know the
+    theme, which imports imgui. Passing the tokens keeps this layer free of
+    the UI without hard-coding a look.
+    """
+
+    hover: RGBA
+    select: RGBA
+    engine_uniform: RGBA
+
+
+# What a caller that passes no palette gets: white for both highlights, which
+# is visible against every node fill and belongs to no theme.
+_NEUTRAL_PALETTE: NodePalette = NodePalette(
+    hover=(1.0, 1.0, 1.0, 1.0),
+    select=(1.0, 1.0, 1.0, 1.0),
+    engine_uniform=(1.0, 1.0, 1.0, 1.0),
+)
+
+
+def _border_of(
+    name: str,
+    hovered: str,
+    selected: frozenset[str],
+    ghost: bool,
+    colors: "NodePalette",
+) -> RGBA | None:
+    """The border colour, in precedence order: selected, then hovered, then
+    the output's accent, then the library's own default.
+
+    Selection outranks hover so a hovered selected node still reads as
+    selected; a ghost takes none of them, because it refuses every gesture and
+    a highlight would promise an interaction it will not honour.
+    """
+    if ghost:
+        return None
+    if name in selected:
+        return colors.select
+    if name == hovered:
+        return colors.hover
+    return None
+
+
+def _border_scale_of(
+    name: str, output: str, hovered: str, selected: frozenset[str]
+) -> float:
+    """Hover and selection THICKEN the border; nothing changes the node's own
+    size, so a highlight never shifts what is under the cursor."""
+    if name in selected:
+        return 2.2
+    if name == hovered:
+        return 1.8
+    return 1.6 if name == output else 1.0
+
+
 @dataclass(frozen=True, slots=True)
 class NodeView:
     """One node as the adapter packed it, kept so an event can be resolved.
@@ -104,6 +165,10 @@ def pack_nodes(
     previews: Mapping[str, tuple[int, int, int]],
     output: str,
     ghosts: frozenset[str] = frozenset(),
+    engine: Mapping[str, Sequence[str]] | None = None,
+    hovered: str = "",
+    selected: frozenset[str] = frozenset(),
+    palette: NodePalette | None = None,
 ) -> Packed:
     """Turn the document's passes into one frame's nodes and edges.
 
@@ -116,12 +181,25 @@ def pack_nodes(
     dashed, and refusing every gesture, so a press falls through to the canvas
     rather than being swallowed by something that does nothing.
 
+    `engine` names each pass's engine-driven uniforms (`u_time` and its
+    siblings). They are CONTROL rows -- a label in the node's body with no pin
+    -- because the engine writes them and no wire can: giving them a pin would
+    offer a connection the document cannot express.
+
+    `hovered` and `selected` decide the border. Hover has to be visible
+    without moving anything, so it recolours and thickens the border rather
+    than resizing the node; selection outranks it, since a hovered selected
+    node should still read as selected.
+
     The nodes and their attributes are built in ONE pass, because each node
     names a contiguous run of the flat attribute array. The edges are resolved
     against the SAME ordering, so a wire's endpoints index what was packed
     rather than what the document happens to iterate.
     """
+    colors = palette or _NEUTRAL_PALETTE
     index_of: dict[str, int] = {name: i for i, name in enumerate(order)}
+    # Where each node's single output landed in its own attribute list.
+    output_slot: dict[str, int] = {}
     nodes: list[NodeSpec] = []
     views: list[NodeView] = []
 
@@ -135,7 +213,26 @@ def pack_nodes(
                     label=port.sampler, is_input=True, pin_shape=shape, pin_fill=fill
                 )
             )
+        output_slot[name] = len(specs)
         specs.append(PortSpec(label="out", is_input=False))
+
+        # An engine uniform gets a PIN that refuses connection rather than a
+        # control row, and the reason is a library limit worth knowing: a
+        # control carries no pin, and an attribute has no label colour, so a
+        # control cannot be tinted at all. The pin is the only coloured thing
+        # on the row. It is drawn hollow and square -- the shape no wirable
+        # port uses -- and the node refuses the wire gesture anyway where
+        # every port is one of these.
+        for label in (engine or {}).get(name, ()):
+            specs.append(
+                PortSpec(
+                    label=label,
+                    is_input=True,
+                    pin_shape=PinShape.SQUARE,
+                    pin_fill=PinFill.HOLLOW,
+                    color=colors.engine_uniform,
+                )
+            )
 
         tex, width, height = previews.get(name, (0, 0, 0))
         ghost: bool = name in ghosts
@@ -153,7 +250,8 @@ def pack_nodes(
                 preview_fit=PreviewFit.CONTAIN,
                 fade=0.6 if ghost else 0.0,
                 dashed=ghost,
-                border_scale=1.6 if name == output else 1.0,
+                border=_border_of(name, hovered, selected, ghost, colors),
+                border_scale=_border_scale_of(name, output, hovered, selected),
                 accepts=int(Gesture.NONE) if ghost else 0,
             )
         )
@@ -173,9 +271,15 @@ def pack_nodes(
             producer = index_of.get(port.source)
             if producer is None:
                 continue
-            # The producer's output is its LAST attribute: inputs then the one
-            # output, which is the order `pack_nodes` emits them in.
-            producer_out: int = len(ports.get(port.source, ()))
+            # Read from the packed list rather than recomputed as "the input
+            # count". The two agree today -- the output is emitted straight
+            # after the samplers and the engine rows follow it -- so this
+            # fixes no live bug; it removes an arithmetic that silently
+            # depends on that emission order, in a function that now appends
+            # two kinds of row after the output.
+            producer_out = output_slot.get(port.source)
+            if producer_out is None:
+                continue
             edges.append(
                 EdgeSpec(
                     id=edge_id(name, port.sampler),

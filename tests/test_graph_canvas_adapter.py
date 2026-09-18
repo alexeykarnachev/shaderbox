@@ -17,6 +17,7 @@ from shaderbox.graph_canvas import ffi
 from shaderbox.graph_canvas.adapter import (
     Clicked,
     Moved,
+    NodePalette,
     Unwired,
     Wired,
     edge_id,
@@ -224,3 +225,111 @@ def test_the_generic_half_stays_free_of_shaderbox_model_types() -> None:
             if name.startswith("shaderbox") and name not in allowed
         }
         assert not offenders, f"{module} reaches into {sorted(offenders)}"
+
+
+def test_a_wire_points_at_an_output_and_engine_rows_follow_it() -> None:
+    """The edge's `from_attr` names an OUTPUT in the packed list.
+
+    Deliberately not phrased as "found beats computed": the input count and
+    the output's index agree by construction here, since the output is
+    emitted straight after the samplers, so no fixture can separate the two
+    formulations and a test claiming to would be theatre. What this pins is
+    the property that matters either way -- the edge lands on the output, and
+    the engine rows really do sit after it.
+    """
+    packed = pack_nodes(
+        ["a", "b"],
+        {
+            "a": [Port("u_x", "unfilled"), Port("u_y", "unfilled")],
+            "b": [Port("u_src", "wired", "a")],
+        },
+        {},
+        {},
+        output="b",
+        engine={"a": ["u_time", "u_resolution"], "b": []},
+    )
+    attributes = packed.nodes[0].ports
+    outputs = [i for i, spec in enumerate(attributes) if not spec.is_input]
+    assert len(outputs) == 1
+    # The engine rows come after the output, or this fixture proves nothing.
+    assert outputs[0] < len(attributes) - 1
+    assert packed.edges[0].from_attr == outputs[0]
+    assert attributes[packed.edges[0].from_attr].is_input is False
+
+
+def test_an_engine_uniform_is_a_row_that_takes_no_wire() -> None:
+    """`u_time` and its siblings are written by the engine, so the document
+    cannot express a wire into one. They are shown, and they refuse."""
+    packed = pack_nodes(
+        ["a", "b"],
+        {"a": [], "b": [Port("u_src", "unfilled")]},
+        {"a": (0.0, 0.0), "b": (300.0, 0.0)},
+        {},
+        output="b",
+        engine={"a": [], "b": ["u_time"]},
+    )
+    labels = [spec.label for spec in packed.nodes[1].ports]
+    assert "u_time" in labels
+
+    canvas = ffi.Canvas()
+    canvas.load_atlas()
+    size = (900.0, 640.0)
+    canvas.frame(packed.nodes, packed.edges, size, ffi.View(), ffi.PointerState())
+    engine_slot = labels.index("u_time")
+    source = canvas.pin_point(0, 0, output=True)
+    target = canvas.pin_point(1, engine_slot, output=False)
+    assert source is not None and target is not None
+
+    down = int(ffi.Pointer.DOWN)
+    view = ffi.View()
+    events: list[object] = []
+    for pointer in (
+        ffi.PointerState(
+            x=source[0], y=source[1], flags=down | int(ffi.Pointer.PRESSED)
+        ),
+        ffi.PointerState(x=(source[0] + target[0]) / 2, y=source[1], flags=down),
+        ffi.PointerState(x=target[0], y=target[1], flags=down),
+        ffi.PointerState(x=target[0], y=target[1], flags=0),
+    ):
+        result = canvas.frame(packed.nodes, packed.edges, size, view, pointer)
+        view = ffi.View(result.pan_x, result.pan_y, result.zoom)
+        events.extend(read_events(result, packed))
+    assert not any(isinstance(event, Wired) for event in events), events
+    canvas.release()
+
+
+def test_hover_and_selection_change_the_border_and_not_the_size() -> None:
+    """A highlight must be visible without moving anything: recolour and
+    thicken, never resize, or the node shifts under the cursor that is
+    pointing at it. Selection outranks hover."""
+    order = ["a", "b"]
+    ports: dict[str, list[Port]] = {"a": [], "b": []}
+    palette = NodePalette(
+        hover=(1.0, 0.0, 0.0, 1.0),
+        select=(0.0, 1.0, 0.0, 1.0),
+        engine_uniform=(0.0, 0.0, 1.0, 1.0),
+    )
+    plain = pack_nodes(order, ports, {}, {}, output="b", palette=palette)
+    hovered = pack_nodes(order, ports, {}, {}, output="b", hovered="a", palette=palette)
+    picked = pack_nodes(
+        order, ports, {}, {}, output="b", selected=frozenset({"a"}), palette=palette
+    )
+    both = pack_nodes(
+        order,
+        ports,
+        {},
+        {},
+        output="b",
+        hovered="a",
+        selected=frozenset({"a"}),
+        palette=palette,
+    )
+
+    assert plain.nodes[0].border is None
+    assert hovered.nodes[0].border == palette.hover
+    assert picked.nodes[0].border == palette.select
+    # Selection wins where both apply.
+    assert both.nodes[0].border == palette.select
+    # Thicker, and the unhovered sibling untouched.
+    assert hovered.nodes[0].border_scale > plain.nodes[0].border_scale
+    assert hovered.nodes[1].border == plain.nodes[1].border

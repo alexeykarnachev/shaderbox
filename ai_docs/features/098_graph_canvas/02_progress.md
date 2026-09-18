@@ -116,6 +116,14 @@ and the gate carries a break for it.
 The window, the tab row, the context menus and the Group prompt. Moving those
 is the next surface, not this one.
 
+## A control row cannot be coloured
+
+The library's `Attribute` carries a label and a pin style and no LABEL
+colour, so a `Control` -- a body row with no pin -- has nothing tintable on
+it. Engine uniforms are therefore drawn as inputs with a hollow square pin in
+`SYN_UNIFORM`, the shape no wirable port uses; the library refuses a wire onto
+them anyway, which is gated. Reported upstream.
+
 ## Parity notes
 
 - **Panning is the HOST's.** The library zooms itself from the wheel and uses

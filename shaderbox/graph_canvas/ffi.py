@@ -515,13 +515,19 @@ class Blob:
 
 @dataclass(slots=True)
 class PortSpec:
-    """One pin on a node: a label, a side, and how it is drawn."""
+    """One attribute on a node: a label, which side it is on, how it is drawn.
+
+    A CONTROL carries no pin and takes no wire — it is a row in the node's
+    body. `color` tints the pin; a control has none, so it reads as a plain
+    label unless the host colours the text some other way.
+    """
 
     label: str
     is_input: bool
     pin_shape: PinShape = PinShape.DOT
     pin_fill: PinFill = PinFill.UNSET
     color: tuple[float, float, float, float] | None = None
+    control: bool = False
 
 
 @dataclass(slots=True)
@@ -655,7 +661,10 @@ class Canvas:
             for port in spec.ports:
                 a = self._attrs[cursor]
                 a.label = self._blob.add(port.label)
-                a.kinds = ATTR_INPUT if port.is_input else ATTR_OUTPUT
+                if port.control:
+                    a.kinds = ATTR_CONTROL
+                else:
+                    a.kinds = ATTR_INPUT if port.is_input else ATTR_OUTPUT
                 a.widget = 0
                 a.value_count = 0
                 a.value_is_text = 0
