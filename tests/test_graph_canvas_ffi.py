@@ -76,9 +76,7 @@ def test_a_frame_returns_geometry_and_the_runs_cover_both_streams() -> None:
         ),
     ]
     edges = [ffi.EdgeSpec(id=1, from_node=0, from_attr=0, to_node=1, to_attr=0)]
-    result = canvas.frame(
-        nodes, edges, (1280.0, 720.0), ffi.View(), ffi.PointerState()
-    )
+    result = canvas.frame(nodes, edges, (1280.0, 720.0), ffi.View(), ffi.PointerState())
 
     assert result.shape_count > 0
     assert result.glyph_count > 0
@@ -147,4 +145,54 @@ def test_the_view_the_library_returns_is_the_one_to_push_back() -> None:
     shifted = result.node_rects[0].x
     result = canvas.frame(nodes, [], (800.0, 600.0), ffi.View(), ffi.PointerState())
     assert result.node_rects[0].x - shifted == pytest.approx(100.0)
+    canvas.release()
+
+
+def test_the_refusal_mask_is_a_veto_and_not_another_gesture() -> None:
+    """`GESTURE_NONE` is the TOP bit, not the first.
+
+    It overrides the others rather than joining them, so numbering it 1 makes
+    it alias `DRAG`: a node marked "refuses everything" then accepts drags,
+    and the refusal reads as silently not working. Measured against the
+    library rather than asserted from the header, by driving a node that
+    refuses and watching it not move.
+    """
+    assert ffi.Gesture.NONE == 1 << 31
+    assert {int(g) for g in ffi.Gesture} & {1, 2, 4, 8} == {1, 2, 4, 8}
+
+    canvas = ffi.Canvas()
+    canvas.load_atlas()
+    inert = ffi.NodeSpec(
+        id=1,
+        title="ghost",
+        x=0,
+        y=0,
+        ports=[ffi.PortSpec("out", False)],
+        accepts=int(ffi.Gesture.NONE),
+    )
+    size = (600.0, 400.0)
+    view = ffi.View()
+    probe = canvas.frame([inert], [], size, view, ffi.PointerState())
+    box = probe.node_rects[0]
+    middle = (box.x + box.w / 2, box.y + box.h / 3)
+
+    down = int(ffi.Pointer.DOWN)
+    canvas.frame(
+        [inert],
+        [],
+        size,
+        view,
+        ffi.PointerState(
+            x=middle[0], y=middle[1], flags=down | int(ffi.Pointer.PRESSED)
+        ),
+    )
+    after = canvas.frame(
+        [inert],
+        [],
+        size,
+        view,
+        ffi.PointerState(x=middle[0] + 80.0, y=middle[1], flags=down),
+    )
+    kinds = {after.events[i].kind for i in range(after.event_count)}
+    assert int(ffi.EventKind.NODE_MOVED) not in kinds
     canvas.release()

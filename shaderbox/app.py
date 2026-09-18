@@ -47,8 +47,6 @@ from shaderbox.editor.ffi import (
 )
 from shaderbox.editor.input import KeyEvent, translate_char, translate_key
 from shaderbox.editor.render import EditorPanel, EditorRenderer
-from shaderbox.graph_canvas.panel import GraphCanvasState
-from shaderbox.graph_canvas.render import CanvasRenderer
 from shaderbox.editor_types import (
     EditorSession,
     EditorTab,
@@ -62,6 +60,8 @@ from shaderbox.exporters.registry import ExporterRegistry
 from shaderbox.exporters.telegram import TelegramExporter
 from shaderbox.exporters.youtube import YouTubeExporter
 from shaderbox.formatting import formatter_for
+from shaderbox.graph_canvas.panel import GraphCanvasState
+from shaderbox.graph_canvas.render import CanvasRenderer
 from shaderbox.help_content import help_sections
 from shaderbox.integrations import IntegrationsStore
 from shaderbox.intel.document import IntelCache
@@ -2142,39 +2142,15 @@ class App:
             document_id, consumer, sampler, NoSource()
         )
 
-    def commit_node_drag(self, document_id: str) -> None:
-        """The release of a node drag (092 D13): the positions the drag machine commits,
-        written once."""
-        view = self.graph_view_for(document_id)
-        drag = view.node_drag
-        view.node_drag = None
-        view.guides = []
-        if drag is None:
-            return
-        ui_document = self.ui_documents.get(document_id)
-        if ui_document is None:
-            return
-        moved = {
-            name: position
-            for name, position in drag.commit().items()
-            if name in ui_document.document.passes
-        }
-        if not moved:
-            return
-        error = self.session.set_pass_positions(document_id, moved)
-        if error:
-            self.notifications.push(error)
-
     def commit_graph_positions(
         self, document_id: str, moved: Mapping[str, tuple[float, float]]
     ) -> None:
         """The release of a drag on the library-backed canvas (098): the
         positions it reported, written ONCE.
 
-        The sibling of `commit_node_drag`, which reads the drag machine the
-        imgui canvas owns. Here the library owns the gesture and reports a
-        position every frame, so the accumulation happens on the canvas state
-        and this verb is the single write.
+        The library owns the gesture and reports a position every frame, so
+        the accumulation happens on the canvas state and this verb is the
+        single write.
         """
         ui_document = self.ui_documents.get(document_id)
         if ui_document is None:

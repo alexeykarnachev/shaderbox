@@ -81,6 +81,16 @@ def pointer_from_io(
     )
 
 
+def pointer_is_claimed(result: ffi.Result) -> bool:
+    """Whether the library has the pointer, so the host must not also act on it.
+
+    A press the host also treats as its own starts two gestures at once -- a
+    node drag and a background marquee -- and each is individually correct, so
+    nothing looks broken.
+    """
+    return bool(result.flags & ffi.RESULT_POINTER_CLAIMED)
+
+
 @dataclass
 class GraphCanvasState:
     """One document's live canvas: the library handle, its panel, and the view.
@@ -97,6 +107,9 @@ class GraphCanvasState:
     packed: Packed | None = None
     # A drag reports every frame; the positions are written once, on release.
     dragging: dict[str, tuple[float, float]] = field(default_factory=dict)
+    # The node the last context-menu event named, so the popup that opens on
+    # one frame still knows what it is about on the next.
+    menu_node: str = ""
     fitted: bool = False
 
     def ensure(self, renderer: CanvasRenderer) -> tuple[ffi.Canvas, CanvasPanel]:
@@ -160,7 +173,9 @@ def render_to_texture(
     its own."""
     canvas, panel = state.ensure(renderer)
     if not state.fitted:
-        state.view = frame_all(canvas, packed, (float(size[0]), float(size[1])), pointer)
+        state.view = frame_all(
+            canvas, packed, (float(size[0]), float(size[1])), pointer
+        )
         state.fitted = True
 
     result = canvas.frame(
@@ -177,5 +192,4 @@ def render_to_texture(
 
     events = read_events(result, packed)
     texture = panel.render(result, size, canvas.distance_range, clear_color)
-    claimed = bool(result.flags & ffi.RESULT_POINTER_CLAIMED)
-    return texture, events, claimed
+    return texture, events, pointer_is_claimed(result)

@@ -17,7 +17,6 @@ from shaderbox.graph_canvas import ffi
 from shaderbox.graph_canvas.adapter import (
     Clicked,
     Moved,
-    Packed,
     Unwired,
     Wired,
     edge_id,
@@ -171,9 +170,7 @@ def test_the_real_cascade_document_packs_and_frames(gl_ctx: moderngl.Context) ->
 
     assert len(packed.nodes) == len(document.passes)
     # Every wired port in the document is an edge, and no more.
-    wired = sum(
-        1 for name in order for p in ports.get(name, ()) if p.kind == "wired"
-    )
+    wired = sum(1 for name in order for p in ports.get(name, ()) if p.kind == "wired")
     assert len(packed.edges) == wired
 
     # And the library accepts the pack.
@@ -194,7 +191,7 @@ def test_a_node_s_attributes_are_packed_in_node_order() -> None:
     order, ports = _simple()
     packed = pack_nodes(order, ports, {}, {}, output="out")
     expected = 0
-    for spec, view in zip(packed.nodes, packed.views):
+    for spec, view in zip(packed.nodes, packed.views, strict=True):
         assert len(spec.ports) == len(view.inputs) + 1
         expected += len(spec.ports)
     assert expected == sum(len(n.ports) for n in packed.nodes)

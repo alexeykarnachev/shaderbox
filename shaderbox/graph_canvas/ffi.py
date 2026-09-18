@@ -290,13 +290,20 @@ class PreviewFit(IntEnum):
 
 
 class Gesture(IntEnum):
-    """`Node.accepts` mask. Zero accepts everything."""
+    """`Node.accepts` mask. Zero is the inert value and accepts everything.
 
-    NONE = 1 << 0
-    DRAG = 1 << 1
-    CLICK = 1 << 2
-    WIRE = 1 << 3
-    MENU = 1 << 4
+    `NONE` is the TOP bit, not the first: it is a veto that overrides the rest
+    rather than another member of the same run, so it cannot share the low
+    bits the individual gestures use. A binding that numbers it 1 leaves every
+    node it marks accepting drags, which reads as the refusal silently not
+    working.
+    """
+
+    DRAG = 1 << 0
+    CLICK = 1 << 1
+    WIRE = 1 << 2
+    MENU = 1 << 3
+    NONE = 1 << 31
 
 
 class Pointer(IntEnum):
@@ -416,8 +423,7 @@ def _verify_layout(lib: ctypes.CDLL) -> None:
         count: int = lib.gc_enum_count(which)
         if count != expected:
             raise LayoutMismatch(
-                f"enum {label}: library has {count} members, binding expects "
-                f"{expected}"
+                f"enum {label}: library has {count} members, binding expects {expected}"
             )
 
 
@@ -730,9 +736,12 @@ class Canvas:
 
         # Gate on the return: on a refusal the out-parameter is left UNTOUCHED
         # rather than zeroed, so reading it anyway serves the previous frame.
-        if self._lib.gc_frame(
-            self._handle, ctypes.byref(f), ctypes.byref(self._result)
-        ) != 1:
+        if (
+            self._lib.gc_frame(
+                self._handle, ctypes.byref(f), ctypes.byref(self._result)
+            )
+            != 1
+        ):
             raise RuntimeError("gc_frame refused the frame")
         return self._result
 
@@ -740,9 +749,12 @@ class Canvas:
         """The size the library gives a node in the most recent frame."""
         w = ctypes.c_float()
         h = ctypes.c_float()
-        if self._lib.gc_node_size(
-            self._handle, index, ctypes.byref(w), ctypes.byref(h)
-        ) != 0:
+        if (
+            self._lib.gc_node_size(
+                self._handle, index, ctypes.byref(w), ctypes.byref(h)
+            )
+            != 0
+        ):
             return None
         return (w.value, h.value)
 

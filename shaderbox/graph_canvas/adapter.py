@@ -38,7 +38,9 @@ _EDGE_TAG: bytes = b"edge:"
 def _hash_id(tag: bytes, *parts: str) -> int:
     """A stable u64 for a host-side name. Never zero, which the library's own
     examples use as "no id"."""
-    digest = hashlib.blake2b(tag + b"\x00".join(p.encode() for p in parts), digest_size=8)
+    digest = hashlib.blake2b(
+        tag + b"\x00".join(p.encode() for p in parts), digest_size=8
+    )
     return int.from_bytes(digest.digest(), "big") | 1
 
 
@@ -128,7 +130,11 @@ def pack_nodes(
         specs: list[PortSpec] = []
         for port in node_ports_:
             shape, fill = _PIN_BY_KIND.get(port.kind, (PinShape.DOT, PinFill.UNSET))
-            specs.append(PortSpec(label=port.sampler, is_input=True, pin_shape=shape, pin_fill=fill))
+            specs.append(
+                PortSpec(
+                    label=port.sampler, is_input=True, pin_shape=shape, pin_fill=fill
+                )
+            )
         specs.append(PortSpec(label="out", is_input=False))
 
         tex, width, height = previews.get(name, (0, 0, 0))

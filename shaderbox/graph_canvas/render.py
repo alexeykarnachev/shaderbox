@@ -74,10 +74,15 @@ _SHAPE_STRIDE: int = _SHAPE_FLOATS * 4
 # Each shape attribute's byte offset and width within the instance, derived from
 # the struct so the two cannot drift. Used to re-bind at a run's base instance.
 _SHAPE_BINDINGS: tuple[tuple[str, int, int], ...] = tuple(
-    (attr, getattr(ShapeInstance, field).offset, getattr(ShapeInstance, field).size // 4)
+    (
+        attr,
+        getattr(ShapeInstance, field).offset,
+        getattr(ShapeInstance, field).size // 4,
+    )
     for attr, field in zip(
         _SHAPE_ATTRS,
         ("rect", "fill_top", "shape", "fill_bot", "edge", "rotation", "field", "uv"),
+        strict=True,
     )
 )
 _GLYPH_STRIDE: int = _GLYPH_FLOATS * 4
@@ -165,9 +170,12 @@ def glyphs_array(result: Result) -> np.ndarray:
     """This frame's glyph vertices as an (n, _GLYPH_FLOATS) array. A copy."""
     if result.glyph_count <= 0:
         return np.zeros((0, _GLYPH_FLOATS), dtype="f4")
-    return np.ctypeslib.as_array(
-        result.glyphs, shape=(result.glyph_count,)
-    ).view("f4").reshape(result.glyph_count, _GLYPH_FLOATS).copy()
+    return (
+        np.ctypeslib.as_array(result.glyphs, shape=(result.glyph_count,))
+        .view("f4")
+        .reshape(result.glyph_count, _GLYPH_FLOATS)
+        .copy()
+    )
 
 
 class CanvasRenderer:
@@ -370,7 +378,13 @@ class CanvasPanel:
 
     def release(self) -> None:
         self._drop_shape_vaos()
-        for obj in (self.glyph_vao, self.glyph_vbo, self.shape_vbo, self.fbo, self.texture):
+        for obj in (
+            self.glyph_vao,
+            self.glyph_vbo,
+            self.shape_vbo,
+            self.fbo,
+            self.texture,
+        ):
             if obj is not None:
                 obj.release()
         self.glyph_vao = None

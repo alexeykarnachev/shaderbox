@@ -14,10 +14,9 @@ import numpy as np
 import pytest
 
 from shaderbox.graph_canvas import ffi
+from shaderbox.graph_canvas.ffi import SHADERS_DIR
 from shaderbox.graph_canvas.render import (
-    ortho,
     _SHAPE_ATTRS,
-    _SHAPE_BINDINGS,
     _SHAPE_FORMAT,
     _SHAPE_STRIDE,
     CanvasPanel,
@@ -39,7 +38,9 @@ def _lit(fbo: moderngl.Framebuffer, size: tuple[int, int]) -> int:
     return int((pixels.reshape(size[1], size[0], 3).sum(axis=2) > 0).sum())
 
 
-def test_the_shape_format_describes_the_struct_exactly(gl_ctx: moderngl.Context) -> None:
+def test_the_shape_format_describes_the_struct_exactly(
+    gl_ctx: moderngl.Context,
+) -> None:
     """The instance is 120 bytes and its eight fields TILE it: 4+4+4+4+4+2+4+4
     is 30 floats, not 26. A padding token appended to the format would widen
     the binding's stride past the row, and then instance N reads from N times
@@ -58,13 +59,7 @@ def test_every_instance_reads_its_own_row(gl_ctx: moderngl.Context) -> None:
     program = gl_ctx.program(
         vertex_shader=(
             "#version 330 core\n"
-            + (
-                gl_ctx.extra
-                if False
-                else open(
-                    "shaderbox/resources/graph_canvas/shaders/common.glsl"
-                ).read()
-            )
+            + (SHADERS_DIR / "common.glsl").read_text()
             + """
 layout(location = ATTR_CORNER) in vec2 a_corner;
 layout(location = ATTR_RECT) in vec4 a_rect;
