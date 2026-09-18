@@ -41,9 +41,14 @@ check:
 # (`[gw3] node down: Not properly terminated`) while the other seven idled at 2% CPU, and
 # nothing bounded it. With it, that same death is named in ~75s. The per-test deadline in
 # pyproject.toml is the other half: it turns a hang INTO the death this flag then reports.
+# PYTHONDONTWRITEBYTECODE: a break/restore loop (mutation-testing a gate) is the one
+# workflow that reliably desynchronises __pycache__ from the source, and a stale .pyc
+# makes a caught mutation look like a vacuous gate -- 098 nearly reported one that way.
+# Writing no bytecode removes the class rather than relying on remembering to clear it.
 test:
 	env MESA_GL_VERSION_OVERRIDE=4.6 MESA_GLSL_VERSION_OVERRIDE=460 \
-		GLCONTEXT_LINUX_LIBGL=libGL.so.1 uv run pytest tests/ -n 8 --dist loadgroup \
+		GLCONTEXT_LINUX_LIBGL=libGL.so.1 PYTHONDONTWRITEBYTECODE=1 \
+		uv run pytest tests/ -n 8 --dist loadgroup \
 		--max-worker-restart=0
 
 # Headless smoke test — runs ~200 frames of update_and_draw against a THROWAWAY tmp project

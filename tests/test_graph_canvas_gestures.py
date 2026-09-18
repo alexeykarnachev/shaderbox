@@ -315,3 +315,75 @@ def test_a_wheel_notch_zooms_about_the_pointer() -> None:
     )
     assert second.zoom > before.zoom
     canvas.release()
+
+
+def test_each_pin_on_a_node_gets_its_own_point_in_pushed_order() -> None:
+    """The falsifier for `pin_point` ignoring the attribute index.
+
+    A GESTURE cannot decide this and it is worth being explicit about why: a
+    wire only has to start on some pin of the right node, so an ignored index
+    and a shifted one both connect and both report the wire landing. The
+    gesture proves a point is ON a pin; it does not prove WHICH pin, and the
+    first claim looks exactly like the second.
+
+    What decides it is walking every pin and requiring distinct points in the
+    order they were pushed. Ignoring the index collapses them to one point;
+    shifting by one collapses them to n-1 and reorders the rest.
+    """
+    canvas = _canvas()
+    labels = ["u_x", "u_y", "u_z"]
+    packed = pack_nodes(
+        ["a", "b"],
+        {"a": [], "b": [Port(label, "unfilled") for label in labels]},
+        {"a": (0.0, 0.0), "b": (300.0, 0.0)},
+        {},
+        output="b",
+    )
+    canvas.frame(packed.nodes, packed.edges, SIZE, ffi.View(), ffi.PointerState())
+
+    points = [canvas.pin_point(1, index, output=False) for index in range(len(labels))]
+    assert all(p is not None for p in points), points
+    assert len(set(points)) == len(labels), f"pins share a point: {points}"
+    # In pushed order, down the node's input edge.
+    ys = [p[1] for p in points if p is not None]
+    assert ys == sorted(ys), f"pins are not in pushed order: {points}"
+    # The output is on the far edge, past the inputs in the same flat array.
+    out = canvas.pin_point(1, len(labels), output=True)
+    assert out is not None and out[0] > points[0][0]
+    assert canvas.pin_point(1, len(labels) + 1, output=False) is None
+    canvas.release()
+
+
+def test_a_wire_lands_on_the_sampler_it_was_aimed_at_not_the_first_one() -> None:
+    """End to end, with a consumer that has THREE inputs.
+
+    The single-input fixture cannot see this: aim, resolve and report all
+    agree on index 0 whatever the code does with the index. Aiming at the
+    third sampler and requiring its NAME back exercises the whole chain --
+    `pin_point`'s index, the library's hit test, and the adapter's mapping
+    from `to_attr` back to a sampler.
+    """
+    canvas = _canvas()
+    labels = ["u_x", "u_y", "u_z"]
+    packed = pack_nodes(
+        ["a", "b"],
+        {"a": [], "b": [Port(label, "unfilled") for label in labels]},
+        {"a": (0.0, 0.0), "b": (300.0, 0.0)},
+        {},
+        output="b",
+    )
+    source = _pin(canvas, packed, 0, 0, output=True)
+    target = _pin(canvas, packed, 1, 2, output=False)
+
+    events = _drive(
+        canvas,
+        packed,
+        [
+            ffi.PointerState(x=source[0], y=source[1], flags=DOWN | PRESSED),
+            ffi.PointerState(x=(source[0] + target[0]) / 2, y=source[1], flags=DOWN),
+            ffi.PointerState(x=target[0], y=target[1], flags=DOWN),
+            ffi.PointerState(x=target[0], y=target[1], flags=0),
+        ],
+    )
+    assert Wired("a", "b", "u_z") in events, events
+    canvas.release()

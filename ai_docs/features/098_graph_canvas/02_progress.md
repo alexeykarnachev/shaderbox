@@ -69,6 +69,23 @@ names against an enum of three. `gc_enum_count` caught it at load on the first
 run. The generalisation "the README states semantics and not values" holds for
 the other findings and not for that one.
 
+## The gate that proved connectivity and not identity
+
+`pin_point` shipped with its attribute index untested: every call in the suite
+passed 0, so hardcoding the index to 0 inside it left 30 tests green. Found by
+the library's author hitting the same hole in his own gate and saying so.
+
+Widening the fixture is necessary and not sufficient — with three pins and the
+gesture aimed at the third, an off-by-one still connects, because a wire only
+has to start somewhere on the right node. Two checks now decide it: walking
+every pin and requiring distinct points in pushed order (which an ignored
+index collapses to one and a shift collapses to n-1), and an end-to-end drop
+onto the THIRD sampler of a three-input consumer that requires `u_z` back by
+name. Both were broken and watched to fail.
+
+The single-input fixture could see neither: aim, resolve and report all agree
+on index 0 whatever the code does with it.
+
 ## What imgui still owns here
 
 The window, the tab row, the context menus and the Group prompt. Moving those

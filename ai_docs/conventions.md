@@ -129,9 +129,25 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   loop, which is the one workflow that reliably does it.** 098 read a mutation as PASSING and
   nearly reported its own gate vacuous; the stale bytecode was also making a method return the
   opposite of what its source said. The tell is a method disagreeing with its own inlined body in
-  the same process. `find . -name '__pycache__' -path '*/shaderbox/*' -prune -exec rm -rf {} +`
-  between rounds, and treat "the code says X but it behaves as not-X" as a staleness symptom
-  before it is a logic one.
+  the same process, and "the code says X but it behaves as not-X" is a staleness symptom before it
+  is a logic one. `make test` now runs under `PYTHONDONTWRITEBYTECODE=1`, which removes the class
+  rather than relying on clearing the cache between rounds; a mutation run OUTSIDE that target
+  still clears it by hand.
+
+- **A test that exercises a thing proves it HAPPENED, not that it happened to the right one —
+  build the fixture where the choice makes a difference.** A wire gesture aimed at a pin proves
+  the point is ON a pin; it does not prove WHICH pin, because a wire only has to start somewhere
+  on the right node, so both an ignored index and a shifted one connect and report success. 098
+  shipped `pin_point` whose attribute index every test passed as 0: hardcoding the index to 0
+  inside it left 30 tests green. Widening the fixture is necessary and NOT sufficient — with three
+  pins and the gesture aimed at the third, an off-by-one still connects. What decides an index is
+  walking every member and requiring distinct results in the pushed order; what decides a mapping
+  end to end is requiring the NAME back, not the connection.
+  The general form, which is not about indices: **a parameter whose default is the neutral value
+  cannot be tested at its default.** At pan 0 zoom 1 a projection and its absence are identical;
+  at one viewport a wrong vertex stride still draws plausibly. Both are the same bug wearing
+  different clothes, and both are caught by choosing a fixture where the parameter does work —
+  hence the render tests parametrized over three viewports.
 
 - **Mutate the WIRING, not the renderer — a mutation aimed one layer below the feature proves
   nothing about the feature.** 086 shipped a prompt notice whose presence was mutation-tested at
