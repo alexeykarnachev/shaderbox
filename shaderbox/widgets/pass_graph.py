@@ -38,6 +38,24 @@ from shaderbox.app import App
 from shaderbox.commands import CommandId
 from shaderbox.core import Pass
 from shaderbox.document import Document
+from shaderbox.graph_canvas.adapter import (
+    Activated,
+    Clicked,
+    GraphEvent,
+    MenuRequested,
+    Moved,
+    Refused,
+    Unwired,
+    Wired,
+    pack_nodes,
+)
+from shaderbox.graph_canvas.panel import (
+    GraphCanvasState,
+    pointer_from_io,
+    refusal_text,
+    render_to_texture,
+)
+from shaderbox.graph_canvas.render import CanvasRenderer
 from shaderbox.menus import command_menu_item
 from shaderbox.pass_graph import (
     PassEntry,
@@ -885,6 +903,144 @@ def _canvas_menu(app: App, document_id: str, view: GraphViewState) -> None:
             imgui.end_popup()
 
 
+def _library_canvas(
+    app: App,
+    document_id: str,
+    document: Document,
+    view: GraphViewState,
+) -> None:
+    """The canvas interior, drawn by the graph_canvas library (098).
+
+    imgui still owns the child, the menus and the tab row; what it no longer
+    owns is the picture. The library is handed the whole graph every frame and
+    hands back geometry plus what the user did, so nothing about a node
+    survives between calls and a rename or a delete needs no bookkeeping here.
+
+    Every write still goes through an `App` verb, which is what keeps each
+    refusal testable without a window.
+    """
+    origin = imgui.get_cursor_screen_pos()
+    avail = imgui.get_content_region_avail()
+    width = max(int(avail.x), 1)
+    height = max(int(avail.y), 1)
+
+    state = app.graph_canvas_for(document_id)
+    if app.graph_renderer is None:
+        app.graph_renderer = CanvasRenderer()
+
+    wiring = document.effective_wiring()
+    ports = ports_of(document, wiring)
+    order = strip_order(document.passes, wiring)
+    entries = document.graph.passes
+    groups = {name: entries.get(name, PassEntry()).group for name in order}
+    # A stored position wins, a pass never placed takes the rank layout's, and
+    # a drag in flight overrides both -- the same rule the strip and the old
+    # canvas used, so a pass does not jump when the renderer changed under it.
+    positions = _positions(
+        document, wiring, groups, node_sizes(ports), state.dragging
+    )
+    previews: dict[str, tuple[int, int, int]] = {}
+    for name in order:
+        canvas = document.passes[name].canvas
+        if canvas is None:
+            continue
+        texture = canvas.texture
+        previews[name] = (texture.glo, texture.size[0], texture.size[1])
+
+    packed = pack_nodes(
+        order,
+        ports,
+        positions,
+        previews,
+        output=document.graph.output_pass or "",
+    )
+
+    # A gesture the canvas did not see the end of is CANCELLED, never resumed:
+    # a stray later release must not commit a wire or a move.
+    hovered = imgui.is_window_hovered(imgui.HoveredFlags_.child_windows)
+    frozen = app.copilot_turn_active
+    pointer = pointer_from_io((origin.x, origin.y), hovered, cancelled=frozen)
+    if not view.fitted:
+        state.fitted = False
+        view.fitted = True
+
+    texture, events, claimed = render_to_texture(
+        state,
+        app.graph_renderer,
+        packed,
+        (width, height),
+        fade(COLOR.BG_APP, 1.0),
+        pointer,
+    )
+    imgui.image(
+        imgui.ImTextureRef(texture.glo),
+        imgui.ImVec2(float(width), float(height)),
+        # The FBO's origin is bottom-left and imgui's is top-left, so the V is
+        # flipped here rather than in the renderer, which has no opinion about
+        # who presents it.
+        imgui.ImVec2(0.0, 1.0),
+        imgui.ImVec2(1.0, 0.0),
+    )
+
+    if not frozen:
+        _apply_graph_events(app, document_id, document, view, state, events)
+
+    # The canvas menu is imgui's this feature, opened from the library's own
+    # context-menu event so the two agree about what the pointer hit.
+    _canvas_menu(app, document_id, view)
+
+
+def _apply_graph_events(
+    app: App,
+    document_id: str,
+    document: Document,
+    view: GraphViewState,
+    state: GraphCanvasState,
+    events: Sequence[GraphEvent],
+) -> None:
+    """Turn the library's events into `App` verb calls.
+
+    A drag reports its position EVERY frame and the write happens once, when
+    the pointer comes up: the accumulated positions live on the canvas state
+    until then, which is what keeps one gesture to one save.
+    """
+    for event in events:
+        if isinstance(event, Moved):
+            state.dragging[event.name] = (event.x, event.y)
+        elif isinstance(event, Clicked):
+            if event.extend:
+                view.selection ^= {event.name}
+            else:
+                view.selection = {event.name}
+                app.choose_output(document_id, event.name)
+        elif isinstance(event, Activated):
+            entry = document.graph.passes.get(event.name)
+            if entry is not None and entry.group:
+                view.scope = entry.group
+                view.fitted = False
+        elif isinstance(event, Wired):
+            refusal = app.drop_wire(
+                document_id, event.producer, event.consumer, event.sampler
+            )
+            if refusal:
+                app.notifications.push(refusal)
+        elif isinstance(event, Unwired):
+            refusal = app.unwire(document_id, event.consumer, event.sampler)
+            if refusal:
+                app.notifications.push(refusal)
+        elif isinstance(event, Refused):
+            app.notifications.push(refusal_text(event.reason))
+        elif isinstance(event, MenuRequested):
+            imgui.open_popup("##graph_canvas_menu")
+
+    # The release is the write. `Moved` stops arriving the frame the button
+    # comes up, so the commit is keyed on the button and not on the events.
+    if state.dragging and not imgui.is_mouse_down(imgui.MouseButton_.left):
+        moved = dict(state.dragging)
+        state.dragging.clear()
+        app.commit_graph_positions(document_id, moved)
+
+
 def draw(app: App, document_id: str) -> None:
     """The graph canvas for one document: the tab row, then a child filling what is left of the
     host's content region. The widget positions no sibling and measures none."""
@@ -921,7 +1077,7 @@ def draw(app: App, document_id: str) -> None:
     )
     imgui.pop_style_color(1)
     if child_open:
-        _draw_canvas(app, document_id, document, view)
+        _library_canvas(app, document_id, document, view)
     imgui.end_child()
     imgui.end_disabled()
 

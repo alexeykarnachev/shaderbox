@@ -1,5 +1,5 @@
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 from enum import StrEnum
 from pathlib import Path
@@ -47,6 +47,8 @@ from shaderbox.editor.ffi import (
 )
 from shaderbox.editor.input import KeyEvent, translate_char, translate_key
 from shaderbox.editor.render import EditorPanel, EditorRenderer
+from shaderbox.graph_canvas.panel import GraphCanvasState
+from shaderbox.graph_canvas.render import CanvasRenderer
 from shaderbox.editor_types import (
     EditorSession,
     EditorTab,
@@ -321,6 +323,11 @@ class App:
         # guaranteed current inside the frame loop).
         self.editor_renderer: EditorRenderer | None = None
         self.editor_panel: EditorPanel | None = None
+        # The graph canvas's GL half, lazy for the same reason (098). One
+        # renderer per context; one `GraphCanvasState` per document, since each
+        # carries its own library handle, FBO and view.
+        self.graph_renderer: CanvasRenderer | None = None
+        self.graph_canvases: dict[str, GraphCanvasState] = {}
         # Per-path fingerprint of the markers last pushed into a session's editor, so the
         # error strip only rebuilds markers (and triggers a redraw) on change.
         self.editor_marker_state: dict[Path, tuple] = {}
@@ -799,6 +806,11 @@ class App:
         self.throttle_states.pop(document_id, None)
         self.document_costs.pop(document_id, None)
         self.graph_views.pop(document_id, None)
+        # The graph canvas holds an FBO and a library handle per document, so a
+        # close that only forgot the entry would leak both per closed document.
+        graph_canvas = self.graph_canvases.pop(document_id, None)
+        if graph_canvas is not None:
+            graph_canvas.release()
 
     def recover_deleted_document(self, msg: Message) -> None:
         # MAIN THREAD (the chat's Recover button). Restore the document, flip the card's
@@ -2062,6 +2074,15 @@ class App:
             self.graph_views[document_id] = view
         return view
 
+    def graph_canvas_for(self, document_id: str) -> GraphCanvasState:
+        """The library-backed canvas for one document (098). One per document:
+        each carries its own handle, FBO and view."""
+        state = self.graph_canvases.get(document_id)
+        if state is None:
+            state = GraphCanvasState()
+            self.graph_canvases[document_id] = state
+        return state
+
     def arrange_graph(self, document_id: str) -> None:
         """Lay every pass of the document out by rank and store it (092 D9): one placement,
         one save, then the current scope fits once more."""
@@ -2141,6 +2162,31 @@ class App:
         if not moved:
             return
         error = self.session.set_pass_positions(document_id, moved)
+        if error:
+            self.notifications.push(error)
+
+    def commit_graph_positions(
+        self, document_id: str, moved: Mapping[str, tuple[float, float]]
+    ) -> None:
+        """The release of a drag on the library-backed canvas (098): the
+        positions it reported, written ONCE.
+
+        The sibling of `commit_node_drag`, which reads the drag machine the
+        imgui canvas owns. Here the library owns the gesture and reports a
+        position every frame, so the accumulation happens on the canvas state
+        and this verb is the single write.
+        """
+        ui_document = self.ui_documents.get(document_id)
+        if ui_document is None:
+            return
+        live = {
+            name: position
+            for name, position in moved.items()
+            if name in ui_document.document.passes
+        }
+        if not live:
+            return
+        error = self.session.set_pass_positions(document_id, live)
         if error:
             self.notifications.push(error)
 
@@ -2351,6 +2397,10 @@ class App:
             self.editor_panel.release()
             self.editor_panel = None
         self.editor_renderer = None
+        for graph_canvas in self.graph_canvases.values():
+            graph_canvas.release()
+        self.graph_canvases.clear()
+        self.graph_renderer = None
 
         if self.share_tab_state is not None:
             self.share_tab_state.release()
