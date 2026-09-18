@@ -38,9 +38,9 @@ entries, and no feature carries an open finding. The rows still marked `partial`
 SCOPE or a check only a display can make -- read them as history, not as a backlog.
 
 **Unmeasured, and owed to nobody:** the canvas past twenty passes at the GPU (its DRAW-CALL
-half is measured -- 2n+3 runs, one textured run per pass, 83 at forty passes -- and gated);
-no brake watches copilot cost or a frame going lit to flat (082); the GL thread if the
-throttle falls short.
+half is measured and gated -- one textured run per pass, and 2n+3 runs in total once an
+atlas is loaded, which is 83 at forty passes); no brake watches copilot cost or a frame
+going lit to flat (082); the GL thread if the throttle falls short.
 
 ## Features
 

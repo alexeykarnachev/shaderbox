@@ -12,6 +12,7 @@ import pytest
 
 from shaderbox.graph_canvas import ffi
 from shaderbox.graph_canvas.adapter import pack_nodes
+from shaderbox.pass_graph import Port
 
 
 def test_the_library_loads_and_its_layout_is_proven() -> None:
@@ -234,7 +235,98 @@ def test_a_frame_costs_one_textured_run_per_preview_not_per_distinct_image() -> 
         measured.append((result.run_count, textured))
         canvas.release()
 
-    assert measured[0] == measured[1], f"sharing a texture changed the cost: {measured}"
-    assert measured[0][1] == len(names), (
-        f"expected one textured run per preview, got {measured[0]}"
-    )
+    # ABSOLUTE values, not an equality between the two measurements. A check
+    # that only compares them cannot detect that both came from the same
+    # place: under a shared handle the second case can read the first's state,
+    # and two readings of one stale thing agree. Here they happen to disagree
+    # and the comparison would catch it, but that is how the corruption lands
+    # rather than something the assertion guarantees.
+    for run_count, textured in measured:
+        assert textured == len(names), (
+            f"expected one textured run per preview, got {measured}"
+        )
+        assert run_count == 2 * len(names) + 3, (
+            f"expected 2n+3 runs with an atlas loaded, got {measured}"
+        )
+
+
+def test_the_run_formula_holds_only_because_an_atlas_is_loaded() -> None:
+    """`2n+3` carries a precondition: TEXT.
+
+    Without an atlas the library emits no glyphs, so nothing interleaves and
+    the same scene is `2n+1`. shaderbox always loads one, which is why the
+    app's budget is the first formula -- but a headless measurement that
+    forgets the atlas is two short at every size and looks like a scene that
+    simply costs less. The textured count is n either way, which is why the
+    number worth planning against is n.
+    """
+    names = [f"p{i}" for i in range(4)]
+    positions = {name: (index * 240.0, 0.0) for index, name in enumerate(names)}
+    previews = {name: (10 + index, 64, 64) for index, name in enumerate(names)}
+    ports: dict[str, list[Port]] = {name: [] for name in names}
+
+    lit = ffi.Canvas()
+    lit.load_atlas()
+    dark = ffi.Canvas()
+    try:
+        packed = pack_nodes(names, ports, positions, previews, output=names[-1])
+        with_text = lit.frame(
+            packed.nodes, packed.edges, (1400.0, 800.0), ffi.View(), ffi.PointerState()
+        )
+        assert with_text.glyph_count > 0
+        assert with_text.run_count == 2 * len(names) + 3
+        textured_lit = sum(
+            1 for i in range(with_text.run_count) if with_text.runs[i].texture != 0
+        )
+
+        without = dark.frame(
+            packed.nodes, packed.edges, (1400.0, 800.0), ffi.View(), ffi.PointerState()
+        )
+        assert without.glyph_count == 0, "no atlas should mean no glyphs"
+        assert without.run_count == 2 * len(names) + 1
+        textured_dark = sum(
+            1 for i in range(without.run_count) if without.runs[i].texture != 0
+        )
+        assert textured_lit == textured_dark == len(names)
+    finally:
+        lit.release()
+        dark.release()
+
+
+def test_an_off_screen_node_still_costs_its_runs() -> None:
+    """Nothing is culled at this layer, so a host cannot budget on the count
+    it can SEE. Two nodes parked far outside the viewport cost what two nodes
+    inside it cost."""
+    names = ["a", "b"]
+    ports: dict[str, list[Port]] = {name: [] for name in names}
+    previews = {name: (10 + index, 64, 64) for index, name in enumerate(names)}
+
+    inside = ffi.Canvas()
+    inside.load_atlas()
+    outside = ffi.Canvas()
+    outside.load_atlas()
+    try:
+        near = pack_nodes(
+            names, ports, {"a": (0.0, 0.0), "b": (300.0, 0.0)}, previews, output="b"
+        )
+        far = pack_nodes(
+            names,
+            ports,
+            {"a": (40000.0, 40000.0), "b": (40300.0, 40000.0)},
+            previews,
+            output="b",
+        )
+        size = (800.0, 600.0)
+        here = inside.frame(
+            near.nodes, near.edges, size, ffi.View(), ffi.PointerState()
+        )
+        here_runs = here.run_count
+        there = outside.frame(
+            far.nodes, far.edges, size, ffi.View(), ffi.PointerState()
+        )
+        assert there.run_count == here_runs, (
+            f"off-screen nodes were culled: {there.run_count} against {here_runs}"
+        )
+    finally:
+        inside.release()
+        outside.release()

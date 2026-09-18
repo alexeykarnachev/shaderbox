@@ -134,6 +134,18 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   rather than relying on clearing the cache between rounds; a mutation run OUTSIDE that target
   still clears it by hand.
 
+- **Assert an ABSOLUTE value, not an equality between two measurements — a comparison cannot
+  detect that both readings came from the same place.** 098 measured a cost two ways and asserted
+  the two agreed. Under a shared handle (the state-leak family below) the second reading can be
+  the first's, and two readings of one stale thing AGREE, so the equality passes for exactly the
+  wrong reason. Here the corruption happened to make them differ and the comparison did catch it
+  — which is luck in how the corruption landed, not something the assertion guarantees. The same
+  applies to any "before and after match" or "both paths agree" check. State the number.
+  **And state what the number ASSUMES.** The same feature recorded `2n+3` draw calls per n graph
+  nodes without noting that it holds only once a glyph atlas is loaded; headless and without one
+  the figure is `2n+1`, which reads as a scene that simply costs less. A measurement in a doc is
+  planned against, so a precondition left out of it is a wrong number with a citation.
+
 - **A test that exercises a thing proves it HAPPENED, not that it happened to the right one —
   build the fixture where the choice makes a difference.** A wire gesture aimed at a pin proves
   the point is ON a pin; it does not prove WHICH pin, because a wire only has to start somewhere

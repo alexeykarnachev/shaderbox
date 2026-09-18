@@ -95,8 +95,15 @@ never adjacent and their runs never merge -- six distinct names and six copies
 of one both give 15 runs and 6 textured. Budgeting per distinct image
 under-counts by the sharing factor.
 
-Scaling is linear: `2n+3` runs and n textured for n passes (5/1 at one, 15/6
-at six, 43/20 at twenty, 83/40 at forty).
+Scaling is linear: **n textured runs for n passes**, and `2n+3` runs in total
+(5/1 at one, 15/6 at six, 43/20 at twenty, 83/40 at forty).
+
+The total carries a precondition the textured count does not: `2n+3` assumes
+an ATLAS is loaded. Without one nothing interleaves and the same scene is
+`2n+1` -- measured, and gated, because a headless budget that forgets the
+atlas is two short at every size and looks like a scene that costs less.
+shaderbox always loads one. Nothing is culled either, so an off-screen node
+still costs its runs and a host cannot budget on the visible count.
 
 Both cases must use a FRESH handle. Measuring them against one reports the
 first case's textures in the second -- the result points into the handle's own
