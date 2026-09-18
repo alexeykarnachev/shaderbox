@@ -135,12 +135,17 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   still clears it by hand.
 
 - **Assert an ABSOLUTE value, not an equality between two measurements — a comparison cannot
-  detect that both readings came from the same place.** 098 measured a cost two ways and asserted
-  the two agreed. Under a shared handle (the state-leak family below) the second reading can be
-  the first's, and two readings of one stale thing AGREE, so the equality passes for exactly the
-  wrong reason. Here the corruption happened to make them differ and the comparison did catch it
-  — which is luck in how the corruption landed, not something the assertion guarantees. The same
-  applies to any "before and after match" or "both paths agree" check. State the number.
+  DECIDE that the two readings came from different places.** This is a claim about what the form
+  can establish, not a prediction that it will miss any particular bug. 098 measured a cost two
+  ways and asserted the two agreed; under a shared handle the second reading can be polluted by
+  the first, and an equality is silent on whether that happened. Measured, the pollution there was
+  partial and the readings differed (15 runs against 24), so the comparison did fire — on both
+  sides of the ABI, as it turned out. **So the reason to state the number is the form's reach,
+  not a war story: nothing about "the two agree" rules out "because they are the same reading".**
+  The same applies to any "before and after match" or "both paths agree" check.
+  Worth separating the two sentences, because conflating them is its own error: a mechanism that
+  would explain the evidence is not thereby the mechanism that produced it, and 098 wrote one up
+  as history on the strength of it fitting. One patch would have checked. Run the patch.
   **And state what the number ASSUMES.** The same feature recorded `2n+3` draw calls per n graph
   nodes without noting that it holds only once a glyph atlas is loaded; headless and without one
   the figure is `2n+1`, which reads as a scene that simply costs less. A measurement in a doc is

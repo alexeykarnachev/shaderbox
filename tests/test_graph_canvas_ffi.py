@@ -235,12 +235,11 @@ def test_a_frame_costs_one_textured_run_per_preview_not_per_distinct_image() -> 
         measured.append((result.run_count, textured))
         canvas.release()
 
-    # ABSOLUTE values, not an equality between the two measurements. A check
-    # that only compares them cannot detect that both came from the same
-    # place: under a shared handle the second case can read the first's state,
-    # and two readings of one stale thing agree. Here they happen to disagree
-    # and the comparison would catch it, but that is how the corruption lands
-    # rather than something the assertion guarantees.
+    # ABSOLUTE values, not an equality between the two measurements: nothing
+    # about "the two agree" rules out "because they are the same reading". The
+    # shared-handle break below is caught either way -- measured, its
+    # pollution is partial and the readings differ -- so this is about what
+    # the assertion can decide, not about that break.
     for run_count, textured in measured:
         assert textured == len(names), (
             f"expected one textured run per preview, got {measured}"
