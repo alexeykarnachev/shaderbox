@@ -465,6 +465,15 @@ def _declare(lib: ctypes.CDLL) -> None:
         ctypes.POINTER(ctypes.c_float),
         ctypes.POINTER(ctypes.c_float),
     ]
+    lib.gc_pin_point.restype = ctypes.c_int32
+    lib.gc_pin_point.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_int32,
+        ctypes.c_int32,
+        ctypes.c_int32,
+        ctypes.POINTER(ctypes.c_float),
+        ctypes.POINTER(ctypes.c_float),
+    ]
     lib.gc_frame.restype = ctypes.c_int32
     lib.gc_frame.argtypes = [
         ctypes.c_void_p,
@@ -744,6 +753,32 @@ class Canvas:
         ):
             raise RuntimeError("gc_frame refused the frame")
         return self._result
+
+    def pin_point(
+        self, node: int, attribute: int, output: bool
+    ) -> tuple[float, float] | None:
+        """One pin's centre in SCREEN space, for the most recent frame.
+
+        A pin is not where its row is: the grab area straddles the node's edge
+        so an edge pin is reachable without the body claiming the press, and
+        the hover-reporting band is the whole row. A host computing a point
+        from a node rect, or from where the hover answers, lands on the body
+        and starts a node drag -- which is indistinguishable from the wire
+        gesture not existing.
+
+        `None` for a node or attribute outside the last frame.
+        """
+        x = ctypes.c_float()
+        y = ctypes.c_float()
+        side: int = 1 if output else 0
+        if (
+            self._lib.gc_pin_point(
+                self._handle, node, attribute, side, ctypes.byref(x), ctypes.byref(y)
+            )
+            != 0
+        ):
+            return None
+        return (x.value, y.value)
 
     def node_size(self, index: int) -> tuple[float, float] | None:
         """The size the library gives a node in the most recent frame."""

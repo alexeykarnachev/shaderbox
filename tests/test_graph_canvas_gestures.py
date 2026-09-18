@@ -65,118 +65,21 @@ def _rect(
     return (box.x, box.y, box.w, box.h)
 
 
-def _wire_start(canvas: ffi.Canvas, packed: Packed, node: int) -> tuple[float, float]:
-    """A point on `node`'s output pin that actually STARTS a wire.
-
-    Found by trying, not by asking where the hover is: the two differ. The
-    pin's grab area overhangs the node's edge so a press there is not claimed
-    by the body, while `hover_attribute` is only reported inside the node --
-    measured, the grab sits at y 178 and the hover reports at y 170 on the
-    same pin. A point taken from the hover starts a NODE DRAG, which is
-    exactly what the wire gesture failing looks like.
-    """
-    x0, y0, w, h = _rect(canvas, packed, node)
-    for x in range(int(x0 + w) - 12, int(x0 + w) + 9, 2):
-        for y in range(int(y0 + h) - 40, int(y0 + h) + 1, 2):
-            probe = ffi.Canvas()
-            view = ffi.View()
-            probe.frame(
-                packed.nodes,
-                packed.edges,
-                SIZE,
-                view,
-                ffi.PointerState(x=float(x), y=float(y), flags=DOWN | PRESSED),
-            )
-            after = probe.frame(
-                packed.nodes,
-                packed.edges,
-                SIZE,
-                view,
-                ffi.PointerState(x=float(x) + 50.0, y=float(y), flags=DOWN),
-            )
-            moved = any(isinstance(e, Moved) for e in read_events(after, packed))
-            probe.release()
-            if not moved:
-                return (float(x), float(y))
-    raise AssertionError(f"no point on node {node}'s output starts a wire")
-
-
-def _wire_drop(
-    canvas: ffi.Canvas, packed: Packed, source: tuple[float, float], node: int
+def _pin(
+    canvas: ffi.Canvas, packed: Packed, node: int, attribute: int, output: bool
 ) -> tuple[float, float]:
-    """A point where a wire from `source` actually LANDS on `node`'s input.
+    """One pin's point, from the library (`gc_pin_point`).
 
-    Probed by completing the gesture, for the same reason `_wire_start` is:
-    the grab area and the hover-reporting area are not the same rectangle, and
-    a drop aimed by hover silently falls on the background.
+    This replaced three brute-force probes that pressed candidate points until
+    one produced the event. They existed because a pin is not where its rect
+    or its hover band says: the grab straddles the node's edge and the hover
+    answers across the whole row, so a point computed from either lands on the
+    body and starts a node drag.
     """
-    x0, y0, _w, h = _rect(canvas, packed, node)
-    for x in range(int(x0) - 14, int(x0) + 15, 2):
-        for y in range(int(y0 + h) - 50, int(y0 + h) + 1, 2):
-            probe = ffi.Canvas()
-            landed = _drive(
-                probe,
-                packed,
-                [
-                    ffi.PointerState(x=source[0], y=source[1], flags=DOWN | PRESSED),
-                    ffi.PointerState(x=(source[0] + x) / 2, y=source[1], flags=DOWN),
-                    ffi.PointerState(x=float(x), y=float(y), flags=DOWN),
-                    ffi.PointerState(x=float(x), y=float(y), flags=0),
-                ],
-            )
-            probe.release()
-            if any(isinstance(e, Wired) for e in landed):
-                return (float(x), float(y))
-    raise AssertionError(f"no point lands a wire on node {node}")
-
-
-def _connected_input(
-    canvas: ffi.Canvas, packed: Packed, node: int
-) -> tuple[float, float]:
-    """A point whose PRESS picks up the wire into `node`'s input.
-
-    Probed, and the range reaches OUTSIDE the node: the input pin's grab area
-    overhangs the left edge (measured at x = 290 for a node at x = 300), which
-    is exactly the overhang that lets a pin on the edge be grabbed without the
-    body claiming the press.
-    """
-    x0, y0, _w, h = _rect(canvas, packed, node)
-    # Bottom-up: the pins sit in the node's lower third, and each sample costs
-    # a fresh handle because the press mutates the library's own copy.
-    for y in range(int(y0 + h), int(y0), -2):
-        for x in range(int(x0) - 16, int(x0) + 30, 2):
-            # No atlas: the probe hit-tests, and loading the metrics per
-            # sample is what made this scan take seconds. Geometry does not
-            # depend on it -- without one the library simply emits no text.
-            probe = ffi.Canvas()
-            events = _drive(
-                probe,
-                packed,
-                [ffi.PointerState(x=float(x), y=float(y), flags=DOWN | PRESSED)],
-            )
-            probe.release()
-            if any(isinstance(e, Unwired) for e in events):
-                return (float(x), float(y))
-    raise AssertionError(f"no press picks up the wire into node {node}")
-
-
-def _input_pin(
-    canvas: ffi.Canvas, packed: Packed, node: int, attribute: int
-) -> tuple[float, float]:
-    """A point that reports `attribute` hovered on `node`."""
-    x0, y0, w, h = _rect(canvas, packed, node)
-    for x in range(int(x0) + 2, int(x0 + w), 2):
-        for y in range(int(y0), int(y0 + h) + 1, 2):
-            probe = canvas.frame(
-                packed.nodes,
-                packed.edges,
-                SIZE,
-                ffi.View(),
-                ffi.PointerState(x=float(x), y=float(y)),
-            )
-            if probe.node_rects[node].hover_attribute == attribute:
-                return (float(x), float(y))
-    raise AssertionError(f"node {node} never reported attribute {attribute}")
+    canvas.frame(packed.nodes, packed.edges, SIZE, ffi.View(), ffi.PointerState())
+    point = canvas.pin_point(node, attribute, output=output)
+    assert point is not None, f"node {node} has no attribute {attribute}"
+    return point
 
 
 def _drive(
@@ -195,8 +98,8 @@ def _drive(
 def test_a_wire_dragged_from_an_output_onto_an_input_lands_there() -> None:
     canvas = _canvas()
     packed = _chain()
-    source = _wire_start(canvas, packed, 0)
-    target = _wire_drop(canvas, packed, source, 1)
+    source = _pin(canvas, packed, 0, 0, output=True)
+    target = _pin(canvas, packed, 1, 0, output=False)
 
     events = _drive(
         canvas,
@@ -216,7 +119,7 @@ def test_a_wire_dropped_on_empty_canvas_writes_nothing() -> None:
     """A drag abandoned over the background is a no-op, not a refusal."""
     canvas = _canvas()
     packed = _chain()
-    source = _wire_start(canvas, packed, 0)
+    source = _pin(canvas, packed, 0, 0, output=True)
 
     events = _drive(
         canvas,
@@ -237,7 +140,7 @@ def test_grabbing_a_connected_input_reports_the_wire_gone_on_the_press() -> None
     hearing about it later would keep a wire the library has already dropped."""
     canvas = _canvas()
     packed = _chain(wired=True)
-    target = _connected_input(canvas, packed, 1)
+    target = _pin(canvas, packed, 1, 0, output=False)
 
     events = _drive(
         canvas,
