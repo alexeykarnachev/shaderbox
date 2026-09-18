@@ -45,10 +45,11 @@ stage_common() {
     # stripping bytecode.
     local stage="$1" platform="$2"
     cp -r shaderbox "$stage/"
-    # The editor binary is linux-x86_64 only (feature 067): a Windows stage must
-    # not carry an ELF .so it can never load.
+    # The vendored Odin binaries are linux-x86_64 only (features 067, 098): a
+    # Windows stage must not carry an ELF .so it can never load.
     if [ "$platform" = "windows" ]; then
         rm -f "$stage/shaderbox/resources/editor/libeditor.so"
+        rm -f "$stage/shaderbox/resources/graph_canvas/libgraph_canvas.so"
     fi
     # Strip Python bytecode (stale .pyc for deleted modules must not ship).
     find "$stage/shaderbox" -type d -name __pycache__ -prune -exec rm -rf {} +
