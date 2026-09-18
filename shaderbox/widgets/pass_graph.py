@@ -257,6 +257,11 @@ def _library_canvas(
     # a drag in flight overrides both -- the same rule the strip and the old
     # canvas used, so a pass does not jump when the renderer changed under it.
     positions = _positions(document, wiring, groups, node_sizes(ports), state.dragging)
+    # Read every frame, and AFTER the document has rendered (`ui._update_and_draw`
+    # renders before it draws). A pass recreates its canvas texture on a resize or a
+    # recompile, so a name cached across frames is a live GL name that is no longer
+    # this pass's -- the library takes a bare uint32 and cannot detect it, the frame
+    # is accepted, and the node draws black with no error.
     previews: dict[str, tuple[int, int, int]] = {}
     for name in order:
         canvas = document.passes[name].canvas

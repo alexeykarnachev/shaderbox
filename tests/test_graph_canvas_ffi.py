@@ -11,6 +11,7 @@ import ctypes
 import pytest
 
 from shaderbox.graph_canvas import ffi
+from shaderbox.graph_canvas.adapter import pack_nodes
 
 
 def test_the_library_loads_and_its_layout_is_proven() -> None:
@@ -196,3 +197,44 @@ def test_the_refusal_mask_is_a_veto_and_not_another_gesture() -> None:
     kinds = {after.events[i].kind for i in range(after.event_count)}
     assert int(ffi.EventKind.NODE_MOVED) not in kinds
     canvas.release()
+
+
+def test_a_frame_costs_one_textured_run_per_preview_not_per_distinct_image() -> None:
+    """The draw-call budget scales with PASSES, not with distinct pictures.
+
+    A run is cut wherever the bound texture changes, and a node's preview sits
+    among that node's own geometry, so two nodes sharing one texture are never
+    adjacent in the stream and their runs never merge. Measured both ways --
+    six distinct names and six copies of one -- and the cost is identical.
+    Budgeting per distinct image would under-count by the sharing factor.
+
+    A FRESH handle per case: everything in a result points into the handle's
+    own storage, so measuring both cases against one handle reports the first
+    case's textures in the second. That misread cost a minute here and a
+    minute upstream, independently.
+    """
+    names = [f"p{i}" for i in range(6)]
+    positions = {name: (index * 240.0, 0.0) for index, name in enumerate(names)}
+    measured: list[tuple[int, int]] = []
+    for previews in (
+        {name: (10 + index, 64, 64) for index, name in enumerate(names)},
+        dict.fromkeys(names, (100, 64, 64)),
+    ):
+        canvas = ffi.Canvas()
+        canvas.load_atlas()
+        packed = pack_nodes(
+            names, {name: [] for name in names}, positions, previews, output=names[-1]
+        )
+        result = canvas.frame(
+            packed.nodes, packed.edges, (1400.0, 800.0), ffi.View(), ffi.PointerState()
+        )
+        textured = sum(
+            1 for i in range(result.run_count) if result.runs[i].texture != 0
+        )
+        measured.append((result.run_count, textured))
+        canvas.release()
+
+    assert measured[0] == measured[1], f"sharing a texture changed the cost: {measured}"
+    assert measured[0][1] == len(names), (
+        f"expected one textured run per preview, got {measured[0]}"
+    )

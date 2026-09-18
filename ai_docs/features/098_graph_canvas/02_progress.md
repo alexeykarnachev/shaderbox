@@ -86,6 +86,23 @@ name. Both were broken and watched to fail.
 The single-input fixture could see neither: aim, resolve and report all agree
 on index 0 whatever the code does with it.
 
+## What a frame costs
+
+Measured, and gated because it rots silently: **one textured run per PREVIEW,
+not per distinct image.** A run is cut where the bound texture changes and a
+node's preview sits among its own geometry, so two nodes sharing a texture are
+never adjacent and their runs never merge -- six distinct names and six copies
+of one both give 15 runs and 6 textured. Budgeting per distinct image
+under-counts by the sharing factor.
+
+Scaling is linear: `2n+3` runs and n textured for n passes (5/1 at one, 15/6
+at six, 43/20 at twenty, 83/40 at forty).
+
+Both cases must use a FRESH handle. Measuring them against one reports the
+first case's textures in the second -- the result points into the handle's own
+storage. That misread cost a minute here and a minute upstream, independently,
+and the gate carries a break for it.
+
 ## What imgui still owns here
 
 The window, the tab row, the context menus and the Group prompt. Moving those

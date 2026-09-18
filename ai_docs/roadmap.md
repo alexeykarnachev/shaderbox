@@ -37,9 +37,10 @@ window, the tab row and the menus -- the next surface to move is a question, not
 entries, and no feature carries an open finding. The rows still marked `partial` are parked
 SCOPE or a check only a display can make -- read them as history, not as a backlog.
 
-**Unmeasured, and owed to nobody:** the canvas past twenty passes (the largest real document
-is six); no brake watches copilot cost or a frame going lit to flat (082); the GL thread if
-the throttle falls short.
+**Unmeasured, and owed to nobody:** the canvas past twenty passes at the GPU (its DRAW-CALL
+half is measured -- 2n+3 runs, one textured run per pass, 83 at forty passes -- and gated);
+no brake watches copilot cost or a frame going lit to flat (082); the GL thread if the
+throttle falls short.
 
 ## Features
 
