@@ -125,6 +125,13 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   package is installed editable, so `uv run` inside a worktree imports the MAIN checkout and a
   mutation there changes nothing the suite reads. The mutation goes to a copy, and the restore is
   verified, in the one tree.
+  **And the restore is not only the file — `__pycache__` desynchronises across a break/restore
+  loop, which is the one workflow that reliably does it.** 098 read a mutation as PASSING and
+  nearly reported its own gate vacuous; the stale bytecode was also making a method return the
+  opposite of what its source said. The tell is a method disagreeing with its own inlined body in
+  the same process. `find . -name '__pycache__' -path '*/shaderbox/*' -prune -exec rm -rf {} +`
+  between rounds, and treat "the code says X but it behaves as not-X" as a staleness symptom
+  before it is a logic one.
 
 - **Mutate the WIRING, not the renderer — a mutation aimed one layer below the feature proves
   nothing about the feature.** 086 shipped a prompt notice whose presence was mutation-tested at

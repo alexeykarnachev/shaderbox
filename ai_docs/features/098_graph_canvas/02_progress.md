@@ -55,6 +55,20 @@ area actually sits (it differs from where `hover_attribute` reports, which is
 why the gesture tests probe for a point that produces the event rather than
 computing one).
 
+## Aiming at a pin
+
+The grab area and the hover-reporting area are different rectangles, so for a
+while the tests found a pin by pressing candidate points until one produced
+the event. `gc_pin_point` was added upstream on the strength of that finding
+and the probes are gone -- `Canvas.pin_point(node, attribute, output=)`.
+
+One correction to what this feature reported upstream: `pin_fill`'s values
+WERE documented. The binding read them correctly; the bug was deriving the
+enum-count check from `len(PinFill)`, which counts the wire encoding's four
+names against an enum of three. `gc_enum_count` caught it at load on the first
+run. The generalisation "the README states semantics and not values" holds for
+the other findings and not for that one.
+
 ## What imgui still owns here
 
 The window, the tab row, the context menus and the Group prompt. Moving those
