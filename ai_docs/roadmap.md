@@ -26,31 +26,26 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-17, nothing is queued and nothing is deferred. -->
-**Nothing is queued and nothing is owed.** The tree is clean, `make gates` is green, `todo.md`
-holds zero entries, and no feature carries an open finding. The rows still marked `partial` are
-parked SCOPE (a decision nobody has needed yet) or a check only a display can make -- read them
-as history, not as a backlog.
+<!-- As of 2026-09-18. -->
+**ShaderBox is getting off imgui, and the graph went first.** The node canvas is no longer
+drawn by this repo: `graph_canvas` (an Odin library, vendored as a `.so` and rendered with
+moderngl) owns the picture, the hit-testing, the gestures and the camera, and shaderbox
+packs the document into it and routes the events back to `App` verbs. imgui still owns the
+window, the tab row and the menus -- the next surface to move is a question, not a plan.
 
-**The two engine bugs the 094 revert left live are fixed.** `Document.render` now composes
-`canvas=` with `target=` -- the blit was keyed on the graph output, so asking for any other pass
-returned an untouched canvas and no error -- and a uniform row's key names the pass that declares
-it, where two passes sharing a uniform name had shared one row and one user-set input type. The
-stored rows were re-keyed by hand, which split a live collision: one document had three passes
-declaring `u_src` under a single row.
+**Nothing is queued and nothing is owed.** `make gates` is green, `todo.md` holds zero
+entries, and no feature carries an open finding. The rows still marked `partial` are parked
+SCOPE or a check only a display can make -- read them as history, not as a backlog.
 
-**094 itself is withdrawn**: implemented, shipped broken, reverted whole, its number retired with
-no spec, mock or row. What it established about uniform rows on a node lives in `9d9e817`'s
-message, and nothing follows from it until the panel's density question is asked again.
-
-**Unmeasured, and owed to nobody:** the canvas past twenty passes (the largest real document is
-six); no brake watches copilot cost or a frame going lit to flat (082); the GL thread if the
-throttle falls short.
+**Unmeasured, and owed to nobody:** the canvas past twenty passes (the largest real document
+is six); no brake watches copilot cost or a frame going lit to flat (082); the GL thread if
+the throttle falls short.
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 098 | graph_canvas | done | The hand-drawn imgui node canvas replaced by the `graph_canvas` library over a C ABI, rendered with moderngl into an FBO that `imgui.image` presents -- the first step of getting shaderbox off imgui. Vendored as feature 067 vendored `libeditor.so`; the ctypes binding and the renderer know no shaderbox type, so the pair lifts into another project, and a test walks their imports. Three renderer defects found by rendering rather than by reading (a stride that made every instance after the first read its neighbour, a run offset that walked off the buffer, a preview sharing the atlas's texture unit) plus a gesture mask numbered so that "refuses everything" accepted drags; each was reintroduced and its gate watched to fail. Two library defects were found and fixed upstream. `pass_graph.py` went 1537 lines to 368. Spec: `ai_docs/features/098_graph_canvas/01_spec.md` + `02_progress.md`. |
 | 097 | test_suite_diet | done | `make gates` ran 45-70s against a 30s ceiling and now runs 27s, while the suite went 2734 tests to 1968. The budget came from the `app` fixture, which built a real App and GL context per test and was 202 of the stage's 261 CPU-seconds; it now builds one per worker, which surfaced four latent project-switch defects and later a GL race of its own. The size came from reading each file against one question -- what a user loses when the check goes -- which cut the tests that pinned strings, the tests of tooling that does not ship, and four checks that could not fail. Spec: `ai_docs/features/097_test_suite_diet/01_spec.md` + `02_progress.md` + `03_findings_drained.md`. |
 | 096 | canvas_ownership | done | Six canvas defects in one week treated as one class: a canvas's configuration is decided in several places and each knows about some canvases but not all. The sizing rule, written at five sites in three shapes with the fifth simply wrong, becomes `Document.canvas_size_for`; an output pass always draws into its own canvas and a caller's canvas receives a blit, which fixed the frozen export and dissolved a second finding outright; the export's fit branch carries the output pass's format, as its sibling already did. Promotion, deleting the output and importing one are three doors onto the same defect and share one verb. Guarded by a battery over the non-default corner in which every test has been broken and seen to fail -- a post-implementation review found four of the original gates passing a verbatim reintroduction of the defect they named, and three further live defects (a scale change never reaching a pass the output does not touch, a demoted output keeping full size, a load leaving such a pass unconformed), all fixed. `Canvas`'s own dtype default was left alone: changing it breaks every raw-byte texture reader, which is wider than this feature. Spec: `ai_docs/features/096_canvas_ownership/01_spec.md` + `00_findings.md` + `02_progress.md`. |
 | 095 | structural_sweep | done | A repo-wide pass over the codebase's shape rather than its behavior, run as one inventory wave plus four working waves with the gate green between each: the live facts deleted from the docs, the gl_ctx fixture given one home in conftest, the symbols that were really dead removed, and a comment pass that left every why-comment alone. Most of what the scan flagged did not survive scrutiny and the log records each rejection with its reason. Two adversarial review rounds; the first found a coverage gap that the fix closed. Spec: `ai_docs/features/095_structural_sweep/01_spec.md` + `02_progress.md`. |

@@ -53,7 +53,9 @@ def _chain(wired: bool = False) -> Packed:
     )
 
 
-def _rect(canvas: ffi.Canvas, packed: Packed, node: int) -> tuple[float, float, float, float]:
+def _rect(
+    canvas: ffi.Canvas, packed: Packed, node: int
+) -> tuple[float, float, float, float]:
     """One node's screen rect, COPIED OUT: everything in the result points into
     the handle's own storage and the next frame overwrites all of it."""
     result = canvas.frame(
@@ -79,11 +81,17 @@ def _wire_start(canvas: ffi.Canvas, packed: Packed, node: int) -> tuple[float, f
             probe = ffi.Canvas()
             view = ffi.View()
             probe.frame(
-                packed.nodes, packed.edges, SIZE, view,
+                packed.nodes,
+                packed.edges,
+                SIZE,
+                view,
                 ffi.PointerState(x=float(x), y=float(y), flags=DOWN | PRESSED),
             )
             after = probe.frame(
-                packed.nodes, packed.edges, SIZE, view,
+                packed.nodes,
+                packed.edges,
+                SIZE,
+                view,
                 ffi.PointerState(x=float(x) + 50.0, y=float(y), flags=DOWN),
             )
             moved = any(isinstance(e, Moved) for e in read_events(after, packed))
@@ -111,9 +119,7 @@ def _wire_drop(
                 packed,
                 [
                     ffi.PointerState(x=source[0], y=source[1], flags=DOWN | PRESSED),
-                    ffi.PointerState(
-                        x=(source[0] + x) / 2, y=source[1], flags=DOWN
-                    ),
+                    ffi.PointerState(x=(source[0] + x) / 2, y=source[1], flags=DOWN),
                     ffi.PointerState(x=float(x), y=float(y), flags=DOWN),
                     ffi.PointerState(x=float(x), y=float(y), flags=0),
                 ],
@@ -318,9 +324,7 @@ def test_a_second_click_inside_the_hosts_own_interval_activates() -> None:
         [
             ffi.PointerState(x=point[0], y=point[1], flags=DOWN | PRESSED),
             ffi.PointerState(x=point[0], y=point[1], flags=0),
-            ffi.PointerState(
-                x=point[0], y=point[1], flags=DOWN | PRESSED | DOUBLE
-            ),
+            ffi.PointerState(x=point[0], y=point[1], flags=DOWN | PRESSED | DOUBLE),
             ffi.PointerState(x=point[0], y=point[1], flags=DOUBLE),
         ],
     )
@@ -356,7 +360,9 @@ def test_a_ghost_swallows_nothing() -> None:
     canvas.release()
 
 
-def test_the_pointer_reads_as_claimed_over_a_node_and_free_over_the_background() -> None:
+def test_the_pointer_reads_as_claimed_over_a_node_and_free_over_the_background() -> (
+    None
+):
     """How a host knows not to treat a press as its own.
 
     `Result.flags` bit 0 alone does NOT answer this: it is measured low while

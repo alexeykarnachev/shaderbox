@@ -1626,6 +1626,22 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   never does since 090 made recording always-on, so the ring grows with the span paths a session
   visits and is bounded by them. Revisit if a GL version this repo targets ever makes timer
   queries nestable, or if `Query` gains a release.
+- **The vendored graph-canvas binary (`shaderbox/resources/graph_canvas/`) is rebuilt from the
+  `graph_canvas` repo with `make ffi`, and a STALE copy lies convincingly.** Seven files ship
+  (feature 098): `libgraph_canvas.so`, `atlas.png`, `atlas.json`, and the four reference shaders
+  under `shaders/`, which are used UNMODIFIED -- they are the shortest statement of the vertex
+  contract, and a host writing its own re-derives the rotation and field rules by hand. Upstream is
+  the maintainer's own `~/src/graph_canvas`. Rebuild: `make ffi` there (which also runs its probe
+  and its leak gate), then copy the seven. The binary is linux-x86_64 only and `build.sh` strips it
+  from the Windows stage, exactly as it strips `libeditor.so`.
+  **The failure to know about:** a stale `.so` reported every run's `first` as 0 while the run
+  COUNTS still tiled both streams exactly. That reads precisely like a library bug -- the arithmetic
+  is self-consistent -- and it is not. Re-vendor before reporting anything about run offsets.
+  Two more measured facts the next rebuild must not "fix": the shape instance is 120 bytes whose
+  eight fields tile it with NO padding (so the vertex format names the eight and nothing else), and
+  `Gesture.NONE` is the top bit rather than the first (numbered 1 it aliases `DRAG`, and a node that
+  refuses everything then accepts drags).
+
 - **The vendored editor binary (`shaderbox/resources/editor/`) rebuilds from a COMMITTED editor-repo
   sha, never a dirty tree.** SEVEN files ship together (feature 067): `libeditor.so`, `atlas.png`,
   `atlas.json`, `VERSION` (the sha), `vim_coverage.md`, `standard_keymap.md`, `abi_probe.py`
