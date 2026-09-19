@@ -141,8 +141,34 @@ def theme_from(
 
 
 @dataclass(frozen=True, slots=True)
+class BodyRow:
+    """One non-wirable row in a node's body: a value the pass carries that no
+    wire can reach.
+
+    `color` is the HOST's, because which colours exist is the host's
+    taxonomy: shaderbox has engine-driven uniforms, script-driven ones and
+    plain pass uniforms, and each already has a colour in the editor. The
+    adapter would have to invent a vocabulary to name them, and it would be
+    the wrong one by the next kind added.
+
+    IT DOES NOT REACH THE SCREEN YET. The library reads a port's colour only
+    while drawing its PIN, and a control has none, so every pinless row
+    draws in the theme's one `control` colour whatever is set here --
+    measured, all three kinds render the same pixel. Reported upstream.
+    Carried rather than dropped because the row's kind is the fact, and the
+    moment the library can show it this is already the right value; the
+    alternative was tinting the label instead, which would look deliberate
+    rather than unfinished.
+    """
+
+    label: str
+    value: tuple[float, ...]
+    color: RGBA
+
+
+@dataclass(frozen=True, slots=True)
 class NodePalette:
-    """The three colours the node's chrome needs, handed in by the caller.
+    """The two colours the node's chrome needs, handed in by the caller.
 
     The adapter knows the document and the library; it does not know the
     theme, which imports imgui. Passing the tokens keeps this layer free of
@@ -151,7 +177,6 @@ class NodePalette:
 
     hover: RGBA
     select: RGBA
-    engine_uniform: RGBA
 
 
 # What a caller that passes no palette gets: white for both highlights, which
@@ -159,7 +184,6 @@ class NodePalette:
 _NEUTRAL_PALETTE: NodePalette = NodePalette(
     hover=(1.0, 1.0, 1.0, 1.0),
     select=(1.0, 1.0, 1.0, 1.0),
-    engine_uniform=(1.0, 1.0, 1.0, 1.0),
 )
 
 
@@ -416,7 +440,7 @@ def pack_nodes(
     view: ScopedView,
     previews: Mapping[str, tuple[int, int, int]],
     output: str,
-    engine: Mapping[str, Sequence[tuple[str, tuple[float, ...]]]] | None = None,
+    body: Mapping[str, Sequence[BodyRow]] | None = None,
     hovered: str = "",
     selected: frozenset[str] = frozenset(),
     palette: NodePalette | None = None,
@@ -437,13 +461,15 @@ def pack_nodes(
     through to the canvas rather than being swallowed by something that does
     nothing.
 
-    `engine` gives each pass's engine-driven uniforms as (name, value)
-    pairs -- `u_time` and its siblings. They are CONTROL rows carrying a
-    read-only widget, which is the case the library's `read_only` field says
-    it exists for: the engine writes them and no wire can, so a pin would
-    offer a connection the document cannot express, and an editable widget
-    would offer an edit the engine overwrites next frame. A box shows its
-    bundle's, since that is the picture it is already showing.
+    `body` gives each pass's non-wirable rows: a uniform the ENGINE writes
+    (`u_time`), one the document SCRIPT writes (`u_mouse_pos`), or a plain
+    constant the pass declares. They are CONTROL rows carrying a read-only
+    widget, which is the case the library's `read_only` field says it exists
+    for -- something writes them and no wire can, so a pin would offer a
+    connection the document cannot express and an editable widget an edit
+    that is overwritten next frame. Each row carries its own colour, because
+    which kinds exist is the host's taxonomy. A box shows its bundle's rows,
+    since that is the picture it is already showing.
 
     `hovered` and `selected` decide the border, and both are keyed by NODE
     KEY rather than by pass name: at the root a group's box is one node and
@@ -477,23 +503,23 @@ def pack_nodes(
                 PortSpec(label=member if node.is_box else "out", is_input=False)
             )
 
-        # An engine uniform is a CONTROL, which is what the library's own
+        # A body row is a CONTROL, which is what the library's own
         # model calls a row the user cannot wire. That is not only semantics:
         # the row's background comes from its KIND, so a control is drawn in
         # the neutral control tone where an input is drawn green -- measured,
         # (0.33, 0.34, 0.42) against (0.29, 0.45, 0.35). Packing these as
         # inputs made a builtin look like a free port, which is exactly what
         # they are not.
-        for label, value in (engine or {}).get(node.preview, ()):
+        for row in (body or {}).get(node.preview, ()):
             specs.append(
                 PortSpec(
-                    label=label,
+                    label=row.label,
                     # A LABEL draws component 0 ONLY, so a vec2 like
                     # `u_resolution` would show half of itself. A read-only
                     # DRAG draws one field per component and takes no input,
                     # which is the same display without the lie.
-                    widget=_widget_for(value),
-                    value=value,
+                    widget=_widget_for(row.value),
+                    value=row.value,
                     read_only=True,
                     # NO pin. `control` alone carries neither side bit, and
                     # the library draws a pin for Input or Output only.
@@ -506,7 +532,7 @@ def pack_nodes(
                     # to ignore the user.
                     is_input=False,
                     control=True,
-                    color=colors.engine_uniform,
+                    color=row.color,
                 )
             )
 

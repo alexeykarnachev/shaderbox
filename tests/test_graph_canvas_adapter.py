@@ -15,6 +15,7 @@ from shaderbox.constants import DOCUMENT_EXAMPLES_DIR
 from shaderbox.document import Document
 from shaderbox.graph_canvas import ffi
 from shaderbox.graph_canvas.adapter import (
+    BodyRow,
     Clicked,
     Moved,
     NodePalette,
@@ -32,6 +33,10 @@ from shaderbox.graph_canvas.render import shapes_array
 from shaderbox.pass_graph import Port, strip_order
 from shaderbox.widgets.graph_state import ports_of
 from shaderbox.widgets.pass_graph import canvas_theme
+
+# One colour for every body row in these fixtures: what the row IS
+# coloured is the host's decision and is tested where it is made.
+_BLUE: tuple[float, float, float, float] = (0.0, 0.0, 1.0, 1.0)
 
 # The largest shipped document: six passes, a diamond, and a pass read twice.
 CASCADE_EXAMPLE = "77a84d27-2e5b-406d-8011-ee1cb1a9587c"
@@ -261,7 +266,13 @@ def test_a_wire_points_at_an_output_and_engine_rows_follow_it() -> None:
         ),
         {},
         output=pass_key("b"),
-        engine={"a": [("u_time", (1.0,)), ("u_resolution", (64.0, 64.0))], "b": []},
+        body={
+            "a": [
+                BodyRow("u_time", (1.0,), _BLUE),
+                BodyRow("u_resolution", (64.0, 64.0), _BLUE),
+            ],
+            "b": [],
+        },
     )
     attributes = packed.nodes[0].ports
     # `not is_input` is not "is an output": a CONTROL is neither, which is
@@ -296,7 +307,7 @@ def test_an_engine_uniform_is_a_control_and_not_an_input() -> None:
         ),
         {},
         output=pass_key("b"),
-        engine={"a": [], "b": [("u_time", (1.0,))]},
+        body={"a": [], "b": [BodyRow("u_time", (1.0,), _BLUE)]},
     )
     by_label = {spec.label: spec for spec in packed.nodes[1].ports}
     assert "u_time" in by_label
@@ -321,7 +332,7 @@ def test_an_engine_row_is_packed_as_a_control_and_a_sampler_is_not() -> None:
         flat_view(["t"], {"t": [Port("u_src", "unfilled")]}, {"t": (0.0, 0.0)}),
         {},
         output=pass_key("t"),
-        engine={"t": [("u_time", (1.0,))]},
+        body={"t": [BodyRow("u_time", (1.0,), _BLUE)]},
     )
     by_label = {port.label: port for port in packed.nodes[0].ports}
     assert by_label["u_time"].control, "an engine uniform was packed as a free input"
@@ -382,7 +393,6 @@ def test_hover_and_selection_change_the_border_and_not_the_size() -> None:
     palette = NodePalette(
         hover=(1.0, 0.0, 0.0, 1.0),
         select=(0.0, 1.0, 0.0, 1.0),
-        engine_uniform=(0.0, 0.0, 1.0, 1.0),
     )
     plain = pack_nodes(
         flat_view(order, ports, {}), {}, output=pass_key("b"), palette=palette
@@ -437,7 +447,7 @@ def test_a_multi_component_engine_value_shows_every_component() -> None:
             flat_view(["a"], {"a": []}, {"a": (0.0, 0.0)}),
             {},
             output=pass_key("a"),
-            engine={"a": [("u_res", value)]},
+            body={"a": [BodyRow("u_res", value, _BLUE)]},
         )
         result = canvas.frame(
             packed.nodes, packed.edges, (900.0, 700.0), ffi.View(), ffi.PointerState()
@@ -459,7 +469,7 @@ def test_an_engine_row_with_no_value_yet_shows_its_name_alone() -> None:
         flat_view(["a"], {"a": []}, {"a": (0.0, 0.0)}),
         {},
         output=pass_key("a"),
-        engine={"a": [("u_time", ())]},
+        body={"a": [BodyRow("u_time", (), _BLUE)]},
     )
     row = next(spec for spec in packed.nodes[0].ports if spec.label == "u_time")
     assert row.control is True
@@ -474,7 +484,12 @@ def test_an_engine_value_is_read_only() -> None:
         flat_view(["a"], {"a": []}, {"a": (0.0, 0.0)}),
         {},
         output=pass_key("a"),
-        engine={"a": [("u_time", (1.0,)), ("u_res", (64.0, 64.0))]},
+        body={
+            "a": [
+                BodyRow("u_time", (1.0,), _BLUE),
+                BodyRow("u_res", (64.0, 64.0), _BLUE),
+            ]
+        },
     )
     for spec in packed.nodes[0].ports:
         if spec.label.startswith("u_"):
@@ -497,7 +512,7 @@ def test_an_engine_row_is_a_pure_control_and_so_carries_no_pin() -> None:
         flat_view(["b"], {"b": [Port("u_src", "unfilled")]}, {"b": (0.0, 0.0)}),
         {},
         output=pass_key("b"),
-        engine={"b": [("u_time", (1.0,))]},
+        body={"b": [BodyRow("u_time", (1.0,), _BLUE)]},
     )
     canvas = ffi.Canvas()
     canvas.load_atlas()

@@ -113,6 +113,33 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   break was tried. The same bar applies to a gate you EDIT: three of those five were introduced by
   the fix for the previous one.
 
+- **Break the DECISION the gate names, not a thing the gate happens to read.** 098's audit mutated
+  the source under every graph-canvas test and found three that stayed green under the exact defect
+  their docstring named — each failing a different way, and the three shapes are worth knowing apart
+  because the remedy differs:
+
+  1. **The test never references the decision.** A node-body check asserted
+     `luminance(BG_FRAME) > luminance(BG_APP)` — two constants in `theme.py`, with the call site
+     nowhere in the test. It pinned that the palette is ORDERABLE and said nothing about which pair
+     the canvas picked, so swapping the call site back to the wrong token left all 2028 tests green.
+     It had been "verified" by breaking `theme.py`, which it reads, rather than the choice it
+     claims to check — so the break proved it could FAIL without showing it could CATCH. Remedy:
+     make the decision readable. The theme became a named `canvas_theme()` so a test reads what is
+     SENT; a test can only check a choice it can see.
+  2. **The expectation is already met by the dependency's defaults.** A role-distinctness check
+     passed a `theme_from` that ignored all fourteen of its arguments and returned the library's
+     default theme, whose roles are distinct anyway. Remedy: assert against values no default holds
+     — mark each argument with a colour the library never produces and look for it by name.
+  3. **A second mechanism carries the assertion.** A ghost check read the adapter's RESOLVED events,
+     and the adapter independently drops a ghost's events, so the test passed with the `accepts`
+     flag it names set to 0. Remedy: read the layer the claim is about — the library's raw events,
+     not the host's filtered ones.
+
+  A fourth, from the same audit and the shape the library's own author hit three times: **a
+  comparison whose sides differ in more than the property under test**. Comparing a widget row to
+  the node BODY passes on the defect, because an untinted panel already differs from the body; what
+  decides it is another ROW. The tell is two differences and one conclusion.
+
 - **A mutation test verifies its own restore before anything else runs.** The technique — break the
   code, confirm the suite catches it, restore — leaves a window where the wrong file is on disk. In
   064 a restore raced the test run that was supposed to confirm it, and a mutated file rode into a

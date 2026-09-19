@@ -25,6 +25,7 @@ Color framework (portable to a future non-gruvbox theme):
   validates the SELECT assignment at import.
 """
 
+import colorsys
 import zlib
 from typing import Literal
 
@@ -51,6 +52,22 @@ def _hex(h: str, a: float = 1.0) -> tuple[float, float, float, float]:
     g = int(h[2:4], 16) / 255.0
     b = int(h[4:6], 16) / 255.0
     return (r, g, b, a)
+
+
+def _muted(
+    base: tuple[float, float, float, float], saturation: float, lightness: float
+) -> tuple[float, float, float, float]:
+    """A palette hue at a chosen saturation and lightness.
+
+    For a role drawn as a FILL rather than as text. The palette's bright
+    hues are 0.7-1.0 saturated, which reads as a neon bar behind a label;
+    the same hue at 0.2-0.4 reads as a tinted surface. Derived rather than
+    hand-picked so a palette swap carries it, which is the whole contract of
+    `_P` being the only place literal colours live.
+    """
+    h, _, _ = colorsys.rgb_to_hls(base[0], base[1], base[2])
+    r, g, b = colorsys.hls_to_rgb(h, lightness, saturation)
+    return (r, g, b, base[3])
 
 
 # Gruvbox-hard palette: near-black floor (bg_0h) backs surfaces, app bg is bg_0
@@ -201,9 +218,13 @@ class _ColorBag:
     # choices follow the EDITOR, so a port reads as what its name reads as in
     # the code -- a sampler bound to a pass is aqua, an output is orange, a
     # builtin uniform is blue.
-    GRAPH_PORT_IN: tuple[float, float, float, float] = (0.357, 0.583, 0.366, 1.0)
-    GRAPH_PORT_OUT: tuple[float, float, float, float] = (0.670, 0.464, 0.330, 1.0)
-    GRAPH_PORT_BOTH: tuple[float, float, float, float] = (0.647, 0.540, 0.333, 1.0)
+    GRAPH_PORT_IN: tuple[float, float, float, float] = _muted(_P["aqua_n"], 0.24, 0.47)
+    GRAPH_PORT_OUT: tuple[float, float, float, float] = _muted(
+        _P["orange_n"], 0.34, 0.50
+    )
+    GRAPH_PORT_BOTH: tuple[float, float, float, float] = _muted(
+        _P["yellow_n"], 0.32, 0.49
+    )
     # A row the engine writes and no wire can reach. `STATE_INFO` itself,
     # which is the blue the uniforms panel already gives an engine-driven
     # uniform (`tabs/uniforms.py`): the canvas and that panel show the same

@@ -25,10 +25,11 @@ from imgui_bundle import imgui
 
 from shaderbox.app import App
 from shaderbox.commands import CommandId
-from shaderbox.document import Document
+from shaderbox.document import Document, sampler_names
 from shaderbox.engine_uniforms import ENGINE_DRIVEN_UNIFORMS
 from shaderbox.graph_canvas.adapter import (
     Activated,
+    BodyRow,
     Clicked,
     GraphEvent,
     MenuRequested,
@@ -49,6 +50,7 @@ from shaderbox.graph_canvas.panel import (
     render_to_texture,
 )
 from shaderbox.graph_canvas.render import CanvasRenderer
+from shaderbox.intel.symbols import SymbolKind
 from shaderbox.menus import command_menu_item
 from shaderbox.pass_graph import (
     PassEntry,
@@ -57,7 +59,8 @@ from shaderbox.pass_graph import (
     strip_order,
 )
 from shaderbox.project_session import compile_pending_passes
-from shaderbox.theme import COLOR, SIZE, fade
+from shaderbox.scripting.engine import is_scriptable
+from shaderbox.theme import COLOR, SIZE, fade, kind_color
 from shaderbox.ui_primitives import (
     context_menu_style,
     name_input_row,
@@ -257,6 +260,59 @@ def _as_components(value: object) -> tuple[float, ...]:
     return ()
 
 
+def _body_rows(
+    app: App,
+    document_id: str,
+    document: Document,
+    order: Sequence[str],
+) -> dict[str, list[BodyRow]]:
+    """Every non-wirable uniform each pass declares, as a coloured body row.
+
+    A node shows what a pass READS. A sampler bound to another pass is a
+    port with a pin; everything else the pass declares is written by
+    something the canvas cannot wire, and the canvas said so for the engine's
+    uniforms only -- a script-driven `u_mouse_pos` appeared nowhere at all,
+    which is the whole point of a node that claims to show a pass.
+
+    The three kinds and their colours are the EDITOR's, through
+    `kind_color`: whatever a name is coloured in the code, it is coloured
+    the same here, and a kind added to `SymbolKind` reaches this surface
+    without a second table to remember.
+    """
+    script_driven = app.session.get_script_driven_uniforms(document_id)
+    rows: dict[str, list[BodyRow]] = {}
+    for name in order:
+        render_pass = document.passes[name]
+        # Only what the compiled program actually declares -- the script may
+        # drive a uniform this pass does not have, and an engine uniform is
+        # engine-driven whether or not it is used.
+        declared = [
+            u.name
+            for u in render_pass.get_active_uniforms()
+            if is_scriptable(u) and u.name not in sampler_names(render_pass)
+        ]
+        out: list[BodyRow] = []
+        for uniform in declared:
+            if uniform in ENGINE_DRIVEN_UNIFORMS:
+                kind = SymbolKind.ENGINE_UNIFORM
+            elif (name, uniform) in script_driven:
+                kind = SymbolKind.SCRIPT_UNIFORM
+            else:
+                kind = SymbolKind.PASS_UNIFORM
+            # The LIVE value, which `Pass.render` and the script engine both
+            # write back into `uniform_values` every frame. A pass that has
+            # not rendered yet has no entry and shows the name alone.
+            out.append(
+                BodyRow(
+                    label=uniform,
+                    value=_as_components(render_pass.uniform_values.get(uniform)),
+                    color=kind_color(kind),
+                )
+            )
+        rows[name] = out
+    return rows
+
+
 def canvas_theme() -> Theme:
     """shaderbox's palette as the library's theme.
 
@@ -360,24 +416,7 @@ def _library_canvas(
         texture = canvas.texture
         previews[name] = (texture.glo, texture.size[0], texture.size[1])
 
-    # The engine's own uniforms (`u_time` and its siblings), shown as body rows
-    # in the syntax colour the editor already gives them. They take no wire --
-    # the engine writes them -- so they are controls rather than ports.
-    engine: dict[str, list[tuple[str, tuple[float, ...]]]] = {}
-    for name in order:
-        render_pass = document.passes[name]
-        declared = {u.name for u in render_pass.get_active_uniforms()}
-        rows: list[tuple[str, tuple[float, ...]]] = []
-        for uniform in sorted(ENGINE_DRIVEN_UNIFORMS):
-            if uniform not in declared:
-                continue
-            # The LIVE value, which `Pass.render` writes back into
-            # `uniform_values` every frame. A pass that has not rendered yet
-            # has no entry and shows the name alone.
-            rows.append(
-                (uniform, _as_components(render_pass.uniform_values.get(uniform)))
-            )
-        engine[name] = rows
+    body = _body_rows(app, document_id, document, order)
 
     # Hover and selection are keyed by NODE KEY, because a node is not always
     # a pass: at the root a group's box is one node and its members are none.
@@ -385,14 +424,10 @@ def _library_canvas(
         scoped,
         previews,
         output=pass_key(document.graph.output_pass or ""),
-        engine=engine,
+        body=body,
         hovered=state.hovered,
         selected=frozenset(pass_key(name) for name in view.selection),
-        palette=NodePalette(
-            hover=COLOR.GRAPH_HOVER,
-            select=COLOR.SELECT,
-            engine_uniform=COLOR.GRAPH_PORT_CONTROL,
-        ),
+        palette=NodePalette(hover=COLOR.GRAPH_HOVER, select=COLOR.SELECT),
     )
 
     # A gesture the canvas did not see the end of is CANCELLED, never resumed:
