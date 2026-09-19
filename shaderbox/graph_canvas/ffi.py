@@ -791,16 +791,18 @@ class Canvas:
             for port in spec.ports:
                 a = self._attrs[cursor]
                 a.label = self._blob.add(port.label)
-                # A MASK, and composed as one. A control that is also an
-                # input carries both bits: the library's `attribute_role_color`
-                # answers `both` for that pair, and its row draw takes the
-                # tinted-slab branch only when Input or Output is present --
-                # so setting Control ALONE dropped the row onto the plain
-                # grey panel branch, where no role colour is read at all.
-                kinds = ATTR_INPUT if port.is_input else ATTR_OUTPUT
+                # A MASK, and which bits are set decides three things: whether
+                # there is a pin, which side it sits on, and whether the row is
+                # the user's to drive. A pin is drawn for Input or Output and
+                # nothing else, so a row carrying NEITHER is the only pinless
+                # row the library can express -- which is what an engine-written
+                # value is.
                 if port.control:
-                    kinds |= ATTR_CONTROL
-                a.kinds = kinds
+                    a.kinds = ATTR_CONTROL
+                elif port.is_input:
+                    a.kinds = ATTR_INPUT
+                else:
+                    a.kinds = ATTR_OUTPUT
                 a.widget = int(port.widget)
                 count = min(len(port.value), 4)
                 a.value_count = count

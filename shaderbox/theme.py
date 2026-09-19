@@ -204,9 +204,13 @@ class _ColorBag:
     GRAPH_PORT_IN: tuple[float, float, float, float] = (0.357, 0.583, 0.366, 1.0)
     GRAPH_PORT_OUT: tuple[float, float, float, float] = (0.670, 0.464, 0.330, 1.0)
     GRAPH_PORT_BOTH: tuple[float, float, float, float] = (0.647, 0.540, 0.333, 1.0)
-    # A row the engine writes and no wire can reach: the blue the editor gives
-    # a builtin uniform, at the library's own control saturation.
-    GRAPH_PORT_CONTROL: tuple[float, float, float, float] = (0.420, 0.573, 0.580, 1.0)
+    # A row the engine writes and no wire can reach. `STATE_INFO` itself,
+    # which is the blue the uniforms panel already gives an engine-driven
+    # uniform (`tabs/uniforms.py`): the canvas and that panel show the same
+    # thing, so they show it in the same colour rather than in two blues that
+    # nearly match. No desaturating needed -- at sat 0.33 it already sits in
+    # the band the library's own roles use.
+    GRAPH_PORT_CONTROL: tuple[float, float, float, float] = _P["blue_n"]
     # The exclusive hover cue (093): a neutral, because every chromatic palette hue is an
     # accent primary, a state hue, a group tint or SELECT, and three of those meet on one wire.
     GRAPH_HOVER: tuple[float, float, float, float] = _P["fg_0"]

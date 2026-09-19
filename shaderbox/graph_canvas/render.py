@@ -22,7 +22,9 @@ Two things about the run list are load-bearing:
   by binding the instance array at a byte offset — one VAO per distinct
   offset, cached. Dropping it is invisible: the runs stay ordered and the
   counts stay right while the wrong instances draw. A measured frame has a
-  shape run at `first=876`, and the library's own gate pins the case.
+  shape run that does not start at zero, and the library's own gate pins the
+  case. (No number here: the one that stood was measured against a `.so`
+  vendored before a rebuild, and the scene has not produced it since.)
 """
 
 import ctypes

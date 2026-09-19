@@ -272,8 +272,16 @@ def test_a_second_click_inside_the_hosts_own_interval_activates() -> None:
 
 
 def test_a_ghost_swallows_nothing() -> None:
-    """A node that refuses every gesture must let the press fall through, which
-    is the difference between a node that is not interactive and a hole."""
+    """A node that refuses every gesture must let the press fall through,
+    which is the difference between a node that is not interactive and a
+    hole in the canvas.
+
+    Read from the LIBRARY's raw events, not from `read_events`. The adapter
+    also drops a ghost's events -- belt and braces its own docstring calls
+    not a live path -- so a test reading the resolved list passes with
+    `accepts` set to 0, the exact flag this names. Measured: with the flag
+    dropped the library emits `NODE_MOVED` and the adapter guard hides it.
+    """
     canvas = _canvas()
     packed = pack_nodes(
         flat_view(
@@ -288,16 +296,19 @@ def test_a_ghost_swallows_nothing() -> None:
     x0, y0, w, h = _rect(canvas, packed, 0)
     point = (x0 + w / 2, y0 + h / 3)
 
-    events = _drive(
-        canvas,
-        packed,
-        [
-            ffi.PointerState(x=point[0], y=point[1], flags=DOWN | PRESSED),
-            ffi.PointerState(x=point[0] + 60.0, y=point[1], flags=DOWN),
-            ffi.PointerState(x=point[0] + 60.0, y=point[1], flags=0),
-        ],
-    )
-    assert not any(isinstance(e, (Moved, Clicked)) and e.name == "a" for e in events)
+    kinds: list[int] = []
+    for pointer in (
+        ffi.PointerState(x=point[0], y=point[1], flags=DOWN | PRESSED),
+        ffi.PointerState(x=point[0] + 60.0, y=point[1], flags=DOWN),
+        ffi.PointerState(x=point[0] + 60.0, y=point[1], flags=0),
+    ):
+        result = canvas.frame(packed.nodes, packed.edges, SIZE, ffi.View(), pointer)
+        kinds += [
+            int(result.events[i].kind)
+            for i in range(result.event_count)
+            if result.events[i].node == 0
+        ]
+    assert not kinds, f"the library acted on a ghost: event kinds {kinds} on node 0"
     canvas.release()
 
 

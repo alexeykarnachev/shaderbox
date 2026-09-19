@@ -8,8 +8,8 @@ never placed), edges are the wiring, ports are the program.
 The picture itself belongs to `graph_canvas` (098). Every frame the document is packed into
 the library's node model, `gc_frame` lays it out and resolves the pointer, and the two vertex
 streams are rendered into an FBO that `imgui.image` presents -- so the hit-testing, the
-gestures, the pan and the zoom are the library's, not an imgui item tree's. imgui still owns
-this child, the tab row and the menus.
+gestures and the zoom are the library's, not an imgui item tree's. The PAN is the host's, as
+it is in the library's own demo. imgui still owns this child, the tab row and the menus.
 
 What stays here is the seam: which passes are packed and how they look, and what each event
 the library reports means in shaderbox's terms. Every write a gesture makes goes through an
@@ -41,6 +41,7 @@ from shaderbox.graph_canvas.adapter import (
     pass_key,
     theme_from,
 )
+from shaderbox.graph_canvas.ffi import Theme
 from shaderbox.graph_canvas.panel import (
     GraphCanvasState,
     pointer_from_io,
@@ -256,6 +257,49 @@ def _as_components(value: object) -> tuple[float, ...]:
     return ()
 
 
+def canvas_theme() -> Theme:
+    """shaderbox's palette as the library's theme.
+
+    A named function rather than a literal inside the draw, so a test can
+    read what the canvas actually SENDS. Asserting the tokens instead --
+    that `BG_FRAME` outranks `BG_APP`, say -- pins that the palette is
+    orderable and says nothing about which pair the canvas picked, which is
+    where the bug was.
+
+    The node BODY is `BG_FRAME` against `BG_APP` behind it: the library's
+    shading lifts a node off its background, so the body has to be the
+    lighter of the two, and `BG_SURFACE` is DARKER than `BG_APP` -- using it
+    made every node a hole in the canvas.
+
+    The three port roles carry the editor's own hues, so a port reads as
+    what its name reads as in the code: a sampler bound to a pass is aqua,
+    an output orange, a builtin blue. Pointing all three at one colour does
+    not unify the palette, it deletes the distinction the row's background
+    exists to carry.
+    """
+    return theme_from(
+        canvas=COLOR.BG_APP,
+        surface=COLOR.BG_FRAME,
+        grid=COLOR.BORDER,
+        border=COLOR.BORDER,
+        text=COLOR.FG_PRIMARY,
+        text_dim=COLOR.FG_MUTED,
+        text_bright=COLOR.FG_TITLE,
+        accent=COLOR.ACCENT_PRIMARY,
+        pin=COLOR.GRAPH_EDGE,
+        # The dark run UNDER a wire, which has to be darker than the canvas,
+        # the nodes and the other wires it crosses -- it cannot borrow
+        # contrast from any one of them. `BORDER` is three times the
+        # canvas's luminance and inverted it into a light halo.
+        wire_outline=COLOR.BG_SURFACE,
+        wire_invalid=COLOR.STATE_ERROR,
+        port_input=COLOR.GRAPH_PORT_IN,
+        port_output=COLOR.GRAPH_PORT_OUT,
+        port_both=COLOR.GRAPH_PORT_BOTH,
+        control=COLOR.GRAPH_PORT_CONTROL,
+    )
+
+
 def _library_canvas(
     app: App,
     document_id: str,
@@ -382,33 +426,7 @@ def _library_canvas(
         (width, height),
         fade(COLOR.BG_APP, 1.0),
         pointer,
-        # The node BODY is BG_FRAME and the canvas behind it BG_APP: the
-        # library's shading lifts a node off its background, so the body has
-        # to be the lighter of the two. BG_SURFACE is DARKER than BG_APP and
-        # made every node a hole in the canvas.
-        #
-        # The three port roles are `GRAPH_PORT_*`, which carry the editor's
-        # hues at the saturation the library mixes down from. Pointing all
-        # three at one colour does not unify the palette, it deletes the
-        # distinction the row's background exists to carry -- and pointing
-        # them at a background grey, which this did for one commit, paints
-        # every row the colour of the thing behind it.
-        theme=theme_from(
-            canvas=COLOR.BG_APP,
-            surface=COLOR.BG_FRAME,
-            grid=COLOR.BORDER,
-            border=COLOR.BORDER,
-            text=COLOR.FG_PRIMARY,
-            text_dim=COLOR.FG_MUTED,
-            text_bright=COLOR.FG_TITLE,
-            accent=COLOR.ACCENT_PRIMARY,
-            wire=COLOR.GRAPH_EDGE,
-            wire_invalid=COLOR.STATE_ERROR,
-            port_input=COLOR.GRAPH_PORT_IN,
-            port_output=COLOR.GRAPH_PORT_OUT,
-            port_both=COLOR.GRAPH_PORT_BOTH,
-            control=COLOR.GRAPH_PORT_CONTROL,
-        ),
+        theme=canvas_theme(),
     )
     imgui.image(
         imgui.ImTextureRef(texture.glo),

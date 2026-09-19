@@ -81,7 +81,8 @@ def theme_from(
     text_dim: RGBA,
     text_bright: RGBA,
     accent: RGBA,
-    wire: RGBA,
+    pin: RGBA,
+    wire_outline: RGBA,
     wire_invalid: RGBA,
     port_input: RGBA,
     port_output: RGBA,
@@ -90,7 +91,7 @@ def theme_from(
 ) -> Theme:
     """The library's palette with a host's colours over it.
 
-    INHERITED, not built: the 16 shading scalars -- how far a depth level
+    INHERITED, not built: the shading scalars -- how far a depth level
     lifts, how a chamfer catches light, how a shadow falls -- are tuned
     against a dark canvas, which shaderbox also is, and a theme constructed
     from zero sets every one of them to 0 and flattens the canvas. Taking
@@ -109,6 +110,16 @@ def theme_from(
     `surface` is the node BODY against `canvas` behind it. It must be
     LIGHTER: the library's shading lifts a node off its background, and a
     surface darker than the canvas makes every node a hole instead.
+
+    `pin` colours the PIN DOT and nothing else. A WIRE takes the role of the
+    port it leaves -- the library's `wire_color` is `shade(role, wire_lift)`
+    -- so one signal keeps one colour end to end, and no argument here sets
+    it. This parameter was called `wire` and named a thing it does not reach.
+
+    `wire_outline` is the dark run UNDER a wire's core, and it has to be
+    darker than everything the wire crosses: a wire runs over nodes, over the
+    canvas and over other wires, so it cannot borrow contrast from any one of
+    them. A mid-grey border colour here inverts it into a light halo.
     """
     theme = default_theme()
     theme.canvas = _RGBA(*canvas)
@@ -122,9 +133,9 @@ def theme_from(
     theme.input = _RGBA(*port_input)
     theme.output = _RGBA(*port_output)
     theme.both = _RGBA(*port_both)
-    theme.pin = _RGBA(*wire)
+    theme.pin = _RGBA(*pin)
     theme.control = _RGBA(*control)
-    theme.wire_outline = _RGBA(*border)
+    theme.wire_outline = _RGBA(*wire_outline)
     theme.wire_invalid = _RGBA(*wire_invalid)
     return theme
 
@@ -484,10 +495,17 @@ def pack_nodes(
                     widget=_widget_for(value),
                     value=value,
                     read_only=True,
-                    is_input=True,
+                    # NO pin. `control` alone carries neither side bit, and
+                    # the library draws a pin for Input or Output only.
+                    #
+                    # The pin was not merely misleading: a wire dropped on it
+                    # produced a real `Edge_Added` that `read_events` then
+                    # discarded, because an engine row has no sampler to
+                    # resolve. So the wire followed the pointer and vanished
+                    # on release with no refusal shown -- the canvas appeared
+                    # to ignore the user.
+                    is_input=False,
                     control=True,
-                    pin_shape=PinShape.SQUARE,
-                    pin_fill=PinFill.CORED,
                     color=colors.engine_uniform,
                 )
             )

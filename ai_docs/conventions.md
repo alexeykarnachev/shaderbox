@@ -1678,8 +1678,10 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   visits and is bounded by them. Revisit if a GL version this repo targets ever makes timer
   queries nestable, or if `Query` gains a release.
 - **The vendored graph-canvas binary (`shaderbox/resources/graph_canvas/`) is rebuilt from the
-  `graph_canvas` repo with `make ffi`, and a STALE copy lies convincingly.** Seven files ship
-  (feature 098): `libgraph_canvas.so`, `atlas.png`, `atlas.json`, and the four reference shaders
+  `graph_canvas` repo with `make ffi`, and a STALE copy lies convincingly.** Eight files ship
+  (feature 098): `libgraph_canvas.so`, `atlas.png`, `atlas.json`, and the five shaders -- the
+  four stage sources and `common.glsl`, which `render.py` prepends to each and which a copy
+  that counted only the stages would leave stale
   under `shaders/`, which are used UNMODIFIED -- they are the shortest statement of the vertex
   contract, and a host writing its own re-derives the rotation and field rules by hand. Upstream is
   the maintainer's own `~/src/graph_canvas`. Rebuild: `make ffi` there (which also runs its probe

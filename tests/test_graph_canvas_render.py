@@ -157,10 +157,23 @@ def test_the_streams_are_uploaded_at_the_library_s_own_widths(
         ctypes.sizeof(ffi.ShapeInstance) // 4,
     )
     assert glyphs.shape == (result.glyph_count, ctypes.sizeof(ffi.GlyphVertex) // 4)
-    # A copy: the result's storage is overwritten by the next frame.
-    first_row = shapes[0].copy()
+    # A copy: the result's storage is overwritten by the next frame, and
+    # `shapes_array` is a VIEW onto it rather than a snapshot.
+    #
+    # Row 20, not row 0. The head of the stream is the grid, which is
+    # byte-identical between two scenes whatever the aliasing does -- so a
+    # fixture reading row 0 measures a stable instance and passes with the
+    # copy removed. Measured: 173 of 186 rows differ between these two
+    # frames, and row 0 is among the 13 that do not.
+    # `result` is the handle's own struct and the next frame REWRITES it, so
+    # `shape_count` has to be read before then -- reading it after picks a
+    # row out of a different scene and the comparison measures nothing.
+    probe = min(20, shapes.shape[0] - 1)
+    first_row = shapes[probe].copy()
     _one_node_frame(canvas, (800.0, 800.0))
-    assert np.array_equal(shapes[0], first_row)
+    assert np.array_equal(shapes[probe], first_row), (
+        "the array is a live view, so the next frame rewrote what it returned"
+    )
     canvas.release()
 
 

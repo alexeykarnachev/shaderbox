@@ -19,8 +19,10 @@ them that way.
 
 ## Measured
 
-- `widgets/pass_graph.py` 1537 -> 423 lines; `widgets/graph_state.py` 296 ->
-  94. (The retirement commit reached 368 and 116; restoring the node menus and
+- The drawing and the hit-testing left `widgets/pass_graph.py` and
+  `widgets/graph_state.py`; what remains in each is the seam. (No gate prints
+  a line count, so one written here rots -- three already had. Restoring the
+  node menus and
   the Group prompt, which were real verbs, put some back.)
 - The real app, driven headless to the graph tab on the six-pass
   radiance-cascade document, draws six node cards with their live rendered
@@ -164,7 +166,7 @@ the root cause and answered in ABI 4 with `FFI_Frame.theme` plus
 `gc_default_theme` / `gc_get_theme`.
 
 The palette is INHERITED and overridden, never built: a `Theme()` from zero
-sets sixteen shading scalars to 0 and flattens every chamfer and shadow, and
+sets every shading scalar to 0 and flattens every chamfer and shadow, and
 restating them here would be the copy-that-drifts the library avoided by
 making its own struct the boundary type. `theme_from` replaces the eleven
 colour fields shaderbox has an opinion about and takes the rest from

@@ -207,9 +207,6 @@ class GraphCanvasState:
     """
 
     canvas: ffi.Canvas | None = None
-    # Pushed once: `gc_frame` treats a null theme as KEEP, so re-sending it
-    # every frame would be work with no effect.
-    themed: bool = False
     panel: CanvasPanel | None = None
     view: ffi.View = field(default_factory=ffi.View)
     packed: Packed | None = None
@@ -371,10 +368,13 @@ def render_to_texture(
         (float(size[0]), float(size[1])),
         state.view,
         pointer,
-        theme=None if state.themed else theme,
+        # Sent EVERY frame rather than latched. `gc_frame` treats a null
+        # theme as KEEP, so pushing it once is cheaper -- and it means a
+        # palette the host recomputes, after an accent swap say, never
+        # reaches the canvas again for the life of the handle. The saving was
+        # one struct copy per frame, against a theme that could not change.
+        theme=theme,
     )
-    if theme is not None:
-        state.themed = True
     # The zoom the library applied comes back on the result; storing it is what
     # makes the next frame continue the gesture rather than fight it.
     state.view = ffi.View(result.pan_x, result.pan_y, result.zoom)

@@ -84,9 +84,15 @@ Each with the trigger that brings it back.
   with a measurement. *Trigger:* a gap that has no expression at all halts and
   goes to the maintainer.
 - **The strip view** (`widgets/pass_list.py`) is untouched.
-- **Node-body widgets.** The library can draw a drag/slider/colour row inside a
-  node; shaderbox's uniform rows stay in the Uniforms tab this feature. *Trigger:*
-  the panel-density question 094 left unanswered being asked again.
+- **Editable node-body widgets.** The library can draw a drag/slider/colour row
+  inside a node that the user DRIVES; shaderbox's editable uniform rows stay in
+  the Uniforms tab this feature. *Trigger:* the panel-density question 094 left
+  unanswered being asked again.
+
+  The trigger fired part-way: engine-driven uniforms DO carry a node-body
+  widget, read-only, because a builtin's value is the thing a reader wants
+  from it and a label draws only the first component of a vec2. Nothing
+  editable crosses.
 
 ## Files touched
 
@@ -102,7 +108,8 @@ replaced by the panel), `shaderbox/widgets/graph_state.py` (imgui-shaped state
 retired where the library now owns it; the scope's own picture -- boxes and
 ghosts -- resolved here), `shaderbox/app.py` (the renderer and the per-document
 canvases, released on a project switch), `build.sh` (the per-platform `.so`
-strip), `Makefile` (the layering gate), `ai_docs/roadmap.md`,
+strip), `tests/test_graph_canvas_adapter.py` (the layering gate: an import walk over
+`ffi.py` and `render.py`), `ai_docs/roadmap.md`,
 `ai_docs/conventions.md`.
 
 Deleted: the imgui draw-list painting in `widgets/pass_graph.py` — the
