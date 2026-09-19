@@ -536,16 +536,14 @@ def _swatch_node() -> Packed:
 def _point_hitting(packed: Packed, node: int, want: type) -> tuple[float, float]:
     """A point where a full click on `node` produces `want`.
 
-    Probed by DRIVING the gesture rather than by reading
-    `hover_attribute`, which answers across the whole row while a widget's
-    hit rect is inset -- the row's reported point is a pixel and a half
-    above the swatch, so aiming by it lands on the body and reports a node
-    click, reading exactly like the event not existing.
+    Found by DRIVING the gesture, not by asking `hover_attribute`: that
+    answers across the whole ROW while a widget's hit rect is inset, so a
+    point taken from it can land on the body, where the press reports a
+    node click and reads exactly like the event not existing.
 
-    One canvas with an IDLE frame between candidates. A gesture left in
-    flight would turn the next press into a drag and move the node under
-    the probe; a canvas per candidate also prevents that, and costs 32ms
-    each -- most of what this test used to spend.
+    The idle frame between candidates settles any gesture in flight, which
+    would otherwise turn the next press into a drag and move the node out
+    from under the probe.
     """
     canvas = _canvas()
     try:
@@ -574,12 +572,8 @@ def test_pressing_a_colour_swatch_asks_the_host_for_a_picker() -> None:
     """
     packed = _swatch_node()
     swatch = _point_hitting(packed, 0, PickerRequested)
-    # Probed the same way rather than offset from the swatch. An offset
-    # picked off one observed layout landed on the node BODY, where a
-    # click yields nothing and the silence below read as "correctly
-    # silent" -- so that half of this gate passed without ever reaching a
-    # drag field. The drag is what proves contact: a point that yields
-    # `ValueEdited` is inside the widget, and nothing else is.
+    # Probed, not offset from the swatch: the assertion below is SILENCE,
+    # so the point has to be one that demonstrably reaches a drag field.
     field = _point_dragging(packed, 0)
 
     asked = [
