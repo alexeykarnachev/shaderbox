@@ -445,7 +445,11 @@ def _library_canvas(
         body=body,
         hovered=state.hovered,
         selected=frozenset(pass_key(name) for name in view.selection),
-        palette=NodePalette(hover=COLOR.GRAPH_HOVER, select=COLOR.SELECT),
+        palette=NodePalette(
+            hover=COLOR.GRAPH_HOVER,
+            select=COLOR.SELECT,
+            output=COLOR.ACCENT_PRIMARY,
+        ),
     )
 
     # A gesture the canvas did not see the end of is CANCELLED, never resumed:

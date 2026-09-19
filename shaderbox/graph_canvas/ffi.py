@@ -30,7 +30,7 @@ ATLAS_JSON_PATH: Path = GRAPH_CANVAS_RESOURCES_DIR / "atlas.json"
 ATLAS_PNG_PATH: Path = GRAPH_CANVAS_RESOURCES_DIR / "atlas.png"
 SHADERS_DIR: Path = GRAPH_CANVAS_RESOURCES_DIR / "shaders"
 
-ABI_VERSION: int = 5
+ABI_VERSION: int = 6
 
 _LIB: ctypes.CDLL | None = None
 
@@ -66,6 +66,14 @@ class Node(ctypes.Structure):
         ("border_a", ctypes.c_float),
         ("border_scale", ctypes.c_float),
         ("id", ctypes.c_uint64),
+        # Two state RINGS outside the node's rect (ABI 6). A node's BORDER
+        # colour is averaged to one luminance on the way to the GPU -- red
+        # and blue arrive identical -- so a halo is how a colour survives:
+        # four plain rects per ring. Two of them, because a node can be both
+        # selected and something else at once. Zero width is inert.
+        ("halo_color", (ctypes.c_float * 4) * 2),
+        ("halo_inset", ctypes.c_float * 2),
+        ("halo_width", ctypes.c_float * 2),
         ("accepts", ctypes.c_uint32),
         ("tint_set", ctypes.c_uint8),
         ("border_set", ctypes.c_uint8),
@@ -681,6 +689,11 @@ class NodeSpec:
     tint_amount: float = 0.0
     border: tuple[float, float, float, float] | None = None
     border_scale: float = 1.0
+    # Up to two state RINGS, each `(colour, width, inset)` in canvas units.
+    # A border's colour does not survive the trip -- the vertex format
+    # carries one luminance, so red and blue arrive identical -- and a halo
+    # is four plain rects, so this is how a COLOUR reaches the screen.
+    halos: tuple[tuple[tuple[float, float, float, float], float, float], ...] = ()
     accepts: int = 0
 
 
@@ -876,6 +889,19 @@ class Canvas:
                 n.tint_set = 1
                 n.tint_r, n.tint_g, n.tint_b, n.tint_a = spec.tint
             n.border_scale = spec.border_scale
+            for ring in range(2):
+                if ring < len(spec.halos):
+                    colour, width, inset = spec.halos[ring]
+                    n.halo_color[ring][0] = colour[0]
+                    n.halo_color[ring][1] = colour[1]
+                    n.halo_color[ring][2] = colour[2]
+                    n.halo_color[ring][3] = colour[3]
+                    n.halo_width[ring] = width
+                    n.halo_inset[ring] = inset
+                else:
+                    # Zero width is inert, and the arrays are reused across
+                    # frames, so a ring dropped this frame must be cleared.
+                    n.halo_width[ring] = 0.0
             if spec.border is None:
                 n.border_set = 0
             else:

@@ -10,6 +10,7 @@ import colorsys
 from pathlib import Path
 
 import moderngl
+import numpy as np
 import pytest
 
 from shaderbox.constants import DOCUMENT_EXAMPLES_DIR
@@ -389,65 +390,98 @@ def test_the_control_kind_alone_changes_the_row_s_tone() -> None:
     )
 
 
-def test_hover_and_selection_change_the_border_and_not_the_size() -> None:
-    """A highlight changes COLOUR and nothing else.
+def test_a_state_ring_carries_its_colour_all_the_way_to_the_pixels(
+    gl_ctx: moderngl.Context,
+) -> None:
+    """Selection, hover and the output are marked by a coloured RING, and
+    the colour has to survive to the screen.
 
-    093 G7: "No size change anywhere. No dot grows on hover, no node grows,
-    no card lifts" -- sourced to four reference node editors, with
-    ImNodeFlow's growing socket radius named as the thing it declines. The
-    switchover shipped a border 2.2x on selection and 1.8x on hover, and
-    the first version of THIS test asserted that thickening, so the gate
-    pinned the violation in place.
+    A border cannot carry it: the vertex format packs a border as one
+    LUMINANCE, so pure red and pure blue render byte-identical and this
+    palette's purple selection and yellow accent land 0.654 against 0.635 --
+    not a distinction anyone makes. Measured in the shape stream, which is
+    also where an earlier version of this check went wrong by reading the
+    column beside it.
 
-    The output pass keeps its wider border: that is identity rather than
-    feedback, it does not appear and vanish under the pointer, and the rule
-    is about a highlight tracking the cursor.
+    So this asserts PIXELS as well as the packed spec: two runs differing
+    only in the ring's colour must differ on screen, and a spec-only
+    assertion is exactly what let an invisible border ship.
+    """
+    order = ["a", "b"]
+    ports: dict[str, list[Port]] = {"a": [], "b": []}
+
+    def frame(colour: tuple[float, float, float, float]) -> np.ndarray:
+        packed = pack_nodes(
+            flat_view(order, ports, {"a": (0.0, 0.0), "b": (240.0, 0.0)}),
+            {},
+            output=pass_key("b"),
+            selected=frozenset({pass_key("a")}),
+            palette=NodePalette(
+                hover=(1.0, 1.0, 1.0, 1.0), select=colour, output=colour
+            ),
+        )
+        canvas = ffi.Canvas()
+        canvas.load_atlas()
+        result = canvas.frame(
+            packed.nodes,
+            packed.edges,
+            (520.0, 400.0),
+            ffi.View(),
+            ffi.PointerState(),
+            theme=canvas_theme(),
+        )
+        shapes = shapes_array(result).copy()
+        canvas.release()
+        return shapes
+
+    red = frame((1.0, 0.0, 0.0, 1.0))
+    blue = frame((0.0, 0.0, 1.0, 1.0))
+    assert red.shape == blue.shape
+    differing = int((np.abs(red - blue).sum(axis=1) > 0).sum())
+    assert differing > 0, (
+        "red and blue rings produced an identical scene, so the ring's "
+        "colour is being discarded the way a border's is"
+    )
+
+
+def test_selection_and_the_output_are_two_rings_rather_than_one() -> None:
+    """A node that is BOTH selected and the document's output wears two
+    rings, because one border had to choose -- and chose selection, so the
+    canvas's primary verb went unmarked exactly when its target was picked.
+
+    Selection outranks hover on the inner ring; a ghost wears none.
     """
     order = ["a", "b"]
     ports: dict[str, list[Port]] = {"a": [], "b": []}
     palette = NodePalette(
         hover=(1.0, 0.0, 0.0, 1.0),
         select=(0.0, 1.0, 0.0, 1.0),
-    )
-    plain = pack_nodes(
-        flat_view(order, ports, {}), {}, output=pass_key("b"), palette=palette
-    )
-    hovered = pack_nodes(
-        flat_view(order, ports, {}),
-        {},
-        output=pass_key("b"),
-        hovered=pass_key("a"),
-        palette=palette,
-    )
-    picked = pack_nodes(
-        flat_view(order, ports, {}),
-        {},
-        output=pass_key("b"),
-        selected=frozenset({pass_key("a")}),
-        palette=palette,
-    )
-    both = pack_nodes(
-        flat_view(order, ports, {}),
-        {},
-        output=pass_key("b"),
-        hovered=pass_key("a"),
-        selected=frozenset({pass_key("a")}),
-        palette=palette,
+        output=(0.0, 0.0, 1.0, 1.0),
     )
 
-    assert plain.nodes[0].border is None
-    assert hovered.nodes[0].border == palette.hover
-    assert picked.nodes[0].border == palette.select
-    # Selection wins where both apply.
-    assert both.nodes[0].border == palette.select
-    # The SAME width in every state: a highlight may not resize a node.
-    widths = {frame.nodes[0].border_scale for frame in (plain, hovered, picked, both)}
-    assert len(widths) == 1, f"a highlight changed the border's width: {widths}"
-    # The unhovered sibling is untouched, and the OUTPUT keeps its own width.
-    assert hovered.nodes[1].border == plain.nodes[1].border
-    assert plain.nodes[1].border_scale > plain.nodes[0].border_scale, (
-        "the output pass lost the wider border that marks it"
+    def halos(**kwargs: object) -> list[tuple[object, ...]]:
+        packed = pack_nodes(
+            flat_view(order, ports, {}),
+            {},
+            output=pass_key("a"),
+            palette=palette,
+            **kwargs,  # type: ignore[arg-type]
+        )
+        return list(packed.nodes[0].halos)
+
+    plain = halos()
+    assert [h[0] for h in plain] == [palette.output], "the output pass wears no ring"
+    picked = halos(selected=frozenset({pass_key("a")}))
+    assert [h[0] for h in picked] == [palette.select, palette.output], (
+        f"a selected output node lost one of its two rings: {picked}"
     )
+    hovered = halos(hovered=pass_key("a"))
+    assert [h[0] for h in hovered] == [palette.hover, palette.output]
+    # Selection outranks hover on the inner ring.
+    both = halos(hovered=pass_key("a"), selected=frozenset({pass_key("a")}))
+    assert [h[0] for h in both] == [palette.select, palette.output]
+    # The rings are separated, or two marks read as one thick band.
+    assert picked[1][2] > picked[0][2], "the two rings sit at one inset"
 
 
 def test_a_multi_component_engine_value_shows_every_component() -> None:

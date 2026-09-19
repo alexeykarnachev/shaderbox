@@ -184,6 +184,10 @@ class NodePalette:
 
     hover: RGBA
     select: RGBA
+    # The document's OUTPUT pass. A ring rather than a thicker border, so
+    # it carries the accent the pass strip gives the same pass, and so it
+    # can show at the same time as selection rather than losing to it.
+    output: RGBA = (1.0, 1.0, 1.0, 1.0)
 
 
 # What a caller that passes no palette gets: white for both highlights, which
@@ -214,27 +218,48 @@ def _widget_for(value: tuple[float, ...], editable: bool) -> Widget:
     return Widget.LABEL
 
 
-def _border_of(
+# How a state ring is drawn: thickness and how far outside the node's rect
+# it sits, both in canvas units. The outer ring is set further out and no
+# thicker, so two rings read as two marks rather than one thick band.
+_HALO: tuple[tuple[float, float], ...] = ((2.5, 2.0), (2.0, 6.0))
+
+
+def _halos_of(
     name: str,
+    output: str,
     hovered: str,
     selected: frozenset[str],
     ghost: bool,
     colors: "NodePalette",
-) -> RGBA | None:
-    """The border colour, in precedence order: selected, then hovered, then
-    the output's accent, then the library's own default.
+) -> tuple[tuple[RGBA, float, float], ...]:
+    """The state rings a node wears, innermost first.
 
-    Selection outranks hover so a hovered selected node still reads as
-    selected; a ghost takes none of them, because it refuses every gesture and
-    a highlight would promise an interaction it will not honour.
+    A HALO rather than a border, because a border's colour does not survive
+    the trip: the vertex format packs it as a single LUMINANCE, so red and
+    blue arrive identical and shaderbox's purple selection and yellow
+    accent land two hundredths apart. A halo is four plain rects and its
+    colour arrives verbatim.
+
+    Two rings carry two facts at once. Selection or hover takes the inner
+    ring and the OUTPUT takes the outer, so a selected output node shows
+    both -- where one border had to choose, and chose selection, leaving
+    the canvas's primary verb unmarked exactly when its target was picked.
+
+    Selection outranks hover on the inner ring: a hovered selected node
+    still reads as selected, and hover is the more transient of the two. A
+    ghost wears none of them, because it refuses every gesture and a
+    highlight would promise an interaction it will not honour.
     """
     if ghost:
-        return None
+        return ()
+    rings: list[tuple[RGBA, float, float]] = []
     if name in selected:
-        return colors.select
-    if name == hovered:
-        return colors.hover
-    return None
+        rings.append((colors.select, *_HALO[0]))
+    elif name == hovered:
+        rings.append((colors.hover, *_HALO[0]))
+    if name == output:
+        rings.append((colors.output, *_HALO[len(rings)]))
+    return tuple(rings)
 
 
 def _border_scale_of(
@@ -586,7 +611,9 @@ def pack_nodes(
                 preview_fit=PreviewFit.CONTAIN,
                 fade=0.6 if node.is_ghost else 0.0,
                 dashed=node.is_ghost,
-                border=_border_of(node.key, hovered, selected, node.is_ghost, colors),
+                halos=_halos_of(
+                    node.key, output, hovered, selected, node.is_ghost, colors
+                ),
                 border_scale=_border_scale_of(node.key, output, hovered, selected),
                 accepts=int(Gesture.NONE) if node.is_ghost else 0,
             )
