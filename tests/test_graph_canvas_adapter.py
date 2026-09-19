@@ -707,8 +707,10 @@ def test_each_kind_of_body_row_draws_its_own_colour() -> None:
         "script": _hue(script[:3]),
         "untinted": _hue(untinted),
     }
+    matched: dict[str, float] = {}
     for name, want in wanted.items():
-        near = min((abs(got - want), got) for got in drawn)
+        near = min((_hue_gap(got, want), got) for got in drawn)
+        matched[name] = near[1]
         assert near[0] < 12.0, (
             f"the {name} row's colour did not reach the screen: sent hue "
             f"{want:.1f}, nearest drawn {near[1]:.1f} of {sorted(drawn)}"
@@ -718,16 +720,26 @@ def test_each_kind_of_body_row_draws_its_own_colour() -> None:
     # colour IS the engine's blue, two of the three look for the same band
     # and both find it.
     #
-    # 30 degrees, from the measurement rather than from taste. The design's
-    # own closest pair -- the script green against the untinted row -- sits
-    # at 34.5, and the collision this catches sits at 25. A bar of 40 would
-    # fail the correct palette, which is how the first version of this line
-    # was wrong.
+    # The floor is HALF the smallest gap the fixture itself sends, not a
+    # number read off one measurement: a fixed 30 goes stale the day a token
+    # is retuned, while a derived one cannot. Two colours a host asked to
+    # differ must not arrive closer than half what it asked for.
     names = sorted(wanted)
+    # An ABSOLUTE bar, and it has to be: a floor derived from either set
+    # scales with the bug. Measured both states -- the correct palette's
+    # closest sent pair is 34.5 degrees, and under the collision this exists
+    # to catch it is 25.5 -- so half-the-smallest-sent passes the collision
+    # too, and half-the-smallest-drawn is circular outright (two kinds at
+    # 0.3 degrees clear a floor of 0.15). 30 sits between the two measured
+    # states and is the only form that separates them.
+    #
+    # A colour landing at the MIDPOINT of two others is not a defect and is
+    # not flagged: at hue 109 between 157 and 61 the three sit 48/48/96
+    # apart, every pair wider than the shipping palette's own 34.5. That is
+    # a different valid palette, not a collapse.
     for i, first in enumerate(names):
         for second in names[i + 1 :]:
-            apart = abs(wanted[first] - wanted[second])
-            apart = min(apart, 360.0 - apart)
+            apart = _hue_gap(matched[first], matched[second])
             assert apart > 30.0, (
                 f"the {first} and {second} rows are drawn alike: "
                 f"{apart:.1f} degrees apart"
@@ -736,3 +748,9 @@ def test_each_kind_of_body_row_draws_its_own_colour() -> None:
 
 def _hue(colour: tuple[float, ...]) -> float:
     return colorsys.rgb_to_hls(colour[0], colour[1], colour[2])[0] * 360.0
+
+
+def _hue_gap(first: float, second: float) -> float:
+    """The shorter way round the wheel."""
+    apart = abs(first - second)
+    return min(apart, 360.0 - apart)
