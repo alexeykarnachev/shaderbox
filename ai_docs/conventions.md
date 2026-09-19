@@ -128,9 +128,18 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   same result shows nothing. When a careful measurement contradicts a careful measurement,
   suspect that one of them is against a state that has since moved.
 
+  **Before reporting a measurement as a defect, say what code would have to exist for it to
+  be real.** An impossible answer kills a wrong reading without a second measurement, which
+  matters because a second measurement against the same wrong key returns the same wrong
+  answer. It costs one question. Four of 098's five wrong findings die there: a border colour
+  that never varies with its input implies a channel the vertex format has no room for, and a
+  state ring on a document with no output implies something to key on when the key is the
+  empty string. The fifth was caught this way and never sent.
+
   The same shape reads the wrong field: 098 also reported a border colour "entirely
   discarded, red and blue byte-identical" from reading shape-instance float 20 where the
-  value is float 18. Both are *measure one thing carefully, then compare it against something
+  value is float 18, and separately read `graph.json` for `output_pass` -- the name of the
+  PROPERTY -- where the stored field is `output`. Both are *measure one thing carefully, then compare it against something
   not re-derived*. Where a struct's layout is the risk, derive the offsets from the type
   (`ShapeInstance._fields_`) rather than counting, and make a second instrument agree -- the
   shape stream and the rendered pixels disagreeing is what catches a misread column.
