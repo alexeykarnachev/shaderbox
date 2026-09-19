@@ -30,7 +30,7 @@ ATLAS_JSON_PATH: Path = GRAPH_CANVAS_RESOURCES_DIR / "atlas.json"
 ATLAS_PNG_PATH: Path = GRAPH_CANVAS_RESOURCES_DIR / "atlas.png"
 SHADERS_DIR: Path = GRAPH_CANVAS_RESOURCES_DIR / "shaders"
 
-ABI_VERSION: int = 4
+ABI_VERSION: int = 5
 
 _LIB: ctypes.CDLL | None = None
 
@@ -95,10 +95,18 @@ class Attribute(ctypes.Structure):
         ("pin_color_g", ctypes.c_float),
         ("pin_color_b", ctypes.c_float),
         ("pin_color_a", ctypes.c_float),
+        # The ROW's colour, distinct from the pin's (ABI 5). `pin_color`
+        # tints the pin and is read only while one is drawn, so a pinless
+        # control could carry no colour of its own and every kind of
+        # non-wirable row fell back to the theme's one `control` value.
+        ("role_color_r", ctypes.c_float),
+        ("role_color_g", ctypes.c_float),
+        ("role_color_b", ctypes.c_float),
+        ("role_color_a", ctypes.c_float),
         ("read_only", ctypes.c_uint8),
         ("pin_on_preview", ctypes.c_uint8),
         ("pin_color_set", ctypes.c_uint8),
-        ("_pad2", ctypes.c_uint8),
+        ("role_color_set", ctypes.c_uint8),
     ]
 
 
@@ -824,16 +832,30 @@ class Canvas:
                 a.pin_fill = int(port.pin_fill)
                 a.read_only = 1 if port.read_only else 0
                 a.pin_on_preview = 0
-                if port.color is None:
-                    a.pin_color_set = 0
-                else:
-                    a.pin_color_set = 1
-                    (
-                        a.pin_color_r,
-                        a.pin_color_g,
-                        a.pin_color_b,
-                        a.pin_color_a,
-                    ) = port.color
+                # A port's colour lands on its PIN, and a control has none,
+                # so for a control it lands on the ROW instead. The two are
+                # separate fields upstream because a pin colour and a row
+                # colour are different questions -- a host can tint one
+                # input's pin without restating what the row IS.
+                a.pin_color_set = 0
+                a.role_color_set = 0
+                if port.color is not None:
+                    if port.control:
+                        a.role_color_set = 1
+                        (
+                            a.role_color_r,
+                            a.role_color_g,
+                            a.role_color_b,
+                            a.role_color_a,
+                        ) = port.color
+                    else:
+                        a.pin_color_set = 1
+                        (
+                            a.pin_color_r,
+                            a.pin_color_g,
+                            a.pin_color_b,
+                            a.pin_color_a,
+                        ) = port.color
                 cursor += 1
 
             n = self._nodes[index]

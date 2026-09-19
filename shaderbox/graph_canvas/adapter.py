@@ -163,7 +163,10 @@ class BodyRow:
 
     label: str
     value: tuple[float, ...]
-    color: RGBA
+    # `None` takes the theme's own control colour: a row with nothing
+    # special writing it needs no signal, and one fewer tint is what keeps
+    # the tinted ones apart.
+    color: RGBA | None
 
 
 @dataclass(frozen=True, slots=True)

@@ -274,10 +274,11 @@ def _body_rows(
     uniforms only -- a script-driven `u_mouse_pos` appeared nowhere at all,
     which is the whole point of a node that claims to show a pass.
 
-    The three kinds and their colours are the EDITOR's, through
-    `kind_color`: whatever a name is coloured in the code, it is coloured
-    the same here, and a kind added to `SymbolKind` reaches this surface
-    without a second table to remember.
+    The kinds and their colours are the EDITOR's, through `kind_color`:
+    whatever a name is coloured in the code, it is coloured the same here,
+    and a kind added to `SymbolKind` reaches this surface without a second
+    table to remember. A plain pass uniform takes no tint, which is what
+    leaves the two tinted kinds distinguishable.
     """
     script_driven = app.session.get_script_driven_uniforms(document_id)
     rows: dict[str, list[BodyRow]] = {}
@@ -294,11 +295,20 @@ def _body_rows(
         out: list[BodyRow] = []
         for uniform in declared:
             if uniform in ENGINE_DRIVEN_UNIFORMS:
-                kind = SymbolKind.ENGINE_UNIFORM
+                kind: SymbolKind | None = SymbolKind.ENGINE_UNIFORM
             elif (name, uniform) in script_driven:
                 kind = SymbolKind.SCRIPT_UNIFORM
             else:
-                kind = SymbolKind.PASS_UNIFORM
+                # No tint. A plain pass uniform is the DEFAULT case -- the
+                # row's own tone already says "not wirable", and a colour on
+                # top of that would be a signal with nothing to signal.
+                #
+                # It also could not be told apart if it tried: the editor's
+                # colours are tuned as TEXT, where saturation carries the
+                # difference, and a row is a fill blended toward the surface
+                # which crushes exactly that. Measured, script-driven and
+                # pass-uniform sat 18 degrees apart as text and 4 as fills.
+                kind = None
             # The LIVE value, which `Pass.render` and the script engine both
             # write back into `uniform_values` every frame. A pass that has
             # not rendered yet has no entry and shows the name alone.
@@ -306,7 +316,7 @@ def _body_rows(
                 BodyRow(
                     label=uniform,
                     value=_as_components(render_pass.uniform_values.get(uniform)),
-                    color=kind_color(kind),
+                    color=None if kind is None else kind_color(kind),
                 )
             )
         rows[name] = out

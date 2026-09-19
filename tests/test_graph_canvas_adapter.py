@@ -6,6 +6,7 @@ about the mapping: a wire's endpoints index what was PACKED, and an event
 names a pass rather than a position in this frame's array.
 """
 
+import colorsys
 from pathlib import Path
 
 import moderngl
@@ -30,7 +31,9 @@ from shaderbox.graph_canvas.adapter import (
     theme_from,
 )
 from shaderbox.graph_canvas.render import shapes_array
+from shaderbox.intel.symbols import SymbolKind
 from shaderbox.pass_graph import Port, strip_order
+from shaderbox.theme import kind_color
 from shaderbox.widgets.graph_state import ports_of
 from shaderbox.widgets.pass_graph import canvas_theme
 
@@ -640,3 +643,96 @@ def test_theme_from_carries_every_colour_it_is_handed() -> None:
         assert got == colour[:3], (
             f"theme_from({argument}=) did not reach theme.{field}: {got}"
         )
+
+
+def test_each_kind_of_body_row_draws_its_own_colour() -> None:
+    """The three kinds of non-wirable row must arrive on screen as three
+    colours, and the check is against what the HOST sent rather than against
+    a distance.
+
+    Two earlier shapes of this failed, both instructive. A distance
+    threshold cannot decide it: under the collision this exists to catch --
+    the theme's default control colour set to the engine's blue -- the bands
+    land 25 degrees apart, while the correct code's own nearest pair is 34.6
+    apart, so no threshold separates them. And measuring the LIBRARY's
+    defaults decides nothing about shaderbox, which is why the theme is
+    pushed.
+
+    So each row's sent colour is looked for by HUE, which is the statistic
+    the blend leaves alone: mixing toward the surface moves lightness and
+    saturation and holds hue. Three sent colours, three found, each matched
+    to the row that asked for it.
+    """
+    engine = kind_color(SymbolKind.ENGINE_UNIFORM)
+    script = kind_color(SymbolKind.SCRIPT_UNIFORM)
+    canvas = ffi.Canvas()
+    canvas.load_atlas()
+    packed = pack_nodes(
+        flat_view(["p"], {"p": []}, {"p": (0.0, 0.0)}),
+        {},
+        output=pass_key("p"),
+        body={
+            "p": [
+                BodyRow("u_time", (0.69,), engine),
+                BodyRow("u_driven", (1.0,), script),
+                BodyRow("u_plain", (2.0,), None),
+            ]
+        },
+    )
+    theme = canvas_theme()
+    result = canvas.frame(
+        packed.nodes,
+        packed.edges,
+        (520.0, 460.0),
+        ffi.View(),
+        ffi.PointerState(),
+        theme=theme,
+    )
+    shapes = shapes_array(result)
+    # The row BANDS, by the geometry this fixture draws: a widget row is the
+    # node's inner width and 30 tall. Measured, not copied -- the filter the
+    # control-tone test uses is tuned to a shorter pin-only row.
+    drawn = {
+        _hue((float(r[4]), float(r[5]), float(r[6])))
+        for r in shapes
+        if r[2] > 90 and 24 < r[3] < 36 and r[7] > 0.9
+    }
+    canvas.release()
+
+    # The untinted row takes the theme's own control colour, which is what
+    # makes "no tint" a third appearance rather than a missing one.
+    untinted = tuple(float(v) for v in list(theme.control)[:3])
+    wanted = {
+        "engine": _hue(engine[:3]),
+        "script": _hue(script[:3]),
+        "untinted": _hue(untinted),
+    }
+    for name, want in wanted.items():
+        near = min((abs(got - want), got) for got in drawn)
+        assert near[0] < 12.0, (
+            f"the {name} row's colour did not reach the screen: sent hue "
+            f"{want:.1f}, nearest drawn {near[1]:.1f} of {sorted(drawn)}"
+        )
+    # And the three must be mutually apart, not merely each present. Looking
+    # for them one at a time passes the collision: when the theme's control
+    # colour IS the engine's blue, two of the three look for the same band
+    # and both find it.
+    #
+    # 30 degrees, from the measurement rather than from taste. The design's
+    # own closest pair -- the script green against the untinted row -- sits
+    # at 34.5, and the collision this catches sits at 25. A bar of 40 would
+    # fail the correct palette, which is how the first version of this line
+    # was wrong.
+    names = sorted(wanted)
+    for i, first in enumerate(names):
+        for second in names[i + 1 :]:
+            apart = abs(wanted[first] - wanted[second])
+            apart = min(apart, 360.0 - apart)
+            assert apart > 30.0, (
+                f"the {first} and {second} rows are drawn alike: "
+                f"{apart:.1f} degrees apart"
+            )
+
+
+def _hue(colour: tuple[float, ...]) -> float:
+    return colorsys.rgb_to_hls(colour[0], colour[1], colour[2])[0] * 360.0

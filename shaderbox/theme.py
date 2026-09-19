@@ -225,13 +225,19 @@ class _ColorBag:
     GRAPH_PORT_BOTH: tuple[float, float, float, float] = _muted(
         _P["yellow_n"], 0.32, 0.49
     )
-    # A row the engine writes and no wire can reach. `STATE_INFO` itself,
-    # which is the blue the uniforms panel already gives an engine-driven
-    # uniform (`tabs/uniforms.py`): the canvas and that panel show the same
-    # thing, so they show it in the same colour rather than in two blues that
-    # nearly match. No desaturating needed -- at sat 0.33 it already sits in
-    # the band the library's own roles use.
-    GRAPH_PORT_CONTROL: tuple[float, float, float, float] = _P["blue_n"]
+    # The DEFAULT non-wirable row: a value the pass declares that nothing
+    # special writes. Neutral on purpose -- the row's own tone already says
+    # "no wire reaches this", and a hue here would be a signal with nothing
+    # to signal. It also has to stay clear of the kinds that DO carry one:
+    # when this held the engine's blue, an engine row and an untinted row sat
+    # 30 degrees apart in hue at the same luminance, which is not a
+    # distinction a reader can make.
+    #
+    # The engine's blue is `kind_color(ENGINE_UNIFORM)`, where the rest of
+    # the app already keeps it, and it reaches the row as an override.
+    GRAPH_PORT_CONTROL: tuple[float, float, float, float] = _muted(
+        _P["bg_4"], 0.05, 0.42
+    )
     # The exclusive hover cue (093): a neutral, because every chromatic palette hue is an
     # accent primary, a state hue, a group tint or SELECT, and three of those meet on one wire.
     GRAPH_HOVER: tuple[float, float, float, float] = _P["fg_0"]
