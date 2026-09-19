@@ -33,6 +33,7 @@ from shaderbox.graph_canvas.adapter import (
     read_events,
     theme_from,
 )
+from shaderbox.graph_canvas.ffi import GRAPH_CANVAS_RESOURCES_DIR
 from shaderbox.graph_canvas.render import shapes_array
 from shaderbox.intel.symbols import SymbolKind
 from shaderbox.pass_graph import Port, strip_order
@@ -685,13 +686,14 @@ def test_theme_from_carries_every_colour_it_is_handed() -> None:
         "port_both": (0.40, 0.41, 0.42, 1.0),
         "control": (0.43, 0.44, 0.45, 1.0),
     }
-    # Not a colour, so it is checked on its own rather than walked with the
-    # marks: a value no default holds, which is what makes an ignored
-    # argument visible.
-    theme = theme_from(**marks, row_role_widget=0.77)
+    # The SHADING arrives as a base theme to write the colours onto, and
+    # what it carries must survive: a value no default holds, so a base
+    # that was ignored is visible.
+    base = ffi.default_theme()
+    base.row_role_widget = 0.77
+    theme = theme_from(**marks, over=base)
     assert round(theme.row_role_widget, 4) == 0.77, (
-        "theme_from(row_role_widget=) did not reach theme.row_role_widget: "
-        f"{theme.row_role_widget}"
+        f"theme_from(over=) dropped the base theme's shading: {theme.row_role_widget}"
     )
     # The three arguments whose field is not their own name.
     lands_on = {"port_input": "input", "port_output": "output", "port_both": "both"}
@@ -964,3 +966,56 @@ def test_a_read_only_colour_row_gets_no_swatch() -> None:
     assert widget is not ffi.Widget.COLOR, (
         "a read-only row opened a picker for a value the engine overwrites"
     )
+
+
+def test_the_canvas_theme_file_decides_the_shading() -> None:
+    """`canvas.theme` is read, not decoration beside a constant.
+
+    The pair is the SAME field under two files: one naming a value the
+    library's default does not hold, one naming nothing. Comparing the
+    live theme against a literal would pass on code that ignored the file
+    and happened to agree with it.
+    """
+    shipped = GRAPH_CANVAS_RESOURCES_DIR / "canvas.theme"
+    default = ffi.default_theme()
+    from_file = ffi.parse_theme(shipped.read_text(), str(shipped))
+    assert from_file.row_role_widget != default.row_role_widget, (
+        "the shipped file names nothing the library does not already do, "
+        "so nothing about it can be shown to have been read"
+    )
+    assert canvas_theme().row_role_widget == from_file.row_role_widget, (
+        "the canvas ignored the shipped theme file"
+    )
+    # A field the file does NOT name keeps the library's value rather than
+    # becoming zero: a theme built from zero flattens the canvas.
+    assert canvas_theme().row_role == default.row_role
+
+
+def test_an_unknown_theme_field_names_its_line_rather_than_being_dropped() -> None:
+    """The file exists to stop guessing which spelling reached the
+    renderer, so a misspelling is an error and not a silent no-op."""
+    try:
+        ffi.parse_theme("row_role = 0.4\nrow_role_widgets = 0.5\n", "t")
+    except ffi.ThemeParseFailed as failure:
+        assert failure.line == 2, f"the wrong line was reported: {failure.line}"
+        assert failure.reason is ffi.ThemeParseError.UNKNOWN_FIELD
+    else:
+        raise AssertionError("a misspelled field parsed clean")
+
+
+def test_host_categories_come_back_unvalidated() -> None:
+    """Which kinds of row exist is shaderbox's taxonomy and it grows on its
+    own schedule, so a name the library has never heard of is returned
+    rather than rejected -- otherwise adding a `SymbolKind` would need a
+    library release.
+
+    The fixture uses a name no library list could contain, on purpose: a
+    name that happened to be known would pass whether or not validation
+    exists.
+    """
+    cats = ffi.parse_categories(
+        "attr.engine_uniform = 0.5 0.6 0.7 1.0\n"
+        "attr.a_name_this_library_cannot_know = 1.0 0.0 0.0 1.0\n"
+    )
+    assert set(cats) == {"engine_uniform", "a_name_this_library_cannot_know"}
+    assert cats["a_name_this_library_cannot_know"] == (1.0, 0.0, 0.0, 1.0)

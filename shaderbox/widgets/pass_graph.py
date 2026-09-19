@@ -19,6 +19,7 @@ written ONCE on release.
 """
 
 from collections.abc import Mapping, Sequence
+from functools import cache
 from pathlib import Path
 
 import moderngl
@@ -45,7 +46,11 @@ from shaderbox.graph_canvas.adapter import (
     pass_key,
     theme_from,
 )
-from shaderbox.graph_canvas.ffi import Theme
+from shaderbox.graph_canvas.ffi import (
+    GRAPH_CANVAS_RESOURCES_DIR,
+    Theme,
+    parse_theme,
+)
 from shaderbox.graph_canvas.panel import (
     GraphCanvasState,
     pointer_from_io,
@@ -392,6 +397,17 @@ def _body_rows(
     return rows
 
 
+@cache
+def _canvas_shading() -> Theme:
+    """The canvas's own shading values, from `canvas.theme`.
+
+    Read once: the file ships with the package and the app does not watch
+    it, so re-reading it per frame would buy nothing and cost a parse.
+    """
+    path = GRAPH_CANVAS_RESOURCES_DIR / "canvas.theme"
+    return parse_theme(path.read_text(), str(path))
+
+
 def canvas_theme() -> Theme:
     """shaderbox's palette as the library's theme.
 
@@ -405,6 +421,12 @@ def canvas_theme() -> Theme:
     shading lifts a node off its background, so the body has to be the
     lighter of the two, and `BG_SURFACE` is DARKER than `BG_APP` -- using it
     made every node a hole in the canvas.
+
+    The SHADING -- how far a depth level lifts, how much of a row's role
+    survives the panel over it -- comes from `canvas.theme` beside the
+    library, which is the file to edit when tuning the look. The colours
+    below stay here because they are the app's palette, shared with every
+    other surface.
 
     The three port roles carry the editor's own hues, so a port reads as
     what its name reads as in the code: a sampler bound to a pass is aqua,
@@ -432,7 +454,7 @@ def canvas_theme() -> Theme:
         port_output=COLOR.GRAPH_PORT_OUT,
         port_both=COLOR.GRAPH_PORT_BOTH,
         control=COLOR.GRAPH_PORT_CONTROL,
-        row_role_widget=0.5,
+        over=_canvas_shading(),
     )
 
 

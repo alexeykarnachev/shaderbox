@@ -647,6 +647,28 @@ def _declare(lib: ctypes.CDLL) -> None:
     ]
     lib.gc_default_theme.restype = None
     lib.gc_default_theme.argtypes = [ctypes.POINTER(Theme)]
+    lib.gc_theme_parse.restype = ctypes.c_int32
+    lib.gc_theme_parse.argtypes = [
+        ctypes.POINTER(ctypes.c_uint8),
+        ctypes.c_int32,
+        ctypes.POINTER(Theme),
+        ctypes.POINTER(ctypes.c_int32),
+    ]
+    lib.gc_theme_write.restype = ctypes.c_int32
+    lib.gc_theme_write.argtypes = [
+        ctypes.POINTER(Theme),
+        ctypes.POINTER(ctypes.c_uint8),
+        ctypes.c_int32,
+    ]
+    lib.gc_theme_categories.restype = ctypes.c_int32
+    lib.gc_theme_categories.argtypes = [
+        ctypes.POINTER(ctypes.c_uint8),
+        ctypes.c_int32,
+        ctypes.POINTER(ctypes.c_uint8),
+        ctypes.c_int32,
+        ctypes.POINTER(ctypes.c_float),
+        ctypes.c_int32,
+    ]
     lib.gc_get_theme.restype = None
     lib.gc_get_theme.argtypes = [ctypes.c_void_p, ctypes.POINTER(Theme)]
     lib.gc_pin_point.restype = ctypes.c_int32
@@ -664,6 +686,87 @@ def _declare(lib: ctypes.CDLL) -> None:
         ctypes.POINTER(Frame),
         ctypes.POINTER(Result),
     ]
+
+
+class ThemeParseFailed(ValueError):
+    """A theme file the library refused, with the 1-based line."""
+
+    def __init__(self, reason: ThemeParseError, line: int, source: str) -> None:
+        super().__init__(f"{source}:{line}: {reason.name.lower().replace('_', ' ')}")
+        self.reason = reason
+        self.line = line
+
+
+def parse_theme(text: str, source: str = "<theme>") -> Theme:
+    """A theme file as a `Theme`, starting from the library's defaults.
+
+    An unspecified field keeps its default rather than becoming zero: a
+    theme built from zero flattens the canvas, because the shading scalars
+    are what lift a node off its background.
+
+    An unknown field name RAISES. The point of the file is to stop
+    guessing which spelling reached the renderer, and a line dropped in
+    silence is the failure the format exists to prevent.
+    """
+    theme = Theme()
+    raw = text.encode()
+    buf = (ctypes.c_uint8 * len(raw)).from_buffer_copy(raw)
+    line = ctypes.c_int32(0)
+    code: int = ensure_loaded().gc_theme_parse(
+        buf, len(raw), ctypes.byref(theme), ctypes.byref(line)
+    )
+    if code != 0:
+        raise ThemeParseFailed(ThemeParseError(code), line.value, source)
+    return theme
+
+
+def write_theme(theme: Theme) -> str:
+    """`theme` as the text `parse_theme` reads back."""
+    lib = ensure_loaded()
+    size: int = lib.gc_theme_write(ctypes.byref(theme), None, 0)
+    buf = (ctypes.c_uint8 * size)()
+    written: int = lib.gc_theme_write(ctypes.byref(theme), buf, size)
+    return bytes(buf[:written]).decode()
+
+
+# The longest host category name the reader accepts. A name longer than
+# this is TRUNCATED by the library rather than refused, which would map a
+# row onto the wrong colour in silence, so the reader checks the length.
+_CATEGORY_NAME_CAP: int = 64
+
+
+def parse_categories(text: str) -> dict[str, tuple[float, float, float, float]]:
+    """The `attr.`-prefixed lines of a theme file, as name -> RGBA.
+
+    The names are the HOST's own and the library never checks them: which
+    kinds of row exist is shaderbox's taxonomy, and it grows on its own
+    schedule. An unknown name comes back rather than being rejected.
+    """
+    lib = ensure_loaded()
+    raw = text.encode()
+    buf = (ctypes.c_uint8 * len(raw)).from_buffer_copy(raw)
+    count: int = lib.gc_theme_categories(buf, len(raw), None, 0, None, 0)
+    if count <= 0:
+        return {}
+    names = (ctypes.c_uint8 * (count * _CATEGORY_NAME_CAP))()
+    colors = (ctypes.c_float * (count * 4))()
+    lib.gc_theme_categories(buf, len(raw), names, _CATEGORY_NAME_CAP, colors, count)
+    out: dict[str, tuple[float, float, float, float]] = {}
+    for i in range(count):
+        span = bytes(names[i * _CATEGORY_NAME_CAP : (i + 1) * _CATEGORY_NAME_CAP])
+        name = span.split(b"\x00", 1)[0].decode()
+        if len(name) >= _CATEGORY_NAME_CAP - 1:
+            raise ValueError(
+                f"theme category name {name!r} hit the {_CATEGORY_NAME_CAP}-byte "
+                "cap, so it may be truncated and would colour the wrong row"
+            )
+        out[name] = (
+            float(colors[i * 4]),
+            float(colors[i * 4 + 1]),
+            float(colors[i * 4 + 2]),
+            float(colors[i * 4 + 3]),
+        )
+    return out
 
 
 def default_theme() -> Theme:

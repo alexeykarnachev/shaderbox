@@ -88,7 +88,7 @@ def theme_from(
     port_output: RGBA,
     port_both: RGBA,
     control: RGBA,
-    row_role_widget: float,
+    over: Theme | None = None,
 ) -> Theme:
     """The library's palette with a host's colours over it.
 
@@ -117,20 +117,17 @@ def theme_from(
     -- so one signal keeps one colour end to end, and no argument here sets
     it. This parameter was called `wire` and named a thing it does not reach.
 
-    `row_role_widget` is the one shading scalar NOT inherited. A row that
-    carries a widget is covered by the panel, which keeps only this
-    fraction of the row's role colour -- at the library's 0.22 every host
-    tint lands within a few levels of the panel grey, so white draws as
-    rgb(93,93,93) and the kinds a body row exists to distinguish all read
-    as the same mud. Measured across the range, hue separation climbs to
-    0.5 and flattens after it.
+    `over` is a theme to write the colours ONTO, for a host that carries
+    its own file of shading values. Left out, the library's defaults are
+    the base -- they must be, since a theme built from zero sets every
+    shading scalar to 0 and flattens the canvas.
 
     `wire_outline` is the dark run UNDER a wire's core, and it has to be
     darker than everything the wire crosses: a wire runs over nodes, over the
     canvas and over other wires, so it cannot borrow contrast from any one of
     them. A mid-grey border colour here inverts it into a light halo.
     """
-    theme = default_theme()
+    theme = over if over is not None else default_theme()
     theme.canvas = _RGBA(*canvas)
     theme.surface = _RGBA(*surface)
     theme.grid = _RGBA(*grid)
@@ -146,7 +143,6 @@ def theme_from(
     theme.control = _RGBA(*control)
     theme.wire_outline = _RGBA(*wire_outline)
     theme.wire_invalid = _RGBA(*wire_invalid)
-    theme.row_role_widget = row_role_widget
     return theme
 
 
