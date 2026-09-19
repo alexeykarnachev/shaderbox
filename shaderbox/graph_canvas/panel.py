@@ -309,6 +309,7 @@ def render_to_texture(
     clear_color: tuple[float, float, float, float],
     pointer: ffi.PointerState,
     theme: ffi.Theme | None = None,
+    dt: float = 0.0,
 ) -> tuple[moderngl.Texture, list[GraphEvent], bool]:
     """Push one frame and draw it. Returns the texture, the events, and whether
     the library claimed the pointer — a host must not treat a claimed press as
@@ -374,6 +375,7 @@ def render_to_texture(
         # reaches the canvas again for the life of the handle. The saving was
         # one struct copy per frame, against a theme that could not change.
         theme=theme,
+        dt=dt,
     )
     # The zoom the library applied comes back on the result; storing it is what
     # makes the next frame continue the gesture rather than fight it.

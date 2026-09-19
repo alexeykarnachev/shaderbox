@@ -17,6 +17,7 @@ from shaderbox.graph_canvas.adapter import (
     pass_key,
     pass_node,
 )
+from shaderbox.graph_canvas.ffi import node_metrics
 from shaderbox.pass_graph import Port, Wiring, group_boundary, node_ports
 from shaderbox.theme import SIZE
 from shaderbox.ui_primitives import InlineInput
@@ -57,18 +58,20 @@ def revalidated_scope(scope: str, groups: Collection[str]) -> str:
 
 
 def node_size(port_count: int, box: bool) -> tuple[float, float]:
-    """A node's canvas-space size at zoom 1: the picture, the name, and one row per port."""
-    width = float(SIZE.GRAPH_NODE_W + (SIZE.GRAPH_BOX_EXTRA_W if box else 0))
-    height = float(
-        SIZE.GRAPH_THUMB_INSET + SIZE.GRAPH_THUMB + SIZE.GRAPH_NAME_H + SIZE.GRAPH_PAD
-    )
-    if port_count:
-        height += (
-            SIZE.GRAPH_PORT_TOP
-            + port_count * SIZE.GRAPH_PORT_ROW
-            + SIZE.GRAPH_PORT_BOTTOM
-        )
-    return width, height
+    """A node's canvas-space size at zoom 1, as the LIBRARY will lay it out.
+
+    Measured from the library rather than computed from shaderbox's own
+    tokens. The tokens described the hand-drawn canvas and were never
+    retuned: against the library they are 24px narrow and 33px short at
+    every port count, so `rank_layout` packed nodes into less room than
+    they take and an auto-arranged graph overlapped.
+
+    A BOX is wider by shaderbox's own extra, which is the one part the
+    library cannot know -- it has no idea a node stands for a group.
+    """
+    width, base, per_port = node_metrics()
+    extra = float(SIZE.GRAPH_BOX_EXTRA_W) if box else 0.0
+    return width + extra, base + per_port * port_count
 
 
 def ports_of(document: Document, wiring: Wiring) -> dict[str, list[Port]]:

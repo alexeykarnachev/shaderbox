@@ -38,8 +38,20 @@ def test_every_enum_has_the_member_count_this_binding_expects() -> None:
     """An enum that gains a member changes NO struct's size, so it passes every
     size check and then hands a value nothing here has a name for."""
     lib = ffi.ensure_loaded()
-    for which, (label, expected) in enumerate(ffi._ENUMS):
+    for which, (label, expected, mirror) in enumerate(ffi._ENUMS):
         assert lib.gc_enum_count(which) == expected, label
+        if mirror is None:
+            continue
+        # By NAME too: a count accepts two members SWAPPED, and a swapped
+        # `Edge_Added`/`Edge_Removed` makes every wire the user draws
+        # unwire instead. Proven -- that exact swap loaded clean before
+        # the name check existed.
+        buf = ctypes.create_string_buffer(128)
+        for member in mirror:
+            written = lib.gc_enum_name(which, int(member), buf, 128)
+            # Sliced by the returned LENGTH: the library writes no
+            # terminator, so a shorter name keeps the previous one's tail.
+            assert buf.raw[:written].decode().upper() == member.name, label
 
 
 def test_a_layout_disagreement_refuses_to_load() -> None:

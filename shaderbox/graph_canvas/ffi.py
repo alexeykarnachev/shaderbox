@@ -219,7 +219,12 @@ class Frame(ctypes.Structure):
         ("pointer_flags", ctypes.c_uint32),
         ("text_codepoint", ctypes.c_int32),
         ("key", ctypes.c_int32),
-        ("_pad6", ctypes.c_int32),
+        # Seconds since the host's previous frame, which is what advances
+        # every eased highlight -- a row's hover among them. Zero holds each
+        # ease where it is, for a host that renders on demand. The library
+        # clamps it, so a first frame carrying time since process start
+        # snaps rather than jumps.
+        ("dt", ctypes.c_float),
         # Null is not "no theme": it LEAVES the handle's current one alone, so
         # a host sets it once and then passes null forever after.
         ("theme", ctypes.POINTER(Theme)),
@@ -460,19 +465,27 @@ _STRUCTS: list[tuple[str, type[ctypes.Structure]]] = [
 # `gc_enum_count` ids, in the library's Enum_Query order. The COUNT is what is
 # checked: an enum that gains a member changes no struct's size, so it passes
 # every size check and then hands a value nothing here has a name for.
-_ENUMS: list[tuple[str, int]] = [
-    ("Event_Kind", len(EventKind)),
-    ("Widget", len(Widget)),
-    ("Connect_Error", len(ConnectError)),
-    ("Preview_Fit", len(PreviewFit)),
-    ("Attribute_Kind", 3),
-    ("Atlas_Error", 4),
-    ("Size_Query", len(_STRUCTS)),
-    ("Enum_Query", 10),
-    ("Pin_Shape", len(PinShape)),
+# Each row is (the library's name for the enum, how many members the binding
+# expects, the binding's mirror of it or None).
+#
+# The MIRROR is what makes a reorder catchable. A count alone accepts two
+# members swapped -- proven: `EDGE_ADDED` and `EDGE_REMOVED` exchanged loads
+# clean, and every wire the user draws would unwire instead. An enum with no
+# mirror here is one the binding never spells out, so only its count can be
+# checked.
+_ENUMS: list[tuple[str, int, type[IntEnum] | None]] = [
+    ("Event_Kind", len(EventKind), EventKind),
+    ("Widget", len(Widget), Widget),
+    ("Connect_Error", len(ConnectError), ConnectError),
+    ("Preview_Fit", len(PreviewFit), PreviewFit),
+    ("Attribute_Kind", 3, None),
+    ("Atlas_Error", 4, None),
+    ("Size_Query", len(_STRUCTS), None),
+    ("Enum_Query", 10, None),
+    ("Pin_Shape", len(PinShape), PinShape),
     # Three, not four: `PinFill.UNSET` is the wire's "no opinion", not a member
-    # of the library's enum.
-    ("Pin_Fill", len(PinFill) - 1),
+    # of the library's enum, so the mirror is compared from its second member.
+    ("Pin_Fill", len(PinFill) - 1, None),
 ]
 
 
@@ -533,12 +546,36 @@ def _verify_layout(lib: ctypes.CDLL) -> None:
                 f"{len(struct._fields_)}"
             )
 
-    for which, (label, expected) in enumerate(_ENUMS):
+    name_buf = ctypes.create_string_buffer(128)
+    for which, (label, expected, mirror) in enumerate(_ENUMS):
         count: int = lib.gc_enum_count(which)
         if count != expected:
             raise LayoutMismatch(
                 f"enum {label}: library has {count} members, binding expects {expected}"
             )
+        if mirror is None:
+            continue
+        # By NAME as well as by count: a swap or a rename leaves the count
+        # equal while turning one event into another. The library spells its
+        # members `Edge_Added`; the binding spells them `EDGE_ADDED`.
+        for member in mirror:
+            # Sliced by the RETURNED LENGTH, not read as a C string: the
+            # library writes the bytes and returns the count without a
+            # terminator, so a shorter name leaves the previous one's tail
+            # behind -- `Edge_Added` read back as `Edge_Addednued` over
+            # `Context_Menued`. Clearing the buffer does not help; only the
+            # length is authoritative.
+            written = lib.gc_enum_name(which, int(member), name_buf, 128)
+            if written <= 0:
+                raise LayoutMismatch(
+                    f"enum {label}: the library named no member {int(member)}"
+                )
+            theirs = name_buf.raw[:written].decode().upper()
+            if theirs != member.name:
+                raise LayoutMismatch(
+                    f"enum {label} member {int(member)}: library calls it "
+                    f"{theirs}, binding calls it {member.name}"
+                )
 
 
 def _declare(lib: ctypes.CDLL) -> None:
@@ -732,6 +769,49 @@ class View:
     zoom: float = 1.0
 
 
+_NODE_METRICS: tuple[float, float, float] | None = None
+
+
+def node_metrics() -> tuple[float, float, float]:
+    """`(width, base_height, per_port_height)` as the LIBRARY lays a node out.
+
+    Measured from the library rather than restated: a host that wants to
+    place a node before drawing it -- an auto-layout, a fit -- needs the
+    size the library will actually use, and a second set of constants on
+    the host side is the copy that drifts. shaderbox's own tokens were 24px
+    narrow and 33px short at every port count, so `rank_layout` packed
+    against nodes smaller than the ones it was placing.
+
+    The height is linear in the port count, which two probes pin and a
+    third checks; measured once and cached, because it depends only on the
+    library's own metrics and those do not change within a build.
+    """
+    global _NODE_METRICS
+    if _NODE_METRICS is None:
+        canvas = Canvas()
+        canvas.load_atlas()
+        sizes: list[tuple[float, float]] = []
+        for count in (1, 2, 3):
+            ports = [PortSpec(f"p{i}", True) for i in range(count)]
+            node = NodeSpec(id=1, title="m", x=0, y=0, ports=ports)
+            canvas.frame([node], [], (600.0, 600.0), View(), PointerState())
+            measured = canvas.node_size(0)
+            sizes.append(measured if measured is not None else (0.0, 0.0))
+        canvas.release()
+        # Measured from ONE port up, not from zero: a node with no ports has
+        # no port section at all, so its height is 22 below the one-port
+        # node rather than the 18 each further port adds. Probing from zero
+        # reads that discontinuity as the slope and under-measures every
+        # node thereafter.
+        step = sizes[1][1] - sizes[0][1]
+        if sizes[2][1] - sizes[1][1] != step:
+            raise RuntimeError(
+                f"the library's node height is not linear above one port: {sizes}"
+            )
+        _NODE_METRICS = (sizes[0][0], sizes[0][1] - step, step)
+    return _NODE_METRICS
+
+
 class Canvas:
     """One live graph canvas: the library handle plus the arrays it reads.
 
@@ -794,8 +874,15 @@ class Canvas:
         pointer: PointerState,
         origin: tuple[float, float] = (0.0, 0.0),
         theme: Theme | None = None,
+        dt: float = 0.0,
     ) -> Result:
         """Push one frame and get back geometry plus what the user did.
+
+        `dt` is seconds since the host's previous frame and is what advances
+        every eased highlight, a row's hover among them. The default of zero
+        holds each ease where it is, which is right for a probe pushing one
+        frame and wrong for a host that renders continuously -- a canvas
+        that never sends a real `dt` has no row hover at all.
 
         The nodes and the attributes are filled in ONE pass, because each node
         names a contiguous run of the flat attribute array. Building them in
@@ -943,6 +1030,7 @@ class Canvas:
         f.origin_x, f.origin_y = origin
         f.pointer_x, f.pointer_y = pointer.x, pointer.y
         f.wheel = pointer.wheel
+        f.dt = dt
         f.pointer_flags = pointer.flags
         # Null is KEEP, not reset: the theme is pushed once and the handle
         # holds it. Kept alive on `self` because ctypes drops the reference

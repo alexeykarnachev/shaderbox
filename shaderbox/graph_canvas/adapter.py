@@ -151,14 +151,11 @@ class BodyRow:
     adapter would have to invent a vocabulary to name them, and it would be
     the wrong one by the next kind added.
 
-    IT DOES NOT REACH THE SCREEN YET. The library reads a port's colour only
-    while drawing its PIN, and a control has none, so every pinless row
-    draws in the theme's one `control` colour whatever is set here --
-    measured, all three kinds render the same pixel. Reported upstream.
-    Carried rather than dropped because the row's kind is the fact, and the
-    moment the library can show it this is already the right value; the
-    alternative was tinting the label instead, which would look deliberate
-    rather than unfinished.
+    It DOES reach the screen, through `Attribute.role_color` (ABI 5). A
+    port's `pin_color` is read only while a pin is drawn and a control has
+    none, so every pinless row used to fall back to the theme's single
+    `control` value; the library gained a separate row colour after that
+    was reported, and the three kinds now render three fills.
     """
 
     label: str
@@ -262,17 +259,16 @@ def _halos_of(
     return tuple(rings)
 
 
-def _border_scale_of(
-    name: str, output: str, hovered: str, selected: frozenset[str]
-) -> float:
+def _border_scale_of(name: str, output: str) -> float:
     """The border's WIDTH, which hover and selection do not change.
 
     093 G7 is explicit: "No size change anywhere. No dot grows on hover, no
     node grows, no card lifts" -- a highlight changes colour, never size,
     and the design names ImNodeFlow's growing socket radius as the thing it
     declines. The switchover shipped 2.2 selected and 1.8 hovered, which is
-    that rule broken twice; `_border_of` already carries both states in
-    colour, so the thickening said nothing the colour did not.
+    that rule broken twice; `_halos_of` carries both states in colour, so
+    the thickening said nothing the colour did not. Hover and selection are
+    not parameters here for that reason -- they cannot change a width.
 
     The OUTPUT pass keeps a wider border, because that is a property of the
     node rather than of the pointer: it does not appear and vanish under
@@ -614,7 +610,7 @@ def pack_nodes(
                 halos=_halos_of(
                     node.key, output, hovered, selected, node.is_ghost, colors
                 ),
-                border_scale=_border_scale_of(node.key, output, hovered, selected),
+                border_scale=_border_scale_of(node.key, output),
                 accepts=int(Gesture.NONE) if node.is_ghost else 0,
             )
         )

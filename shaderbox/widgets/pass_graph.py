@@ -484,6 +484,11 @@ def _library_canvas(
         fade(COLOR.BG_APP, 1.0),
         pointer,
         theme=canvas_theme(),
+        # imgui's own frame time, which is the platform's. Without it every
+        # eased highlight the library draws -- a row's hover among them --
+        # holds at zero forever, and the canvas answers "which node" while
+        # never answering "which row".
+        dt=imgui.get_io().delta_time,
     )
     imgui.image(
         imgui.ImTextureRef(texture.glo),

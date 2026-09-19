@@ -6,6 +6,9 @@ geometry, the hit test and the drag machine went with the renderer that owned
 them -- `test_graph_canvas_gestures.py` drives those through the library now.
 """
 
+import pytest
+
+from shaderbox.graph_canvas import ffi
 from shaderbox.theme import SIZE
 from shaderbox.widgets.graph_state import (
     group_names_in_order,
@@ -26,18 +29,41 @@ def test_group_names_follow_their_first_members_order() -> None:
     assert group_names_in_order(order, groups) == ["bloom", "grade"]
 
 
-def test_a_node_grows_one_row_per_port_and_a_box_is_wider() -> None:
-    # A card with ports pays BOTH pads (093 W2-6): the gap above the first row and the one
-    # under the last, so its label clears the border by what its left inset gives it.
-    # Falsifier: drop `GRAPH_PORT_BOTTOM` from `node_size` and the last label sits ~3px off it.
-    w0, h0 = node_size(0, False)
-    w2, h2 = node_size(2, False)
-    assert w0 == w2 == float(SIZE.GRAPH_NODE_W)
-    assert h2 == h0 + SIZE.GRAPH_PORT_TOP + 2 * SIZE.GRAPH_PORT_ROW + (
-        SIZE.GRAPH_PORT_BOTTOM
-    )
-    assert node_size(0, True)[0] == w0 + SIZE.GRAPH_BOX_EXTRA_W
-    # A card with NO ports pays neither.
-    assert h0 == float(
-        SIZE.GRAPH_THUMB_INSET + SIZE.GRAPH_THUMB + SIZE.GRAPH_NAME_H + SIZE.GRAPH_PAD
-    )
+def test_a_node_is_sized_the_way_the_library_will_draw_it() -> None:
+    """`node_size` feeds `rank_layout`, which places a node the LIBRARY then
+    draws -- so the two have to agree or the auto-layout packs a graph into
+    less room than it takes.
+
+    They did not. `node_size` was built from shaderbox's own tokens,
+    written for the hand-drawn canvas and never retuned: measured against
+    the library they were 24px narrow and 33px short at every port count.
+    The test that stood here asserted the token formula, so it pinned the
+    disagreement rather than catching it.
+
+    Compared against `gc_node_size` -- the library's own answer for a node
+    it has actually laid out -- because that is the number the drawing
+    uses. A BOX is the one exception: it is wider by shaderbox's own extra,
+    since the library has no idea a node stands for a group.
+    """
+    canvas = ffi.Canvas()
+    canvas.load_atlas()
+    # From ONE port up: a node with no ports has no port section, so its
+    # height sits below the linear run rather than on it, and `node_size`
+    # models the run. Nothing lays out a portless pass -- every pass has at
+    # least its own output -- so the discontinuity costs nothing.
+    for count in (1, 2, 3):
+        ports = [ffi.PortSpec(f"u_{i}", True) for i in range(count)]
+        node = ffi.NodeSpec(id=1, title="n", x=0, y=0, ports=ports)
+        canvas.frame([node], [], (700.0, 600.0), ffi.View(), ffi.PointerState())
+        drawn = canvas.node_size(0)
+        assert drawn is not None
+        assert node_size(count, False) == pytest.approx(drawn), (
+            f"at {count} ports the layout sizes a node {node_size(count, False)} "
+            f"while the library draws it {drawn}"
+        )
+    canvas.release()
+    # A box is wider by shaderbox's own extra and otherwise the same.
+    plain_w, plain_h = node_size(2, False)
+    box_w, box_h = node_size(2, True)
+    assert box_w == plain_w + SIZE.GRAPH_BOX_EXTRA_W
+    assert box_h == plain_h
