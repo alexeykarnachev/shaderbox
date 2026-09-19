@@ -312,6 +312,31 @@ def test_a_ghost_swallows_nothing() -> None:
             if result.events[i].node == 0
         ]
     assert not kinds, f"the library acted on a ghost: event kinds {kinds} on node 0"
+
+    # Silence is the assertion, so the point has to be shown to have
+    # ARRIVED: it is arithmetic off the rect, not a point the library
+    # reported, and "refused correctly" and "missed the node" are the same
+    # empty list. The REAL node at the same relative point answers, which
+    # is what says the aim is good and the refusal is the ghost's doing.
+    real = _rect(canvas, packed, 1)
+    control = (real[0] + real[2] / 2, real[1] + real[3] / 3)
+    answered = [
+        int(result.events[i].kind)
+        for pointer in (
+            ffi.PointerState(x=control[0], y=control[1], flags=DOWN | PRESSED),
+            ffi.PointerState(x=control[0] + 60.0, y=control[1], flags=DOWN),
+            ffi.PointerState(x=control[0] + 60.0, y=control[1], flags=0),
+        )
+        for result in (
+            canvas.frame(packed.nodes, packed.edges, SIZE, ffi.View(), pointer),
+        )
+        for i in range(result.event_count)
+        if result.events[i].node == 1
+    ]
+    assert answered, (
+        "the same aim on the REAL node produced nothing either, so the "
+        "ghost's silence says nothing about the ghost"
+    )
     canvas.release()
 
 
