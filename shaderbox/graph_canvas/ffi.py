@@ -30,7 +30,7 @@ ATLAS_JSON_PATH: Path = GRAPH_CANVAS_RESOURCES_DIR / "atlas.json"
 ATLAS_PNG_PATH: Path = GRAPH_CANVAS_RESOURCES_DIR / "atlas.png"
 SHADERS_DIR: Path = GRAPH_CANVAS_RESOURCES_DIR / "shaders"
 
-ABI_VERSION: int = 8
+ABI_VERSION: int = 9
 
 _LIB: ctypes.CDLL | None = None
 
@@ -334,6 +334,11 @@ class EventKind(IntEnum):
     EDGE_REMOVED = 6
     EDGE_REFUSED = 7
     VALUE_CHANGED = 8
+    # A press on a widget whose editor is an OVERLAY -- a colour swatch or
+    # an enum. The library draws nothing and expects nothing back: the host
+    # shows its own picker and writes the result into the attribute's value
+    # next frame. The overlay struct itself does not cross the ABI.
+    OVERLAY_REQUESTED = 9
 
 
 class ConnectError(IntEnum):

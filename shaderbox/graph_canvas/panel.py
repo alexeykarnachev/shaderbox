@@ -227,6 +227,11 @@ class GraphCanvasState:
     # The group, when the menu was opened on a BOX. At the root a group is a
     # node and no pass carries its name, so the node alone cannot say.
     menu_group: str = ""
+    # The body row whose picker is open, as (pass, uniform). The library
+    # draws the swatch and reports the press; the editor itself is the
+    # host's, so this is what the popup is about between frames. Cleared
+    # when it closes, for the same reason `menu_node` is.
+    picker_row: tuple[str, str] | None = None
     # Last frame's pointer, for the pan delta. `None` until the first frame,
     # so a pan that begins on the frame the canvas appears has no delta to
     # apply rather than a jump from the origin.

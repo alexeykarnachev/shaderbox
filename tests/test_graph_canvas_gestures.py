@@ -17,9 +17,11 @@ import pytest
 from shaderbox.graph_canvas import ffi
 from shaderbox.graph_canvas.adapter import (
     Activated,
+    BodyRow,
     Clicked,
     Moved,
     Packed,
+    PickerRequested,
     Unwired,
     Wired,
     flat_view,
@@ -440,3 +442,89 @@ def test_a_wire_lands_on_the_sampler_it_was_aimed_at_not_the_first_one() -> None
     )
     assert Wired("a", "b", "u_z") in events, events
     canvas.release()
+
+
+def _click(point: tuple[float, float]) -> list[ffi.PointerState]:
+    """A full click. The press alone produces nothing: the library answers a
+    widget on the RELEASE, so a down-only fixture reports no event and reads
+    exactly like the feature being absent."""
+    return [
+        ffi.PointerState(x=point[0], y=point[1], flags=DOWN | PRESSED),
+        ffi.PointerState(x=point[0], y=point[1], flags=0),
+    ]
+
+
+def _swatch_node() -> Packed:
+    """One node with a colour row and a drag row, so a press can be shown to
+    fire for the swatch and not for every widget."""
+    return pack_nodes(
+        flat_view(["p"], {"p": []}, {"p": (0.0, 0.0)}),
+        {},
+        output="",
+        body={
+            "p": [
+                BodyRow(
+                    "u_line_color", (1.0, 0.5, 0.25), None, editable=True, swatch=True
+                ),
+                BodyRow("u_gain", (0.5,), None, editable=True),
+            ]
+        },
+    )
+
+
+def _point_hitting(packed: Packed, node: int, want: type) -> tuple[float, float]:
+    """A point where a full click on `node` produces `want`.
+
+    Probed by DRIVING the gesture rather than by reading
+    `hover_attribute`, which answers across the whole row while a widget's
+    hit rect is inset -- the row's reported point is a pixel and a half
+    above the swatch, so aiming by it lands on the body and reports a node
+    click, reading exactly like the event not existing.
+
+    Each candidate gets a FRESH canvas: a gesture left in flight turns the
+    next press into a drag, and the node then moves under the probe.
+    """
+    box = _rect(_canvas(), packed, node)
+    for step in range(int(box[3])):
+        y = box[1] + step + 0.5
+        for frac in (0.5, 0.85):
+            x = box[0] + box[2] * frac
+            if any(
+                isinstance(e, want) for e in _drive(_canvas(), packed, _click((x, y)))
+            ):
+                return (x, y)
+    raise AssertionError(f"no point on node {node} produces {want.__name__}")
+
+
+def test_pressing_a_colour_swatch_asks_the_host_for_a_picker() -> None:
+    """The library draws the swatch and reports the press; the picker is the
+    host's. Without the event a colour row is a swatch that cannot be
+    edited, which is worse than the drag fields it replaced.
+
+    The DRAG row is the comparison: if the event fired for any press, both
+    rows would produce one and the check would pass on code that cannot
+    tell a swatch from a field.
+    """
+    packed = _swatch_node()
+    swatch = _point_hitting(packed, 0, PickerRequested)
+    # A DRAG field's row, aimed the same way but at the row BELOW the
+    # swatch, so the two points differ only in which widget they land on.
+    box = _rect(_canvas(), packed, 0)
+    field = (box[0] + box[2] * 0.5, swatch[1] + 32.0)
+
+    asked = [
+        e
+        for e in _drive(_canvas(), packed, _click(swatch))
+        if isinstance(e, PickerRequested)
+    ]
+    assert len(asked) == 1, f"a press on the swatch asked for no picker: {asked}"
+    assert asked[0].pass_name == "p" and asked[0].uniform == "u_line_color", (
+        f"the picker was asked for the wrong row: {asked[0]}"
+    )
+
+    on_field = [
+        e
+        for e in _drive(_canvas(), packed, _click(field))
+        if isinstance(e, PickerRequested)
+    ]
+    assert not on_field, f"a press on a DRAG field also asked for a picker: {on_field}"

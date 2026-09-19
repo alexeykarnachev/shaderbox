@@ -885,17 +885,17 @@ def test_an_editable_scalar_takes_the_pointer_like_an_editable_vector() -> None:
     loses nothing, since a LABEL draws component 0 and a scalar has only
     that. A read-only VECTOR may not have one, which the row below pins.
     """
-    assert _widget_for((1.0,), editable=True) is ffi.Widget.DRAG, (
+    assert _widget_for((1.0,), editable=True, swatch=False) is ffi.Widget.DRAG, (
         "an editable scalar was given a widget that cannot be dragged"
     )
-    assert _widget_for((1.0, 2.0), editable=True) is ffi.Widget.DRAG
+    assert _widget_for((1.0, 2.0), editable=True, swatch=False) is ffi.Widget.DRAG
     # Read-only: a scalar may be a label, a vector may not.
-    assert _widget_for((1.0,), editable=False) is ffi.Widget.LABEL
-    assert _widget_for((1.0, 2.0), editable=False) is ffi.Widget.DRAG, (
+    assert _widget_for((1.0,), editable=False, swatch=False) is ffi.Widget.LABEL
+    assert _widget_for((1.0, 2.0), editable=False, swatch=False) is ffi.Widget.DRAG, (
         "a read-only vector was given a LABEL, which draws only its first "
         "component and drops the rest in silence"
     )
-    assert _widget_for((), editable=True) is ffi.Widget.NONE
+    assert _widget_for((), editable=True, swatch=False) is ffi.Widget.NONE
 
 
 def test_an_editable_row_is_packed_with_a_pointer_taking_widget() -> None:
@@ -921,3 +921,46 @@ def test_an_editable_row_is_packed_with_a_pointer_taking_widget() -> None:
     assert by_label["u_gain"].widget is ffi.Widget.DRAG
     assert not by_label["u_gain"].read_only
     assert by_label["u_time"].read_only
+
+
+def test_a_colour_typed_row_draws_a_swatch_and_a_plain_one_does_not() -> None:
+    """A colour uniform gets the library's swatch; the same row without the
+    colour type gets drag fields.
+
+    The pair differs ONLY in `swatch`: same value, same length, same
+    editability. Comparing a colour row against a read-only scalar would
+    differ whether or not the swatch flag was read.
+    """
+    rows = [
+        BodyRow("u_line_color", (1.0, 0.5, 0.25), None, editable=True, swatch=True),
+        BodyRow("u_offset", (1.0, 0.5, 0.25), None, editable=True, swatch=False),
+    ]
+    packed = pack_nodes(
+        flat_view(["p"], {"p": []}, {"p": (0.0, 0.0)}),
+        {},
+        output="",
+        body={"p": rows},
+    )
+    widgets = [port.widget for port in packed.nodes[0].ports if port.control]
+    assert widgets == [ffi.Widget.COLOR, ffi.Widget.DRAG], (
+        f"the swatch flag did not decide the widget: {widgets}"
+    )
+
+
+def test_a_read_only_colour_row_gets_no_swatch() -> None:
+    """A swatch opens an editor, so a value the engine rewrites every frame
+    must not carry one -- the picker would take an edit the next tick
+    discards."""
+    rows = [
+        BodyRow("u_engine_color", (1.0, 0.5, 0.25), None, editable=False, swatch=True),
+    ]
+    packed = pack_nodes(
+        flat_view(["p"], {"p": []}, {"p": (0.0, 0.0)}),
+        {},
+        output="",
+        body={"p": rows},
+    )
+    widget = next(port.widget for port in packed.nodes[0].ports if port.control)
+    assert widget is not ffi.Widget.COLOR, (
+        "a read-only row opened a picker for a value the engine overwrites"
+    )

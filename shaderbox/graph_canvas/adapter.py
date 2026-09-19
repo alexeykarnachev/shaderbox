@@ -170,6 +170,10 @@ class BodyRow:
 
     label: str
     value: tuple[float, ...]
+    # A SWATCH rather than one field per component. The library draws it and
+    # reports the press as `PickerRequested`; the picker itself is the
+    # host's, so the canvas and the uniforms panel show the same control
+    # instead of two kept alike by hand.
     # `None` takes the theme's own control colour: a row with nothing
     # special writing it needs no signal, and one fewer tint is what keeps
     # the tinted ones apart.
@@ -178,6 +182,11 @@ class BodyRow:
     # the engine recomputes it every frame, so an edit would appear to take
     # and silently revert on the next tick.
     editable: bool = False
+    # A SWATCH rather than one field per component. The library draws it and
+    # reports the press as `PickerRequested`; the picker itself is the
+    # host's, so the canvas and the uniforms panel show the same control
+    # instead of two kept alike by hand.
+    swatch: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -209,13 +218,17 @@ _NEUTRAL_PALETTE: NodePalette = NodePalette(
 )
 
 
-def _widget_for(value: tuple[float, ...], editable: bool) -> Widget:
+def _widget_for(value: tuple[float, ...], editable: bool, swatch: bool) -> Widget:
     """What draws a body row's value.
 
     A `DRAG` renders one field per component and takes the pointer unless
     `read_only` says otherwise, so it is the only choice for a row the user
     may edit -- a `LABEL` is read-only by nature, and a scalar given one
     looked identical to an editable row and quietly refused every drag.
+
+    A COLOR needs `editable`: the library reports a press on the swatch and
+    the host answers with a picker, so a read-only one would open an editor
+    for a value the engine overwrites on the next tick.
 
     A LABEL is still right for a read-only SCALAR: it is the quieter of the
     two and loses nothing, because it renders component 0 and a scalar has
@@ -224,6 +237,8 @@ def _widget_for(value: tuple[float, ...], editable: bool) -> Widget:
     """
     if not value:
         return Widget.NONE
+    if swatch and editable:
+        return Widget.COLOR
     if editable or len(value) > 1:
         return Widget.DRAG
     return Widget.LABEL
@@ -601,7 +616,7 @@ def pack_nodes(
                     # `u_resolution` would show half of itself. A read-only
                     # DRAG draws one field per component and takes no input,
                     # which is the same display without the lie.
-                    widget=_widget_for(row.value, row.editable),
+                    widget=_widget_for(row.value, row.editable, row.swatch),
                     value=row.value,
                     read_only=not row.editable,
                     # NO pin. `control` alone carries neither side bit, and
@@ -780,6 +795,24 @@ class ValueEdited:
 
 
 @dataclass(frozen=True, slots=True)
+class PickerRequested:
+    """A body row whose editor the host owns: a colour swatch, an enum.
+
+    The library draws the swatch and reports the press; it draws no picker
+    and waits for nothing. The host pops its own and writes the result back
+    as an ordinary value edit, which is what makes the canvas's control and
+    the uniforms panel's the SAME widget rather than two kept alike by hand.
+
+    `x`/`y` are in SCREEN space, where a popup goes.
+    """
+
+    pass_name: str
+    uniform: str
+    x: float
+    y: float
+
+
+@dataclass(frozen=True, slots=True)
 class Refused:
     """A wire the library rejected, and by which of its rules."""
 
@@ -794,6 +827,7 @@ GraphEvent = (
     | Wired
     | Unwired
     | ValueEdited
+    | PickerRequested
     | Refused
 )
 
@@ -871,6 +905,11 @@ def read_events(result: Result, packed: Packed) -> list[GraphEvent]:
                             tuple(float(event.value[i]) for i in range(count)),
                         )
                     )
+        elif kind == EventKind.OVERLAY_REQUESTED:
+            if node is not None and not node.is_ghost:
+                named = node.body_of(event.attribute)
+                if named is not None:
+                    events.append(PickerRequested(named[0], named[1], event.x, event.y))
         elif kind == EventKind.EDGE_REFUSED:
             events.append(Refused(event.error))
     return events

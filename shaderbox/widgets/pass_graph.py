@@ -21,6 +21,7 @@ written ONCE on release.
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+import moderngl
 from imgui_bundle import imgui
 
 from shaderbox.app import App
@@ -35,6 +36,7 @@ from shaderbox.graph_canvas.adapter import (
     MenuRequested,
     Moved,
     NodePalette,
+    PickerRequested,
     Refused,
     Unwired,
     ValueEdited,
@@ -62,12 +64,14 @@ from shaderbox.pass_graph import (
 from shaderbox.project_session import compile_pending_passes
 from shaderbox.scripting.engine import is_scriptable
 from shaderbox.theme import COLOR, SIZE, fade, group_tint, kind_color
+from shaderbox.ui_models import UIDocumentState, UIUniform
 from shaderbox.ui_primitives import (
     context_menu_style,
     name_input_row,
     primary_button,
     text_tab_row,
 )
+from shaderbox.util import get_uniform_hash
 from shaderbox.widgets.graph_state import (
     GraphViewState,
     group_names_in_order,
@@ -231,6 +235,32 @@ def _node_menu(
             state.menu_group = ""
 
 
+def _color_picker(app: App, document_id: str, state: GraphCanvasState) -> None:
+    """The editor for a colour-typed uniform, opened from the node's swatch.
+
+    The library draws the swatch and says a picker is wanted; it draws no
+    editor and waits for nothing. This is the uniforms panel's own control,
+    so the two surfaces show one widget rather than two kept looking alike.
+    """
+    row = state.picker_row
+    if imgui.begin_popup("##graph_color_picker"):
+        if row is not None:
+            render_pass = app.ui_documents[document_id].document.passes.get(row[0])
+            current = render_pass.uniform_values.get(row[1]) if render_pass else None
+            if isinstance(current, Sequence):
+                values = [float(v) for v in current]
+                fn = getattr(imgui, f"color_picker{len(values)}", None)
+                if fn is not None:
+                    changed, picked = fn(row[1], values)
+                    if changed:
+                        app.set_graph_uniform(
+                            document_id, row[0], row[1], tuple(picked)
+                        )
+        imgui.end_popup()
+    else:
+        state.picker_row = None
+
+
 def _canvas_menu(app: App, document_id: str, view: GraphViewState) -> None:
     with context_menu_style():
         if imgui.begin_popup("##graph_canvas_menu"):
@@ -261,6 +291,21 @@ def _as_components(value: object) -> tuple[float, ...]:
     return ()
 
 
+def _stored_or_default(
+    ui_state: UIDocumentState,
+    uniform: moderngl.Uniform | moderngl.UniformBlock,
+    pass_name: str,
+) -> UIUniform:
+    """The user's choice of control for one uniform, or the default rule.
+
+    Read-only: this must NOT create the row. The panel owns that lifecycle
+    and prunes stale ones on save, so a canvas that seeded entries for
+    every pass would write rows the panel never asked for.
+    """
+    stored = ui_state.ui_uniforms.get(get_uniform_hash(uniform, pass_name))
+    return stored if stored is not None else UIUniform.from_uniform(uniform)
+
+
 def _body_rows(
     app: App,
     document_id: str,
@@ -282,6 +327,7 @@ def _body_rows(
     leaves the two tinted kinds distinguishable.
     """
     script_driven = app.session.get_script_driven_uniforms(document_id)
+    ui_state = app.ui_documents[document_id].ui_state
     rows: dict[str, list[BodyRow]] = {}
     for name in order:
         render_pass = document.passes[name]
@@ -293,6 +339,16 @@ def _body_rows(
             for u in render_pass.get_active_uniforms()
             if is_scriptable(u) and u.name not in sampler_names(render_pass)
         ]
+        # The SAME question the uniforms panel asks, and the same answer
+        # when nobody has answered it yet: a row exists in `ui_uniforms`
+        # only once the panel has drawn that pass, so a canvas that read
+        # the stored preference alone showed drag fields until the user
+        # visited the panel. `from_uniform` applies `reset_input_type`,
+        # which is the rule the panel would have applied.
+        color_typed = {
+            u.name: _stored_or_default(ui_state, u, name).input_type == "color"
+            for u in render_pass.get_active_uniforms()
+        }
         out: list[BodyRow] = []
         for uniform in declared:
             if uniform in ENGINE_DRIVEN_UNIFORMS:
@@ -325,6 +381,11 @@ def _body_rows(
                     # rule the uniforms panel follows (048).
                     color=None if kind is None else kind_color(kind),
                     editable=kind is not SymbolKind.ENGINE_UNIFORM,
+                    # The SAME question the uniforms panel asks. Reading
+                    # `input_type` rather than re-deriving from the name
+                    # means a row the user switched to a colour switches on
+                    # both surfaces, and one rule decides it.
+                    swatch=color_typed.get(uniform, False),
                 )
             )
         rows[name] = out
@@ -542,6 +603,8 @@ def _library_canvas(
     _canvas_menu(app, document_id, view)
     if state.menu_node:
         _node_menu(app, document_id, view, state)
+    if state.picker_row:
+        _color_picker(app, document_id, state)
     _group_prompt(app, document_id, view)
 
 
@@ -621,6 +684,13 @@ def _apply_graph_events(
             app.set_graph_uniform(
                 document_id, event.pass_name, event.uniform, event.value
             )
+        elif isinstance(event, PickerRequested):
+            # The library drew the swatch and reports the press; the editor
+            # is ours, so the canvas and the uniforms panel show the same
+            # control rather than two kept alike by hand.
+            state.picker_row = (event.pass_name, event.uniform)
+            imgui.set_next_window_pos(imgui.ImVec2(event.x, event.y))
+            imgui.open_popup("##graph_color_picker")
         elif isinstance(event, Refused):
             app.notifications.push(refusal_text(event.reason))
         elif isinstance(event, MenuRequested):

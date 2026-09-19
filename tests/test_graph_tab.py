@@ -17,12 +17,14 @@ from shaderbox.commands import CommandId
 from shaderbox.editor_types import TabRecord
 from shaderbox.formatting import formatter_for
 from shaderbox.graph_canvas.adapter import Moved
-from shaderbox.graph_canvas.ffi import Gesture
+from shaderbox.graph_canvas.ffi import Gesture, Widget
 from shaderbox.pass_graph import PassEntry, strip_order
 from shaderbox.paths import shader_lib_root
 from shaderbox.tabs.code import tab_label
 from shaderbox.theme import COLOR, group_tint
 from shaderbox.ui import update_and_draw
+from shaderbox.ui_models import UIUniform
+from shaderbox.util import get_uniform_hash
 from shaderbox.widgets import pass_graph, uniform
 from shaderbox.widgets.graph_state import node_sizes, ports_of
 from tests.conftest import restart_app, seed_extra_document
@@ -643,4 +645,75 @@ def test_a_grouped_pass_carries_its_groups_tint_on_the_canvas(app: Any) -> None:
     loose = _packed_node(app, document_id, "a")
     assert loose.tint_amount == 0.0, (
         f"an ungrouped pass still carries a group's hue: {loose.tint}"
+    )
+
+
+_COLOR_PASS = """#version 460 core
+in vec2 vs_uv;
+uniform vec3 u_line_color;
+uniform float u_gain;
+out vec4 fs_color;
+void main() { fs_color = vec4(u_line_color * u_gain, 1.0); }
+"""
+
+
+def test_a_colour_uniform_reaches_the_canvas_as_a_swatch(app: Any) -> None:
+    """The uniforms panel decides a control from `input_type`, and the
+    canvas must ask the SAME question -- otherwise one uniform has a colour
+    picker on one surface and three drag fields on the other.
+
+    `u_gain` is the pair: same pass, same frame, editable, and not
+    colour-typed. Checking the swatch against a constant would pass on code
+    that gave every row a swatch.
+    """
+    document_id, document = _chain(app)
+    document.passes["a"].release_program(_COLOR_PASS)
+    document.passes["a"].compile()
+    app.open_graph_for(document_id)
+    _frames(app, 2)
+
+    node = _packed_node(app, document_id, "a")
+    widgets = {port.label: port.widget for port in node.ports if port.control}
+    assert widgets.get("u_line_color") is Widget.COLOR, (
+        f"a colour uniform did not get the swatch: {widgets}"
+    )
+    assert widgets.get("u_gain") is Widget.DRAG, (
+        f"a plain float uniform was given a swatch: {widgets}"
+    )
+
+
+def test_switching_a_uniforms_control_in_the_panel_reaches_the_canvas(
+    app: Any,
+) -> None:
+    """The stored preference outranks the default rule, or the two surfaces
+    diverge the moment the user changes one.
+
+    The SAME uniform before and after the switch is the pair: it differs
+    only in `input_type`, which is the property under test.
+    """
+    document_id, document = _chain(app)
+    document.passes["a"].release_program(_COLOR_PASS)
+    document.passes["a"].compile()
+    app.open_graph_for(document_id)
+    _frames(app, 2)
+
+    def widget_of(label: str) -> Any:
+        node = _packed_node(app, document_id, "a")
+        return next(p.widget for p in node.ports if p.control and p.label == label)
+
+    assert widget_of("u_line_color") is Widget.COLOR, "the default rule did not apply"
+
+    ui_state = app.ui_documents[document_id].ui_state
+    uniform = next(
+        u
+        for u in document.passes["a"].get_active_uniforms()
+        if u.name == "u_line_color"
+    )
+    row = UIUniform.from_uniform(uniform)
+    row.input_type = "drag"
+    ui_state.ui_uniforms[get_uniform_hash(uniform, "a")] = row
+    _frames(app, 2)
+
+    assert widget_of("u_line_color") is Widget.DRAG, (
+        "the canvas ignored the control the user chose in the panel"
     )
