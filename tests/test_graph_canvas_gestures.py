@@ -595,6 +595,40 @@ def _point_hitting(packed: Packed, node: int, want: type) -> tuple[float, float]
     raise AssertionError(f"no point on node {node} produces {want.__name__}")
 
 
+def test_a_colour_rows_swatch_is_drawn_in_the_value_it_was_given() -> None:
+    """The swatch shows the colour, so the VALUE has to reach the geometry.
+
+    Without this nothing requires the fixture's colour anywhere: the event
+    carries no value -- the host already holds it -- so every other
+    assertion about a swatch holds with the row set to black, and the
+    fixture would be supplying something no check needs.
+
+    Two distinct values rather than one against a constant: a swatch drawn
+    in a fixed colour would match whichever literal the test named.
+    """
+    for value in ((1.0, 0.5, 0.25), (0.25, 1.0, 0.5)):
+        canvas = _canvas()
+        packed = pack_nodes(
+            flat_view(["p"], {"p": []}, {"p": (0.0, 0.0)}),
+            {},
+            output="",
+            body={
+                "p": [BodyRow("u_line_color", value, None, editable=True, swatch=True)]
+            },
+        )
+        result = canvas.frame(
+            packed.nodes, packed.edges, SIZE, ffi.View(), ffi.PointerState()
+        )
+        fills = {
+            tuple(round(result.shapes[i].fill_top[k], 3) for k in range(3))
+            for i in range(result.shape_count)
+        }
+        assert tuple(round(v, 3) for v in value) in fills, (
+            f"the swatch was not drawn in the colour it was given: {value}"
+        )
+        canvas.release()
+
+
 def test_pressing_a_colour_swatch_asks_the_host_for_a_picker() -> None:
     """The library draws the swatch and reports the press; the picker is the
     host's. Without the event a colour row is a swatch that cannot be
