@@ -20,10 +20,30 @@
   h2:first-child { margin-top: 0; }
   .row { display: grid; grid-template-columns: 1fr 34px 62px;
          gap: 8px; align-items: center; margin-bottom: 4px; }
-  .row label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+               cursor: pointer; }
   .row.changed label { color: var(--accent); }
-  input[type=color] { width: 34px; height: 24px; padding: 0; border: 1px solid var(--line);
-                      background: none; border-radius: 3px; cursor: pointer; }
+  .swatch { width: 34px; height: 24px; border: 1px solid var(--line);
+            border-radius: 3px; cursor: pointer; }
+  .swatch.open { border-color: var(--accent); }
+  /* The picker is a panel in the list, not a modal: the canvas stays
+     visible while you drag, which is the whole point of tuning against it. */
+  .picker { display: none; padding: 6px 0 10px 0; }
+  .picker.open { display: block; }
+  .picker .track { display: grid; grid-template-columns: 14px 1fr 46px;
+                   gap: 6px; align-items: center; margin-bottom: 3px; }
+  .picker .track span { color: var(--dim); font-size: 11px; }
+  .picker input[type=range] { -webkit-appearance: none; appearance: none;
+                              height: 14px; border-radius: 3px;
+                              border: 1px solid var(--line); }
+  .picker input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 8px; height: 18px; border-radius: 2px;
+    background: var(--fg); border: 1px solid #000; cursor: ew-resize; }
+  .picker input[type=range]::-moz-range-thumb {
+    width: 8px; height: 18px; border-radius: 2px;
+    background: var(--fg); border: 1px solid #000; cursor: ew-resize; }
+  .hexrow { display: grid; grid-template-columns: 14px 1fr; gap: 6px;
+            align-items: center; margin-top: 4px; }
   input[type=number], input[type=text] {
     width: 100%; background: var(--bg); color: var(--fg);
     border: 1px solid var(--line); border-radius: 3px; padding: 2px 4px;
@@ -75,6 +95,26 @@ const fromHex = (h, a) => [
   a,
 ];
 
+// HSV rather than raw channels: tuning a fill means moving its lightness or
+// its saturation while holding the hue, and three RGB sliders cannot do that
+// without changing all of them.
+function rgb2hsv(r, g, b) {
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+  let h = 0;
+  if (d) {
+    if (mx === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+    else if (mx === g) h = ((b - r) / d + 2) / 6;
+    else h = ((r - g) / d + 4) / 6;
+  }
+  return [h, mx ? d / mx : 0, mx];
+}
+function hsv2rgb(h, s, v) {
+  const i = Math.floor(h * 6), f = h * 6 - i;
+  const p = v * (1 - s), q = v * (1 - f * s), t = v * (1 - (1 - f) * s);
+  const tbl = [[v,t,p],[q,v,p],[p,v,t],[p,q,v],[t,p,v],[v,p,q]];
+  return tbl[i % 6];
+}
+
 let pending = false, again = false;
 async function draw() {
   if (pending) { again = true; return; }
@@ -100,27 +140,95 @@ function markChanged(name, node) {
   node.classList.toggle("changed", a !== b);
 }
 
+function colourField(name, host) {
+  const row = document.createElement("div");
+  row.className = "row";
+  row.innerHTML =
+    `<label title="${name}">${name}</label>` +
+    `<div class="swatch"></div>` +
+    `<input type="number" min="0" max="1" step="0.05" value="${theme[name][3]}">`;
+  const [label, swatch, alpha] = row.children;
+
+  const panel = document.createElement("div");
+  panel.className = "picker";
+  panel.innerHTML =
+    ["h", "s", "v"].map((ch) =>
+      `<div class="track"><span>${ch}</span>` +
+      `<input type="range" min="0" max="1" step="0.002" data-ch="${ch}">` +
+      `<input type="number" min="0" max="1" step="0.01" data-ch="${ch}"></div>`
+    ).join("") +
+    `<div class="hexrow"><span>#</span><input type="text" maxlength="7"></div>`;
+  const ranges = {}, nums = {};
+  for (const el of panel.querySelectorAll("input[type=range]")) ranges[el.dataset.ch] = el;
+  for (const el of panel.querySelectorAll("input[type=number]")) nums[el.dataset.ch] = el;
+  const hexIn = panel.querySelector("input[type=text]");
+
+  // Every widget writes the model and redraws immediately -- no confirm step,
+  // because the render IS the feedback and a button between them breaks it.
+  function paint() {
+    const c = theme[name];
+    swatch.style.background = `rgb(${to255(c[0])},${to255(c[1])},${to255(c[2])})`;
+    const [h, sa, v] = rgb2hsv(c[0], c[1], c[2]);
+    ranges.h.value = nums.h.value = h.toFixed(3);
+    ranges.s.value = nums.s.value = sa.toFixed(3);
+    ranges.v.value = nums.v.value = v.toFixed(3);
+    hexIn.value = hex(c);
+    // The tracks show where they lead, so a hue is picked by eye.
+    const stops = [];
+    for (let i = 0; i <= 6; i++) {
+      const [r, g, b] = hsv2rgb(i / 6, Math.max(sa, 0.85), Math.max(v, 0.85));
+      stops.push(`rgb(${to255(r)},${to255(g)},${to255(b)})`);
+    }
+    ranges.h.style.background = `linear-gradient(90deg, ${stops.join(",")})`;
+    const dull = hsv2rgb(h, 0, v), full = hsv2rgb(h, 1, v);
+    ranges.s.style.background =
+      `linear-gradient(90deg, rgb(${to255(dull[0])},${to255(dull[1])},${to255(dull[2])}),` +
+      ` rgb(${to255(full[0])},${to255(full[1])},${to255(full[2])}))`;
+    const lit = hsv2rgb(h, sa, 1);
+    ranges.v.style.background =
+      `linear-gradient(90deg, #000, rgb(${to255(lit[0])},${to255(lit[1])},${to255(lit[2])}))`;
+    markChanged(name, row);
+  }
+
+  function commit(rgb) {
+    theme[name] = [rgb[0], rgb[1], rgb[2], parseFloat(alpha.value)];
+    paint();
+    draw();
+  }
+  for (const ch of ["h", "s", "v"]) {
+    const push = (src) => {
+      const v = Math.max(0, Math.min(1, parseFloat(src.value) || 0));
+      const cur = rgb2hsv(...theme[name].slice(0, 3));
+      const next = { h: cur[0], s: cur[1], v: cur[2] };
+      next[ch] = v;
+      commit(hsv2rgb(next.h, next.s, next.v));
+    };
+    ranges[ch].addEventListener("input", () => push(ranges[ch]));
+    nums[ch].addEventListener("input", () => push(nums[ch]));
+  }
+  hexIn.addEventListener("input", () => {
+    if (/^#[0-9a-fA-F]{6}$/.test(hexIn.value)) {
+      commit(fromHex(hexIn.value, 1).slice(0, 3));
+    }
+  });
+  alpha.addEventListener("input", () => commit(theme[name].slice(0, 3)));
+
+  const toggle = () => {
+    const open = panel.classList.toggle("open");
+    swatch.classList.toggle("open", open);
+  };
+  swatch.addEventListener("click", toggle);
+  label.addEventListener("click", toggle);
+
+  paint();
+  host.appendChild(row);
+  host.appendChild(panel);
+}
+
 function buildColours() {
   const host = $("#colours");
   host.innerHTML = "<h2>colours</h2>";
-  for (const name of COLOURS) {
-    const row = document.createElement("div");
-    row.className = "row";
-    row.innerHTML =
-      `<label title="${name}">${name}</label>` +
-      `<input type="color" value="${hex(theme[name])}">` +
-      `<input type="number" min="0" max="1" step="0.05" value="${theme[name][3]}">`;
-    const [, picker, alpha] = row.children;
-    const apply = () => {
-      theme[name] = fromHex(picker.value, parseFloat(alpha.value));
-      markChanged(name, row);
-      draw();
-    };
-    picker.addEventListener("input", apply);
-    alpha.addEventListener("input", apply);
-    markChanged(name, row);
-    host.appendChild(row);
-  }
+  for (const name of COLOURS) colourField(name, host);
 }
 
 function buildScalars() {
