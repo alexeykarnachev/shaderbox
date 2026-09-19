@@ -9,11 +9,13 @@ them -- `test_graph_canvas_gestures.py` drives those through the library now.
 import pytest
 
 from shaderbox.graph_canvas import ffi
+from shaderbox.pass_graph import Port
 from shaderbox.theme import SIZE
 from shaderbox.widgets.graph_state import (
     group_names_in_order,
     node_size,
     revalidated_scope,
+    scoped_view,
 )
 
 
@@ -67,3 +69,38 @@ def test_a_node_is_sized_the_way_the_library_will_draw_it() -> None:
     box_w, box_h = node_size(2, True)
     assert box_w == plain_w + SIZE.GRAPH_BOX_EXTRA_W
     assert box_h == plain_h
+
+
+def test_a_pass_that_both_feeds_and_reads_a_group_is_drawn_in_both_columns() -> None:
+    """A ghost's key carries its COLUMN, because one pass can be both a
+    feeder and a reader of the same group and is drawn on both sides.
+
+    Keyed by pass name alone the two would collide: one node would
+    overwrite the other, and the wire on whichever side lost would land on
+    nothing. The check is that the same pass appears TWICE with distinct
+    keys -- counting nodes alone passes a collision, since the survivor is
+    still a node.
+    """
+    order = ["x", "m"]
+    groups = {"m": "g"}
+    ports = {
+        "m": [Port("u_src", "wired", "x")],
+        "x": [Port("u_back", "wired", "m")],
+    }
+    at = {"x": (0.0, 0.0), "m": (200.0, 0.0)}
+    # `x` feeds the group and reads it back, which is what puts it in both
+    # columns; a one-way fixture cannot show the collision at all.
+    wiring = {"m": {"u_src": "x"}, "x": {"u_back": "m"}}
+
+    view = scoped_view("g", order, groups, ports, at, wiring, "m")
+    drawn = [node for node in view.nodes if node.name == "x"]
+    assert len(drawn) == 2, (
+        f"a pass feeding AND reading the group was drawn {len(drawn)} time(s), "
+        "so one of its two ghosts is missing"
+    )
+    assert len({node.key for node in drawn}) == 2, (
+        f"both ghosts of the same pass share a key: {[n.key for n in drawn]}"
+    )
+    # The member itself is still there, or the fixture proved nothing about
+    # a scope that draws its own passes.
+    assert [node.name for node in view.nodes if not node.is_ghost] == ["m"]
