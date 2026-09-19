@@ -6,10 +6,17 @@ tests.
 """
 
 import moderngl
+import numpy as np
 import pytest
 
 from shaderbox.graph_canvas import ffi
-from shaderbox.graph_canvas.adapter import Moved, flat_view, pack_nodes, pass_key
+from shaderbox.graph_canvas.adapter import (
+    BodyRow,
+    Moved,
+    flat_view,
+    pack_nodes,
+    pass_key,
+)
 from shaderbox.graph_canvas.panel import (
     GraphCanvasState,
     frame_all,
@@ -425,4 +432,114 @@ def test_framing_waits_for_the_button_to_come_up(gl_ctx: moderngl.Context) -> No
     assert held.view != ffi.View(), "the deferred framing never happened"
 
     held.release()
+    renderer.release()
+
+
+def test_a_hovered_row_lights_up(gl_ctx: moderngl.Context) -> None:
+    """The library eases a per-attribute hover and `dt` is what advances it.
+    Without a frame time every ease holds at zero and the canvas answers
+    "which node" while never answering "which row".
+
+    The aim is resolved AFTER the view has settled, and that is the whole
+    difficulty. The canvas frames the graph on its first frame, so a row's
+    screen position before framing is not where it ends up -- a coordinate
+    is valid only for the frame state it was measured in. Measuring the
+    sweep under one view and the pixels under another reports zero every
+    time, which is what three wrong findings on this bug all were.
+
+    The pointer also JIGGLES by a hundredth of a pixel: a hover reached
+    while nothing moves leaves the stale hover and the current one in
+    agreement, so an ordering bug between resolve and update cannot show.
+    """
+    renderer = CanvasRenderer(gl=gl_ctx)
+    # ONE node, not the shared three-node fixture: that one spreads its
+    # nodes 1800px apart, so framing zooms far enough out that a row is
+    # under a pixel tall and its highlight has nowhere to land. A fixture
+    # has to be built where the thing under test is visible.
+    packed = pack_nodes(
+        flat_view(["n"], {"n": [Port("u_src", "unfilled")]}, {"n": (0.0, 0.0)}),
+        {},
+        output=pass_key("n"),
+        body={"n": [BodyRow("u_gain", (1.0,), None, editable=True)]},
+    )
+    size = (500, 420)
+
+    def frames(state: GraphCanvasState, x: float, y: float, count: int) -> None:
+        for i in range(count):
+            render_to_texture(
+                state,
+                renderer,
+                packed,
+                size,
+                (0.0, 0.0, 0.0, 1.0),
+                ffi.PointerState(x=x + (i % 2) * 0.01, y=y),
+                dt=1.0 / 60.0,
+            )
+
+    # Settle the view, then ask the library where a row IS under it.
+    settle = GraphCanvasState()
+    frames(settle, -1e6, -1e6, 5)
+    assert settle.canvas is not None
+    probe = settle.canvas.frame(
+        packed.nodes,
+        packed.edges,
+        (float(size[0]), float(size[1])),
+        settle.view,
+        ffi.PointerState(x=-1e6, y=-1e6),
+        dt=1.0 / 60.0,
+    )
+    rect = probe.node_rects[0]
+    centre_x = rect.x + rect.w * 0.5
+    band: list[float] = []
+    for step in range(int(rect.h)):
+        y = rect.y + step + 0.5
+        swept = settle.canvas.frame(
+            packed.nodes,
+            packed.edges,
+            (float(size[0]), float(size[1])),
+            settle.view,
+            ffi.PointerState(x=centre_x, y=y),
+            dt=1.0 / 60.0,
+        )
+        if swept.node_rects[0].hover_attribute == 0:
+            band.append(y)
+    settle.release()
+    assert band, "no row reported a hover, so this test cannot see one light up"
+    row_y = (band[0] + band[-1]) / 2.0
+
+    def pixels(x: float, y: float) -> np.ndarray:
+        state = GraphCanvasState()
+        frames(state, x, y, 40)
+        assert state.panel is not None and state.panel.fbo is not None
+        out = np.frombuffer(state.panel.fbo.read(components=3), dtype="u1").copy()
+        state.release()
+        return out
+
+    away = pixels(-1e6, -1e6)
+    on = pixels(centre_x, row_y)
+    changed = int((np.abs(away.astype(int) - on.astype(int)) > 0).sum())
+    assert changed > 0, (
+        "a hovered row changed no pixel, so either the frame time is not "
+        "reaching the library or the row was not actually under the pointer"
+    )
+
+    # And WITHOUT a frame time nothing moves, which is what says the ease is
+    # what lit it rather than some other per-frame difference.
+    still = GraphCanvasState()
+    for i in range(40):
+        render_to_texture(
+            still,
+            renderer,
+            packed,
+            size,
+            (0.0, 0.0, 0.0, 1.0),
+            ffi.PointerState(x=centre_x + (i % 2) * 0.01, y=row_y),
+            dt=0.0,
+        )
+    assert still.panel is not None and still.panel.fbo is not None
+    frozen = np.frombuffer(still.panel.fbo.read(components=3), dtype="u1").copy()
+    still.release()
+    assert int((np.abs(away.astype(int) - frozen.astype(int)) > 0).sum()) == 0, (
+        "the row lit up with no time passing, so the highlight is not the ease"
+    )
     renderer.release()
