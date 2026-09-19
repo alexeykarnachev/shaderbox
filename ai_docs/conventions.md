@@ -1735,7 +1735,8 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   under `shaders/`, which are used UNMODIFIED -- they are the shortest statement of the vertex
   contract, and a host writing its own re-derives the rotation and field rules by hand. Upstream is
   the maintainer's own `~/src/graph_canvas`. Rebuild: `make ffi` there (which also runs its probe
-  and its leak gate), then copy the seven. The binary is linux-x86_64 only and `build.sh` strips it
+  and its leak gate), then copy them all -- the `.so` from the repo root, the
+  atlas pair from `assets/`, the shaders from `resources/shaders/`. The binary is linux-x86_64 only and `build.sh` strips it
   from the Windows stage, exactly as it strips `libeditor.so`.
   **The failure to know about:** a stale `.so` reported every run's `first` as 0 while the run
   COUNTS still tiled both streams exactly. That reads precisely like a library bug -- the arithmetic

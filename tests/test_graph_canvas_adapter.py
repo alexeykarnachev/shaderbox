@@ -685,7 +685,14 @@ def test_theme_from_carries_every_colour_it_is_handed() -> None:
         "port_both": (0.40, 0.41, 0.42, 1.0),
         "control": (0.43, 0.44, 0.45, 1.0),
     }
-    theme = theme_from(**marks)
+    # Not a colour, so it is checked on its own rather than walked with the
+    # marks: a value no default holds, which is what makes an ignored
+    # argument visible.
+    theme = theme_from(**marks, row_role_widget=0.77)
+    assert round(theme.row_role_widget, 4) == 0.77, (
+        "theme_from(row_role_widget=) did not reach theme.row_role_widget: "
+        f"{theme.row_role_widget}"
+    )
     # The three arguments whose field is not their own name.
     lands_on = {"port_input": "input", "port_output": "output", "port_both": "both"}
     for argument, colour in marks.items():

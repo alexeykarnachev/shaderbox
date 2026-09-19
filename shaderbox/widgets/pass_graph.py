@@ -371,6 +371,7 @@ def canvas_theme() -> Theme:
         port_output=COLOR.GRAPH_PORT_OUT,
         port_both=COLOR.GRAPH_PORT_BOTH,
         control=COLOR.GRAPH_PORT_CONTROL,
+        row_role_widget=0.5,
     )
 
 

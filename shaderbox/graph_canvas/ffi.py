@@ -30,7 +30,7 @@ ATLAS_JSON_PATH: Path = GRAPH_CANVAS_RESOURCES_DIR / "atlas.json"
 ATLAS_PNG_PATH: Path = GRAPH_CANVAS_RESOURCES_DIR / "atlas.png"
 SHADERS_DIR: Path = GRAPH_CANVAS_RESOURCES_DIR / "shaders"
 
-ABI_VERSION: int = 6
+ABI_VERSION: int = 7
 
 _LIB: ctypes.CDLL | None = None
 
@@ -166,6 +166,8 @@ class Theme(ctypes.Structure):
         ("wire_outline", _RGBA),
         ("wire_invalid", _RGBA),
         ("wire_lift", ctypes.c_float),
+        ("row_role", ctypes.c_float),
+        ("row_role_widget", ctypes.c_float),
     ]
 
 
