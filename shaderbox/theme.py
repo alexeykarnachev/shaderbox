@@ -188,6 +188,25 @@ class _ColorBag:
     # far a ghost node fades. GRAPH_EDGE and GRAPH_HOVER are fixed roles drawn against box
     # borders and beside STATE_ERROR wires, so both are excluded from the group tints below.
     GRAPH_EDGE: tuple[float, float, float, float] = _P["gray"]
+    # The node canvas's three PORT ROLES (098): what a row's background says
+    # a row IS -- takes a wire in, sends one out, or both. The library mixes
+    # each 35% toward the node surface for the row and lifts it for the wire
+    # that leaves it, so these are the colours BEFORE that, and they are read
+    # at roughly twice the surface's luminance once mixed.
+    #
+    # Gruvbox hues at the saturation the library's own roles use (0.12-0.39 at
+    # light ~0.5), which is the part that has to be right: the palette's `_b`
+    # hues are 0.7-1.0 saturated and read as neon bars at this luminance,
+    # while the same hue desaturated reads as a tinted surface. The hue
+    # choices follow the EDITOR, so a port reads as what its name reads as in
+    # the code -- a sampler bound to a pass is aqua, an output is orange, a
+    # builtin uniform is blue.
+    GRAPH_PORT_IN: tuple[float, float, float, float] = (0.357, 0.583, 0.366, 1.0)
+    GRAPH_PORT_OUT: tuple[float, float, float, float] = (0.670, 0.464, 0.330, 1.0)
+    GRAPH_PORT_BOTH: tuple[float, float, float, float] = (0.647, 0.540, 0.333, 1.0)
+    # A row the engine writes and no wire can reach: the blue the editor gives
+    # a builtin uniform, at the library's own control saturation.
+    GRAPH_PORT_CONTROL: tuple[float, float, float, float] = (0.420, 0.573, 0.580, 1.0)
     # The exclusive hover cue (093): a neutral, because every chromatic palette hue is an
     # accent primary, a state hue, a group tint or SELECT, and three of those meet on one wire.
     GRAPH_HOVER: tuple[float, float, float, float] = _P["fg_0"]

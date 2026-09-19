@@ -347,7 +347,7 @@ def _library_canvas(
         palette=NodePalette(
             hover=COLOR.GRAPH_HOVER,
             select=COLOR.SELECT,
-            engine_uniform=COLOR.SYN_UNIFORM,
+            engine_uniform=COLOR.GRAPH_PORT_CONTROL,
         ),
     )
 
@@ -382,10 +382,21 @@ def _library_canvas(
         (width, height),
         fade(COLOR.BG_APP, 1.0),
         pointer,
+        # The node BODY is BG_FRAME and the canvas behind it BG_APP: the
+        # library's shading lifts a node off its background, so the body has
+        # to be the lighter of the two. BG_SURFACE is DARKER than BG_APP and
+        # made every node a hole in the canvas.
+        #
+        # The three port roles are `GRAPH_PORT_*`, which carry the editor's
+        # hues at the saturation the library mixes down from. Pointing all
+        # three at one colour does not unify the palette, it deletes the
+        # distinction the row's background exists to carry -- and pointing
+        # them at a background grey, which this did for one commit, paints
+        # every row the colour of the thing behind it.
         theme=theme_from(
             canvas=COLOR.BG_APP,
-            surface=COLOR.BG_SURFACE,
-            grid=COLOR.BG_SURFACE,
+            surface=COLOR.BG_FRAME,
+            grid=COLOR.BORDER,
             border=COLOR.BORDER,
             text=COLOR.FG_PRIMARY,
             text_dim=COLOR.FG_MUTED,
@@ -393,8 +404,10 @@ def _library_canvas(
             accent=COLOR.ACCENT_PRIMARY,
             wire=COLOR.GRAPH_EDGE,
             wire_invalid=COLOR.STATE_ERROR,
-            port=COLOR.BG_SURFACE,
-            control=COLOR.SYN_UNIFORM,
+            port_input=COLOR.GRAPH_PORT_IN,
+            port_output=COLOR.GRAPH_PORT_OUT,
+            port_both=COLOR.GRAPH_PORT_BOTH,
+            control=COLOR.GRAPH_PORT_CONTROL,
         ),
     )
     imgui.image(

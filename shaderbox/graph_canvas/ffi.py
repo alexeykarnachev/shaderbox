@@ -791,10 +791,16 @@ class Canvas:
             for port in spec.ports:
                 a = self._attrs[cursor]
                 a.label = self._blob.add(port.label)
+                # A MASK, and composed as one. A control that is also an
+                # input carries both bits: the library's `attribute_role_color`
+                # answers `both` for that pair, and its row draw takes the
+                # tinted-slab branch only when Input or Output is present --
+                # so setting Control ALONE dropped the row onto the plain
+                # grey panel branch, where no role colour is read at all.
+                kinds = ATTR_INPUT if port.is_input else ATTR_OUTPUT
                 if port.control:
-                    a.kinds = ATTR_CONTROL
-                else:
-                    a.kinds = ATTR_INPUT if port.is_input else ATTR_OUTPUT
+                    kinds |= ATTR_CONTROL
+                a.kinds = kinds
                 a.widget = int(port.widget)
                 count = min(len(port.value), 4)
                 a.value_count = count

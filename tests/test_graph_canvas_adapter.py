@@ -26,6 +26,7 @@ from shaderbox.graph_canvas.adapter import (
     pack_nodes,
     pass_key,
     read_events,
+    theme_from,
 )
 from shaderbox.graph_canvas.render import shapes_array
 from shaderbox.pass_graph import Port, strip_order
@@ -472,3 +473,95 @@ def test_an_engine_value_is_read_only() -> None:
     for spec in packed.nodes[0].ports:
         if spec.label.startswith("u_"):
             assert spec.read_only is True, spec.label
+
+
+def test_a_control_that_is_also_an_input_carries_both_kind_bits() -> None:
+    """`Attribute.kinds` is a MASK and has to be composed as one.
+
+    Written as an enum -- `kinds = ATTR_CONTROL` for a control, discarding
+    the input bit -- the library sees a PURE control, and its row draw takes
+    the tinted-slab branch only when Input or Output is present. So the row
+    fell through to a plain depth-level panel and no role colour was read at
+    all: every engine uniform drew the same grey as the node body.
+
+    The falsifier is the mask itself rather than a pixel, because the pixel
+    cannot see it on a row that also carries a widget -- the widget's panel
+    covers the band either way, which is a separate library-side gap.
+    """
+    packed = pack_nodes(
+        flat_view(["b"], {"b": [Port("u_src", "unfilled")]}, {"b": (0.0, 0.0)}),
+        {},
+        output=pass_key("b"),
+        engine={"b": [("u_time", (1.0,))]},
+    )
+    canvas = ffi.Canvas()
+    canvas.load_atlas()
+    canvas.frame(
+        packed.nodes, packed.edges, (600.0, 400.0), ffi.View(), ffi.PointerState()
+    )
+    # The attribute list in packed order: the sampler, the output, the
+    # engine row -- which is the order `pack_nodes` emits and the order an
+    # edge's `to_attr` indexes.
+    kinds = [canvas._attrs[i].kinds for i in range(3)]
+    assert kinds[0] == ffi.ATTR_INPUT, "a sampler is not a plain input"
+    assert kinds[1] == ffi.ATTR_OUTPUT, "the output is not a plain output"
+    assert kinds[2] == ffi.ATTR_INPUT | ffi.ATTR_CONTROL, (
+        f"an engine row lost a kind bit: {kinds[2]:#05b}"
+    )
+    canvas.release()
+
+
+def test_the_three_port_roles_are_three_different_colours() -> None:
+    """The row background is drawn from the attribute's ROLE, so the three
+    role colours are what say whether a row takes a wire in, sends one out,
+    or does both.
+
+    Pointing them all at one token does not unify the palette, it deletes
+    the distinction -- and pointing them at a BACKGROUND token, which
+    shipped for one commit, paints every row the colour of the thing behind
+    it and turns the canvas into grey slabs. Both failures are the same
+    shape and this catches both: three distinct hues, none of them the
+    surface they are drawn on.
+    """
+    theme = theme_from(
+        canvas=(0.11, 0.13, 0.13, 1.0),
+        surface=(0.16, 0.16, 0.16, 1.0),
+        grid=(0.24, 0.22, 0.21, 1.0),
+        border=(0.24, 0.22, 0.21, 1.0),
+        text=(0.92, 0.86, 0.70, 1.0),
+        text_dim=(0.66, 0.60, 0.52, 1.0),
+        text_bright=(0.98, 0.95, 0.78, 1.0),
+        accent=(0.98, 0.74, 0.18, 1.0),
+        wire=(0.57, 0.51, 0.46, 1.0),
+        wire_invalid=(0.98, 0.29, 0.20, 1.0),
+        port_input=(0.36, 0.58, 0.37, 1.0),
+        port_output=(0.67, 0.46, 0.33, 1.0),
+        port_both=(0.65, 0.54, 0.33, 1.0),
+        control=(0.42, 0.57, 0.58, 1.0),
+    )
+    roles = {
+        name: tuple(round(v, 3) for v in list(getattr(theme, name))[:3])
+        for name in ("input", "output", "both", "control")
+    }
+    assert len(set(roles.values())) == 4, f"two roles share a colour: {roles}"
+
+    surface = tuple(round(v, 3) for v in list(theme.surface)[:3])
+    canvas_bg = tuple(round(v, 3) for v in list(theme.canvas)[:3])
+    for name, colour in roles.items():
+        assert colour != surface, f"the {name} role is the node surface"
+        assert colour != canvas_bg, f"the {name} role is the canvas background"
+
+
+def test_the_node_surface_is_lighter_than_the_canvas_behind_it() -> None:
+    """The library's shading LIFTS a node off its background, so a surface
+    darker than the canvas makes every node read as a hole instead of a
+    card. `BG_SURFACE` is darker than `BG_APP` in this palette, and using it
+    for the body is what did exactly that."""
+    from shaderbox.theme import COLOR
+
+    def luminance(c: tuple[float, ...]) -> float:
+        return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+
+    assert luminance(COLOR.BG_FRAME) > luminance(COLOR.BG_APP), (
+        "the token the canvas uses for a node body is darker than the canvas"
+    )

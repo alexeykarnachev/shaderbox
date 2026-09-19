@@ -83,7 +83,9 @@ def theme_from(
     accent: RGBA,
     wire: RGBA,
     wire_invalid: RGBA,
-    port: RGBA,
+    port_input: RGBA,
+    port_output: RGBA,
+    port_both: RGBA,
     control: RGBA,
 ) -> Theme:
     """The library's palette with a host's colours over it.
@@ -95,13 +97,18 @@ def theme_from(
     them from `default_theme()` also means an upstream retune arrives here
     for free, where copied constants would silently fight it.
 
-    Only the colours an application has an opinion about are replaced. The
-    four ROLE colours take `port` and the pin takes `wire`: a wire is drawn
-    from its port's colour, so a single hue for both made every row the same
-    tan as the wires and a control stopped standing out from an input. They
-    are separate arguments rather than four, because shaderbox has one idea
-    of a port and one of a wire, and four fields would let one signal drift
-    into several hues by accident.
+    The three ROLE colours are what a row's background is drawn from, so
+    they are what says at a glance whether a row takes a wire in, sends one
+    out, or does both. They take three separate arguments because they carry
+    three different meanings: collapsing them onto one colour does not
+    "unify" the palette, it deletes the distinction -- and pointing all
+    three at a background grey, which this did for one commit, paints every
+    row the colour of the thing behind it and turns the whole canvas into
+    grey slabs.
+
+    `surface` is the node BODY against `canvas` behind it. It must be
+    LIGHTER: the library's shading lifts a node off its background, and a
+    surface darker than the canvas makes every node a hole instead.
     """
     theme = default_theme()
     theme.canvas = _RGBA(*canvas)
@@ -112,9 +119,9 @@ def theme_from(
     theme.text_dim = _RGBA(*text_dim)
     theme.text_bright = _RGBA(*text_bright)
     theme.accent = _RGBA(*accent)
-    theme.input = _RGBA(*port)
-    theme.output = _RGBA(*port)
-    theme.both = _RGBA(*port)
+    theme.input = _RGBA(*port_input)
+    theme.output = _RGBA(*port_output)
+    theme.both = _RGBA(*port_both)
     theme.pin = _RGBA(*wire)
     theme.control = _RGBA(*control)
     theme.wire_outline = _RGBA(*border)
