@@ -1019,3 +1019,49 @@ def test_host_categories_come_back_unvalidated() -> None:
     )
     assert set(cats) == {"engine_uniform", "a_name_this_library_cannot_know"}
     assert cats["a_name_this_library_cannot_know"] == (1.0, 0.0, 0.0, 1.0)
+
+
+def test_category_names_sharing_a_prefix_stay_distinct() -> None:
+    """A name longer than the read buffer is TRUNCATED, not refused, so two
+    names sharing a prefix arrive as one string with two colours behind it
+    -- and shaderbox's kind names are exactly that shape.
+
+    Checked as DISTINCTNESS rather than arrival: searching for each name
+    independently passes a collision, because when both collapse to the
+    same string both searches find it. The fixture's names differ only
+    after character 15, so a buffer sized by any fixed guess short of the
+    full length merges them.
+    """
+    text = (
+        "attr.engine_uniform_alpha = 1 0 0 1\n"
+        "attr.engine_uniform_beta = 0 1 0 1\n"
+        "attr.engine_uniform_gamma = 0 0 1 1\n"
+    )
+    cats = ffi.parse_categories(text)
+    assert len(cats) == 3, f"three names collapsed into {len(cats)}: {sorted(cats)}"
+    assert sorted(cats) == [
+        "engine_uniform_alpha",
+        "engine_uniform_beta",
+        "engine_uniform_gamma",
+    ], f"a name came back truncated: {sorted(cats)}"
+    # Distinct colours too: a collision keeps one key and one colour, which
+    # the length check alone would not catch if two names were equal.
+    assert len({tuple(v) for v in cats.values()}) == 3, (
+        f"two categories share a colour, so one overwrote another: {cats}"
+    )
+
+
+def test_a_category_named_twice_is_refused() -> None:
+    """The library returns every `attr.` line and merges none, so a
+    repeated name would take whichever came last. A theme file exists to
+    stop a line being dropped in silence, and a duplicate drops one."""
+    try:
+        ffi.parse_categories("attr.x = 1 0 0 1\nattr.x = 0 1 0 1\n")
+    except ValueError as failure:
+        assert "more than once" in str(failure), failure
+    else:
+        raise AssertionError("a duplicated category name was accepted")
+
+    # The same two names, distinct, must still parse -- or the check is
+    # refusing categories rather than refusing duplicates.
+    assert len(ffi.parse_categories("attr.x = 1 0 0 1\nattr.y = 0 1 0 1\n")) == 2

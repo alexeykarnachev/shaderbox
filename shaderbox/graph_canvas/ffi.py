@@ -30,7 +30,7 @@ ATLAS_JSON_PATH: Path = GRAPH_CANVAS_RESOURCES_DIR / "atlas.json"
 ATLAS_PNG_PATH: Path = GRAPH_CANVAS_RESOURCES_DIR / "atlas.png"
 SHADERS_DIR: Path = GRAPH_CANVAS_RESOURCES_DIR / "shaders"
 
-ABI_VERSION: int = 9
+ABI_VERSION: int = 10
 
 _LIB: ctypes.CDLL | None = None
 
@@ -660,6 +660,11 @@ def _declare(lib: ctypes.CDLL) -> None:
         ctypes.POINTER(ctypes.c_uint8),
         ctypes.c_int32,
     ]
+    lib.gc_theme_name_cap.restype = ctypes.c_int32
+    lib.gc_theme_name_cap.argtypes = [
+        ctypes.POINTER(ctypes.c_uint8),
+        ctypes.c_int32,
+    ]
     lib.gc_theme_categories.restype = ctypes.c_int32
     lib.gc_theme_categories.argtypes = [
         ctypes.POINTER(ctypes.c_uint8),
@@ -729,12 +734,6 @@ def write_theme(theme: Theme) -> str:
     return bytes(buf[:written]).decode()
 
 
-# The longest host category name the reader accepts. A name longer than
-# this is TRUNCATED by the library rather than refused, which would map a
-# row onto the wrong colour in silence, so the reader checks the length.
-_CATEGORY_NAME_CAP: int = 64
-
-
 def parse_categories(text: str) -> dict[str, tuple[float, float, float, float]]:
     """The `attr.`-prefixed lines of a theme file, as name -> RGBA.
 
@@ -748,17 +747,27 @@ def parse_categories(text: str) -> dict[str, tuple[float, float, float, float]]:
     count: int = lib.gc_theme_categories(buf, len(raw), None, 0, None, 0)
     if count <= 0:
         return {}
-    names = (ctypes.c_uint8 * (count * _CATEGORY_NAME_CAP))()
+    # Sized by the LIBRARY, not by a constant here. A name longer than the
+    # buffer is TRUNCATED rather than refused, and two names sharing a
+    # prefix then arrive as one string with two different colours behind
+    # it -- which is what shaderbox's kind names look like. Measured: at 16
+    # bytes `engine_uniform_alpha` and `engine_uniform_beta` both come back
+    # as `engine_uniform_`. Plus one for the terminator.
+    cap: int = lib.gc_theme_name_cap(buf, len(raw)) + 1
+    names = (ctypes.c_uint8 * (count * cap))()
     colors = (ctypes.c_float * (count * 4))()
-    lib.gc_theme_categories(buf, len(raw), names, _CATEGORY_NAME_CAP, colors, count)
+    lib.gc_theme_categories(buf, len(raw), names, cap, colors, count)
     out: dict[str, tuple[float, float, float, float]] = {}
     for i in range(count):
-        span = bytes(names[i * _CATEGORY_NAME_CAP : (i + 1) * _CATEGORY_NAME_CAP])
-        name = span.split(b"\x00", 1)[0].decode()
-        if len(name) >= _CATEGORY_NAME_CAP - 1:
+        name = bytes(names[i * cap : (i + 1) * cap]).split(b"\x00", 1)[0].decode()
+        # The library returns every `attr.` line in file order and merges
+        # none, so a repeated name would quietly take whichever came last.
+        # The format exists to stop a line being dropped in silence, and a
+        # duplicate is a line dropped.
+        if name in out:
             raise ValueError(
-                f"theme category name {name!r} hit the {_CATEGORY_NAME_CAP}-byte "
-                "cap, so it may be truncated and would colour the wrong row"
+                f"theme names category {name!r} more than once, so one "
+                "colour silently replaces the other"
             )
         out[name] = (
             float(colors[i * 4]),
