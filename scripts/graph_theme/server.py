@@ -34,6 +34,7 @@ from shaderbox.graph_canvas.adapter import (
 )
 from shaderbox.graph_canvas.panel import GraphCanvasState, render_to_texture
 from shaderbox.graph_canvas.render import CanvasRenderer
+from shaderbox.intel.symbols import SymbolKind
 from shaderbox.pass_graph import Port
 from shaderbox.theme import COLOR
 from shaderbox.widgets.pass_graph import canvas_theme
@@ -86,44 +87,86 @@ def _theme_from_dict(values: dict[str, Any]) -> ffi.Theme:
     return theme
 
 
-def _scene() -> Any:
-    """One node of every kind the canvas draws, so a change is visible.
+# A body row's tint comes from the EDITOR's colour for that kind of name,
+# through `kind_color` -- so a builtin reads on the node as it reads in the
+# code. Keyed by the token those resolve to, because that is what an export
+# has to name for the edit to be pasteable.
+#
+# Enumerated from `SymbolKind` rather than hand-listed: a kind added there
+# reaches the canvas, and it should reach this page in the same commit.
+_ROW_KINDS: tuple[SymbolKind, ...] = (
+    SymbolKind.ENGINE_UNIFORM,
+    SymbolKind.SCRIPT_UNIFORM,
+)
+_KIND_TOKEN: dict[SymbolKind, str] = {
+    SymbolKind.ENGINE_UNIFORM: "SYN_UNIFORM",
+    SymbolKind.SCRIPT_UNIFORM: "SYN_SCRIPT_UNIFORM",
+}
 
-    A sampler that is wired and one that is not, the output row, an engine
-    value, a script-driven one, a plain constant, a selected node and the
-    output node -- every colour the theme carries has something on screen.
+
+def _rgba(
+    values: list[float] | tuple[float, ...] | None,
+) -> tuple[float, float, float, float] | None:
+    """JSON hands back a list; the adapter's types want a fixed 4-tuple."""
+    if values is None:
+        return None
+    r, g, b, a = (float(v) for v in list(values)[:4])
+    return (r, g, b, a)
+
+
+def _row_colours() -> list[str]:
+    return [_KIND_TOKEN[kind] for kind in _ROW_KINDS]
+
+
+def _scene(host: dict[str, list[float]]) -> Any:
+    """Every kind of row and pin shaderbox actually draws, on two nodes.
+
+    Built from the taxonomies rather than by hand: `PortKind`'s four values
+    decide a pin's shape and fill, and `SymbolKind` decides a body row's
+    tint. A field with nothing on screen cannot be judged, and the colours
+    got wrong in this feature were the ones never rendered while tuning.
+
+    `src` is selected and `blur` is the output, so both rings show at once
+    -- a node can wear both and the two must not fight.
     """
-    return pack_nodes(
-        flat_view(
-            ["src", "blur"],
-            {
-                "src": [],
-                "blur": [
-                    Port("u_src", "wired", "src"),
-                    Port("u_mask", "unfilled"),
-                ],
-            },
-            {"src": (0.0, 0.0), "blur": (260.0, 30.0)},
+    ports = {
+        "src": [],
+        # One port of each `PortKind`: wired (filled dot), unfilled (hollow),
+        # none (cored), media (square).
+        "blur": [
+            Port("u_src", "wired", "src"),
+            Port("u_mask", "unfilled"),
+            Port("u_black", "none"),
+            Port("u_tex", "media"),
+        ],
+    }
+    body = [
+        BodyRow("u_time", (0.69,), _rgba(host.get("SYN_UNIFORM"))),
+        BodyRow(
+            "u_mouse_pos",
+            (0.5, 0.25),
+            _rgba(host.get("SYN_SCRIPT_UNIFORM")),
+            editable=True,
         ),
+        BodyRow("u_gain", (1.0,), None, editable=True),
+    ]
+    return pack_nodes(
+        flat_view(["src", "blur"], ports, {"src": (0.0, 0.0), "blur": (250.0, 10.0)}),
         {},
         output=pass_key("blur"),
         selected=frozenset({pass_key("src")}),
-        body={
-            "blur": [
-                BodyRow("u_time", (0.69,), None),
-                BodyRow("u_mouse", (0.5, 0.25), None, editable=True),
-                BodyRow("u_gain", (1.0,), None, editable=True),
-            ]
-        },
+        body={"blur": body},
         palette=NodePalette(
-            hover=COLOR.GRAPH_HOVER,
-            select=COLOR.SELECT,
-            output=COLOR.ACCENT_PRIMARY,
+            hover=_rgba(host.get("GRAPH_HOVER")) or COLOR.GRAPH_HOVER,
+            select=_rgba(host.get("SELECT")) or COLOR.SELECT,
+            output=_rgba(host.get("ACCENT_PRIMARY")) or COLOR.ACCENT_PRIMARY,
         ),
     )
 
 
-def render(theme: ffi.Theme, size: tuple[int, int]) -> bytes:
+def render(
+    theme: ffi.Theme, size: tuple[int, int], host: dict[str, list[float]]
+) -> bytes:
     global _CTX, _RENDERER
     with _LOCK:
         if _CTX is None:
@@ -131,7 +174,7 @@ def render(theme: ffi.Theme, size: tuple[int, int]) -> bytes:
             _RENDERER = CanvasRenderer(gl=_CTX)
         assert _RENDERER is not None
         state = GraphCanvasState()
-        packed = _scene()
+        packed = _scene(host)
         background = [float(v) for v in list(theme.canvas)]
         canvas_rgba = (background[0], background[1], background[2], background[3])
         # Several frames: the eased highlights settle, so what is shown is
@@ -172,11 +215,27 @@ class Handler(BaseHTTPRequestHandler):
         if self.path in ("/", "/index.html"):
             self._send(200, "text/html", (HERE / "index.html").read_bytes())
         elif self.path == "/theme":
+            # The HOST's own colours travel beside the library's theme:
+            # a row's tint per `SymbolKind`, and the three node rings, are
+            # shaderbox's decisions and the library never sees them as
+            # theme fields. Without these the page can tune the generic
+            # roles and not the things this canvas actually distinguishes.
+            host = {
+                name: [round(float(v), 4) for v in getattr(COLOR, name)]
+                for name in (*_row_colours(), "GRAPH_HOVER", "SELECT", "ACCENT_PRIMARY")
+            }
             payload = {
                 "current": _theme_as_dict(canvas_theme()),
                 "library": _theme_as_dict(ffi.default_theme()),
                 "colours": _colour_fields(),
                 "scalars": _scalar_fields(),
+                "host": host,
+                "hostOrder": [
+                    *_row_colours(),
+                    "GRAPH_HOVER",
+                    "SELECT",
+                    "ACCENT_PRIMARY",
+                ],
             }
             self._send(200, "application/json", json.dumps(payload).encode())
         else:
@@ -189,7 +248,11 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         request = json.loads(self.rfile.read(length) or b"{}")
         size = (int(request.get("w", 820)), int(request.get("h", 560)))
-        png = render(_theme_from_dict(request.get("theme", {})), size)
+        png = render(
+            _theme_from_dict(request.get("theme", {})),
+            size,
+            request.get("host", {}),
+        )
         body = json.dumps({"png": base64.b64encode(png).decode()}).encode()
         self._send(200, "application/json", body)
 

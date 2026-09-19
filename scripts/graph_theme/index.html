@@ -70,6 +70,7 @@
     <button id="lib">Library defaults</button>
     <button id="export">Export</button>
   </div>
+  <div id="host"></div>
   <div id="colours"></div>
   <h2>shading</h2>
   <div id="scalars"></div>
@@ -84,6 +85,7 @@
 <script>
 const $ = (s) => document.querySelector(s);
 let BASE = null, LIB = null, COLOURS = [], SCALARS = [], theme = {};
+let HOST_BASE = null, HOST_ORDER = [], host = {};
 
 const to255 = (v) => Math.max(0, Math.min(255, Math.round(v * 255)));
 const hex = (rgba) =>
@@ -123,7 +125,7 @@ async function draw() {
     const r = await fetch("/render", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ theme, w: 820, h: 560 }),
+      body: JSON.stringify({ theme, host, w: 820, h: 560 }),
     });
     const { png } = await r.json();
     $("#view").src = "data:image/png;base64," + png;
@@ -140,13 +142,13 @@ function markChanged(name, node) {
   node.classList.toggle("changed", a !== b);
 }
 
-function colourField(name, host) {
+function colourField(name, container, model, base) {
   const row = document.createElement("div");
   row.className = "row";
   row.innerHTML =
     `<label title="${name}">${name}</label>` +
     `<div class="swatch"></div>` +
-    `<input type="number" min="0" max="1" step="0.05" value="${theme[name][3]}">`;
+    `<input type="number" min="0" max="1" step="0.05" value="${model[name][3]}">`;
   const [label, swatch, alpha] = row.children;
 
   const panel = document.createElement("div");
@@ -166,7 +168,7 @@ function colourField(name, host) {
   // Every widget writes the model and redraws immediately -- no confirm step,
   // because the render IS the feedback and a button between them breaks it.
   function paint() {
-    const c = theme[name];
+    const c = model[name];
     swatch.style.background = `rgb(${to255(c[0])},${to255(c[1])},${to255(c[2])})`;
     const [h, sa, v] = rgb2hsv(c[0], c[1], c[2]);
     ranges.h.value = nums.h.value = h.toFixed(3);
@@ -187,18 +189,19 @@ function colourField(name, host) {
     const lit = hsv2rgb(h, sa, 1);
     ranges.v.style.background =
       `linear-gradient(90deg, #000, rgb(${to255(lit[0])},${to255(lit[1])},${to255(lit[2])}))`;
-    markChanged(name, row);
+    row.classList.toggle(
+      "changed", JSON.stringify(model[name]) !== JSON.stringify(base[name]));
   }
 
   function commit(rgb) {
-    theme[name] = [rgb[0], rgb[1], rgb[2], parseFloat(alpha.value)];
+    model[name] = [rgb[0], rgb[1], rgb[2], parseFloat(alpha.value)];
     paint();
     draw();
   }
   for (const ch of ["h", "s", "v"]) {
     const push = (src) => {
       const v = Math.max(0, Math.min(1, parseFloat(src.value) || 0));
-      const cur = rgb2hsv(...theme[name].slice(0, 3));
+      const cur = rgb2hsv(...model[name].slice(0, 3));
       const next = { h: cur[0], s: cur[1], v: cur[2] };
       next[ch] = v;
       commit(hsv2rgb(next.h, next.s, next.v));
@@ -211,7 +214,7 @@ function colourField(name, host) {
       commit(fromHex(hexIn.value, 1).slice(0, 3));
     }
   });
-  alpha.addEventListener("input", () => commit(theme[name].slice(0, 3)));
+  alpha.addEventListener("input", () => commit(model[name].slice(0, 3)));
 
   const toggle = () => {
     const open = panel.classList.toggle("open");
@@ -221,14 +224,20 @@ function colourField(name, host) {
   label.addEventListener("click", toggle);
 
   paint();
-  host.appendChild(row);
-  host.appendChild(panel);
+  container.appendChild(row);
+  container.appendChild(panel);
 }
 
 function buildColours() {
-  const host = $("#colours");
-  host.innerHTML = "<h2>colours</h2>";
-  for (const name of COLOURS) colourField(name, host);
+  // The host's own decisions first: these are the ones that say what a
+  // shaderbox ROW is -- an engine value, a script-driven one, a selection
+  // -- and the library has no field for any of them.
+  const hostHost = $("#host");
+  hostHost.innerHTML = "<h2>shaderbox roles</h2>";
+  for (const name of HOST_ORDER) colourField(name, hostHost, host, HOST_BASE);
+  const lib = $("#colours");
+  lib.innerHTML = "<h2>library theme</h2>";
+  for (const name of COLOURS) colourField(name, lib, theme, BASE);
 }
 
 function buildScalars() {
@@ -257,20 +266,32 @@ function buildScalars() {
   }
 }
 
-function load(values) {
+function load(values, hostValues) {
   theme = JSON.parse(JSON.stringify(values));
+  host = JSON.parse(JSON.stringify(hostValues ?? HOST_BASE));
   buildColours();
   buildScalars();
   draw();
 }
 
-$("#reset").onclick = () => load(BASE);
-$("#lib").onclick = () => load(LIB);
+$("#reset").onclick = () => load(BASE, HOST_BASE);
+$("#lib").onclick = () => load(LIB, HOST_BASE);
 $("#export").onclick = () => {
+  const hostChanged = HOST_ORDER.filter(
+    (n) => JSON.stringify(host[n]) !== JSON.stringify(HOST_BASE[n]));
   const changed = COLOURS.filter(
     (n) => JSON.stringify(theme[n]) !== JSON.stringify(BASE[n]));
   const scal = SCALARS.filter((n) => theme[n] !== BASE[n]);
   const lines = [];
+  if (hostChanged.length) {
+    lines.push("# shaderbox/theme.py -- the host's own role colours");
+    for (const n of hostChanged) {
+      const c = host[n];
+      lines.push(`    ${n}: tuple[float, float, float, float] = (` +
+                 `${c.map((v) => v.toFixed(3)).join(", ")})`);
+    }
+    lines.push("");
+  }
   if (changed.length) {
     lines.push("# theme_from(...) arguments -- paste into canvas_theme()");
     for (const n of changed) {
@@ -291,6 +312,7 @@ $("#export").onclick = () => {
 fetch("/theme").then((r) => r.json()).then((d) => {
   BASE = d.current; LIB = d.library;
   COLOURS = d.colours; SCALARS = d.scalars;
-  load(BASE);
+  HOST_BASE = d.host; HOST_ORDER = d.hostOrder;
+  load(BASE, HOST_BASE);
 });
 </script>
