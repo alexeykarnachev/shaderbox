@@ -113,6 +113,28 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   break was tried. The same bar applies to a gate you EDIT: three of those five were introduced by
   the fix for the previous one.
 
+- **A measured coordinate is valid for the FRAME STATE it was measured in, not for the
+  thing it describes.** 098 spent four wrong findings on one bug this way. The graph canvas
+  frames itself on its first frame, so a row's screen position resolved before framing is not
+  where it ends up; a probe that swept for the row under one view and then measured pixels
+  under another reported "a hovered row changes nothing" three times, and the fourth report
+  built a theory on it ("the behaviour depends on the view") that was the same error wearing
+  numbers. The library's author could not reproduce any of it and was right each time.
+
+  The tells, which are worth more than the rule because the rule was already known and
+  restated by both of us while breaking it: a number ABSURD rather than wrong (a node rect
+  reading 9.8e+23); a stream that ignores input it plainly received; and two readings of the
+  same frame disagreeing -- the hover reporting a row while the measurement taken from that
+  same result shows nothing. When a careful measurement contradicts a careful measurement,
+  suspect that one of them is against a state that has since moved.
+
+  The same shape reads the wrong field: 098 also reported a border colour "entirely
+  discarded, red and blue byte-identical" from reading shape-instance float 20 where the
+  value is float 18. Both are *measure one thing carefully, then compare it against something
+  not re-derived*. Where a struct's layout is the risk, derive the offsets from the type
+  (`ShapeInstance._fields_`) rather than counting, and make a second instrument agree -- the
+  shape stream and the rendered pixels disagreeing is what catches a misread column.
+
 - **Break the DECISION the gate names, not a thing the gate happens to read.** 098's audit mutated
   the source under every graph-canvas test and found three that stayed green under the exact defect
   their docstring named — each failing a different way, and the three shapes are worth knowing apart
