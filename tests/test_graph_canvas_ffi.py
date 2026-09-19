@@ -47,8 +47,11 @@ def test_every_enum_has_the_member_count_this_binding_expects() -> None:
         # unwire instead. Proven -- that exact swap loaded clean before
         # the name check existed.
         buf = ctypes.create_string_buffer(128)
-        for member in mirror:
-            written = lib.gc_enum_name(which, int(member), buf, 128)
+        for position, member in enumerate(mirror):
+            # By POSITION, which is what `gc_enum_name` takes. Every enum
+            # here but one has value == position, so asking by value agreed
+            # until `Theme_Parse_Error` arrived running 0, -2, -3, ...
+            written = lib.gc_enum_name(which, position, buf, 128)
             # Sliced by the returned LENGTH: the library writes no
             # terminator, so a shorter name keeps the previous one's tail.
             assert buf.raw[:written].decode().upper() == member.name, label

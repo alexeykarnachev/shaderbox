@@ -30,7 +30,7 @@ ATLAS_JSON_PATH: Path = GRAPH_CANVAS_RESOURCES_DIR / "atlas.json"
 ATLAS_PNG_PATH: Path = GRAPH_CANVAS_RESOURCES_DIR / "atlas.png"
 SHADERS_DIR: Path = GRAPH_CANVAS_RESOURCES_DIR / "shaders"
 
-ABI_VERSION: int = 7
+ABI_VERSION: int = 8
 
 _LIB: ctypes.CDLL | None = None
 
@@ -381,6 +381,22 @@ class Widget(IntEnum):
     ENUM = 8
 
 
+class ThemeParseError(IntEnum):
+    """Why a theme file was refused, as the library's own values.
+
+    NEGATIVE and non-contiguous, so a member's POSITION is not its value --
+    which is why the verifier asks `gc_enum_name` by value. `-1` is absent
+    on purpose.
+    """
+
+    NONE = 0
+    NO_EQUALS = -2
+    UNKNOWN_FIELD = -3
+    BAD_WIDTH = -4
+    BAD_NUMBER = -5
+    WRONG_ARITY = -6
+
+
 class PreviewFit(IntEnum):
     CONTAIN = 0
     COVER = 1
@@ -483,11 +499,12 @@ _ENUMS: list[tuple[str, int, type[IntEnum] | None]] = [
     ("Attribute_Kind", 3, None),
     ("Atlas_Error", 4, None),
     ("Size_Query", len(_STRUCTS), None),
-    ("Enum_Query", 10, None),
+    ("Enum_Query", 11, None),
     ("Pin_Shape", len(PinShape), PinShape),
     # Three, not four: `PinFill.UNSET` is the wire's "no opinion", not a member
     # of the library's enum, so the mirror is compared from its second member.
     ("Pin_Fill", len(PinFill) - 1, None),
+    ("Theme_Parse_Error", len(ThemeParseError), ThemeParseError),
 ]
 
 
@@ -560,22 +577,27 @@ def _verify_layout(lib: ctypes.CDLL) -> None:
         # By NAME as well as by count: a swap or a rename leaves the count
         # equal while turning one event into another. The library spells its
         # members `Edge_Added`; the binding spells them `EDGE_ADDED`.
-        for member in mirror:
+        for position, member in enumerate(mirror):
+            # Asked by POSITION, not by value. For every enum here but one
+            # the two coincide, which is what hid the difference:
+            # `Theme_Parse_Error` runs 0, -2, -3, ... and the library names
+            # nothing at -2.
+            #
             # Sliced by the RETURNED LENGTH, not read as a C string: the
             # library writes the bytes and returns the count without a
             # terminator, so a shorter name leaves the previous one's tail
             # behind -- `Edge_Added` read back as `Edge_Addednued` over
             # `Context_Menued`. Clearing the buffer does not help; only the
             # length is authoritative.
-            written = lib.gc_enum_name(which, int(member), name_buf, 128)
+            written = lib.gc_enum_name(which, position, name_buf, 128)
             if written <= 0:
                 raise LayoutMismatch(
-                    f"enum {label}: the library named no member {int(member)}"
+                    f"enum {label}: the library named no member at position {position}"
                 )
             theirs = name_buf.raw[:written].decode().upper()
             if theirs != member.name:
                 raise LayoutMismatch(
-                    f"enum {label} member {int(member)}: library calls it "
+                    f"enum {label} position {position}: library calls it "
                     f"{theirs}, binding calls it {member.name}"
                 )
 
