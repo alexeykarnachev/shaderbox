@@ -836,8 +836,11 @@ def read_events(result: Result, packed: Packed) -> list[GraphEvent]:
     host that renamed or deleted between frames would otherwise act on
     whatever now sits at that index.
 
-    A GHOST is packed refusing every gesture, so the library reports nothing
-    about one; the guard here is belt and braces rather than a live path.
+    A GHOST refuses every gesture through `accepts`, but that governs the
+    POINTER gestures only: the library still reports a context menu on
+    one. The `is_ghost` guards here are what keep that from resolving --
+    without them a right-click on a ghost opens a pass menu, offering
+    Rename and Delete on a pass this scope does not own.
     """
     events: list[GraphEvent] = []
     for i in range(result.event_count):

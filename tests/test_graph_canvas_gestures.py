@@ -19,6 +19,7 @@ from shaderbox.graph_canvas.adapter import (
     Activated,
     BodyRow,
     Clicked,
+    MenuRequested,
     Moved,
     Packed,
     PickerRequested,
@@ -299,8 +300,8 @@ def test_a_ghost_swallows_nothing() -> None:
     hole in the canvas.
 
     Read from the LIBRARY's raw events, not from `read_events`. The adapter
-    also drops a ghost's events -- belt and braces its own docstring calls
-    not a live path -- so a test reading the resolved list passes with
+    also drops a ghost's events -- a live guard, since the library reports
+    a context menu on a ghost -- so a test reading the resolved list passes with
     `accepts` set to 0, the exact flag this names. Measured: with the flag
     dropped the library emits `NODE_MOVED` and the adapter guard hides it.
     """
@@ -636,3 +637,44 @@ def test_pressing_a_colour_swatch_asks_the_host_for_a_picker() -> None:
         "the point meant to prove the event is SELECTIVE never reached a "
         f"drag field, so its silence proved nothing: {on_field}"
     )
+
+
+def test_a_right_click_on_a_ghost_opens_no_pass_menu() -> None:
+    """`accepts` refuses the POINTER gestures and not the context menu: the
+    library reports one on a ghost, and the adapter's `is_ghost` guard is
+    what stops it resolving. Without it a right-click on a ghost offers
+    Rename and Delete on a pass this scope does not own.
+
+    Documented here as belt and braces for one commit, which a sweep of the
+    raw events disproved -- kind 4 arrives naming the ghost.
+
+    The same click on the REAL node is the contact proof: silence is the
+    assertion, so a menu has to be shown to open when the node is not a
+    ghost, or the aim proves nothing.
+    """
+    ports = {"a": [], "b": [Port("u_src", "unfilled")]}
+    at = {"a": (0.0, 0.0), "b": (300.0, 0.0)}
+    ghosted = pack_nodes(
+        flat_view(["a", "b"], ports, at, frozenset({"a"})), {}, output=pass_key("b")
+    )
+    solid = pack_nodes(flat_view(["a", "b"], ports, at), {}, output=pass_key("b"))
+
+    canvas = _canvas()
+    x0, y0, w, h = _rect(canvas, ghosted, 0)
+    point = (x0 + w / 2, y0 + h / 3)
+    menu = ffi.PointerState(x=point[0], y=point[1], flags=int(ffi.Pointer.ALT_PRESSED))
+
+    on_ghost = read_events(
+        canvas.frame(ghosted.nodes, ghosted.edges, SIZE, ffi.View(), menu), ghosted
+    )
+    assert not [e for e in on_ghost if isinstance(e, MenuRequested) and e.name], (
+        f"a right-click on a ghost named a pass: {on_ghost}"
+    )
+    on_solid = read_events(
+        canvas.frame(solid.nodes, solid.edges, SIZE, ffi.View(), menu), solid
+    )
+    assert [e for e in on_solid if isinstance(e, MenuRequested) and e.name == "a"], (
+        "the same click on the same point opened no menu when the node was "
+        f"NOT a ghost, so the ghost's silence proves nothing: {on_solid}"
+    )
+    canvas.release()
