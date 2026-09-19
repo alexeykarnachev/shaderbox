@@ -412,11 +412,15 @@ ATTR_CONTROL: int = 1 << 2
 # `node_rects`. It is the only signal a host should gate a pan on.
 RESULT_POINTER_CLAIMED: int = 1 << 0
 
-# `NodeRect.flags`. HOVERED and OVER_PORT are about the pointer's position;
-# ACTIVE says a gesture is in flight ON THIS NODE, which is the only signal
-# that covers a wire dragged from a pin -- a pin's grab area OVERHANGS the
-# node, so a press beside the body starts a wire while the body reports no
-# hover at all.
+# `NodeRect.flags`. HOVERED and OVER_PORT are the pointer's position.
+#
+# ACTIVE marks the node a gesture was PRESSED on, which is not the same as
+# an end of the wire being dragged: grabbing a CONNECTED input picks the
+# existing wire up, and the anchor moves to the far output while ACTIVE
+# stays on the input that was pressed -- a node the dragged wire no longer
+# touches. So it answers "this node is in play" and never "these are the
+# wire's endpoints"; the endpoints come from the `Edge_Removed` the press
+# emits, which is why that event fires on the press rather than the release.
 NODE_RECT_HOVERED: int = 1 << 0
 NODE_RECT_OVER_PORT: int = 1 << 1
 NODE_RECT_ACTIVE: int = 1 << 2

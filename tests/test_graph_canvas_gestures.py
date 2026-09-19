@@ -153,6 +153,40 @@ def test_grabbing_a_connected_input_reports_the_wire_gone_on_the_press() -> None
     canvas.release()
 
 
+def test_the_active_flag_marks_the_pressed_node_and_not_a_wire_end() -> None:
+    """`NODE_RECT_ACTIVE` answers "this node is in play", never "these are
+    the wire's endpoints" -- and a RE-DRAG is the case that separates them.
+
+    Grabbing a connected input picks the existing wire up: the anchor moves
+    to the far output and the loose end follows the pointer, while the flag
+    stays on the input that was pressed -- a node the dragged wire no longer
+    touches. Measured: press b's input, flag on b, anchor on a.
+
+    The fresh-drag case cannot see this. There the pressed node IS the
+    wire's end, so both readings agree and a fixture with only that case
+    passes a library that swapped one for the other. The endpoints come from
+    the `Edge_Removed` the press emits, which the test above pins.
+    """
+    canvas = _canvas()
+    packed = _chain(wired=True)
+    target = _pin(canvas, packed, 1, 0, output=False)
+
+    result = canvas.frame(
+        packed.nodes,
+        packed.edges,
+        SIZE,
+        ffi.View(),
+        ffi.PointerState(x=target[0], y=target[1], flags=DOWN | PRESSED),
+    )
+    active = {
+        packed.name_of(i)
+        for i in range(result.rect_count)
+        if result.node_rects[i].flags & ffi.NODE_RECT_ACTIVE
+    }
+    assert active == {"b"}, f"the pressed node is not the one marked active: {active}"
+    canvas.release()
+
+
 def test_a_press_on_the_body_moves_the_node_and_reports_canvas_space() -> None:
     canvas = _canvas()
     packed = _chain()
