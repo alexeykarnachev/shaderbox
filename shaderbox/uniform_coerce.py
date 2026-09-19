@@ -10,6 +10,10 @@ from typing import TypeGuard
 
 import moderngl
 from OpenGL.GL import (
+    GL_BOOL,
+    GL_BOOL_VEC2,
+    GL_BOOL_VEC3,
+    GL_BOOL_VEC4,
     GL_INT,
     GL_INT_VEC2,
     GL_INT_VEC3,
@@ -30,7 +34,13 @@ _UINT_GL_TYPES = frozenset(
     {GL_UNSIGNED_INT, GL_UNSIGNED_INT_VEC2, GL_UNSIGNED_INT_VEC3, GL_UNSIGNED_INT_VEC4}
 )
 _SINT_GL_TYPES = frozenset({GL_INT, GL_INT_VEC2, GL_INT_VEC3, GL_INT_VEC4})
-_INT_GL_TYPES = _UINT_GL_TYPES | _SINT_GL_TYPES
+# A GLSL bool crosses as an INTEGER too: moderngl refuses a float write to
+# one with the same `required argument is not an integer`, and `Pass.render`
+# answers that by popping the cached value -- so an unrounded bool does not
+# merely fail, it re-seeds the uniform to 0 two frames later. Measured on
+# `bool` and `bvec2` alike.
+_BOOL_GL_TYPES = frozenset({GL_BOOL, GL_BOOL_VEC2, GL_BOOL_VEC3, GL_BOOL_VEC4})
+_INT_GL_TYPES = _UINT_GL_TYPES | _SINT_GL_TYPES | _BOOL_GL_TYPES
 
 
 def is_number(v: object) -> TypeGuard[int | float]:

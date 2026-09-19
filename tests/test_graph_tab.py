@@ -16,11 +16,14 @@ from imgui_bundle import imgui
 from shaderbox.commands import CommandId
 from shaderbox.editor_types import TabRecord
 from shaderbox.formatting import formatter_for
+from shaderbox.graph_canvas.adapter import Moved
 from shaderbox.graph_canvas.ffi import Gesture
+from shaderbox.pass_graph import PassEntry, strip_order
 from shaderbox.paths import shader_lib_root
 from shaderbox.tabs.code import tab_label
 from shaderbox.ui import update_and_draw
-from shaderbox.widgets import uniform
+from shaderbox.widgets import pass_graph, uniform
+from shaderbox.widgets.graph_state import node_sizes, ports_of
 from tests.conftest import restart_app, seed_extra_document
 
 # The imgui font atlas is process-global, so every frame-driving module owns a worker
@@ -419,4 +422,88 @@ def test_a_project_switch_releases_the_canvas_renderer(app: Any) -> None:
     assert app.graph_renderer is None, "the renderer survived the switch"
     assert type(atlas.mglo).__name__ == "InvalidObject", (
         "the glyph atlas texture is still live on the GPU after the switch"
+    )
+
+
+def test_dragging_a_box_keeps_its_members_apart(app: Any) -> None:
+    """098: a box has no position of its own -- it is drawn at its members'
+    corner -- so a drag applies a DELTA against each member's start. Frozen
+    from the STORED position, a member never placed contributes (0, 0) while
+    the canvas draws it at the rank layout's, so the whole group collapsed
+    onto one point on the first pixel of the first drag, and
+    `commit_graph_positions` wrote it to disk.
+
+    Measured before the fix: three passes drawn at x 0 / 200 / 400 landed on
+    two distinct points with two of them identical.
+
+    The frozen starts must be the positions the canvas is DRAWING, which is
+    what `_positions` already resolved. Driven through `_apply_graph_events`
+    rather than through a copy of its body: a probe that reimplements the
+    branch cannot see a fix to the branch.
+    """
+    document_id, document = _chain(app)
+    app.open_graph_for(document_id)
+    view = app.graph_view_for(document_id)
+    view.selection = {"a", "b"}
+    assert app.group_selection(document_id, "pair") == ""
+    _frames(app, 3)
+
+    # None of them has ever been placed, which is the case that broke.
+    entries = document.graph.passes
+    assert all(entries[n].position is None for n in ("a", "b", "c"))
+
+    state = app.graph_canvases[document_id]
+    assert state.packed is not None
+    drawn = {
+        view_.name: (node.x, node.y)
+        for view_, node in zip(state.packed.views, state.packed.nodes, strict=True)
+    }
+    box = next(v for v in state.packed.views if v.is_box)
+    start = drawn[box.name]
+
+    # The positions the WIDGET resolves, which is what it hands the event
+    # handler: a stored position wins, a pass never placed takes the rank
+    # layout's. Built the same way here rather than guessed, because the
+    # whole defect was the handler using a different source than the draw.
+    wiring = document.effective_wiring()
+    ports = ports_of(document, wiring)
+    order = strip_order(document.passes, wiring)
+    groups = {n: entries.get(n, PassEntry()).group for n in order}
+    positions = pass_graph._positions(document, wiring, groups, node_sizes(ports), {})
+    assert positions["a"] != positions["b"], (
+        "the fixture placed both members at one point, so it cannot see a collapse"
+    )
+    # One call is one frame, and the real mouse is UP in a test -- so the
+    # commit branch fires and writes. That is the path that persisted the
+    # collapse, which makes it the right one to assert against.
+    pass_graph._apply_graph_events(
+        app,
+        document_id,
+        document,
+        view,
+        state,
+        [Moved(box.key, box.name, start[0] + 30.0, start[1] + 12.0, box.members)],
+        positions,
+    )
+
+    # Re-read: `document.graph` is replaced by the write, so the `entries`
+    # captured above is the pre-drag model.
+    saved = {name: document.graph.passes[name].position for name in ("a", "b")}
+    assert all(p is not None for p in saved.values()), (
+        f"the drag wrote no position: {saved}"
+    )
+    assert saved["a"] != saved["b"], (
+        f"the box's members collapsed onto one point: {saved}"
+    )
+    # Each moved by the SAME delta, which is what a box drag means.
+    delta_a = (
+        saved["a"][0] - positions["a"][0],
+        saved["a"][1] - positions["a"][1],
+    )
+    delta_b = (
+        saved["b"][0] - positions["b"][0],
+        saved["b"][1] - positions["b"][1],
+    )
+    assert delta_a == pytest.approx(delta_b), (
+        f"the members moved by different deltas: {delta_a} against {delta_b}"
     )

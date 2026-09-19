@@ -5,6 +5,8 @@ logic, not a GL write — the GL write is verified in-app + by the headless prob
 
 import types
 
+import moderngl
+
 from shaderbox.uniform_coerce import coerce_uniform_value, gl_type_label
 
 _GL_FLOAT = 0x1406
@@ -103,3 +105,61 @@ def test_float_and_sampler_and_block_labels() -> None:
     assert gl_type_label(_u(1, 4)) == "float[4]"
     # A sampler is a live Uniform but not settable — set_uniform matches this exact label to reject.
     assert gl_type_label(_u(1, 1, _GL_SAMPLER_2D)) == "sampler2D"
+
+
+def test_every_integer_glsl_type_coerces_to_something_moderngl_accepts(
+    gl_ctx: moderngl.Context,
+) -> None:
+    """Enumerated from the GLSL types themselves, not from a hand-kept list.
+
+    moderngl refuses a float written to any integer-valued uniform with
+    `required argument is not an integer`, and `Pass.render` answers that by
+    POPPING the cached value -- so a type missing from the coercion set does
+    not fail loudly, it re-seeds the uniform to 0 two frames after the user
+    edited it.
+
+    `bool` and `bvec` were exactly that gap: they cross GL as integers and
+    were absent from `_INT_GL_TYPES`, so the set was one family short and
+    the shortfall was invisible until someone dragged a bool. This walks
+    every integer-valued declaration a shader can make and writes the
+    result through moderngl, which is the only thing that decides it.
+    """
+    declarations = {
+        "u_i": ("int", 1.0),
+        "u_i2": ("ivec2", (1.0, 2.0)),
+        "u_i3": ("ivec3", (1.0, 2.0, 3.0)),
+        "u_i4": ("ivec4", (1.0, 2.0, 3.0, 4.0)),
+        "u_u": ("uint", 1.0),
+        "u_u2": ("uvec2", (1.0, 2.0)),
+        "u_u3": ("uvec3", (1.0, 2.0, 3.0)),
+        "u_u4": ("uvec4", (1.0, 2.0, 3.0, 4.0)),
+        "u_b": ("bool", 1.0),
+        "u_b2": ("bvec2", (1.0, 0.0)),
+        "u_b3": ("bvec3", (1.0, 0.0, 1.0)),
+        "u_b4": ("bvec4", (1.0, 0.0, 1.0, 0.0)),
+    }
+    body = "\n".join(f"uniform {t} {n};" for n, (t, _) in declarations.items())
+    reads = " + ".join(
+        f"float({n})" if t in ("int", "uint", "bool") else f"float({n}.x)"
+        for n, (t, _) in declarations.items()
+    )
+    program = gl_ctx.program(
+        vertex_shader=(
+            "#version 460 core\nin vec2 in_pos;\n"
+            "void main(){ gl_Position = vec4(in_pos, 0.0, 1.0); }"
+        ),
+        fragment_shader=(
+            f"#version 460 core\n{body}\nout vec4 c;\n"
+            f"void main(){{ c = vec4({reads}); }}"
+        ),
+    )
+    refused: list[str] = []
+    for name, (glsl, value) in declarations.items():
+        uniform = program[name]
+        assert isinstance(uniform, moderngl.Uniform)
+        shaped = coerce_uniform_value(value, uniform)
+        try:
+            uniform.value = shaped
+        except Exception as error:
+            refused.append(f"{glsl} {name}: {shaped!r} -> {error}")
+    assert not refused, "moderngl refused a coerced value:\n" + "\n".join(refused)

@@ -240,12 +240,20 @@ def _border_of(
 def _border_scale_of(
     name: str, output: str, hovered: str, selected: frozenset[str]
 ) -> float:
-    """Hover and selection THICKEN the border; nothing changes the node's own
-    size, so a highlight never shifts what is under the cursor."""
-    if name in selected:
-        return 2.2
-    if name == hovered:
-        return 1.8
+    """The border's WIDTH, which hover and selection do not change.
+
+    093 G7 is explicit: "No size change anywhere. No dot grows on hover, no
+    node grows, no card lifts" -- a highlight changes colour, never size,
+    and the design names ImNodeFlow's growing socket radius as the thing it
+    declines. The switchover shipped 2.2 selected and 1.8 hovered, which is
+    that rule broken twice; `_border_of` already carries both states in
+    colour, so the thickening said nothing the colour did not.
+
+    The OUTPUT pass keeps a wider border, because that is a property of the
+    node rather than of the pointer: it does not appear and vanish under
+    the cursor, and it is the one case the rule's "no size change" is about
+    feedback rather than identity.
+    """
     return 1.6 if name == output else 1.0
 
 

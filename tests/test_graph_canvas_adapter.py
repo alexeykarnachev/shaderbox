@@ -390,9 +390,19 @@ def test_the_control_kind_alone_changes_the_row_s_tone() -> None:
 
 
 def test_hover_and_selection_change_the_border_and_not_the_size() -> None:
-    """A highlight must be visible without moving anything: recolour and
-    thicken, never resize, or the node shifts under the cursor that is
-    pointing at it. Selection outranks hover."""
+    """A highlight changes COLOUR and nothing else.
+
+    093 G7: "No size change anywhere. No dot grows on hover, no node grows,
+    no card lifts" -- sourced to four reference node editors, with
+    ImNodeFlow's growing socket radius named as the thing it declines. The
+    switchover shipped a border 2.2x on selection and 1.8x on hover, and
+    the first version of THIS test asserted that thickening, so the gate
+    pinned the violation in place.
+
+    The output pass keeps its wider border: that is identity rather than
+    feedback, it does not appear and vanish under the pointer, and the rule
+    is about a highlight tracking the cursor.
+    """
     order = ["a", "b"]
     ports: dict[str, list[Port]] = {"a": [], "b": []}
     palette = NodePalette(
@@ -430,9 +440,14 @@ def test_hover_and_selection_change_the_border_and_not_the_size() -> None:
     assert picked.nodes[0].border == palette.select
     # Selection wins where both apply.
     assert both.nodes[0].border == palette.select
-    # Thicker, and the unhovered sibling untouched.
-    assert hovered.nodes[0].border_scale > plain.nodes[0].border_scale
+    # The SAME width in every state: a highlight may not resize a node.
+    widths = {frame.nodes[0].border_scale for frame in (plain, hovered, picked, both)}
+    assert len(widths) == 1, f"a highlight changed the border's width: {widths}"
+    # The unhovered sibling is untouched, and the OUTPUT keeps its own width.
     assert hovered.nodes[1].border == plain.nodes[1].border
+    assert plain.nodes[1].border_scale > plain.nodes[0].border_scale, (
+        "the output pass lost the wider border that marks it"
+    )
 
 
 def test_a_multi_component_engine_value_shows_every_component() -> None:

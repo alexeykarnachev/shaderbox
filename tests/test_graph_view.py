@@ -235,3 +235,77 @@ def _drag_node(app: Any, view: Any, start: tuple[float, float], dx: float) -> No
     _park(app, (start[0] + dx, start[1]))
     imgui.get_io().add_mouse_button_event(0, False)
     _frames(app, 3)
+
+
+_TYPED = """#version 460 core
+in vec2 vs_uv;
+uniform int u_steps;
+uniform float u_gain;
+uniform vec2 u_shift;
+out vec4 fs_color;
+void main() {
+    fs_color = vec4(vs_uv + u_shift, float(u_steps) * u_gain, 1.0);
+}
+"""
+
+
+def test_a_dragged_int_uniform_survives_the_next_render(app: Any) -> None:
+    """A canvas drag reports a FLOAT whatever the uniform's GL type, and
+    moderngl refuses a float written to an int (`required argument is not
+    an integer`). `Pass.render` catches that by POPPING the cached value,
+    which re-seeds the uniform to 0 -- so an unshaped write does not merely
+    fail, it destroys what was there.
+
+    Measured before the fix: dragging from 34 wrote 34.45 and the next
+    frame read 0. Asserted after a real render, because the write itself
+    looks fine and only the render is where the value dies.
+    """
+    document_id = app.current_document_id
+    document = app.ui_documents[document_id].document
+    assert app.session.add_pass(document_id, "typed") == ""
+    render_pass = document.passes["typed"]
+    render_pass.release_program(_TYPED)
+    render_pass.compile()
+    assert render_pass.program is not None, "the fixture shader did not compile"
+    # Seeding rides a LAZY compile, and this fixture compiled explicitly, so
+    # the seed is called directly -- otherwise the values a consumer relies
+    # on are simply absent.
+    render_pass.seed_uniform_values()
+    assert render_pass.uniform_values["u_steps"] == 0
+
+    app.set_graph_uniform(document_id, "typed", "u_steps", (34.45,))
+    assert render_pass.uniform_values["u_steps"] == 34, (
+        "an int uniform was written a float, which moderngl refuses"
+    )
+    document.render()
+    assert render_pass.uniform_values["u_steps"] == 34, (
+        "the render dropped the value, so the write was the wrong shape"
+    )
+
+    # The float beside it keeps its fraction: the coercion is per GL type,
+    # not a blanket round.
+    app.set_graph_uniform(document_id, "typed", "u_gain", (0.25,))
+    document.render()
+    assert render_pass.uniform_values["u_gain"] == pytest.approx(0.25)
+
+
+def test_a_dragged_uniform_of_the_wrong_arity_is_refused(app: Any) -> None:
+    """The library reports as many components as the widget drew. A value
+    of the wrong width would be refused by moderngl at draw time and take
+    the cached value down with it, so it is refused here instead."""
+    document_id = app.current_document_id
+    document = app.ui_documents[document_id].document
+    assert app.session.add_pass(document_id, "typed") == ""
+    render_pass = document.passes["typed"]
+    render_pass.release_program(_TYPED)
+    render_pass.compile()
+    render_pass.seed_uniform_values()
+    before = render_pass.uniform_values["u_shift"]
+
+    app.set_graph_uniform(document_id, "typed", "u_shift", (1.0,))
+    assert render_pass.uniform_values["u_shift"] == before, (
+        "a one-component value was written into a vec2"
+    )
+    # And a uniform the pass does not declare reaches nothing.
+    app.set_graph_uniform(document_id, "typed", "u_absent", (1.0,))
+    assert "u_absent" not in render_pass.uniform_values

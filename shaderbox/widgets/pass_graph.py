@@ -492,7 +492,7 @@ def _library_canvas(
     )
 
     if not frozen:
-        _apply_graph_events(app, document_id, document, view, state, events)
+        _apply_graph_events(app, document_id, document, view, state, events, positions)
         # A click on the background clears the selection -- but only when the
         # library did NOT claim the pointer, or a press that starts a node
         # drag would also deselect on the way past.
@@ -519,6 +519,7 @@ def _apply_graph_events(
     view: GraphViewState,
     state: GraphCanvasState,
     events: Sequence[GraphEvent],
+    positions: Mapping[str, tuple[float, float]],
 ) -> None:
     """Turn the library's events into `App` verb calls.
 
@@ -541,10 +542,17 @@ def _apply_graph_events(
                 if anchor is None:
                     anchor = (event.x, event.y)
                     state.box_anchors[event.key] = anchor
+                    # The positions the canvas is DRAWING, not the stored
+                    # ones. A pass that has never been placed has no stored
+                    # position and takes the rank layout's, so reading the
+                    # entry gave every unplaced member (0, 0) and the whole
+                    # group collapsed onto one point the moment its box was
+                    # dragged -- measured: three passes at x 0/200/400
+                    # landed on two distinct points, two of them identical.
                     state.box_members[event.key] = {
-                        name: document.graph.passes[name].position or (0.0, 0.0)
+                        name: positions[name]
                         for name in event.members
-                        if name in document.graph.passes
+                        if name in positions
                     }
                 dx = event.x - anchor[0]
                 dy = event.y - anchor[1]

@@ -125,6 +125,7 @@ from shaderbox.ui_models import (
 )
 from shaderbox.ui_primitives import InlineInput
 from shaderbox.ui_regions import DocumentTab, next_channel_view
+from shaderbox.uniform_coerce import coerce_uniform_value
 from shaderbox.util import (
     open_in_file_manager,
     pfd_block,
@@ -2164,18 +2165,30 @@ class App:
             return
         if (pass_name, name) in self.session.get_script_driven_uniforms(document_id):
             self.set_uniform_stopped(document_id, pass_name, name, True)
-        current = render_pass.uniform_values[name]
-        # The shape the pass already holds decides what a scalar edit means:
-        # the library reports as many components as the widget drew, and a
-        # value of the wrong arity would be refused by moderngl at draw.
-        if isinstance(current, tuple):
-            if len(value) != len(current):
-                return
-            render_pass.uniform_values[name] = value
-        elif isinstance(current, (int, float)) and not isinstance(current, bool):
-            if len(value) != 1:
-                return
-            render_pass.uniform_values[name] = value[0]
+        # Shaped by the uniform's OWN GL type, through the module that
+        # exists for it. Judging by the Python value already in the dict is
+        # not enough: an `int` uniform holds a Python int, a dragged value
+        # arrives as a float, and moderngl refuses a float write with
+        # `required argument is not an integer` -- which `Pass.render`
+        # catches by POPPING the cached value, so the uniform re-seeds to 0.
+        # Measured before this: dragging an int from 34 wrote 34.45 and the
+        # next frame showed 0.
+        uniform = next(
+            (
+                u
+                for u in render_pass.get_active_uniforms()
+                if u.name == name and isinstance(u, moderngl.Uniform)
+            ),
+            None,
+        )
+        if uniform is None:
+            return
+        shaped = coerce_uniform_value(
+            value[0] if len(value) == 1 else tuple(value), uniform
+        )
+        if shaped is None:
+            return
+        render_pass.uniform_values[name] = shaped
 
     def commit_graph_positions(
         self, document_id: str, moved: Mapping[str, tuple[float, float]]
