@@ -136,6 +136,25 @@ def test_a_wire_dropped_on_empty_canvas_writes_nothing() -> None:
         ],
     )
     assert not any(isinstance(e, Wired) for e in events)
+
+    # Silence is the assertion, so the press has to be shown to have
+    # STARTED a wire: "abandoned correctly" and "never began" are the same
+    # empty list. The same drag dropped on a real input wires, and only a
+    # press that took hold of the pin can.
+    target = _pin(canvas, packed, 1, 0, output=False)
+    landed = _drive(
+        canvas,
+        packed,
+        [
+            ffi.PointerState(x=source[0], y=source[1], flags=DOWN | PRESSED),
+            ffi.PointerState(x=target[0], y=target[1], flags=DOWN),
+            ffi.PointerState(x=target[0], y=target[1], flags=0),
+        ],
+    )
+    assert any(isinstance(e, Wired) for e in landed), (
+        "the same press wired nothing when dropped ON an input, so it never "
+        "grabbed the pin and the abandoned drag above proved nothing"
+    )
     canvas.release()
 
 
@@ -316,26 +335,40 @@ def test_a_ghost_swallows_nothing() -> None:
     # Silence is the assertion, so the point has to be shown to have
     # ARRIVED: it is arithmetic off the rect, not a point the library
     # reported, and "refused correctly" and "missed the node" are the same
-    # empty list. The REAL node at the same relative point answers, which
-    # is what says the aim is good and the refusal is the ghost's doing.
-    real = _rect(canvas, packed, 1)
-    control = (real[0] + real[2] / 2, real[1] + real[3] / 3)
+    # empty list.
+    #
+    # The control is THE SAME NODE at THE SAME POINT with the ghost flag
+    # off, so the pair differs in exactly the property under test. A
+    # different node would differ in its shape too -- one of these carries
+    # a port and the other does not, so `h / 3` is not the same place on
+    # both -- and would only show that SOME point on SOME node answers.
+    packed_solid = pack_nodes(
+        flat_view(
+            ["a", "b"],
+            {"a": [], "b": [Port("u_src", "unfilled")]},
+            {"a": (0.0, 0.0), "b": (300.0, 0.0)},
+        ),
+        {},
+        output=pass_key("b"),
+    )
     answered = [
         int(result.events[i].kind)
         for pointer in (
-            ffi.PointerState(x=control[0], y=control[1], flags=DOWN | PRESSED),
-            ffi.PointerState(x=control[0] + 60.0, y=control[1], flags=DOWN),
-            ffi.PointerState(x=control[0] + 60.0, y=control[1], flags=0),
+            ffi.PointerState(x=point[0], y=point[1], flags=DOWN | PRESSED),
+            ffi.PointerState(x=point[0] + 60.0, y=point[1], flags=DOWN),
+            ffi.PointerState(x=point[0] + 60.0, y=point[1], flags=0),
         )
         for result in (
-            canvas.frame(packed.nodes, packed.edges, SIZE, ffi.View(), pointer),
+            canvas.frame(
+                packed_solid.nodes, packed_solid.edges, SIZE, ffi.View(), pointer
+            ),
         )
         for i in range(result.event_count)
-        if result.events[i].node == 1
+        if result.events[i].node == 0
     ]
     assert answered, (
-        "the same aim on the REAL node produced nothing either, so the "
-        "ghost's silence says nothing about the ghost"
+        "the same point on the same node, not a ghost, produced nothing "
+        "either -- so the ghost's silence says nothing about the ghost"
     )
     canvas.release()
 
@@ -589,14 +622,17 @@ def test_pressing_a_colour_swatch_asks_the_host_for_a_picker() -> None:
     # Silence is the assertion here, so the point has to be shown to have
     # ARRIVED: an empty result otherwise means "correctly silent" and
     # "never landed on it" equally well.
-    on_field = _drive(_canvas(), packed, _click(field))
+    #
+    # The DRAG carries both, deliberately. A click on a drag field
+    # produces nothing at all, so a silence asserted on a click could not
+    # be licensed by a drag's contact -- the proof would be one gesture
+    # removed from the thing it licenses.
+    on_field = _drive(_canvas(), packed, _drag(field))
     assert not [e for e in on_field if isinstance(e, PickerRequested)], (
-        f"a press on a DRAG field also asked for a picker: {on_field}"
+        f"a drag on a DRAG field also asked for a picker: {on_field}"
     )
-    moved = [
-        e for e in _drive(_canvas(), packed, _drag(field)) if isinstance(e, ValueEdited)
-    ]
+    moved = [e for e in on_field if isinstance(e, ValueEdited)]
     assert moved and moved[0].uniform == "u_gain", (
         "the point meant to prove the event is SELECTIVE never reached a "
-        f"drag field, so its silence proved nothing: {moved}"
+        f"drag field, so its silence proved nothing: {on_field}"
     )

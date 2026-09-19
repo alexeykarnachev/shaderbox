@@ -629,18 +629,12 @@ def test_a_grouped_pass_carries_its_groups_tint_on_the_canvas(app: Any) -> None:
         round(v, 4) for v in group_tint("pair")[:3]
     ), f"the member's tint is not its group's hue: {member.tint}"
 
-    # `c` is the pair that differs only in membership: same scope, same
-    # frame, drawn as itself, and NOT in the group. Checking the collapsed
-    # box at the root instead would decide nothing -- a box is keyed
-    # `b:<group>` while the tints are keyed `p:<pass>`, so it comes back
-    # untinted whether the rule holds or not.
-    # The same pass drawn UNGROUPED is the pair that differs only in
-    # membership. Every candidate inside this scope is unreachable by
-    # construction: the collapsed box is keyed `b:<group>` and a ghost
+    # The SAME pass ungrouped, which differs from the reading above in
+    # membership alone. Every candidate inside the scope is unreachable by
+    # construction -- the collapsed box is keyed `b:<group>` and a ghost
     # `g:out:<pass>`, while the tints are keyed `p:<pass>` -- so either
     # comes back untinted whether the rule holds or not.
     assert app.dissolve_group(document_id, "pair") == ""
-    view.scope = ""
     _frames(app, 2)
     loose = _packed_node(app, document_id, "a")
     assert loose.tint_amount == 0.0, (
