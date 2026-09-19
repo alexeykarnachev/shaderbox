@@ -21,6 +21,7 @@ from shaderbox.graph_canvas.ffi import Gesture
 from shaderbox.pass_graph import PassEntry, strip_order
 from shaderbox.paths import shader_lib_root
 from shaderbox.tabs.code import tab_label
+from shaderbox.theme import COLOR, group_tint
 from shaderbox.ui import update_and_draw
 from shaderbox.widgets import pass_graph, uniform
 from shaderbox.widgets.graph_state import node_sizes, ports_of
@@ -506,4 +507,140 @@ def test_dragging_a_box_keeps_its_members_apart(app: Any) -> None:
     )
     assert delta_a == pytest.approx(delta_b), (
         f"the members moved by different deltas: {delta_a} against {delta_b}"
+    )
+
+
+def _halo_widths(app: Any, document_id: str, title: str) -> list[float]:
+    """The state rings one packed node wears. Zero width is an inert ring."""
+    state = app.graph_canvases[document_id]
+    assert state.packed is not None
+    node = next(n for n in state.packed.nodes if n.title == title)
+    return [round(float(width), 4) for _color, _inset, width in node.halos]
+
+
+def test_a_selected_group_box_wears_the_selection_ring(app: Any) -> None:
+    """Selecting a box must mark the box, and the check is against the
+    UNSELECTED node beside it rather than against a constant.
+
+    The two node keys live in different namespaces: a box's is `b:<group>`
+    while `view.selection` holds pass NAMES, so `pass_key(member)` could
+    never equal the box's key and the box drew bare. At the root its
+    members are not drawn either, so clicking a group selected it and
+    nothing on screen said so.
+
+    `c` is the pair that differs only in the property under test -- same
+    scope, same frame, same theme, selected or not. Comparing the box
+    against its own earlier frame would also move when anything else did.
+    """
+    document_id, _document = _chain(app)
+    app.open_graph_for(document_id)
+    view = app.graph_view_for(document_id)
+    view.selection = {"a", "b"}
+    assert app.group_selection(document_id, "pair") == ""
+
+    view.selection = set()
+    _frames(app, 2)
+    bare_box = _halo_widths(app, document_id, "pair")
+    bare_c = _halo_widths(app, document_id, "c")
+    assert bare_box == bare_c, (
+        "with nothing selected the box and the loose pass must wear the same "
+        f"rings: box={bare_box} c={bare_c}"
+    )
+
+    # Clicking a box selects its MEMBERS -- that is what the click handler
+    # stores, and the box has to answer to it.
+    view.selection = {"a", "b"}
+    _frames(app, 2)
+    picked_box = _halo_widths(app, document_id, "pair")
+    picked_c = _halo_widths(app, document_id, "c")
+    assert picked_c == bare_c, (
+        f"selecting the group moved the untouched pass's rings: {picked_c}"
+    )
+    assert picked_box != bare_box, (
+        "a selected group box wears no ring: it packed the same halos as "
+        f"when nothing was selected ({picked_box})"
+    )
+
+
+def _packed_node(app: Any, document_id: str, title: str) -> Any:
+    state = app.graph_canvases[document_id]
+    assert state.packed is not None
+    return next(n for n in state.packed.nodes if n.title == title)
+
+
+def test_a_pass_that_fails_to_compile_says_so_on_the_canvas(app: Any) -> None:
+    """The strip draws a compile error as a red border; the canvas drew
+    nothing at all, so the same broken pass looked healthy on one surface
+    and broken on the other.
+
+    `c` is the comparison: same frame, same scope, same theme, compiling.
+    A node checked against a constant would pass on code that marked every
+    node, and one checked against its own earlier frame would move whenever
+    anything else did.
+    """
+    document_id, document = _chain(app)
+    app.open_graph_for(document_id)
+    _frames(app, 2)
+    assert _packed_node(app, document_id, "b").halos == (), (
+        "a compiling pass already wears a ring, so the error ring cannot be "
+        "told from it"
+    )
+
+    document.passes["b"].release_program("#version 460 core\nthis is not glsl\n")
+    document.passes["b"].compile()
+    assert document.passes["b"].compile_unit.errors, "the fixture did not break"
+    _frames(app, 2)
+
+    broken = _packed_node(app, document_id, "b")
+    healthy = _packed_node(app, document_id, "c")
+    assert healthy.halos == (), (
+        f"marking the broken pass also marked the compiling one: {healthy.halos}"
+    )
+    assert broken.halos, "a pass with compile errors wears no ring on the canvas"
+    colour = broken.halos[0][0]
+    assert tuple(round(v, 4) for v in colour[:3]) == tuple(
+        round(v, 4) for v in COLOR.STATE_ERROR[:3]
+    ), f"the error ring is not the theme's error colour: {colour}"
+
+
+def test_a_grouped_pass_carries_its_groups_tint_on_the_canvas(app: Any) -> None:
+    """The strip fills a grouped pass faintly with its group's hue. Inside
+    the group's own tab the canvas drew the members untinted, so which
+    group a pass belonged to was unreadable there.
+
+    Checked inside the scope, where members are drawn as themselves: at the
+    root they collapse into one box and there is no member to tint.
+    """
+    document_id, _document = _chain(app)
+    app.open_graph_for(document_id)
+    view = app.graph_view_for(document_id)
+    view.selection = {"a", "b"}
+    assert app.group_selection(document_id, "pair") == ""
+    view.scope = "pair"
+    _frames(app, 2)
+
+    member = _packed_node(app, document_id, "a")
+    assert member.tint is not None and member.tint_amount > 0.0, (
+        "a grouped pass carries no tint inside its own group's tab"
+    )
+    assert tuple(round(v, 4) for v in member.tint[:3]) == tuple(
+        round(v, 4) for v in group_tint("pair")[:3]
+    ), f"the member's tint is not its group's hue: {member.tint}"
+
+    # `c` is the pair that differs only in membership: same scope, same
+    # frame, drawn as itself, and NOT in the group. Checking the collapsed
+    # box at the root instead would decide nothing -- a box is keyed
+    # `b:<group>` while the tints are keyed `p:<pass>`, so it comes back
+    # untinted whether the rule holds or not.
+    # The same pass drawn UNGROUPED is the pair that differs only in
+    # membership. Every candidate inside this scope is unreachable by
+    # construction: the collapsed box is keyed `b:<group>` and a ghost
+    # `g:out:<pass>`, while the tints are keyed `p:<pass>` -- so either
+    # comes back untinted whether the rule holds or not.
+    assert app.dissolve_group(document_id, "pair") == ""
+    view.scope = ""
+    _frames(app, 2)
+    loose = _packed_node(app, document_id, "a")
+    assert loose.tint_amount == 0.0, (
+        f"an ungrouped pass still carries a group's hue: {loose.tint}"
     )

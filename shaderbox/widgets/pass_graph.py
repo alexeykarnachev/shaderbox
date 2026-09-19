@@ -61,7 +61,7 @@ from shaderbox.pass_graph import (
 )
 from shaderbox.project_session import compile_pending_passes
 from shaderbox.scripting.engine import is_scriptable
-from shaderbox.theme import COLOR, SIZE, fade, kind_color
+from shaderbox.theme import COLOR, SIZE, fade, group_tint, kind_color
 from shaderbox.ui_primitives import (
     context_menu_style,
     name_input_row,
@@ -439,18 +439,41 @@ def _library_canvas(
 
     # Hover and selection are keyed by NODE KEY, because a node is not always
     # a pass: at the root a group's box is one node and its members are none.
+    # A box answers to its MEMBERS, which is what a click on one stores and
+    # the only name the selection ever holds -- keyed by `pass_key` alone a
+    # box could not match, so selecting a group marked nothing on screen.
     packed = pack_nodes(
         scoped,
         previews,
         output=pass_key(document.graph.output_pass or ""),
         body=body,
         hovered=state.hovered,
-        selected=frozenset(pass_key(name) for name in view.selection),
+        selected=frozenset(
+            node.key
+            for node in scoped.nodes
+            if node.is_box and (set(node.members) & view.selection)
+        )
+        | frozenset(pass_key(name) for name in view.selection),
         palette=NodePalette(
             hover=COLOR.GRAPH_HOVER,
             select=COLOR.SELECT,
             output=COLOR.ACCENT_PRIMARY,
+            failing=COLOR.STATE_ERROR,
         ),
+        failing=frozenset(
+            pass_key(name)
+            for name in order
+            if document.passes[name].compile_unit.errors
+        ),
+        # A group's hue reaches its members only inside the group's own
+        # tab, where they are drawn as themselves. At the root the group is
+        # one box already named after itself, so there is no member to
+        # tint and this map is empty.
+        tints={
+            pass_key(node.name): group_tint(view.scope)
+            for node in scoped.nodes
+            if view.scope
+        },
     )
 
     # A gesture the canvas did not see the end of is CANCELLED, never resumed:

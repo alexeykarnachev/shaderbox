@@ -191,6 +191,10 @@ class NodePalette:
 
     hover: RGBA
     select: RGBA
+    # A pass whose program did not compile. The strip has drawn this since
+    # 093 and the canvas did not, so the same pass read healthy on one
+    # surface and broken on the other.
+    failing: RGBA = (1.0, 0.0, 0.0, 1.0)
     # The document's OUTPUT pass. A ring rather than a thicker border, so
     # it carries the accent the pass strip gives the same pass, and so it
     # can show at the same time as selection rather than losing to it.
@@ -230,6 +234,10 @@ def _widget_for(value: tuple[float, ...], editable: bool) -> Widget:
 # thicker, so two rings read as two marks rather than one thick band.
 _HALO: tuple[tuple[float, float], ...] = ((2.5, 2.0), (2.0, 6.0))
 
+# How strongly a group's hue washes its members. Faint: the tint says which
+# group a pass belongs to and must not fight the role colours the rows carry.
+_GROUP_TINT: float = 0.18
+
 
 def _halos_of(
     name: str,
@@ -238,6 +246,7 @@ def _halos_of(
     selected: frozenset[str],
     ghost: bool,
     colors: "NodePalette",
+    failing: bool = False,
 ) -> tuple[tuple[RGBA, float, float], ...]:
     """The state rings a node wears, innermost first.
 
@@ -252,8 +261,9 @@ def _halos_of(
     both -- where one border had to choose, and chose selection, leaving
     the canvas's primary verb unmarked exactly when its target was picked.
 
-    Selection outranks hover on the inner ring: a hovered selected node
-    still reads as selected, and hover is the more transient of the two. A
+    Selection outranks a compile error and a compile error outranks hover
+    on the inner ring: a hovered selected node still reads as selected, and
+    hover is the most transient of the three. A
     ghost wears none of them, because it refuses every gesture and a
     highlight would promise an interaction it will not honour.
     """
@@ -262,6 +272,11 @@ def _halos_of(
     rings: list[tuple[RGBA, float, float]] = []
     if name in selected:
         rings.append((colors.select, *_HALO[0]))
+    elif failing:
+        # A broken pass outranks HOVER and loses to SELECTION: the error is
+        # a property of the pass and survives the pointer leaving, but a
+        # user who has just picked a node needs to see which one they got.
+        rings.append((colors.failing, *_HALO[0]))
     elif name == hovered:
         rings.append((colors.hover, *_HALO[0]))
     if name == output:
@@ -510,6 +525,8 @@ def pack_nodes(
     hovered: str = "",
     selected: frozenset[str] = frozenset(),
     palette: NodePalette | None = None,
+    failing: frozenset[str] = frozenset(),
+    tints: Mapping[str, RGBA] | None = None,
 ) -> Packed:
     """Turn one scope's resolved nodes into a frame the library can draw.
 
@@ -617,8 +634,16 @@ def pack_nodes(
                 preview_fit=PreviewFit.CONTAIN,
                 fade=0.6 if node.is_ghost else 0.0,
                 dashed=node.is_ghost,
+                tint=(tints or {}).get(node.key),
+                tint_amount=_GROUP_TINT if node.key in (tints or {}) else 0.0,
                 halos=_halos_of(
-                    node.key, output, hovered, selected, node.is_ghost, colors
+                    node.key,
+                    output,
+                    hovered,
+                    selected,
+                    node.is_ghost,
+                    colors,
+                    node.key in failing,
                 ),
                 border_scale=_border_scale_of(node.key, output),
                 accepts=int(Gesture.NONE) if node.is_ghost else 0,
