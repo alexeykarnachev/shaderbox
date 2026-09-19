@@ -21,6 +21,7 @@ from shaderbox.graph_canvas.adapter import (
     Moved,
     NodePalette,
     Unwired,
+    ValueEdited,
     Wired,
     edge_id,
     flat_view,
@@ -754,3 +755,60 @@ def _hue_gap(first: float, second: float) -> float:
     """The shorter way round the wheel."""
     apart = abs(first - second)
     return min(apart, 360.0 - apart)
+
+
+def test_a_dragged_row_names_the_pass_that_declares_it() -> None:
+    """A `Value_Changed` resolves to (pass, uniform) through the node's body
+    rows, which follow the inputs and the outputs in the flat attribute list.
+
+    The pass is the node's PREVIEW rather than its name: a box shows its
+    bundle member's rows, so an edit on a box writes the member that
+    actually declares the uniform and not the group, which declares nothing.
+    """
+    packed = pack_nodes(
+        flat_view(["p"], {"p": [Port("u_src", "unfilled")]}, {"p": (0.0, 0.0)}),
+        {},
+        output=pass_key("p"),
+        body={
+            "p": [
+                BodyRow("u_time", (1.0,), None),
+                BodyRow("u_tint", (0.5, 0.25), None, editable=True),
+            ]
+        },
+    )
+    result = ffi.Result()
+    events = (ffi.Event * 1)()
+    events[0].kind = int(ffi.EventKind.VALUE_CHANGED)
+    events[0].node = 0
+    # One input, one output, then the body rows: u_tint is the fourth slot.
+    events[0].attribute = 3
+    events[0].value[0], events[0].value[1] = 0.75, 0.125
+    events[0].value_count = 2
+    result.events = events
+    result.event_count = 1
+
+    assert read_events(result, packed) == [ValueEdited("p", "u_tint", (0.75, 0.125))]
+
+
+def test_an_engine_row_refuses_the_pointer_and_the_others_take_it() -> None:
+    """`read_only` is what stops a drag reaching the widget at all.
+
+    An engine uniform is not the user's to set -- the engine recomputes it
+    from the clock and the canvas every frame -- so a drag on one would
+    appear to take and revert on the next tick, which reads as the canvas
+    being broken rather than as the value being owned elsewhere.
+    """
+    packed = pack_nodes(
+        flat_view(["p"], {"p": []}, {"p": (0.0, 0.0)}),
+        {},
+        output=pass_key("p"),
+        body={
+            "p": [
+                BodyRow("u_time", (1.0,), None),
+                BodyRow("u_tint", (0.5,), None, editable=True),
+            ]
+        },
+    )
+    by_label = {port.label: port for port in packed.nodes[0].ports}
+    assert by_label["u_time"].read_only, "an engine value took the pointer"
+    assert not by_label["u_tint"].read_only, "an editable value refused it"

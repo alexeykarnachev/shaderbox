@@ -37,6 +37,7 @@ from shaderbox.graph_canvas.adapter import (
     NodePalette,
     Refused,
     Unwired,
+    ValueEdited,
     Wired,
     pack_nodes,
     pass_key,
@@ -316,7 +317,14 @@ def _body_rows(
                 BodyRow(
                     label=uniform,
                     value=_as_components(render_pass.uniform_values.get(uniform)),
+                    # An engine uniform is not the user's to set: the engine
+                    # recomputes it from the clock and the canvas every
+                    # frame, so a drag would appear to take and revert on
+                    # the next tick. A script-driven one IS editable -- the
+                    # edit auto-stops the script for that uniform, the same
+                    # rule the uniforms panel follows (048).
                     color=None if kind is None else kind_color(kind),
+                    editable=kind is not SymbolKind.ENGINE_UNIFORM,
                 )
             )
         rows[name] = out
@@ -568,6 +576,10 @@ def _apply_graph_events(
             refusal = app.unwire(document_id, event.consumer, event.sampler)
             if refusal:
                 app.notifications.push(refusal)
+        elif isinstance(event, ValueEdited):
+            app.set_graph_uniform(
+                document_id, event.pass_name, event.uniform, event.value
+            )
         elif isinstance(event, Refused):
             app.notifications.push(refusal_text(event.reason))
         elif isinstance(event, MenuRequested):

@@ -2142,6 +2142,41 @@ class App:
             document_id, consumer, sampler, NoSource()
         )
 
+    def set_graph_uniform(
+        self, document_id: str, pass_name: str, name: str, value: tuple[float, ...]
+    ) -> None:
+        """A uniform dragged on the graph canvas (098).
+
+        The same two steps the uniforms panel takes for the same edit: a
+        manual write to a SCRIPT-DRIVEN uniform auto-stops the script for
+        that slot first (048), or the next tick overwrites what the user
+        just set and the drag reads as broken. Then the value is written.
+
+        Frozen mid-copilot-turn, like every other document write.
+        """
+        if self.copilot_turn_active:
+            return
+        ui_document = self.ui_documents.get(document_id)
+        if ui_document is None:
+            return
+        render_pass = ui_document.document.passes.get(pass_name)
+        if render_pass is None or name not in render_pass.uniform_values:
+            return
+        if (pass_name, name) in self.session.get_script_driven_uniforms(document_id):
+            self.set_uniform_stopped(document_id, pass_name, name, True)
+        current = render_pass.uniform_values[name]
+        # The shape the pass already holds decides what a scalar edit means:
+        # the library reports as many components as the widget drew, and a
+        # value of the wrong arity would be refused by moderngl at draw.
+        if isinstance(current, tuple):
+            if len(value) != len(current):
+                return
+            render_pass.uniform_values[name] = value
+        elif isinstance(current, (int, float)) and not isinstance(current, bool):
+            if len(value) != 1:
+                return
+            render_pass.uniform_values[name] = value[0]
+
     def commit_graph_positions(
         self, document_id: str, moved: Mapping[str, tuple[float, float]]
     ) -> None:

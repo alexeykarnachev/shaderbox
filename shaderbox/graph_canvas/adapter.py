@@ -167,6 +167,10 @@ class BodyRow:
     # special writing it needs no signal, and one fewer tint is what keeps
     # the tinted ones apart.
     color: RGBA | None
+    # Whether the user may drag it. An engine-written value is not theirs --
+    # the engine recomputes it every frame, so an edit would appear to take
+    # and silently revert on the next tick.
+    editable: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -318,6 +322,10 @@ class NodeView:
     inputs: tuple[str, ...]
     owners: tuple[str, ...]
     outputs: tuple[str, ...]
+    # The body rows in packed order, and the pass they belong to. A box
+    # shows its BUNDLE's rows, so the owner is not always `name`.
+    body: tuple[str, ...] = ()
+    body_owner: str = ""
     is_box: bool = False
     is_ghost: bool = False
     group: str = ""
@@ -332,6 +340,15 @@ class NodeView:
     def sampler_of(self, slot: int) -> str | None:
         if 0 <= slot < len(self.inputs):
             return self.inputs[slot]
+        return None
+
+    def body_of(self, attr: int) -> tuple[str, str] | None:
+        """The (pass, uniform) a body row names, by its index in the flat
+        attribute list. The rows follow the inputs and the outputs, in that
+        order, which is how `pack_nodes` emits them."""
+        slot = attr - len(self.inputs) - len(self.outputs)
+        if 0 <= slot < len(self.body):
+            return (self.body_owner, self.body[slot])
         return None
 
     def output_of(self, attr: int) -> str | None:
@@ -523,7 +540,7 @@ def pack_nodes(
                     # which is the same display without the lie.
                     widget=_widget_for(row.value),
                     value=row.value,
-                    read_only=True,
+                    read_only=not row.editable,
                     # NO pin. `control` alone carries neither side bit, and
                     # the library draws a pin for Input or Output only.
                     #
@@ -566,6 +583,8 @@ def pack_nodes(
                 inputs=tuple(p.sampler for p in node.ports),
                 owners=node.owners,
                 outputs=node.outputs,
+                body=tuple(r.label for r in (body or {}).get(node.preview, ())),
+                body_owner=node.preview,
                 is_box=node.is_box,
                 is_ghost=node.is_ghost,
                 group=node.group,
@@ -673,13 +692,37 @@ class Unwired:
 
 
 @dataclass(frozen=True, slots=True)
+class ValueEdited:
+    """A body row the user dragged. `pass_name` is the pass that DECLARES
+    the uniform, which for a box is its bundle member rather than the group.
+
+    The library reverts the value on the next frame unless the host applies
+    it, so this event is not advisory -- an edit the host drops looks to the
+    user like a drag that snapped back.
+    """
+
+    pass_name: str
+    uniform: str
+    value: tuple[float, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class Refused:
     """A wire the library rejected, and by which of its rules."""
 
     reason: int
 
 
-GraphEvent = Moved | Clicked | Activated | MenuRequested | Wired | Unwired | Refused
+GraphEvent = (
+    Moved
+    | Clicked
+    | Activated
+    | MenuRequested
+    | Wired
+    | Unwired
+    | ValueEdited
+    | Refused
+)
 
 
 def read_events(result: Result, packed: Packed) -> list[GraphEvent]:
@@ -743,6 +786,18 @@ def read_events(result: Result, packed: Packed) -> list[GraphEvent]:
                 sampler = consumer.sampler_of(event.to_attr)
                 if owner is not None and sampler is not None:
                     events.append(Unwired(owner, sampler))
+        elif kind == EventKind.VALUE_CHANGED:
+            if node is not None:
+                named = node.body_of(event.attribute)
+                if named is not None:
+                    count = max(0, min(int(event.value_count), 4))
+                    events.append(
+                        ValueEdited(
+                            named[0],
+                            named[1],
+                            tuple(float(event.value[i]) for i in range(count)),
+                        )
+                    )
         elif kind == EventKind.EDGE_REFUSED:
             events.append(Refused(event.error))
     return events
