@@ -23,6 +23,7 @@ from shaderbox.graph_canvas.adapter import (
     Unwired,
     ValueEdited,
     Wired,
+    _widget_for,
     edge_id,
     flat_view,
     node_id,
@@ -812,3 +813,55 @@ def test_an_engine_row_refuses_the_pointer_and_the_others_take_it() -> None:
     by_label = {port.label: port for port in packed.nodes[0].ports}
     assert by_label["u_time"].read_only, "an engine value took the pointer"
     assert not by_label["u_tint"].read_only, "an editable value refused it"
+
+
+def test_an_editable_scalar_takes_the_pointer_like_an_editable_vector() -> None:
+    """A `LABEL` is read-only BY NATURE -- it renders text and takes no
+    pointer -- so a scalar given one looks exactly like an editable row and
+    silently refuses every drag.
+
+    Found by driving the real frame loop: a vec2 row emitted nine
+    `ValueEdited` events across a drag and the scalar beside it emitted
+    none. `_widget_for` chose on arity alone, which was right while every
+    row was read-only and became a trap the moment one was not.
+
+    A read-only scalar keeps its LABEL: it is the quieter of the two and
+    loses nothing, since a LABEL draws component 0 and a scalar has only
+    that. A read-only VECTOR may not have one, which the row below pins.
+    """
+    assert _widget_for((1.0,), editable=True) is ffi.Widget.DRAG, (
+        "an editable scalar was given a widget that cannot be dragged"
+    )
+    assert _widget_for((1.0, 2.0), editable=True) is ffi.Widget.DRAG
+    # Read-only: a scalar may be a label, a vector may not.
+    assert _widget_for((1.0,), editable=False) is ffi.Widget.LABEL
+    assert _widget_for((1.0, 2.0), editable=False) is ffi.Widget.DRAG, (
+        "a read-only vector was given a LABEL, which draws only its first "
+        "component and drops the rest in silence"
+    )
+    assert _widget_for((), editable=True) is ffi.Widget.NONE
+
+
+def test_an_editable_row_is_packed_with_a_pointer_taking_widget() -> None:
+    """The same claim end to end: what `pack_nodes` actually emits.
+
+    Separate from the row above because that one tests the CHOICE and this
+    one tests that the choice reaches the attribute -- a `_widget_for` fixed
+    in isolation while the call site kept passing arity alone would leave
+    the defect exactly where it was.
+    """
+    packed = pack_nodes(
+        flat_view(["p"], {"p": []}, {"p": (0.0, 0.0)}),
+        {},
+        output=pass_key("p"),
+        body={
+            "p": [
+                BodyRow("u_gain", (1.0,), None, editable=True),
+                BodyRow("u_time", (1.0,), None),
+            ]
+        },
+    )
+    by_label = {port.label: port for port in packed.nodes[0].ports}
+    assert by_label["u_gain"].widget is ffi.Widget.DRAG
+    assert not by_label["u_gain"].read_only
+    assert by_label["u_time"].read_only

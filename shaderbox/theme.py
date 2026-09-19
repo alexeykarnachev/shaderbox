@@ -201,9 +201,12 @@ class _ColorBag:
     )
     GROUP_FILL_ALPHA: float = 0.10
 
-    # The graph canvas (092, 093): a wire's stroke, the hover hue and its halo alphas, and how
-    # far a ghost node fades. GRAPH_EDGE and GRAPH_HOVER are fixed roles drawn against box
-    # borders and beside STATE_ERROR wires, so both are excluded from the group tints below.
+    # The graph canvas (098): the two colours shaderbox decides and the
+    # library draws with. Everything about HOW a node is drawn -- its
+    # rounding, its wire curve, its hit boxes, its zoom clamp -- belongs to
+    # the library now and the tokens for those are gone. GRAPH_EDGE and
+    # GRAPH_HOVER are fixed roles drawn beside STATE_ERROR wires, so both
+    # are excluded from the group tints below.
     GRAPH_EDGE: tuple[float, float, float, float] = _P["gray"]
     # The node canvas's three PORT ROLES (098): what a row's background says
     # a row IS -- takes a wire in, sends one out, or both. The library mixes
@@ -241,14 +244,6 @@ class _ColorBag:
     # The exclusive hover cue (093): a neutral, because every chromatic palette hue is an
     # accent primary, a state hue, a group tint or SELECT, and three of those meet on one wire.
     GRAPH_HOVER: tuple[float, float, float, float] = _P["fg_0"]
-    GRAPH_HOVER_HALO_ALPHA: float = 0.35
-    GRAPH_SELECT_HALO_ALPHA: float = 0.55
-    GRAPH_GHOST_ALPHA: float = 0.45
-    GRAPH_STALE_ALPHA: float = 0.5
-    GRAPH_DIM_ALPHA: float = 0.35
-    GRAPH_BAND_FILL_ALPHA: float = 0.12
-    GRAPH_BAND_EDGE_ALPHA: float = 0.8
-    GRAPH_GUIDE_ALPHA: float = 0.7
 
     # Syntax tokens for the inline editor, applied via editor_palette() below
     # (the Color->SYNTAX_* slot mapping).
@@ -372,10 +367,10 @@ class SIZE:
 
     PANEL_CTRL_MINH: int = 600
 
-    # The graph canvas (092 D7, 093): a node wide enough for the longest real pass and sampler
-    # names (an `ellipsize` cuts anything longer), its picture, one port row, the dot and the
-    # screen-pixel floor its hit box keeps under zoom; the layout's gaps; the snap distance;
-    # the zoom clamp.
+    # The graph canvas (092 D7, 098): what shaderbox still measures, which
+    # is only the LAYOUT -- a node's size, so `rank_layout` can place one
+    # that has never been placed, and the gaps between them. The drawing is
+    # the library's and its metrics are its own.
     GRAPH_NODE_W: int = 136
     GRAPH_BOX_EXTRA_W: int = 40
     GRAPH_THUMB: int = 116
@@ -390,33 +385,8 @@ class SIZE:
     GRAPH_PORT_TOP: int = 4
     GRAPH_PORT_BOTTOM: int = 7
     GRAPH_PORT_ROW: int = 18
-    GRAPH_PORT_R: int = 4
-    GRAPH_HIT_MIN: int = 7
     GRAPH_GAP_X: int = 64
     GRAPH_GAP_Y: int = 20
-    GRAPH_SNAP_PX: int = 6
-    GRAPH_ZOOM_MIN: float = 0.25
-    GRAPH_ZOOM_MAX: float = 2.5
-    GRAPH_ROUNDING: int = 6
-    GRAPH_THUMB_ROUNDING: int = 2
-    GRAPH_DASH: int = 4
-    GRAPH_WIRE_W: float = 1.5
-    GRAPH_PORT_RING_W: float = 1.2
-    # A wire is one cubic bezier for every pair of endpoints: the control offset is a fraction
-    # of the endpoints' distance, floored in canvas units, and never negative -- which is what
-    # makes a backward wire an S-curve from the same two lines rather than a fold.
-    GRAPH_WIRE_BOW: float = 0.40
-    GRAPH_WIRE_MIN_OFF: int = 24
-    # A wire's hit reach in SCREEN pixels, floored at 6 -- one under the port's own
-    # `GRAPH_HIT_MIN = 7`, so a port always outranks a wire for the same pixel -- and the
-    # segment count the curve is flattened to before the distance is measured.
-    GRAPH_WIRE_HIT_FLOOR: int = 6
-    GRAPH_WIRE_HIT_SEGS: int = 24
-    # The selected wire's mid-curve unwire badge, in canvas units.
-    GRAPH_WIRE_X_R: int = 7
-    # How far the mouse travels, in SCREEN pixels, before a press becomes a drag rather than a
-    # click. Not zoom-scaled; imgui's own 6px default is tuned for buttons.
-    GRAPH_DRAG_LOCK_PX: float = 4.0
 
     # One square of the viewer's alpha checkerboard. At 8 the pattern is busy behind a small
     # preview; at 24 a narrow preview shows two cells and reads as a diagonal split.

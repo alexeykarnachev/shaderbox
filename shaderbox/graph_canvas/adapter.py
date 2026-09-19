@@ -194,17 +194,24 @@ _NEUTRAL_PALETTE: NodePalette = NodePalette(
 )
 
 
-def _widget_for(value: tuple[float, ...]) -> Widget:
-    """What draws a read-only engine value.
+def _widget_for(value: tuple[float, ...], editable: bool) -> Widget:
+    """What draws a body row's value.
 
-    Measured: a `LABEL` renders `value_text_component(value, 0)` and nothing
-    else, so a two-component value loses its second half silently. A `DRAG`
-    renders one field per component and, with `read_only`, never takes the
-    pointer -- which is the library's own stated reason for that flag.
+    A `DRAG` renders one field per component and takes the pointer unless
+    `read_only` says otherwise, so it is the only choice for a row the user
+    may edit -- a `LABEL` is read-only by nature, and a scalar given one
+    looked identical to an editable row and quietly refused every drag.
+
+    A LABEL is still right for a read-only SCALAR: it is the quieter of the
+    two and loses nothing, because it renders component 0 and a scalar has
+    only that one. It is wrong for a read-only vector, where it would drop
+    every component past the first in silence.
     """
     if not value:
         return Widget.NONE
-    return Widget.LABEL if len(value) == 1 else Widget.DRAG
+    if editable or len(value) > 1:
+        return Widget.DRAG
+    return Widget.LABEL
 
 
 def _border_of(
@@ -538,7 +545,7 @@ def pack_nodes(
                     # `u_resolution` would show half of itself. A read-only
                     # DRAG draws one field per component and takes no input,
                     # which is the same display without the lie.
-                    widget=_widget_for(row.value),
+                    widget=_widget_for(row.value, row.editable),
                     value=row.value,
                     read_only=not row.editable,
                     # NO pin. `control` alone carries neither side bit, and

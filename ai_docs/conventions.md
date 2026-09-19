@@ -1117,29 +1117,21 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   appears that no member can hold (an exposed parameter set, a description) -- then it becomes
   an entity.
 - **The graph view is a second picture of the same wiring, it lives in the editor pane, and it
-  stores one thing (features 092, 093).** `widgets/pass_graph.py` draws a document's passes as
-  nodes on one imgui draw list, in its OWN editor tab -- one per document, `EditorTab(kind=
-  "graph")` keyed on the document's `graph.json` -- so it gets the pane's whole height and the
-  Document tab keeps the strip with an `open` beside it, the way the Script row works. A wire
-  is ONE cubic bezier for every pair of endpoints, forward
-  or backward, whose control offset is a `max` of two non-negative terms: a fold needs
-  `2 * offset <= dx`, so it is unreachable while `dx < 0`, which makes the S-curve structural
-  rather than tuned -- there is no backward case in the code, no bus, and no threshold that
-  switches curve topology. Hover is EXCLUSIVE and resolved in one order -- a port or output
-  dot, else a node body, else the nearest wire under a screen-floored distance threshold, else
-  nothing -- written fresh every frame and read one frame late at draw time, because the
-  picture must be drawn before the rects the ports' positions come from. A wire is the one
-  thing hit-tested outside imgui's item system (a curve has no rect), and the selected wire's
-  unwire badge likewise, hand-tested on the press: an earlier item that declares no overlap
-  beats a later one, and the ports must keep declaring nothing or the drop target dies. An
-  INPUT PIN is not a drag source at all: its press moves the node, filled or not, so a wire
-  leaves only by that badge or the Delete key and is replaced by dropping a new one from an
-  output onto the port (`drop_wire` overwrites). That goes against the references that draw a
-  wire from a filled input (imgui-node-editor, litegraph, xyflow, Blender; imnodes behind an
-  opt-in flag), which detach by dragging it off, and is the maintainer's call
-  on the ghost wire, which does not say that releasing removes the read; revisit if he asks for
-  drag-to-detach after living with the badge. A
-  CLICK on a node -- or on the strip's tile, or the uniforms row's source preview -- chooses
+  stores one thing (features 092, 093, 098).** `widgets/pass_graph.py` shows a document's
+  passes as nodes in its OWN editor tab -- one per document, `EditorTab(kind="graph")` keyed on
+  the document's `graph.json` -- so it gets the pane's whole height and the Document tab keeps
+  the strip with an `open` beside it, the way the Script row works.
+
+  The PICTURE is the `graph_canvas` library's since 098, and with it every question about how
+  a node is drawn: the wire's curve, the hit testing, the hover resolution, the gestures and
+  the zoom. shaderbox packs the document every frame and routes the events back to `App`
+  verbs; it measures only what the LAYOUT needs (`node_size`, the gaps) so `rank_layout` can
+  place a pass that has never been placed. An INPUT PIN IS a drag source there -- grabbing a
+  connected input picks the wire up and the far output stays anchored, which is what every
+  reference node editor does and what the hand-drawn canvas deliberately did not; the unwire
+  badge it used instead is gone with it.
+
+  A CLICK on a node -- or on the strip's tile, or the uniforms row's source preview -- chooses
   the output and nothing else (`App.choose_output`); no click of any count opens a shader
   tab, because inside the pane a `pick_pass` click evicted the graph tab it was made on, and
   the pass's context menu (`pass_menu_items`, one item set for the tile and the node) carries
