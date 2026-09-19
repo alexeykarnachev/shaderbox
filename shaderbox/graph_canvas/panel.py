@@ -54,14 +54,22 @@ def pointer_flags(
     claimed: bool = False,
     holding: bool = False,
     cancelled: bool = False,
+    host_claimed: bool = False,
 ) -> int:
     """The pointer flags for one frame, from plain booleans.
 
     Split out of `pointer_from_io` so the gate is testable without an imgui
     frame: the io read is three lines and the RULE is the part that has been
     wrong twice.
+
+    `host_claimed` is the host saying the pointer is ITS this frame -- a popup
+    is up, a modal is open. It is sent on rather than swallowed here, because
+    the library answers it by dropping a gesture in flight, which is the
+    behaviour a menu opening over a half-made wire needs.
     """
     flags = int(ffi.Pointer.CANCELLED) if cancelled else 0
+    if host_claimed:
+        flags |= int(ffi.Pointer.CLAIMED)
     if not hovered and not holding:
         return flags
     if left_down:
@@ -78,7 +86,12 @@ def pointer_flags(
     # down, not for the Alt key -- its own comment says so, and it answers
     # the flag with a Context_Menu event. Mapping the Alt key onto it opened
     # the menu whenever Alt was held, which costs the user alt-tab.
-    if right_click:
+    #
+    # Held OFF while a gesture of this canvas is in flight: the library
+    # answers the flag before it looks at the gesture, so a right-click
+    # mid-drag opened a menu over a node that went on being dragged
+    # underneath it -- two gestures, each individually correct.
+    if right_click and not holding:
         flags |= int(ffi.Pointer.ALT_PRESSED)
     if middle or (alt and left_down) or (left_down and not claimed):
         flags |= int(ffi.Pointer.VIEW_MOVING)
@@ -91,6 +104,7 @@ def pointer_from_io(
     cancelled: bool = False,
     claimed: bool = False,
     holding: bool = False,
+    host_claimed: bool = False,
 ) -> ffi.PointerState:
     """imgui's mouse this frame, in the canvas's own coordinates.
 
@@ -115,6 +129,7 @@ def pointer_from_io(
         claimed=claimed,
         holding=holding,
         cancelled=cancelled,
+        host_claimed=host_claimed,
     )
     return ffi.PointerState(
         x=io.mouse_pos.x - canvas_origin[0],
@@ -137,6 +152,7 @@ def result_claims_pointer(
     gesture arrives in the same frame its hit is resolved. It pushes a
     pointer with no buttons, so it resolves hover and starts nothing; the
     real frame follows immediately and overwrites the result either way.
+
     """
     probe = canvas.frame(
         packed.nodes,
@@ -148,20 +164,20 @@ def result_claims_pointer(
     return pointer_is_claimed(probe)
 
 
-def _hovered_name(result: ffi.Result, packed: Packed) -> str:
-    """The pass the pointer is over, or `""`.
+def _hovered_key(result: ffi.Result, packed: Packed) -> str:
+    """The canvas node the pointer is over, by KEY, or `""`.
 
-    Read from the PER-NODE flag rather than from the result's own hover bit:
-    that one says something is hovered, this one says which.
+    Read from the PER-NODE flag rather than from the result's own claim bit:
+    that one says a press would be the library's -- deliberately wider than
+    any node -- and this one says which node the pointer is on.
+
+    The KEY rather than the name, because the highlight is keyed by it: at
+    the root a group's box is one node and no pass carries its name.
     """
     for index in range(result.rect_count):
-        if result.node_rects[index].flags & _NODE_HOVERED:
-            return packed.name_of(index) or ""
+        if result.node_rects[index].flags & ffi.NODE_RECT_HOVERED:
+            return packed.key_of(index) or ""
     return ""
-
-
-# `FFI_Node_Rect.flags` bit 0: the pointer is over this node.
-_NODE_HOVERED: int = 1 << 0
 
 
 def pointer_is_claimed(result: ffi.Result) -> bool:
@@ -170,6 +186,12 @@ def pointer_is_claimed(result: ffi.Result) -> bool:
     A press the host also treats as its own starts two gestures at once -- a
     node drag and a background marquee -- and each is individually correct, so
     nothing looks broken.
+
+    The result's own bit is the WHOLE answer, and deliberately wider than any
+    rect a host can test: a pin's grab area overhangs its node, so a press
+    the library will answer with a wire can land outside every rect in
+    `node_rects`. The per-node HOVERED bit stays narrow and still means "the
+    pointer is on this node", which is what the highlight wants.
     """
     return bool(result.flags & ffi.RESULT_POINTER_CLAIMED)
 
@@ -193,9 +215,21 @@ class GraphCanvasState:
     packed: Packed | None = None
     # A drag reports every frame; the positions are written once, on release.
     dragging: dict[str, tuple[float, float]] = field(default_factory=dict)
+    # A BOX has no position of its own -- it is drawn at its members' corner --
+    # so a drag on one is applied as a DELTA. The anchor is where the library
+    # first reported it this gesture, and the members' own starting positions
+    # are frozen beside it: reading them live would compound the delta every
+    # frame, since the drag writes them back through `dragging`.
+    box_anchors: dict[str, tuple[float, float]] = field(default_factory=dict)
+    box_members: dict[str, dict[str, tuple[float, float]]] = field(default_factory=dict)
     # The node the last context-menu event named, so the popup that opens on
-    # one frame still knows what it is about on the next.
+    # one frame still knows what it is about on the next. CLEARED when the
+    # popup closes: left standing it names a pass that may since have been
+    # deleted or renamed, and the next menu would open about the wrong thing.
     menu_node: str = ""
+    # The group, when the menu was opened on a BOX. At the root a group is a
+    # node and no pass carries its name, so the node alone cannot say.
+    menu_group: str = ""
     # Last frame's pointer, for the pan delta. `None` until the first frame,
     # so a pan that begins on the frame the canvas appears has no delta to
     # apply rather than a jump from the origin.
@@ -204,10 +238,10 @@ class GraphCanvasState:
     # decides if a plain left-drag pans. A press is delivered on the same frame
     # its hit is resolved, so this frame's answer is not available in time.
     claimed: bool = False
-    # The node the library reported hovered on the PREVIOUS frame. The hover is
-    # resolved inside `gc_frame`, so a highlight packed from it is one frame
-    # late -- the same latency the imgui canvas had, for the same reason, and
-    # invisible at any rate a hand can outrun.
+    # The node the library reported hovered on the PREVIOUS frame, by KEY. The
+    # hover is resolved inside `gc_frame`, so a highlight packed from it is one
+    # frame late -- the same latency the imgui canvas had, for the same reason,
+    # and invisible at any rate a hand can outrun.
     hovered: str = ""
     # Whether the CURRENT press is a pan. Decided once, when the button goes
     # down, and held until it comes up.
@@ -283,7 +317,13 @@ def render_to_texture(
     the library claimed the pointer — a host must not treat a claimed press as
     its own."""
     canvas, panel = state.ensure(renderer)
-    if not state.fitted:
+    # Framing moves the camera under the pointer, so it waits for the button
+    # to come up. Mid-press the pointer's canvas position jumps with the view
+    # while its screen position has not moved, and the library reads that as
+    # travel: a click becomes a drag, and a node the user only selected is
+    # moved and saved. The request is a latch, not an edge, so nothing is
+    # lost by deferring it a frame.
+    if not state.fitted and not (pointer.flags & int(ffi.Pointer.DOWN)):
         state.view = frame_all(
             canvas, packed, (float(size[0]), float(size[1])), pointer
         )
@@ -341,7 +381,7 @@ def render_to_texture(
     state.packed = packed
 
     events = read_events(result, packed)
-    state.hovered = _hovered_name(result, packed)
+    state.hovered = _hovered_key(result, packed)
     texture = panel.render(result, size, canvas.distance_range, clear_color)
     # Latched while the button is held: a drag that began on a node must keep
     # counting as the library's for its whole life, or the frame the pointer

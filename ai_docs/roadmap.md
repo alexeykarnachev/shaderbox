@@ -26,12 +26,14 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-18. -->
+<!-- As of 2026-09-19. -->
 **ShaderBox is getting off imgui, and the graph went first.** The node canvas is no longer
 drawn by this repo: `graph_canvas` (an Odin library, vendored as a `.so` and rendered with
-moderngl) owns the picture, the hit-testing, the gestures and the camera, and shaderbox
-packs the document into it and routes the events back to `App` verbs. imgui still owns the
-window, the tab row and the menus -- the next surface to move is a question, not a plan.
+moderngl) owns the picture, the hit-testing and the gestures, and shaderbox packs the
+document into it and routes the events back to `App` verbs. The camera is SPLIT: the
+library zooms itself from the wheel, and panning is the host's, as it is in the library's
+own demo. imgui still owns the window, the tab row and the menus -- the next surface to
+move is a question, not a plan.
 
 **Nothing is queued and nothing is owed.** `make gates` is green, `todo.md` holds zero
 entries, and no feature carries an open finding. The rows still marked `partial` are parked

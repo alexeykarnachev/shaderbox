@@ -11,7 +11,7 @@ import ctypes
 import pytest
 
 from shaderbox.graph_canvas import ffi
-from shaderbox.graph_canvas.adapter import pack_nodes
+from shaderbox.graph_canvas.adapter import flat_view, pack_nodes, pass_key
 from shaderbox.pass_graph import Port
 
 
@@ -224,7 +224,9 @@ def test_a_frame_costs_one_textured_run_per_preview_not_per_distinct_image() -> 
         canvas = ffi.Canvas()
         canvas.load_atlas()
         packed = pack_nodes(
-            names, {name: [] for name in names}, positions, previews, output=names[-1]
+            flat_view(names, {name: [] for name in names}, positions),
+            previews,
+            output=pass_key(names[-1]),
         )
         result = canvas.frame(
             packed.nodes, packed.edges, (1400.0, 800.0), ffi.View(), ffi.PointerState()
@@ -268,7 +270,9 @@ def test_the_run_formula_holds_only_because_an_atlas_is_loaded() -> None:
     lit.load_atlas()
     dark = ffi.Canvas()
     try:
-        packed = pack_nodes(names, ports, positions, previews, output=names[-1])
+        packed = pack_nodes(
+            flat_view(names, ports, positions), previews, output=pass_key(names[-1])
+        )
         with_text = lit.frame(
             packed.nodes, packed.edges, (1400.0, 800.0), ffi.View(), ffi.PointerState()
         )
@@ -306,14 +310,14 @@ def test_an_off_screen_node_still_costs_its_runs() -> None:
     outside.load_atlas()
     try:
         near = pack_nodes(
-            names, ports, {"a": (0.0, 0.0), "b": (300.0, 0.0)}, previews, output="b"
+            flat_view(names, ports, {"a": (0.0, 0.0), "b": (300.0, 0.0)}),
+            previews,
+            output=pass_key("b"),
         )
         far = pack_nodes(
-            names,
-            ports,
-            {"a": (40000.0, 40000.0), "b": (40300.0, 40000.0)},
+            flat_view(names, ports, {"a": (40000.0, 40000.0), "b": (40300.0, 40000.0)}),
             previews,
-            output="b",
+            output=pass_key("b"),
         )
         size = (800.0, 600.0)
         here = inside.frame(
@@ -329,3 +333,20 @@ def test_an_off_screen_node_still_costs_its_runs() -> None:
     finally:
         inside.release()
         outside.release()
+
+
+def test_a_canvas_that_failed_to_construct_collects_without_raising() -> None:
+    """`__del__` runs on an object `__init__` never finished, so it cannot
+    assume the attributes `__init__` binds. A `gc_new` returning null raises
+    `RuntimeError`, and the collector then raised `AttributeError` inside
+    `__del__` on top of it -- an error during finalisation, printed to
+    stderr and swallowed, hiding the real one.
+
+    Built by bypassing `__init__` entirely, which is the state a raise
+    leaves the object in.
+    """
+    orphan = ffi.Canvas.__new__(ffi.Canvas)
+    assert not hasattr(orphan, "_handle")
+    orphan.__del__()
+    # And the public path is safe on the same object.
+    orphan.release()

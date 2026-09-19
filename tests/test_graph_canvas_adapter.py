@@ -21,8 +21,10 @@ from shaderbox.graph_canvas.adapter import (
     Unwired,
     Wired,
     edge_id,
+    flat_view,
     node_id,
     pack_nodes,
+    pass_key,
     read_events,
 )
 from shaderbox.graph_canvas.render import shapes_array
@@ -61,7 +63,7 @@ def test_a_wire_lands_on_the_port_that_declares_it() -> None:
     its input count, and getting it wrong lands the wire on the wrong pin
     rather than raising."""
     order, ports = _simple()
-    packed = pack_nodes(order, ports, {}, {}, output="out")
+    packed = pack_nodes(flat_view(order, ports, {}), {}, output=pass_key("out"))
 
     assert len(packed.edges) == 2
     by_consumer = {e.to_node: e for e in packed.edges}
@@ -79,7 +81,7 @@ def test_a_wire_lands_on_the_port_that_declares_it() -> None:
 
 def test_an_unwired_port_gets_a_pin_and_no_edge() -> None:
     order, ports = _simple()
-    packed = pack_nodes(order, ports, {}, {}, output="out")
+    packed = pack_nodes(flat_view(order, ports, {}), {}, output=pass_key("out"))
     # `out` declares two inputs plus its own output.
     assert len(packed.nodes[2].ports) == 3
     assert [p.label for p in packed.nodes[2].ports] == ["u_a", "u_b", "out"]
@@ -90,7 +92,9 @@ def test_a_ghost_refuses_every_gesture() -> None:
     """A node that is not interactive must never START a gesture, so the press
     falls through to the canvas rather than being swallowed and dropped."""
     order, ports = _simple()
-    packed = pack_nodes(order, ports, {}, {}, output="out", ghosts=frozenset({"seed"}))
+    packed = pack_nodes(
+        flat_view(order, ports, {}, frozenset({"seed"})), {}, output=pass_key("out")
+    )
     ghost = packed.nodes[0]
     assert ghost.accepts == int(ffi.Gesture.NONE)
     assert ghost.dashed and ghost.fade > 0.0
@@ -99,7 +103,7 @@ def test_a_ghost_refuses_every_gesture() -> None:
 
 def test_the_output_pass_is_marked_and_the_others_are_not() -> None:
     order, ports = _simple()
-    packed = pack_nodes(order, ports, {}, {}, output="out")
+    packed = pack_nodes(flat_view(order, ports, {}), {}, output=pass_key("out"))
     assert packed.nodes[2].border_scale > packed.nodes[0].border_scale
 
 
@@ -107,7 +111,9 @@ def test_a_preview_carries_its_real_pixel_size() -> None:
     """The aspect builds the SLOT and the pixels drive the fit, so declaring
     one shape and handing over another squashes the picture."""
     order, ports = _simple()
-    packed = pack_nodes(order, ports, {}, {"seed": (7, 320, 160)}, output="out")
+    packed = pack_nodes(
+        flat_view(order, ports, {}), {"seed": (7, 320, 160)}, output=pass_key("out")
+    )
     assert packed.nodes[0].preview_tex == 7
     assert (packed.nodes[0].preview_w, packed.nodes[0].preview_h) == (320, 160)
     assert packed.nodes[0].preview_aspect == pytest.approx(2.0)
@@ -118,7 +124,7 @@ def test_an_event_about_a_vanished_node_is_dropped() -> None:
     renamed or deleted between frames would otherwise act on whatever now
     sits at that index."""
     order, ports = _simple()
-    packed = pack_nodes(order, ports, {}, {}, output="out")
+    packed = pack_nodes(flat_view(order, ports, {}), {}, output=pass_key("out"))
 
     result = ffi.Result()
     events = (ffi.Event * 2)()
@@ -130,12 +136,12 @@ def test_an_event_about_a_vanished_node_is_dropped() -> None:
     result.event_count = 2
 
     read = read_events(result, packed)
-    assert read == [Clicked("blur", False)]
+    assert read == [Clicked(pass_key("blur"), "blur", False)]
 
 
 def test_events_come_back_as_pass_names() -> None:
     order, ports = _simple()
-    packed = pack_nodes(order, ports, {}, {}, output="out")
+    packed = pack_nodes(flat_view(order, ports, {}), {}, output=pass_key("out"))
 
     result = ffi.Result()
     events = (ffi.Event * 3)()
@@ -150,7 +156,7 @@ def test_events_come_back_as_pass_names() -> None:
     result.event_count = 3
 
     assert read_events(result, packed) == [
-        Moved("seed", 12.0, 34.0),
+        Moved(pass_key("seed"), "seed", 12.0, 34.0),
         Wired("seed", "out", "u_b"),
         Unwired("out", "u_a"),
     ]
@@ -168,7 +174,11 @@ def test_the_real_cascade_document_packs_and_frames(gl_ctx: moderngl.Context) ->
     wiring = document.effective_wiring()
     ports = ports_of(document, wiring)
     order = strip_order(document.passes.keys(), wiring)
-    packed = pack_nodes(order, ports, {}, {}, output=document.graph.output_pass or "")
+    packed = pack_nodes(
+        flat_view(order, ports, {}),
+        {},
+        output=pass_key(document.graph.output_pass or ""),
+    )
 
     assert len(packed.nodes) == len(document.passes)
     # Every wired port in the document is an edge, and no more.
@@ -191,7 +201,7 @@ def test_a_node_s_attributes_are_packed_in_node_order() -> None:
     two have to be built in one pass. Mis-ranged nodes read each other's
     attributes and everything still draws."""
     order, ports = _simple()
-    packed = pack_nodes(order, ports, {}, {}, output="out")
+    packed = pack_nodes(flat_view(order, ports, {}), {}, output=pass_key("out"))
     expected = 0
     for spec, view in zip(packed.nodes, packed.views, strict=True):
         assert len(spec.ports) == len(view.inputs) + 1
@@ -239,14 +249,16 @@ def test_a_wire_points_at_an_output_and_engine_rows_follow_it() -> None:
     the engine rows really do sit after it.
     """
     packed = pack_nodes(
-        ["a", "b"],
-        {
-            "a": [Port("u_x", "unfilled"), Port("u_y", "unfilled")],
-            "b": [Port("u_src", "wired", "a")],
-        },
+        flat_view(
+            ["a", "b"],
+            {
+                "a": [Port("u_x", "unfilled"), Port("u_y", "unfilled")],
+                "b": [Port("u_src", "wired", "a")],
+            },
+            {},
+        ),
         {},
-        {},
-        output="b",
+        output=pass_key("b"),
         engine={"a": [("u_time", (1.0,)), ("u_resolution", (64.0, 64.0))], "b": []},
     )
     attributes = packed.nodes[0].ports
@@ -270,11 +282,13 @@ def test_an_engine_uniform_is_a_control_and_not_an_input() -> None:
     (0.33, 0.34, 0.42) and (0.29, 0.45, 0.35).
     """
     packed = pack_nodes(
-        ["a", "b"],
-        {"a": [], "b": [Port("u_src", "unfilled")]},
-        {"a": (0.0, 0.0), "b": (300.0, 0.0)},
+        flat_view(
+            ["a", "b"],
+            {"a": [], "b": [Port("u_src", "unfilled")]},
+            {"a": (0.0, 0.0), "b": (300.0, 0.0)},
+        ),
         {},
-        output="b",
+        output=pass_key("b"),
         engine={"a": [], "b": [("u_time", (1.0,))]},
     )
     by_label = {spec.label: spec for spec in packed.nodes[1].ports}
@@ -285,10 +299,38 @@ def test_an_engine_uniform_is_a_control_and_not_an_input() -> None:
     assert by_label["u_src"].control is False
 
 
-def test_a_control_row_is_drawn_in_a_different_tone_from_an_input() -> None:
-    """The reason the kind matters, asserted against the geometry rather than
-    against the intent: the same label packed as an input and as a control
-    produces different row colours."""
+def test_an_engine_row_is_packed_as_a_control_and_a_sampler_is_not() -> None:
+    """The adapter's half of the claim: an engine uniform goes over as a
+    CONTROL and a sampler as a plain input.
+
+    Split from the tone check below because the two need different
+    evidence. A rendered-tone test cannot isolate this flag -- an engine row
+    also carries a widget and sits after the output, and either difference
+    moves the colour on its own, so the tone differs whatever `control`
+    says. Measured: flipping `control` to False changed no pixel the filter
+    could see. What can decide it is the packed attribute itself.
+    """
+    packed = pack_nodes(
+        flat_view(["t"], {"t": [Port("u_src", "unfilled")]}, {"t": (0.0, 0.0)}),
+        {},
+        output=pass_key("t"),
+        engine={"t": [("u_time", (1.0,))]},
+    )
+    by_label = {port.label: port for port in packed.nodes[0].ports}
+    assert by_label["u_time"].control, "an engine uniform was packed as a free input"
+    assert by_label["u_time"].read_only, "an engine uniform was packed as editable"
+    assert not by_label["u_src"].control, "a sampler was packed as a control"
+
+
+def test_the_control_kind_alone_changes_the_row_s_tone() -> None:
+    """The library's half: the row background comes from the attribute's
+    KIND, which is WHY the adapter sets it. Two attributes identical in
+    every other field, differing only in `control`.
+
+    Built at the library boundary on purpose -- this is a claim about the
+    library's rendering, and routing it through `pack_nodes` would make
+    every other field differ too and prove nothing about this one.
+    """
 
     def row_tones(control: bool) -> set[tuple[float, float, float]]:
         canvas = ffi.Canvas()
@@ -318,6 +360,7 @@ def test_a_control_row_is_drawn_in_a_different_tone_from_an_input() -> None:
 
     as_input = row_tones(False)
     as_control = row_tones(True)
+    assert as_input, "no row was measured, so the filter found nothing to compare"
     assert as_input != as_control, (
         f"a control row is drawn the same as an input: {as_input}"
     )
@@ -334,19 +377,29 @@ def test_hover_and_selection_change_the_border_and_not_the_size() -> None:
         select=(0.0, 1.0, 0.0, 1.0),
         engine_uniform=(0.0, 0.0, 1.0, 1.0),
     )
-    plain = pack_nodes(order, ports, {}, {}, output="b", palette=palette)
-    hovered = pack_nodes(order, ports, {}, {}, output="b", hovered="a", palette=palette)
+    plain = pack_nodes(
+        flat_view(order, ports, {}), {}, output=pass_key("b"), palette=palette
+    )
+    hovered = pack_nodes(
+        flat_view(order, ports, {}),
+        {},
+        output=pass_key("b"),
+        hovered=pass_key("a"),
+        palette=palette,
+    )
     picked = pack_nodes(
-        order, ports, {}, {}, output="b", selected=frozenset({"a"}), palette=palette
+        flat_view(order, ports, {}),
+        {},
+        output=pass_key("b"),
+        selected=frozenset({pass_key("a")}),
+        palette=palette,
     )
     both = pack_nodes(
-        order,
-        ports,
+        flat_view(order, ports, {}),
         {},
-        {},
-        output="b",
-        hovered="a",
-        selected=frozenset({"a"}),
+        output=pass_key("b"),
+        hovered=pass_key("a"),
+        selected=frozenset({pass_key("a")}),
         palette=palette,
     )
 
@@ -374,11 +427,9 @@ def test_a_multi_component_engine_value_shows_every_component() -> None:
         canvas = ffi.Canvas()
         canvas.load_atlas()
         packed = pack_nodes(
-            ["a"],
-            {"a": []},
-            {"a": (0.0, 0.0)},
+            flat_view(["a"], {"a": []}, {"a": (0.0, 0.0)}),
             {},
-            output="a",
+            output=pass_key("a"),
             engine={"a": [("u_res", value)]},
         )
         result = canvas.frame(
@@ -398,11 +449,9 @@ def test_an_engine_row_with_no_value_yet_shows_its_name_alone() -> None:
     worth drawing -- the uniform exists and the user should see it -- so the
     widget goes to NONE rather than the row disappearing."""
     packed = pack_nodes(
-        ["a"],
-        {"a": []},
-        {"a": (0.0, 0.0)},
+        flat_view(["a"], {"a": []}, {"a": (0.0, 0.0)}),
         {},
-        output="a",
+        output=pass_key("a"),
         engine={"a": [("u_time", ())]},
     )
     row = next(spec for spec in packed.nodes[0].ports if spec.label == "u_time")
@@ -415,11 +464,9 @@ def test_an_engine_value_is_read_only() -> None:
     """The engine overwrites it every frame, so an editable widget would offer
     an edit that reverts -- which the library's own contract calls out."""
     packed = pack_nodes(
-        ["a"],
-        {"a": []},
-        {"a": (0.0, 0.0)},
+        flat_view(["a"], {"a": []}, {"a": (0.0, 0.0)}),
         {},
-        output="a",
+        output=pass_key("a"),
         engine={"a": [("u_time", (1.0,)), ("u_res", (64.0, 64.0))]},
     )
     for spec in packed.nodes[0].ports:

@@ -393,6 +393,12 @@ class Pointer(IntEnum):
     ALT_PRESSED = 1 << 6
     DOUBLE = 1 << 7
     EXTEND = 1 << 8
+    # The HOST has the pointer this frame: a popup is up, a modal is open, a
+    # marquee is being dragged. The library then hovers nothing, starts
+    # nothing, and DROPS a gesture already in flight rather than committing
+    # it -- which is what separates it from `CANCELLED`, whose meaning is "I
+    # took this press".
+    CLAIMED = 1 << 9
 
 
 # Attribute.kinds is a mask, not an enum value.
@@ -400,8 +406,20 @@ ATTR_INPUT: int = 1 << 0
 ATTR_OUTPUT: int = 1 << 1
 ATTR_CONTROL: int = 1 << 2
 
-# Result.flags bit 0: the library claims the pointer this frame.
+# Result.flags bit 0: this frame's press would be the library's. WIDER than
+# any node rect a host can test -- a pin's grab area overhangs its node, so a
+# press the library answers with a wire can land outside every rect in
+# `node_rects`. It is the only signal a host should gate a pan on.
 RESULT_POINTER_CLAIMED: int = 1 << 0
+
+# `NodeRect.flags`. HOVERED and OVER_PORT are about the pointer's position;
+# ACTIVE says a gesture is in flight ON THIS NODE, which is the only signal
+# that covers a wire dragged from a pin -- a pin's grab area OVERHANGS the
+# node, so a press beside the body starts a wire while the body reports no
+# hover at all.
+NODE_RECT_HOVERED: int = 1 << 0
+NODE_RECT_OVER_PORT: int = 1 << 1
+NODE_RECT_ACTIVE: int = 1 << 2
 
 # `gc_sizeof` / `gc_offsetof` ids, in the library's Size_Query order.
 _STRUCTS: list[tuple[str, type[ctypes.Structure]]] = [
@@ -701,12 +719,17 @@ class Canvas:
     """
 
     def __init__(self) -> None:
-        lib = ensure_loaded()
-        self._lib: ctypes.CDLL = lib
+        # Bound BEFORE anything that can raise, so a failed construction still
+        # has the two attributes `__del__` reads. Without them a `gc_new` that
+        # returns null raises `RuntimeError`, and the collector then raises
+        # `AttributeError` inside `__del__` on top of it.
+        self._handle: int = 0
+        self._lib: ctypes.CDLL = ensure_loaded()
+        lib = self._lib
         handle = lib.gc_new()
         if not handle:
             raise RuntimeError("gc_new returned null")
-        self._handle: int = handle
+        self._handle = handle
         self._frame: Frame = Frame()
         self._result: Result = Result()
         self._blob: Blob = Blob()
@@ -921,7 +944,12 @@ class Canvas:
         return (w.value, h.value)
 
     def release(self) -> None:
-        if self._handle:
+        # `getattr`, because an `__init__` that raised -- `ensure_loaded()`
+        # failing, `gc_new` returning null -- leaves the attributes unbound
+        # while the collector still calls `__del__`. An `AttributeError`
+        # raised during finalisation is printed and swallowed, which hides
+        # the real error underneath it.
+        if getattr(self, "_handle", 0):
             self._lib.gc_free(self._handle)
             self._handle = 0
 

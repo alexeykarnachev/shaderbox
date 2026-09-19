@@ -90,24 +90,31 @@ Each with the trigger that brings it back.
 
 ## Files touched
 
-New: `shaderbox/graph_canvas/__init__.py`, `ffi.py`, `render.py`, `adapter.py`;
+New: `shaderbox/graph_canvas/__init__.py`, `ffi.py`, `render.py`, `adapter.py`,
+`panel.py` (the imgui seam: the pointer rule, the canvas state, the framing);
 `shaderbox/resources/graph_canvas/` (the `.so`, the atlas pair, the shaders);
 `tests/test_graph_canvas_ffi.py`, `tests/test_graph_canvas_render.py`,
-`tests/test_graph_canvas_adapter.py`.
+`tests/test_graph_canvas_adapter.py`, `tests/test_graph_canvas_panel.py`,
+`tests/test_graph_canvas_gestures.py`.
 
 Changed: `shaderbox/widgets/pass_graph.py` (the drawing and hit-testing half
 replaced by the panel), `shaderbox/widgets/graph_state.py` (imgui-shaped state
-retired where the library now owns it), `build.sh` (the per-platform `.so` strip),
-`Makefile` (the layering gate), `ai_docs/roadmap.md`, `ai_docs/conventions.md`.
+retired where the library now owns it; the scope's own picture -- boxes and
+ghosts -- resolved here), `shaderbox/app.py` (the renderer and the per-document
+canvases, released on a project switch), `build.sh` (the per-platform `.so`
+strip), `Makefile` (the layering gate), `ai_docs/roadmap.md`,
+`ai_docs/conventions.md`.
 
-Deleted: the imgui draw-list painting in `widgets/pass_graph.py` — roughly 280
-lines of primitives plus the parts of the 445-line interaction loop the library
-now answers.
+Deleted: the imgui draw-list painting in `widgets/pass_graph.py` — the
+primitives and the parts of the interaction loop the library now answers.
 
 ## Evidence already gathered
 
-- The library loads from shaderbox's own interpreter: ABI 2 both sides, atlas
-  loads, `gc_atlas_distance_range` returns 8.0.
+- The library loads from shaderbox's own interpreter: the ABI version matches
+  on both sides (proven every run by `test_the_library_loads_and_its_layout_is_proven`,
+  which reads it rather than restating it), the atlas loads, and
+  `gc_atlas_distance_range` returns 8.0. It began at ABI 2 and reached 4 during
+  the integration, as the gaps below were filled.
 - Both reference shaders compile unmodified under moderngl 3.3 core, and a
   four-node shaderbox-shaped graph renders correctly — nodes, pins, bezier wires,
   MTSDF text, grid.

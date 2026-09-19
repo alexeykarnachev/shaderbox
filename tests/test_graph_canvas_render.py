@@ -144,25 +144,6 @@ def test_a_run_offset_draws_that_run_and_not_the_head_of_the_stream(
     renderer.release()
 
 
-def test_a_frame_renders_the_node_body(gl_ctx: moderngl.Context) -> None:
-    """The end-to-end check: a node is a large opaque slab, so a frame that
-    draws one lights a large share of a small viewport. Under the stride bug
-    this fell to a few hundred pixels."""
-    renderer = CanvasRenderer(gl=gl_ctx)
-    panel = CanvasPanel(renderer)
-    canvas = ffi.Canvas()
-    canvas.load_atlas()
-    size = (400, 400)
-    result = _one_node_frame(canvas, (float(size[0]), float(size[1])))
-    panel.render(result, size, canvas.distance_range, (0.0, 0.0, 0.0, 1.0))
-    assert panel.fbo is not None
-    body = result.node_rects[0]
-    assert _lit(panel.fbo, size) > 0.5 * body.w * body.h
-    canvas.release()
-    panel.release()
-    renderer.release()
-
-
 def test_the_streams_are_uploaded_at_the_library_s_own_widths(
     gl_ctx: moderngl.Context,
 ) -> None:
@@ -227,13 +208,20 @@ def test_an_empty_frame_clears_without_drawing(gl_ctx: moderngl.Context) -> None
     renderer.release()
 
 
-@pytest.mark.parametrize("size", [(320, 240), (900, 400), (1280, 720)])
+@pytest.mark.parametrize("size", [(320, 240), (400, 400), (900, 400), (1280, 720)])
 def test_the_body_survives_every_viewport(
     gl_ctx: moderngl.Context, size: tuple[int, int]
 ) -> None:
-    """The stride bug hid at one viewport and showed at another, because the
-    instance count decides how far past the buffer the walk runs. A single
-    size proves nothing."""
+    """The end-to-end check: a node is a large opaque slab, so a frame that
+    draws one lights a large share of the viewport. Under the stride bug
+    this fell to a few hundred pixels.
+
+    Swept, because that bug hid at one viewport and showed at another -- the
+    instance count decides how far past the buffer the walk runs, and a
+    single size proves nothing. A separate one-size copy of this body stood
+    beside it until the review: strictly weaker, failing only where the
+    sweep already failed, so its size was folded in here instead.
+    """
     renderer = CanvasRenderer(gl=gl_ctx)
     panel = CanvasPanel(renderer)
     canvas = ffi.Canvas()

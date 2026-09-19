@@ -22,7 +22,9 @@ from shaderbox.graph_canvas.adapter import (
     Packed,
     Unwired,
     Wired,
+    flat_view,
     pack_nodes,
+    pass_key,
     read_events,
 )
 from shaderbox.graph_canvas.panel import pointer_is_claimed
@@ -45,11 +47,11 @@ def _chain(wired: bool = False) -> Packed:
     """`a -> b`, with `b`'s one sampler either reading `a` or reading nothing."""
     port = Port("u_src", "wired", "a") if wired else Port("u_src", "unfilled")
     return pack_nodes(
-        ["a", "b"],
-        {"a": [], "b": [port]},
-        {"a": (0.0, 0.0), "b": (300.0, 0.0)},
+        flat_view(
+            ["a", "b"], {"a": [], "b": [port]}, {"a": (0.0, 0.0), "b": (300.0, 0.0)}
+        ),
         {},
-        output="b",
+        output=pass_key("b"),
     )
 
 
@@ -188,7 +190,7 @@ def test_a_press_and_release_without_travel_is_a_click() -> None:
             ffi.PointerState(x=point[0], y=point[1], flags=0),
         ],
     )
-    assert Clicked("b", False) in events
+    assert Clicked(pass_key("b"), "b", False) in events
     canvas.release()
 
 
@@ -208,7 +210,7 @@ def test_a_click_carrying_extend_says_so() -> None:
             ffi.PointerState(x=point[0], y=point[1], flags=EXTEND),
         ],
     )
-    assert Clicked("b", True) in events
+    assert Clicked(pass_key("b"), "b", True) in events
     canvas.release()
 
 
@@ -231,7 +233,7 @@ def test_a_second_click_inside_the_hosts_own_interval_activates() -> None:
             ffi.PointerState(x=point[0], y=point[1], flags=DOUBLE),
         ],
     )
-    assert Activated("b") in events
+    assert Activated(pass_key("b"), "b") in events
     canvas.release()
 
 
@@ -240,12 +242,14 @@ def test_a_ghost_swallows_nothing() -> None:
     is the difference between a node that is not interactive and a hole."""
     canvas = _canvas()
     packed = pack_nodes(
-        ["a", "b"],
-        {"a": [], "b": [Port("u_src", "unfilled")]},
-        {"a": (0.0, 0.0), "b": (300.0, 0.0)},
+        flat_view(
+            ["a", "b"],
+            {"a": [], "b": [Port("u_src", "unfilled")]},
+            {"a": (0.0, 0.0), "b": (300.0, 0.0)},
+            frozenset({"a"}),
+        ),
         {},
-        output="b",
-        ghosts=frozenset({"a"}),
+        output=pass_key("b"),
     )
     x0, y0, w, h = _rect(canvas, packed, 0)
     point = (x0 + w / 2, y0 + h / 3)
@@ -333,11 +337,13 @@ def test_each_pin_on_a_node_gets_its_own_point_in_pushed_order() -> None:
     canvas = _canvas()
     labels = ["u_x", "u_y", "u_z"]
     packed = pack_nodes(
-        ["a", "b"],
-        {"a": [], "b": [Port(label, "unfilled") for label in labels]},
-        {"a": (0.0, 0.0), "b": (300.0, 0.0)},
+        flat_view(
+            ["a", "b"],
+            {"a": [], "b": [Port(label, "unfilled") for label in labels]},
+            {"a": (0.0, 0.0), "b": (300.0, 0.0)},
+        ),
         {},
-        output="b",
+        output=pass_key("b"),
     )
     canvas.frame(packed.nodes, packed.edges, SIZE, ffi.View(), ffi.PointerState())
 
@@ -366,11 +372,13 @@ def test_a_wire_lands_on_the_sampler_it_was_aimed_at_not_the_first_one() -> None
     canvas = _canvas()
     labels = ["u_x", "u_y", "u_z"]
     packed = pack_nodes(
-        ["a", "b"],
-        {"a": [], "b": [Port(label, "unfilled") for label in labels]},
-        {"a": (0.0, 0.0), "b": (300.0, 0.0)},
+        flat_view(
+            ["a", "b"],
+            {"a": [], "b": [Port(label, "unfilled") for label in labels]},
+            {"a": (0.0, 0.0), "b": (300.0, 0.0)},
+        ),
         {},
-        output="b",
+        output=pass_key("b"),
     )
     source = _pin(canvas, packed, 0, 0, output=True)
     target = _pin(canvas, packed, 1, 2, output=False)

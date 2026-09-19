@@ -63,6 +63,11 @@ while the tests found a pin by pressing candidate points until one produced
 the event. `gc_pin_point` was added upstream on the strength of that finding
 and the probes are gone -- `Canvas.pin_point(node, attribute, output=)`.
 
+Its readers are the gesture tests, and nothing in the widget calls it: the
+canvas draws its own pins and the library hit-tests them, so the host never
+needs the point. It was asked for to make a gesture AIMABLE, which is a
+test's problem and a keyboard path's, and it stays for those.
+
 One correction to what this feature reported upstream: `pin_fill`'s values
 WERE documented. The binding read them correctly; the bug was deriving the
 enum-count check from `len(PinFill)`, which counts the wire encoding's four
@@ -150,13 +155,20 @@ component while taking no pointer.
 upstream with the measurement (a Label with a value gave the same glyph count
 as one without, at every zoom, so it was not the LOD gate).
 
-**Still not blue, and it cannot be from here.** A row's background comes from
-`attribute_role_color` reading the THEME, text colour comes from three fixed
-theme roles, and no FFI export sets the theme -- `gc_new` installs the default
-and nothing writes it again. `pin_color` is the only host-settable colour, and
-a control has no pin. Reported upstream as the root cause; until a theme
-export exists the rows are distinguished by KIND (the neutral control tone
-against the input green) and not by shaderbox's palette.
+**The colour needed a theme export, which is what it got.** A row's
+background comes from `attribute_role_color` reading the THEME, text colour
+comes from three fixed theme roles, and at ABI 3 no export set the theme --
+`gc_new` installed the default and nothing wrote it again. `pin_color` was
+the only host-settable colour, and a control has no pin. Reported upstream as
+the root cause and answered in ABI 4 with `FFI_Frame.theme` plus
+`gc_default_theme` / `gc_get_theme`.
+
+The palette is INHERITED and overridden, never built: a `Theme()` from zero
+sets sixteen shading scalars to 0 and flattens every chamfer and shadow, and
+restating them here would be the copy-that-drifts the library avoided by
+making its own struct the boundary type. `theme_from` replaces the eleven
+colour fields shaderbox has an opinion about and takes the rest from
+`default_theme()`.
 
 ## Parity notes
 
@@ -171,5 +183,20 @@ against the input green) and not by shaderbox's palette.
 - The rubber band, the snap guides and the mid-curve unwire badge are not
   re-expressed: the library has no primitive for them. A wire is removed by
   grabbing its input, which the library reports on the PRESS.
-- Group boxes still open into their own tab through the box menu; the root
-  scope does not yet draw a group as one collapsed box.
+- **The scope decides the picture, not just the tab label.** The switchover
+  packed the flat graph every frame: the tab row relabelled itself and the
+  canvas never changed, so grouping a pass did nothing visible and the
+  feature was absent while the row claimed it. `scoped_view` answers it now
+  -- at the root a group is ONE box carrying its boundary ports, and inside a
+  group's tab the outside neighbours are ghosts.
+- **A box is a node standing for several passes**, which is where its
+  awkwardness lives: it has no position of its own (it is drawn at its
+  members' corner, so a drag is applied as a DELTA against a frozen anchor),
+  its input slots belong to its members (so a wire dropped on it reaches the
+  pass that holds the read), and its output dots name members rather than the
+  group. Hence `CanvasNode.owners` and `.outputs` -- the two mappings every
+  event is resolved through.
+- Hover and selection are keyed by NODE KEY (`p:<pass>`, `b:<group>`,
+  `g:in:` / `g:out:<pass>`) and not by pass name: at the root a group's box is
+  one node and no pass carries its name, and a pass that both feeds and reads
+  a group is drawn twice.

@@ -16,6 +16,7 @@ from imgui_bundle import imgui
 from shaderbox.commands import CommandId
 from shaderbox.editor_types import TabRecord
 from shaderbox.formatting import formatter_for
+from shaderbox.graph_canvas.ffi import Gesture
 from shaderbox.paths import shader_lib_root
 from shaderbox.tabs.code import tab_label
 from shaderbox.ui import update_and_draw
@@ -301,3 +302,121 @@ def test_a_project_with_no_saved_tabs_still_opens_its_shader(app: Any) -> None:
     fresh = restart_app(app)
     assert len(fresh.editor_tabs) == 1, fresh.editor_tabs
     assert fresh.editor_tabs[0].kind == "shader"
+
+
+def _canvas_titles(app: Any, document_id: str) -> list[str]:
+    """What the canvas actually packed this frame, by node title."""
+    state = app.graph_canvases[document_id]
+    assert state.packed is not None
+    return [node.title for node in state.packed.nodes]
+
+
+def test_the_scope_tab_collapses_a_group_into_one_box(app: Any) -> None:
+    """098 F4: the scope was resolved for the TAB ROW and never for the
+    picture, so switching tabs relabelled the row and packed the same flat
+    graph -- every pass, every time, with no box and no ghost. The feature
+    the row exists for was absent while the row claimed it.
+
+    Read from what was PACKED rather than from pixels: the node list is the
+    thing the scope decides, and a pixel test at this size cannot tell a box
+    from the pass it replaced.
+    """
+    document_id, _document = _chain(app)
+    app.open_graph_for(document_id)
+    view = app.graph_view_for(document_id)
+    view.selection = {"a", "b"}
+    assert app.group_selection(document_id, "pair") == ""
+    _frames(app, 2)
+
+    # The root: the group is ONE box named after itself, and neither member
+    # is drawn beside it.
+    root = _canvas_titles(app, document_id)
+    assert "pair" in root, f"the group did not collapse into a box: {root}"
+    assert "a" not in root and "b" not in root, f"a member escaped its box: {root}"
+    assert "c" in root, "the ungrouped pass vanished with the grouping"
+
+    # Inside the group: its members, plus the outside reader as a ghost, so
+    # the wire leaving the group still lands on something.
+    view.scope = "pair"
+    _frames(app, 2)
+    inside = _canvas_titles(app, document_id)
+    assert "a" in inside and "b" in inside, f"a member is missing inside: {inside}"
+    assert "c" in inside, f"the outside reader got no ghost: {inside}"
+    assert "pair" not in inside, "the box drew itself inside its own tab"
+
+
+def test_a_ghost_inside_a_group_refuses_every_gesture(app: Any) -> None:
+    """A ghost stands for context, not for a thing to grab: a press on one
+    must fall through to the canvas rather than being swallowed by a node
+    that does nothing with it."""
+    document_id, _document = _chain(app)
+    app.open_graph_for(document_id)
+    view = app.graph_view_for(document_id)
+    view.selection = {"a", "b"}
+    assert app.group_selection(document_id, "pair") == ""
+    view.scope = "pair"
+    _frames(app, 2)
+
+    state = app.graph_canvases[document_id]
+    assert state.packed is not None
+    ghosts = [n for n in state.packed.nodes if n.dashed]
+    assert ghosts, "the group's outside reader was not drawn as a ghost"
+    for ghost in ghosts:
+        assert ghost.accepts == int(Gesture.NONE), f"{ghost.title} accepts a gesture"
+        assert ghost.fade > 0.0, f"{ghost.title} is not faded"
+
+
+def test_a_menu_forgets_its_node_once_the_popup_is_gone(app: Any) -> None:
+    """098 F6: `menu_node` was written on the context-menu event and never
+    cleared, so it named a pass for the rest of the session -- including
+    after that pass was deleted from the very menu it opened, at which point
+    every later frame draws a node menu about a pass the document no longer
+    has.
+
+    Driven through real frames with NO popup open, which is the state the
+    field has to survive being in: the widget reaches the clearing branch
+    the first time `begin_popup` returns False. Setting the field and
+    asserting it by hand would pass with that branch deleted.
+    """
+    document_id, document = _chain(app)
+    app.open_graph_for(document_id)
+    _frames(app, 2)
+    state = app.graph_canvases[document_id]
+
+    # What a Context_Menu event leaves behind, for a pass that then goes away
+    # -- which is what the menu's own Delete does.
+    state.menu_node = "b"
+    assert app.session.delete_pass(document_id, "b") == ""
+    assert "b" not in document.passes
+    _frames(app, 3)
+    assert state.menu_node == "", "a closed menu still names a deleted pass"
+
+
+def test_a_project_switch_releases_the_canvas_renderer(app: Any) -> None:
+    """098 GL#4: `release()` dropped the renderer REFERENCE and never called
+    its `release()`, so the glyph atlas texture and two programs stayed on
+    the GPU -- once per project switch, for the life of the process.
+
+    Dropping a Python reference frees the Python object; the GL objects
+    behind it outlive it, which is why every other GL owner in this file is
+    released explicitly rather than left to the collector.
+
+    The falsifier is the atlas texture: moderngl reclasses the released
+    object's `mglo` to `InvalidObject`, so the texture taken before the
+    switch must carry that afterwards. The wrapper itself keeps its class
+    and its `glo` -- measured, both unchanged across a release -- so neither
+    of those can witness this, and asserting that `use()` raises would pass
+    on the `AttributeError` a typo raises too.
+    """
+    document_id, _document = _chain(app)
+    app.open_graph_for(document_id)
+    _frames(app, 2)
+    renderer = app.graph_renderer
+    assert renderer is not None
+    atlas = renderer.atlas
+
+    restart_app(app)
+    assert app.graph_renderer is None, "the renderer survived the switch"
+    assert type(atlas.mglo).__name__ == "InvalidObject", (
+        "the glyph atlas texture is still live on the GPU after the switch"
+    )

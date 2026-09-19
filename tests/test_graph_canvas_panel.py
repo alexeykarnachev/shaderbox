@@ -9,7 +9,7 @@ import moderngl
 import pytest
 
 from shaderbox.graph_canvas import ffi
-from shaderbox.graph_canvas.adapter import Moved, pack_nodes
+from shaderbox.graph_canvas.adapter import Moved, flat_view, pack_nodes, pass_key
 from shaderbox.graph_canvas.panel import (
     GraphCanvasState,
     frame_all,
@@ -34,7 +34,7 @@ def _packed() -> object:
         "c": [Port("u_in", "wired", "b")],
     }
     positions = {"a": (0.0, 0.0), "b": (900.0, 400.0), "c": (1800.0, -400.0)}
-    return pack_nodes(order, ports, positions, {}, output="c")
+    return pack_nodes(flat_view(order, ports, positions), {}, output=pass_key("c"))
 
 
 def test_framing_puts_every_node_on_screen() -> None:
@@ -57,7 +57,7 @@ def test_framing_puts_every_node_on_screen() -> None:
 def test_an_empty_graph_frames_without_dividing_by_a_zero_span() -> None:
     canvas = ffi.Canvas()
     canvas.load_atlas()
-    packed = pack_nodes([], {}, {}, {}, output="")
+    packed = pack_nodes(flat_view([], {}, {}), {}, output="")
     view = frame_all(canvas, packed, (800.0, 600.0), ffi.PointerState())
     assert view.zoom > 0.0
     canvas.release()
@@ -257,6 +257,11 @@ def test_a_pan_does_not_jump_on_the_first_frame(gl_ctx: moderngl.Context) -> Non
     The FIRST frame has to carry the pan flag: a fixture that settles the view
     first has already recorded a pointer, so the guard it is meant to test is
     never reached and the check passes with the guard deleted.
+
+    Both states press the button, because framing is deferred while one is
+    down -- a state that presses and one that does not take different paths
+    through the view, and then the comparison measures the framing rather
+    than the pan it names.
     """
     renderer = CanvasRenderer(gl=gl_ctx)
     packed = _packed()
@@ -275,7 +280,7 @@ def test_a_pan_does_not_jump_on_the_first_frame(gl_ctx: moderngl.Context) -> Non
     )
     panned_cold = cold.view
 
-    # The same view, fitted with no pan flag at all.
+    # The same press with NO pan flag: the one difference between the two.
     still = GraphCanvasState()
     render_to_texture(
         still,
@@ -283,7 +288,11 @@ def test_a_pan_does_not_jump_on_the_first_frame(gl_ctx: moderngl.Context) -> Non
         packed,
         (800, 600),
         (0, 0, 0, 1),
-        ffi.PointerState(x=700.0, y=560.0),
+        ffi.PointerState(
+            x=700.0,
+            y=560.0,
+            flags=int(ffi.Pointer.DOWN) | int(ffi.Pointer.PRESSED),
+        ),
     )
     assert panned_cold.pan_x == still.view.pan_x, (
         "the first frame panned by the pointer's distance from the origin"
@@ -333,3 +342,87 @@ def test_a_button_the_canvas_is_not_under_never_reaches_the_library() -> None:
     # And over the canvas, everything arrives as normal.
     over = pointer_flags(hovered=True, left_down=True, left_click=True)
     assert over & int(ffi.Pointer.DOWN) and over & int(ffi.Pointer.PRESSED)
+
+
+def test_a_right_click_mid_drag_does_not_also_open_a_menu() -> None:
+    """The library answers the secondary button BEFORE it looks at the
+    gesture in flight, so a right-click during a drag fired a Context_Menu
+    and went on dragging the node underneath it -- two gestures at once, each
+    individually correct, which is why nothing looked broken.
+
+    The gate is `holding`, the same flag the menu-click fix turns on: a
+    gesture this canvas began suppresses the menu until the button is up.
+    """
+    mid_drag = pointer_flags(
+        hovered=True, left_down=True, right_click=True, holding=True
+    )
+    assert mid_drag & int(ffi.Pointer.ALT_PRESSED) == 0, (
+        "a right-click mid-drag still asked for a menu"
+    )
+    assert mid_drag & int(ffi.Pointer.DOWN), "the drag lost its button"
+
+    # With nothing in flight the menu opens as it always did.
+    idle = pointer_flags(hovered=True, right_click=True)
+    assert idle & int(ffi.Pointer.ALT_PRESSED), "a plain right-click opened no menu"
+
+
+def test_a_popup_over_the_canvas_takes_the_pointer() -> None:
+    """`CLAIMED` is how a host says "this frame's pointer is mine". The
+    library answers it by hovering nothing, starting nothing, and DROPPING a
+    gesture already in flight -- which is what a menu opening over a
+    half-made wire needs.
+
+    Distinct from the `holding` gate beside it: that one stops an off-canvas
+    press from reaching the library at all, and this one covers the press
+    that IS over the canvas, under a popup drawn on top of it.
+    """
+    claimed = pointer_flags(hovered=True, left_down=True, host_claimed=True)
+    assert claimed & int(ffi.Pointer.CLAIMED), "the popup did not claim the pointer"
+    # Sent on rather than swallowed: the library needs the press to know a
+    # gesture was dropped rather than merely paused.
+    assert claimed & int(ffi.Pointer.DOWN)
+
+    free = pointer_flags(hovered=True, left_down=True)
+    assert free & int(ffi.Pointer.CLAIMED) == 0
+
+
+def test_framing_waits_for_the_button_to_come_up(gl_ctx: moderngl.Context) -> None:
+    """A frame-all mid-press moves the camera under the pointer: its canvas
+    position jumps while its screen position has not moved, and the library
+    reads that as travel. A click then becomes a drag, and a node the user
+    only selected is moved and saved.
+
+    The fixture presses at a point far from the origin, because at the
+    default view a framing and its absence return the same numbers and the
+    guard cannot be seen.
+    """
+    renderer = CanvasRenderer(gl=gl_ctx)
+    packed = _packed()
+    down = int(ffi.Pointer.DOWN) | int(ffi.Pointer.PRESSED)
+
+    held = GraphCanvasState()
+    render_to_texture(
+        held,
+        renderer,
+        packed,
+        (800, 600),
+        (0, 0, 0, 1),
+        ffi.PointerState(x=700.0, y=560.0, flags=down),
+    )
+    assert not held.fitted, "the view was framed while the button was down"
+    assert held.view == ffi.View(), "the camera moved under a press"
+
+    # The release frames it, so the request is delayed and not discarded.
+    render_to_texture(
+        held,
+        renderer,
+        packed,
+        (800, 600),
+        (0, 0, 0, 1),
+        ffi.PointerState(x=700.0, y=560.0),
+    )
+    assert held.fitted
+    assert held.view != ffi.View(), "the deferred framing never happened"
+
+    held.release()
+    renderer.release()

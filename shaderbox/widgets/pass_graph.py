@@ -38,6 +38,7 @@ from shaderbox.graph_canvas.adapter import (
     Unwired,
     Wired,
     pack_nodes,
+    pass_key,
     theme_from,
 )
 from shaderbox.graph_canvas.panel import (
@@ -68,6 +69,7 @@ from shaderbox.widgets.graph_state import (
     node_sizes,
     ports_of,
     revalidated_scope,
+    scoped_view,
 )
 from shaderbox.widgets.pass_list import pass_menu_items
 
@@ -191,19 +193,27 @@ def _group_item(app: App, document_id: str, view: GraphViewState, name: str) -> 
         view.group_input.open(Path(name), buf="")
 
 
-def _node_menu(app: App, document_id: str, view: GraphViewState, name: str) -> None:
+def _node_menu(
+    app: App,
+    document_id: str,
+    view: GraphViewState,
+    state: GraphCanvasState,
+) -> None:
     """The context menu for the node the library says the pointer was over.
 
     A group box gets its own two verbs; a pass gets the same items its tile on
     the strip has, so the two surfaces never drift apart.
+
+    The remembered node is dropped the frame the popup is no longer open, so
+    a later menu never opens about the previous one -- and a pass deleted
+    from inside this very menu cannot be named by the next frame's draw.
     """
-    document = app.ui_documents[document_id].document
-    entry = document.graph.passes.get(name)
+    name = state.menu_node
     with context_menu_style():
         if imgui.begin_popup("##graph_node_menu"):
-            if view.scope == "" and entry is not None and entry.group:
-                _box_menu_items(app, document_id, view, entry.group)
-            else:
+            if state.menu_group:
+                _box_menu_items(app, document_id, view, state.menu_group)
+            elif name in app.ui_documents[document_id].document.passes:
                 pass_menu_items(
                     app,
                     document_id,
@@ -211,6 +221,9 @@ def _node_menu(app: App, document_id: str, view: GraphViewState, name: str) -> N
                     slot=lambda: _group_item(app, document_id, view, name),
                 )
             imgui.end_popup()
+        else:
+            state.menu_node = ""
+            state.menu_group = ""
 
 
 def _canvas_menu(app: App, document_id: str, view: GraphViewState) -> None:
@@ -278,6 +291,18 @@ def _library_canvas(
     # a drag in flight overrides both -- the same rule the strip and the old
     # canvas used, so a pass does not jump when the renderer changed under it.
     positions = _positions(document, wiring, groups, node_sizes(ports), state.dragging)
+    # The SCOPE resolved: at the root a group is one box, inside a group's tab
+    # the outside neighbours are ghosts. Everything below packs whatever this
+    # returns, so the tab row changes the picture rather than only the label.
+    scoped = scoped_view(
+        view.scope,
+        order,
+        groups,
+        ports,
+        positions,
+        wiring,
+        document.graph.output_pass or "",
+    )
     # Read every frame, and AFTER the document has rendered (`ui._update_and_draw`
     # renders before it draws). A pass recreates its canvas texture on a resize or a
     # recompile, so a name cached across frames is a live GL name that is no longer
@@ -310,15 +335,15 @@ def _library_canvas(
             )
         engine[name] = rows
 
+    # Hover and selection are keyed by NODE KEY, because a node is not always
+    # a pass: at the root a group's box is one node and its members are none.
     packed = pack_nodes(
-        order,
-        ports,
-        positions,
+        scoped,
         previews,
-        output=document.graph.output_pass or "",
+        output=pass_key(document.graph.output_pass or ""),
         engine=engine,
         hovered=state.hovered,
-        selected=frozenset(view.selection),
+        selected=frozenset(pass_key(name) for name in view.selection),
         palette=NodePalette(
             hover=COLOR.GRAPH_HOVER,
             select=COLOR.SELECT,
@@ -330,12 +355,21 @@ def _library_canvas(
     # a stray later release must not commit a wire or a move.
     hovered = imgui.is_window_hovered(imgui.HoveredFlags_.child_windows)
     frozen = app.copilot_turn_active
+    # A popup over the canvas owns the pointer. Told so, the library hovers
+    # nothing and starts nothing -- without it a click on a menu item is also
+    # a click on whatever the menu is drawn over.
+    menu_open = (
+        imgui.is_popup_open("##graph_node_menu")
+        or imgui.is_popup_open("##graph_canvas_menu")
+        or imgui.is_popup_open("##graph_group")
+    )
     pointer = pointer_from_io(
         (origin.x, origin.y),
         hovered,
         cancelled=frozen,
         claimed=state.claimed,
         holding=state.holding,
+        host_claimed=menu_open,
     )
     if not view.fitted:
         state.fitted = False
@@ -390,7 +424,7 @@ def _library_canvas(
     # context-menu event so the two agree about what the pointer hit.
     _canvas_menu(app, document_id, view)
     if state.menu_node:
-        _node_menu(app, document_id, view, state.menu_node)
+        _node_menu(app, document_id, view, state)
     _group_prompt(app, document_id, view)
 
 
@@ -407,20 +441,46 @@ def _apply_graph_events(
     A drag reports its position EVERY frame and the write happens once, when
     the pointer comes up: the accumulated positions live on the canvas state
     until then, which is what keeps one gesture to one save.
+
+    A BOX is one node standing for several passes, so a gesture on one is
+    resolved to its members here: dragging it moves all of them by the same
+    delta, and clicking it selects them rather than a pass that does not
+    exist by that name.
     """
     for event in events:
         if isinstance(event, Moved):
-            state.dragging[event.name] = (event.x, event.y)
-        elif isinstance(event, Clicked):
-            if event.extend:
-                view.selection ^= {event.name}
+            if event.members:
+                # A box carries no position of its own -- it is drawn at its
+                # members' top-left corner -- so the drag is applied to each
+                # member as the same DELTA from where the box started.
+                anchor = state.box_anchors.get(event.key)
+                if anchor is None:
+                    anchor = (event.x, event.y)
+                    state.box_anchors[event.key] = anchor
+                    state.box_members[event.key] = {
+                        name: document.graph.passes[name].position or (0.0, 0.0)
+                        for name in event.members
+                        if name in document.graph.passes
+                    }
+                dx = event.x - anchor[0]
+                dy = event.y - anchor[1]
+                for name, (x, y) in state.box_members.get(event.key, {}).items():
+                    state.dragging[name] = (x + dx, y + dy)
             else:
-                view.selection = {event.name}
-                app.choose_output(document_id, event.name)
+                state.dragging[event.name] = (event.x, event.y)
+        elif isinstance(event, Clicked):
+            names = set(event.members) if event.is_box else {event.name}
+            if event.extend:
+                view.selection ^= names
+            else:
+                view.selection = set(names)
+                # Only a single pass names an output; a box stands for several
+                # and choosing one of them would be a guess.
+                if not event.is_box:
+                    app.choose_output(document_id, event.name)
         elif isinstance(event, Activated):
-            entry = document.graph.passes.get(event.name)
-            if entry is not None and entry.group:
-                view.scope = entry.group
+            if event.is_box and event.group:
+                view.scope = event.group
                 view.fitted = False
         elif isinstance(event, Wired):
             refusal = app.drop_wire(
@@ -438,6 +498,7 @@ def _apply_graph_events(
             # The library says WHAT the pointer was over; which menu that is
             # stays the host's question.
             state.menu_node = event.name or ""
+            state.menu_group = event.group if event.is_box else ""
             imgui.open_popup(
                 "##graph_node_menu" if event.name else "##graph_canvas_menu"
             )
@@ -447,6 +508,8 @@ def _apply_graph_events(
     if state.dragging and not imgui.is_mouse_down(imgui.MouseButton_.left):
         moved = dict(state.dragging)
         state.dragging.clear()
+        state.box_anchors.clear()
+        state.box_members.clear()
         app.commit_graph_positions(document_id, moved)
 
 

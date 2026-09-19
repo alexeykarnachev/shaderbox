@@ -2376,7 +2376,12 @@ class App:
         for graph_canvas in self.graph_canvases.values():
             graph_canvas.release()
         self.graph_canvases.clear()
-        self.graph_renderer = None
+        # The renderer owns the glyph atlas texture and two programs, which a
+        # project switch would otherwise drop on the floor: dropping the
+        # reference frees the Python object, not the GL objects behind it.
+        if self.graph_renderer is not None:
+            self.graph_renderer.release()
+            self.graph_renderer = None
 
         if self.share_tab_state is not None:
             self.share_tab_state.release()
