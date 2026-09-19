@@ -235,6 +235,23 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   different clothes, and both are caught by choosing a fixture where the parameter does work —
   hence the render tests parametrized over three viewports.
 
+- **A fixture's VALUES are only half of it: it also has to REACH the thing under test.** The rule
+  above is about choosing values where the code does work; this is about the fixture making contact
+  at all, and it fails separately. Every instance in 098 was a fixture aimed at something
+  unreachable — a tint map keyed `p:<pass>` aimed at a box keyed `b:<group>` or a ghost keyed
+  `g:out:<pass>`; a press aimed by `hover_attribute`, which answers across the whole row while a
+  widget's hit rect is inset; a press-only gesture where the library answers on the release;
+  `PointerState(*point, DOWN | PRESSED)`, whose third positional field is `wheel`, so the button
+  was never down. None was a wrong value. Each simply never arrived, and came back clean whether
+  the feature worked, was broken, or had been deleted.
+  **So make the fixture prove it made contact: assert a second observable that is only true if it
+  arrived.** This matters most where SILENCE is the assertion, because there "correctly silent" and
+  "never landed on it" are the same empty result — the comparison point in the colour-swatch gate
+  had never once reached a drag field, so that half of the gate passed without testing anything.
+  It now has to produce a `ValueEdited` under the same drag. Asking "what would this report if the
+  feature were deleted?" catches the same class, but it is a question, and questions get skipped;
+  the second observable is a line of code that cannot be.
+
 - **Mutate the WIRING, not the renderer — a mutation aimed one layer below the feature proves
   nothing about the feature.** 086 shipped a prompt notice whose presence was mutation-tested at
   the function that BUILDS the string, and passed. Hardcoding the caller's argument — which deletes

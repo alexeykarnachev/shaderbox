@@ -23,6 +23,7 @@ from shaderbox.graph_canvas.adapter import (
     Packed,
     PickerRequested,
     Unwired,
+    ValueEdited,
     Wired,
     flat_view,
     pack_nodes,
@@ -444,6 +445,41 @@ def test_a_wire_lands_on_the_sampler_it_was_aimed_at_not_the_first_one() -> None
     canvas.release()
 
 
+def _drag(point: tuple[float, float]) -> list[ffi.PointerState]:
+    """A press, two frames of travel, a release."""
+    return [
+        ffi.PointerState(x=point[0], y=point[1], flags=DOWN | PRESSED),
+        ffi.PointerState(x=point[0] + 18, y=point[1], flags=DOWN),
+        ffi.PointerState(x=point[0] + 36, y=point[1], flags=DOWN),
+        ffi.PointerState(x=point[0] + 36, y=point[1], flags=0),
+    ]
+
+
+def _point_dragging(packed: Packed, node: int) -> tuple[float, float]:
+    """A point where a drag moves a DRAG field's value.
+
+    `ValueEdited` arrives on the frame the value moves, so the whole drag
+    is read rather than only what follows the release.
+    """
+    canvas = _canvas()
+    try:
+        box = _rect(canvas, packed, node)
+        x = box[0] + box[2] * 0.5
+        for step in range(0, int(box[3]), 4):
+            y = box[1] + step + 0.5
+            canvas.frame(
+                packed.nodes, packed.edges, SIZE, ffi.View(), ffi.PointerState()
+            )
+            if any(
+                isinstance(e, ValueEdited)
+                for e in _drive(canvas, packed, _drag((x, y)))
+            ):
+                return (x, y)
+    finally:
+        canvas.release()
+    raise AssertionError(f"no point on node {node} drags a field")
+
+
 def _click(point: tuple[float, float]) -> list[ffi.PointerState]:
     """A full click. The press alone produces nothing: the library answers a
     widget on the RELEASE, so a down-only fixture reports no event and reads
@@ -481,18 +517,24 @@ def _point_hitting(packed: Packed, node: int, want: type) -> tuple[float, float]
     above the swatch, so aiming by it lands on the body and reports a node
     click, reading exactly like the event not existing.
 
-    Each candidate gets a FRESH canvas: a gesture left in flight turns the
-    next press into a drag, and the node then moves under the probe.
+    One canvas with an IDLE frame between candidates. A gesture left in
+    flight would turn the next press into a drag and move the node under
+    the probe; a canvas per candidate also prevents that, and costs 32ms
+    each -- most of what this test used to spend.
     """
-    box = _rect(_canvas(), packed, node)
-    for step in range(int(box[3])):
-        y = box[1] + step + 0.5
-        for frac in (0.5, 0.85):
-            x = box[0] + box[2] * frac
-            if any(
-                isinstance(e, want) for e in _drive(_canvas(), packed, _click((x, y)))
-            ):
+    canvas = _canvas()
+    try:
+        box = _rect(canvas, packed, node)
+        x = box[0] + box[2] * 0.5
+        for step in range(0, int(box[3]), 4):
+            y = box[1] + step + 0.5
+            canvas.frame(
+                packed.nodes, packed.edges, SIZE, ffi.View(), ffi.PointerState()
+            )
+            if any(isinstance(e, want) for e in _drive(canvas, packed, _click((x, y)))):
                 return (x, y)
+    finally:
+        canvas.release()
     raise AssertionError(f"no point on node {node} produces {want.__name__}")
 
 
@@ -507,10 +549,13 @@ def test_pressing_a_colour_swatch_asks_the_host_for_a_picker() -> None:
     """
     packed = _swatch_node()
     swatch = _point_hitting(packed, 0, PickerRequested)
-    # A DRAG field's row, aimed the same way but at the row BELOW the
-    # swatch, so the two points differ only in which widget they land on.
-    box = _rect(_canvas(), packed, 0)
-    field = (box[0] + box[2] * 0.5, swatch[1] + 32.0)
+    # Probed the same way rather than offset from the swatch. An offset
+    # picked off one observed layout landed on the node BODY, where a
+    # click yields nothing and the silence below read as "correctly
+    # silent" -- so that half of this gate passed without ever reaching a
+    # drag field. The drag is what proves contact: a point that yields
+    # `ValueEdited` is inside the widget, and nothing else is.
+    field = _point_dragging(packed, 0)
 
     asked = [
         e
@@ -522,9 +567,17 @@ def test_pressing_a_colour_swatch_asks_the_host_for_a_picker() -> None:
         f"the picker was asked for the wrong row: {asked[0]}"
     )
 
-    on_field = [
-        e
-        for e in _drive(_canvas(), packed, _click(field))
-        if isinstance(e, PickerRequested)
+    # Silence is the assertion here, so the point has to be shown to have
+    # ARRIVED: an empty result otherwise means "correctly silent" and
+    # "never landed on it" equally well.
+    on_field = _drive(_canvas(), packed, _click(field))
+    assert not [e for e in on_field if isinstance(e, PickerRequested)], (
+        f"a press on a DRAG field also asked for a picker: {on_field}"
+    )
+    moved = [
+        e for e in _drive(_canvas(), packed, _drag(field)) if isinstance(e, ValueEdited)
     ]
-    assert not on_field, f"a press on a DRAG field also asked for a picker: {on_field}"
+    assert moved and moved[0].uniform == "u_gain", (
+        "the point meant to prove the event is SELECTIVE never reached a "
+        f"drag field, so its silence proved nothing: {moved}"
+    )
