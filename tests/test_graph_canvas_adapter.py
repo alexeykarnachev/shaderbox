@@ -38,7 +38,7 @@ from shaderbox.intel.symbols import SymbolKind
 from shaderbox.pass_graph import Port, strip_order
 from shaderbox.theme import kind_color
 from shaderbox.widgets.graph_state import ports_of
-from shaderbox.widgets.pass_graph import canvas_theme
+from shaderbox.widgets.pass_graph import _ring_palette, canvas_theme
 
 # One colour for every body row in these fixtures: what the row IS
 # coloured is the host's decision and is tested where it is made.
@@ -1080,3 +1080,38 @@ def test_a_written_theme_names_only_what_was_tuned() -> None:
     assert ffi.parse_theme(text).row_role_widget == tuned.row_role_widget, (
         "the diff does not read back as the theme it was written from"
     )
+
+
+def test_a_node_never_wears_two_rings_of_one_colour() -> None:
+    """Two rings can show on ONE node, and that pair must not read as one.
+
+    Only the inner-outer pairs co-occur: a node wears one state ring
+    (select, hover or failing -- they are mutually exclusive by
+    `_halos_of`) and, if it is the document's output, the output ring
+    outside it. So the constraint is each state against `output`, NOT all
+    four against each other -- red and yellow are 36 degrees apart and
+    both are fixed by meaning, so a flat all-pairs floor asserts something
+    no palette can satisfy and would be a gate demanding its own failure.
+
+    What broke was hover at hue 48 against output at 42: six degrees, so
+    hovering the output node looked like one fat ring, and selecting it
+    looked like a new colour arriving from nowhere.
+
+    The floor is ABSOLUTE rather than derived from the palette, because a
+    floor computed from these colours shrinks with the collision it exists
+    to catch. 60 sits between the broken state (6) and the shipping
+    palette's own nearest co-occurring pair.
+    """
+    palette = _ring_palette()
+
+    def hue_of(name: str) -> float:
+        return colorsys.rgb_to_hsv(*getattr(palette, name)[:3])[0] * 360.0
+
+    outer = hue_of("output")
+    for state in ("select", "hover", "failing"):
+        apart = abs(hue_of(state) - outer)
+        apart = min(apart, 360.0 - apart)
+        assert apart > 60.0, (
+            f"a {state} node that is also the output wears two rings "
+            f"{apart:.1f} degrees apart, which reads as one band"
+        )

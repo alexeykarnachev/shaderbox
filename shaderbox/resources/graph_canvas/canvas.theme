@@ -110,3 +110,29 @@ attr.script_uniform = 0.7216 0.7333 0.1490 1
 # a row by LABEL, standing in for a host that maps its own SymbolKind; naming
 # the uniform directly is what that looks like from a theme file.
 attr.u_time = 0.5137 0.6471 0.5961 1
+
+# The state RINGS a node wears. Host concepts, so they ride the `attr.`
+# namespace the library leaves to the host rather than a theme field.
+#
+# A node can wear two at once -- an inner ring for its state and an outer
+# for "this is the document's output" -- so the two must never be the same
+# family. They were: hover was a cream at hue 48 and output a yellow at 42,
+# six degrees apart, which is why hovering the output node read as one
+# fat band and selecting it read as a second colour arriving from nowhere.
+#
+# A node can wear an inner state ring AND the outer output ring, so each
+# state has to read apart from `ring_output`. The three states never
+# co-occur with each other (`_halos_of` picks one), so only the pairs
+# with the output ring are constrained.
+#
+# Red is spoken for: failing means broken here as everywhere in the app.
+# That fixes one state at hue 6 and leaves the output ring nowhere warm
+# to go -- the accent yellow it used to be sat 36 degrees off at the same
+# saturation and value, which is one band rather than two. So the output
+# ring is the cyan opposite red, 180 degrees away, and the live states
+# take the warm half where nothing else is. Hue from the output ring:
+# select 141, hover 159, failing 180.
+attr.ring_select  = 0.9804 0.7412 0.1843 1
+attr.ring_hover   = 0.9961 0.5020 0.0980 1
+attr.ring_failing = 0.9843 0.2863 0.2039 1
+attr.ring_output  = 0.2706 0.6902 0.7333 1
