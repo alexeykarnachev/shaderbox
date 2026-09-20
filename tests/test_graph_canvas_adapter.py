@@ -1158,3 +1158,48 @@ def test_the_state_rings_separate_on_the_channel_that_carries_them() -> None:
         f"select and failing are both saturated and {apart:.1f} degrees "
         "apart, so the two urgent states read alike"
     )
+
+
+def test_the_state_ring_is_thick_enough_to_see() -> None:
+    """The ring is the ONLY mark a state gets, so it has to carry.
+
+    It shipped at 2.5 units set 2.0 outside the card and read as a thin
+    outline floating off it -- tolerable while a second concentric ring
+    was also drawn, barely visible once the ring became the whole signal.
+
+    Measured as DRAWN AREA rather than as the constant, so a change that
+    widens the rect while insetting it back out of view fails here. The
+    floor sits between the two measured states: 1785 units at the old
+    geometry, 3460 at the shipping one.
+    """
+    palette = NodePalette(hover=(1.0, 1.0, 1.0, 1.0), select=(0.0, 1.0, 0.0, 1.0))
+    packed = pack_nodes(
+        flat_view(["a"], {"a": []}, {"a": (0.0, 0.0)}),
+        {},
+        output=pass_key("a"),
+        selected=frozenset({pass_key("a")}),
+        palette=palette,
+    )
+    canvas = ffi.Canvas()
+    canvas.load_atlas()
+    result = canvas.frame(
+        packed.nodes,
+        packed.edges,
+        (400.0, 300.0),
+        ffi.View(),
+        ffi.PointerState(),
+        theme=None,
+    )
+    shapes = shapes_array(result)
+    area = sum(
+        float(row[2]) * float(row[3])
+        for row in shapes
+        if abs(float(row[4])) < 0.01
+        and float(row[5]) > 0.9
+        and abs(float(row[6])) < 0.01
+    )
+    canvas.release()
+    assert area > 2500.0, (
+        f"the state ring covers {area:.0f} units, back near the 1785 that "
+        "read as a thin outline floating off the card"
+    )

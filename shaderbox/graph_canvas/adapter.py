@@ -168,7 +168,12 @@ def _widget_for(value: tuple[float, ...], editable: bool, swatch: bool) -> Widge
 # rect it sits, in canvas units. ONE ring -- a node shows one state, so a
 # second concentric band would be a second thing to decode with no second
 # fact behind it.
-_HALO: tuple[float, float] = (2.5, 2.0)
+#
+# Wide and tight to the node: at 2.5 units set 2.0 out it read as a thin
+# outline floating off the card, which is what a second concentric ring
+# had been compensating for. It is the only mark a state gets now, so it
+# carries the weight the pair used to.
+_HALO: tuple[float, float] = (5.0, 0.5)
 
 # How strongly a group's hue washes its members. Faint: the tint says which
 # group a pass belongs to and must not fight the role colours the rows carry.
