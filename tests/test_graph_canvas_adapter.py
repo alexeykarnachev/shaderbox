@@ -1065,3 +1065,27 @@ def test_a_category_named_twice_is_refused() -> None:
     # The same two names, distinct, must still parse -- or the check is
     # refusing categories rather than refusing duplicates.
     assert len(ffi.parse_categories("attr.x = 1 0 0 1\nattr.y = 0 1 0 1\n")) == 2
+
+
+def test_a_written_theme_names_only_what_was_tuned() -> None:
+    """`write_theme_diff` is what a vendored `.theme` is written with.
+
+    The property is NOT that it round-trips -- a full 29-field dump
+    round-trips too, and would pin every colour the app owns at the
+    version it was written against. It is that a field left at its
+    default is ABSENT, so the file follows the library forward and makes
+    no claim on the palette `theme.py` supplies.
+    """
+    tuned = ffi.default_theme()
+    tuned.row_role_widget = tuned.row_role_widget + 0.28
+    text = ffi.write_theme_diff(tuned)
+
+    assert "row_role_widget" in text, "the tuned field is missing from the diff"
+    # `surface` is a colour the app owns and this session never touched.
+    assert "surface" not in text, (
+        "an untouched field was written, so the file claims a colour the "
+        "app owns and would pin it at this library version"
+    )
+    assert ffi.parse_theme(text).row_role_widget == tuned.row_role_widget, (
+        "the diff does not read back as the theme it was written from"
+    )

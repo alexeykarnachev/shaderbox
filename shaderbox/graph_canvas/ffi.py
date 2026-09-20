@@ -30,7 +30,7 @@ ATLAS_JSON_PATH: Path = GRAPH_CANVAS_RESOURCES_DIR / "atlas.json"
 ATLAS_PNG_PATH: Path = GRAPH_CANVAS_RESOURCES_DIR / "atlas.png"
 SHADERS_DIR: Path = GRAPH_CANVAS_RESOURCES_DIR / "shaders"
 
-ABI_VERSION: int = 10
+ABI_VERSION: int = 12
 
 _LIB: ctypes.CDLL | None = None
 
@@ -138,12 +138,8 @@ class Theme(ctypes.Structure):
         ("hover_lift", ctypes.c_float),
         ("active_lift", ctypes.c_float),
         ("border", _RGBA),
-        ("edge_width", ctypes.c_float),
-        ("edge_inner", ctypes.c_float),
-        ("edge_light", ctypes.c_float),
-        ("edge_dark", ctypes.c_float),
-        ("edge_outer", ctypes.c_float),
-        ("edge_bounce", ctypes.c_float),
+        ("bevel_width", ctypes.c_float),
+        ("bevel", ctypes.c_float),
         ("text", _RGBA),
         ("text_dim", _RGBA),
         ("text_bright", _RGBA),
@@ -154,14 +150,10 @@ class Theme(ctypes.Structure):
         ("both", _RGBA),
         ("pin", _RGBA),
         ("shadow", ctypes.c_float),
-        ("shadow_stack", ctypes.c_float),
         ("pin_ring", _RGBA),
         ("pin_hollow", ctypes.c_float),
         ("bar_edge", ctypes.c_float),
         ("inner_shadow", ctypes.c_float),
-        ("rim_light", ctypes.c_float),
-        ("rim_dark", ctypes.c_float),
-        ("gradient", ctypes.c_float),
         ("text_shadow", ctypes.c_float),
         ("wire_outline", _RGBA),
         ("wire_invalid", _RGBA),
@@ -390,8 +382,8 @@ class ThemeParseError(IntEnum):
     """Why a theme file was refused, as the library's own values.
 
     NEGATIVE and non-contiguous, so a member's POSITION is not its value --
-    which is why the verifier asks `gc_enum_name` by value. `-1` is absent
-    on purpose.
+    which is why `_verify_layout` asks `gc_enum_name` by POSITION for every
+    enum: a value would name nothing here. `-1` is absent on purpose.
     """
 
     NONE = 0
@@ -660,6 +652,13 @@ def _declare(lib: ctypes.CDLL) -> None:
         ctypes.POINTER(ctypes.c_uint8),
         ctypes.c_int32,
     ]
+    lib.gc_theme_write_diff.restype = ctypes.c_int32
+    lib.gc_theme_write_diff.argtypes = [
+        ctypes.POINTER(Theme),
+        ctypes.POINTER(Theme),
+        ctypes.POINTER(ctypes.c_uint8),
+        ctypes.c_int32,
+    ]
     lib.gc_theme_name_cap.restype = ctypes.c_int32
     lib.gc_theme_name_cap.argtypes = [
         ctypes.POINTER(ctypes.c_uint8),
@@ -731,6 +730,27 @@ def write_theme(theme: Theme) -> str:
     size: int = lib.gc_theme_write(ctypes.byref(theme), None, 0)
     buf = (ctypes.c_uint8 * size)()
     written: int = lib.gc_theme_write(ctypes.byref(theme), buf, size)
+    return bytes(buf[:written]).decode()
+
+
+def write_theme_diff(theme: Theme, baseline: Theme | None = None) -> str:
+    """Only the fields where `theme` departs from `baseline` (the defaults).
+
+    What a tuning session moved, rather than the whole palette. This is the
+    form a vendored `.theme` wants: a field the file does not name keeps the
+    library's default, so a partial file follows the library forward instead
+    of pinning 29 values at the version they were written against, and it
+    never claims a colour the app owns.
+    """
+    lib = ensure_loaded()
+    base: Theme = baseline if baseline is not None else default_theme()
+    size: int = lib.gc_theme_write_diff(
+        ctypes.byref(theme), ctypes.byref(base), None, 0
+    )
+    buf = (ctypes.c_uint8 * size)()
+    written: int = lib.gc_theme_write_diff(
+        ctypes.byref(theme), ctypes.byref(base), buf, size
+    )
     return bytes(buf[:written]).decode()
 
 

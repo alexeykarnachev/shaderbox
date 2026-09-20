@@ -5,9 +5,14 @@
 # come from `theme.py`, which every other surface shares; copying them here
 # would give each two homes and the copy would drift.
 #
-# Every field not named keeps the library's default. Read by
-# `shaderbox.graph_canvas.ffi.parse_theme`; an unknown field name is an
-# error naming its line, so a misspelling cannot be dropped in silence.
+# PARTIAL BY CONSTRUCTION: a field this file does not name keeps the
+# library's default, so the canvas follows the library forward instead of
+# pinning a palette at the version it was written against. Write this file
+# with the library demo's Shift+F6 (or `ffi.write_theme_diff`), which emits
+# only what a tuning session moved; plain F6 dumps all 29 fields and would
+# claim every colour the app owns. Read by `ffi.parse_theme`; an unknown
+# field name is an error naming its line, so a misspelling cannot be
+# dropped in silence.
 
 # How much of a row's role colour survives the widget panel drawn over it.
 # The library ships 0.22, which leaves every host tint within a few levels
