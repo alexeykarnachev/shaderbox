@@ -17,7 +17,6 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from shaderbox.graph_canvas.ffi import (
-    _RGBA,
     EdgeSpec,
     EventKind,
     Gesture,
@@ -27,9 +26,7 @@ from shaderbox.graph_canvas.ffi import (
     PortSpec,
     PreviewFit,
     Result,
-    Theme,
     Widget,
-    default_theme,
 )
 from shaderbox.pass_graph import Port
 
@@ -70,80 +67,6 @@ _PIN_BY_KIND: dict[str, tuple[PinShape, PinFill]] = {
 
 
 RGBA = tuple[float, float, float, float]
-
-
-def theme_from(
-    canvas: RGBA,
-    surface: RGBA,
-    grid: RGBA,
-    border: RGBA,
-    text: RGBA,
-    text_dim: RGBA,
-    text_bright: RGBA,
-    accent: RGBA,
-    pin: RGBA,
-    wire_outline: RGBA,
-    wire_invalid: RGBA,
-    port_input: RGBA,
-    port_output: RGBA,
-    port_both: RGBA,
-    control: RGBA,
-    over: Theme | None = None,
-) -> Theme:
-    """The library's palette with a host's colours over it.
-
-    INHERITED, not built: the shading scalars -- how far a depth level
-    lifts, how a chamfer catches light, how a shadow falls -- are tuned
-    against a dark canvas, which shaderbox also is, and a theme constructed
-    from zero sets every one of them to 0 and flattens the canvas. Taking
-    them from `default_theme()` also means an upstream retune arrives here
-    for free, where copied constants would silently fight it.
-
-    The three ROLE colours are what a row's background is drawn from, so
-    they are what says at a glance whether a row takes a wire in, sends one
-    out, or does both. They take three separate arguments because they carry
-    three different meanings: collapsing them onto one colour does not
-    "unify" the palette, it deletes the distinction -- and pointing all
-    three at a background grey, which this did for one commit, paints every
-    row the colour of the thing behind it and turns the whole canvas into
-    grey slabs.
-
-    `surface` is the node BODY against `canvas` behind it. It must be
-    LIGHTER: the library's shading lifts a node off its background, and a
-    surface darker than the canvas makes every node a hole instead.
-
-    `pin` colours the PIN DOT and nothing else. A WIRE takes the role of the
-    port it leaves -- the library's `wire_color` is `shade(role, wire_lift)`
-    -- so one signal keeps one colour end to end, and no argument here sets
-    it. This parameter was called `wire` and named a thing it does not reach.
-
-    `over` is a theme to write the colours ONTO, for a host that carries
-    its own file of shading values. Left out, the library's defaults are
-    the base -- they must be, since a theme built from zero sets every
-    shading scalar to 0 and flattens the canvas.
-
-    `wire_outline` is the dark run UNDER a wire's core, and it has to be
-    darker than everything the wire crosses: a wire runs over nodes, over the
-    canvas and over other wires, so it cannot borrow contrast from any one of
-    them. A mid-grey border colour here inverts it into a light halo.
-    """
-    theme = over if over is not None else default_theme()
-    theme.canvas = _RGBA(*canvas)
-    theme.surface = _RGBA(*surface)
-    theme.grid = _RGBA(*grid)
-    theme.border = _RGBA(*border)
-    theme.text = _RGBA(*text)
-    theme.text_dim = _RGBA(*text_dim)
-    theme.text_bright = _RGBA(*text_bright)
-    theme.accent = _RGBA(*accent)
-    theme.input = _RGBA(*port_input)
-    theme.output = _RGBA(*port_output)
-    theme.both = _RGBA(*port_both)
-    theme.pin = _RGBA(*pin)
-    theme.control = _RGBA(*control)
-    theme.wire_outline = _RGBA(*wire_outline)
-    theme.wire_invalid = _RGBA(*wire_invalid)
-    return theme
 
 
 @dataclass(frozen=True, slots=True)

@@ -31,7 +31,6 @@ from shaderbox.graph_canvas.adapter import (
     pack_nodes,
     pass_key,
     read_events,
-    theme_from,
 )
 from shaderbox.graph_canvas.ffi import GRAPH_CANVAS_RESOURCES_DIR
 from shaderbox.graph_canvas.render import shapes_array
@@ -660,49 +659,41 @@ def test_the_wire_outline_is_darker_than_everything_it_crosses() -> None:
         )
 
 
-def test_theme_from_carries_every_colour_it_is_handed() -> None:
-    """Each argument reaches the field it names.
+def test_the_shipped_theme_file_is_what_the_canvas_draws_with() -> None:
+    """The FILE decides the canvas's palette, with nothing overriding it.
 
-    The gate this replaces asserted only that the roles were mutually
-    distinct, which `default_theme()` already satisfies -- so a `theme_from`
-    that ignored all fourteen arguments and returned the library's default
-    passed it. Every colour here is a value no default holds, and each is
-    looked for by name.
+    Every value is read from the shipped file and looked for by name in
+    what `canvas_theme()` returns, so a host that went back to writing
+    its own colours over the file fails here rather than looking
+    slightly wrong on screen. Comparing against literals instead would
+    pass on code that ignored the file and happened to agree with it.
     """
-    marks = {
-        "canvas": (0.01, 0.02, 0.03, 1.0),
-        "surface": (0.04, 0.05, 0.06, 1.0),
-        "grid": (0.07, 0.08, 0.09, 1.0),
-        "border": (0.10, 0.11, 0.12, 1.0),
-        "text": (0.13, 0.14, 0.15, 1.0),
-        "text_dim": (0.16, 0.17, 0.18, 1.0),
-        "text_bright": (0.19, 0.20, 0.21, 1.0),
-        "accent": (0.22, 0.23, 0.24, 1.0),
-        "pin": (0.25, 0.26, 0.27, 1.0),
-        "wire_outline": (0.28, 0.29, 0.30, 1.0),
-        "wire_invalid": (0.31, 0.32, 0.33, 1.0),
-        "port_input": (0.34, 0.35, 0.36, 1.0),
-        "port_output": (0.37, 0.38, 0.39, 1.0),
-        "port_both": (0.40, 0.41, 0.42, 1.0),
-        "control": (0.43, 0.44, 0.45, 1.0),
-    }
-    # The SHADING arrives as a base theme to write the colours onto, and
-    # what it carries must survive: a value no default holds, so a base
-    # that was ignored is visible.
-    base = ffi.default_theme()
-    base.row_role_widget = 0.77
-    theme = theme_from(**marks, over=base)
-    assert round(theme.row_role_widget, 4) == 0.77, (
-        f"theme_from(over=) dropped the base theme's shading: {theme.row_role_widget}"
+    shipped = GRAPH_CANVAS_RESOURCES_DIR / "canvas.theme"
+    text = shipped.read_text()
+    from_file = ffi.parse_theme(text, str(shipped))
+    live = canvas_theme()
+
+    named = [
+        line.split("=")[0].strip()
+        for line in text.splitlines()
+        if "=" in line and not line.strip().startswith("#")
+    ]
+    colours = [n for n in named if not n.startswith("attr.")]
+    assert "input" in colours and "canvas" in colours, (
+        "the shipped file no longer names the colours this gate reads, "
+        f"so it is checking nothing: {colours}"
     )
-    # The three arguments whose field is not their own name.
-    lands_on = {"port_input": "input", "port_output": "output", "port_both": "both"}
-    for argument, colour in marks.items():
-        field = lands_on.get(argument, argument)
-        got = tuple(round(v, 4) for v in list(getattr(theme, field))[:3])
-        assert got == colour[:3], (
-            f"theme_from({argument}=) did not reach theme.{field}: {got}"
-        )
+    for field in colours:
+        want = getattr(from_file, field)
+        got = getattr(live, field)
+        if not isinstance(want, float):
+            want, got = list(want), list(got)
+        assert got == want, f"canvas.theme's {field} did not reach the canvas: {got}"
+
+    # A field the file does NOT name keeps the library's value rather than
+    # becoming zero: a theme built from zero flattens the canvas.
+    assert "hover_lift" not in colours
+    assert live.hover_lift == ffi.default_theme().hover_lift
 
 
 def test_each_kind_of_body_row_draws_its_own_colour() -> None:
@@ -988,7 +979,7 @@ def test_the_canvas_theme_file_decides_the_shading() -> None:
     )
     # A field the file does NOT name keeps the library's value rather than
     # becoming zero: a theme built from zero flattens the canvas.
-    assert canvas_theme().row_role == default.row_role
+    assert canvas_theme().hover_lift == default.hover_lift
 
 
 def test_an_unknown_theme_field_names_its_line_rather_than_being_dropped() -> None:

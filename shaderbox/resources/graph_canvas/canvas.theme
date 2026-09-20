@@ -1,22 +1,112 @@
-# The graph canvas's own look, over the palette `theme.py` supplies.
+# The graph canvas's palette, tuned in the library's own demo.
 #
-# Only what is SPECIFIC to the canvas lives here. The gruvbox colours --
-# the canvas, the node body, the text, the port roles -- are the app's and
-# come from `theme.py`, which every other surface shares; copying them here
-# would give each two homes and the copy would drift.
+# This file IS the canvas's look: what it names, it decides. It is written
+# by the demo's Shift+F6, which emits only the fields a tuning session
+# moved, so a field absent here keeps the library's default and the canvas
+# follows the library forward.
 #
-# PARTIAL BY CONSTRUCTION: a field this file does not name keeps the
-# library's default, so the canvas follows the library forward instead of
-# pinning a palette at the version it was written against. Write this file
-# with the library demo's Shift+F6 (or `ffi.write_theme_diff`), which emits
-# only what a tuning session moved; plain F6 dumps all 29 fields and would
-# claim every colour the app owns. Read by `ffi.parse_theme`; an unknown
-# field name is an error naming its line, so a misspelling cannot be
-# dropped in silence.
+# Scope is the CANVAS. The rest of the app is themed by `theme.py` and is
+# not affected by anything in this file.
+#
+# Read by `ffi.parse_theme`; an unknown field name is an error naming its
+# line, so a misspelling cannot be dropped in silence.
 
-# How much of a row's role colour survives the widget panel drawn over it.
-# The library ships 0.22, which leaves every host tint within a few levels
-# of the panel grey -- white draws as rgb(93,93,93). Hue separation between
-# the two tinted row kinds climbs 26/31/33/34 across 0.35/0.5/0.65/0.8, so
-# 0.5 is the knee and past it the extra tint buys nothing.
-row_role_widget = 0.5
+# Gruvbox-hard, matching shaderbox's own palette.
+#
+# Every colour here is one of gruvbox's greys or an already-muted role from
+# shaderbox's own GRAPH_PORT_* tokens, so a node on this canvas reads as the
+# same material as a panel in that app.
+#
+# canvas is bg_0 and surface bg_2, which is NOT how the app layers its own
+# chrome -- it backs panels with the near-black bg_0h. Tried that first and
+# the node bodies vanished: bg_0h against bg_0 is a contrast ratio of 1.09,
+# which is no edge at all. These two are 1.41, the widest separation the
+# palette's own greys allow, and the shape survives.
+canvas  = 0.1137 0.1255 0.1294 1
+surface = 0.2353 0.2196 0.2118 1
+grid    = 0.1569 0.1569 0.1569 1
+border  = 0.3137 0.2863 0.2667 1
+
+# fg_0 rather than fg_1: a label sits on a TINTED row here, not on the node
+# body, and against the brightest of those fg_1 measured 3.96 where fg_0
+# measures 4.79 -- the difference between under and over the 4.5 floor.
+text        = 0.9843 0.9451 0.7804 1
+text_bright = 0.9843 0.9451 0.7804 1
+
+# yellow_b, the default accent preset.
+accent = 0.9804 0.7412 0.1843 1
+
+# Port roles taken from the EDITOR's syntax colours, so a uniform on a node
+# is the colour its name is in the code:
+#
+#   input   SYN_PASS_SAMPLER  a sampler bound to another pass
+#   output  SYN_OUTPUT        the fragment output
+#   control SYN_IDENT         a pass uniform
+#
+# Not from GRAPH_PORT_*, which are the same hues desaturated for a strip
+# behind a label in a dense panel. On a node row those land between 0.25 and
+# 0.39 on every channel and every row reads as the same grey-brown.
+input   = 0.5569 0.7529 0.4863 1
+output  = 0.9961 0.5020 0.0980 1
+both    = 0.9804 0.7412 0.1843 1
+# SYN_IDENT, the colour a pass uniform's name takes in the editor. Reads at
+# 8.45 with a dark label -- the best of every candidate, because it is far
+# from the mid-tone rather than near it. An earlier pass rejected the light
+# options on a light-text assumption that no longer holds: the label flips.
+# The UNTINTED row -- the one whose uniform has no kind worth colouring.
+# Desaturated and cool on purpose: it sits 71 degrees of hue from the
+# nearest kind colour, where the tuned cream it replaced sat 18 from the
+# script green and made a plain row read as a script-driven one.
+control = 0.6200 0.6400 0.7200 1
+pin     = 0.9216 0.8588 0.6980 1
+
+# fg_2, not gray or fg_3: a row's NAME sits on a tinted fill or a widget
+# panel rather than on the node body. Measured on the rendered pixels
+# against the widget panel -- gray 2.6, fg_3 3.5, fg_2 4.44 -- and it still
+# reads as quieter than the value beside it, which is what the field is for.
+text_dim = 0.8353 0.7686 0.6314 1
+
+# The halo is what lets light text sit on a saturated fill. Raised from the
+# 0.45 default because these rows are brighter than the ones it was tuned on.
+text_shadow = 0.60
+
+# GRAPH_EDGE is the wire colour; the outline under it goes to the floor.
+wire_outline = 0.0863 0.0941 0.0980 0.85
+wire_invalid = 0.9843 0.2863 0.2039 0.95
+pin_ring     = 0.0863 0.0941 0.0980 0.55
+
+# The palette's greys are closely spaced, so a depth step has less room than
+# the built-in theme's and the bevel does more of the work.
+step   = 0.030
+shadow = 0.18
+bevel  = 0.18
+
+# Full strength. A row IS its port's colour here rather than a hint of it --
+# at 0.35 every hue arrived with red as its highest channel, because mixing
+# most of the way toward a warm surface is the surface. The label flips to
+# dark automatically on a fill this bright, which is what makes it possible.
+row_role        = 1.00
+# Full strength, like the bare row. Anything partway lands in the mid-tone
+# where NEITHER text colour clears 4.5 -- measured across the four roles, the
+# worst case runs 3.22 at 0.70, 3.60 at 0.80, 4.08 at 0.90 and 4.59 at 1.0.
+# The way out of the dead zone is through it.
+#
+# It also fixes the other half: at 0.35 four different categories landed
+# within 0.09 of each other on every channel, distinct by measurement and not
+# by eye.
+row_role_widget = 1.00
+
+# The editor's own uniform kinds, as row categories. A host reads these back
+# by name and applies them itself; the library never interprets them.
+#
+#   engine  SYN_UNIFORM         rewritten by the engine every frame
+#   script  SYN_SCRIPT_UNIFORM  driven by a script, green_b -- the same
+#                               colour the editor gives a builtin
+attr.engine_uniform = 0.5137 0.6471 0.5961 1
+attr.script_uniform = 0.7216 0.7333 0.1490 1
+
+# u_time IS an engine uniform -- the engine rewrites it every frame -- so it
+# takes SYN_UNIFORM like the rest of its kind. The demo matches a category to
+# a row by LABEL, standing in for a host that maps its own SymbolKind; naming
+# the uniform directly is what that looks like from a theme file.
+attr.u_time = 0.5137 0.6471 0.5961 1

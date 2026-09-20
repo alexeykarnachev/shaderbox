@@ -44,7 +44,6 @@ from shaderbox.graph_canvas.adapter import (
     Wired,
     pack_nodes,
     pass_key,
-    theme_from,
 )
 from shaderbox.graph_canvas.ffi import (
     GRAPH_CANVAS_RESOURCES_DIR,
@@ -398,64 +397,23 @@ def _body_rows(
 
 
 @cache
-def _canvas_shading() -> Theme:
-    """The canvas's own shading values, from `canvas.theme`.
+def canvas_theme() -> Theme:
+    """The canvas's palette, from `canvas.theme`.
+
+    The FILE decides: it is tuned in the library's own demo and read
+    whole, so what the canvas looks like is what was tuned, with no
+    second opinion here to fight it. A field the file does not name keeps
+    the library's default, which is how the canvas follows an upstream
+    retune for free.
+
+    Scope is the canvas. `theme.py` themes the rest of the app and no
+    value here reaches it.
 
     Read once: the file ships with the package and the app does not watch
     it, so re-reading it per frame would buy nothing and cost a parse.
     """
     path = GRAPH_CANVAS_RESOURCES_DIR / "canvas.theme"
     return parse_theme(path.read_text(), str(path))
-
-
-def canvas_theme() -> Theme:
-    """shaderbox's palette as the library's theme.
-
-    A named function rather than a literal inside the draw, so a test can
-    read what the canvas actually SENDS. Asserting the tokens instead --
-    that `BG_FRAME` outranks `BG_APP`, say -- pins that the palette is
-    orderable and says nothing about which pair the canvas picked, which is
-    where the bug was.
-
-    The node BODY is `BG_FRAME` against `BG_APP` behind it: the library's
-    shading lifts a node off its background, so the body has to be the
-    lighter of the two, and `BG_SURFACE` is DARKER than `BG_APP` -- using it
-    made every node a hole in the canvas.
-
-    The SHADING -- how far a depth level lifts, how much of a row's role
-    survives the panel over it -- comes from `canvas.theme` beside the
-    library, which is the file to edit when tuning the look. The colours
-    below stay here because they are the app's palette, shared with every
-    other surface.
-
-    The three port roles carry the editor's own hues, so a port reads as
-    what its name reads as in the code: a sampler bound to a pass is aqua,
-    an output orange, a builtin blue. Pointing all three at one colour does
-    not unify the palette, it deletes the distinction the row's background
-    exists to carry.
-    """
-    return theme_from(
-        canvas=COLOR.BG_APP,
-        surface=COLOR.BG_FRAME,
-        grid=COLOR.BORDER,
-        border=COLOR.BORDER,
-        text=COLOR.FG_PRIMARY,
-        text_dim=COLOR.FG_MUTED,
-        text_bright=COLOR.FG_TITLE,
-        accent=COLOR.ACCENT_PRIMARY,
-        pin=COLOR.GRAPH_EDGE,
-        # The dark run UNDER a wire, which has to be darker than the canvas,
-        # the nodes and the other wires it crosses -- it cannot borrow
-        # contrast from any one of them. `BORDER` is three times the
-        # canvas's luminance and inverted it into a light halo.
-        wire_outline=COLOR.BG_SURFACE,
-        wire_invalid=COLOR.STATE_ERROR,
-        port_input=COLOR.GRAPH_PORT_IN,
-        port_output=COLOR.GRAPH_PORT_OUT,
-        port_both=COLOR.GRAPH_PORT_BOTH,
-        control=COLOR.GRAPH_PORT_CONTROL,
-        over=_canvas_shading(),
-    )
 
 
 def _library_canvas(
