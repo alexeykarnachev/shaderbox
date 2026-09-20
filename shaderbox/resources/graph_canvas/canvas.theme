@@ -111,28 +111,31 @@ attr.script_uniform = 0.7216 0.7333 0.1490 1
 # the uniform directly is what that looks like from a theme file.
 attr.u_time = 0.5137 0.6471 0.5961 1
 
-# The state RINGS a node wears. Host concepts, so they ride the `attr.`
+# The state RING a node wears. Host concepts, so they ride the `attr.`
 # namespace the library leaves to the host rather than a theme field.
 #
-# A node can wear two at once -- an inner ring for its state and an outer
-# for "this is the document's output" -- so the two must never be the same
-# family. They were: hover was a cream at hue 48 and output a yellow at 42,
-# six degrees apart, which is why hovering the output node read as one
-# fat band and selecting it read as a second colour arriving from nowhere.
+# ONE ring. Three colours because a node shows one state
+# at a time -- selected, failing, or hovered, in that order of rank -- and
+# never two rings at once.
 #
-# A node can wear an inner state ring AND the outer output ring, so each
-# state has to read apart from `ring_output`. The three states never
-# co-occur with each other (`_halos_of` picks one), so only the pairs
-# with the output ring are constrained.
+# The document's OUTPUT is not here. It is a property of the node rather
+# than something the pointer does, so it is marked in the node's title and
+# its border width. It used to be a second concentric ring, which is what
+# made these colours hard: four marks had to stay mutually legible, two
+# of them could appear together, and every choice was a compromise
+# between them. Three independent states need only differ from each other.
 #
-# Red is spoken for: failing means broken here as everywhere in the app.
-# That fixes one state at hue 6 and leaves the output ring nowhere warm
-# to go -- the accent yellow it used to be sat 36 degrees off at the same
-# saturation and value, which is one band rather than two. So the output
-# ring is the cyan opposite red, 180 degrees away, and the live states
-# take the warm half where nothing else is. Hue from the output ring:
-# select 141, hover 159, failing 180.
+# They separate on two channels rather than one, which is what lets three
+# marks be legible without hunting for three distant hues:
+#
+#   hover    is the only DESATURATED one -- the most transient state, and
+#            the one that should not shout.
+#   select   and failing are both saturated and demand attention, so they
+#            are told apart by HUE: the app's accent against the red that
+#            means broken everywhere.
+#
+# Trying to separate all three by hue alone is what produced a blue
+# selection ring nobody asked for.
 attr.ring_select  = 0.9804 0.7412 0.1843 1
-attr.ring_hover   = 0.9961 0.5020 0.0980 1
+attr.ring_hover   = 0.5725 0.5137 0.4549 1
 attr.ring_failing = 0.9843 0.2863 0.2039 1
-attr.ring_output  = 0.2706 0.6902 0.7333 1

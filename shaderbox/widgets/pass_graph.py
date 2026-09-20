@@ -433,14 +433,13 @@ def _ring_palette() -> NodePalette:
     """
     path = GRAPH_CANVAS_RESOURCES_DIR / "canvas.theme"
     rings = parse_categories(path.read_text())
-    missing = {"ring_select", "ring_hover", "ring_failing", "ring_output"} - set(rings)
+    missing = {"ring_select", "ring_hover", "ring_failing"} - set(rings)
     if missing:
         raise ValueError(f"{path}: the theme names no {', '.join(sorted(missing))}")
     return NodePalette(
         hover=rings["ring_hover"],
         select=rings["ring_select"],
         failing=rings["ring_failing"],
-        output=rings["ring_output"],
     )
 
 

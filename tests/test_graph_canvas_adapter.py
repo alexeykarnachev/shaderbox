@@ -24,6 +24,7 @@ from shaderbox.graph_canvas.adapter import (
     Unwired,
     ValueEdited,
     Wired,
+    _halos_of,
     _widget_for,
     edge_id,
     flat_view,
@@ -416,9 +417,7 @@ def test_a_state_ring_carries_its_colour_all_the_way_to_the_pixels(
             {},
             output=pass_key("b"),
             selected=frozenset({pass_key("a")}),
-            palette=NodePalette(
-                hover=(1.0, 1.0, 1.0, 1.0), select=colour, output=colour
-            ),
+            palette=NodePalette(hover=(1.0, 1.0, 1.0, 1.0), select=colour),
         )
         canvas = ffi.Canvas()
         canvas.load_atlas()
@@ -444,44 +443,50 @@ def test_a_state_ring_carries_its_colour_all_the_way_to_the_pixels(
     )
 
 
-def test_selection_and_the_output_are_two_rings_rather_than_one() -> None:
-    """A node that is BOTH selected and the document's output wears two
-    rings, because one border had to choose -- and chose selection, so the
-    canvas's primary verb went unmarked exactly when its target was picked.
+def test_the_output_is_marked_in_the_title_not_a_second_ring() -> None:
+    """The document's output is a PROPERTY, so it survives every state.
 
-    Selection outranks hover on the inner ring; a ghost wears none.
+    It used to be a concentric second ring, which meant a hovered output
+    node wore two marks and the two had to stay mutually legible against
+    three interaction states -- an unsatisfiable constraint that produced
+    a selection colour nobody wanted. In the title it is unaffected by
+    what the pointer is doing, which is the point.
     """
     order = ["a", "b"]
     ports: dict[str, list[Port]] = {"a": [], "b": []}
     palette = NodePalette(
         hover=(1.0, 0.0, 0.0, 1.0),
         select=(0.0, 1.0, 0.0, 1.0),
-        output=(0.0, 0.0, 1.0, 1.0),
+        failing=(0.0, 0.0, 1.0, 1.0),
     )
 
-    def halos(**kwargs: object) -> list[tuple[object, ...]]:
-        packed = pack_nodes(
+    def packed(**kwargs: object):
+        return pack_nodes(
             flat_view(order, ports, {}),
             {},
             output=pass_key("a"),
             palette=palette,
             **kwargs,  # type: ignore[arg-type]
         )
-        return list(packed.nodes[0].halos)
 
-    plain = halos()
-    assert [h[0] for h in plain] == [palette.output], "the output pass wears no ring"
-    picked = halos(selected=frozenset({pass_key("a")}))
-    assert [h[0] for h in picked] == [palette.select, palette.output], (
-        f"a selected output node lost one of its two rings: {picked}"
-    )
-    hovered = halos(hovered=pass_key("a"))
-    assert [h[0] for h in hovered] == [palette.hover, palette.output]
-    # Selection outranks hover on the inner ring.
-    both = halos(hovered=pass_key("a"), selected=frozenset({pass_key("a")}))
-    assert [h[0] for h in both] == [palette.select, palette.output]
-    # The rings are separated, or two marks read as one thick band.
-    assert picked[1][2] > picked[0][2], "the two rings sit at one inset"
+    out_node = packed().nodes[0]
+    other = packed().nodes[1]
+    assert out_node.title != other.title, "the output node is not marked at all"
+    assert other.title == "b", f"a non-output node was marked: {other.title}"
+    assert "a" in out_node.title
+
+    # The mark survives every state, which is what a colour could not do.
+    for kwargs in (
+        {"selected": frozenset({pass_key("a")})},
+        {"hovered": pass_key("a")},
+        {"failing": frozenset({pass_key("a")})},
+    ):
+        assert packed(**kwargs).nodes[0].title == out_node.title, (
+            f"the output mark changed under {kwargs}"
+        )
+        assert len(packed(**kwargs).nodes[0].halos) == 1, (
+            "a state on the output node drew more than one ring"
+        )
 
 
 def test_a_multi_component_engine_value_shows_every_component() -> None:
@@ -1082,36 +1087,74 @@ def test_a_written_theme_names_only_what_was_tuned() -> None:
     )
 
 
-def test_a_node_never_wears_two_rings_of_one_colour() -> None:
-    """Two rings can show on ONE node, and that pair must not read as one.
+def test_a_node_wears_at_most_one_state_ring() -> None:
+    """One ring, so a reader never decodes a combination.
 
-    Only the inner-outer pairs co-occur: a node wears one state ring
-    (select, hover or failing -- they are mutually exclusive by
-    `_halos_of`) and, if it is the document's output, the output ring
-    outside it. So the constraint is each state against `output`, NOT all
-    four against each other -- red and yellow are 36 degrees apart and
-    both are fixed by meaning, so a flat all-pairs floor asserts something
-    no palette can satisfy and would be a gate demanding its own failure.
+    The three states are mutually exclusive, and the document's output --
+    a property rather than a state -- is marked in the title instead of a
+    second concentric ring. The pairing that broke was a hovered output
+    node: two warm rings six degrees apart reading as one fat band.
 
-    What broke was hover at hue 48 against output at 42: six degrees, so
-    hovering the output node looked like one fat ring, and selecting it
-    looked like a new colour arriving from nowhere.
+    Every state is driven here, including the pairs that used to stack.
+    """
+    palette = NodePalette(
+        hover=(0.1, 0.2, 0.3, 1.0),
+        select=(0.4, 0.5, 0.6, 1.0),
+        failing=(0.7, 0.8, 0.9, 1.0),
+    )
+    for selected, failing, hovered in (
+        (frozenset(), False, ""),
+        (frozenset({"p"}), False, ""),
+        (frozenset(), True, ""),
+        (frozenset(), False, "p"),
+        # The stacking cases: each state ON the output node.
+        (frozenset({"p"}), False, "p"),
+        (frozenset({"p"}), True, "p"),
+        (frozenset(), True, "p"),
+    ):
+        rings = _halos_of(
+            "p",
+            hovered,
+            selected,
+            ghost=False,
+            colors=palette,
+            failing=failing,
+        )
+        assert len(rings) <= 1, (
+            f"selected={bool(selected)} failing={failing} hovered={bool(hovered)} "
+            f"drew {len(rings)} rings; a node shows one state"
+        )
+    assert _halos_of("p", "p", frozenset({"p"}), True, palette, True) == (), (
+        "a ghost wore a highlight promising a gesture it refuses"
+    )
 
-    The floor is ABSOLUTE rather than derived from the palette, because a
-    floor computed from these colours shrinks with the collision it exists
-    to catch. 60 sits between the broken state (6) and the shipping
-    palette's own nearest co-occurring pair.
+
+def test_the_state_rings_separate_on_the_channel_that_carries_them() -> None:
+    """Hover is the desaturated one; the two urgent states differ in hue.
+
+    Three marks cannot all be far apart in hue -- red is fixed by meaning
+    and the accent is fixed by the rest of the app -- and a gate demanding
+    that produced a blue selection ring nobody wanted. So the rule is two
+    channels: the transient state is the only quiet one, and the two that
+    demand attention are told apart by hue.
     """
     palette = _ring_palette()
 
-    def hue_of(name: str) -> float:
-        return colorsys.rgb_to_hsv(*getattr(palette, name)[:3])[0] * 360.0
+    def hsv(name: str) -> tuple[float, float, float]:
+        return colorsys.rgb_to_hsv(*getattr(palette, name)[:3])
 
-    outer = hue_of("output")
-    for state in ("select", "hover", "failing"):
-        apart = abs(hue_of(state) - outer)
-        apart = min(apart, 360.0 - apart)
-        assert apart > 60.0, (
-            f"a {state} node that is also the output wears two rings "
-            f"{apart:.1f} degrees apart, which reads as one band"
+    assert hsv("hover")[1] < 0.4, (
+        f"hover is saturated ({hsv('hover')[1]:.2f}), so the most transient "
+        "state shouts as loudly as selection"
+    )
+    for urgent in ("select", "failing"):
+        assert hsv(urgent)[1] > 0.6, (
+            f"{urgent} is washed out ({hsv(urgent)[1]:.2f}) and no longer "
+            "reads as a state that wants attention"
         )
+    apart = abs(hsv("select")[0] - hsv("failing")[0]) * 360.0
+    apart = min(apart, 360.0 - apart)
+    assert apart > 25.0, (
+        f"select and failing are both saturated and {apart:.1f} degrees "
+        "apart, so the two urgent states read alike"
+    )
