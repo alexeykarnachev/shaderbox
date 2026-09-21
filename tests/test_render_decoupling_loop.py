@@ -28,7 +28,7 @@ from shaderbox.tabs.document import _apply_canvas_size, _switch_resolution_mode
 from shaderbox.theme import SIZE
 from shaderbox.ui import _tick_frame_state, update_and_draw
 from shaderbox.ui_models import ConfirmRequest
-from shaderbox.ui_primitives import profile_rows_plan
+from shaderbox.widgets.fps_panel import profile_rows_plan
 from tests.conftest import seed_extra_document
 
 # This module drives real frames, so it gets its own worker: the imgui font atlas is per

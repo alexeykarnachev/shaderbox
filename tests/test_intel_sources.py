@@ -21,7 +21,8 @@ from shaderbox.intel.script import (
 from shaderbox.intel.symbols import SymbolKind, kind_rank
 from shaderbox.paths import DOCUMENT_SCRIPT_BASENAME
 from shaderbox.scripting.engine import ScriptEngine
-from shaderbox.theme import COLOR, editor_palette, kind_color, kind_slot
+from shaderbox.syntax_colors import editor_palette, kind_color, kind_slot
+from shaderbox.theme import COLOR
 
 _SHADER = """#version 330
 // uniform float u_commented;

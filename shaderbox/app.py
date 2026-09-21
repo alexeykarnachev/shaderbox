@@ -111,8 +111,9 @@ from shaderbox.shader_lib.file_ops import ShaderLibFileManager
 from shaderbox.shader_lib.seed import sync_shipped_lib
 from shaderbox.shader_lib.tags import ShaderLibTagsStore
 from shaderbox.shader_source import ShaderSource
+from shaderbox.syntax_colors import editor_palette
 from shaderbox.tabs import share_state
-from shaderbox.theme import COLOR, SETTINGS_MARK_S, SIZE, apply_theme, editor_palette
+from shaderbox.theme import COLOR, SETTINGS_MARK_S, SIZE, apply_theme
 from shaderbox.ui_models import (
     ConfirmRequest,
     EditorSettings,

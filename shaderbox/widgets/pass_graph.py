@@ -68,7 +68,8 @@ from shaderbox.pass_graph import (
 )
 from shaderbox.project_session import compile_pending_passes
 from shaderbox.scripting.engine import is_scriptable
-from shaderbox.theme import COLOR, SIZE, fade, group_tint, kind_color
+from shaderbox.syntax_colors import kind_color
+from shaderbox.theme import COLOR, SIZE, fade, group_tint
 from shaderbox.ui_models import UIDocumentState, UIUniform
 from shaderbox.ui_primitives import (
     context_menu_style,

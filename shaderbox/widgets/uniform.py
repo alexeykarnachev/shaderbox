@@ -17,7 +17,8 @@ from shaderbox.media import MediaWithTexture, Video, media_class_for
 from shaderbox.pass_graph import AutoSource, NoSource, PassSource, wired_pass
 from shaderbox.paths import pass_name_of
 from shaderbox.shader_errors import find_uniform_declaration_line
-from shaderbox.theme import COLOR, SIZE, SPACE, kind_color
+from shaderbox.syntax_colors import kind_color
+from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_models import UIUniform
 from shaderbox.ui_primitives import (
     ComboRow,

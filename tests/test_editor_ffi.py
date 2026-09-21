@@ -45,7 +45,7 @@ from shaderbox.glsl_docs import BUILTINS, VARIABLES
 from shaderbox.hotkeys import _delete_word_back, _drain_editor_input, spec_eligible
 from shaderbox.intel.symbols import SymbolKind
 from shaderbox.shader_source import ShaderSource
-from shaderbox.theme import editor_palette, kind_slot
+from shaderbox.syntax_colors import editor_palette, kind_slot
 
 
 @pytest.fixture(autouse=True)

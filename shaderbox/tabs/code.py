@@ -32,13 +32,13 @@ from shaderbox.media import MediaWithTexture
 from shaderbox.pass_graph import AutoSource, NoSource, PassSource
 from shaderbox.paths import pass_name_of
 from shaderbox.shader_errors import ShaderError, error_at_line
+from shaderbox.syntax_colors import kind_slot
 from shaderbox.theme import (
     COLOR,
     EDITOR_CURSOR_LINE_ALPHA,
     EDITOR_UNFOCUSED_ALPHA,
     SPACE,
     fade,
-    kind_slot,
 )
 from shaderbox.ui_primitives import (
     anchored_note,

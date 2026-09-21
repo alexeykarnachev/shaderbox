@@ -37,7 +37,7 @@ from shaderbox.graph_canvas.ffi import GRAPH_CANVAS_RESOURCES_DIR
 from shaderbox.graph_canvas.render import shapes_array
 from shaderbox.intel.symbols import SymbolKind
 from shaderbox.pass_graph import Port, strip_order
-from shaderbox.theme import kind_color
+from shaderbox.syntax_colors import kind_color
 from shaderbox.widgets.graph_state import ports_of
 from shaderbox.widgets.pass_graph import _ring_palette, canvas_theme
 

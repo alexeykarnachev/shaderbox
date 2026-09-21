@@ -7,27 +7,48 @@ authors = [
 license = "GPL-3.0-or-later"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
+# The CORE is what a host needs to open a themed window and render: the UI kit
+# (`theme`, `ui_primitives`, `notifications`) and the document/render path. A
+# dependency that only one feature needs lives in that feature's extra, so a
+# project reusing the widgets does not install a chat client to get a button.
+# `[all]` is what the app itself runs on and what `build.sh` bundles.
 dependencies = [
     "glfw>=2.10.0",
-    "imageio[ffmpeg]>=2.37.3",
     "loguru>=0.7.3",
     "moderngl>=5.12.0",
     "numpy>=2.4.6",
     "pillow>=12.2.0",
     "platformdirs>=4.10.0",
     "pydantic>=2.13.4",
-    "python-telegram-bot>=22.8",
     "pyperclip>=1.11.0",
     "imgui-bundle>=1.92.801",
     "pyopengl>=3.1.10",
+]
+
+[project.optional-dependencies]
+# Video encode/decode: the exporters and the video texture source.
+video = [
+    "imageio[ffmpeg]>=2.37.3",
     "imageio-ffmpeg>=0.6.0",
     "opencv-python-headless>=4.11.0.86",
+]
+# The LLM copilot.
+copilot = ["openai>=2.41.1"]
+# Sticker-set upload.
+telegram = ["python-telegram-bot>=22.8"]
+# YouTube upload from the Share tab.
+youtube = [
     "google-api-python-client>=2.197.0",
     "google-auth-oauthlib>=1.4.0",
-    "openai>=2.41.1",
+]
+# The code editor's language intelligence: Python completion and GLSL format.
+editor = [
     "jedi>=0.20.0",
     "clang-format>=23.1.0",
     "ruff==0.15.17",
+]
+all = [
+    "shaderbox[video,copilot,telegram,youtube,editor]",
 ]
 
 [build-system]

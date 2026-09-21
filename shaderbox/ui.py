@@ -49,7 +49,6 @@ from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_models import UIDocument
 from shaderbox.ui_primitives import (
     chip_button,
-    fps_overlay,
     item_normalized_mouse,
     rendering_overlay,
     toggle_button,
@@ -58,6 +57,7 @@ from shaderbox.ui_regions import CHANNEL_VIEW_LABELS, ChannelView, DocumentTab
 from shaderbox.watch import maybe_rebuild_lib_index, reload_document_if_changed
 from shaderbox.widgets import cheatsheet, copilot_chat
 from shaderbox.widgets.document_grid import draw_document_preview_grid
+from shaderbox.widgets.fps_panel import fps_overlay
 
 _FONT_14_SIZE = 14.0
 _FONT_18_SIZE = 18.0

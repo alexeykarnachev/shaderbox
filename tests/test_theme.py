@@ -19,7 +19,7 @@ from shaderbox.theme import (
     load_color,
     throttle_color,
 )
-from shaderbox.ui_primitives import profile_rows_plan
+from shaderbox.widgets.fps_panel import profile_rows_plan
 
 
 def test_the_bands_meet_at_their_thresholds() -> None:

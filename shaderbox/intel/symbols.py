@@ -6,7 +6,7 @@ from enum import StrEnum, auto
 
 class SymbolKind(StrEnum):
     """Every kind of name the editor can know. Its color and its syntax slot are functions of
-    this enum (`theme.kind_color`, `theme.kind_slot`), walked by the enum-domain test, so a
+    this enum (`syntax_colors.kind_color`, `syntax_colors.kind_slot`), walked by the enum-domain test, so a
     kind added here without both fails before a frame draws it."""
 
     GLSL_KEYWORD = auto()

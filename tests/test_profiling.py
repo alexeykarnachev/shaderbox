@@ -27,7 +27,7 @@ from shaderbox.profiling import (
     Span,
     by_cost,
 )
-from shaderbox.ui_primitives import profile_rows_plan
+from shaderbox.widgets.fps_panel import profile_rows_plan
 
 # This module drives real frames, so it gets a worker of its own (`conventions.md ## Known
 # quirks`): two Apps that both render a full frame in one process die on the font atlas.
@@ -497,19 +497,19 @@ def _capture_the_overlays_profile(app: Any, monkeypatch: Any) -> Any:
 def _capture_the_plan_call(app: Any, monkeypatch: Any) -> Any:
     """Drive one frame with `profile_rows_plan` spied on, and report its arguments.
 
-    The spy goes on `ui_primitives`, the module `fps_overlay` resolves the name in at call
+    The spy goes on `widgets.fps_panel`, the module `fps_overlay` resolves the name in at call
     time; `ui.fps_overlay` stays real, so the plan call actually runs inside a live draw.
     """
-    from shaderbox import ui_primitives
+    from shaderbox.widgets import fps_panel
 
     calls: list[Any] = []
-    real = ui_primitives.profile_rows_plan
+    real = fps_panel.profile_rows_plan
 
     def spy(*args: Any, **kwargs: Any) -> Any:
         calls.append((args, kwargs))
         return real(*args, **kwargs)
 
-    monkeypatch.setattr(ui_primitives, "profile_rows_plan", spy)
+    monkeypatch.setattr(fps_panel, "profile_rows_plan", spy)
     try:
         from shaderbox import ui
 
