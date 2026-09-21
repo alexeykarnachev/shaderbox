@@ -45,6 +45,13 @@ def render_to(
     )
     details.file_details.path = str(out_path)
 
+    broken = document.output_chain_errors()
+    if broken:
+        for name, errors in broken.items():
+            for error in errors:
+                logger.error(f"{name}:{error.line}: {error.message}")
+        return None
+
     try:
         rendered: MediaDetails = document.render_media(details, preset)
     except Exception as e:

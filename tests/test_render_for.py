@@ -6,6 +6,7 @@ the whole module skips rather than failing.
 """
 
 import contextlib
+import dataclasses
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -18,7 +19,7 @@ from shaderbox.core import Pass
 from shaderbox.document import DEFAULT_PASS_NAME, Document
 from shaderbox.media import MediaDetails
 from shaderbox.pass_graph import PassEntry, PassGraph, PassSource, TargetConfig
-from shaderbox.render_job import render_for
+from shaderbox.render_job import render_for, render_to
 from shaderbox.render_preset import (
     FitPolicy,
     RenderPreset,
@@ -381,3 +382,74 @@ def test_a_scaled_feedback_pass_survives_an_off_size_export(
     assert document.passes["trail"].canvas.texture.size == (32, 32)
     assert document.passes["show"].canvas.texture.size == (64, 64)
     document.release()
+
+
+def test_a_pass_that_did_not_compile_writes_no_file(
+    document: Document, tmp_path: Path
+) -> None:
+    """A failed compile is a failed render, and the caller has to be able to
+    tell without a UI.
+
+    The pass renders nothing and the canvas stays black, which `render_media`
+    reports as success -- the file exists at the right size, so a headless
+    caller reads a black PNG as a picture. Measured on the shipped code: the
+    artifact came back populated and the file was on disk.
+
+    The fixture breaks the shader through the LIBRARY resolver rather than
+    with bad GLSL, because that is the path that reaches `render_to` with a
+    renderable canvas; a syntax error earlier in the pipeline was already
+    refused for an unrelated reason (the resize target stayed at zero), which
+    is a different bug and hides this one.
+    """
+    source = document.render_pass.source
+    document.render_pass.source = dataclasses.replace(
+        source,
+        text=source.text.replace(
+            "void main",
+            "float probe() { return SB_does_not_exist(0.0); }\nvoid main",
+            1,
+        ),
+    )
+    document.render_pass.invalidate()
+
+    assert document.output_chain_errors(), (
+        "the fixture did not break the shader, so the gate proves nothing"
+    )
+
+    out = tmp_path / "broken.png"
+    preset = RenderPreset(
+        is_video=False,
+        container=".png",
+        resolution_policy=ResolutionPolicy.LONGEST_EDGE,
+        longest_edge=64,
+        fit=FitPolicy.RENDER_AT_TARGET,
+    )
+    artifact = render_to(document, preset, 0.0, out)
+    assert artifact is None, f"a broken document reported a render: {artifact}"
+    assert not out.exists(), "a broken document left a file behind"
+
+
+def test_an_image_renders_under_scale_distort(
+    document: Document, tmp_path: Path
+) -> None:
+    """SCALE_DISTORT with an image preset renders rather than raising.
+
+    That branch returns before `resolve_dims` fills `resolution_details`, and
+    `_render_image` resizes to exactly that pair -- so a caller that did not
+    come from the Render tab (which types its own W x H) hit a resize to
+    (0, 0) and PIL's "height and width must be > 0". The branch now defaults
+    the pair to the size it actually rendered.
+    """
+    out = tmp_path / "distort.png"
+    artifact = render_to(
+        document,
+        RenderPreset(is_video=False, container=".png", fit=FitPolicy.SCALE_DISTORT),
+        0.0,
+        out,
+    )
+    assert artifact is not None, "SCALE_DISTORT refused an image render"
+    assert out.exists() and out.stat().st_size > 0
+    rendered = PILImage.open(out)
+    assert rendered.size == document.render_pass.canvas.texture.size, (
+        f"the image was resized to {rendered.size} rather than the rendered size"
+    )

@@ -72,6 +72,7 @@ from shaderbox.render_preset import (
     resolve_dims,
 )
 from shaderbox.render_shape import ResolutionMode, aspect_of, aspect_ratio
+from shaderbox.shader_errors import ShaderError
 from shaderbox.shader_source import ShaderSource
 
 DEFAULT_PASS_NAME = "main"
@@ -382,6 +383,33 @@ class Document:
     def graph_errors(self) -> list[GraphError]:
         """Wiring errors from the last render — a cycle, or a pass an input names (D7)."""
         return list(self._graph_errors)
+
+    def output_chain_errors(self) -> dict[str, list[ShaderError]]:
+        """Compile errors on the passes this document's OUTPUT actually needs.
+
+        Brings the chain online first, since a never-compiled pass has neither a
+        program nor errors and would read as healthy. Passes OFF the chain are
+        not consulted: they contribute nothing to the picture, and a document
+        may legitimately carry a broken one while the output renders.
+        """
+        target = self.graph.output_pass
+        if target is None or target not in self.passes:
+            target = next(iter(self.passes))
+        self._bring_chain_online(target)
+        names = set(self.passes)
+        reached: set[str] = set()
+        pending = [target]
+        while pending:
+            name = pending.pop()
+            if name in reached or name not in self.passes:
+                continue
+            reached.add(name)
+            pending.extend(self._reads_of(name, names).values())
+        return {
+            name: list(self.passes[name].compile_unit.errors)
+            for name in sorted(reached)
+            if self.passes[name].compile_unit.errors
+        }
 
     def release(self) -> None:
         for render_pass in self.passes.values():
@@ -1206,6 +1234,18 @@ class Document:
             # decides what lands on disk, through the PIL resize and ffmpeg's -s.
             source_size = self.export_source_size()
             if preset is None or preset.fit is FitPolicy.SCALE_DISTORT:
+                # The Render tab fills `resolution_details` from its own W x H
+                # fields, and `_render_image` resizes to that pair. A caller
+                # with no tab behind it leaves the pair at its default, so the
+                # resize target is (0, 0) and PIL refuses. Default it to the
+                # size actually rendered; a caller that set a pair keeps it.
+                if not (
+                    details.resolution_details.width
+                    and details.resolution_details.height
+                ):
+                    details = details.model_copy(deep=True)
+                    details.resolution_details.width = source_size[0]
+                    details.resolution_details.height = source_size[1]
                 scratch = Canvas(
                     gl=self._gl,
                     size=source_size,
