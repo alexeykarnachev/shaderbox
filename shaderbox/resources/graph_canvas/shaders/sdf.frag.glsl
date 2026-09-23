@@ -5,6 +5,7 @@ in vec4 v_fill_bot;
 in vec4 v_edge;
 in vec2 v_uv;
 in float v_textured;
+in vec4 v_border;
 uniform sampler2D u_image;
 
 out vec4 finalColor;
@@ -77,7 +78,10 @@ void main() {
     float border_w = v_edge.y;
     if (border_w > 0.0) {
         float band = smoothstep(-border_w - aa, -border_w + aa, d);
-        fill = mix(fill, vec3(v_edge.z), band);
+        // A border colour arrives verbatim; the greyscale luminance is the
+        // fallback for every shape that never sent one.
+        vec3 bc = v_border.a > 0.0 ? v_border.rgb : vec3(v_edge.z);
+        fill = mix(fill, bc, band);
     }
 
     // The image replaces the FILL, after the chamfer and the border have run,

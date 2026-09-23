@@ -136,6 +136,13 @@ attr.u_time = 0.5137 0.6471 0.5961 1
 #
 # Trying to separate all three by hue alone is what produced a blue
 # selection ring nobody asked for.
-attr.ring_select  = 0.9804 0.7412 0.1843 1
-attr.ring_hover   = 0.5725 0.5137 0.4549 1
-attr.ring_failing = 0.9843 0.2863 0.2039 1
+# Drawn by the library on the node's own edge (ABI 13), so they follow the
+# card's corner radius and share its antialiasing.
+state_selected = 0.9804 0.7412 0.1843 1
+state_hovered  = 0.5725 0.5137 0.4549 1
+state_failing  = 0.9843 0.2863 0.2039 1
+
+# A multiplier on the outline weight. The maintainer reported the previous
+# ring as "too small, barely visible", so this is set above the library's
+# 1.8 default rather than at it.
+state_width = 2.6

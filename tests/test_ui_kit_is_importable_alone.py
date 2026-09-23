@@ -43,8 +43,7 @@ from shaderbox.notifications import Notifications
 def _kit_closure() -> set[str]:
     """Every module a fresh interpreter loads to import the kit."""
     probe = (
-        KIT
-        + "\nimport sys\nprint(' '.join(sorted(m for m in sys.modules "
+        KIT + "\nimport sys\nprint(' '.join(sorted(m for m in sys.modules "
         "if not m.startswith('_'))))\n"
     )
     done = subprocess.run(

@@ -17,11 +17,11 @@ from shaderbox.commands import CommandId
 from shaderbox.editor_types import TabRecord
 from shaderbox.formatting import formatter_for
 from shaderbox.graph_canvas.adapter import Moved
-from shaderbox.graph_canvas.ffi import Gesture, Widget
+from shaderbox.graph_canvas.ffi import Gesture, NodeState, Widget
 from shaderbox.pass_graph import PassEntry, strip_order
 from shaderbox.paths import shader_lib_root
 from shaderbox.tabs.code import tab_label
-from shaderbox.theme import COLOR, group_tint
+from shaderbox.theme import group_tint
 from shaderbox.ui import update_and_draw
 from shaderbox.ui_models import UIUniform
 from shaderbox.util import get_uniform_hash
@@ -512,12 +512,12 @@ def test_dragging_a_box_keeps_its_members_apart(app: Any) -> None:
     )
 
 
-def _halo_widths(app: Any, document_id: str, title: str) -> list[float]:
-    """The state rings one packed node wears. Zero width is an inert ring."""
+def _node_state(app: Any, document_id: str, title: str) -> int:
+    """The state border one packed node wears (ABI 13)."""
     state = app.graph_canvases[document_id]
     assert state.packed is not None
     node = next(n for n in state.packed.nodes if n.title == title)
-    return [round(float(width), 4) for _color, _inset, width in node.halos]
+    return int(node.state)
 
 
 def test_a_selected_group_box_wears_the_selection_ring(app: Any) -> None:
@@ -542,8 +542,8 @@ def test_a_selected_group_box_wears_the_selection_ring(app: Any) -> None:
 
     view.selection = set()
     _frames(app, 2)
-    bare_box = _halo_widths(app, document_id, "pair")
-    bare_c = _halo_widths(app, document_id, "c")
+    bare_box = _node_state(app, document_id, "pair")
+    bare_c = _node_state(app, document_id, "c")
     assert bare_box == bare_c, (
         "with nothing selected the box and the loose pass must wear the same "
         f"rings: box={bare_box} c={bare_c}"
@@ -553,14 +553,14 @@ def test_a_selected_group_box_wears_the_selection_ring(app: Any) -> None:
     # stores, and the box has to answer to it.
     view.selection = {"a", "b"}
     _frames(app, 2)
-    picked_box = _halo_widths(app, document_id, "pair")
-    picked_c = _halo_widths(app, document_id, "c")
+    picked_box = _node_state(app, document_id, "pair")
+    picked_c = _node_state(app, document_id, "c")
     assert picked_c == bare_c, (
-        f"selecting the group moved the untouched pass's rings: {picked_c}"
+        f"selecting the group moved the untouched pass's state: {picked_c}"
     )
     assert picked_box != bare_box, (
-        "a selected group box wears no ring: it packed the same halos as "
-        f"when nothing was selected ({picked_box})"
+        "a selected group box wears no state border: it packed the same "
+        f"state as when nothing was selected ({picked_box})"
     )
 
 
@@ -583,9 +583,9 @@ def test_a_pass_that_fails_to_compile_says_so_on_the_canvas(app: Any) -> None:
     document_id, document = _chain(app)
     app.open_graph_for(document_id)
     _frames(app, 2)
-    assert _packed_node(app, document_id, "b").halos == (), (
-        "a compiling pass already wears a ring, so the error ring cannot be "
-        "told from it"
+    assert _packed_node(app, document_id, "b").state == NodeState.NORMAL, (
+        "a compiling pass already wears a state border, so the failing one "
+        "cannot be told from it"
     )
 
     document.passes["b"].release_program("#version 460 core\nthis is not glsl\n")
@@ -595,14 +595,13 @@ def test_a_pass_that_fails_to_compile_says_so_on_the_canvas(app: Any) -> None:
 
     broken = _packed_node(app, document_id, "b")
     healthy = _packed_node(app, document_id, "c")
-    assert healthy.halos == (), (
-        f"marking the broken pass also marked the compiling one: {healthy.halos}"
+    assert healthy.state == NodeState.NORMAL, (
+        f"marking the broken pass also marked the compiling one: {healthy.state}"
     )
-    assert broken.halos, "a pass with compile errors wears no ring on the canvas"
-    colour = broken.halos[0][0]
-    assert tuple(round(v, 4) for v in colour[:3]) == tuple(
-        round(v, 4) for v in COLOR.STATE_ERROR[:3]
-    ), f"the error ring is not the theme's error colour: {colour}"
+    assert broken.state == NodeState.FAILING, (
+        f"a pass with compile errors wears {NodeState(broken.state).name} on "
+        "the canvas, not FAILING"
+    )
 
 
 def test_a_grouped_pass_carries_its_groups_tint_on_the_canvas(app: Any) -> None:

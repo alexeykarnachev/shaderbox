@@ -63,11 +63,12 @@ _SHAPE_ATTRS: tuple[str, ...] = (
     "a_shape",
     "a_fill_bot",
     "a_edge",
+    "a_border",
     "a_rotation",
     "a_field",
     "a_uv",
 )
-_SHAPE_FORMAT: str = "4f 4f 4f 4f 4f 2f 4f 4f/i"
+_SHAPE_FORMAT: str = "4f 4f 4f 4f 4f 4f 2f 4f 4f/i"
 _GLYPH_ATTRS: tuple[str, ...] = ("a_position", "a_texcoord", "a_color", "a_uv_bounds")
 _GLYPH_FORMAT: str = "2f 2f 4f 4f"
 
@@ -83,7 +84,17 @@ _SHAPE_BINDINGS: tuple[tuple[str, int, int], ...] = tuple(
     )
     for attr, field in zip(
         _SHAPE_ATTRS,
-        ("rect", "fill_top", "shape", "fill_bot", "edge", "rotation", "field", "uv"),
+        (
+            "rect",
+            "fill_top",
+            "shape",
+            "fill_bot",
+            "edge",
+            "border",
+            "rotation",
+            "field",
+            "uv",
+        ),
         strict=True,
     )
 )

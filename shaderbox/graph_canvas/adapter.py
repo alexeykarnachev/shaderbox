@@ -21,6 +21,7 @@ from shaderbox.graph_canvas.ffi import (
     EventKind,
     Gesture,
     NodeSpec,
+    NodeState,
     PinFill,
     PinShape,
     PortSpec,
@@ -108,36 +109,6 @@ class BodyRow:
     swatch: bool = False
 
 
-@dataclass(frozen=True, slots=True)
-class NodePalette:
-    """The colours of a node's ONE state ring, handed in by the caller.
-
-    The adapter knows the document and the library; it does not know the
-    theme, which imports imgui. Passing the tokens keeps this layer free of
-    the UI without hard-coding a look.
-
-    Three colours, not four, because the ring carries exactly one kind of
-    fact: what is true of this node right now. A node being the document's
-    OUTPUT is a property rather than a state -- it does not change under
-    the pointer -- so it is marked in the title and the border width and
-    takes no colour here. Encoding both kinds in one channel is what forced
-    four hues to be mutually legible and made every choice a compromise.
-    """
-
-    hover: RGBA
-    select: RGBA
-    # A pass whose program did not compile. The strip has drawn this since
-    # 093 and the canvas did not, so the same pass read healthy on one
-    # surface and broken on the other.
-    failing: RGBA = (1.0, 0.0, 0.0, 1.0)
-
-
-_NEUTRAL_PALETTE: NodePalette = NodePalette(
-    hover=(1.0, 1.0, 1.0, 1.0),
-    select=(1.0, 1.0, 1.0, 1.0),
-)
-
-
 def _widget_for(value: tuple[float, ...], editable: bool, swatch: bool) -> Widget:
     """What draws a body row's value.
 
@@ -164,64 +135,44 @@ def _widget_for(value: tuple[float, ...], editable: bool, swatch: bool) -> Widge
     return Widget.LABEL
 
 
-# How the state ring is drawn: thickness and how far outside the node's
-# rect it sits, in canvas units. ONE ring -- a node shows one state, so a
-# second concentric band would be a second thing to decode with no second
-# fact behind it.
-#
-# Wide and tight to the node: at 2.5 units set 2.0 out it read as a thin
-# outline floating off the card, which is what a second concentric ring
-# had been compensating for. It is the only mark a state gets now, so it
-# carries the weight the pair used to.
-_HALO: tuple[float, float] = (5.0, 0.5)
-
 # How strongly a group's hue washes its members. Faint: the tint says which
 # group a pass belongs to and must not fight the role colours the rows carry.
 _GROUP_TINT: float = 0.18
 
 
-def _halos_of(
+def _state_of(
     name: str,
     hovered: str,
     selected: frozenset[str],
     ghost: bool,
-    colors: "NodePalette",
     failing: bool = False,
-) -> tuple[tuple[RGBA, float, float], ...]:
-    """The ONE state ring a node wears, or none.
+) -> NodeState:
+    """The ONE state a node wears (ABI 13).
 
-    A HALO rather than a border, because a border's colour does not survive
-    the trip: the vertex format packs it as a single LUMINANCE, so red and
-    blue arrive identical and two different states land two hundredths
-    apart. A halo is four plain rects and its colour arrives verbatim.
+    The library draws the border itself, on the node's own edge, so it gets
+    the card's corner radius and the same antialiasing the body has. The
+    colours and the width come from the theme's `state_*` fields.
 
     The three states are mutually exclusive and ranked: selection outranks
     a compile error and an error outranks hover. A hovered selected node
-    reads as selected, and hover is the most transient of the three. So at
-    most one ring is ever returned, and a reader never has to decode a
-    combination.
+    reads as selected, and hover is the most transient of the three.
 
-    The document's OUTPUT is deliberately NOT here. It is a property of the
-    node rather than a state of the pointer, it is already carried by the
-    title and the border width, and giving it a concentric second ring is
-    what made a hovered output node read as one fat band and a selected one
-    read as a colour arriving from nowhere.
+    The document's OUTPUT is deliberately NOT a state. It is a property of
+    the node rather than of the pointer, and it is already carried by the
+    title and the border width.
 
     A ghost wears nothing, because it refuses every gesture and a highlight
     would promise an interaction it will not honour.
     """
     if ghost:
-        return ()
+        return NodeState.NORMAL
     if name in selected:
-        return ((colors.select, *_HALO),)
+        return NodeState.SELECTED
     if failing:
-        # A broken pass outranks HOVER and loses to SELECTION: the error is
-        # a property of the pass and survives the pointer leaving, but a
-        # user who has just picked a node needs to see which one they got.
-        return ((colors.failing, *_HALO),)
+        return NodeState.FAILING
     if name == hovered:
-        return ((colors.hover, *_HALO),)
-    return ()
+        return NodeState.HOVERED
+    return NodeState.NORMAL
 
 
 def _title_of(node: "CanvasNode", output: str) -> str:
@@ -242,7 +193,7 @@ def _border_scale_of(name: str, output: str) -> float:
     node grows, no card lifts" -- a highlight changes colour, never size,
     and the design names ImNodeFlow's growing socket radius as the thing it
     declines. The switchover shipped 2.2 selected and 1.8 hovered, which is
-    that rule broken twice; `_halos_of` carries both states in colour, so
+    that rule broken twice; the state border carries both in colour, so
     the thickening said nothing the colour did not. Hover and selection are
     not parameters here for that reason -- they cannot change a width.
 
@@ -475,7 +426,6 @@ def pack_nodes(
     body: Mapping[str, Sequence[BodyRow]] | None = None,
     hovered: str = "",
     selected: frozenset[str] = frozenset(),
-    palette: NodePalette | None = None,
     failing: frozenset[str] = frozenset(),
     tints: Mapping[str, RGBA] | None = None,
 ) -> Packed:
@@ -514,7 +464,6 @@ def pack_nodes(
     resolved against the SAME ordering, so a wire's endpoints index what was
     packed rather than what the document happens to iterate.
     """
-    colors = palette or _NEUTRAL_PALETTE
     index_of: dict[str, int] = {node.key: i for i, node in enumerate(view.nodes)}
     # Where each node's outputs START in its own attribute list; a box has
     # several, one per member the outside reads.
@@ -587,12 +536,11 @@ def pack_nodes(
                 dashed=node.is_ghost,
                 tint=(tints or {}).get(node.key),
                 tint_amount=_GROUP_TINT if node.key in (tints or {}) else 0.0,
-                halos=_halos_of(
+                state=_state_of(
                     node.key,
                     hovered,
                     selected,
                     node.is_ghost,
-                    colors,
                     node.key in failing,
                 ),
                 border_scale=_border_scale_of(node.key, output),

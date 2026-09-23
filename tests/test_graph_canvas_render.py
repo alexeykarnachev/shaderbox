@@ -67,13 +67,14 @@ layout(location = ATTR_FILL_TOP) in vec4 a_fill_top;
 layout(location = ATTR_SHAPE) in vec4 a_shape;
 layout(location = ATTR_FILL_BOT) in vec4 a_fill_bot;
 layout(location = ATTR_EDGE) in vec4 a_edge;
+layout(location = ATTR_BORDER) in vec4 a_border;
 layout(location = ATTR_ROTATION) in vec2 a_rotation;
 layout(location = ATTR_FIELD) in vec4 a_field;
 layout(location = ATTR_UV) in vec4 a_uv;
 out vec4 o_rect;
 void main() {
     o_rect = a_rect + 0.000001 * (a_fill_top + a_shape + a_fill_bot + a_edge
-             + a_field + a_uv + vec4(a_rotation, a_corner));
+             + a_border + a_field + a_uv + vec4(a_rotation, a_corner));
     gl_Position = vec4(0.0);
 }"""
         ),

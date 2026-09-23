@@ -36,7 +36,6 @@ from shaderbox.graph_canvas.adapter import (
     GraphEvent,
     MenuRequested,
     Moved,
-    NodePalette,
     PickerRequested,
     Refused,
     Unwired,
@@ -48,7 +47,6 @@ from shaderbox.graph_canvas.adapter import (
 from shaderbox.graph_canvas.ffi import (
     GRAPH_CANVAS_RESOURCES_DIR,
     Theme,
-    parse_categories,
     parse_theme,
 )
 from shaderbox.graph_canvas.panel import (
@@ -418,32 +416,6 @@ def canvas_theme() -> Theme:
     return parse_theme(path.read_text(), str(path))
 
 
-@cache
-def _ring_palette() -> NodePalette:
-    """The state rings, from `canvas.theme`.
-
-    Host concepts -- selection, hover, a failed compile, the output pass --
-    so they ride the `attr.` namespace the library leaves to the host
-    rather than a theme field it would have to know about.
-
-    Here rather than in `theme.py` because these colours are the canvas's:
-    a ring is drawn by the library over a node the library drew, against
-    the canvas's own fill, and it has to be legible against THAT rather
-    than against a panel. Reading them from the app's palette is what left
-    hover six degrees of hue from the output ring.
-    """
-    path = GRAPH_CANVAS_RESOURCES_DIR / "canvas.theme"
-    rings = parse_categories(path.read_text())
-    missing = {"ring_select", "ring_hover", "ring_failing"} - set(rings)
-    if missing:
-        raise ValueError(f"{path}: the theme names no {', '.join(sorted(missing))}")
-    return NodePalette(
-        hover=rings["ring_hover"],
-        select=rings["ring_select"],
-        failing=rings["ring_failing"],
-    )
-
-
 def _library_canvas(
     app: App,
     document_id: str,
@@ -523,7 +495,6 @@ def _library_canvas(
             if node.is_box and (set(node.members) & view.selection)
         )
         | frozenset(pass_key(name) for name in view.selection),
-        palette=_ring_palette(),
         failing=frozenset(
             pass_key(name)
             for name in order

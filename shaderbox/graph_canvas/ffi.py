@@ -30,7 +30,7 @@ ATLAS_JSON_PATH: Path = GRAPH_CANVAS_RESOURCES_DIR / "atlas.json"
 ATLAS_PNG_PATH: Path = GRAPH_CANVAS_RESOURCES_DIR / "atlas.png"
 SHADERS_DIR: Path = GRAPH_CANVAS_RESOURCES_DIR / "shaders"
 
-ABI_VERSION: int = 12
+ABI_VERSION: int = 13
 
 _LIB: ctypes.CDLL | None = None
 
@@ -66,15 +66,14 @@ class Node(ctypes.Structure):
         ("border_a", ctypes.c_float),
         ("border_scale", ctypes.c_float),
         ("id", ctypes.c_uint64),
-        # Two state RINGS outside the node's rect (ABI 6). A node's BORDER
-        # colour is averaged to one luminance on the way to the GPU -- red
-        # and blue arrive identical -- so a halo is how a colour survives:
-        # four plain rects per ring. Two of them, because a node can be both
-        # selected and something else at once. Zero width is inert.
+        # Two state RINGS outside the node's rect (ABI 6), superseded by
+        # `state` in ABI 13 once the border learned to carry a colour.
+        # Still honoured by the library, so shaderbox clears them.
         ("halo_color", (ctypes.c_float * 4) * 2),
         ("halo_inset", ctypes.c_float * 2),
         ("halo_width", ctypes.c_float * 2),
         ("accepts", ctypes.c_uint32),
+        ("state", ctypes.c_uint32),
         ("tint_set", ctypes.c_uint8),
         ("border_set", ctypes.c_uint8),
         ("dashed", ctypes.c_uint8),
@@ -138,6 +137,10 @@ class Theme(ctypes.Structure):
         ("hover_lift", ctypes.c_float),
         ("active_lift", ctypes.c_float),
         ("border", _RGBA),
+        ("state_hovered", _RGBA),
+        ("state_selected", _RGBA),
+        ("state_failing", _RGBA),
+        ("state_width", ctypes.c_float),
         ("bevel_width", ctypes.c_float),
         ("bevel", ctypes.c_float),
         ("text", _RGBA),
@@ -160,6 +163,32 @@ class Theme(ctypes.Structure):
         ("wire_lift", ctypes.c_float),
         ("row_role", ctypes.c_float),
         ("row_role_widget", ctypes.c_float),
+    ]
+
+
+class PointerInfo(ctypes.Structure):
+    """What the library thinks the pointer is doing, asked after a frame.
+
+    An event stream cannot tell a pointer that never arrived from one that
+    arrived and resolved onto nothing: both produce no events. This says
+    which. `over_node` of -1 while the pointer is visibly over a node means
+    the position never reached the library or reached it in the wrong
+    space; a real node with `hover_attribute` of -1 means it arrived and
+    landed between rows.
+    """
+
+    _fields_ = [
+        ("hover_node", ctypes.c_int32),
+        ("hover_attribute", ctypes.c_int32),
+        ("hover_part", ctypes.c_int32),
+        ("over_node", ctypes.c_int32),
+        ("over_pin", ctypes.c_int32),
+        ("active_kind", ctypes.c_int32),
+        ("active_node", ctypes.c_int32),
+        ("active_is_click", ctypes.c_uint8),
+        ("_pad0", ctypes.c_uint8),
+        ("_pad1", ctypes.c_uint8),
+        ("_pad2", ctypes.c_uint8),
     ]
 
 
@@ -232,6 +261,7 @@ class ShapeInstance(ctypes.Structure):
         ("shape", ctypes.c_float * 4),
         ("fill_bot", ctypes.c_float * 4),
         ("edge", ctypes.c_float * 4),
+        ("border", ctypes.c_float * 4),
         ("rotation", ctypes.c_float * 2),
         ("field", ctypes.c_float * 4),
         ("uv", ctypes.c_float * 4),
@@ -378,6 +408,21 @@ class Widget(IntEnum):
     ENUM = 8
 
 
+class NodeState(IntEnum):
+    """Which state border a node wears, drawn by the library (ABI 13).
+
+    RANKED by value: a node in two states at once shows the higher one, so
+    a selected node that is also hovered reads as selected. The colours and
+    the width live in the theme (`state_hovered` / `state_selected` /
+    `state_failing` / `state_width`), not on the node.
+    """
+
+    NORMAL = 0
+    HOVERED = 1
+    FAILING = 2
+    SELECTED = 3
+
+
 class ThemeParseError(IntEnum):
     """Why a theme file was refused, as the library's own values.
 
@@ -475,6 +520,7 @@ _STRUCTS: list[tuple[str, type[ctypes.Structure]]] = [
     ("Glyph", GlyphVertex),
     ("Node_Rect", NodeRect),
     ("Theme", Theme),
+    ("Pointer", PointerInfo),
 ]
 
 # `gc_enum_count` ids, in the library's Enum_Query order. The COUNT is what is
@@ -496,12 +542,13 @@ _ENUMS: list[tuple[str, int, type[IntEnum] | None]] = [
     ("Attribute_Kind", 3, None),
     ("Atlas_Error", 4, None),
     ("Size_Query", len(_STRUCTS), None),
-    ("Enum_Query", 11, None),
+    ("Enum_Query", 12, None),
     ("Pin_Shape", len(PinShape), PinShape),
     # Three, not four: `PinFill.UNSET` is the wire's "no opinion", not a member
     # of the library's enum, so the mirror is compared from its second member.
     ("Pin_Fill", len(PinFill) - 1, None),
     ("Theme_Parse_Error", len(ThemeParseError), ThemeParseError),
+    ("Node_State", len(NodeState), NodeState),
 ]
 
 
@@ -887,11 +934,10 @@ class NodeSpec:
     tint_amount: float = 0.0
     border: tuple[float, float, float, float] | None = None
     border_scale: float = 1.0
-    # Up to two state RINGS, each `(colour, width, inset)` in canvas units.
-    # A border's colour does not survive the trip -- the vertex format
-    # carries one luminance, so red and blue arrive identical -- and a halo
-    # is four plain rects, so this is how a COLOUR reaches the screen.
-    halos: tuple[tuple[tuple[float, float, float, float], float, float], ...] = ()
+    # Which state border the library draws on this node (ABI 13). Its
+    # colour and width come from the theme's `state_*` fields, and it is
+    # drawn on the node's own edge, so it follows the card's corner radius.
+    state: int = 0
     accepts: int = 0
 
 
@@ -1137,19 +1183,12 @@ class Canvas:
                 n.tint_set = 1
                 n.tint_r, n.tint_g, n.tint_b, n.tint_a = spec.tint
             n.border_scale = spec.border_scale
-            for ring in range(2):
-                if ring < len(spec.halos):
-                    colour, width, inset = spec.halos[ring]
-                    n.halo_color[ring][0] = colour[0]
-                    n.halo_color[ring][1] = colour[1]
-                    n.halo_color[ring][2] = colour[2]
-                    n.halo_color[ring][3] = colour[3]
-                    n.halo_width[ring] = width
-                    n.halo_inset[ring] = inset
-                else:
-                    # Zero width is inert, and the arrays are reused across
-                    # frames, so a ring dropped this frame must be cleared.
-                    n.halo_width[ring] = 0.0
+            n.state = spec.state
+            # The arrays are reused across frames and the library still
+            # honours a halo, so a stale ring would outlive the state that
+            # replaced it.
+            n.halo_width[0] = 0.0
+            n.halo_width[1] = 0.0
             if spec.border is None:
                 n.border_set = 0
             else:

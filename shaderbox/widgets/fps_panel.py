@@ -22,6 +22,7 @@ from shaderbox.theme import (
 )
 from shaderbox.ui_primitives import caption_text, chip_button, clipped_caption
 
+
 @dataclass(frozen=True)
 class ProfileRow:
     """One row of the FPS panel, decided before any imgui call.
@@ -280,5 +281,3 @@ def fps_overlay(
         imgui.pop_style_color(1)
 
     return not is_open if clicked else is_open
-
-

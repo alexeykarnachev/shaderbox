@@ -10,6 +10,7 @@ from shaderbox.editor import ffi as editor_ffi
 from shaderbox.intel.symbols import SymbolKind
 from shaderbox.theme import COLOR, fade
 
+
 def kind_color(kind: SymbolKind) -> tuple[float, float, float, float]:
     """The color a kind of name has on a host surface (a source list, a note), the same one
     its syntax slot draws in the popup and the text (078 D2): the enum test pins that a

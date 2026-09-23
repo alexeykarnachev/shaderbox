@@ -17,6 +17,9 @@ layout(location = ATTR_ROTATION) in vec2 a_rotation;
 // uploads.
 layout(location = ATTR_FIELD) in vec4 a_field;
 layout(location = ATTR_UV) in vec4 a_uv;
+// The border band's own colour. A zero alpha defers to the luminance in
+// a_edge.z, which is what every shape that never asked for one sends.
+layout(location = ATTR_BORDER) in vec4 a_border;
 
 uniform mat4 u_mvp;
 
@@ -27,6 +30,7 @@ out vec4 v_fill_bot;
 out vec4 v_edge;
 out vec2 v_uv;
 out float v_textured;
+out vec4 v_border;
 
 void main() {
     // Pixels from the QUAD's centre. This is the geometry -- what gets
@@ -60,6 +64,7 @@ void main() {
     v_shape = a_shape;
     v_fill_bot = a_fill_bot;
     v_edge = a_edge;
+    v_border = a_border;
     // Addressed by the QUAD's own unit coordinate, not by the field's: a
     // selectively-rounded instance evaluates its field over a larger box, and
     // a UV taken from that would slide the image off the rect it paints.

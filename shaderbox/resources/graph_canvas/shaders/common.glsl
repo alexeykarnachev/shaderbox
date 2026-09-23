@@ -34,5 +34,6 @@
 #define ATTR_EDGE       2
 #define ATTR_FIELD      7
 #define ATTR_UV         8
+#define ATTR_BORDER     9
 
 float median3(vec3 c) { return max(min(c.r, c.g), min(max(c.r, c.g), c.b)); }

@@ -7,6 +7,7 @@ names a pass rather than a position in this frame's array.
 """
 
 import colorsys
+import copy
 from pathlib import Path
 
 import moderngl
@@ -20,11 +21,10 @@ from shaderbox.graph_canvas.adapter import (
     BodyRow,
     Clicked,
     Moved,
-    NodePalette,
     Unwired,
     ValueEdited,
     Wired,
-    _halos_of,
+    _state_of,
     _widget_for,
     edge_id,
     flat_view,
@@ -33,13 +33,13 @@ from shaderbox.graph_canvas.adapter import (
     pass_key,
     read_events,
 )
-from shaderbox.graph_canvas.ffi import GRAPH_CANVAS_RESOURCES_DIR
+from shaderbox.graph_canvas.ffi import GRAPH_CANVAS_RESOURCES_DIR, NodeState
 from shaderbox.graph_canvas.render import shapes_array
 from shaderbox.intel.symbols import SymbolKind
 from shaderbox.pass_graph import Port, strip_order
 from shaderbox.syntax_colors import kind_color
 from shaderbox.widgets.graph_state import ports_of
-from shaderbox.widgets.pass_graph import _ring_palette, canvas_theme
+from shaderbox.widgets.pass_graph import canvas_theme
 
 # One colour for every body row in these fixtures: what the row IS
 # coloured is the host's decision and is tested where it is made.
@@ -417,8 +417,9 @@ def test_a_state_ring_carries_its_colour_all_the_way_to_the_pixels(
             {},
             output=pass_key("b"),
             selected=frozenset({pass_key("a")}),
-            palette=NodePalette(hover=(1.0, 1.0, 1.0, 1.0), select=colour),
         )
+        theme = copy.copy(canvas_theme())
+        theme.state_selected[:] = colour
         canvas = ffi.Canvas()
         canvas.load_atlas()
         result = canvas.frame(
@@ -427,7 +428,7 @@ def test_a_state_ring_carries_its_colour_all_the_way_to_the_pixels(
             (520.0, 400.0),
             ffi.View(),
             ffi.PointerState(),
-            theme=canvas_theme(),
+            theme=theme,
         )
         shapes = shapes_array(result).copy()
         canvas.release()
@@ -454,18 +455,12 @@ def test_the_output_is_marked_in_the_title_not_a_second_ring() -> None:
     """
     order = ["a", "b"]
     ports: dict[str, list[Port]] = {"a": [], "b": []}
-    palette = NodePalette(
-        hover=(1.0, 0.0, 0.0, 1.0),
-        select=(0.0, 1.0, 0.0, 1.0),
-        failing=(0.0, 0.0, 1.0, 1.0),
-    )
 
     def packed(**kwargs: object):
         return pack_nodes(
             flat_view(order, ports, {}),
             {},
             output=pass_key("a"),
-            palette=palette,
             **kwargs,  # type: ignore[arg-type]
         )
 
@@ -484,8 +479,8 @@ def test_the_output_is_marked_in_the_title_not_a_second_ring() -> None:
         assert packed(**kwargs).nodes[0].title == out_node.title, (
             f"the output mark changed under {kwargs}"
         )
-        assert len(packed(**kwargs).nodes[0].halos) == 1, (
-            "a state on the output node drew more than one ring"
+        assert packed(**kwargs).nodes[0].state != NodeState.NORMAL, (
+            f"a state on the output node was not carried: {kwargs}"
         )
 
 
@@ -1087,8 +1082,8 @@ def test_a_written_theme_names_only_what_was_tuned() -> None:
     )
 
 
-def test_a_node_wears_at_most_one_state_ring() -> None:
-    """One ring, so a reader never decodes a combination.
+def test_a_node_wears_exactly_the_state_its_rank_demands() -> None:
+    """One state, and the RIGHT one, so a reader never decodes a combination.
 
     The three states are mutually exclusive, and the document's output --
     a property rather than a state -- is marked in the title instead of a
@@ -1097,11 +1092,6 @@ def test_a_node_wears_at_most_one_state_ring() -> None:
 
     Every state is driven here, including the pairs that used to stack.
     """
-    palette = NodePalette(
-        hover=(0.1, 0.2, 0.3, 1.0),
-        select=(0.4, 0.5, 0.6, 1.0),
-        failing=(0.7, 0.8, 0.9, 1.0),
-    )
     for selected, failing, hovered in (
         (frozenset(), False, ""),
         (frozenset({"p"}), False, ""),
@@ -1112,19 +1102,30 @@ def test_a_node_wears_at_most_one_state_ring() -> None:
         (frozenset({"p"}), True, "p"),
         (frozenset(), True, "p"),
     ):
-        rings = _halos_of(
+        state = _state_of(
             "p",
             hovered,
             selected,
             ghost=False,
-            colors=palette,
             failing=failing,
         )
-        assert len(rings) <= 1, (
-            f"selected={bool(selected)} failing={failing} hovered={bool(hovered)} "
-            f"drew {len(rings)} rings; a node shows one state"
+        # The RANKING, not merely "one state": every combination below has a
+        # single correct winner, and a function returning the wrong one still
+        # returns exactly one.
+        want = (
+            NodeState.SELECTED
+            if selected
+            else NodeState.FAILING
+            if failing
+            else NodeState.HOVERED
+            if hovered
+            else NodeState.NORMAL
         )
-    assert _halos_of("p", "p", frozenset({"p"}), True, palette, True) == (), (
+        assert state == want, (
+            f"selected={bool(selected)} failing={failing} hovered={bool(hovered)} "
+            f"wore {state.name}, expected {want.name}"
+        )
+    assert _state_of("p", "p", frozenset({"p"}), True, True) == NodeState.NORMAL, (
         "a ghost wore a highlight promising a gesture it refuses"
     )
 
@@ -1138,21 +1139,21 @@ def test_the_state_rings_separate_on_the_channel_that_carries_them() -> None:
     channels: the transient state is the only quiet one, and the two that
     demand attention are told apart by hue.
     """
-    palette = _ring_palette()
+    theme = canvas_theme()
 
     def hsv(name: str) -> tuple[float, float, float]:
-        return colorsys.rgb_to_hsv(*getattr(palette, name)[:3])
+        return colorsys.rgb_to_hsv(*tuple(getattr(theme, name))[:3])
 
-    assert hsv("hover")[1] < 0.4, (
-        f"hover is saturated ({hsv('hover')[1]:.2f}), so the most transient "
-        "state shouts as loudly as selection"
+    assert hsv("state_hovered")[1] < 0.4, (
+        f"hover is saturated ({hsv('state_hovered')[1]:.2f}), so the most "
+        "transient state shouts as loudly as selection"
     )
-    for urgent in ("select", "failing"):
+    for urgent in ("state_selected", "state_failing"):
         assert hsv(urgent)[1] > 0.6, (
             f"{urgent} is washed out ({hsv(urgent)[1]:.2f}) and no longer "
             "reads as a state that wants attention"
         )
-    apart = abs(hsv("select")[0] - hsv("failing")[0]) * 360.0
+    apart = abs(hsv("state_selected")[0] - hsv("state_failing")[0]) * 360.0
     apart = min(apart, 360.0 - apart)
     assert apart > 25.0, (
         f"select and failing are both saturated and {apart:.1f} degrees "
@@ -1160,46 +1161,51 @@ def test_the_state_rings_separate_on_the_channel_that_carries_them() -> None:
     )
 
 
-def test_the_state_ring_is_thick_enough_to_see() -> None:
-    """The ring is the ONLY mark a state gets, so it has to carry.
+def test_the_state_border_gets_its_weight_from_the_theme() -> None:
+    """The border is the ONLY mark a state gets, so its width has to carry.
 
-    It shipped at 2.5 units set 2.0 outside the card and read as a thin
-    outline floating off it -- tolerable while a second concentric ring
-    was also drawn, barely visible once the ring became the whole signal.
+    It shipped as a halo 2.5 units wide set 2.0 outside the card and read
+    as a thin outline floating off it -- reported as "too small, barely
+    visible" and "not round". The library draws it now, on the node's own
+    edge, and `state_width` is what makes it heavy.
 
-    Measured as DRAWN AREA rather than as the constant, so a change that
-    widens the rect while insetting it back out of view fails here. The
-    floor sits between the two measured states: 1785 units at the old
-    geometry, 3460 at the shipping one.
+    Compared at two WIDTHS rather than against a constant: the same node in
+    the same state, differing only in that one theme field, must reach the
+    screen differently. A constant would pass on a build that ignored the
+    field entirely, which is the failure this replaces.
     """
-    palette = NodePalette(hover=(1.0, 1.0, 1.0, 1.0), select=(0.0, 1.0, 0.0, 1.0))
-    packed = pack_nodes(
-        flat_view(["a"], {"a": []}, {"a": (0.0, 0.0)}),
-        {},
-        output=pass_key("a"),
-        selected=frozenset({pass_key("a")}),
-        palette=palette,
+
+    def scene(width: float) -> np.ndarray:
+        packed = pack_nodes(
+            flat_view(["a"], {"a": []}, {"a": (0.0, 0.0)}),
+            {},
+            output=pass_key("a"),
+            selected=frozenset({pass_key("a")}),
+        )
+        theme = copy.copy(canvas_theme())
+        theme.state_width = width
+        canvas = ffi.Canvas()
+        canvas.load_atlas()
+        result = canvas.frame(
+            packed.nodes,
+            packed.edges,
+            (400.0, 300.0),
+            ffi.View(),
+            ffi.PointerState(),
+            theme=theme,
+        )
+        shapes = shapes_array(result).copy()
+        canvas.release()
+        return shapes
+
+    thin = scene(1.0)
+    thick = scene(4.0)
+    assert thin.shape == thick.shape, (
+        "the two widths drew different shape counts, so this compares "
+        "scenes rather than the border's weight"
     )
-    canvas = ffi.Canvas()
-    canvas.load_atlas()
-    result = canvas.frame(
-        packed.nodes,
-        packed.edges,
-        (400.0, 300.0),
-        ffi.View(),
-        ffi.PointerState(),
-        theme=None,
-    )
-    shapes = shapes_array(result)
-    area = sum(
-        float(row[2]) * float(row[3])
-        for row in shapes
-        if abs(float(row[4])) < 0.01
-        and float(row[5]) > 0.9
-        and abs(float(row[6])) < 0.01
-    )
-    canvas.release()
-    assert area > 2500.0, (
-        f"the state ring covers {area:.0f} units, back near the 1785 that "
-        "read as a thin outline floating off the card"
+    differing = int((np.abs(thin - thick).sum(axis=1) > 0).sum())
+    assert differing > 0, (
+        "widening state_width fourfold changed nothing on screen, so the "
+        "theme's border weight never reaches the outline"
     )
