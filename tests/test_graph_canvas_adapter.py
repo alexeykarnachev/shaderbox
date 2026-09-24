@@ -874,20 +874,27 @@ def test_an_editable_scalar_takes_the_pointer_like_an_editable_vector() -> None:
     none. `_widget_for` chose on arity alone, which was right while every
     row was read-only and became a trap the moment one was not.
 
-    A read-only scalar keeps its LABEL: it is the quieter of the two and
-    loses nothing, since a LABEL draws component 0 and a scalar has only
-    that. A read-only VECTOR may not have one, which the row below pins.
+    A read-only row is a read-only DRAG, not a LABEL. A LABEL draws no
+    field, so it reports hover and answers it with nothing: the engine rows
+    measured 0 changed subpixels under the pointer against 10721 for an
+    editable row beside them. The read-only DRAG draws the field and still
+    refuses the press, so a row the user cannot set still looks like a row.
     """
     assert _widget_for((1.0,), editable=True, swatch=False) is ffi.Widget.DRAG, (
         "an editable scalar was given a widget that cannot be dragged"
     )
     assert _widget_for((1.0, 2.0), editable=True, swatch=False) is ffi.Widget.DRAG
-    # Read-only: a scalar may be a label, a vector may not.
-    assert _widget_for((1.0,), editable=False, swatch=False) is ffi.Widget.LABEL
+    # Read-only rows draw a field too -- refusing the press is `read_only`'s
+    # job, not the widget kind's.
+    assert _widget_for((1.0,), editable=False, swatch=False) is ffi.Widget.DRAG, (
+        "a read-only scalar was given a LABEL, which draws no field and so "
+        "cannot show the pointer that it is a value at all"
+    )
     assert _widget_for((1.0, 2.0), editable=False, swatch=False) is ffi.Widget.DRAG, (
         "a read-only vector was given a LABEL, which draws only its first "
         "component and drops the rest in silence"
     )
+    # Nothing to draw a field FOR: this is the one case LABEL still loses to.
     assert _widget_for((), editable=True, swatch=False) is ffi.Widget.NONE
 
 

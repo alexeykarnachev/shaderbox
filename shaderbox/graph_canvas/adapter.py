@@ -121,18 +121,22 @@ def _widget_for(value: tuple[float, ...], editable: bool, swatch: bool) -> Widge
     the host answers with a picker, so a read-only one would open an editor
     for a value the engine overwrites on the next tick.
 
-    A LABEL is still right for a read-only SCALAR: it is the quieter of the
-    two and loses nothing, because it renders component 0 and a scalar has
-    only that one. It is wrong for a read-only vector, where it would drop
-    every component past the first in silence.
+    A read-only row is a read-only DRAG rather than a LABEL. A LABEL draws
+    no field, so it reports hover and answers it with nothing: the engine
+    rows measured 0 changed subpixels under the pointer against 10721 for
+    an editable one beside them, which reads as a dead patch of node
+    rather than as a value that cannot be set. The read-only DRAG draws
+    the field, dims its text, and still refuses the press, so the row
+    looks like what it is.
+
+    LABEL is left for a row carrying no value at all, where there is no
+    field to draw.
     """
     if not value:
         return Widget.NONE
     if swatch and editable:
         return Widget.COLOR
-    if editable or len(value) > 1:
-        return Widget.DRAG
-    return Widget.LABEL
+    return Widget.DRAG
 
 
 # How strongly a group's hue washes its members. Faint: the tint says which

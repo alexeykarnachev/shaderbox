@@ -635,3 +635,124 @@ def test_the_state_border_is_not_eaten_by_the_title_band(
     )
     state.release()
     renderer.release()
+
+
+def test_a_read_only_row_answers_the_pointer(gl_ctx: moderngl.Context) -> None:
+    """An engine row cannot be set, but it still has to look like a row.
+
+    It was a LABEL, which draws no field: the pointer crossed it and
+    nothing changed, so an engine uniform read as a dead patch of node
+    and the maintainer spent a session trying to drag one. Measured, the
+    read-only row moved 0 subpixels under the pointer while the editable
+    row beside it moved 10721.
+
+    The EDITABLE row in the same frame is the comparison. Both are hovered
+    at their own centres, so the two differ in exactly one thing -- whether
+    the value is the user's to set -- and a build that stopped drawing
+    hover everywhere fails on the editable row rather than passing here.
+
+    Silence is half the assertion, so the fixture proves contact: the
+    hover band is found by asking the library which attribute each row
+    of pixels resolves to, and a row that never reports one fails before
+    any pixel is compared.
+    """
+    renderer = CanvasRenderer(gl=gl_ctx)
+    packed = pack_nodes(
+        flat_view(["n"], {"n": []}, {"n": (0.0, 0.0)}),
+        {},
+        output=pass_key("n"),
+        body={
+            "n": [
+                BodyRow("u_aspect", (1.0,), None, editable=False),
+                BodyRow("u_gain", (1.0,), None, editable=True),
+            ]
+        },
+    )
+    labels = {i: port.label for i, port in enumerate(packed.nodes[0].ports)}
+    size = (500, 420)
+    theme = canvas_theme()
+
+    def frames(state: GraphCanvasState, x: float, y: float, count: int) -> None:
+        for i in range(count):
+            render_to_texture(
+                state,
+                renderer,
+                packed,
+                size,
+                (0.0, 0.0, 0.0, 1.0),
+                ffi.PointerState(x=x + (i % 2) * 0.01, y=y),
+                theme=theme,
+                dt=1.0 / 60.0,
+            )
+
+    settle = GraphCanvasState()
+    frames(settle, -1e6, -1e6, 5)
+    assert settle.canvas is not None
+    probe = settle.canvas.frame(
+        packed.nodes,
+        packed.edges,
+        (float(size[0]), float(size[1])),
+        settle.view,
+        ffi.PointerState(x=-1e6, y=-1e6),
+        theme=theme,
+        dt=1.0 / 60.0,
+    )
+    rect = probe.node_rects[0]
+    centre_x = rect.x + rect.w * 0.5
+    bands: dict[int, list[float]] = {}
+    for step in range(int(rect.h)):
+        y = rect.y + step + 0.5
+        swept = settle.canvas.frame(
+            packed.nodes,
+            packed.edges,
+            (float(size[0]), float(size[1])),
+            settle.view,
+            ffi.PointerState(x=centre_x, y=y),
+            theme=theme,
+            dt=1.0 / 60.0,
+        )
+        attribute = swept.node_rects[0].hover_attribute
+        if attribute >= 0:
+            bands.setdefault(attribute, []).append(y)
+    settle.release()
+
+    wanted = {
+        label: index
+        for index, label in labels.items()
+        if label in {"u_aspect", "u_gain"}
+    }
+    for label, index in wanted.items():
+        assert index in bands, (
+            f"{label} reported no hover anywhere down the node, so this test "
+            "never reached the row it is about"
+        )
+
+    def moved(y: float) -> int:
+        state = GraphCanvasState()
+        frames(state, -1e6, -1e6, 40)
+        assert state.panel is not None and state.panel.fbo is not None
+        away = np.frombuffer(state.panel.fbo.read(components=3), dtype="u1").copy()
+        state.release()
+        state = GraphCanvasState()
+        frames(state, centre_x, y, 40)
+        assert state.panel is not None and state.panel.fbo is not None
+        on = np.frombuffer(state.panel.fbo.read(components=3), dtype="u1").copy()
+        state.release()
+        return int((np.abs(away.astype(int) - on.astype(int)) > 0).sum())
+
+    def centre(index: int) -> float:
+        rows = bands[index]
+        return (rows[0] + rows[-1]) / 2.0
+
+    editable = moved(centre(wanted["u_gain"]))
+    read_only = moved(centre(wanted["u_aspect"]))
+    assert editable > 0, (
+        "the editable row changed no pixel on hover, so the canvas draws no "
+        "hover at all and this test cannot see one withheld"
+    )
+    assert read_only > 0, (
+        f"the read-only row changed {read_only} pixels under the pointer while "
+        f"the editable row beside it changed {editable}: an engine uniform "
+        "reads as a dead patch of node rather than as a value"
+    )
+    renderer.release()
