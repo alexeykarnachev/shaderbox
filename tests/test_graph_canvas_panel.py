@@ -727,7 +727,14 @@ def test_a_read_only_row_answers_the_pointer(gl_ctx: moderngl.Context) -> None:
             "never reached the row it is about"
         )
 
-    def moved(y: float) -> int:
+    def moved(y: float) -> tuple[int, float]:
+        """How many subpixels the hover changes, and by how much on average.
+
+        The COUNT says the row answered the pointer at all; the magnitude
+        says how loudly. A read-only row lifts by a fraction of an
+        editable one, so it covers a similar area at a lower strength and
+        the count alone cannot tell the two apart.
+        """
         state = GraphCanvasState()
         frames(state, -1e6, -1e6, 40)
         assert state.panel is not None and state.panel.fbo is not None
@@ -738,21 +745,32 @@ def test_a_read_only_row_answers_the_pointer(gl_ctx: moderngl.Context) -> None:
         assert state.panel is not None and state.panel.fbo is not None
         on = np.frombuffer(state.panel.fbo.read(components=3), dtype="u1").copy()
         state.release()
-        return int((np.abs(away.astype(int) - on.astype(int)) > 0).sum())
+        delta = np.abs(away.astype(int) - on.astype(int))
+        count = int((delta > 0).sum())
+        return count, float(delta.sum()) / max(1, count)
 
     def centre(index: int) -> float:
         rows = bands[index]
         return (rows[0] + rows[-1]) / 2.0
 
-    editable = moved(centre(wanted["u_gain"]))
-    read_only = moved(centre(wanted["u_aspect"]))
-    assert editable > 0, (
+    editable_count, editable_lift = moved(centre(wanted["u_gain"]))
+    read_only_count, read_only_lift = moved(centre(wanted["u_aspect"]))
+    assert editable_count > 0, (
         "the editable row changed no pixel on hover, so the canvas draws no "
         "hover at all and this test cannot see one withheld"
     )
-    assert read_only > 0, (
-        f"the read-only row changed {read_only} pixels under the pointer while "
-        f"the editable row beside it changed {editable}: an engine uniform "
-        "reads as a dead patch of node rather than as a value"
+    assert read_only_count > 0, (
+        f"the read-only row changed {read_only_count} pixels under the pointer "
+        f"while the editable row beside it changed {editable_count}: an engine "
+        "uniform reads as a dead patch of node rather than as a value"
+    )
+    # And SHORT of it: a row the user cannot set must not shout as loudly as
+    # one they can. Compared as a ratio between the two rows in this frame
+    # rather than against a number, so retuning `read_only_lift` moves the
+    # measurement with it and only the ORDER is pinned here.
+    assert read_only_lift < editable_lift * 0.8, (
+        f"the read-only row lifts {read_only_lift:.2f} against the editable "
+        f"row's {editable_lift:.2f}, so a value the engine owns invites the "
+        "same drag as one the user owns"
     )
     renderer.release()
