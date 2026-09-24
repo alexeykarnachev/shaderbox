@@ -731,6 +731,8 @@ def _declare(lib: ctypes.CDLL) -> None:
         ctypes.POINTER(ctypes.c_float),
         ctypes.POINTER(ctypes.c_float),
     ]
+    lib.gc_pointer.restype = ctypes.c_int32
+    lib.gc_pointer.argtypes = [ctypes.c_void_p, ctypes.POINTER(PointerInfo)]
     lib.gc_frame.restype = ctypes.c_int32
     lib.gc_frame.argtypes = [
         ctypes.c_void_p,
@@ -1290,6 +1292,17 @@ class Canvas:
         ):
             return None
         return (w.value, h.value)
+
+    def pointer_info(self) -> PointerInfo:
+        """What the library made of the LAST frame's pointer.
+
+        For telling "the position never arrived" from "it arrived and
+        resolved onto nothing" -- both of which produce no events, so the
+        event stream alone cannot separate them.
+        """
+        info = PointerInfo()
+        self._lib.gc_pointer(self._handle, ctypes.byref(info))
+        return info
 
     def release(self) -> None:
         # `getattr`, because an `__init__` that raised -- `ensure_loaded()`

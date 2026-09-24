@@ -26,6 +26,7 @@ from shaderbox.graph_canvas.panel import (
 )
 from shaderbox.graph_canvas.render import CanvasRenderer
 from shaderbox.pass_graph import Port
+from shaderbox.widgets.pass_graph import canvas_theme
 
 # A canvas point the library does NOT claim, so a press there begins a pan.
 # Load-bearing rather than arbitrary: a pan is decided at the press, so a
@@ -542,4 +543,95 @@ def test_a_hovered_row_lights_up(gl_ctx: moderngl.Context) -> None:
     assert int((np.abs(away.astype(int) - frozen.astype(int)) > 0).sum()) == 0, (
         "the row lit up with no time passing, so the highlight is not the ease"
     )
+    renderer.release()
+
+
+def test_the_state_border_is_not_eaten_by_the_title_band(
+    gl_ctx: moderngl.Context,
+) -> None:
+    """The border runs the whole way round, the header band included.
+
+    The band is drawn AFTER the body's outline and inset by the bevel
+    (`pal.bevel_width * z`) rather than by the outline's own weight, which
+    is `hairline(style, z) * border_scale * state_width`. Those are
+    unrelated quantities, so the band clears the border only by luck of
+    the numbers, and `state_width` is what spends that luck: at the
+    shipped theme the top edge measured 5px of border against 6px on the
+    bottom.
+
+    Compared TOP against BOTTOM rather than against a constant. The two
+    edges of one node in one frame differ in exactly one thing -- whether
+    the header band is painted over them -- so a thickness that is merely
+    unexpected fails nothing here, while the band eating a pixel fails.
+    A constant would have to be retuned with the theme and would pass on
+    a build that thinned every edge equally.
+
+    The OUTPUT node, because `border_scale` 1.6 is the case that loses a
+    pixel first; a plain node holds on until the view is zoomed out.
+    """
+    renderer = CanvasRenderer(gl=gl_ctx)
+    packed = pack_nodes(
+        flat_view(["n"], {"n": [Port("u_src", "unfilled")]}, {"n": (0.0, 0.0)}),
+        {},
+        output=pass_key("n"),
+        selected=frozenset({pass_key("n")}),
+        body={"n": [BodyRow("u_gain", (1.0,), None, editable=True)]},
+    )
+    size = (500, 420)
+    theme = canvas_theme()
+    state = GraphCanvasState()
+    for _ in range(40):
+        render_to_texture(
+            state,
+            renderer,
+            packed,
+            size,
+            (0.0, 0.0, 0.0, 1.0),
+            ffi.PointerState(x=-1e6, y=-1e6),
+            theme=theme,
+            dt=1.0 / 60.0,
+        )
+    assert state.panel is not None and state.panel.fbo is not None
+    assert state.canvas is not None
+    image = np.frombuffer(state.panel.fbo.read(components=3), dtype="u1").reshape(
+        size[1], size[0], 3
+    )
+    probe = state.canvas.frame(
+        packed.nodes,
+        packed.edges,
+        (float(size[0]), float(size[1])),
+        state.view,
+        ffi.PointerState(x=-1e6, y=-1e6),
+        theme=theme,
+        dt=1.0 / 60.0,
+    )
+    rect = probe.node_rects[0]
+    want = np.array([c * 255.0 for c in tuple(theme.state_selected)[:3]])
+
+    def runs(x: float, from_top: bool) -> int:
+        """How many pixels of border colour run inward from one edge."""
+        depth = 0
+        for step in range(24):
+            y = rect.y + step if from_top else rect.y + rect.h - 1 - step
+            row = round(size[1] - 1 - y)
+            if not 0 <= row < size[1]:
+                break
+            pixel = image[row, round(x)].astype(int)
+            if not bool(np.all(np.abs(pixel - want) < 60)):
+                break
+            depth = step + 1
+        return depth
+
+    columns = [rect.x + rect.w * f for f in (0.3, 0.5, 0.7)]
+    top = min(runs(x, True) for x in columns)
+    bottom = min(runs(x, False) for x in columns)
+    assert bottom > 0, (
+        "the bottom edge carries no border colour, so this compares nothing "
+        "-- the fixture never reached a drawn state border"
+    )
+    assert top >= bottom, (
+        f"the state border is {top}px deep under the title band and {bottom}px "
+        "on the bottom edge, so the header is painted over its inner side"
+    )
+    state.release()
     renderer.release()
