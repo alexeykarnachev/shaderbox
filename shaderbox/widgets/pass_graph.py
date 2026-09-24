@@ -46,6 +46,7 @@ from shaderbox.graph_canvas.adapter import (
 )
 from shaderbox.graph_canvas.ffi import (
     GRAPH_CANVAS_RESOURCES_DIR,
+    EditKey,
     Theme,
     parse_theme,
 )
@@ -535,6 +536,30 @@ def _library_canvas(
         state.fitted = False
         view.fitted = True
 
+    # The keyboard, for a field the library has open. Sent every frame: it
+    # reaches an edit only, so there is nothing to gate on here and a host
+    # that guessed would have to track the edit state twice.
+    #
+    # The QUEUE rather than one codepoint, because a paste and a fast
+    # typist both put several between two frames and the singular field
+    # would keep the first and drop the rest.
+    typed: list[int] = [int(c) for c in imgui.get_io().input_queue_characters]
+    pressed: list[int] = [
+        key
+        for key, chord in (
+            (int(EditKey.ENTER), imgui.Key.enter),
+            (int(EditKey.ENTER), imgui.Key.keypad_enter),
+            (int(EditKey.ESCAPE), imgui.Key.escape),
+            (int(EditKey.BACKSPACE), imgui.Key.backspace),
+            (int(EditKey.DELETE), imgui.Key.delete),
+            (int(EditKey.LEFT), imgui.Key.left_arrow),
+            (int(EditKey.RIGHT), imgui.Key.right_arrow),
+            (int(EditKey.HOME), imgui.Key.home),
+            (int(EditKey.END), imgui.Key.end),
+        )
+        if imgui.is_key_pressed(chord, repeat=True)
+    ]
+
     texture, events, claimed = render_to_texture(
         state,
         app.graph_renderer,
@@ -548,6 +573,8 @@ def _library_canvas(
         # holds at zero forever, and the canvas answers "which node" while
         # never answering "which row".
         dt=imgui.get_io().delta_time,
+        text=typed,
+        keys=pressed,
     )
     imgui.image(
         imgui.ImTextureRef(texture.glo),

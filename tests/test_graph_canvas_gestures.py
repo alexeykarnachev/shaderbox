@@ -802,3 +802,103 @@ def test_a_read_only_field_swallows_the_press_instead_of_moving_the_node() -> No
         f"a read-only row accepted an edit at {edited_on_read_only}: the engine "
         "overwrites that value every frame, so the drag would silently revert"
     )
+
+
+def test_typing_into_an_open_field_reaches_the_drawn_text() -> None:
+    """A field the user can type into has to SHOW what they typed.
+
+    Both `text_codepoint` and `key` crossed the ABI and neither was read:
+    the caret appeared, blinked, and every character went nowhere. The
+    library routes them now and the host sends its queue.
+
+    Counted as DRAWN GLYPHS, not as the edit buffer's length. The two are
+    different questions and the interesting failure is a buffer that
+    fills while nothing reaches the screen -- a buffer-only check passes
+    that build clean.
+
+    The atlas is loaded before anything is measured: without it the
+    library emits no text at all and `glyph_count` is 0 for every frame,
+    which reads exactly like typing doing nothing.
+    """
+    packed = pack_nodes(
+        flat_view(["n"], {"n": []}, {"n": (0.0, 0.0)}),
+        {},
+        output=pass_key("n"),
+        body={"n": [BodyRow("u_gain", (1.0,), None, editable=True)]},
+    )
+    canvas = _canvas()
+    try:
+        assert canvas.atlas_loaded, (
+            "no atlas, so the library draws no text and every frame counts "
+            "zero glyphs whether typing works or not"
+        )
+        box = _rect(canvas, packed, 0)
+        x = box[0] + box[2] * 0.5
+        opened_at: float | None = None
+        for step in range(int(box[3])):
+            y = box[1] + step + 0.5
+            canvas.frame(
+                packed.nodes, packed.edges, SIZE, ffi.View(), ffi.PointerState()
+            )
+            canvas.frame(
+                packed.nodes,
+                packed.edges,
+                SIZE,
+                ffi.View(),
+                ffi.PointerState(x=x, y=y),
+                dt=1.0 / 60.0,
+            )
+            canvas.frame(
+                packed.nodes,
+                packed.edges,
+                SIZE,
+                ffi.View(),
+                ffi.PointerState(x=x, y=y, flags=DOWN | PRESSED | DOUBLE),
+                dt=1.0 / 60.0,
+            )
+            canvas.frame(
+                packed.nodes,
+                packed.edges,
+                SIZE,
+                ffi.View(),
+                ffi.PointerState(x=x, y=y),
+                dt=1.0 / 60.0,
+            )
+            if canvas.pointer_info().editing:
+                opened_at = y
+                break
+        assert opened_at is not None, (
+            "no double click anywhere down the node opened an edit, so this "
+            "test never reached the field it is about"
+        )
+
+        def push(**kwargs: object) -> int:
+            result = canvas.frame(
+                packed.nodes,
+                packed.edges,
+                SIZE,
+                ffi.View(),
+                ffi.PointerState(x=x, y=opened_at),
+                dt=1.0 / 60.0,
+                **kwargs,  # type: ignore[arg-type]
+            )
+            return int(result.glyph_count)
+
+        for _ in range(canvas.pointer_info().edit_length):
+            push(keys=[int(ffi.EditKey.BACKSPACE)])
+        empty = push()
+        assert canvas.pointer_info().edit_length == 0, (
+            "Backspace left the field non-empty, so the KEY path is not "
+            "reaching the editor and the rest of this measures nothing"
+        )
+        typed = push(text=[ord("4"), ord("2")])
+        assert canvas.pointer_info().edit_length == 2, (
+            "the field took neither character, so the codepoint path is dead"
+        )
+        assert typed > empty, (
+            f"the buffer took two characters and the frame still draws "
+            f"{typed} glyphs against {empty} when empty: what was typed "
+            "never reached the screen"
+        )
+    finally:
+        canvas.release()

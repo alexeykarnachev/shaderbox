@@ -13,6 +13,7 @@ owns the window's input and knows whether the canvas region is hovered. Going
 around it while it still owns the window is how a gesture gets delivered twice.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 import moderngl
@@ -315,6 +316,8 @@ def render_to_texture(
     pointer: ffi.PointerState,
     theme: ffi.Theme | None = None,
     dt: float = 0.0,
+    text: Sequence[int] = (),
+    keys: Sequence[int] = (),
 ) -> tuple[moderngl.Texture, list[GraphEvent], bool]:
     """Push one frame and draw it. Returns the texture, the events, and whether
     the library claimed the pointer — a host must not treat a claimed press as
@@ -381,6 +384,8 @@ def render_to_texture(
         # one struct copy per frame, against a theme that could not change.
         theme=theme,
         dt=dt,
+        text=text,
+        keys=keys,
     )
     # The zoom the library applied comes back on the result; storing it is what
     # makes the next frame continue the gesture rather than fight it.

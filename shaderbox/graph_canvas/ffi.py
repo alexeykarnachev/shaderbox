@@ -30,7 +30,7 @@ ATLAS_JSON_PATH: Path = GRAPH_CANVAS_RESOURCES_DIR / "atlas.json"
 ATLAS_PNG_PATH: Path = GRAPH_CANVAS_RESOURCES_DIR / "atlas.png"
 SHADERS_DIR: Path = GRAPH_CANVAS_RESOURCES_DIR / "shaders"
 
-ABI_VERSION: int = 13
+ABI_VERSION: int = 14
 
 _LIB: ctypes.CDLL | None = None
 
@@ -188,9 +188,17 @@ class PointerInfo(ctypes.Structure):
         ("active_kind", ctypes.c_int32),
         ("active_node", ctypes.c_int32),
         ("active_is_click", ctypes.c_uint8),
+        # Whether a field is taking keystrokes, and which one. Without it a
+        # host cannot route keyboard focus, and an edit that is open reads
+        # the same as one that closed on the last commit.
+        ("editing", ctypes.c_uint8),
         ("_pad0", ctypes.c_uint8),
         ("_pad1", ctypes.c_uint8),
-        ("_pad2", ctypes.c_uint8),
+        ("edit_node", ctypes.c_int32),
+        ("edit_attribute", ctypes.c_int32),
+        ("edit_part", ctypes.c_int32),
+        ("edit_caret", ctypes.c_int32),
+        ("edit_length", ctypes.c_int32),
     ]
 
 
@@ -244,6 +252,14 @@ class Frame(ctypes.Structure):
         ("pointer_flags", ctypes.c_uint32),
         ("text_codepoint", ctypes.c_int32),
         ("key", ctypes.c_int32),
+        # The QUEUE forms, oldest first, applied after the singular fields
+        # above. A platform hands over everything typed between two frames,
+        # and a paste or a fast typist really does produce several -- the
+        # singular field was the lossy part, not the editing code.
+        ("text", ctypes.POINTER(ctypes.c_int32)),
+        ("text_count", ctypes.c_int32),
+        ("keys", ctypes.POINTER(ctypes.c_int32)),
+        ("key_count", ctypes.c_int32),
         # Seconds since the host's previous frame, which is what advances
         # every eased highlight -- a row's hover among them. Zero holds each
         # ease where it is, for a host that renders on demand. The library
@@ -423,6 +439,25 @@ class NodeState(IntEnum):
     HOVERED = 1
     FAILING = 2
     SELECTED = 3
+
+
+class EditKey(IntEnum):
+    """An editing key, as the library's `Frame.keys` numbers them.
+
+    Not a keycode: the host maps its platform's keyboard onto these, so
+    the library never learns what a keyboard is. Anything else the host
+    simply does not send.
+    """
+
+    NONE = 0
+    ENTER = 1
+    ESCAPE = 2
+    BACKSPACE = 3
+    DELETE = 4
+    LEFT = 5
+    RIGHT = 6
+    HOME = 7
+    END = 8
 
 
 class ThemeParseError(IntEnum):
@@ -1053,6 +1088,8 @@ class Canvas:
         self._attrs: ctypes.Array[Attribute] = (Attribute * 0)()
         self._edges: ctypes.Array[Edge] = (Edge * 0)()
         self._strings: ctypes.Array[ctypes.c_uint8] = (ctypes.c_uint8 * 1)()
+        self._text: ctypes.Array[ctypes.c_int32] = (ctypes.c_int32 * 0)()
+        self._keys: ctypes.Array[ctypes.c_int32] = (ctypes.c_int32 * 0)()
         self._theme: Theme | None = None
         self.atlas_loaded: bool = False
         self.distance_range: float = 0.0
@@ -1086,8 +1123,18 @@ class Canvas:
         origin: tuple[float, float] = (0.0, 0.0),
         theme: Theme | None = None,
         dt: float = 0.0,
+        text: Sequence[int] = (),
+        keys: Sequence[int] = (),
     ) -> Result:
         """Push one frame and get back geometry plus what the user did.
+
+        `text` is the codepoints typed since the last frame and `keys` the
+        editing keys pressed (`EditKey`), both oldest first. They reach an
+        OPEN field only: the library ignores them when nothing is being
+        edited, so a host may send its whole queue every frame. A platform
+        hands over several between two frames on a paste or a fast typist,
+        which is why these are sequences rather than the single codepoint
+        the ABI also still carries.
 
         `dt` is seconds since the host's previous frame and is what advances
         every eased highlight, a row's hover among them. The default of zero
@@ -1234,6 +1281,25 @@ class Canvas:
         f.origin_x, f.origin_y = origin
         f.pointer_x, f.pointer_y = pointer.x, pointer.y
         f.wheel = pointer.wheel
+        # Reused across frames like every other array here, and the COUNT is
+        # what the library reads -- a stale tail past `text_count` is never
+        # looked at, so the buffers are grown and never cleared.
+        if text:
+            if len(self._text) < len(text):
+                self._text = (ctypes.c_int32 * max(len(text), 16))()
+            self._text[: len(text)] = list(text)
+            f.text = ctypes.cast(self._text, ctypes.POINTER(ctypes.c_int32))
+        else:
+            f.text = ctypes.POINTER(ctypes.c_int32)()
+        f.text_count = len(text)
+        if keys:
+            if len(self._keys) < len(keys):
+                self._keys = (ctypes.c_int32 * max(len(keys), 16))()
+            self._keys[: len(keys)] = list(keys)
+            f.keys = ctypes.cast(self._keys, ctypes.POINTER(ctypes.c_int32))
+        else:
+            f.keys = ctypes.POINTER(ctypes.c_int32)()
+        f.key_count = len(keys)
         f.dt = dt
         f.pointer_flags = pointer.flags
         # Null is KEEP, not reset: the theme is pushed once and the handle
