@@ -137,6 +137,7 @@ class Theme(ctypes.Structure):
         ("hover_lift", ctypes.c_float),
         ("active_lift", ctypes.c_float),
         ("read_only_lift", ctypes.c_float),
+        ("hover_outline", ctypes.c_float),
         ("border", _RGBA),
         ("state_hovered", _RGBA),
         ("state_selected", _RGBA),

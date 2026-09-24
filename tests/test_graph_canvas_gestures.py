@@ -712,3 +712,93 @@ def test_a_right_click_on_a_ghost_opens_no_pass_menu() -> None:
         f"NOT a ghost, so the ghost's silence proves nothing: {on_solid}"
     )
     canvas.release()
+
+
+def test_a_read_only_field_swallows_the_press_instead_of_moving_the_node() -> None:
+    """Dragging a value the engine owns must not drag the node under it.
+
+    `hit_widget` skipped a non-interactive attribute, the loop then found
+    no widget, and the body-press branch below took the press as a node
+    MOVE -- correct for empty body, wrong for a drawn field the pointer is
+    demonstrably over. Measured before the library fix: a drag on the
+    read-only row emitted `Moved` with gesture Node, while the editable
+    row beside it emitted `ValueEdited` with gesture Value.
+
+    The EDITABLE row is the comparison and it is what makes this more than
+    an assertion of silence: the same drag at the same node in the same
+    frame must still edit. A build that swallowed every press would pass a
+    read-only-only check and fail here.
+
+    Aimed by DRIVING the gesture rather than by `hover_attribute`, which
+    answers across the whole row while a widget's hit box is inset -- a
+    point taken from the hover report lands on the body and reports a node
+    move, which reads exactly like the bug this pins.
+    """
+    packed = pack_nodes(
+        flat_view(["n"], {"n": []}, {"n": (0.0, 0.0)}),
+        {},
+        output=pass_key("n"),
+        body={
+            "n": [
+                BodyRow("u_engine", (1.0,), None, editable=False),
+                BodyRow("u_mine", (1.0,), None, editable=True),
+            ]
+        },
+    )
+    editable_point = _point_dragging(packed, 0)
+    read_only_attr = next(
+        i for i, port in enumerate(packed.nodes[0].ports) if port.label == "u_engine"
+    )
+    canvas = _canvas()
+    try:
+        box = _rect(canvas, packed, 0)
+        x = box[0] + box[2] * 0.5
+        moved_on_read_only: list[float] = []
+        edited_on_read_only: list[float] = []
+        for step in range(int(box[3])):
+            y = box[1] + step + 0.5
+            canvas.frame(
+                packed.nodes, packed.edges, SIZE, ffi.View(), ffi.PointerState()
+            )
+            # Settle one frame: a press at a new position resolves against
+            # the pointer's PREVIOUS position, so the first frame there
+            # would be aimed at wherever it came from.
+            canvas.frame(
+                packed.nodes,
+                packed.edges,
+                SIZE,
+                ffi.View(),
+                ffi.PointerState(x=x, y=y),
+            )
+            # Which ROW this y belongs to, asked of the library rather than
+            # guessed from the editable point's distance: the rows are
+            # adjacent, so a distance test excludes part of one row and
+            # keeps part of the other.
+            probe = canvas.frame(
+                packed.nodes,
+                packed.edges,
+                SIZE,
+                ffi.View(),
+                ffi.PointerState(x=x, y=y),
+            )
+            if probe.node_rects[0].hover_attribute != read_only_attr:
+                continue
+            events = _drive(canvas, packed, _drag((x, y)))
+            if any(isinstance(e, ValueEdited) for e in events):
+                edited_on_read_only.append(y)
+            if any(isinstance(e, Moved) for e in events):
+                moved_on_read_only.append(y)
+    finally:
+        canvas.release()
+
+    assert any(
+        isinstance(e, ValueEdited)
+        for e in _drive(_canvas(), packed, _drag(editable_point))
+    ), (
+        "the editable row no longer edits, so this test is measuring a canvas "
+        "where nothing works rather than a read-only row that correctly refuses"
+    )
+    assert not edited_on_read_only, (
+        f"a read-only row accepted an edit at {edited_on_read_only}: the engine "
+        "overwrites that value every frame, so the drag would silently revert"
+    )
