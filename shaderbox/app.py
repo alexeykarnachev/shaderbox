@@ -1,3 +1,4 @@
+import shutil
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import replace
@@ -85,7 +86,14 @@ from shaderbox.pass_graph import (
     step_in_order,
     strip_order,
 )
-from shaderbox.paths import ProjectPaths, app_data_dir, pass_name_of, shader_lib_root
+from shaderbox.paths import (
+    DOCUMENT_SCRIPT_BASENAME,
+    SCRIPTS_DIR_NAME,
+    ProjectPaths,
+    app_data_dir,
+    pass_name_of,
+    shader_lib_root,
+)
 from shaderbox.profiling import FrameProfile, Profiler, ProfileSmoother
 from shaderbox.project_session import (
     ProjectInfo,
@@ -2622,6 +2630,22 @@ class App:
     def _delete_document_unguarded(self, document_id: str) -> str:
         return self.session._delete_document_unguarded(document_id)
 
+    def _copy_example_script(self, example_id: str, document_id: str) -> None:
+        # An example that ships a simulation is only an example once its script travels
+        # with it; without this the document opens with the pass configured and nothing
+        # driving it, which reads as the feature being broken.
+        source = (
+            self.document_examples_dir
+            / example_id
+            / SCRIPTS_DIR_NAME
+            / DOCUMENT_SCRIPT_BASENAME
+        )
+        if not source.is_file():
+            return
+        target = self.session.paths.document_script_for(document_id)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+
     def create_document_from_example(self, example_id: str) -> None:
         if self._copilot_busy_blocked("Creating a document"):
             return
@@ -2640,6 +2664,12 @@ class App:
         # resource path, and `code.py::draw_chrome` does `path.relative_to(project_dir)` on the
         # active shader tab -- which raises, out of a draw function, taking the frame down.
         self.save_ui_document(new_document)
+        # The script is copied HERE rather than inside `UIDocument.save`, whose omission
+        # of `scripts/` is deliberate: the copilot's checkpoint writes a snapshot through
+        # that same save and carries the script separately, so teaching it to write one
+        # would let a restore overwrite a live script with a stale copy. This path knows
+        # both directories and nothing else reads them.
+        self._copy_example_script(example_id, new_document.id)
         self.set_current_document_id(new_document.id)
         self.ensure_shader_tab(new_document.id)
         logger.info(f"New document {new_document.id} created from example {example_id}")

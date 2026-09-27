@@ -11,11 +11,13 @@ from collections.abc import Iterator
 from typing import Any
 
 import moderngl
+import numpy as np
 import pytest
 
 from shaderbox.constants import DOCUMENT_EXAMPLES_DIR, EXAMPLE_ORDER
 from shaderbox.copilot.capabilities import EditResult
 from shaderbox.paths import DOCUMENT_JSON_BASENAME, shader_lib_root
+from shaderbox.scripting.context import ScriptContext
 from shaderbox.shader_lib import ShaderLibIndex, set_active
 from shaderbox.ui_models import load_document_from_dir
 
@@ -26,6 +28,9 @@ def _text_handle(app: Any) -> str:
         for t in app.copilot_backend.example_catalog()
         if t.name == "Text Rendering"
     )
+
+
+_ENTITY_EXAMPLE_ID = "c1f0a7d2-4b83-4e91-9a52-6d0f3e8b7c14"
 
 
 def test_catalogue_has_all_prefixed_unique_examples(app: Any) -> None:
@@ -42,6 +47,7 @@ def test_catalogue_has_all_prefixed_unique_examples(app: Any) -> None:
         "Fire",
         "Night City",
         "Radiance Cascades",
+        "Entity Flock",
     }
 
 
@@ -188,3 +194,37 @@ def test_a_shipped_example_keeps_every_uniform_row_through_a_save(
     )
     assert after == before, f"the save dropped {len(before - after)} row(s)"
     ui_document.document.release()
+
+
+def test_the_entity_example_carries_its_script_and_draws_its_population(
+    app: Any,
+) -> None:
+    """An instanced example is only an example once its simulation travels with it.
+
+    `UIDocument.save` deliberately omits `scripts/` -- the copilot's checkpoint carries
+    the script separately, and teaching the save to write one would let a restore
+    overwrite a live script with a stale copy. So the copy happens where both directories
+    are known, and this is what says it happened.
+
+    The sibling test that renders every shipped example asserts the read is non-empty,
+    which an all-black frame satisfies: an instanced pass whose script never arrived
+    renders nothing at all and passes it. This one counts ink.
+    """
+    app.create_document_from_example(_ENTITY_EXAMPLE_ID)
+    document_id = app.current_document_id
+    script = app.session.paths.document_script_for(document_id)
+    assert script.is_file(), "the example's script did not travel with it"
+    assert "@instances" in script.read_text()
+
+    document = app.ui_documents[document_id].document
+    for frame in range(8):
+        app.session.script_engine.tick(
+            document_id, document, ScriptContext(t=frame / 60, dt=1 / 60, frame=frame)
+        )
+        document.begin_frame(frame)
+        document.render(u_time=frame / 60)
+
+    pixels = np.frombuffer(
+        document.render_pass.canvas.fbo.read(components=4, dtype="f2"), dtype="f2"
+    )
+    assert float(pixels.max()) > 0.0, "the population drew nothing"

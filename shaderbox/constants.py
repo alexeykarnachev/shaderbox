@@ -18,6 +18,7 @@ EXAMPLE_ORDER = [
     "0b0d16bb-f014-4a85-b155-6be74c33eded",  # Fire
     "8d454b7b-bd48-49dc-aebe-58b9e31cfc28",  # Night City
     "77a84d27-2e5b-406d-8011-ee1cb1a9587c",  # Radiance Cascades (iterated passes)
+    "c1f0a7d2-4b83-4e91-9a52-6d0f3e8b7c14",  # Entity Flock (instanced passes)
 ]
 STARTER_EXAMPLE_ID = EXAMPLE_ORDER[0]
 

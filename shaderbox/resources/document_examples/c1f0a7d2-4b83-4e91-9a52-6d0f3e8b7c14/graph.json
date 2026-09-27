@@ -1,0 +1,11 @@
+{
+    "version": 2,
+    "output": "swarm",
+    "passes": {
+        "swarm": {
+            "target": {
+                "dtype": "f2"
+            }
+        }
+    }
+}

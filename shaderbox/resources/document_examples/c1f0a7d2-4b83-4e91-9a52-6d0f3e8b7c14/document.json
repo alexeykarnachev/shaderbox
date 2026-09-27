@@ -1,0 +1,15 @@
+{
+    "uniforms": {
+        "swarm": {
+            "u_core": 0.22,
+            "u_glow": 0.55
+        }
+    },
+    "ui_state": {
+        "ui_name": "Entity Flock",
+        "aspect": [
+            16,
+            9
+        ]
+    }
+}
