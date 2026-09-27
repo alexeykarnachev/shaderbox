@@ -40,6 +40,11 @@ render thread, with two snapshots and an interpolation alpha, is a separate feat
 engine takes the columns as a value and nothing in the draw path reads live state, so that
 feature swaps the producer and touches nothing else.
 
+**Next is 101, the on-ramp.** The mechanism is gated and the names are not discoverable:
+one shipped example and two `conventions.md` entries are the whole documentation, and the
+copilot's prompt still names a boids flock as the case for the array-uniform technique 100
+replaced. Eight surfaces are inventoried; which of them are in is the open question.
+
 **ShaderBox is still getting off imgui.** `graph_canvas` owns the node picture, the
 hit-testing and the gestures (098); imgui still owns the window, the tab row and the menus,
 and the next surface to move is a question, not a plan.
@@ -58,6 +63,7 @@ going lit to flat (082); the GL thread if the throttle falls short.
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 101 | instanced_onramp | pending | Instanced passes (100) are usable only by someone already told they exist: `@instances`, `flat in`, `pos`/`radius` and `vs_quad` live in one shipped example and in `conventions.md`, and nothing in the editor, the panels or the copilot knows the feature is there -- the copilot's prompt still recommends the array-uniform technique 100 replaced, by name. Eight surfaces inventoried against the code; none designed. Spec: `ai_docs/features/101_instanced_onramp/01_spec.md`. |
 | 100 | instanced_entities | done | A pass whose fragment shader declares `flat in` fields draws one quad per ENTITY instead of one over the canvas: the engine reads those declarations from the flattened source, writes the vertex stage the author never sees, and binds one GPU buffer per field, so a script returning numpy columns under a reserved `@instances` key inside its pass block drives tens of thousands of them in a single `glDrawArraysInstanced`. `pos` and `radius` are reserved -- nothing in a declaration says which field is geometry, and both inference rules fail silently. The layout comes from the declarations, never from introspection, because the driver dead-strips an unread attribute and an introspected record is then the wrong width with no error. Simulation is INLINE; threading and snapshot interpolation are a separate feature the seam is shaped for. Spec: `ai_docs/features/100_instanced_entities/01_spec.md`. |
 | 098 | graph_canvas | done | The hand-drawn imgui node canvas replaced by the `graph_canvas` library over a C ABI, rendered with moderngl into an FBO that `imgui.image` presents -- the first step of getting shaderbox off imgui. Vendored as feature 067 vendored `libeditor.so`; the ctypes binding and the renderer know no shaderbox type, so the pair lifts into another project, and a test walks their imports. Three renderer defects found by rendering rather than by reading (a stride that made every instance after the first read its neighbour, a run offset that walked off the buffer, a preview sharing the atlas's texture unit) plus a gesture mask numbered so that "refuses everything" accepted drags; each was reintroduced and its gate watched to fail. Several library defects were found and fixed upstream, each reported with the measurement
 that showed it. The drawing left `pass_graph.py`; what remains there is the seam. Spec: `ai_docs/features/098_graph_canvas/01_spec.md` + `02_progress.md`. |
