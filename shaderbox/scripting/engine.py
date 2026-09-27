@@ -32,6 +32,7 @@ from typing import Any, Protocol, TypeGuard
 import moderngl
 from OpenGL.GL import GL_INT, GL_SAMPLER_2D, GL_UNSIGNED_INT
 
+from shaderbox.instanced import validate_population
 from shaderbox.intel.script import glsl_type_of_value
 from shaderbox.paths import DOCUMENT_SCRIPT_BASENAME
 from shaderbox.scripting.behavior import (
@@ -831,6 +832,21 @@ class ScriptEngine:
                     )
                     skipped.add((pass_name, key))
                     continue
+                render_pass = document.passes.get(pass_name)
+                fields = getattr(render_pass, "entity_fields", ())
+                if not fields:
+                    # No `flat in` yet, or the pass has not compiled. The second is
+                    # ordinary on frame one, so this stays quiet and the next tick
+                    # routes it once a program exists.
+                    populations[pass_name] = value
+                    continue
+                _, problem = validate_population(fields, value)
+                if problem is not None:
+                    errors[(document_id, pass_name, key)] = ScriptError(
+                        key, "runtime", problem, pass_name=pass_name
+                    )
+                    skipped.add((pass_name, key))
+                    continue
                 populations[pass_name] = value
         # A bare reserved key names no pass, so the block path would report it as a
         # missing pass -- true and useless. The author forgot the pass, and that is what
@@ -856,8 +872,13 @@ class ScriptEngine:
             )
             skipped.add(("", key))
 
-        for pass_name, render_pass in document.passes.items():
-            render_pass.pending_instances = populations.get(pass_name, {})
+        # `values_sink` is set only by `dry_run`, whose contract is that the live
+        # document is byte-identical afterward. Every uniform write already honours it;
+        # a population is live state too, and writing it unconditionally replaced the
+        # real document's entities with the throwaway probe instance's.
+        if values_sink is None:
+            for pass_name, render_pass in document.passes.items():
+                render_pass.pending_instances = populations.get(pass_name, {})
 
         for name, value in broadcasts.items():
             # An engine-owned key (u_time…) is SILENTLY dropped (decision 5): the renderer owns that

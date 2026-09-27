@@ -70,8 +70,8 @@ def _is_number(value: object) -> bool:
     # The GL-free twin of `uniform_coerce.is_number`. A numpy scalar counts at every
     # width -- splitting on whether the type happens to subclass `float` accepted f8 and
     # refused f4, so the same expression named a type over one array and nothing over
-    # another. `np.bool_` is excluded explicitly because it is NOT a subclass of Python's
-    # `bool`, so the guard below does not cover it.
+    # another. `np.bool_` already falls through both checks below; the explicit line is
+    # a barrier against a later widening, not what refuses it today.
     if isinstance(value, np.bool_):
         return False
     if isinstance(value, np.number):

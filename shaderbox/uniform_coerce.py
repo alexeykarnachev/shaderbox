@@ -51,9 +51,10 @@ def is_number(v: object) -> TypeGuard[int | float]:
     # invisible from a script. `np.mean` and `np.linalg.norm` over an f4 array both return
     # f4, so the rejected case is the common one.
     #
-    # Both bool spellings stay out, and `np.bool_` needs saying separately: it is NOT a
-    # subclass of Python's `bool`, so the guard on the left does not cover it, and a
-    # silent widening here would put a bool back into a float uniform.
+    # Both bool spellings stay out. `np.bool_` already falls through -- it is neither an
+    # `np.number` nor a Python `int`/`float` -- so this line changes no answer today and
+    # exists as a barrier: it is what stops a later widening of the `np.number` branch
+    # from admitting a bool into a float uniform without anyone noticing.
     if isinstance(v, np.bool_):
         return False
     if isinstance(v, np.number):

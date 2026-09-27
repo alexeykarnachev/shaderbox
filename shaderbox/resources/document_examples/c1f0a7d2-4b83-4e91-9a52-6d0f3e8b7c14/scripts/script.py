@@ -78,9 +78,13 @@ class Behavior(ScriptBehavior):
         # Which flock, and how far out. Speed itself is nearly constant here -- the clamp
         # below sees to that -- so colouring by it would make every entity the same shade.
         heat = np.where(near_a, 0.0, 1.0).astype("f4") * np.float32(0.72)
-        heat += np.clip(dist / np.float32(ORBIT * 2.2), 0.0, 1.0).astype("f4") * np.float32(0.28)
+        heat += np.clip(dist / np.float32(ORBIT * 2.2), 0.0, 1.0).astype(
+            "f4"
+        ) * np.float32(0.28)
         too_fast = speed > MAX_SPEED
-        scale = np.where(too_fast, MAX_SPEED / np.maximum(speed, 1e-6), 1.0).astype("f4")
+        scale = np.where(too_fast, MAX_SPEED / np.maximum(speed, 1e-6), 1.0).astype(
+            "f4"
+        )
         self.vx *= scale
         self.vy *= scale
 

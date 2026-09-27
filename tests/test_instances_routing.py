@@ -12,12 +12,14 @@ import moderngl
 import numpy as np
 import pytest
 
+from shaderbox.core import Pass
 from shaderbox.document import Document
 from shaderbox.instanced import validate_population
 from shaderbox.intel.glsl import entity_fields
 from shaderbox.intel.script import _is_number
 from shaderbox.scripting.context import ScriptContext
 from shaderbox.scripting.engine import ScriptEngine
+from shaderbox.shader_source import ShaderSource
 from shaderbox.uniform_coerce import is_number
 
 _FRAGMENT = """#version 460 core
@@ -161,10 +163,15 @@ def test_a_numpy_scalar_is_a_number_at_every_width_but_a_numpy_bool_is_not() -> 
     # array returns f4 -- so the rejected case was the common one.
     assert is_number(np.float32(1.0)) and is_number(np.float64(1.0))
     assert is_number(np.int32(1)) and is_number(np.uint8(3))
-    # `np.bool_` is NOT a subclass of Python's `bool`, so the guard that keeps bools out
-    # of a float uniform does not cover it and has to say so separately.
     assert not is_number(np.bool_(True))
     assert not is_number(True)
+    # Assert the MECHANISM, not the answer: `np.bool_` is refused today by falling
+    # through both checks, so the explicit guard against it is a barrier for a future
+    # widening and deleting it changes nothing measurable. What WOULD change the answer
+    # is numpy making `np.bool_` a number, and that is what this pins.
+    assert not isinstance(np.bool_(True), np.number), (
+        "np.bool_ became an np.number -- the explicit guard is now load-bearing"
+    )
 
 
 def test_the_two_number_rules_agree() -> None:
@@ -251,3 +258,182 @@ def test_a_population_never_enters_the_probe_s_samples(
             assert not isinstance(value, np.ndarray), (
                 f"{key} carries a whole population"
             )
+
+
+def test_a_field_declared_but_not_yet_read_does_not_crash_the_frame(
+    gl_ctx: moderngl.Context, tmp_path: Path
+) -> None:
+    """Declare a field, read it in the next edit -- the ordinary authoring step.
+
+    The driver DEAD-STRIPS an attribute the fragment shader does not read, so the linked
+    program has no `a_mass` while the declaration plainly does, and binding it raised a
+    KeyError out of `Document.render` -- the frame loop.
+    """
+    source = tmp_path / "swarm.frag.glsl"
+    source.write_text(
+        _FRAGMENT.replace(
+            "flat in float radius;", "flat in float radius;\nflat in float mass;"
+        )
+    )
+    render_pass = Pass(
+        gl=gl_ctx, source=ShaderSource.load(source), canvas_size=(64, 64)
+    )
+    render_pass.compile()
+    assert [f.name for f in render_pass.entity_fields] == ["pos", "radius", "mass"]
+    # The premise, checked: the driver really did drop it. Without this the test could
+    # pass because the attribute survived, proving nothing about the guard.
+    assert render_pass.program is not None and "a_mass" not in render_pass.program
+
+    render_pass.render(
+        u_time=0.0,
+        instances={
+            "pos": np.array([[-0.4, 0.0], [0.4, 0.0]], dtype="f4"),
+            "radius": np.full(2, 0.2, dtype="f4"),
+            "mass": np.ones(2, dtype="f4"),
+        },
+    )
+    pixels = np.frombuffer(
+        render_pass.canvas.fbo.read(components=4, dtype="f2"), dtype="f2"
+    )
+    assert float(pixels.max()) > 0.0, "the population still has to draw"
+
+
+def test_an_invalid_population_draws_nothing_rather_than_the_whole_canvas(
+    gl_ctx: moderngl.Context, tmp_path: Path
+) -> None:
+    """A wrong dtype must not paint the entity shader over everything.
+
+    "No population" and "a population that does not match" returned the same value, and
+    the draw read it as "go fullscreen" -- so a single `dtype="f8"`, which is what numpy
+    gives you unless you ask otherwise, filled the canvas.
+    """
+    source = tmp_path / "swarm.frag.glsl"
+    # No `discard`: a fullscreen draw then covers every pixel, so the failure is visible
+    # rather than masked by the shape test.
+    source.write_text(
+        """#version 460 core
+in vec2 vs_quad;
+flat in vec2  pos;
+flat in float radius;
+out vec4 frag_color;
+void main(){ frag_color = vec4(1.0); }
+"""
+    )
+    render_pass = Pass(
+        gl=gl_ctx, source=ShaderSource.load(source), canvas_size=(64, 64)
+    )
+    render_pass.compile()
+    render_pass.render(
+        u_time=0.0,
+        instances={
+            "pos": np.zeros((4, 2), dtype="f4"),
+            "radius": np.zeros(4, dtype="f8"),  # the mistake
+        },
+    )
+    pixels = np.frombuffer(
+        render_pass.canvas.fbo.read(components=4, dtype="f2"), dtype="f2"
+    )
+    assert float(pixels.max()) == 0.0, "an invalid population drew something"
+
+    # The SAME pass with a valid population draws, so the silence above is about the
+    # invalid case rather than about a pass that never draws at all.
+    render_pass.render(
+        u_time=0.0,
+        instances={
+            "pos": np.zeros((4, 2), dtype="f4"),
+            "radius": np.full(4, 0.2, dtype="f4"),
+        },
+    )
+    good = np.frombuffer(
+        render_pass.canvas.fbo.read(components=4, dtype="f2"), dtype="f2"
+    )
+    assert float(good.max()) > 0.0
+
+
+def test_a_dry_run_leaves_the_live_population_alone(
+    gl_ctx: moderngl.Context, tmp_path: Path
+) -> None:
+    """`dry_run` promises the live document is byte-identical afterward.
+
+    Every uniform write routes through `values_sink` to keep that promise. A population
+    is live state too, and writing it unconditionally replaced the real document's
+    entities with the throwaway probe instance's.
+    """
+    growing = """
+import numpy as np
+from shaderbox.scripting import ScriptBehavior, ScriptContext
+
+
+class Behavior(ScriptBehavior):
+    def __init__(self) -> None:
+        self.n = 0
+
+    def update(self, context: ScriptContext) -> dict:
+        self.n += 1
+        return {"swarm": {"@instances": {
+            "pos": np.full((self.n, 2), float(self.n), dtype="f4"),
+            "radius": np.full(self.n, 0.1, dtype="f4"),
+        }}}
+"""
+    document, engine = _document(tmp_path, gl_ctx, growing)
+    engine.tick("doc", document, ScriptContext(t=0.0, dt=1 / 60, frame=0))
+    before = document.passes["swarm"].pending_instances["pos"].copy()
+
+    engine.dry_run("doc", document, (0.0, 0.5, 1.0), 60.0)
+
+    after = document.passes["swarm"].pending_instances["pos"]
+    # The probe's own instance counts up, so a leak shows as BOTH a different shape and
+    # a different value -- the fixture is built where the two cannot coincide.
+    assert after.shape == before.shape and float(after[0, 0]) == float(before[0, 0])
+
+
+def test_a_bad_population_says_why_on_the_strip(
+    gl_ctx: moderngl.Context, tmp_path: Path
+) -> None:
+    """The message reaches the author, not a log file nobody opens.
+
+    Validation happens in the engine rather than at draw time for exactly this reason:
+    `Pass` can only log, and an author running the app from a launcher never sees it.
+    """
+    wrong_dtype = _SCRIPT.replace(
+        'dtype="f4")\n        self.radius', 'dtype="f8")\n        self.radius'
+    )
+    document, engine = _document(tmp_path, gl_ctx, wrong_dtype)
+    engine.tick("doc", document, ScriptContext(t=0.0, dt=1 / 60, frame=0))
+
+    status = engine.script_status("doc")
+    assert status is not None
+    messages = " ".join(error.message for _, _, error in status.soft_errors)
+    assert "pos" in messages and "f4" in messages
+    assert document.passes["swarm"].pending_instances == {}
+
+
+def test_a_pass_that_stops_returning_a_population_does_not_keep_the_last_one(
+    gl_ctx: moderngl.Context, tmp_path: Path
+) -> None:
+    # The write is unconditional for exactly this reason. Making it conditional on the
+    # pass appearing in the returned dict -- the natural-looking optimisation -- leaves
+    # a pass rendering last frame's entities forever once the script stops sending them.
+    alternating = """
+import numpy as np
+from shaderbox.scripting import ScriptBehavior, ScriptContext
+
+
+class Behavior(ScriptBehavior):
+    def __init__(self) -> None:
+        self.frame = 0
+
+    def update(self, context: ScriptContext) -> dict:
+        self.frame += 1
+        if self.frame % 2 == 1:
+            return {"swarm": {"@instances": {
+                "pos": np.zeros((2, 2), dtype="f4"),
+                "radius": np.full(2, 0.2, dtype="f4"),
+            }}}
+        return {}
+"""
+    document, engine = _document(tmp_path, gl_ctx, alternating)
+    engine.tick("doc", document, ScriptContext(t=0.0, dt=1 / 60, frame=0))
+    assert document.passes["swarm"].pending_instances, "the odd frame must populate"
+    engine.tick("doc", document, ScriptContext(t=1 / 60, dt=1 / 60, frame=1))
+    assert document.passes["swarm"].pending_instances == {}, "the even frame must clear"

@@ -248,3 +248,82 @@ void main(){
     render_pass.invalidate()
     assert render_pass.instance_buffers == {}
     assert render_pass.entity_fields == ()
+
+
+def test_invalidate_frees_the_instance_buffers_it_allocated(
+    gl_ctx: moderngl.Context, tmp_path: Path
+) -> None:
+    """A shader edit must not leak a buffer per field, per edit.
+
+    The sibling gate in `test_gl_lifetime_guards.py` runs on a fullscreen example, where
+    `instance_buffers` is empty before and after -- so it asserts `{} == {}` and stays
+    green with the release deleted. This one allocates buffers first and proves they
+    were there, which is what makes the silence afterwards mean anything.
+    """
+    source = tmp_path / "swarm.frag.glsl"
+    source.write_text(
+        """#version 460 core
+in vec2 vs_quad;
+flat in vec2  pos;
+flat in float radius;
+out vec4 frag_color;
+void main(){ if (length(vs_quad) > 1.0) discard; frag_color = vec4(1.0); }
+"""
+    )
+    render_pass = Pass(
+        gl=gl_ctx, source=ShaderSource.load(source), canvas_size=(64, 64)
+    )
+    render_pass.compile()
+    render_pass.render(
+        u_time=0.0,
+        instances={
+            "pos": np.zeros((3, 2), dtype="f4"),
+            "radius": np.full(3, 0.2, dtype="f4"),
+        },
+    )
+    allocated = list(render_pass.instance_buffers.values())
+    assert len(allocated) == 2, "the fixture allocated nothing -- it never reached this"
+
+    render_pass.invalidate()
+
+    assert render_pass.instance_buffers == {}
+    # Freed, not merely forgotten. GL hands released names back out, so a recompile that
+    # re-uploads must land on the SAME names. Clearing the dict without releasing leaves
+    # the old names allocated and the new buffers take fresh ones -- which is the leak,
+    # and it is what this catches. Comparing the classes would not: moderngl's deferred
+    # collection leaves a released Buffer answering as a Buffer.
+    freed = sorted(buffer.glo for buffer in allocated)
+    render_pass.compile()
+    render_pass.render(
+        u_time=0.0,
+        instances={
+            "pos": np.zeros((3, 2), dtype="f4"),
+            "radius": np.full(3, 0.2, dtype="f4"),
+        },
+    )
+    assert sorted(b.glo for b in render_pass.instance_buffers.values()) == freed
+
+
+def test_build_refuses_invalid_fields_through_the_seam_compile_uses(
+    gl_ctx: moderngl.Context, tmp_path: Path
+) -> None:
+    # Every other validation test calls `validate_fields` directly, so deleting the call
+    # from `build` -- which is what `Pass.compile` uses -- leaves them all green. This
+    # goes the way a real pass does and checks the author reads their own field's name.
+    source = tmp_path / "bad.frag.glsl"
+    source.write_text(
+        """#version 460 core
+in vec2 vs_quad;
+flat in vec2  pos;
+flat in float radius;
+flat in mat4  xform;
+out vec4 frag_color;
+void main(){ frag_color = vec4(xform[0][0]); }
+"""
+    )
+    render_pass = Pass(
+        gl=gl_ctx, source=ShaderSource.load(source), canvas_size=(64, 64)
+    )
+    render_pass.compile()
+    assert render_pass.program is None
+    assert "xform" in render_pass.compile_unit.error_raw

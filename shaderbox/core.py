@@ -55,6 +55,11 @@ from shaderbox.util import try_to_release
 
 # moderngl's buffer-format spelling per field type. `/i` (divisor 1) is appended at the
 # binding: without it every instance reads row 0 and the whole population stacks.
+# Returned when a population does not match what the shader declares. A distinct value
+# from None, which means "this pass draws fullscreen": conflating the two drew the entity
+# shader over the WHOLE canvas on a wrong dtype, which is the likeliest mistake there is.
+_INVALID_POPULATION = -1
+
 _ATTRIBUTE_FORMATS: dict[str, str] = {
     "float": "1f",
     "vec2": "2f",
@@ -609,6 +614,11 @@ class Pass:
         count = self._upload_instances(
             instances if instances is not None else self.pending_instances
         )
+        if count == _INVALID_POPULATION:
+            # Hold the previous frame. The engine already reported why on the strip, and
+            # drawing the entity shader fullscreen would answer a data mistake with a
+            # picture that looks deliberate.
+            return
         if self.entity_fields:
             # The generated stage branches on this, so an unset flag silently takes the
             # fullscreen path and the whole population vanishes with no error.
@@ -644,12 +654,8 @@ class Pass:
             return None
         count, problem = validate_population(self.entity_fields, instances)
         if problem is not None:
-            # Draw nothing rather than something wrong, and say why once. The frame
-            # continues: a bad population is an authoring state, not a crash.
-            if problem != self._instances_error:
-                logger.error(f"{self.source.path.name}: {problem}")
-                self._instances_error = problem
-            return None
+            self._instances_error = problem
+            return _INVALID_POPULATION
         self._instances_error = None
         for entity_field in self.entity_fields:
             column = instances[entity_field.name]
@@ -677,11 +683,19 @@ class Pass:
             (self.vbo, "2f", CORNER_ATTRIBUTE)
         ]
         for entity_field in self.entity_fields:
+            attribute = f"a_{entity_field.name}"
+            if attribute not in self.program:
+                # The driver DEAD-STRIPS an attribute the fragment shader does not read
+                # yet, so the linked program has no `a_mass` while the declaration
+                # plainly does -- and binding a name it lacks raises. Declaring a field
+                # and reading it in the next edit is the ordinary step, so it keeps its
+                # buffer and binds nothing until the body uses it.
+                continue
             content.append(
                 (
                     self.instance_buffers[entity_field.name],
                     f"{_ATTRIBUTE_FORMATS[entity_field.glsl_type]}/i",
-                    f"a_{entity_field.name}",
+                    attribute,
                 )
             )
         self.vao = self._gl.vertex_array(self.program, content)

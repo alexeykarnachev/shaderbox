@@ -76,11 +76,9 @@ def test_invalidate_frees_the_program_and_its_buffers(gl: moderngl.Context) -> N
         and document.render_pass.vbo is None
         and document.render_pass.vao is None
     )
-    # A pass's GL objects are whatever `invalidate` must free, and that set GREW when
-    # instanced passes landed: an entity field owns a buffer too. A fixed tuple of the
-    # three above stays green while a fourth kind leaks once per edit, so the assertion
-    # is written against the container rather than a list someone must remember to
-    # extend.
+    # The example is not instanced, so `instance_buffers` is empty before and after --
+    # an assertion here would be `{} == {}` and would hold with the release deleted.
+    # The instance-buffer half lives in `test_instanced.py`, which allocates some first.
     assert document.render_pass.instance_buffers == {}
     assert _released(program), "the GL program outlived invalidate()"
     for name, obj in (("vbo", vbo), ("vao", vao)):

@@ -6,10 +6,16 @@
         }
     },
     "ui_state": {
-        "ui_name": "Entity Flock",
         "aspect": [
             16,
             9
-        ]
+        ],
+        "description": "Twenty thousand entities steered in numpy and drawn in one call. The shader declares each per-entity value as a `flat in`; script.py fills them by name under \"@instances\".",
+        "resolution": [
+            960,
+            540
+        ],
+        "resolution_mode": "auto",
+        "ui_name": "Entity Flock"
     }
 }
