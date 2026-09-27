@@ -24,6 +24,21 @@ _OUT_VARIABLE = re.compile(
 )
 _WORD = re.compile(r"\b[A-Za-z_]\w*\b")
 
+# `flat in vec2 pos;` -- ONE ENTITY FIELD of an instanced pass. The two qualifiers are
+# accepted in either order because GLSL allows both and a line-anchored `flat\s+in` finds
+# ZERO fields in a shader written `in flat` (measured). `layout(...)` and a precision
+# qualifier may precede, and one declaration may carry several comma-separated names
+# (`flat in float radius, energy;` is two fields, and a pattern taking only the first
+# silently drops the rest). `flat` is what distinguishes an entity field from an ordinary
+# interpolated varying like `vs_uv`: a per-entity value has nothing to interpolate.
+_ENTITY_FIELD = re.compile(
+    r"^[ \t]*(?:layout\s*\([^)]*\)\s*)?"
+    r"(?:flat\s+in|in\s+flat)\s+"
+    r"(?:lowp\s+|mediump\s+|highp\s+)?"
+    r"(\w+)\s+([^;]+);",
+    re.MULTILINE,
+)
+
 
 @dataclass(frozen=True)
 class UniformDeclaration:
@@ -133,3 +148,32 @@ def local_declarations(text: str, types: frozenset[str]) -> dict[str, str]:
 def buffer_words(text: str) -> frozenset[str]:
     """Every identifier-shaped word in the buffer, comments excluded."""
     return frozenset(_WORD.findall(_strip_comments(text)))
+
+
+@dataclass(frozen=True)
+class EntityField:
+    """One `flat in` declaration of an instanced pass: a value that varies per ENTITY."""
+
+    name: str
+    glsl_type: str
+    # 0-based line of the declaration.
+    line: int
+
+
+def entity_fields(text: str) -> tuple[EntityField, ...]:
+    """Every `flat in <type> <name>;` in the buffer, comments excluded, in source order.
+
+    Read from the SOURCE rather than the linked program: the driver dead-strips an
+    attribute the body does not read yet, so introspection reports a field the author
+    declared as absent and the record it implies is the wrong width.
+    """
+    code = _strip_comments(text)
+    fields: list[EntityField] = []
+    for match in _ENTITY_FIELD.finditer(code):
+        glsl_type = match.group(1)
+        line = _line_of(code, match.start())
+        for declarator in match.group(2).split(","):
+            name = declarator.strip()
+            if name.isidentifier():
+                fields.append(EntityField(name, glsl_type, line))
+    return tuple(fields)
