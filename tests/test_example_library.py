@@ -228,3 +228,55 @@ def test_the_entity_example_carries_its_script_and_draws_its_population(
         document.render_pass.canvas.fbo.read(components=4, dtype="f2"), dtype="f2"
     )
     assert float(pixels.max()) > 0.0, "the population drew nothing"
+
+
+def test_the_entity_example_still_looks_like_a_flock_after_thirty_seconds(
+    app: Any,
+) -> None:
+    """An example is documentation, and a simulation's late state is what a reader sees.
+
+    The first version collapsed: every per-frame increment exceeded the speed cap, so
+    the clamp rewrote velocity to pure tangential and the flock converged onto two
+    one-pixel rings -- coverage 39% to 2%, peak brightness 6.7 to 219. Frame one looked
+    right the whole time, which is why this walks the clock instead.
+    """
+    app.create_document_from_example(_ENTITY_EXAMPLE_ID)
+    document_id = app.current_document_id
+    document = app.ui_documents[document_id].document
+    # A canvas big enough to resolve individual entities. At the 64x64 default the
+    # sprites are sub-pixel and a collapsed ring covers a similar fraction to a healthy
+    # disc -- measured, the two are indistinguishable there, so the gate passed with the
+    # collapsing parameters restored.
+    document.set_canvas_size((480, 270))
+
+    # What  does before the live tick: re-stat each document's scripts dir and
+    # bind what it finds. A document created from an example is inserted after load, so
+    # without this its script is never bound.
+    app.session.reload_scripts()
+
+    coverage: list[float] = []
+    for frame in range(0, 1801):
+        # Through `session.tick`, which is what the app calls: it resolves and reloads
+        # the document's script first. Ticking the engine directly leaves the script
+        # unbound, and the pass then draws its fullscreen fallback -- 78.5% coverage at
+        # both times, which passed this gate while measuring nothing.
+        app.session.tick([document_id], t=frame / 60, dt=1 / 60)
+        document.begin_frame(frame)
+        document.render(u_time=frame / 60)
+        if frame == 60:
+            assert document.passes["swarm"].pending_instances, (
+                "the script never drove the pass -- this measures the fallback"
+            )
+        if frame in (60, 1800):
+            pixels = np.frombuffer(
+                document.render_pass.canvas.fbo.read(components=4, dtype="f2"),
+                dtype="f2",
+            ).reshape(-1, 4)
+            coverage.append(float((pixels[:, 3] > 0.01).mean()))
+
+    early, late = coverage
+    # The absolute floor is what matters: a collapsed flock covers a few percent however
+    # it started. Compared against a literal rather than against `early`, since a
+    # collapse that happened before frame 60 would make the ratio look healthy.
+    assert late > 0.08, f"the flock collapsed to {late:.1%} coverage"
+    assert late > early * 0.5, f"coverage fell from {early:.1%} to {late:.1%}"

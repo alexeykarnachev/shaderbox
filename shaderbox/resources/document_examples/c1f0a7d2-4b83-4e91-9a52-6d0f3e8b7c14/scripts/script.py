@@ -14,12 +14,18 @@ COUNT = 20000
 # degrees into a tangential push, with only a weak radial term holding the orbit at a
 # radius. Pure attraction collapses the whole flock onto two points within a second --
 # measured, and it renders as two white blobs.
-PULL = 1.6
-SWIRL = 2.4
+# Every per-frame increment stays well UNDER the speed cap. When SWIRL*dt exceeded it
+# -- 0.040 against 0.014 -- the clamp rewrote velocity to pure tangential every frame,
+# which made DRAG, JITTER and most of PULL inert and collapsed the flock onto two
+# one-pixel rings within three seconds. Measured: radial spread fell 15x and peak
+# brightness climbed from 6.7 to 219 as 20000 entities piled into the same orbit.
+PULL = 1.1
+SWIRL = 0.40
 ORBIT = 0.20
-DRAG = 0.97
-JITTER = 0.05
-MAX_SPEED = 0.014
+SPREAD = 0.13
+DRAG = 0.985
+JITTER = 0.22
+MAX_SPEED = 0.013
 
 
 class Behavior(ScriptBehavior):
@@ -34,6 +40,9 @@ class Behavior(ScriptBehavior):
         self.vx = np.zeros(COUNT, "f4")
         self.vy = np.zeros(COUNT, "f4")
         self.radius = (rng.random(COUNT) * 0.010 + 0.004).astype("f4")
+        # A per-entity orbit radius, spread around ORBIT. Without it every entity is
+        # pulled to the same distance and the flock becomes a one-pixel-wide circle.
+        self.orbit = (ORBIT + (rng.random(COUNT) - 0.5) * 2.0 * SPREAD).astype("f4")
         self._rng = rng
 
     def update(self, context: ScriptContext) -> dict:
@@ -59,9 +68,10 @@ class Behavior(ScriptBehavior):
         nx = rx / dist
         ny = ry / dist
 
-        # Radial: pull in when outside the orbit radius, push out when inside. This is
-        # what stops the collapse -- an entity at the centre is pushed back out.
-        radial = (dist - np.float32(ORBIT)) * PULL
+        # Radial: pull in when outside the orbit radius, push out when inside -- and
+        # each entity keeps its OWN radius, so the flock is a disc rather than a ring.
+        # A single shared ORBIT is what made every entity converge to one circle.
+        radial = (dist - self.orbit) * PULL
         self.vx += nx * radial * dt
         self.vy += ny * radial * dt
 
