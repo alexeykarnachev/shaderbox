@@ -14,6 +14,7 @@ import pytest
 
 from shaderbox.core import Pass
 from shaderbox.instanced import (
+    SUPPORTED_TYPES,
     InstancedError,
     build,
     generate_vertex_source,
@@ -337,3 +338,30 @@ def test_a_field_whose_generated_name_collides_is_refused_by_its_own_name() -> N
     source = "flat in vec2 pos;\nflat in float radius;\nflat in float corner;"
     with pytest.raises(InstancedError, match="corner"):
         validate_fields(_fields(source), _ATTRIBUTES)
+
+
+def test_every_supported_type_has_an_entry_in_every_table() -> None:
+    """Five parallel type tables, and nothing but this stops them drifting.
+
+    `SUPPORTED_TYPES`, `_COMPONENTS` and `_EXPECTED_DTYPE` live in `instanced.py`;
+    `_ATTRIBUTE_FORMATS` lives in `core.py` because this module may not import GL, and
+    `_LOCATIONS` holds only the members that cost more than one. Adding a type to the
+    first alone passes validation and then raises a bare KeyError at draw time, which is
+    the "two parallel name-keyed dicts must stay in lockstep" smell the repo's own rules
+    name -- enumerated here rather than trusted.
+    """
+    from shaderbox.core import _ATTRIBUTE_FORMATS
+    from shaderbox.instanced import _COMPONENTS, _EXPECTED_DTYPE, _LOCATIONS
+
+    for glsl_type in SUPPORTED_TYPES:
+        assert glsl_type in _COMPONENTS, f"{glsl_type} has no component count"
+        assert glsl_type in _EXPECTED_DTYPE, f"{glsl_type} has no expected dtype"
+        assert glsl_type in _ATTRIBUTE_FORMATS, f"{glsl_type} has no buffer format"
+        # `_LOCATIONS` is a lookup with a default of 1, so a member's ABSENCE is the
+        # claim that it costs one location. Assert that claim rather than membership.
+        assert _LOCATIONS.get(glsl_type, 1) >= 1
+
+    # And nothing claims support it does not have: a format for a type the validator
+    # refuses is dead weight that reads as a supported type.
+    assert set(_ATTRIBUTE_FORMATS) == set(SUPPORTED_TYPES)
+    assert set(_COMPONENTS) == set(SUPPORTED_TYPES)

@@ -571,15 +571,25 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   every entity at its velocity as soon as another vec2 is declared first, and inferring
   nothing stretches every quad across the viewport. A scalar radius is aspect-corrected
   because it is a length; a vec2 is componentwise, which is how a rectangle is expressed.
+  **`vs_quad` is the quad-local coordinate, -1..1 from the entity's centre**, and it is the
+  name an author cannot guess: `vs_uv` keeps meaning 0..1 across the CANVAS, so reaching
+  for it to shape an entity draws a canvas-wide vignette of hard squares with no error at
+  all. A column is **f4** for a float or vec, **i4** for an int or ivec, **u4** for a uint
+  or uvec -- checked, never cast, because numpy's own assignment would turn an f8 into an
+  f4 and 1e40 into inf -- **C-contiguous**, and shaped `(N, components)` for a vector or
+  `(N,)` for a scalar. Every column needs a `flat in` and every `flat in` needs a column:
+  one that nothing declares refuses the whole population, so a rename changes both sides
+  in one edit.
   **The record layout comes from the PARSED DECLARATIONS, never from introspection**: the
   driver dead-strips an attribute the body does not read yet, so an introspected record is
   the wrong width with no error (measured: energy 0.3 where 0.8999 renders), and a
   dead-stripped field binds nothing rather than raising. One GPU buffer PER FIELD, not one
   interleaved record -- the draw costs the same either way (0.131 ms both) while
   interleaving repacks every column every frame and a script's arrays are already
-  contiguous. The mode is per-FRAME via an engine-set `sb_instanced` bool on one program:
+  contiguous. The mode is per-FRAME via an engine-set `sb_instanced` bool on one program,
   and the flag is written on EVERY draw: an unset flag silently takes the fullscreen
-  branch, so the whole population vanishes into one canvas-sized quad with no GL error. The budget is counted in attribute LOCATIONS, since a
+  branch, so the whole population vanishes into one canvas-sized quad with no GL error.
+  The budget is counted in attribute LOCATIONS, since a
   matrix costs one per column while reporting as one field. Revisit if an entity shape
   needs vertex-stage geometry the fragment shader cannot express -- a non-`flat` custom
   varying, a trail stretched along velocity -- which is the real trigger for a
@@ -588,6 +598,15 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   copilot's `<id>#<pass>` addressing. Rejected on measurement: SSBO (the VBO was fastest),
   a `graph.json` draw-mode toggle (cannot alternate per frame), a wrapper class (079
   deleted those), engine-INJECTED declarations (the shader stops being self-describing).
+
+- **`UIDocument.save` writes no `scripts/` and must not learn to (feature 100).** The
+  copilot's checkpoint snapshots a document through that same funnel and carries the
+  script separately, so a save that wrote one would let a restore overwrite a live script
+  with a stale copy. An example's script is therefore copied where both directories are
+  known, in `App.create_document_from_example`, and gated by
+  `test_the_entity_example_carries_its_script_and_draws_its_population`. Revisit only with
+  the checkpoint path in hand: the omission is the invariant, not an oversight, and
+  "save should be complete" is the edit that breaks it.
 
 - **A script's bulk data travels under a RESERVED `@` key inside a pass block, and the
   engine owns every buffer (feature 100).** `@instances` carries a dict of named numpy

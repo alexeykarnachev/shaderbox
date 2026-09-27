@@ -13,7 +13,10 @@
 > 8 and 10 (stable slots, generation counters, off-thread simulation and snapshot
 > interpolation — deferred to a separate feature by the maintainer), and the Files-touched
 > list (five of its entries were never touched). The Goal, the Out-of-scope triggers and
-> the gate DISCIPLINE stand.
+> the gate DISCIPLINE stand -- except the Goal's last sentence, which does not: there is
+> no capacity of 65536 (buffers double on growth, per decision 2's supersession above),
+> and the render rate is NOT independent of the simulation rate. Simulation is INLINE;
+> that independence is the deferred threading feature.
 
 ## Goal
 
@@ -147,8 +150,10 @@ restored. Each line below names the break.
 8. Both the main-thread frame time and the achieved tick rate are asserted; one without the
    other passes on a simulation that is not running.
 
-Measured numbers belong in `probes/` under this directory, printed by the probe, not written
-into this spec as prose.
+Measured numbers belong with the code that can emit them, not in this spec as prose. No
+`probes/` directory was created for this feature: the numbers that decided something are
+in the two `conventions.md` entries beside the decision they justify, and the rest are in
+the commit bodies of `a8976a5..7ba6f1e`.
 
 ## Open questions for the user
 
@@ -163,5 +168,9 @@ into this spec as prose.
    simulation seam with its own file and lifecycle. Bears on the threading model and on what
    a hot reload means.
 
-3. **Export cost.** A 30-second export at 50k re-simulates every tick before rendering, and
-   is not what the live view showed. Accept, cap, or seed.
+3. **Export cost.** A 30-second export at 50k re-simulates every tick before rendering:
+   roughly 44 seconds of CPU before a frame is written. It is also not the same motion --
+   the export integrates a fixed `1/fps` step while the live view integrates the real
+   frame gap, so the trajectories differ from the ones the user watched. Accept, cap, or
+   seed. **Trigger:** the maintainer asks, or a second instanced example makes it the
+   thing in the way.

@@ -117,11 +117,6 @@ class InstancedProgram:
     vertex_source: str
     fields: tuple[EntityField, ...]
 
-    @property
-    def attribute_of(self) -> dict[str, str]:
-        """Field name -> the attribute name the generated source declares for it."""
-        return {field.name: f"a_{field.name}" for field in self.fields}
-
 
 def locations_used(fields: tuple[EntityField, ...]) -> int:
     """Attribute locations these fields consume, counting a matrix once per column."""

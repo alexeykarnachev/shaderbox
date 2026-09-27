@@ -7,8 +7,8 @@ below is a placeholder except the inventory, which is measured.
 
 Make instanced passes (100) discoverable from inside the app. The mechanism works
 and is gated; the four names an author needs -- `@instances`, `flat in`,
-`pos`/`radius`, `vs_quad` -- exist only in one shipped example and in
-`conventions.md`. Nothing in the editor, the panels or the copilot knows the feature
+`pos`/`radius`, `vs_quad` -- are documented only in `conventions.md`'s two feature-100
+entries and demonstrated only in one shipped example. Nothing in the editor, the panels or the copilot knows the feature
 is there, so it is usable only by someone already told about it.
 
 ## Out of scope
@@ -34,9 +34,13 @@ Eight surfaces, measured against the code. Ordered by harm, not by effort.
    script's returned literals; it has no notion of a `flat in` field, and `vs_quad` is
    offered nowhere. The shader is where an author starts, so this is where the absence
    is felt first.
-3. **`glsl_docs.py`** documents `vs_uv` in `VARIABLES` for hover. `vs_quad` is absent,
-   and it is the one name whose meaning cannot be guessed -- quad-local, -1..1, versus
-   `vs_uv`'s 0..1 across the canvas.
+3. **`vs_quad` is documented for the author nowhere in the app.** `glsl_docs.VARIABLES`
+   is the wrong home -- it holds `gl_*` builtins only, and `vs_uv` is not in it either.
+   The two places that do carry the shader contract are `help_content.py`'s shader
+   section and `copilot/prompt_context.py`; `vs_quad` belongs beside `vs_uv` in both. It
+   is the one name whose meaning cannot be guessed, and guessing wrong is silent: reach
+   for `vs_uv` to shape an entity and the pass draws a canvas-wide vignette of hard
+   squares with no error.
 4. **The script stub.** A new `script.py` starts from a template teaching the
    plain-uniform path. The cheapest place to show the other one.
 5. **Help content.** `help_content.py` carries an engine-uniform section with a gate
