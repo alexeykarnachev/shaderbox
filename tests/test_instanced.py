@@ -6,10 +6,13 @@ both sides, a round shape where they asked for one, and an error naming their ow
 rather than a compile failure in a file they never wrote.
 """
 
+from pathlib import Path
+
 import moderngl
 import numpy as np
 import pytest
 
+from shaderbox.core import Pass
 from shaderbox.instanced import (
     InstancedError,
     build,
@@ -18,9 +21,18 @@ from shaderbox.instanced import (
     validate_fields,
 )
 from shaderbox.intel.glsl import EntityField, entity_fields
+from shaderbox.shader_source import ShaderSource
 
 # A driver's real budget is passed in, so these fix one to keep the arithmetic readable.
 _ATTRIBUTES = 16
+
+
+def _lit(render_pass: Pass) -> np.ndarray:
+    width, height = render_pass.canvas.texture.size
+    pixels = np.frombuffer(
+        render_pass.canvas.fbo.read(components=4, dtype="f2"), dtype="f2"
+    ).reshape(height, width, 4)
+    return pixels[..., 3] > 0.5
 
 
 def _fields(source: str) -> tuple[EntityField, ...]:
@@ -30,19 +42,24 @@ def _fields(source: str) -> tuple[EntityField, ...]:
 _MINIMAL = "flat in vec2 pos;\nflat in float radius;\n"
 
 
-def test_a_matrix_costs_one_location_per_column() -> None:
-    # The budget the hardware enforces is LOCATIONS, and a mat4 takes four of them while
-    # reporting as one field. Counting fields instead lets six fields consume seventeen
-    # locations, where they alias in silence -- no error at link, at VAO build or at draw.
-    fields = _fields("flat in mat4 a;\nflat in mat4 b;\nflat in mat4 c;\nflat in float d;")
-    assert len(fields) == 4
-    assert locations_used(fields) == 13
+def test_a_matrix_is_refused_rather_than_silently_unbindable() -> None:
+    # A matrix links as an attribute but occupies one location per column, so it needs a
+    # binding per column. Nothing asks for that yet -- a per-entity transform is its
+    # columns -- so it is refused HERE, by name, rather than as a KeyError in the draw
+    # path or a compile error inside source the author never wrote.
+    source = "flat in vec2 pos;\nflat in float radius;\nflat in mat4 xform;"
+    with pytest.raises(InstancedError, match="xform"):
+        validate_fields(_fields(source), _ATTRIBUTES)
 
 
 def test_the_location_budget_refuses_what_would_alias() -> None:
+    # Above the driver's budget, locations ALIAS: two fields share one, with no error at
+    # link, at VAO build or at draw -- just wrong values. The corner attribute takes one
+    # of the budget alongside the fields, which is why this crosses at 16 rather than 17.
     source = "flat in vec2 pos;\nflat in float radius;\n" + "".join(
-        f"flat in mat4 m{i};\n" for i in range(4)
+        f"flat in vec4 c{i};\n" for i in range(14)
     )
+    assert locations_used(_fields(source)) == 16
     with pytest.raises(InstancedError, match="attribute locations"):
         validate_fields(_fields(source), _ATTRIBUTES)
 
@@ -53,14 +70,18 @@ def test_the_two_geometry_fields_are_required_by_name() -> None:
     # first; inferring nothing draws every quad across the whole viewport. Both measured,
     # both silent -- so the names are fixed and their absence is an error the author reads.
     with pytest.raises(InstancedError, match="pos"):
-        validate_fields(_fields("flat in float radius;\nflat in vec2 centre;"), _ATTRIBUTES)
+        validate_fields(
+            _fields("flat in float radius;\nflat in vec2 centre;"), _ATTRIBUTES
+        )
     with pytest.raises(InstancedError, match="radius"):
         validate_fields(_fields("flat in vec2 pos;\nflat in float size;"), _ATTRIBUTES)
 
 
 def test_a_geometry_field_of_the_wrong_type_is_named() -> None:
     with pytest.raises(InstancedError, match="must be a vec2"):
-        validate_fields(_fields("flat in vec3 pos;\nflat in float radius;"), _ATTRIBUTES)
+        validate_fields(
+            _fields("flat in vec3 pos;\nflat in float radius;"), _ATTRIBUTES
+        )
     with pytest.raises(InstancedError, match="float or a vec2"):
         validate_fields(_fields("flat in vec2 pos;\nflat in vec4 radius;"), _ATTRIBUTES)
 
@@ -173,3 +194,57 @@ void main(){
 
     for owned in (corner, positions, radii, energies, vao, compiled, fbo, canvas):
         owned.release()
+
+
+def test_a_pass_draws_its_population_and_frees_it(
+    gl_ctx: moderngl.Context, tmp_path: Path
+) -> None:
+    """The whole seam through a real Pass: declare, upload, draw, switch mode, release."""
+    source = tmp_path / "swarm.frag.glsl"
+    source.write_text(
+        """#version 460 core
+in vec2 vs_uv;
+in vec2 vs_quad;
+flat in vec2  pos;
+flat in float radius;
+flat in float energy;
+out vec4 frag_color;
+void main(){
+    if (length(vs_quad) > 1.0) discard;
+    frag_color = vec4(energy, 1.0 - energy, 0.0, 1.0);
+}
+"""
+    )
+    render_pass = Pass(
+        gl=gl_ctx, source=ShaderSource.load(source), canvas_size=(320, 180)
+    )
+    render_pass.compile()
+    assert render_pass.program is not None, render_pass.compile_unit.error_raw
+    assert [f.name for f in render_pass.entity_fields] == ["pos", "radius", "energy"]
+
+    columns = {
+        "pos": np.array([[-0.6, 0], [0, 0], [0.6, 0]], dtype="f4"),
+        "radius": np.array([0.10, 0.12, 0.14], dtype="f4"),
+        "energy": np.array([0.0, 0.5, 1.0], dtype="f4"),
+    }
+    render_pass.render(u_time=0.0, instances=columns)
+    lit = _lit(render_pass)
+    columns_hit = np.where(lit.any(axis=0))[0]
+    runs = 1 + len(np.where(np.diff(columns_hit) > 1)[0])
+    assert runs == 3, "three entities must draw at three distinct places"
+    instanced_total = int(lit.sum())
+
+    # The same program draws fullscreen when no population arrives. Asserted as a
+    # DIFFERENT picture, not merely a non-empty one: before the mode uniform was set the
+    # instanced draw silently took this branch and the two were byte-identical.
+    render_pass.render(u_time=0.0)
+    assert int(_lit(render_pass).sum()) > instanced_total * 4
+
+    # A population past its capacity grows the buffers rather than truncating.
+    bigger = {k: np.repeat(v, 400, axis=0).astype("f4") for k, v in columns.items()}
+    render_pass.render(u_time=0.0, instances=bigger)
+    assert int(_lit(render_pass).sum()) > 0
+
+    render_pass.invalidate()
+    assert render_pass.instance_buffers == {}
+    assert render_pass.entity_fields == ()

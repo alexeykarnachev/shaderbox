@@ -52,7 +52,10 @@ _LOCATIONS: dict[str, int] = {
 }
 
 # Types a field may take. `bool` is absent because it does not compile as a vertex
-# attribute, and an author reaching for it should be told so by name.
+# attribute. A matrix is absent for a different reason: it links, but it occupies one
+# attribute location per column and so needs a binding per column, which nothing asks for
+# yet -- a per-entity transform is expressible as its columns. Both are refused by name
+# here rather than by a KeyError in the draw path or a compile error in generated source.
 SUPPORTED_TYPES = frozenset(
     {
         "float",
@@ -67,9 +70,6 @@ SUPPORTED_TYPES = frozenset(
         "uvec2",
         "uvec3",
         "uvec4",
-        "mat2",
-        "mat3",
-        "mat4",
     }
 )
 
