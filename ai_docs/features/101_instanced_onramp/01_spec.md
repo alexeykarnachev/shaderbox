@@ -100,11 +100,62 @@ carries over is the DISTINCTION -- that a builtin variable, a constructor, a met
 and a plain local are four different things -- and shaderbox already has kinds for most of
 them (`PY_MEMBER`, `PY_API`, `PY_LOCAL`), currently all mapped to `SYN_IDENT`.
 
-**Open:** whether the editor library learns these or exposes them; whether shaderbox's
-palette gains slots for the new distinctions or reuses existing ones; and whether the
-GLSL side has the same gap (its lexer emits keywords, numbers and builtins, and a
-host-classified identifier fills the rest -- so the answer is probably no, but it is
-worth one look while the code is open).
+### What the check of GLSL found, and why this is one subsystem problem
+
+GLSL does NOT have the same gap, and the reason is the finding. Highlighting is built in
+two halves: the library's lexer colours what a word list can decide, and the host pushes
+what only it can know through `highlight_set_ranges`. MEASURED, `syntax_colors._KIND_SLOT`:
+
+    lexer's half (slots 1, 6)   GLSL_KEYWORD GLSL_TYPE GLSL_BUILTIN GLSL_VARIABLE
+                                LIB_FUNCTION SCRIPT_UNIFORM PY_KEYWORD PY_BUILTIN PY_API
+    host's half (slots 7-9)     ENGINE_UNIFORM PASS_SAMPLER WIRABLE_SAMPLER
+                                OUTPUT_VARIABLE
+    plain (slot 0)              PASS_UNIFORM BUFFER_SYMBOL PY_MEMBER PY_LOCAL GLSL_MEMBER
+
+Every kind in the host's half is GLSL. The feed is `GlslIndex.classes` (`intel/index.py`),
+which lists five GLSL kinds and is the only `classes()` in the package -- there is no
+Python index with one. So the host half of the subsystem was built for GLSL and never
+extended to scripts, which is why `PY_MEMBER` and `PY_LOCAL` sit at slot 0 with nothing
+able to move them. `self` is not a missing keyword; it is a name in a language whose
+host-classification path does not exist.
+
+That also bounds the library's share of the work. `Token_Class` (`src/language.odin`) has
+seven members -- None, Keyword, String, Comment, Number, Operator, Builtin -- and is
+deliberately language-neutral, its own comment saying "adding a language is adding a lexer
+and a case". A constructor, a method definition and a builtin variable are three
+distinctions that enum cannot carry, so teaching the Odin lexer about `self` would colour
+it Builtin, the same as `len` and `SB_*`. **The distinctions belong host-side, where the
+GLSL ones already are.**
+
+### The next session reviews the whole subsystem, not these symptoms
+
+The maintainer's read is that this is either a half-built feature or a bug, and the
+measurement above says half-built: one of two halves exists for one of two languages.
+Patching `self` into a word list would deepen that rather than fix it. So the next session
+starts by establishing the subsystem's shape and only then decides what to add.
+
+What it must answer, before writing anything:
+
+- **Is the two-halves split right?** The library lexes what a word list decides; the host
+  classifies what needs a symbol table. State it as a rule, then check every kind against
+  it -- `LIB_FUNCTION` and `SCRIPT_UNIFORM` are host knowledge sitting in the lexer's
+  slots, which either has a reason or is a second instance of the same drift.
+- **Why is there no `PythonIndex.classes`?** `intel/python.py` already computes
+  `PY_MEMBER`, `PY_API`, `PY_LOCAL` for completion. Establish whether the feed is missing
+  or deliberately withheld, and whether one `classes()` can serve both languages.
+- **Are the seven `Token_Class` members enough** once the host half covers both? If yes,
+  the library needs no change at all and this stays in shaderbox.
+- **What does the slot map cost?** There are a fixed number of syntax slots. Adding
+  distinctions means either new slots or reuse; find the ceiling before designing.
+- **Which kinds are plain because they SHOULD be?** Slot 0 is a legitimate answer for a
+  local variable. Decide per kind rather than colouring everything that currently is not.
+
+Then, and only then, the five Python cases: `self`/`cls`, dunders, the name after `def`
+and `class`, decorators, annotations.
+
+**Do not take the symptom list as the work.** `self` being plain is one visible instance;
+the review is of the subsystem, and its deliverable is a statement of how highlighting is
+supposed to work that the code then matches.
 
 ## Design decisions
 
