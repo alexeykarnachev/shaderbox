@@ -37,6 +37,7 @@ from shaderbox.instanced import (
     MODE_UNIFORM,
     InstancedError,
     build,
+    validate_population,
 )
 from shaderbox.intel.glsl import EntityField, entity_fields
 from shaderbox.media import MediaWithTexture, Video
@@ -267,6 +268,12 @@ class Pass:
         # every column every frame, and a script's arrays are already contiguous.
         self.instance_buffers: dict[str, moderngl.Buffer] = {}
         self.entity_fields: tuple[EntityField, ...] = ()
+        # What the script produced for THIS frame, by field name; empty when it produced
+        # nothing. The script engine writes it and `render` consumes it, which keeps the
+        # engine free of GL and leaves one place for a future off-thread producer to
+        # write instead.
+        self.pending_instances: dict[str, np.ndarray] = {}
+        self._instances_error: str | None = None
 
     def set_target(self, target: TargetConfig) -> None:
         """Adopt a new target configuration, reallocating the canvas when its format changed.
@@ -599,7 +606,9 @@ class Pass:
                     )
                     self.uniform_values.pop(uniform.name)
 
-        count = self._upload_instances(instances)
+        count = self._upload_instances(
+            instances if instances is not None else self.pending_instances
+        )
         if self.entity_fields:
             # The generated stage branches on this, so an unset flag silently takes the
             # fullscreen path and the whole population vanishes with no error.
@@ -633,7 +642,15 @@ class Pass:
         """
         if not self.entity_fields or not instances or self.program is None:
             return None
-        count = len(next(iter(instances.values())))
+        count, problem = validate_population(self.entity_fields, instances)
+        if problem is not None:
+            # Draw nothing rather than something wrong, and say why once. The frame
+            # continues: a bad population is an authoring state, not a crash.
+            if problem != self._instances_error:
+                logger.error(f"{self.source.path.name}: {problem}")
+                self._instances_error = problem
+            return None
+        self._instances_error = None
         for entity_field in self.entity_fields:
             column = instances[entity_field.name]
             buffer = self.instance_buffers.get(entity_field.name)

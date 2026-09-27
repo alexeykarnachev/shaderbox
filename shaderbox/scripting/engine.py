@@ -50,6 +50,13 @@ from shaderbox.uniform_coerce import is_text_array
 # error key is `(document_id, "", _SCRIPT_FILE)`.
 _SCRIPT_FILE = DOCUMENT_SCRIPT_BASENAME
 
+# Engine vocabulary inside a returned pass block. `@` cannot begin a GLSL identifier or a
+# pass name, so a reserved key can never collide with a uniform the author declared -- and
+# an unrecognised one is an ERROR rather than the silent orphan a plain name would be,
+# because a misspelling here costs a blank frame with nothing in the strip to read.
+RESERVED_PREFIX = "@"
+INSTANCES_KEY = "@instances"
+
 
 def normalize_script_tabs(text: str) -> str:
     # Tabs in a script are banned at the boundary: every tab -> 4 spaces (the project standard), so the
@@ -105,6 +112,12 @@ def is_scriptable(uniform: object) -> TypeGuard[moderngl.Uniform]:
 class ScriptPass(Protocol):
     # The slice of ONE render pass the engine writes into — nothing GL-program-specific.
     uniform_values: dict[str, Any]
+
+    # This frame's entity columns, or empty. Plain arrays by field name: the engine stays
+    # GL-free (025) and the draw owns every buffer, so a population is DATA here and
+    # becomes GPU state only inside `Pass.render`. It is also why a future off-thread
+    # producer changes nothing downstream -- it writes the same slot.
+    pending_instances: dict[str, Any]
 
     # False only while the pass has NEVER ATTEMPTED a compile: the engine skips it this tick rather
     # than forcing a compile from inside the script tick (066 D1). True once a compile was attempted,
@@ -788,6 +801,63 @@ class ScriptEngine:
             for k, block in raw.items()
             if isinstance(block, dict)
         }
+        # A reserved key is pulled OUT of its block before anything else looks at it. The
+        # `@` cannot begin a GLSL identifier or a pass name, so the namespace is decidable
+        # -- and it has to be taken here, because a key naming no uniform is silently an
+        # orphan by 079 D5, which is right for a uniform the shader has yet to declare and
+        # wrong for engine vocabulary. A mistyped `@instance` would otherwise render a
+        # blank frame with an empty error strip.
+        populations: dict[str, dict[str, Any]] = {}
+        for pass_name, block in blocks.items():
+            for key in [k for k in block if k.startswith(RESERVED_PREFIX)]:
+                value = block.pop(key)
+                if key != INSTANCES_KEY:
+                    errors[(document_id, pass_name, key)] = ScriptError(
+                        key,
+                        "runtime",
+                        f"'{key}' is not an engine key -- did you mean "
+                        f"'{INSTANCES_KEY}'?",
+                        pass_name=pass_name,
+                    )
+                    skipped.add((pass_name, key))
+                    continue
+                if not isinstance(value, dict):
+                    errors[(document_id, pass_name, key)] = ScriptError(
+                        key,
+                        "runtime",
+                        f"'{INSTANCES_KEY}' is a dict of named columns, got "
+                        f"{type(value).__name__}",
+                        pass_name=pass_name,
+                    )
+                    skipped.add((pass_name, key))
+                    continue
+                populations[pass_name] = value
+        # A bare reserved key names no pass, so the block path would report it as a
+        # missing pass -- true and useless. The author forgot the pass, and that is what
+        # the message says.
+        for key in [k for k in broadcasts if k.startswith(RESERVED_PREFIX)]:
+            broadcasts.pop(key)
+            errors[(document_id, "", key)] = ScriptError(
+                key,
+                "runtime",
+                f"'{key}' belongs INSIDE a pass block: "
+                f'{{"<pass>": {{"{key}": ...}}}}',
+            )
+            skipped.add(("", key))
+        for key in [k for k in raw if k.startswith(RESERVED_PREFIX) and k in blocks]:
+            # `{"@instances": {...}}` at the top level is a dict, so it became a BLOCK
+            # above rather than a broadcast, and the loop over broadcasts cannot see it.
+            blocks.pop(key, None)
+            errors[(document_id, "", key)] = ScriptError(
+                key,
+                "runtime",
+                f"'{key}' belongs INSIDE a pass block: "
+                f'{{"<pass>": {{"{key}": ...}}}}',
+            )
+            skipped.add(("", key))
+
+        for pass_name, render_pass in document.passes.items():
+            render_pass.pending_instances = populations.get(pass_name, {})
 
         for name, value in broadcasts.items():
             # An engine-owned key (u_time…) is SILENTLY dropped (decision 5): the renderer owns that
