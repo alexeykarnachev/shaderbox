@@ -64,4 +64,6 @@ Full design decisions, library quirks, and the sanctioned type-ignore allowlist 
 
 ## Reply language
 
-Reply in the language of the user's latest message (per global `~/.claude/CLAUDE.md`).
+Reply in the language of the user's latest message, switching per message rather than
+locking into one for the session. Don't infer the working language from these docs — several
+are in Russian. Code identifiers, file paths and quoted tool output stay as-is.

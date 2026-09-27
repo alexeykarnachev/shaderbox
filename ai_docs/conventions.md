@@ -327,8 +327,9 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   that a sibling silently misses. The per-caller bracket is a KNOWN dead-end (041 did it 3× before the
   `Document.render_media` funnel; 028's pointer clobber fixed in smoke then re-clobbered by the fixture →
   real fix one gate in `App.__init__`; the `.trash/` filter on one glob but not the watcher's). A
-  SECOND fix of the same bug at a sibling site is the trigger to move to the funnel. This is the
-  in-repo instance of the global blast-radius rule (`~/.claude/CLAUDE.md` — fix at the shared root).
+  SECOND fix of the same bug at a sibling site is the trigger to move to the funnel. The general rule it instantiates: fix at the
+  shared root, and treat a small bug producing a large diff as a signal the wrong problem is
+  being solved unless the symptom is provably one instance of a systemic class.
 - **Stateless-rebuild over stateful-daemon; consensus is not evidence.** Before building a daemon to
   hold expensive state, check whether that state is ALREADY cheaply serialized — if a code-read shows
   the rebuild is ~1 s (027: the conversation is a free NL-only replay; the EGL+worker rebuild it'd

@@ -41,7 +41,8 @@ Recorded so the next session does not re-propose them.
 - **A timer before reporting a population that reaches a pass with no `flat in`.** The
   session proposed "stay silent for ~1s, then error", and the maintainer asked why a
   second mechanism was needed when one exists. It is not: `engine.py:969` already skips
-  a key the pass does not declare, SILENTLY, and `conventions.md:662` states the rule --
+  a key the pass does not declare, SILENTLY, and the script-engine bullet of
+  `conventions.md ## Design decisions` states the rule --
   writing the script before the shader is a normal authoring step (079 D5). The
   proposal would have added an inconsistent second rule for a case already ruled on.
   **What survives is a different question, stated in I1 below**: `@` is the LOUD
@@ -90,10 +91,11 @@ error strip empty.
   fullscreen gradient.
   **The open question, and it is a boundary question on an existing decision.** Two rules
   already exist and they disagree here:
-  - *the orphan rule* (079 D5, `conventions.md:662`, `engine.py:969`): a key naming a
+  - *the orphan rule* (079 D5, the script-engine bullet of `conventions.md ## Design decisions`,
+    `engine.py:969`): a key naming a
     uniform no pass declares is skipped SILENTLY, because writing the script before the
     shader is normal authoring.
-  - *the reserved-vocabulary rule* (`conventions.md:612-616`): an unrecognised `@` key is
+  - *the reserved-vocabulary rule* (the `@instances` bullet of `conventions.md ## Design decisions`): an unrecognised `@` key is
     a HARD error, because `@` is engine vocabulary and a mistyped `@instance` otherwise
     costs a blank frame with an empty strip.
 
@@ -119,8 +121,9 @@ error strip empty.
   `REFUSED_POPULATION` branch returns at `core.py:661` before reaching either assignment,
   so a message from an earlier bad-dtype frame survives into a later refusal (MEASURED:
   case (d) printed case (c)'s message).
-  **This falsifies `conventions.md:618`**, which says "`Pass` can only log". It does not
-  log. Fix that line in the same wave.
+  **This falsified the `@instances` bullet of `conventions.md ## Design decisions`**, which
+  said "`Pass` can only log". It does not log. ALREADY FIXED -- that bullet now records the
+  dead field and points here; nothing more is owed.
 - **I5. A failed recompile keeps the old fields AND the old program.** READ,
   `core.py:423` returns before `self.entity_fields = fields` at `core.py:472`. MEASURED: a
   pass compiled with `pos`/`radius` and then given source declaring only `velocity` still
@@ -163,10 +166,11 @@ per-frame outcome —
 — which one surface reads. That would close I2, I3, I4 (the dead field becomes the return
 value), give I5 something to say, and make I1 observable so a rule can be applied to it.
 
-**Treat this sceptically.** It is a single shared primitive replacing five instances, which
-is the sanctioned shape for a large diff (`~/.claude/CLAUDE.md` blast-radius rule) -- and it
-is also exactly the kind of unifying story that sounds right and over-reaches. It wants an
-adversarial read before it becomes a design.
+**Treat this sceptically.** A large diff is justified only when the symptom is provably one
+instance of a systemic class and the fix is a shared primitive applied across every instance;
+five symptoms with one cause is that shape. It is ALSO exactly the kind of unifying story that
+sounds right and over-reaches, and the test that keeps it honest is whether the sibling call
+sites are unchanged except for the fix. It wants an adversarial read before it becomes a design.
 
 ---
 
@@ -272,7 +276,9 @@ real, corrected two, and added five more.
   and the prompt. Under D-D this becomes "document the new per-pass choice" rather than
   "document the constant".
 - **D6. The uniform panel and the graph canvas do not mark an instanced pass.** READ:
-  zero instancing hits in `tabs/uniforms.py` (118 lines) or `pass_graph.py` (824 lines).
+  zero instancing hits in `shaderbox/tabs/uniforms.py` (118 lines) or
+  `shaderbox/widgets/pass_graph.py` (754 lines, the canvas -- note the same-named
+  `shaderbox/pass_graph.py` is the MODEL and is also clean).
   Cheap to close: `entity_fields` already sits on `RenderPass` (`core.py:276`), so both are
   reads rather than new plumbing.
   **The correct SCALE, established this session:** instancing is a property of a PASS
@@ -435,7 +441,7 @@ MEASURED by counting the enum and the map. Nine syntax slots exist -- `SYNTAX_1.
 (`shaderbox/editor/ffi.py:105-119`), backed by `Theme.syntax: [10]Color`
 (`~/src/editor/src/theme.odin:53`) with index 0 reserved for "no class", so **9 is a library
 ceiling, not a shaderbox convention**. Four are lexer-owned (2 string, 3 comment, 4 number,
-5 operator). Five are host-assigned in `_KIND_SLOT` (1, 6, 7, 8, 9).
+5 operator). Five are host-assigned in `_KIND_SLOT` (`shaderbox/syntax_colors.py`, NOT `intel/`) at 1, 6, 7, 8, 9.
 
     9 total − 4 lexer-owned − 5 host-assigned = 0 free
 
@@ -609,7 +615,7 @@ Four features, in dependency order. Numbering is D-E, the implementing session's
 
 | Feature | Contents | Gates on |
 |---|---|---|
-| instancing contract | I1–I7, plus fixing `conventions.md:618` | maintainer's I1 boundary call |
+| instancing contract | I1–I7. The candidate `InstancedOutcome` below is NOT a settled type | maintainer's I1 boundary call, then an adversarial read of the candidate |
 | copilot integration | C1–C10 | the contract's outcome type, which C1 reads |
 | the on-ramp | D1–D10 | the contract and D-D, so it documents what is true |
 | highlighting | H-requirements above, cross-repo | nothing; parallel from the start |
@@ -626,7 +632,7 @@ with a recorded precedent of shipping broken.
 ## Open questions for the maintainer
 
 - **I1's boundary**: does `@instances` reaching a pass with no `flat in` follow the ORPHAN rule
-  (silent, 079 D5) or the RESERVED-VOCABULARY rule (loud, `conventions.md:612`)? The session's
+  (silent, 079 D5) or the RESERVED-VOCABULARY rule (loud, the `@instances` bullet of `conventions.md`)? The session's
   reading is loud; the decision is 079 D5's boundary and therefore the maintainer's.
 - **Does the unified `InstancedOutcome` proposal survive an adversarial read**, or is the point
   fix per defect the right size?
