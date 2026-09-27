@@ -54,13 +54,68 @@ Eight surfaces, measured against the code. Ordered by harm, not by effort.
    nothing of `@instances` or of a pass block holding one. Ranked last: completion
    inside a dict literal is the fiddliest of these and buys the least.
 
+## Also in this wave: Python syntax highlighting
+
+Reported by the maintainer, unrelated to instancing but in the same editor surfaces, so
+it rides along rather than waiting for a wave of its own.
+
+`self`, `__init__` and method names draw as plain identifiers in a `script.py`. Measured
+against the lexer that colours them, `~/src/editor/src/lex_python.odin`: `PYTHON_KEYWORDS`
+is complete and correct -- `class`, `def`, `None`, `True` are all there and do colour --
+and the gap is everything that is not a keyword. Python has no `self` keyword, no rule for
+a dunder, and no notion that the name after `def` is a definition rather than a use, so
+the lexer has nothing to match on and the words fall through to plain text.
+
+That puts the fix in the editor library, NOT in this repo: `lex_python.odin` classifies,
+and shaderbox only maps a class to a colour in `syntax_colors.py`. Either the library
+learns the cases below and shaderbox picks up a rebuilt `.so`, or the library exposes
+them and shaderbox classifies them host-side the way it already classifies GLSL
+identifiers. Which of those is the first decision this item needs.
+
+The cases, in the order they are noticeable:
+
+- `self` and `cls` -- the first parameter, everywhere it appears.
+- Dunders: `__init__`, `__name__`, and the rest of the form `__x__`.
+- A definition name: the identifier after `def` and after `class`, which reads
+  differently from a call.
+- A decorator, `@property` and the like, including the `@`.
+- A type annotation after `:` and after `->`.
+
+The reference is the maintainer's own nvim -- gruvbox hard, no italic comments -- whose
+treesitter groups resolve to (MEASURED, `nvim_get_hl`):
+
+    @variable.builtin  #fe8019   self, cls
+    @constructor       #fe8019   __init__
+    @function.method   #b8bb26   method names
+    @function          #b8bb26   function names
+    @keyword           #fb4934
+    @type              #fabd2f
+    @string            #b8bb26
+    @comment           #928374
+    @number            #d3869b
+
+Those are the SOURCE, not the target: shaderbox has its own palette in `theme.py` and the
+slot map in `syntax_colors.py`, and matching gruvbox's hexes exactly would fight it. What
+carries over is the DISTINCTION -- that a builtin variable, a constructor, a method name
+and a plain local are four different things -- and shaderbox already has kinds for most of
+them (`PY_MEMBER`, `PY_API`, `PY_LOCAL`), currently all mapped to `SYN_IDENT`.
+
+**Open:** whether the editor library learns these or exposes them; whether shaderbox's
+palette gains slots for the new distinctions or reuses existing ones; and whether the
+GLSL side has the same gap (its lexer emits keywords, numbers and builtins, and a
+host-classified identifier fills the rest -- so the answer is probably no, but it is
+worth one look while the code is open).
+
 ## Design decisions
 
 None. Nothing is locked.
 
 ## Files touched
 
-Unknown until designed. The inventory names the modules each item lands in.
+Unknown until designed. The inventory names the modules each item lands in; the
+highlighting item lands in `~/src/editor` first, which is a different repo with its own
+ABI and rebuild step -- see `conventions.md` on the vendored `graph_canvas` binary for
+the shape that takes.
 
 ## Open questions for the user
 
