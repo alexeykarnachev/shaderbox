@@ -6,7 +6,15 @@ not. The persisted field imports it from here, so the on-disk shape and the engi
 type rather than two that must be kept in step.
 """
 
+from typing import Any
+
 from pydantic import BaseModel
+
+# A population the engine REFUSED, as distinct from one the script did not send. An
+# absent population legitimately means "draw fullscreen this frame", so a rejected one
+# needs its own value or a dtype slip is answered by painting the entity shader over the
+# whole canvas. Compared by IDENTITY, which is why it is a module-level singleton.
+REFUSED_POPULATION: dict[str, Any] = {}
 
 
 class StoppedKey(BaseModel, frozen=True):

@@ -43,7 +43,7 @@ from shaderbox.scripting.behavior import (
 )
 from shaderbox.scripting.context import ScriptContext
 from shaderbox.scripting.errors import ScriptError
-from shaderbox.scripting.keys import StoppedKey
+from shaderbox.scripting.keys import REFUSED_POPULATION, StoppedKey
 from shaderbox.uniform_coerce import is_text_array
 
 # The single document script: one stateful class whose update returns a dict driving many uniforms.
@@ -846,6 +846,12 @@ class ScriptEngine:
                         key, "runtime", problem, pass_name=pass_name
                     )
                     skipped.add((pass_name, key))
+                    # Mark it REFUSED rather than dropping it. An absent population
+                    # legitimately means "draw fullscreen this frame", so clearing the
+                    # dict here made a rejected population indistinguishable from one
+                    # the script chose not to send -- and the draw answered a dtype slip
+                    # by painting the entity shader over the whole canvas.
+                    populations[pass_name] = REFUSED_POPULATION
                     continue
                 populations[pass_name] = value
         # A bare reserved key names no pass, so the block path would report it as a

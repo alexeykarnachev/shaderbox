@@ -141,9 +141,13 @@ def validate_fields(fields: tuple[EntityField, ...], max_attributes: int) -> Non
         )
     seen: set[str] = set()
     for field in fields:
-        if field.name in RESERVED_NAMES:
+        if field.name in RESERVED_NAMES or f"a_{field.name}" in RESERVED_NAMES:
+            # Both spellings. A field called `corner` is not itself an engine name, but
+            # it GENERATES `a_corner`, which collides with the quad attribute and fails
+            # inside source the author never wrote, at a line number that means nothing
+            # to them.
             raise InstancedError(
-                f"`{field.name}` is the engine's own name -- rename the field"
+                f"`{field.name}` collides with an engine name -- rename the field"
             )
         if field.name in seen:
             raise InstancedError(f"`{field.name}` is declared more than once")
@@ -261,9 +265,12 @@ def validate_population(
         return 0, f"no column for {', '.join(sorted(missing))}"
     extra = supplied - declared
     if extra:
-        # A WARNING's shape, not an error's: declaring the field and wiring it up next is
-        # the ordinary authoring step, and the driver drops a field the body does not
-        # read yet, so the two states are indistinguishable from here.
+        # This REFUSES the population rather than ignoring the extra column, and it is
+        # deliberately asymmetric with its mirror: a field declared but not yet READ is
+        # bound as nothing and the frame draws, because the driver strips it and the two
+        # states are indistinguishable from here. A column with no declaration is the
+        # other order of the same edit, and refusing it is what stops a renamed field
+        # from silently keeping the old name's values.
         return (
             0,
             f"nothing declares {', '.join(sorted(extra))} -- add a `flat in` for it",

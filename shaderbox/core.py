@@ -42,6 +42,7 @@ from shaderbox.instanced import (
 from shaderbox.intel.glsl import EntityField, entity_fields
 from shaderbox.media import MediaWithTexture, Video
 from shaderbox.pass_graph import AutoSource, TargetConfig
+from shaderbox.scripting.keys import REFUSED_POPULATION
 from shaderbox.shader_errors import (
     ShaderError,
     SourceMap,
@@ -458,8 +459,11 @@ class Pass:
         if self.vao:
             self.vao.release()
         # A recompile rebuilds the VAO, and a VAO holds its buffers -- so these go with
-        # it. Without this they leak once per shader edit, which is every keystroke that
-        # reaches the watcher.
+        # it. Explicit, though `clear()` alone would also free them: dropping the last
+        # Python reference lets moderngl's collector release the names, measured at the
+        # same live count over twenty recompiles either way. The release stays because it
+        # does not depend on when that collection runs. The twin in `invalidate` is the
+        # one that genuinely leaks without it, and that one is gated.
         for buffer in self.instance_buffers.values():
             buffer.release()
         self.instance_buffers.clear()
@@ -650,6 +654,11 @@ class Pass:
         VALUE and nothing here reads live state, so moving the producer off the render
         thread later changes nothing in this path.
         """
+        if instances is REFUSED_POPULATION:
+            # The engine already named the problem on the strip. Holding the previous
+            # frame is the honest answer; drawing fullscreen would dress a data mistake
+            # up as a deliberate picture.
+            return _INVALID_POPULATION
         if not self.entity_fields or not instances or self.program is None:
             return None
         count, problem = validate_population(self.entity_fields, instances)

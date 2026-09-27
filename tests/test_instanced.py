@@ -327,3 +327,13 @@ void main(){ frag_color = vec4(xform[0][0]); }
     render_pass.compile()
     assert render_pass.program is None
     assert "xform" in render_pass.compile_unit.error_raw
+
+
+def test_a_field_whose_generated_name_collides_is_refused_by_its_own_name() -> None:
+    # A field called `corner` is not itself an engine name, but it GENERATES `a_corner`,
+    # which collides with the quad attribute. Unguarded, that surfaces as a compile error
+    # at line 6 of a file the author never wrote. The check is over the generated
+    # namespace, not only the author's spelling.
+    source = "flat in vec2 pos;\nflat in float radius;\nflat in float corner;"
+    with pytest.raises(InstancedError, match="corner"):
+        validate_fields(_fields(source), _ATTRIBUTES)

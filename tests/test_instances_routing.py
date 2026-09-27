@@ -18,7 +18,7 @@ from shaderbox.instanced import validate_population
 from shaderbox.intel.glsl import entity_fields
 from shaderbox.intel.script import _is_number
 from shaderbox.scripting.context import ScriptContext
-from shaderbox.scripting.engine import ScriptEngine
+from shaderbox.scripting.engine import RESERVED_PREFIX, ScriptEngine
 from shaderbox.shader_source import ShaderSource
 from shaderbox.uniform_coerce import is_number
 
@@ -255,6 +255,10 @@ def test_a_population_never_enters_the_probe_s_samples(
     assert any(("swarm", "u_glow") in values for _, values in probe.samples)
     for _, values in probe.samples:
         for key, value in values.items():
+            # By NAME first: a population is a DICT of columns, so an ndarray check
+            # cannot see one and stays green while every sample copies the whole thing.
+            assert not str(key[1]).startswith(RESERVED_PREFIX), f"{key} is engine data"
+            assert not isinstance(value, dict), f"{key} carries a column dict"
             assert not isinstance(value, np.ndarray), (
                 f"{key} carries a whole population"
             )
@@ -437,3 +441,38 @@ class Behavior(ScriptBehavior):
     assert document.passes["swarm"].pending_instances, "the odd frame must populate"
     engine.tick("doc", document, ScriptContext(t=1 / 60, dt=1 / 60, frame=1))
     assert document.passes["swarm"].pending_instances == {}, "the even frame must clear"
+
+
+def test_a_bad_population_from_a_SCRIPT_draws_nothing(
+    gl_ctx: moderngl.Context, tmp_path: Path
+) -> None:
+    """The live route, which is the only one production uses.
+
+    Nothing outside tests passes `instances=` to `Pass.render`; a real frame reads
+    `pending_instances`. So a guard that only fires on the direct argument is unreachable
+    in the app, and the engine clearing the dict on a rejection made a refused population
+    indistinguishable from one the script chose not to send -- which legitimately means
+    "draw fullscreen". The engine now marks the refusal and the draw reads the mark.
+    """
+    wrong_dtype = _SCRIPT.replace(
+        'self.radius = np.array([0.2, 0.2], dtype="f4")',
+        'self.radius = np.array([0.2, 0.2], dtype="f8")',
+    )
+    document, engine = _document(tmp_path, gl_ctx, wrong_dtype)
+    # The pass paints every pixel when it draws fullscreen, so a held frame and a fresh
+    # fullscreen draw are distinguishable only from a cleared canvas. Clear it, or this
+    # reads the previous frame's ink and passes for the wrong reason.
+    document.render_pass.canvas.fbo.use()
+    gl_ctx.clear()
+
+    engine.tick("doc", document, ScriptContext(t=0.0, dt=1 / 60, frame=0))
+    document.render()
+
+    pixels = np.frombuffer(
+        document.render_pass.canvas.fbo.read(components=4, dtype="f2"), dtype="f2"
+    )
+    assert float(pixels.max()) == 0.0, "a refused population drew something"
+
+    status = engine.script_status("doc")
+    assert status is not None
+    assert any("f4" in error.message for _, _, error in status.soft_errors)

@@ -578,8 +578,8 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   interleaved record -- the draw costs the same either way (0.131 ms both) while
   interleaving repacks every column every frame and a script's arrays are already
   contiguous. The mode is per-FRAME via an engine-set `sb_instanced` bool on one program:
-  drawing an entity program the fullscreen way yields zero pixels and no GL error, so
-  omission is not the mechanism. The budget is counted in attribute LOCATIONS, since a
+  and the flag is written on EVERY draw: an unset flag silently takes the fullscreen
+  branch, so the whole population vanishes into one canvas-sized quad with no GL error. The budget is counted in attribute LOCATIONS, since a
   matrix costs one per column while reporting as one field. Revisit if an entity shape
   needs vertex-stage geometry the fragment shader cannot express -- a non-`flat` custom
   varying, a trail stretched along velocity -- which is the real trigger for a
