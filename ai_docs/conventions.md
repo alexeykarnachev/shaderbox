@@ -562,6 +562,50 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   mutation whose UI reaction touches imgui state adds an `on_*` callback (default no-op), never a direct
   imgui import. Spec: `ai_docs/features/025_project_session_extraction.md`. Revisit if a core op needs a
   UI reaction that a fire-and-forget callback can't express (e.g. it needs a return value App reads).
+- **A pass draws a POPULATION when its fragment shader declares `flat in` fields, and the
+  engine owns the vertex stage (feature 100).** `flat in` IS the declaration -- stock GLSL
+  meaning "one value per entity, nothing to interpolate" -- so there is no dialect and the
+  author's names are used verbatim on both sides. `pos` (vec2 centre) and `radius` (float or
+  vec2 half-extent), both in clip space, are RESERVED: nothing in a declaration says which
+  field is geometry, and both inference rules fail SILENTLY -- inferring by position draws
+  every entity at its velocity as soon as another vec2 is declared first, and inferring
+  nothing stretches every quad across the viewport. A scalar radius is aspect-corrected
+  because it is a length; a vec2 is componentwise, which is how a rectangle is expressed.
+  **The record layout comes from the PARSED DECLARATIONS, never from introspection**: the
+  driver dead-strips an attribute the body does not read yet, so an introspected record is
+  the wrong width with no error (measured: energy 0.3 where 0.8999 renders), and a
+  dead-stripped field binds nothing rather than raising. One GPU buffer PER FIELD, not one
+  interleaved record -- the draw costs the same either way (0.131 ms both) while
+  interleaving repacks every column every frame and a script's arrays are already
+  contiguous. The mode is per-FRAME via an engine-set `sb_instanced` bool on one program:
+  drawing an entity program the fullscreen way yields zero pixels and no GL error, so
+  omission is not the mechanism. The budget is counted in attribute LOCATIONS, since a
+  matrix costs one per column while reporting as one field. Revisit if an entity shape
+  needs vertex-stage geometry the fragment shader cannot express -- a non-`flat` custom
+  varying, a trail stretched along velocity -- which is the real trigger for a
+  user-authored per-pass `.vert.glsl`, deliberately out of scope here because it drags in
+  `SourceMap`'s single root, `watch.py`'s root-vs-lib branch, the tab-kind enum and the
+  copilot's `<id>#<pass>` addressing. Rejected on measurement: SSBO (the VBO was fastest),
+  a `graph.json` draw-mode toggle (cannot alternate per frame), a wrapper class (079
+  deleted those), engine-INJECTED declarations (the shader stops being self-describing).
+
+- **A script's bulk data travels under a RESERVED `@` key inside a pass block, and the
+  engine owns every buffer (feature 100).** `@instances` carries a dict of named numpy
+  columns; `@` cannot begin a GLSL identifier or a pass name, so the namespace is decidable
+  and an unrecognised `@` key is a HARD error rather than the silent orphan a plain name
+  gets under 079 D5 -- a mistyped `@instance` otherwise costs a blank frame and an empty
+  strip. The columns are validated in the ENGINE, not at draw time: `Pass` can only log,
+  and an author running the app from a launcher never reads that. Nothing is cast or
+  truncated -- numpy's own assignment casts silently, so an f8 column would arrive as f4
+  and 1e40 as inf -- and an invalid population draws NOTHING, which is distinct from "no
+  population" meaning fullscreen; conflating the two painted the entity shader over the
+  whole canvas on a wrong dtype. The write honours `values_sink`, so a `dry_run` leaves the
+  live population alone, which is the isolation the 063 ruling exists to protect. The
+  columns reach `Pass.render` as a VALUE and nothing in the draw path reads live state, so
+  moving the producer off the render thread later swaps one write site and touches nothing
+  else. Revisit when that threading feature lands: it needs stable slot indices and a
+  generation counter, because compaction silently repoints a held reference.
+
 - **The CPU-script engine is headless `ProjectSession` code; scripts are project DATA; a document has ONE
   STATEFUL-class script; a new script LANGUAGE is a `Behavior` backend, not an engine-loop change (feature
   041→048).** A document carries at most ONE script, `documents/<id>/scripts/script.py` (the document script), a

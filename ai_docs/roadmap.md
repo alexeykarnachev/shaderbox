@@ -26,18 +26,23 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-19. -->
-**ShaderBox is getting off imgui, and the graph went first.** The node canvas is no longer
-drawn by this repo: `graph_canvas` (an Odin library, vendored as a `.so` and rendered with
-moderngl) owns the picture, the hit-testing and the gestures, and shaderbox packs the
-document into it and routes the events back to `App` verbs. The camera is SPLIT: the
-library zooms itself from the wheel, and panning is the host's, as it is in the library's
-own demo. imgui still owns the window, the tab row and the menus -- the next surface to
-move is a question, not a plan.
+<!-- As of 2026-09-27. -->
+**A pass can now draw a POPULATION, and the simulation behind it is ordinary numpy.** 100
+gave a pass a second shape: declare `flat in` fields in the fragment shader and the engine
+writes the vertex stage, binds a buffer per field and draws one quad per entity, fed by a
+script returning columns under `@instances`. The draw is not the constraint -- fill rate
+is, and the tick is -- so the interesting work is in what the CPU can steer, and the
+shipped `Entity Flock` example is where that starts.
 
-**Nothing is queued.** `make gates` is green and `todo.md` holds zero entries. The rows
-still marked `partial` are parked SCOPE or a check only a display can make -- read them as
-history, not as a backlog.
+**Simulation runs INLINE, deliberately.** A script's tick is still the document's render,
+which caps a fifty-thousand-entity document at the tick's own rate. Moving it off the
+render thread, with two snapshots and an interpolation alpha, is a separate feature; the
+engine takes the columns as a value and nothing in the draw path reads live state, so that
+feature swaps the producer and touches nothing else.
+
+**ShaderBox is still getting off imgui.** `graph_canvas` owns the node picture, the
+hit-testing and the gestures (098); imgui still owns the window, the tab row and the menus,
+and the next surface to move is a question, not a plan.
 
 One finding is open and it is upstream's: on the canvas, a node row that carries a widget
 has its role colour covered by the widget's own panel, so an engine-driven uniform draws in
@@ -53,6 +58,7 @@ going lit to flat (082); the GL thread if the throttle falls short.
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 100 | instanced_entities | done | A pass whose fragment shader declares `flat in` fields draws one quad per ENTITY instead of one over the canvas: the engine reads those declarations from the flattened source, writes the vertex stage the author never sees, and binds one GPU buffer per field, so a script returning numpy columns under a reserved `@instances` key inside its pass block drives tens of thousands of them in a single `glDrawArraysInstanced`. `pos` and `radius` are reserved -- nothing in a declaration says which field is geometry, and both inference rules fail silently. The layout comes from the declarations, never from introspection, because the driver dead-strips an unread attribute and an introspected record is then the wrong width with no error. Simulation is INLINE; threading and snapshot interpolation are a separate feature the seam is shaped for. Spec: `ai_docs/features/100_instanced_entities/01_spec.md`. |
 | 098 | graph_canvas | done | The hand-drawn imgui node canvas replaced by the `graph_canvas` library over a C ABI, rendered with moderngl into an FBO that `imgui.image` presents -- the first step of getting shaderbox off imgui. Vendored as feature 067 vendored `libeditor.so`; the ctypes binding and the renderer know no shaderbox type, so the pair lifts into another project, and a test walks their imports. Three renderer defects found by rendering rather than by reading (a stride that made every instance after the first read its neighbour, a run offset that walked off the buffer, a preview sharing the atlas's texture unit) plus a gesture mask numbered so that "refuses everything" accepted drags; each was reintroduced and its gate watched to fail. Several library defects were found and fixed upstream, each reported with the measurement
 that showed it. The drawing left `pass_graph.py`; what remains there is the seam. Spec: `ai_docs/features/098_graph_canvas/01_spec.md` + `02_progress.md`. |
 | 097 | test_suite_diet | done | `make gates` ran 45-70s against a 30s ceiling and now runs 27s, while the suite went 2734 tests to 1968. The budget came from the `app` fixture, which built a real App and GL context per test and was 202 of the stage's 261 CPU-seconds; it now builds one per worker, which surfaced four latent project-switch defects and later a GL race of its own. The size came from reading each file against one question -- what a user loses when the check goes -- which cut the tests that pinned strings, the tests of tooling that does not ship, and four checks that could not fail. Spec: `ai_docs/features/097_test_suite_diet/01_spec.md` + `02_progress.md` + `03_findings_drained.md`. |

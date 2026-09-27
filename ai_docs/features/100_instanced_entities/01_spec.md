@@ -1,5 +1,20 @@
 # 100 — Instanced entity rendering
 
+> **Half of this spec was superseded before implementation, by three review rounds whose
+> corrections are recorded in the commits `a8976a5..e9eabff`.** What landed, and why it
+> differs, is filed in `conventions.md ## Design decisions` under the two feature-100
+> entries; read those first. Superseded here: decision 1 (a `PassEntry` discriminated
+> union — the mode is per-FRAME, so it cannot be model state), decision 2 (capacity as a
+> bounded `graph.json` field — buffers double on growth instead), decision 5 (the script
+> "widens the accepted value types by one" — it needed a destination namespace, `@instances`,
+> because a returned key must otherwise name a declared uniform), decision 6's *reason*
+> (the "solid white" claim was gain-dependent; f2 being the default is the surviving
+> argument) and its interleaving note (interleaving measured SLOWER, not faster), decisions
+> 8 and 10 (stable slots, generation counters, off-thread simulation and snapshot
+> interpolation — deferred to a separate feature by the maintainer), and the Files-touched
+> list (five of its entries were never touched). The Goal, the Out-of-scope triggers and
+> the gate DISCIPLINE stand.
+
 ## Goal
 
 Draw tens of thousands of CPU-simulated entities in ONE draw call, each expanded from a
