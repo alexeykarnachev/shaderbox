@@ -219,10 +219,12 @@ def test_a_value_infers_the_type_a_literal_would_have() -> None:
     assert glsl_type_of_value({"u_x": 1.0}) is None
     assert glsl_type_of_value("hello") is None
     # A sequence the COERCION would refuse names no type either, so the completion never seeds a
-    # declaration the next tick rejects: bools are not numbers to it, and neither is a float32.
+    # declaration the next tick rejects: bools are not numbers to it.
     assert glsl_type_of_value([True, False]) is None
-    assert glsl_type_of_value([np.float32(1.0), np.float32(2.0)]) is None
-    # A plain numpy array IS accepted -- its elements are float64, which is a real float.
+    # A numpy scalar IS a number, at every width. This used to split on whether the type
+    # happened to subclass `float` -- f8 passed and f4 did not -- which made the same
+    # expression name a type over one array and nothing over another.
+    assert glsl_type_of_value([np.float32(1.0), np.float32(2.0)]) == "vec2"
     assert glsl_type_of_value(np.array([1.0, 2.0, 3.0, 4.0])) == "vec4"
 
 

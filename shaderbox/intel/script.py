@@ -4,6 +4,8 @@ each literal value implies -- the source of `SCRIPT_UNIFORM` candidates in a sha
 import ast
 from dataclasses import dataclass
 
+import numpy as np
+
 
 @dataclass(frozen=True)
 class ScriptReturn:
@@ -64,6 +66,19 @@ def _literal_type(value: ast.expr) -> str | None:
     return f"float[{length}]"
 
 
+def _is_number(value: object) -> bool:
+    # The GL-free twin of `uniform_coerce.is_number`. A numpy scalar counts at every
+    # width -- splitting on whether the type happens to subclass `float` accepted f8 and
+    # refused f4, so the same expression named a type over one array and nothing over
+    # another. `np.bool_` is excluded explicitly because it is NOT a subclass of Python's
+    # `bool`, so the guard below does not cover it.
+    if isinstance(value, np.bool_):
+        return False
+    if isinstance(value, np.number):
+        return True
+    return isinstance(value, int | float) and not isinstance(value, bool)
+
+
 def glsl_type_of_value(value: object) -> str | None:
     """The GLSL type a live script VALUE implies, or None when nothing sensible does.
 
@@ -84,13 +99,12 @@ def glsl_type_of_value(value: object) -> str | None:
         return None
     if length == 0:
         return None
-    # Mirrors `uniform_coerce.is_number` (not imported: that module pulls in moderngl and this
-    # package stays GL-free). A value this offers a declaration for is one the coercion accepts --
-    # a bool or a numpy float32, which it rejects, names no type here either.
-    if not all(
-        isinstance(item, int | float) and not isinstance(item, bool)
-        for item in value  # type: ignore[union-attr]
-    ):
+    # Mirrors `uniform_coerce.is_number`, which cannot be imported here: it pulls in
+    # moderngl and this package stays GL-free. A value this offers a declaration for must
+    # be one the coercion accepts, or the completion seeds a declaration the next tick
+    # rejects -- so the two rules are pinned equal member by member, over both bool
+    # spellings and every numpy width, by `test_the_two_number_rules_agree`.
+    if not all(_is_number(item) for item in value):  # type: ignore[union-attr]
         return None
     if 2 <= length <= 4:
         return f"vec{length}"

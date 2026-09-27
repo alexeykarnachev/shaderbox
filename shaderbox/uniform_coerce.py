@@ -9,6 +9,7 @@ it in without a cycle.
 from typing import TypeGuard
 
 import moderngl
+import numpy as np
 from OpenGL.GL import (
     GL_BOOL,
     GL_BOOL_VEC2,
@@ -44,6 +45,19 @@ _INT_GL_TYPES = _UINT_GL_TYPES | _SINT_GL_TYPES | _BOOL_GL_TYPES
 
 
 def is_number(v: object) -> TypeGuard[int | float]:
+    # A numpy scalar counts. Without this the rule was accidental rather than chosen:
+    # `np.float64` subclasses `float` and passed, while `np.float32` did not, so the same
+    # expression over an f4 array and an f8 array gave different answers for a reason
+    # invisible from a script. `np.mean` and `np.linalg.norm` over an f4 array both return
+    # f4, so the rejected case is the common one.
+    #
+    # Both bool spellings stay out, and `np.bool_` needs saying separately: it is NOT a
+    # subclass of Python's `bool`, so the guard on the left does not cover it, and a
+    # silent widening here would put a bool back into a float uniform.
+    if isinstance(v, np.bool_):
+        return False
+    if isinstance(v, np.number):
+        return True
     return isinstance(v, int | float) and not isinstance(v, bool)
 
 
