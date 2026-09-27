@@ -613,8 +613,9 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   columns; `@` cannot begin a GLSL identifier or a pass name, so the namespace is decidable
   and an unrecognised `@` key is a HARD error rather than the silent orphan a plain name
   gets under 079 D5 -- a mistyped `@instance` otherwise costs a blank frame and an empty
-  strip. The columns are validated in the ENGINE, not at draw time: `Pass` can only log,
-  and an author running the app from a launcher never reads that. Nothing is cast or
+  strip. The columns are validated in the ENGINE, not at draw time: `Pass` has no surface
+  to report to (it writes `_instances_error`, which as of feature 101's research nothing
+  reads and nothing logs -- see that spec's I4). Nothing is cast or
   truncated -- numpy's own assignment casts silently, so an f8 column would arrive as f4
   and 1e40 as inf -- and an invalid population draws NOTHING, which is distinct from "no
   population" meaning fullscreen; conflating the two painted the entity shader over the

@@ -27,23 +27,35 @@ feature; brief points at the superseder).
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
 <!-- As of 2026-09-27. -->
-**A pass can now draw a POPULATION, and the simulation behind it is ordinary numpy.** 100
-gave a pass a second shape: declare `flat in` fields in the fragment shader and the engine
-writes the vertex stage, binds a buffer per field and draws one quad per entity, fed by a
-script returning columns under `@instances`. The draw is not the constraint -- fill rate
-is, and the tick is -- so the interesting work is in what the CPU can steer, and the
-shipped `Entity Flock` example is where that starts.
+**101 is a research record, and its finding is that the on-ramp was the wrong first
+question.** Feature 100's instanced passes work and are gated, but the engine misreports
+its own state: eight reachable draw states rather than the three anyone had written down,
+a population sent to a pass with no `flat in` accepted and dropped forever with no signal,
+zero entities clearing the canvas in silence, `_instances_error` written and read by
+nothing, and a failed recompile drawing the old shader under the new error. Teaching the
+feature before fixing that would document a mechanism that lies about itself.
 
-**Simulation runs INLINE, deliberately.** A script's tick is still the document's render,
-which caps a fifty-thousand-entity document at the tick's own rate. Moving it off the
-render thread, with two snapshots and an interpolation alpha, is a separate feature; the
-engine takes the columns as a value and nothing in the draw path reads live state, so that
-feature swaps the producer and touches nothing else.
+**The copilot is not merely uninformed, it is misinformed.** Its own probe reports the
+shipped Entity Flock example as driving nothing and animating nothing; the generated script
+API doc tells it every value is plain Python while the engine requires numpy; and the
+prompt still recommends the array-uniform technique 100 replaced, by name. Full integration
+is settled (D-A), and populations cannot cross a tool call as data -- 20k entities is
+~320 KB -- so the shape is fixed: the copilot writes the generator and reads back statistics.
 
-**Next is 101, the on-ramp.** The mechanism is gated and the names are not discoverable:
-one shipped example and two `conventions.md` entries are the whole documentation, and the
-copilot's prompt still names a boids flock as the case for the array-uniform technique 100
-replaced. Eight surfaces are inventoried; which of them are in is the open question.
+**Blend mode becomes a per-pass choice** (D-D), with the usual options surfaced in the graph
+and the panel. Additive was hardcoded, which made an opaque sprite double on overlap and a
+dark entity on a light field impossible outright.
+
+**Highlighting is a half-exported library feature, not a Python gap.** The host's only
+channel is a position-blind word table; the one call that feeds it is guarded off script
+tabs, so 95% of a real script's identifier occurrences draw plain and `self` is 41 of them.
+The library already promises a C host, in its own ABI contract, that it may push its own
+spans -- and no ABI call keeps that promise. The general mechanism is the deliverable (D-B),
+planned here and implemented by a separate editor session (D-C), and it needs more syntax
+slots: nine exist and zero are free.
+
+**Next is the split** -- four features in dependency order, contract before copilot before
+on-ramp, with highlighting parallel. Numbering is the implementing session's call.
 
 **ShaderBox is still getting off imgui.** `graph_canvas` owns the node picture, the
 hit-testing and the gestures (098); imgui still owns the window, the tab row and the menus,
@@ -63,7 +75,7 @@ going lit to flat (082); the GL thread if the throttle falls short.
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 101 | instanced_onramp | pending | Instanced passes (100) are usable only by someone already told they exist: `@instances`, `flat in`, `pos`/`radius` and `vs_quad` are documented in three `conventions.md` entries and demonstrated in one shipped example, and nothing in the editor, the panels or the copilot knows the feature is there -- the copilot's prompt still recommends the array-uniform technique 100 replaced, by name. Ten surfaces inventoried against the code; none designed. The wave also carries a review of the whole highlighting subsystem, which the maintainer reported through its symptom (`self`, `__init__` and method names drawing plain in a script): the host's only channel is a position-blind word->slot table, and the one call that feeds it is guarded off script tabs, so 95% of a real script's identifier occurrences draw plain. Spans and a Python lexer are plannable in the editor repo, whose requirements this wave hands to an editor session. Spec: `ai_docs/features/101_instanced_onramp/01_spec.md`. |
+| 101 | instanced_onramp | pending | RESEARCH RECORD holding four features' worth of material; the split is the next session's first job. Feature 100 works and is gated, but the research found the ENGINE reports its own state wrongly before any discoverability question arises: eight reachable draw states rather than three, a population reaching a pass with no `flat in` accepted and dropped forever, zero entities clearing the canvas in silence, `_instances_error` written and read by nothing, and a failed recompile drawing the old shader under the new error. The copilot is worse than uninformed -- its own probe reports the shipped working example as driving nothing, and the generated script API doc asserts a value space the engine refuses. Additive blending becomes a per-pass choice (D-D). The wave also carries the highlighting subsystem, where the host's only channel is a position-blind word table, the one call feeding it is guarded off script tabs, 95% of a real script's identifiers draw plain, and there are zero free syntax slots -- so the general span mechanism the library already promises a C host in its own ABI contract is the deliverable, planned here and implemented by an editor session. Spec: `ai_docs/features/101_instanced_onramp/01_spec.md`. |
 | 100 | instanced_entities | done | A pass whose fragment shader declares `flat in` fields draws one quad per ENTITY instead of one over the canvas: the engine reads those declarations from the flattened source, writes the vertex stage the author never sees, and binds one GPU buffer per field, so a script returning numpy columns under a reserved `@instances` key inside its pass block drives tens of thousands of them in a single `glDrawArraysInstanced`. `pos` and `radius` are reserved -- nothing in a declaration says which field is geometry, and both inference rules fail silently. The layout comes from the declarations, never from introspection, because the driver dead-strips an unread attribute and an introspected record is then the wrong width with no error. Simulation is INLINE; threading and snapshot interpolation are a separate feature the seam is shaped for. Spec: `ai_docs/features/100_instanced_entities/01_spec.md`. |
 | 098 | graph_canvas | done | The hand-drawn imgui node canvas replaced by the `graph_canvas` library over a C ABI, rendered with moderngl into an FBO that `imgui.image` presents -- the first step of getting shaderbox off imgui. Vendored as feature 067 vendored `libeditor.so`; the ctypes binding and the renderer know no shaderbox type, so the pair lifts into another project, and a test walks their imports. Three renderer defects found by rendering rather than by reading (a stride that made every instance after the first read its neighbour, a run offset that walked off the buffer, a preview sharing the atlas's texture unit) plus a gesture mask numbered so that "refuses everything" accepted drags; each was reintroduced and its gate watched to fail. Several library defects were found and fixed upstream, each reported with the measurement
 that showed it. The drawing left `pass_graph.py`; what remains there is the seam. Spec: `ai_docs/features/098_graph_canvas/01_spec.md` + `02_progress.md`. |
