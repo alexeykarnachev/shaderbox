@@ -24,7 +24,9 @@ def test_one_declaration_may_carry_several_names() -> None:
 
 
 def test_qualifiers_in_front_do_not_hide_the_field() -> None:
-    assert [f.name for f in entity_fields("layout(location=3) flat in vec3 col;")] == ["col"]
+    assert [f.name for f in entity_fields("layout(location=3) flat in vec3 col;")] == [
+        "col"
+    ]
     assert [f.name for f in entity_fields("flat in highp float t;")] == ["t"]
 
 
