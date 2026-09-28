@@ -199,3 +199,58 @@ had no behavioural coverage at all.
   lesson is not "count more carefully" — it is that an AST gate over the whole tree finds
   what a grep-and-read of the sites you already know about cannot, and it is worth
   writing even when the class looks small enough to enumerate by hand.
+
+## W-7 — a second instance of W-2's class, found by its inventory (01986f4a)
+
+The W-2 inventory (an agent tracing every failure sentinel to a user action) ranked
+**`:w` announcing a save that did not happen** above anything else it found. Verified
+directly: `App.save` answered `None` whether it wrote, was refused mid-copilot-turn, or
+raised — so `hotkeys.py` pushed "Saved" on top of the lock warning or the error. The
+handler's own comment says `App.save` was chosen as the one funnel precisely so `:w`
+would not lie about a save, and then the return value could not carry the answer.
+
+**The same defect as the clipboard**, one layer up: a function whose type cannot express
+failure, and a caller that therefore cannot report one. That is now two independent
+instances of the class the spec named, in code neither of them shares.
+
+`save()` reports; `Ctrl+S` takes a named `save_command` wrapper because the command
+registry holds `Callable[[], None]` and widening it would be the wrong direction.
+
+### A fixture of mine that was kinder than the suite
+The `:w` tests measured pushed notifications by diffing the stack's length. The stack is
+a `deque(maxlen=5)`, so once full a push does not change the length. **The file passed
+alone and failed in the full suite** — the fixture was answering a question about its own
+starting state. It clears the stack first now. Recorded because it is the exact shape
+107 spent its night on, produced fresh by me while fixing that shape elsewhere.
+
+## Doc citations — three fixed, one false alarm (2698b403)
+
+Stale symbol citations on ground 107 did not cover (it checked `dev_flow.md`'s module
+map; these are roadmap rows and a skill): row 106's three colour-table symbols, row 016's
+`LibIndex.build`, row 025's `sync_nodes_from_disk`, and the imgui skill's
+`widgets/pass_graph.py::_draw_canvas`. Row 025's `App.reload_nodes_from_disk` citation
+STAYS — that row records the deletion and says so.
+
+**A FALSE ALARM worth recording**: the scan reported the banner's "a light theme is out
+of scope" as contradicted, because `gruvbox_light.theme` ships and is selectable. It is
+not contradicted — that picker is `##syntax_theme` and drives `apply_syntax_theme`, which
+repaints the EDITORS. The banner is about the app chrome palette, which is still unbuilt.
+Two different things with one word in common.
+
+## NOT done, deliberately, and why
+
+- **`project_session.py::_delete_document_unguarded`'s unguarded `shutil.move`.** Ranked
+  top of the W-2 inventory and VERIFIED: the document is popped, released and deselected
+  before the move, so an `OSError` there leaves it gone from memory and present on disk,
+  reappearing on the next load. Not fixed unattended because the fix is a design choice —
+  whether a failed move re-loads the document or reports and leaves it — and the function
+  has four callers including the copilot's revert path, whose `trash_name` return drives a
+  Recover affordance. **A maintainer decision, not a mechanical one.**
+- **`copilot/session.py::_run_one_turn`'s `build_context` outside the try.** Reported as
+  leaving the worker dead with `in_flight` stuck True. Plausible and serious; not verified
+  by me, and not fixed, because reproducing it means driving a real turn.
+- **`widgets/uniform.py`'s `contextlib.suppress` on an array parse.** Examined and left
+  alone deliberately: it fires per keystroke, so mid-typing `"1, 2,"` is legitimately
+  unparseable. Surfacing here is the cry-wolf case the spec warns about.
+- **`:wq` closes the tab whether or not the save landed.** True before this sweep, left
+  alone; the tab-close path has its own unsaved-changes guard.
