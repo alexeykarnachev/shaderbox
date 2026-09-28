@@ -38,9 +38,9 @@ def test_every_target_field_is_classified_by_allocates_same_as() -> None:
     """
     allocation_relevant = {"scale", "dtype", "filter_linear", "wrap"}
     draw_state_only = {"blend"}
-    assert allocation_relevant | draw_state_only == set(
-        TargetConfig.model_fields
-    ), "a TargetConfig field is in neither tier -- classify it in allocates_same_as"
+    assert allocation_relevant | draw_state_only == set(TargetConfig.model_fields), (
+        "a TargetConfig field is in neither tier -- classify it in allocates_same_as"
+    )
 
     base = TargetConfig()
     # Each allocation-relevant field, changed one at a time, must force a reallocation.
@@ -94,7 +94,7 @@ def test_key_fail_reasons_partition_into_warning_and_silent() -> None:
 
 
 def test_instanced_states_partition_into_healthy_and_reportable() -> None:
-    assert HEALTHY_INSTANCED_STATES <= set(INSTANCED_STATES)
+    assert set(INSTANCED_STATES) >= HEALTHY_INSTANCED_STATES
     reportable = set(INSTANCED_STATES) - HEALTHY_INSTANCED_STATES
     # The five states the research found that nothing in the app could say (101 I1-I5).
     assert reportable == {
@@ -114,7 +114,9 @@ def test_every_outcome_state_describes_itself_distinctly() -> None:
     collision, and checking each string is non-empty would pass one.
     """
     lines = {
-        state: InstancedOutcome("blur", state, count=0 if state == "empty" else 7).describe()
+        state: InstancedOutcome(
+            "blur", state, count=0 if state == "empty" else 7
+        ).describe()
         for state in INSTANCED_STATES
     }
     assert len(set(lines.values())) == len(INSTANCED_STATES), (
@@ -131,7 +133,7 @@ def test_reserved_names_partition_covers_every_name() -> None:
     assert USER_FACING_NAMES | ENGINE_INTERNAL_NAMES == RESERVED_NAMES
     assert not USER_FACING_NAMES & ENGINE_INTERNAL_NAMES
     # The two that must never be documented, named so a widening argues with a test.
-    assert ENGINE_INTERNAL_NAMES == {"sb_instanced", "a_corner"}
+    assert {"sb_instanced", "a_corner"} == ENGINE_INTERNAL_NAMES
     assert "vs_quad" in USER_FACING_NAMES
 
 
