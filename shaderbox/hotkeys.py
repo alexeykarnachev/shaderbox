@@ -289,7 +289,7 @@ def _read_clipboard(app: App) -> str:
     return raw.decode() if isinstance(raw, bytes) else raw
 
 
-def _handle_clipboard(app: App, editor: Editor, event: KeyEvent) -> bool:
+def _handle_clipboard(app: "App | None", editor: Editor, event: KeyEvent) -> bool:
     # Host-wired clipboard (the keymap has no registers): Ctrl+C/X against the system
     # clipboard, and paste on Ctrl+Shift+V. Runs before ed_key, so anything claimed here
     # never reaches the editor. The synthesized CHAR carries the uppercase text with the
@@ -299,6 +299,10 @@ def _handle_clipboard(app: App, editor: Editor, event: KeyEvent) -> bool:
     # vim, where Ctrl+Shift+V is the terminal's paste. Claiming it here would leave the mode
     # unreachable: this function returning True is the whole decision, since ed_key never sees
     # the event.
+    # `app` is optional because the DECLINE path never reads it: this returns before any
+    # `app.` access, which is what lets a caller ask "would you claim this event?" without
+    # an App at all. A claimed event does read it, and would raise -- loudly, rather than
+    # pasting into a half-built host.
     if event.code != KeyCode.CHAR or event.mods not in (
         KeyMod.CTRL,
         KeyMod.CTRL | KeyMod.SHIFT,
@@ -308,6 +312,8 @@ def _handle_clipboard(app: App, editor: Editor, event: KeyEvent) -> bool:
         return False
     if event.text.lower() == "v" and event.mods == KeyMod.CTRL:
         return False
+    # Past every decline: from here the function CLAIMS the event and reads the host.
+    assert app is not None, "a claimed clipboard event needs a real App"
     if event.text.lower() in ("c", "x"):
         selected = editor.get_selection_text()
         if selected:

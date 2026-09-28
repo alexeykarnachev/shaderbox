@@ -288,12 +288,9 @@ def test_no_binding_claims_a_chord_the_host_serves_on_false() -> None:
     chord, so `f` here does not collide with the host's Ctrl+F. The check is on how a row
     is REGISTERED, which is what `_apply_editor_settings_to` passes to `ed_bind`.
     """
-    # DRIVE the registrar with a spy rather than reading `app.py`'s source. Two earlier
-    # versions of this check were vacuous in different ways: one built its own
-    # `[(key, 0, True) for ...]` list and then skipped every row, so its assertions ran
-    # zero times; the other searched the source for `editor.bind(key, index, leader=True)`,
-    # which survives making that very call unreachable. Only calling the function shows
-    # what it registers.
+    # DRIVE the registrar with a spy. Reading `app.py`'s source instead cannot see whether
+    # the call is REACHED, and building the triples here instead would assert the fixture's
+    # own construction.
     registered: list[tuple[str, int, bool]] = []
 
     class _BindingSpy:
@@ -340,13 +337,6 @@ def test_no_binding_claims_a_chord_the_host_serves_on_false() -> None:
     )
 
 
-def test_the_registration_shape_is_the_one_the_app_actually_uses() -> None:
-    # The test above reasons about (key, mods, leader) triples; this pins that the app
-    # registers exactly that shape, so the two cannot drift apart.
-    source = Path("shaderbox/app.py").read_text()
-    assert "editor.bind(key, index, leader=True)" in source
-
-
 def test_the_host_clipboard_leaves_bare_ctrl_v_to_the_editor() -> None:
     """`Ctrl+V` is blockwise visual (editor 5aa51cd), and `_handle_clipboard` runs BEFORE
     `ed_key` — so claiming it there does not merely shadow the mode, it makes it unreachable.
@@ -362,7 +352,7 @@ def test_the_host_clipboard_leaves_bare_ctrl_v_to_the_editor() -> None:
     # No app is needed: a handler that declines this event returns before reading one. Passing
     # None is the assertion — if the host ever claims Ctrl+V here, this raises instead of
     # quietly pasting, which is the louder failure.
-    assert not _handle_clipboard(None, editor, event)  # type: ignore[arg-type]
+    assert not _handle_clipboard(None, editor, event)
     assert editor.key(event.code, event.mods, event.text) is True
     assert editor.get_mode() is Mode.VISUAL_BLOCK, (
         "Ctrl+V reached the editor but did not enter blockwise"

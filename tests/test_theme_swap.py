@@ -135,16 +135,14 @@ def test_no_colour_survives_the_palette_swap(swapped: dict[str, str]) -> None:
     colour at 0.18 alpha, silently keeping the old theme's accent after a swap.
     """
     probe = {c.lower() for c in _PROBE}
-    # Derived colours are legitimately outside the palette: `_muted` keeps a `_P` hue and
-    # substitutes saturation and lightness, so its output is palette-DEPENDENT without
-    # being a palette entry. They are checked by the hue test below instead.
+    # Pure black and white are not theme colours -- they are the neutral ends every
+    # palette shares, so a swap leaves them alone by construction.
     neutral = {"#000000", "#ffffff"}
     survivors = {
         name: colour
         for name, colour in swapped.items()
         if colour.lower() not in probe and colour.lower() not in neutral
     }
-    # Anything left must be derived, not literal. `_muted` is the only deriver.
     assert not survivors, (
         f"these colours survived a full palette swap, so they are literals outside `_P`: "
         f"{survivors}"

@@ -675,7 +675,7 @@ class Pass:
             # picture that looks deliberate.
             return
         count = outcome.count
-        if self.entity_fields:
+        if self.is_instanced:
             # The generated stage branches on this, so an unset flag silently takes the
             # fullscreen path and the whole population vanishes with no error.
             mode = self.program[MODE_UNIFORM]
@@ -715,7 +715,7 @@ class Pass:
             return InstancedOutcome(
                 "", "refused", detail="the script engine refused this population"
             )
-        if not self.entity_fields or not instances or self.program is None:
+        if not self.is_instanced or not instances or self.program is None:
             return InstancedOutcome("", "fullscreen")
         count, problem = validate_population(self.entity_fields, instances)
         if problem is not None:
