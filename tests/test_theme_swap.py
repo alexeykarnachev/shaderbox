@@ -29,13 +29,33 @@ _REPO = Path(__file__).resolve().parent.parent
 _PROBE = [
     f"#{r:02x}{g:02x}{b:02x}"
     for r, g, b in [
-        (255, 0, 255), (0, 255, 255), (255, 255, 0), (0, 255, 0),
-        (255, 0, 0), (0, 0, 255), (128, 0, 255), (255, 128, 0),
-        (0, 128, 255), (128, 255, 0), (255, 0, 128), (0, 255, 128),
-        (200, 100, 50), (50, 200, 100), (100, 50, 200), (220, 20, 60),
-        (20, 220, 60), (60, 20, 220), (240, 240, 40), (40, 240, 240),
-        (240, 40, 240), (10, 90, 170), (170, 10, 90), (90, 170, 10),
-        (200, 200, 200), (30, 30, 30), (140, 140, 140),
+        (255, 0, 255),
+        (0, 255, 255),
+        (255, 255, 0),
+        (0, 255, 0),
+        (255, 0, 0),
+        (0, 0, 255),
+        (128, 0, 255),
+        (255, 128, 0),
+        (0, 128, 255),
+        (128, 255, 0),
+        (255, 0, 128),
+        (0, 255, 128),
+        (200, 100, 50),
+        (50, 200, 100),
+        (100, 50, 200),
+        (220, 20, 60),
+        (20, 220, 60),
+        (60, 20, 220),
+        (240, 240, 40),
+        (40, 240, 240),
+        (240, 40, 240),
+        (10, 90, 170),
+        (170, 10, 90),
+        (90, 170, 10),
+        (200, 200, 200),
+        (30, 30, 30),
+        (140, 140, 140),
     ]
 ]
 
@@ -128,4 +148,60 @@ def test_no_colour_survives_the_palette_swap(swapped: dict[str, str]) -> None:
     assert not survivors, (
         f"these colours survived a full palette swap, so they are literals outside `_P`: "
         f"{survivors}"
+    )
+
+
+def test_the_canvas_palette_follows_a_swap(swapped: dict[str, str]) -> None:
+    """`canvas.theme` is a SECOND palette the app draws from, and it must move too.
+
+    It holds the node graph's colours and the library parses it, so before its fields
+    named `_P` entries a swapped theme left the whole graph gruvbox while every panel
+    around it changed. The file still decides WHICH entry each field takes -- those are
+    measured choices whose reasoning is in its own comments -- and only the colour behind
+    the name moves.
+    """
+    import json
+
+    probe_theme = _REPO / "shaderbox" / "resources" / "graph_canvas" / "canvas.theme"
+    source = probe_theme.read_text()
+    named = [
+        line.split("=")[1].strip().split()[0]
+        for line in source.splitlines()
+        if "=" in line
+        and not line.lstrip().startswith("#")
+        and line.split("=")[1].strip()[:1].isalpha()
+    ]
+    # Count the RAW colour fields, not the named ones: asserting "some are named" passes
+    # when one reverts to floats, which is the drift this gate exists to catch. Exactly one
+    # field is allowed to hold literals -- `control`, which its own comment explains as a
+    # deliberate departure from every palette entry.
+    raw = [
+        line.split("=")[0].strip()
+        for line in source.splitlines()
+        if "=" in line
+        and not line.lstrip().startswith("#")
+        and re.match(r"^[\d.]+ [\d.]+ [\d.]+", line.split("=")[1].strip())
+    ]
+    assert raw == ["control"], (
+        f"these fields hold literal colours a palette swap cannot reach: {raw}"
+    )
+    assert named, "no field names a palette entry -- the file is still raw floats"
+
+    # Every name it uses must exist, or the resolver raises at load and the canvas is
+    # black. Cheap here, expensive in a frame.
+    report = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from shaderbox.theme import _P;"
+            f"import json;print(json.dumps([n for n in {named!r} if n not in _P]))",
+        ],
+        cwd=_REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert report.returncode == 0, report.stderr
+    assert json.loads(report.stdout) == [], (
+        "theme names a palette entry that does not exist"
     )

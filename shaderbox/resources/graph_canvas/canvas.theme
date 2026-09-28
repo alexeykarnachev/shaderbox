@@ -22,19 +22,19 @@
 # the node bodies vanished: bg_0h against bg_0 is a contrast ratio of 1.09,
 # which is no edge at all. These two are 1.41, the widest separation the
 # palette's own greys allow, and the shape survives.
-canvas  = 0.1137 0.1255 0.1294 1
-surface = 0.2353 0.2196 0.2118 1
-grid    = 0.1569 0.1569 0.1569 1
-border  = 0.3137 0.2863 0.2667 1
+canvas  = bg_0
+surface = bg_2
+grid    = bg_1
+border  = bg_3
 
 # fg_0 rather than fg_1: a label sits on a TINTED row here, not on the node
 # body, and against the brightest of those fg_1 measured 3.96 where fg_0
 # measures 4.79 -- the difference between under and over the 4.5 floor.
-text        = 0.9843 0.9451 0.7804 1
-text_bright = 0.9843 0.9451 0.7804 1
+text        = fg_0
+text_bright = fg_0
 
 # yellow_b, the default accent preset.
-accent = 0.9804 0.7412 0.1843 1
+accent = yellow_b
 
 # Port roles taken from the EDITOR's syntax colours, so a uniform on a node
 # is the colour its name is in the code:
@@ -46,9 +46,9 @@ accent = 0.9804 0.7412 0.1843 1
 # Not from GRAPH_PORT_*, which are the same hues desaturated for a strip
 # behind a label in a dense panel. On a node row those land between 0.25 and
 # 0.39 on every channel and every row reads as the same grey-brown.
-input   = 0.5569 0.7529 0.4863 1
-output  = 0.9961 0.5020 0.0980 1
-both    = 0.9804 0.7412 0.1843 1
+input   = aqua_b
+output  = orange_b
+both    = yellow_b
 # SYN_IDENT, the colour a pass uniform's name takes in the editor. Reads at
 # 8.45 with a dark label -- the best of every candidate, because it is far
 # from the mid-tone rather than near it. An earlier pass rejected the light
@@ -57,23 +57,26 @@ both    = 0.9804 0.7412 0.1843 1
 # Desaturated and cool on purpose: it sits 71 degrees of hue from the
 # nearest kind colour, where the tuned cream it replaced sat 18 from the
 # script green and made a plain row read as a script-driven one.
+# The one field that names no palette entry, deliberately: every candidate in the
+# palette sat too close to a kind colour, and this is the hue distance the row needs.
+# It does NOT follow a palette swap, which is the trade for the separation.
 control = 0.6200 0.6400 0.7200 1
-pin     = 0.9216 0.8588 0.6980 1
+pin     = fg_1
 
 # fg_2, not gray or fg_3: a row's NAME sits on a tinted fill or a widget
 # panel rather than on the node body. Measured on the rendered pixels
 # against the widget panel -- gray 2.6, fg_3 3.5, fg_2 4.44 -- and it still
 # reads as quieter than the value beside it, which is what the field is for.
-text_dim = 0.8353 0.7686 0.6314 1
+text_dim = fg_2
 
 # The halo is what lets light text sit on a saturated fill. Raised from the
 # 0.45 default because these rows are brighter than the ones it was tuned on.
 text_shadow = 0.60
 
 # GRAPH_EDGE is the wire colour; the outline under it goes to the floor.
-wire_outline = 0.0863 0.0941 0.0980 0.85
-wire_invalid = 0.9843 0.2863 0.2039 0.95
-pin_ring     = 0.0863 0.0941 0.0980 0.55
+wire_outline = bg_0h 0.85
+wire_invalid = red_b 0.95
+pin_ring     = bg_0h 0.55
 
 # The palette's greys are closely spaced, so a depth step has less room than
 # the built-in theme's and the bevel does more of the work.
@@ -102,14 +105,14 @@ row_role_widget = 1.00
 #   engine  SYN_UNIFORM         rewritten by the engine every frame
 #   script  SYN_SCRIPT_UNIFORM  driven by a script, green_b -- the same
 #                               colour the editor gives a builtin
-attr.engine_uniform = 0.5137 0.6471 0.5961 1
-attr.script_uniform = 0.7216 0.7333 0.1490 1
+attr.engine_uniform = blue_b
+attr.script_uniform = green_b
 
 # u_time IS an engine uniform -- the engine rewrites it every frame -- so it
 # takes SYN_UNIFORM like the rest of its kind. The demo matches a category to
 # a row by LABEL, standing in for a host that maps its own SymbolKind; naming
 # the uniform directly is what that looks like from a theme file.
-attr.u_time = 0.5137 0.6471 0.5961 1
+attr.u_time = blue_b
 
 # The state RING a node wears. Host concepts, so they ride the `attr.`
 # namespace the library leaves to the host rather than a theme field.
@@ -138,9 +141,9 @@ attr.u_time = 0.5137 0.6471 0.5961 1
 # selection ring nobody asked for.
 # Drawn by the library on the node's own edge (ABI 13), so they follow the
 # card's corner radius and share its antialiasing.
-state_selected = 0.9804 0.7412 0.1843 1
-state_hovered  = 0.5725 0.5137 0.4549 1
-state_failing  = 0.9843 0.2863 0.2039 1
+state_selected = yellow_b
+state_hovered  = gray
+state_failing  = red_b
 
 # A multiplier on the outline weight. The maintainer reported the previous
 # ring as "too small, barely visible", so this is set above the library's

@@ -68,7 +68,7 @@ from shaderbox.pass_graph import (
 from shaderbox.project_session import compile_pending_passes
 from shaderbox.scripting.engine import is_scriptable
 from shaderbox.syntax_colors import kind_color
-from shaderbox.theme import COLOR, SIZE, fade, group_tint
+from shaderbox.theme import COLOR, SIZE, fade, group_tint, resolve_palette_refs
 from shaderbox.ui_models import UIDocumentState, UIUniform
 from shaderbox.ui_primitives import (
     context_menu_style,
@@ -401,9 +401,12 @@ def _body_rows(
 def canvas_theme() -> Theme:
     """The canvas's palette, from `canvas.theme`.
 
-    The FILE decides: it is tuned in the library's own demo and read
-    whole, so what the canvas looks like is what was tuned, with no
-    second opinion here to fight it. A field the file does not name keeps
+    The FILE decides WHICH palette entry each field takes and the tuning
+    behind that choice; `theme._P` decides what that entry looks like. A
+    field written as `bg_0` rather than as three floats is the same value
+    either way and re-themes with the rest of the app, which three floats
+    do not -- this file is a second palette the app draws from, and before
+    the references it kept gruvbox after a palette swap. A field the file does not name keeps
     the library's default, which is how the canvas follows an upstream
     retune for free.
 
@@ -414,7 +417,7 @@ def canvas_theme() -> Theme:
     it, so re-reading it per frame would buy nothing and cost a parse.
     """
     path = GRAPH_CANVAS_RESOURCES_DIR / "canvas.theme"
-    return parse_theme(path.read_text(), str(path))
+    return parse_theme(resolve_palette_refs(path.read_text()), str(path))
 
 
 def instanced_pass_keys(document: Document, order: Iterable[str]) -> frozenset[str]:

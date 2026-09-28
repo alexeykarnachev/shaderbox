@@ -26,6 +26,7 @@ Color framework (portable to a future non-gruvbox theme):
 """
 
 import colorsys
+import re
 import zlib
 from typing import Literal, get_args
 
@@ -707,3 +708,41 @@ ROLE_COLOR: dict[SyntaxRole, tuple[float, float, float, float]] = {
 assert set(ROLE_COLOR) == set(SYNTAX_ROLES), (
     f"roles without a colour: {set(SYNTAX_ROLES) - set(ROLE_COLOR)}"
 )
+
+
+# A `.theme` file may name a palette entry where it would otherwise write three floats:
+# `canvas = bg_0` instead of `canvas = 0.1137 0.1255 0.1294 1`. Same value, but a name
+# follows a palette swap and three floats do not -- and the canvas file is a second palette
+# the app draws from, so without this a swapped theme left the whole node graph gruvbox.
+#
+# An alpha may follow the name (`wire_outline = bg_0h 0.85`), because a wash is the entry's
+# colour at a chosen transparency rather than a different colour.
+#
+# What the FILE still decides is WHICH entry each field takes. Those choices are measured --
+# the comments there record contrast ratios against specific greys -- and no generator can
+# re-derive them, so they stay in the file and only the colour behind them moves.
+_PALETTE_REF = re.compile(r"^(\s*[\w.]+\s*=\s*)([a-z][a-z0-9_]*)(\s+[\d.]+)?\s*$")
+
+
+def resolve_palette_refs(text: str) -> str:
+    """Replace `name` and `name alpha` field values with the palette entry's floats.
+
+    An unknown name RAISES rather than passing through: the library's parser would reject
+    it anyway, but with a line number and not the name, and a silently-kept literal is the
+    failure this exists to prevent.
+    """
+    out: list[str] = []
+    for line in text.splitlines():
+        match = _PALETTE_REF.match(line)
+        if match is None:
+            out.append(line)
+            continue
+        prefix, name, alpha = match.groups()
+        if name not in _P:
+            raise KeyError(
+                f"unknown palette entry {name!r} in theme line: {line.strip()}"
+            )
+        r, g, b, a = _P[name]
+        opacity = float(alpha) if alpha else a
+        out.append(f"{prefix}{r:.4f} {g:.4f} {b:.4f} {opacity}")
+    return "\n".join(out) + ("\n" if text.endswith("\n") else "")

@@ -38,6 +38,7 @@ from shaderbox.graph_canvas.render import shapes_array
 from shaderbox.intel.symbols import SymbolKind
 from shaderbox.pass_graph import Port, strip_order
 from shaderbox.syntax_colors import kind_color
+from shaderbox.theme import resolve_palette_refs
 from shaderbox.widgets.graph_state import ports_of
 from shaderbox.widgets.pass_graph import canvas_theme
 
@@ -669,7 +670,10 @@ def test_the_shipped_theme_file_is_what_the_canvas_draws_with() -> None:
     pass on code that ignored the file and happened to agree with it.
     """
     shipped = GRAPH_CANVAS_RESOURCES_DIR / "canvas.theme"
-    text = shipped.read_text()
+    # Resolved the way `canvas_theme` resolves it: fields name palette entries rather
+    # than literals, so parsing the raw text compares against something the app never
+    # draws with.
+    text = resolve_palette_refs(shipped.read_text())
     from_file = ffi.parse_theme(text, str(shipped))
     live = canvas_theme()
 
@@ -976,7 +980,7 @@ def test_the_canvas_theme_file_decides_the_shading() -> None:
     """
     shipped = GRAPH_CANVAS_RESOURCES_DIR / "canvas.theme"
     default = ffi.default_theme()
-    from_file = ffi.parse_theme(shipped.read_text(), str(shipped))
+    from_file = ffi.parse_theme(resolve_palette_refs(shipped.read_text()), str(shipped))
     assert from_file.row_role_widget != default.row_role_widget, (
         "the shipped file names nothing the library does not already do, "
         "so nothing about it can be shown to have been read"
