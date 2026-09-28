@@ -54,3 +54,14 @@ Four files use it. Three are AST-based structural checks (`test_button_tiers.py`
 Those are correct. The dangerous shape is narrower: a POSITIVE presence assertion on
 source text standing in for behaviour. Absence assertions ("this pattern is gone") are
 also fine — a deleted thing has no runtime to drive.
+
+## Spec written and checked
+
+`01_spec.md` passes its structural check. Three real violations it caught, all mine:
+live facts (a line count and a file size) inside a spec whose own wave deletes live
+facts; a missing re-measure instruction; and coverage lines carrying counts.
+
+Two of its complaints were FALSE POSITIVES worth knowing about, because both are
+multi-line regex matches that a per-line grep cannot show: "Phase **1** ... its
+**finding**s" and "W-**2** — **Dead** code" both match a defect-count pattern that is
+looking for "delete the 6 dead symbols". Reworded rather than argued with.
