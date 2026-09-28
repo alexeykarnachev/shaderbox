@@ -27,64 +27,39 @@ feature; brief points at the superseder).
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
 <!-- As of 2026-09-28. -->
-**The instancing wave is specced as four features and none of them is started.** 101 is the
-research record they cite; 102, 103, 104 and 105 carry the work.
+**The instancing wave shipped: 102, 103, 104 and 105, built in parallel against a frozen
+contract.** 102 and 104 are `partial`; their rows say what remains.
 
-**102 is the one to do first, and it is not about instancing.** Feature 100's passes draw
-correctly, but the engine misreports its own state: eight reachable draw states rather than
-the three anyone had written down, a population reaching a pass with no `flat in` accepted
-and dropped forever, zero entities clearing the canvas in silence, `_instances_error`
-written and read by nothing, a failed recompile drawing the old shader under the new error.
-Two seams fix all of it -- one rule for a script key that does not land, which WARNS and has
-no branch per case, and a per-frame outcome returned by the draw for one surface to read.
-The first reverses 079 D5's silence for EVERY script key, so the wave touches the script
-engine's reporting split, two `conventions.md` bullets, and the tests that currently pin the
-silence. Blend mode becomes a per-pass choice in the same wave.
+**Two premises measurement reversed, and the rows carry the detail.** I7 is live for additive
+and absent for `screen`, so the UI names the mode to avoid and an inverted gate trips if that
+ever changes. In 105, editor spans are anchored and follow edits, so the burst regime the
+spec predicted does not happen.
 
-**103 is gated on it because the copilot is misinformed rather than uninformed.** Its own
-probe reports the shipped Entity Flock example as driving nothing and animating nothing, and
-the generated script API doc asserts a value space the engine refuses. Populations cannot
-cross a tool call as data -- 20k entities is ~320 KB against a JSON schema -- so the shape is
-settled: the copilot writes the generator and reads back statistics.
+**The lesson that cost most.** Four reviewers converged on one class: producers and consumers
+were gated and the call joining them was not, so deleting a wiring site left the suite green.
+A derivation buried in a draw function is one no test can reach, and "unreachable" and
+"correct" look identical from outside.
 
-**104 is the on-ramp**, and review found only one of its items actually blocked — the blend
-documentation waits on 102, nothing waits on 103, and the four text-only items ship as soon
-as the wave opens. Twelve surfaces, led by the two that are wrong rather than merely missing: the help modal's first
-section calls `vs_uv` and the full-screen quad "fixed", and both are false for an instanced
-pass.
+**ShaderBox is still getting off imgui.** `graph_canvas` owns the node picture, hit-testing
+and gestures (098); imgui owns the window, tab row and menus, and the next surface to move is
+a question, not a plan.
 
-**105 runs in parallel and shares no code with them.** `self` draws plain because the host's
-only channel into the editor is position-blind and the one call that feeds it is guarded off
-script tabs -- 95% of a real script's identifier occurrences draw plain, `self` being 41 of
-them. The library already promises a C host, in its own ABI contract, that it may push its
-own spans, and no ABI call keeps that promise. The requirements are written
-(`101_instancing_research/02_editor_requirements.md`, R1-R6 with evidence) and go to the
-editor session when the feature starts, not before; every technical choice there is theirs.
+One finding is open and it is upstream's: a canvas node row carrying a widget has its role
+colour covered by the widget's own panel. Reported with the case; no workaround, because
+tinting something adjacent would hide it.
 
-**ShaderBox is still getting off imgui.** `graph_canvas` owns the node picture, the
-hit-testing and the gestures (098); imgui still owns the window, the tab row and the menus,
-and the next surface to move is a question, not a plan.
-
-One finding is open and it is upstream's: on the canvas, a node row that carries a widget
-has its role colour covered by the widget's own panel, so an engine-driven uniform draws in
-the node's grey rather than the blue the rest of the app gives it. Reported to the library
-with the case; no workaround here, because tinting something adjacent would hide it.
-
-**Unmeasured, and owed to nobody:** the canvas past twenty passes at the GPU (its DRAW-CALL
-half is measured and gated -- one textured run per pass, and 2n+3 runs in total once an
-atlas is loaded, which is 83 at forty passes); no brake watches copilot cost or a frame
-going lit to flat (082); the GL thread if the throttle falls short. `make gates` flaked once
-on `test_math_members_and_the_api_complete_by_kind` with a jedi RecursionError under
-parallel workers and passed on re-run; not chased.
+**Unmeasured:** the canvas past twenty passes at the GPU; no brake on copilot cost (082); the
+GL thread if the throttle falls short. Annotations and decorators share one colour, which a
+fifth `SymbolKind` would close.
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
-| 105 | semantic_highlighting | pending | `self`, `__init__` and method names draw plain in a script because the host's only channel into the editor library is an exact-word, position-blind table and the one call that feeds it is guarded off script tabs -- 302 of 316 identifier occurrences in a real script draw plain, `self` being 41. The fix is the general mechanism the library already promises a C host in its own ABI contract and no ABI call keeps: a host pushes position-based spans it computed itself. Two mechanisms with two jobs, since a name-keyed fact is edit-invariant and a position-keyed one is not -- `self`/`cls`/dunders stay on the word table, spans carry only what needs positions, and GLSL stays entirely on the table because no GLSL parser exists. Needs syntax classes that do not exist: nine slots, four lexer-owned, five assigned, zero free. Editor-side requirements are written and handed over when the feature starts. Spec: `ai_docs/features/105_semantic_highlighting/01_spec.md`. |
-| 104 | instancing_onramp | pending | Feature 100 is usable only by someone already told it exists. Twelve surfaces, all in, ordered wrong-text before missing-text: the help modal's first section calls `vs_uv` and the full-screen quad "fixed" and both are false for an instanced pass; `vs_quad` is the one name an author cannot guess and reaching for `vs_uv` instead draws a canvas-wide vignette with no error; the generated script stub offers "(no scriptable uniforms)" for an instanced-only document; the README's scripting bullet names the exact workload and stops at uniform-driving; and the example carrying the best in-app explanation sorts last in the gallery. Gates on 102 and 103 so that what it teaches is true. Spec: `ai_docs/features/104_instancing_onramp/01_spec.md`. |
-| 103 | copilot_instancing | pending | The copilot is misinformed rather than uninformed: its own dry-run reports the shipped Entity Flock example as driving nothing and animating nothing, so an agent that writes a correct instanced script is told it failed. The generated API doc asserts every value is plain Python while the engine requires numpy, and the gate pinning that doc enumerates its domain from a uniform dispatcher, so a reserved key sits outside it by construction. Populations cannot cross a tool call as data, which settles the shape by arithmetic rather than preference: the copilot writes the generator and reads back statistics. The dry-run reports a population without writing one, which satisfies the 063 isolation ruling as stated rather than bending it. Gates on 102's outcome seam. Spec: `ai_docs/features/103_copilot_instancing/01_spec.md`. |
-| 102 | script_reporting_contract | pending | The engine knows something is wrong and says nothing, in five places: a population reaching a pass with no `flat in` is accepted and dropped forever, no population draws fullscreen and zero entities clears to black with the strip empty in both, `_instances_error` is written and read by nothing while going stale across refusals, and a failed recompile keeps the old fields and the old program so the canvas shows the old shader under the new error. Two seams rather than seven patches: one rule for a script key that does not land, which warns to logs and notifications with no branch per case, and a per-frame outcome returned by the draw for one surface to read. The first reverses 079 D5's silence for EVERY script key, so the blast radius covers the engine's reporting split, two conventions bullets, and the tests that pin the silence and therefore invert. Blend mode becomes a per-pass choice, since additive was hardcoded and made an opaque sprite double on overlap and a dark entity on a light field impossible. Spec: `ai_docs/features/102_script_reporting_contract/01_spec.md`. |
+| 105 | semantic_highlighting | done | `self` drew plain because the host's only channel into the editor was position-blind -- 302 of 316 identifier occurrences in a real script, `self` being 41. Both halves shipped: `self`/`cls`/dunders on the word table (edit-invariant, no positions needed) and definitions, decorators and annotations as spans, through `ed_set_spans`, which the editor session built and landed mid-wave. Two spec premises fell to measurement: spans are ANCHORED and follow edits, so the predicted colour-drops-to-plain burst regime does not happen and the debounce is justified by head-of-line blocking instead; and parso answers all three positional cases at 6.6 ms against jedi's 7.5, so nothing was deferred. `render_state` gained a span-feed dimension, without which a span answer landing on an idle buffer would never reach the screen at all. Spec: `ai_docs/features/105_semantic_highlighting/01_spec.md`. |
+| 104 | instancing_onramp | partial | Twelve surfaces so an author who was never told about instancing can find it, ordered wrong-text before missing-text. The help modal no longer calls `vs_uv` and the full-screen quad fixed; `vs_quad` is documented; the README and the example ordering landed; the uniforms panel and the graph both mark an instanced pass. The graph badge is a title-string mark, not a struct field: `libgraph_canvas.so` is a vendored binary with no C source in this repo, verified, so the `BodyRow` route the spec anticipated was not buildable here. Review killed a false justification that had shipped in help text -- a `flat in` cannot arrive from a `lib:` include, because the resolver splices function bodies only. **Partial:** item 5 (the script stub's signature) and item 12's blend prose wait on their owning files; `@instances` dict-literal completion has no seam, since script-tab completion is jedi-only and carries no document data. Spec: `ai_docs/features/104_instancing_onramp/01_spec.md`. |
+| 103 | copilot_instancing | done | The copilot was misinformed rather than uninformed: its own dry-run called the shipped Entity Flock example broken. It now writes the generator and reads back statistics -- settled by arithmetic, since 20k entities is ~320 KB against a JSON schema -- with a statistics-only sink on the dry-run path that reports without writing, so the 063 isolation ruling is satisfied rather than bent. `sb_instanced` joined `ENGINE_DRIVEN_UNIFORMS`, which one line fixed across the probe, the stub, `_format_uniforms` and the uniform row. Review found and fixed a live defect in the new code: population motion compared the first sample against the LAST, so a flock that orbits back to where it started reported STATIC -- the same false verdict the feature exists to end, in a narrower window. Spec: `ai_docs/features/103_copilot_instancing/01_spec.md`. |
+| 102 | script_reporting_contract | partial | The engine knew things were wrong and said nothing, in five places. Two seams rather than seven patches: one rule for a script key that does not land, warning to logs and notifications with no branch per case (`KeyFailReason`, nine reasons, seven warning and two provably-exempt), and an eight-state `InstancedOutcome` three producers write and three surfaces read. Reverses 079 D5's silence for every script key. Blend became a per-pass choice, which needed `allocates_same_as` so picking a mode does not destroy a feedback trail by either of the two paths that asked `==`. **Partial:** I7 is LIVE, not dissolved -- on an `f1` target 20 additive entities and 2 both read exactly 1.0, while `screen` reads 0.996 against 0.506 and does discriminate, so I7 is additive's alone and not a property of `f1`. No code fix is possible (8-bit unorm clamps whatever the factors are); the tooltip names the mode that saturates and points at the one that does not, and the gate is inverted so a future fix trips it. Spec: `ai_docs/features/102_script_reporting_contract/01_spec.md`. |
 | 101 | instancing_research | done | The research record features 102-105 cite for evidence, not a plan. One session's solo reading plus four adversarial agents, every measurement re-run: the eight-state draw table, the copilot's false verdict on its own example, the 95%-plain measurement behind the highlighting work, and the editor-library findings including a gate whose exact failure mode the library records having shipped once. Also carries the editor requirements handed to the editor session when 105 starts. Spec: `ai_docs/features/101_instancing_research/01_spec.md` + `02_editor_requirements.md`. |
 | 100 | instanced_entities | done | A pass whose fragment shader declares `flat in` fields draws one quad per ENTITY instead of one over the canvas: the engine reads those declarations from the flattened source, writes the vertex stage the author never sees, and binds one GPU buffer per field, so a script returning numpy columns under a reserved `@instances` key inside its pass block drives tens of thousands of them in a single `glDrawArraysInstanced`. `pos` and `radius` are reserved -- nothing in a declaration says which field is geometry, and both inference rules fail silently. The layout comes from the declarations, never from introspection, because the driver dead-strips an unread attribute and an introspected record is then the wrong width with no error. Simulation is INLINE; threading and snapshot interpolation are a separate feature the seam is shaped for. Spec: `ai_docs/features/100_instanced_entities/01_spec.md`. |
 | 098 | graph_canvas | done | The hand-drawn imgui node canvas replaced by the `graph_canvas` library over a C ABI, rendered with moderngl into an FBO that `imgui.image` presents -- the first step of getting shaderbox off imgui. Vendored as feature 067 vendored `libeditor.so`; the ctypes binding and the renderer know no shaderbox type, so the pair lifts into another project, and a test walks their imports. Three renderer defects found by rendering rather than by reading (a stride that made every instance after the first read its neighbour, a run offset that walked off the buffer, a preview sharing the atlas's texture unit) plus a gesture mask numbered so that "refuses everything" accepted drags; each was reintroduced and its gate watched to fail. Several library defects were found and fixed upstream, each reported with the measurement

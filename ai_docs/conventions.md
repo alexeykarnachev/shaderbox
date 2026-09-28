@@ -629,11 +629,15 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
 - **A script's bulk data travels under a RESERVED `@` key inside a pass block, and the
   engine owns every buffer (feature 100).** `@instances` carries a dict of named numpy
   columns; `@` cannot begin a GLSL identifier or a pass name, so the namespace is decidable
-  and an unrecognised `@` key is a HARD error rather than the silent orphan a plain name
-  gets under 079 D5 -- a mistyped `@instance` otherwise costs a blank frame and an empty
-  strip. The columns are validated in the ENGINE, not at draw time: `Pass` has no surface
-  to report to (it writes `_instances_error`, which as of feature 101's research nothing
-  reads and nothing logs -- see that spec's I4). Nothing is cast or
+  and every key that does not land WARNS -- one rule, no branch per case (102 D1). That
+  RELAXED the `@` key from a hard error and REVERSED 079 D5's silence for a plain name in
+  the same move: one rule beats two, and a warning still reaches the author where the
+  silence did not. `KeyFailReason` (`scripting/keys.py`) is the enumerable domain a gate
+  walks; two members are exempt because their correct behaviour is provably not a warning
+  (a pass that has never compiled, and a slot the engine owns). The columns are validated
+  in the ENGINE, not at draw time, and what the draw did comes back as an `InstancedOutcome`
+  that three producers write and three surfaces read (102 D4) -- the old `_instances_error`,
+  which nothing read and which went stale across refusals, is deleted. Nothing is cast or
   truncated -- numpy's own assignment casts silently, so an f8 column would arrive as f4
   and 1e40 as inf -- and an invalid population draws NOTHING, which is distinct from "no
   population" meaning fullscreen; conflating the two painted the entity shader over the
@@ -676,10 +680,19 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   frame loop (mirrors `shader_errors.ShaderError`). Freeze granularity: a per-KEY coercion mismatch freezes
   only that key (`(document_id, pass, name)`); a raw throw / non-dict return is behavior-level — freezes every
   pair it drove last frame, records under the sentinel `(document_id, "", "script.py")` (`""` is the
-  absent-pass marker a document-level error uses). A key naming an engine-owned (`u_time`…) uniform is dropped
-  SILENTLY, and so is a key NO pass declares — writing the script before the shader declares the uniform
-  is a normal authoring step, and the shader side already offers the declaration (079 D5). A key naming a
-  sampler/block, or an unknown pass name, records a soft error + skip. The strip shows a pass-attributed
+  absent-pass marker a document-level error uses). Every key that does not LAND takes one code path and WARNS
+  (102 D1, reversing 079 D5): a name no pass declares, an unknown pass, a sampler or block, an
+  `@instances` reaching a compiled pass with no `flat in`. The code deciding what to do never
+  branches on which of those it is — it consults `SILENT_KEY_FAIL_REASONS`, and a gate walks
+  `KEY_FAIL_REASONS` so a new reason cannot be added without deciding its tier. TWO reasons do
+  not warn, and are exempt because their correct behaviour is provably not a warning rather
+  than because they are special: a key for a pass that has NEVER attempted a compile (true of
+  every pass on frame one, so warning there fires on every document open), and an engine-owned
+  slot (`u_time`…) a script cannot be expected to avoid naming. **Revisit if a THIRD such case
+  appears** — at which point "warn unless…" is the wrong rule shape and wants re-deriving,
+  not a third exemption. The warning is EDGE-triggered on the reason changing, since the path
+  runs at frame rate, and leaves the headless engine through an injected callback because
+  `notifications.py` imports imgui. The strip shows a pass-attributed
   error on the script tab AND on that pass's shader tab; a bare-key or sentinel error is the script tab's
   alone. NaN/Inf is frozen-as-data like a shape error.
   **PLAY/STOP is document-scoped + `(pass, name)`-keyed model state, NOT a per-`UIUniform` flag (feature 048,
