@@ -724,11 +724,10 @@ def test_array_accepts_nested_vec_rows(tmp_path: Path) -> None:
 # ---- soft (document,pass,name) errors: orphan/typo + sampler/block keys skipped, not driven ----
 
 
-def test_a_key_no_pass_declares_is_skipped_silently(tmp_path: Path) -> None:
-    # 079 D5: writing the script before the shader declares the uniform is a normal authoring step,
-    # so a BARE key naming no active uniform on ANY pass is SKIPPED with NO error row — and still
-    # claims no ownership in script_driven_uniforms. Falsifier: u_ghost written, or driven, or an
-    # error row appears for it.
+def test_a_key_no_pass_declares_warns(tmp_path: Path) -> None:
+    # 102 D2 reverses 079 D5: a BARE key naming no active uniform on ANY pass now WARNS
+    # (`no_such_uniform`) with an error row — and still claims no ownership in
+    # script_driven_uniforms. Falsifier: u_ghost written, driven, or no error row for it.
     _write_script(
         tmp_path,
         _script(update_body="        return {'u_a': 0.5, 'u_ghost': 0.9}\n"),
@@ -738,7 +737,7 @@ def test_a_key_no_pass_declares_is_skipped_silently(tmp_path: Path) -> None:
     eng.tick("n0", document, _ctx(0.0))
     assert document.uniform_values["u_a"] == 0.5
     assert "u_ghost" not in document.uniform_values  # NOT written as None
-    assert not [key for key in eng.errors if key[2] == "u_ghost"]
+    assert [key for key in eng.errors if key[2] == "u_ghost"]  # now a warning row
     assert ("", "u_ghost") not in eng.script_driven_uniforms(
         "n0"
     )  # claims no ownership
@@ -759,11 +758,11 @@ def test_a_bare_sampler_key_errors_like_a_pass_block_one(tmp_path: Path) -> None
     assert ("main", "u_tex") not in eng.script_driven_uniforms("n0")
 
 
-def test_a_pass_block_key_that_pass_does_not_declare_is_skipped_silently(
+def test_a_pass_block_key_that_pass_does_not_declare_warns(
     tmp_path: Path,
 ) -> None:
-    # 079 D5 through the block phase: the pass compiles and simply has no such uniform yet.
-    # Falsifier: an error row, or the key written.
+    # 102 D2 through the block phase: the pass compiles and simply has no such uniform yet, and
+    # that now warns (`no_such_uniform`). Falsifier: no error row, or the key written.
     _write_script(
         tmp_path,
         _script(update_body="        return {'main': {'u_a': 0.5, 'u_ghost': 0.9}}\n"),
@@ -773,7 +772,7 @@ def test_a_pass_block_key_that_pass_does_not_declare_is_skipped_silently(
     eng.tick("n0", document, _ctx(0.0))
     assert document.uniform_values["u_a"] == 0.5
     assert "u_ghost" not in document.uniform_values
-    assert not [key for key in eng.errors if key[2] == "u_ghost"]
+    assert [key for key in eng.errors if key[2] == "u_ghost"]
     assert ("main", "u_ghost") not in eng.script_driven_uniforms("n0")
 
 
@@ -819,12 +818,15 @@ def test_a_pass_name_error_clears_when_the_key_becomes_a_bare_one(
     # pass declares, and a block naming a pass that does not exist. Rewriting `{"blur": {...}}`
     # as `{"blur": 1.0}` touched the pair from the BARE path, which suppressed the stale-clear,
     # while never writing the slot to overwrite it — so the "no pass named 'blur'" error stood
-    # forever, on the strip and in the copilot's probe. Falsifier: clear on "touched this tick"
-    # again rather than on "re-recorded this tick", and the error survives the rewrite.
+    # forever, on the strip and in the copilot's probe. A real `blur` uniform (rather than an
+    # orphan name) keeps this test isolated to the stale-clear mechanism: since 102 D2 a bare
+    # orphan now warns too, which would leave an error present for the WRONG reason and hide a
+    # regression in the clear. Falsifier: clear on "touched this tick" again rather than on
+    # "re-recorded this tick", and the pass-name error survives the rewrite.
     path = _write_script(
         tmp_path, _script(update_body="        return {'blur': {'u_x': 1.0}}\n")
     )
-    document = _FakeDocument([_u("u_x")])
+    document = _FakeDocument([_u("u_x"), _u("blur")])
     eng = _engine(tmp_path, document)
     eng.tick("n0", document, _ctx(0.0))
     assert ("n0", "", "blur") in eng.errors
@@ -838,6 +840,7 @@ def test_a_pass_name_error_clears_when_the_key_becomes_a_bare_one(
     assert ("n0", "", "blur") not in eng.errors, (
         "the pass-name error outlived the pass block"
     )
+    assert document.uniform_values["blur"] == 1.0  # the bare key landed for real
 
 
 def test_a_bad_key_error_clears_when_the_key_is_fixed(tmp_path: Path) -> None:
@@ -1295,9 +1298,14 @@ def _two_pass() -> _FakeDocument:
         ("{'u_a': 1.0}", {"paint": {"u_a": 1.0}, "composite": {"u_a": 1.0}}, None, ""),
         # bare key, ONE pass declares it -> that pass only; the sibling is untouched
         ("{'u_b': 1.0}", {"paint": {"u_b": 1.0}, "composite": {}}, None, ""),
-        # bare key, NO pass declares it -> nothing written, NO error (079 D5: a normal
-        # authoring step, the shader has yet to declare it)
-        ("{'u_z': 1.0}", {"paint": {}, "composite": {}}, None, ""),
+        # bare key, NO pass declares it -> nothing written, WARNS (102 D2 reverses 079 D5:
+        # a normal authoring step now still gets a row, not silence)
+        (
+            "{'u_z': 1.0}",
+            {"paint": {}, "composite": {}},
+            ("n0", "", "u_z"),
+            "no pass declares 'u_z'",
+        ),
         # pass block, declared there -> that pass only
         (
             "{'paint': {'u_a': 1.0}}",
@@ -1305,8 +1313,13 @@ def _two_pass() -> _FakeDocument:
             None,
             "",
         ),
-        # pass block, NOT declared on that pass -> nothing written, NO error (079 D5)
-        ("{'composite': {'u_b': 1.0}}", {"paint": {}, "composite": {}}, None, ""),
+        # pass block, NOT declared on that pass -> nothing written, WARNS (102 D2)
+        (
+            "{'composite': {'u_b': 1.0}}",
+            {"paint": {}, "composite": {}},
+            ("n0", "composite", "u_b"),
+            "declares no uniform 'u_b'",
+        ),
         # pass block naming NO pass -> nothing written, an error listing the real passes
         (
             "{'nope': {'u_a': 1.0}}",
@@ -1324,9 +1337,9 @@ def test_the_routing_table(
     error_fragment: str,
 ) -> None:
     # The (bare, nested) x (declared in one pass, in two, in none) matrix (069 D3; the undeclared
-    # rows carry 079 D5's silent skip). Falsifier: route every key to one pass (the pre-069
-    # output-only behavior) — rows 1/2/4 go red on the write side, rows 3/5 on the no-error side
-    # and row 6 on the error side, so no single wrong implementation passes the table.
+    # rows now WARN, 102 D2). Falsifier: route every key to one pass (the pre-069 output-only
+    # behavior) — rows 1/2/4 go red on the write side, rows 3/5/6 on the error side, so no
+    # single wrong implementation passes the table.
     _write_script(tmp_path, _script(update_body=f"        return {returned}\n"))
     document = _two_pass()
     eng = _engine(tmp_path, document)
@@ -1527,25 +1540,28 @@ def test_a_broadcast_is_held_for_a_not_yet_compiled_pass(tmp_path: Path) -> None
     assert not any(k[0] == "n0" for k in eng.errors)
 
 
-def test_an_undeclared_key_stays_silent_whatever_the_passes_are_doing(
+def test_an_undeclared_key_warns_whatever_the_passes_are_doing(
     tmp_path: Path,
 ) -> None:
-    # 079 D5 across every reason a pass can fail to declare the key: a compile that failed (ready
-    # but declaring nothing), and a pass that compiles and simply does not have it. Neither is the
-    # script's defect — a broken pass surfaces its own compile error on its shader tab. Falsifier:
-    # restore either orphan row; both halves go red.
+    # 102 D2 reverses 079 D5 across every reason a READY pass can fail to declare the key: a
+    # compile that failed (ready but declaring nothing) and a pass that compiles and simply
+    # does not have it now both WARN as `no_such_uniform` -- `active_by_pass` includes any
+    # `script_ready` pass regardless of whether its uniform set is empty, so the reason is
+    # decidable without recompiling. Falsifier: either case drops back to silent.
     _write_script(tmp_path, _script(update_body="        return {'u_wave': 1.0}\n"))
     broken = _FakeDocument({"main": []})  # ready, declaring nothing = a failed compile
     eng = _engine(tmp_path, broken)
     eng.tick("n0", broken, _ctx(0.0))
-    assert not any(k[0] == "n0" for k in eng.errors)
+    assert any(k[0] == "n0" for k in eng.errors)
 
     healthy = _FakeDocument({"paint": [_u("u_a")], "composite": [_u("u_a")]})
     eng2 = _engine(tmp_path, healthy)
     eng2.tick("n0", healthy, _ctx(0.0))
-    assert not any(k[0] == "n0" for k in eng2.errors)
+    assert any(k[0] == "n0" for k in eng2.errors)
     status = eng2.script_status("n0")
-    assert status is not None and status.soft_errors == []
+    assert status is not None and [(p, name) for p, name, _ in status.soft_errors] == [
+        ("", "u_wave")
+    ]
 
 
 # ---- Pass.script_ready's truth table, GL-free ----
