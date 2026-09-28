@@ -205,3 +205,53 @@ def test_the_canvas_palette_follows_a_swap(swapped: dict[str, str]) -> None:
     assert json.loads(report.stdout) == [], (
         "theme names a palette entry that does not exist"
     )
+
+
+def test_a_theme_field_can_override_the_palette_entrys_alpha() -> None:
+    """`name alpha` in a `.theme` file means that entry's colour at that transparency.
+
+    Gated because nothing exercised it. `canvas.theme` uses the syntax for `wire_outline`
+    and `pin_ring`, both naming `bg_0h`, whose own alpha is 1.0 -- so dropping the
+    override makes two translucent washes draw fully opaque, and every existing test
+    still passed: the theme tests compare `parse_theme(resolve_palette_refs(text))`
+    against `canvas_theme()`, and BOTH sides route through the same function, so they
+    agree with each other while disagreeing with the file.
+
+    The lesson generalises past this field: a comparison whose two sides share the
+    machinery under test cannot see that machinery fail.
+    """
+    from shaderbox.theme import _P, resolve_palette_refs
+
+    entry_alpha = _P["bg_0h"][3]
+    assert entry_alpha != 0.5, "pick a probe alpha the entry does not already have"
+
+    resolved = resolve_palette_refs("wire_outline = bg_0h 0.5\n")
+    assert resolved.strip().endswith("0.5"), (
+        f"the explicit alpha did not reach the parsed value: {resolved!r}"
+    )
+
+    # And the RGB still comes from the entry, so an override changes only transparency.
+    r, g, b, _ = _P["bg_0h"]
+    assert resolved.strip().split("=")[1].split()[:3] == [
+        f"{r:.4f}",
+        f"{g:.4f}",
+        f"{b:.4f}",
+    ]
+
+    # Without an alpha the entry's own is kept, which is the other half of the branch.
+    assert resolve_palette_refs("canvas = bg_0h\n").strip().endswith(str(entry_alpha))
+
+
+def test_the_shipped_theme_keeps_its_translucent_washes() -> None:
+    """The two fields that use the override, read back through the real loader.
+
+    A unit test on the resolver alone would pass with the loader wired to something
+    else, so this asserts the value the CANVAS receives.
+    """
+    from shaderbox.widgets.pass_graph import canvas_theme
+
+    theme = canvas_theme()
+    assert theme.wire_outline[3] == pytest.approx(0.85), (
+        "the wire outline lost its transparency and will draw as an opaque band"
+    )
+    assert theme.pin_ring[3] == pytest.approx(0.55)
