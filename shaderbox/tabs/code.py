@@ -33,7 +33,7 @@ from shaderbox.media import MediaWithTexture
 from shaderbox.pass_graph import AutoSource, NoSource, PassSource
 from shaderbox.paths import pass_name_of
 from shaderbox.shader_errors import ShaderError, error_at_line
-from shaderbox.syntax_colors import kind_slot
+from shaderbox.syntax_colors import kind_slot, popup_slot
 from shaderbox.theme import (
     COLOR,
     EDITOR_CURSOR_LINE_ALPHA,
@@ -486,7 +486,7 @@ def accept_python_spans(editor: Editor, feed: PythonFeed, result: PythonResult) 
     DROP-AND-RE-REQUEST, and the library makes it the only option: `ed_set_spans` takes the
     `ed_revision` the text was read at and returns 1 applied, 0 that revision is no longer
     the buffer's -- nothing changed, the previous set stands -- and -1 for a class outside
-    1..9. There is no offset salvage, which is the right call: a set computed before a
+    the library's range. There is no offset salvage, which is the right call: a set computed before a
     newline was typed would put every span below that line one row out, so a definition's
     colour would land on the WRONG word rather than on no word.
 
@@ -898,7 +898,7 @@ def _offer_completion(app: App, editor: Editor, tab: EditorTab, explicit: bool) 
         return
     editor.complete_begin()
     for symbol in matches:
-        editor.complete_push_class(symbol.inserted, kind_slot(symbol.kind))
+        editor.complete_push_class(symbol.inserted, popup_slot(symbol.kind))
     app.editor_completion_prefix = context.prefix
     app.editor_completion_offered = {symbol.inserted: symbol for symbol in matches}
     app.editor_completion_auto = not explicit

@@ -19,6 +19,11 @@ _SECTION = re.compile(r"^\[(\w+)\]$")
 _ENTRY = re.compile(r"^([@\w.]+)\s*=\s*(.+?)$")
 _HEX = re.compile(r"^#([0-9a-fA-F]{6})$")
 
+# What a capture name IS: `@` then dot-separated segments of lowercase letters, digits and
+# underscores. Taken from the names nvim-treesitter's own queries emit -- a sweep of every
+# `highlights.scm` it ships finds no other character in one.
+_CAPTURE_NAME = re.compile(r"^@[a-z0-9_]+(\.[a-z0-9_]+)*$")
+
 # A capture falls back to its parent by dropping the last dotted segment, which is
 # treesitter's own rule: `@function.method` with no line of its own draws as
 # `@function`, and `@function` as `@variable`. A theme therefore states only what it
@@ -46,13 +51,15 @@ class Theme:
         A name the theme cannot account for is a typo rather than a fallback case, and
         raises: a capture resolving quietly to a plausible colour is indistinguishable
         from a correct mapping, so every gate downstream passes on it. Two shapes qualify
-        -- a root the theme never declares, and an EMPTY dotted segment, which the walk
-        would otherwise step over in silence (`@variable.` lands on `@variable`, because
-        `rpartition` hands back the parent whether or not a segment followed the dot).
+        -- a root the theme never declares, and a name that is not a capture name at all.
+
+        The second is stated as what a capture name IS (`_CAPTURE_NAME`) rather than as a
+        list of malformed shapes, because the list is never complete: an earlier version
+        rejected an EMPTY segment and still let `@variable.parameter ` through, whose
+        trailing space is not empty, so the walk missed every parent and returned the
+        root's colour -- `#ebdbb2` where `#83a598` was asked for.
         """
-        if not name.startswith("@") or any(
-            not segment for segment in name[1:].split(".")
-        ):
+        if _CAPTURE_NAME.match(name) is None:
             raise ThemeError(f"{self.name}: {name!r} is not a capture name")
         probe = name
         while probe:

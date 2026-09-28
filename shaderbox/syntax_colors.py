@@ -79,12 +79,15 @@ def kind_color(kind: SymbolKind) -> tuple[float, float, float, float]:
     return _THEME.capture(_KIND_CAPTURE[kind])
 
 
-def _build_capture_class() -> dict[str, int]:
+def _build_capture_class() -> tuple[dict[str, int], int]:
     """Which syntax class the library draws each capture in. DERIVED from the colours.
 
     Captures sharing a colour share a class, and one whose colour the lexer already emits
     reuses the lexer's class rather than spending a host one. Classes are GLOBAL -- one
     class means one thing in every buffer.
+
+    Returns the table and the class reserved for PLAIN text, which the popup needs by
+    number because 0 does not mean the same thing there.
     """
     by_colour: dict[tuple[float, float, float, float], int] = {
         _THEME.capture(capture): cls for cls, capture in _LEXER_CLASS_CAPTURE.items()
@@ -95,7 +98,7 @@ def _build_capture_class() -> dict[str, int]:
     for capture in sorted(set(_KIND_CAPTURE.values())):
         colour = _THEME.capture(capture)
         # Class 0 means "leave it to the lexer", which for plain text is both correct and
-        # free.
+        # free -- the library's TEXT slot already carries this colour.
         if colour == plain:
             assigned[capture] = 0
             continue
@@ -105,10 +108,14 @@ def _build_capture_class() -> dict[str, int]:
         by_colour[colour] = host_class
         assigned[capture] = host_class
         host_class += 1
-    return assigned
+    # A real class holding the plain colour, for the surfaces where 0 means something
+    # else. It reuses one the lexer already emits if the colour matches, and spends a host
+    # class only when it does not.
+    plain_class = by_colour.get(plain, host_class)
+    return assigned, plain_class
 
 
-_CAPTURE_CLASS: dict[str, int] = _build_capture_class()
+_CAPTURE_CLASS, _PLAIN_CLASS = _build_capture_class()
 
 # The library refuses a class past its ceiling rather than clamping it, so an overflow
 # would fail at RUNTIME on whichever buffer first showed that kind. Asserting here moves it
@@ -125,8 +132,27 @@ def kind_slot(kind: SymbolKind) -> int:
 
     Derived from the kind's capture, so a kind's colour and the class it is pushed as
     cannot disagree -- which they did when both were hand-written.
+
+    For the BUFFER, where class 0 falls through to the library's TEXT slot and that slot
+    carries `@variable`'s colour. The completion popup resolves 0 to its own plain-text
+    colour instead, so it asks `popup_slot` rather than this.
     """
     return _CAPTURE_CLASS[_KIND_CAPTURE[kind]]
+
+
+def popup_slot(kind: SymbolKind) -> int:
+    """The syntax class the COMPLETION POPUP draws this kind in.
+
+    Class 0 means a different thing in each surface: in the buffer it falls through to the
+    library's TEXT slot, which carries `@variable`'s colour, while in the popup it means
+    the popup's own plain text -- a dimmer colour chosen so unselected rows recede. A kind
+    resolving to `@variable` therefore drew `#ebdbb2` in the buffer and `#a89984` in the
+    popup, two colours for one symbol.
+
+    Naming the class explicitly is what makes them agree; the popup then draws every kind
+    in the colour the theme file asks for.
+    """
+    return _CAPTURE_CLASS[_KIND_CAPTURE[kind]] or _PLAIN_CLASS
 
 
 def editor_palette() -> dict["editor_ffi.Slot", tuple[float, float, float, float]]:
@@ -146,6 +172,11 @@ def editor_palette() -> dict["editor_ffi.Slot", tuple[float, float, float, float
     for capture, cls in _CAPTURE_CLASS.items():
         if cls:
             palette[getattr(editor_ffi.Slot, f"SYNTAX_{cls}")] = _THEME.capture(capture)
+    # The plain class the popup pushes by number. Unset, a popup row naming it would draw
+    # in whatever that slot defaulted to.
+    palette[getattr(editor_ffi.Slot, f"SYNTAX_{_PLAIN_CLASS}")] = _THEME.capture(
+        "@variable"
+    )
     return palette
 
 

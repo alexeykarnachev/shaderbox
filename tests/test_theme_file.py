@@ -13,9 +13,11 @@ from pathlib import Path
 
 import pytest
 
+from shaderbox.editor.ffi import Slot
 from shaderbox.intel.symbols import SymbolKind
-from shaderbox.syntax_colors import kind_capture
+from shaderbox.syntax_colors import editor_palette, kind_capture, kind_slot, popup_slot
 from shaderbox.theme_file import (
+    _CAPTURE_NAME,
     DEFAULT_THEME,
     Theme,
     ThemeError,
@@ -261,22 +263,61 @@ def test_the_shipped_theme_loads_in_a_clean_process() -> None:
         "@",
         "variable",
         "",
+        # Whitespace inside a segment. `@variable.parameter ` is the one that got past an
+        # earlier guard: its segments are not EMPTY, so an empty-segment check waves it
+        # through, and the walk then matches no parent and returns the ROOT's colour --
+        # `#ebdbb2` where `#83a598` was asked for. A plausible colour, and the wrong one.
+        "@variable.parameter ",
+        " @variable.parameter",
+        "@variable .parameter",
+        "@variable.parameter\t",
+        "@vari able",
+        # Uppercase and non-ascii: treesitter capture names are lowercase ascii, so these
+        # are typos rather than captures this theme happens not to carry.
+        "@Variable",
+        "@VARIABLE",
     ],
 )
 def test_a_malformed_capture_name_raises_rather_than_resolving(name: str) -> None:
-    """An empty dotted segment is a typo, and a typo must not return a colour.
+    """A name that is not a capture name must not return a colour.
 
-    The walk up the dotted parents cannot see the difference on its own: `rpartition`
-    hands back `@variable` for both `@variable.x` and `@variable.`, so the empty segment
-    is stepped over and the parent's colour comes back looking entirely legitimate. A
-    name built by string concatenation with a missing suffix would draw in a plausible
-    colour with nothing to distinguish it from a correct mapping.
+    The walk up the dotted parents cannot tell a typo from a fallback: it strips segments
+    until something matches, so a malformed name lands on an ancestor and returns a colour
+    that looks entirely legitimate. `@variable.parameter ` returning the root's `#ebdbb2`
+    instead of `#83a598` is the live shape -- one trailing space, a plausible answer, and
+    nothing to distinguish it from a correct mapping.
 
     Falsifier: drop the guard in `Theme.capture` and every name here resolves silently.
     """
     theme = load_theme()
     with pytest.raises(ThemeError, match="not a capture name"):
         theme.capture(name)
+
+
+def test_the_guard_admits_every_capture_name_treesitter_emits() -> None:
+    """The other side of the guard: it must reject typos without rejecting real captures.
+
+    Anchored to nvim-treesitter's own queries rather than to this theme -- the app must
+    survive meeting a capture from a grammar it has never seen, and a guard tightened
+    against a typo is exactly the change that would break that.
+
+    Names appearing only inside comments or string literals (`@Nullable` in java, Zig's
+    `@cImport`) are not captures and are expected to be rejected; the assertion is over
+    names a grammar actually emits, which is why it reads the `@x` of a capture line.
+    """
+    queries = Path.home() / ".local/share/nvim/lazy/nvim-treesitter/queries"
+    if not queries.is_dir():
+        pytest.skip("nvim-treesitter queries not installed on this machine")
+    emitted: set[str] = set()
+    for scm in queries.rglob("highlights.scm"):
+        for line in scm.read_text().splitlines():
+            # A capture is emitted by a line that is not a comment; the name follows `@`.
+            if line.lstrip().startswith(";"):
+                continue
+            emitted.update(re.findall(r"@[a-z_][a-z0-9_.]*", line))
+    assert len(emitted) > 100, f"only {len(emitted)} capture names found -- bad sweep"
+    rejected = sorted(n for n in emitted if _CAPTURE_NAME.match(n) is None)
+    assert not rejected, f"the guard rejects real capture names: {rejected}"
 
 
 @pytest.mark.parametrize(
@@ -290,3 +331,46 @@ def test_a_well_formed_capture_still_resolves(name: str) -> None:
     it exercises the dotted-parent fallback the guard sits in front of.
     """
     assert load_theme().capture(name)
+
+
+def test_a_kind_draws_one_colour_in_the_buffer_and_the_popup() -> None:
+    """The same symbol must not be two colours on two surfaces.
+
+    Class 0 means a DIFFERENT thing in each: in the buffer it falls through to the
+    library's TEXT slot, which carries `@variable`'s colour, while in the completion popup
+    it means the popup's own plain text -- deliberately dimmer so unselected rows recede.
+    So a kind resolving to `@variable` drew `#ebdbb2` in the buffer and `#a89984` in the
+    popup, and neither surface was obviously wrong on its own.
+
+    The comparison is between the two SURFACES for one kind, which differ only in the
+    property under test; comparing either against a constant would pass whichever way the
+    bug fell.
+
+    Falsifier: push `kind_slot` in the popup instead of `popup_slot` and the three plain
+    kinds go back to drawing the popup's grey.
+    """
+    palette = editor_palette()
+    theme = load_theme()
+
+    def drawn(cls: int, plain: tuple[float, float, float, float]) -> tuple[float, ...]:
+        # Class 0 is not a slot: it means "whatever this surface calls plain".
+        return plain if cls == 0 else palette[getattr(Slot, f"SYNTAX_{cls}")]
+
+    buffer_plain = palette[Slot.TEXT]
+    popup_plain = palette[Slot.POPUP_TEXT]
+    # Contact: the two surfaces really do disagree about class 0, or this test is vacuous
+    # and would pass with `popup_slot` deleted.
+    assert buffer_plain != popup_plain, (
+        "the two surfaces' plain colours are equal, so this fixture cannot see the bug"
+    )
+
+    for kind in SymbolKind:
+        in_buffer = drawn(kind_slot(kind), buffer_plain)
+        in_popup = drawn(popup_slot(kind), popup_plain)
+        assert in_buffer == in_popup, (
+            f"{kind.name} draws {in_buffer} in the buffer and {in_popup} in the popup"
+        )
+        # And both are what the theme file asks for, so agreeing on a wrong colour fails.
+        assert in_buffer == theme.capture(kind_capture(kind)), (
+            f"{kind.name} draws {in_buffer}, not its capture's colour"
+        )
