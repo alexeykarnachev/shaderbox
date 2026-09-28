@@ -9,8 +9,6 @@ UNCHANGED across t (STATIC)" with no honest word about the population that IS mo
 from pathlib import Path
 
 import moderngl
-import numpy as np
-import pytest
 
 from shaderbox.copilot.backend import (
     _motion_verdict,
@@ -158,7 +156,9 @@ def test_the_flock_plus_a_constant_scalar_does_not_report_a_blanket_static(
     assert probe.driven
 
     scalar_verdict = _motion_verdict(probe, "", COPILOT_ENGINE.motion_value_eps)
-    assert "values UNCHANGED across t (STATIC)" in scalar_verdict  # the scalar IS static
+    assert (
+        "values UNCHANGED across t (STATIC)" in scalar_verdict
+    )  # the scalar IS static
 
     population_facts = _population_facts_text(probe, COPILOT_ENGINE.motion_value_eps)
     assert population_facts, "the population's own facts must not be silent"
@@ -181,9 +181,7 @@ def test_a_population_reaching_an_uncompiled_pass_reports_not_validated(
     # "if not fields:" branch. The statistics sink must say "not validated", never a false
     # zero-entity report (103 D2).
     broken_fragment = "#version 460 core\nBROKEN SYNTAX HERE\n"
-    document, engine = _flock_document(
-        tmp_path, gl_ctx, _FLOCK_SCRIPT, broken_fragment
-    )
+    document, engine = _flock_document(tmp_path, gl_ctx, _FLOCK_SCRIPT, broken_fragment)
     probe = engine.dry_run(
         "doc", document, COPILOT_ENGINE.motion_sample_times, COPILOT_ENGINE.motion_fps
     )

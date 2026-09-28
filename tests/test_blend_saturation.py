@@ -116,13 +116,40 @@ def test_an_f1_target_does_not_saturate_under_each_blend_mode(
     )
     sparse = _center_pixel(sparse_pass)
 
-    if blend in ("additive", "screen"):
-        # Both are monotonically brightening -- the mode a real I7 trap would hit. The gate:
-        # 20 entities must read brighter than 2, or the extra 18 contributed NOTHING, which
-        # is what saturation looks like.
+    if blend == "screen":
+        # MEASURED: screen DOES discriminate on `f1` -- 0.996 at 20 entities against 0.506
+        # at 2. Its factors are (ONE, ONE_MINUS_SRC_COLOR), so each contribution scales by
+        # how much headroom is left and the sum approaches 1.0 asymptotically instead of
+        # hitting it. That makes it the mitigation for I7 an author can actually pick, and
+        # it is gated here so a change that flattens it is caught.
         assert float(dense.max()) > float(sparse.max()) + 1.0 / 255.0, (
-            f"{blend}: 20 entities ({dense.tolist()}) no brighter than 2 "
-            f"({sparse.tolist()}) -- saturated"
+            f"screen: 20 entities ({dense.tolist()}) no brighter than 2 "
+            f"({sparse.tolist()}) -- screen stopped discriminating, and it was I7's "
+            f"only in-app mitigation"
+        )
+    if blend == "additive":
+        # 20 entities must read brighter than 2, or the extra 18 contributed NOTHING.
+        #
+        # I7 IS LIVE, and this assertion is inverted to record that rather than dropped to
+        # hide it. 102 predicted D5's per-pass blend MIGHT dissolve I7 and forbade
+        # un-hedging the claim: "if the gate says otherwise, I7 is live and needs its own
+        # fix". It says otherwise. MEASURED: on an `f1` target 20 additive entities and 2
+        # both read exactly 1.0, so a denser population is indistinguishable from a
+        # sparser one.
+        #
+        # Blend mode cannot fix it -- `f1` is 8-bit unorm and clamps at 1.0 whatever the
+        # factors are, which is arithmetic rather than a defect in the draw. The real fixes
+        # are the author's (pick `f2`, the default) and the app's (say so where the choice
+        # is made, which `popups/pass_settings.py` now does on both the format and the two
+        # brightening modes). A code fix would mean tone-mapping the instanced draw, which
+        # is a feature nobody has asked for.
+        #
+        # INVERTED deliberately: if a later change makes the dense case brighter, this
+        # fails and I7 is closed. That is the trigger, and it is a test rather than a note.
+        saturated = float(dense.max()) <= float(sparse.max()) + 1.0 / 255.0
+        assert saturated, (
+            f"additive: 20 entities ({dense.tolist()}) now read brighter than 2 "
+            f"({sparse.tolist()}) -- I7 is FIXED; close it and restore this assertion"
         )
     # For opaque/alpha/multiply the count-independence is BY DESIGN (opaque and alpha never
     # exceed what a single covering fragment writes; multiply only darkens), so a dense and

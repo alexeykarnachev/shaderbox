@@ -39,7 +39,7 @@ _CTRL_W = 168.0
 # tuple is (code, menu label, what it is for) — the label is what a person picks from, the last
 # half is the tooltip, because "16-bit" alone does not tell you when to want it.
 _FORMATS: list[tuple[str, str, str]] = [
-    ("f1", "8-bit", "clamps to 0-1, the smallest"),
+    ("f1", "8-bit", "clamps to 0-1; additive saturates here -- try screen"),
     ("f2", "16-bit float", "holds values above 1, the default"),
     ("f4", "32-bit float", "full precision, twice the memory"),
 ]
@@ -50,10 +50,10 @@ _FORMAT_CODES = [code for code, _, _ in _FORMATS]
 # drawing with no tooltip. `alpha` names its own ordering limitation (102 D5): additive's
 # "no per-frame sort" was free because additive is order-independent, and alpha is not.
 _BLEND_DESCRIPTIONS: dict[BlendMode, str] = {
-    "additive": "glow adds up, order-independent",
+    "additive": "glow adds up, order-independent; saturates on an 8-bit target",
     "alpha": "transparency; overlaps are draw-order dependent",
     "opaque": "replaces what's under it",
-    "screen": "lightens what's under it",
+    "screen": "lightens what's under it; unlike additive it holds up on 8-bit",
 }
 assert set(_BLEND_DESCRIPTIONS) == set(BLEND_MODES), (
     f"blend modes without a tooltip: {set(BLEND_MODES) - set(_BLEND_DESCRIPTIONS)}"

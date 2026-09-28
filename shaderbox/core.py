@@ -24,6 +24,7 @@ from OpenGL.GL import (
     glUseProgram,
 )
 
+from shaderbox.blend import blend_func_for
 from shaderbox.constants import (
     DEFAULT_CANVAS_SIZE,
     DEFAULT_FS_FILE_PATH,
@@ -42,7 +43,6 @@ from shaderbox.instanced import (
 from shaderbox.instanced_outcome import InstancedOutcome
 from shaderbox.intel.glsl import EntityField, entity_fields
 from shaderbox.media import MediaWithTexture, Video
-from shaderbox.blend import blend_func_for
 from shaderbox.pass_graph import DEFAULT_BLEND, AutoSource, TargetConfig
 from shaderbox.scripting.keys import REFUSED_POPULATION
 from shaderbox.shader_errors import (

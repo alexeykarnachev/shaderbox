@@ -685,12 +685,15 @@ class Document:
         take effect on the next frame rather than the one after.
         """
         render_pass = self.passes.get(name)
-        if render_pass is None or render_pass.target.allocates_same_as(target):
+        if render_pass is None:
+            return
+        if render_pass.target is not None and render_pass.target.allocates_same_as(
+            target
+        ):
             # `==` here would drop the feedback trail on a blend-only change: blend is
-            # draw state and reallocates nothing (102 D5). `Pass.set_target` still adopts
-            # the new config -- it is the DROP that must not happen, not the adoption.
-            if render_pass is not None:
-                render_pass.set_target(target)
+            # draw state and reallocates nothing (102 D5). The pass still ADOPTS the new
+            # config -- it is the drop that must not happen, not the adoption.
+            render_pass.set_target(target)
             return
         render_pass.set_target(target)
         self.drop_feedback(name)
