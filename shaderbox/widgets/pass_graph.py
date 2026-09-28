@@ -18,7 +18,7 @@ and a drag, which the library reports every frame, is accumulated on the canvas 
 written ONCE on release.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from functools import cache
 from pathlib import Path
 
@@ -417,6 +417,21 @@ def canvas_theme() -> Theme:
     return parse_theme(path.read_text(), str(path))
 
 
+def instanced_pass_keys(document: Document, order: Iterable[str]) -> frozenset[str]:
+    """Which passes draw one quad per entity, keyed like `failing` (104 D3).
+
+    A function rather than an expression inside the draw so the derivation is reachable
+    from a test: a review deleted the inline version and the whole suite stayed green,
+    which meant the mark could vanish from the app with nothing to catch it.
+
+    `entity_fields` is populated at compile from the flattened source (`core.Pass.compile`),
+    the same field the uniforms panel's badge reads -- one fact, two surfaces.
+    """
+    return frozenset(
+        pass_key(name) for name in order if document.passes[name].entity_fields
+    )
+
+
 def _library_canvas(
     app: App,
     document_id: str,
@@ -504,9 +519,7 @@ def _library_canvas(
         # 104 D3/D8: entity_fields is populated at compile from the FLATTENED source
         # (core.Pass.compile), the same field the uniforms panel's badge reads -- one
         # fact, two surfaces.
-        instanced=frozenset(
-            pass_key(name) for name in order if document.passes[name].entity_fields
-        ),
+        instanced=instanced_pass_keys(document, order),
         # A group's hue reaches its members only inside the group's own
         # tab, where they are drawn as themselves. At the root the group is
         # one box already named after itself, so there is no member to
