@@ -78,3 +78,69 @@ green before any of it: exit 0, smoke RAN (not skipped).
 One scan agent ran `uv add --group dev pytest-cov` despite a read-only brief, caught it
 via `git status` and reverted it. Tree confirmed clean. `pytest-cov` is NOT a dependency
 of this project and coverage was not run.
+
+## W-4 — the skill that instructed a violation. DONE (eb32d9de)
+
+`sanitize/SKILL.md` told a session to file a new `todo.md` entry in THREE places, not
+the two the scan found: the walk step, the convention-audit step, and the sweep-report
+template's "Y added" column. Found two by grepping the skill against the rules, and the
+third only by re-sweeping the whole skill directory afterwards — the usual shape, where a
+removal is cleaned up in the file class the author expected and left in the one they did
+not. The remaining `todo.md` mention under `.claude/` is dogfood's, stating the rule
+correctly.
+
+## W-5 — the stale roadmap claim. DONE (5e0fb8e4)
+
+Row 020 listed `delete_lib_file` and `bind_media` as parked scope decisions. Both are
+live, registered, gated tools, and row 052 has said so all along — the two rows
+contradicted each other and the later one was wrong. `undo_edit` (zero hits under
+`copilot/`) and semantic editing (`edit_shader` still matches `old_str`/`new_str`
+substrings) stay. Corrected rather than deleted: the row is frozen history.
+
+## W-1 — the dropped VertexArray. DONE (3a8605f4)
+
+`core.py::_upload_instances` dropped a live VAO on a population outgrowing its reserve.
+Two lines to fix, and the gate is the whole point: GL hands released names back out, so
+the rebuilt VAO landing on the SAME name is what proves the old one was freed rather
+than forgotten. Break (delete the release, keep the assignment) → the VAO takes name 3
+where the fixed code recycles name 2. Restored and verified before the suite ran.
+
+The fixture asserts it REACHED the path before asserting anything: a VAO existed,
+buffers were allocated, and at least one buffer's size actually grew. An existing
+sibling test already grew a population past capacity and never looked at the VAO — the
+fixture made contact and measured the wrong thing, which is why this stayed invisible.
+
+## W-3 — the malformed key. DONE (7bf51547)
+
+The probe's verdict: **the class has exactly one live instance outside the theme
+resolver**, and it is the same shape as theme round four. `PASS_NAME_RE` asked with
+`re.match`, where `$` matches before a trailing newline.
+
+`"glow\n"` was a legal pass name, so the collision check behind the guard could not see
+it either — a second pass beside `"glow"`, written to `passes/glow\n.frag.glsl`. Rename
+was worse: refused `"b"`, accepted `"b\n"`, then moved a real file onto that path.
+Reached from the copilot's `add_pass`/`set_pass`, neither stripping, while the sibling
+`rename_document` and duplicate both do. The UI cannot reach it (single-line
+`input_text`, stripped).
+
+Gated at BOTH sites and BOTH verbs — one of N identical paths being pinned is how a
+sibling drifts back. The add and rename bad-name lists never held a trailing-newline
+case, which is where a reader looks and why it survived.
+
+### The probe's clean answers, recorded so no later round re-runs them
+`wired_pass`, `_auto_source`, `namespace_error`, the copilot address parser, the
+document-id resolver, `Theme.capture`, `resolve_palette_refs`, `group_tint`,
+`entity_fields` and the script engine's `KeyFailReason` domain all answered every
+malformed input correctly. Several are clean by a documented guard rather than by luck:
+`KeyFailReason` enumerates its domain with `get_args` and derives the silent set by
+SUBTRACTION, so a new member cannot default to silence — the direct opposite of the class.
+
+### Unreachable by a guard upstream, NOT findings
+- `validate_project_name` accepts `"a\nb"`; its only caller is fed by a single-line
+  `input_text` and is not copilot-reachable.
+- `instanced.validate_fields` misses `"vs_quad "`; `intel/glsl.py` strips and
+  `isidentifier()`-checks before it, so no field name ever carries whitespace.
+- `theme_file._parse_hex` accepts a trailing newline; both callers read values from a
+  `splitlines()` loop that cannot produce one.
+- `PassEntry.group`'s pydantic pattern is anchored correctly and rejects both newline
+  cases — the defect was confined to the two `.match()` call sites.
