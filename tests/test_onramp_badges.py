@@ -8,7 +8,6 @@ frame, or a fixture that never reached the panel would report "no chip" identica
 correct one.
 """
 
-from pathlib import Path
 from typing import Any
 
 from imgui_bundle import imgui

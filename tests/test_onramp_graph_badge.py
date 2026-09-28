@@ -47,7 +47,5 @@ def test_a_box_carries_no_instanced_mark() -> None:
     # `instanced` is keyed like `failing` -- by pass_key, never a box key -- because a box
     # collapses several passes and "is THIS box instanced" has no single answer.
     view = _view(["swarm"])
-    packed = pack_nodes(
-        view, {}, output="", instanced=frozenset({"g:some-group"})
-    )
+    packed = pack_nodes(view, {}, output="", instanced=frozenset({"g:some-group"}))
     assert packed.nodes[0].title == "swarm"
