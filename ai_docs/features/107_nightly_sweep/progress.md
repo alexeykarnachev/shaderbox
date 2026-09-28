@@ -228,3 +228,29 @@ a case where BOTH implementations give the same answer:
 - W-2: `theme.py::_muted` (dead), `tests/test_graph_view.py`'s eight-helper rig cluster
 - W-3: point `pass_settings.py:140` and `tabs/uniforms.py:61` at `instanced_pass_keys`
 - W-R: `dev_flow.md`'s Module map
+
+## W-R — live facts: NOTHING TO DELETE. Wave closed empty.
+
+The presence scan flagged `dev_flow.md`'s Module map as the harness's highest-risk zone
+for silent staleness. Checked rather than trusted, and it is accurate:
+
+- all 79 cited `.py` files resolve (two live outside `shaderbox/` -- `scripts/dogfood/`
+  and a skill directory -- which a naive glob reports as missing);
+- all 8 cited `file::symbol` pairs resolve.
+
+Every countable figure in `conventions.md` and `roadmap.md` turns out to be FROZEN
+HISTORY, which the rule says to keep:
+- `2028 tests green` narrates a specific mutation test that happened, not the suite's
+  size now (it is 2226);
+- `2734 tests to 1968` records what feature 097 DID;
+- `~1024 slots` is a hardware constant;
+- `368 lines when ... 423` is the worked example inside the passage that TEACHES this
+  rule. Deleting it would remove the lesson about deleting live facts.
+
+The one `currently` outside the dated banner is "as the code currently is", a rule about
+comments rather than a status claim.
+
+**The scan flagged the Module map on SHAPE -- it is a closed list of symbols, which is the
+risky form -- and the wave's job was to find out whether the risk had materialised. It has
+not.** Recording that is the wave's output; deleting an accurate doc because its shape is
+risky would have been the error.
