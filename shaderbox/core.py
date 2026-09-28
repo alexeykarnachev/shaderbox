@@ -42,7 +42,8 @@ from shaderbox.instanced import (
 from shaderbox.instanced_outcome import InstancedOutcome
 from shaderbox.intel.glsl import EntityField, entity_fields
 from shaderbox.media import MediaWithTexture, Video
-from shaderbox.pass_graph import AutoSource, TargetConfig
+from shaderbox.blend import blend_func_for
+from shaderbox.pass_graph import DEFAULT_BLEND, AutoSource, TargetConfig
 from shaderbox.scripting.keys import REFUSED_POPULATION
 from shaderbox.shader_errors import (
     ShaderError,
@@ -288,7 +289,11 @@ class Pass:
         Size is NOT applied here: a pass's canvas is sized by the document (its canvas size times
         the target's scale), so applying `scale` from two places would fight.
         """
-        if self.target == target:
+        if self.target is not None and self.target.allocates_same_as(target):
+            # A blend-only change is draw state and reallocating for it would drop this
+            # pass's feedback history -- `target_generation` below is what
+            # `_feedback_canvas` reads to decide the history predates the format.
+            self.target = target
             return
         size = self.canvas.texture.size
         self.target = target
@@ -673,7 +678,9 @@ class Pass:
         # save and restore, and an enable left behind doubles the output of any later
         # pass that draws more than once.
         self._gl.enable(moderngl.BLEND)
-        self._gl.blend_func = moderngl.ONE, moderngl.ONE
+        self._gl.blend_func = blend_func_for(
+            self.target.blend if self.target is not None else DEFAULT_BLEND
+        )
         self.vao.render(moderngl.TRIANGLES, vertices=6, instances=count)
         self._gl.disable(moderngl.BLEND)
 

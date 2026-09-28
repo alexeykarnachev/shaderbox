@@ -17,7 +17,6 @@ _FACTORS: dict[BlendMode, tuple[int, int]] = {
     "additive": (moderngl.ONE, moderngl.ONE),
     "alpha": (moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA),
     "opaque": (moderngl.ONE, moderngl.ZERO),
-    "multiply": (moderngl.DST_COLOR, moderngl.ZERO),
     "screen": (moderngl.ONE, moderngl.ONE_MINUS_SRC_COLOR),
 }
 

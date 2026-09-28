@@ -58,7 +58,12 @@ DEFAULT_SCALE = 1.0
 # order-independent, and under `alpha` they are not -- overlapping alpha sprites draw in
 # population order, which is a standing limitation of that mode and is stated where an
 # author meets it rather than left as a consequence nobody wrote down.
-BlendMode = Literal["additive", "alpha", "opaque", "multiply", "screen"]
+# No `multiply`. It is the mode people expect to find and it cannot work here: its factors
+# are (DST_COLOR, ZERO) and `Pass.render` clears its target to black unconditionally before
+# every draw, so the result is src*0 + dst*0 for every pixel and every source colour. It
+# would ship as a control that draws nothing, which is the failure D5 names as worse than
+# having no control. Revisit if a pass ever draws onto something it did not clear.
+BlendMode = Literal["additive", "alpha", "opaque", "screen"]
 BLEND_MODES: tuple[BlendMode, ...] = get_args(BlendMode)
 DEFAULT_BLEND: BlendMode = "additive"
 
