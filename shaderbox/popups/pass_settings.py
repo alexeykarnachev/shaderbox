@@ -12,7 +12,14 @@ panel (072).
 from imgui_bundle import imgui
 
 from shaderbox.app import App, ModalId
-from shaderbox.pass_graph import MAX_ITERATIONS, PassEntry, PassGraph, TargetConfig
+from shaderbox.pass_graph import (
+    BLEND_MODES,
+    MAX_ITERATIONS,
+    BlendMode,
+    PassEntry,
+    PassGraph,
+    TargetConfig,
+)
 from shaderbox.popups import Modal
 from shaderbox.theme import SIZE, SPACE
 from shaderbox.ui_primitives import (
@@ -38,6 +45,21 @@ _FORMATS: list[tuple[str, str, str]] = [
 ]
 _FORMAT_LABELS = [label for _, label, _ in _FORMATS]
 _FORMAT_CODES = [code for code, _, _ in _FORMATS]
+
+# What a blend mode MEANS, keyed off BLEND_MODES so a new mode fails loudly here rather than
+# drawing with no tooltip. `alpha` names its own ordering limitation (102 D5): additive's
+# "no per-frame sort" was free because additive is order-independent, and alpha is not.
+_BLEND_DESCRIPTIONS: dict[BlendMode, str] = {
+    "additive": "glow adds up, order-independent",
+    "alpha": "transparency; overlaps are draw-order dependent",
+    "opaque": "replaces what's under it",
+    "multiply": "darkens what's under it",
+    "screen": "lightens what's under it",
+}
+assert set(_BLEND_DESCRIPTIONS) == set(BLEND_MODES), (
+    f"blend modes without a tooltip: {set(BLEND_MODES) - set(_BLEND_DESCRIPTIONS)}"
+)
+_BLEND_LABELS: list[str] = list(BLEND_MODES)
 
 
 def _size(app: App) -> tuple[float, float]:
@@ -109,12 +131,14 @@ def _draw_body(app: App) -> bool:
         if committed:
             app.commit_pass_group()
         imgui.dummy((0.0, float(SPACE.MD)))
+        render_pass = document.passes.get(name)
         new_entry = _draw_target(
             app,
             name,
             entry,
             document.canvas_size,
             is_output=name == document.graph.output,
+            is_instanced=bool(render_pass is not None and render_pass.entity_fields),
         )
         new_entry = _draw_repeat(app, name, new_entry)
         _apply_entry(app, document_id, name, entry, new_entry)
@@ -225,6 +249,7 @@ def _draw_target(
     entry: PassEntry,
     canvas_size: tuple[int, int],
     is_output: bool,
+    is_instanced: bool = False,
 ) -> PassEntry:
     """What this pass DRAWS INTO, drawn over `entry`; returns the entry as the controls left
     it (the caller decides whether that is a document write or a draft)."""
@@ -271,6 +296,21 @@ def _draw_target(
     tile_changed, tile = imgui.checkbox(f"repeat##{name}", target.wrap)
     if tile_changed:
         new_target = new_target.model_copy(update={"wrap": tile})
+
+    if is_instanced:
+        # Blend is applied only on the instanced draw path today (102 D5) -- a fullscreen
+        # pass clears and draws once with nothing already in the target, so the control
+        # would show and do nothing there. Hidden rather than shown-and-inert.
+        label_row(app.font_12, "blend", _CTRL_W, _ROW_LABEL_W)
+        blend_changed, blend_picked = imgui.combo(
+            f"##blend_{name}", BLEND_MODES.index(target.blend), _BLEND_LABELS
+        )
+        if blend_changed:
+            new_target = new_target.model_copy(
+                update={"blend": BLEND_MODES[blend_picked]}
+            )
+        imgui.same_line()
+        help_marker(_BLEND_DESCRIPTIONS[target.blend])
 
     return (
         entry
