@@ -1150,12 +1150,20 @@ def test_turn_time_budget_forces_a_final_reply(monkeypatch) -> None:
     # max_iterations bounds step COUNT; the wall-clock budget bounds their DURATION. A clock
     # jumping past the budget after iteration 0 must end the turn via the forced no-tools
     # reply (same shape as max_iterations exhaustion), never run all scripted iterations.
-    clock = iter(range(0, 100_000, 200))
+    clock = iter(range(0, 100_000_000, 200))
     monkeypatch.setattr(
         "shaderbox.copilot.agent.time.monotonic", lambda: float(next(clock))
     )
+    # SEVERAL scripted rounds, not one. With a single round the turn ends after one tool
+    # call whether the budget fired or the script simply ran out, so the two are
+    # indistinguishable -- setting `time_budget_hit = False` while leaving the `break`
+    # passed this test, and so did deleting the whole budget condition.
+    #
+    # Three rounds, not `max_iterations`: the fake client raises once its script is
+    # exhausted, so a list long enough to outlast a DEAD budget would take the turn past
+    # the end of it and the test would fail for the wrong reason.
     read = _tool_call("cr", "read_shader", "{}")
-    scripts: list[list[LLMStreamEvent]] = [read]
+    scripts: list[list[LLMStreamEvent]] = [read] * 3
     scripts.append(
         [LLMTextDelta("Ran out of time; here is where I got."), LLMDone("stop")]
     )
@@ -1173,10 +1181,26 @@ def test_turn_time_budget_forces_a_final_reply(monkeypatch) -> None:
             cancel=threading.Event(),
         )
     )
-    assert isinstance(events[-1], AgentTurnDone)
-    assert "here is where I got" in events[-1].summary.reply
+    # ONE tool call out of three scripted: the clock stopped the turn, not the script.
     ran_tools = [e for e in events if isinstance(e, AgentToolCard)]
-    assert len(ran_tools) == 1
+    assert len(ran_tools) == 1, (
+        f"ran {len(ran_tools)} of 3 scripted rounds -- the budget did not cut the turn "
+        "short"
+    )
+
+    # And it tells the user WHY. A budget that ends the loop while reporting an ordinary
+    # finish is invisible, and the flag is what selects this notice.
+    #
+    # The turn ends on an AgentError with NO AgentTurnDone -- which the previous version
+    # of this test could not have discovered, because with one scripted round the budget
+    # never fired and the turn took the ordinary path it asserted against.
+    errors = [e for e in events if isinstance(e, AgentError)]
+    assert errors, (
+        f"no AgentError; the turn ended as {[type(e).__name__ for e in events]}"
+    )
+    assert "time budget" in errors[-1].message, (
+        f"the turn stopped without naming the budget: {errors[-1].message!r}"
+    )
 
 
 def test_turn_time_budget_zero_is_off(monkeypatch) -> None:
