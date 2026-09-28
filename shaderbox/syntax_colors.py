@@ -6,6 +6,8 @@ neither the editor nor the symbol taxonomy -- `theme` is colours and
 there; nothing here defines one.
 """
 
+from typing import Literal
+
 from shaderbox.editor import ffi as editor_ffi
 from shaderbox.intel.symbols import SymbolKind
 from shaderbox.theme import COLOR, fade
@@ -39,6 +41,10 @@ _KIND_COLOR: dict[SymbolKind, tuple[float, float, float, float]] = {
     SymbolKind.PY_MEMBER: COLOR.SYN_IDENT,
     SymbolKind.PY_LOCAL: COLOR.SYN_IDENT,
     SymbolKind.GLSL_MEMBER: COLOR.SYN_IDENT,
+    SymbolKind.PY_SELF: COLOR.SYN_KEYWORD,
+    SymbolKind.PY_DUNDER: COLOR.SYN_BUILTIN,
+    SymbolKind.PY_DEFINITION: COLOR.SYN_PY_DEFINITION,
+    SymbolKind.PY_DECORATOR: COLOR.SYN_PY_DECORATOR,
 }
 
 
@@ -69,6 +75,11 @@ _KIND_SLOT: dict[SymbolKind, int] = {
     SymbolKind.PY_MEMBER: 0,
     SymbolKind.PY_LOCAL: 0,
     SymbolKind.GLSL_MEMBER: 0,
+    # `self`/`cls` read as a keyword, which is what they are in every other editor.
+    SymbolKind.PY_SELF: 1,
+    SymbolKind.PY_DUNDER: 6,
+    SymbolKind.PY_DEFINITION: 7,
+    SymbolKind.PY_DECORATOR: 8,
 }
 
 
@@ -76,10 +87,37 @@ def kind_slot(kind: SymbolKind) -> int:
     return _KIND_SLOT[kind]
 
 
-def editor_palette() -> dict["editor_ffi.Slot", tuple[float, float, float, float]]:
+def editor_palette(
+    language: 'Literal["glsl", "python"]' = "glsl",
+) -> dict["editor_ffi.Slot", tuple[float, float, float, float]]:
     """The gruvbox palette in libeditor theme slots (feature 067). Applied at
     editor-session creation; the syntax slots follow the lexer's token classes
-    (1 keyword, 2 string, 3 comment, 4 number, 5 operator, 6 builtin)."""
+    (1 keyword, 2 string, 3 comment, 4 number, 5 operator, 6 builtin).
+
+    The palette is PER-LANGUAGE because slots 7/8/9 mean different things in a shader and
+    in a script, and the host has exactly one editor per source path with its language
+    already decided at that site (`app.py:get_session`). So Python's four semantic kinds
+    reuse the three host-assignable slots rather than needing a wider theme array -- GLSL
+    does not use them in a `.py` buffer and Python does not use them in a `.frag.glsl` one.
+    Nothing about this needs a library change; the slots were always per-editor.
+
+    That makes `kind_slot` ambiguous on its own: slot 7 is an engine uniform in GLSL and a
+    definition in Python. It is not a collision because no buffer holds both vocabularies,
+    but a reader checking only `_KIND_SLOT` cannot see that, which is why it is said here.
+    """
+    slot = editor_ffi.Slot
+    if language == "python":
+        return _base_palette() | {
+            slot.SYNTAX_7: COLOR.SYN_PY_DEFINITION,
+            slot.SYNTAX_8: COLOR.SYN_PY_DECORATOR,
+            # Python has no fragment output; 9 is free for the third positional kind
+            # whenever D7's second producer lands one.
+            slot.SYNTAX_9: COLOR.SYN_OUTPUT,
+        }
+    return _base_palette()
+
+
+def _base_palette() -> dict["editor_ffi.Slot", tuple[float, float, float, float]]:
     slot = editor_ffi.Slot
     return {
         slot.BACKGROUND: COLOR.BG_SURFACE,

@@ -39,7 +39,19 @@ QUAD_VARYING = "vs_quad"
 # Names the generated source already binds. A field taking one of these is rejected here,
 # with the author's own field named, rather than surfacing as a compile error in a file
 # they never wrote.
-RESERVED_NAMES = frozenset({CORNER_ATTRIBUTE, MODE_UNIFORM, QUAD_VARYING, "vs_uv"})
+# The partition, and `RESERVED_NAMES` derived as the union so the two cannot drift.
+# `RESERVED_NAMES` exists to REJECT an author's declaration -- a different question from
+# "should this name be documented", and nothing in the engine answered the second until
+# this split (104 D4). A gate asserting "every reserved name is documented" would
+# otherwise demand documenting `sb_instanced`, which an author who declares it is refused
+# for, so the gate would enforce the opposite of the decision.
+#
+# `vs_uv` is user-facing but documented in the help modal's prose rather than in the
+# engine-vocabulary section, because it is a varying and that section renders
+# `uniform {type} {name};` lines off a uniform table.
+USER_FACING_NAMES = frozenset({QUAD_VARYING, "vs_uv"})
+ENGINE_INTERNAL_NAMES = frozenset({CORNER_ATTRIBUTE, MODE_UNIFORM})
+RESERVED_NAMES = USER_FACING_NAMES | ENGINE_INTERNAL_NAMES
 
 # How many attribute locations one field of each type consumes. A matrix takes one per
 # column while reporting as a single field, so a count of FIELDS does not bound the

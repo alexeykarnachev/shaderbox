@@ -48,6 +48,20 @@ DEFAULT_FILTER_LINEAR = True
 DEFAULT_WRAP = False
 DEFAULT_SCALE = 1.0
 
+# How a pass's draw combines with what is already in its target. Permanent on-disk
+# vocabulary the moment it ships, and this project writes no migrations -- so the set is
+# decided in the spec (102 D5), not by whoever wires the combo.
+#
+# `additive` was feature 100's hardcoded `ONE, ONE`, and it is the default so every
+# existing document draws identically. It reverses only the FIRST of 100 decision 7's three
+# claims: "no depth" and "no per-frame sort" were free BECAUSE additive is
+# order-independent, and under `alpha` they are not -- overlapping alpha sprites draw in
+# population order, which is a standing limitation of that mode and is stated where an
+# author meets it rather than left as a consequence nobody wrote down.
+BlendMode = Literal["additive", "alpha", "opaque", "multiply", "screen"]
+BLEND_MODES: tuple[BlendMode, ...] = get_args(BlendMode)
+DEFAULT_BLEND: BlendMode = "additive"
+
 GRAPH_JSON_VERSION = 2
 
 # A pass name is a FILENAME and a graph key, so it stays to the characters both accept. A group
@@ -100,6 +114,33 @@ class TargetConfig(BaseModel):
     dtype: TargetDtype = DEFAULT_DTYPE
     filter_linear: bool = DEFAULT_FILTER_LINEAR
     wrap: bool = DEFAULT_WRAP
+    blend: BlendMode = DEFAULT_BLEND
+
+    def allocates_same_as(self, other: "TargetConfig") -> bool:
+        """Whether adopting `other` would reuse this canvas rather than reallocate it.
+
+        NOT `==`. `blend` is a draw-time GL state with no bearing on the texture, so a
+        blend-only change must compare EQUAL here or picking a mode from a combo destroys
+        the pass's feedback trail -- by two independent paths, both of which asked `==`
+        before this existed: `Document.set_pass_target` calls `drop_feedback`
+        unconditionally when the configs differ, and `Pass.set_target` bumps
+        `target_generation`, which `_feedback_canvas` reads to drop the history a second
+        way. `scale` is here because the document resamples on it.
+
+        Adding a field to `TargetConfig` means deciding whether it belongs in this tuple;
+        a gate walks the model's fields and fails on one this method does not mention.
+        """
+        return (
+            self.scale,
+            self.dtype,
+            self.filter_linear,
+            self.wrap,
+        ) == (
+            other.scale,
+            other.dtype,
+            other.filter_linear,
+            other.wrap,
+        )
 
     def target_size(self, canvas_size: tuple[int, int]) -> tuple[int, int]:
         return (

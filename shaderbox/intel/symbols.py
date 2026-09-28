@@ -40,6 +40,16 @@ class SymbolKind(StrEnum):
     PY_LOCAL = auto()
     # A vector component reached through a dot: `u_color.rgb`, `uv.x`.
     GLSL_MEMBER = auto()
+    # The four semantic kinds a Python script needs and a lexer cannot supply (105).
+    #
+    # The first two are EDIT-INVARIANT -- `self` means the same thing everywhere it
+    # appears -- so they ride the word table and need no positions. The last two are
+    # positional by nature: the name after `def` is a definition and the same name two
+    # lines down is a call, and only a span can tell them apart.
+    PY_SELF = auto()
+    PY_DUNDER = auto()
+    PY_DEFINITION = auto()
+    PY_DECORATOR = auto()
 
 
 @dataclass(frozen=True)
@@ -82,6 +92,12 @@ _KIND_RANK: dict[SymbolKind, int] = {
     SymbolKind.PY_BUILTIN: 5,
     SymbolKind.PY_KEYWORD: 6,
     SymbolKind.GLSL_MEMBER: 0,
+    # A name the script itself defines sorts with the other document-local names (0); the
+    # two fixed vocabularies sort with their language's keywords and builtins.
+    SymbolKind.PY_DEFINITION: 0,
+    SymbolKind.PY_DECORATOR: 0,
+    SymbolKind.PY_SELF: 6,
+    SymbolKind.PY_DUNDER: 5,
 }
 
 

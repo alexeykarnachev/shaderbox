@@ -145,7 +145,12 @@ def test_every_kind_is_a_distinct_string() -> None:
 def test_every_kind_has_a_color() -> None:
     # The checker-narrowing guard: a kind added to the enum without a color fails here, not
     # at the first frame that draws it.
-    palette = editor_palette()
+    # Per-LANGUAGE palettes: slots 7/8/9 mean an engine uniform in a shader and a
+    # definition in a script, and no buffer holds both vocabularies (one Editor per source
+    # path, language fixed at creation). So a kind is checked against ITS language's
+    # palette; checking every kind against one palette asserts a collision that cannot
+    # happen and forbids Python from using the slots GLSL leaves free in a `.py` buffer.
+    palettes = {"glsl": editor_palette("glsl"), "python": editor_palette("python")}
     slots = {
         1: Slot.SYNTAX_1,
         2: Slot.SYNTAX_2,
@@ -165,7 +170,8 @@ def test_every_kind_has_a_color() -> None:
         if slot:
             # One color per kind: what the popup and the text draw is what a host surface
             # shows, by the palette rather than by coincidence.
-            assert kind_color(kind) == palette[slots[slot]], kind
+            language = "python" if kind.name.startswith("PY_") else "glsl"
+            assert kind_color(kind) == palettes[language][slots[slot]], kind
 
 
 def test_the_fragment_output_is_scanned_and_the_near_misses_are_not() -> None:

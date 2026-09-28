@@ -257,6 +257,10 @@ class _ColorBag:
     SYN_OUTPUT: tuple[float, float, float, float] = _P["orange_b"]
     SYN_IDENT: tuple[float, float, float, float] = _P["fg_1"]
     SYN_OP: tuple[float, float, float, float] = _P["fg_3"]
+    # Python-only, drawn in slots GLSL uses for uniforms and samplers; see
+    # `syntax_colors.editor_palette`, which is per-language.
+    SYN_PY_DEFINITION: tuple[float, float, float, float] = _P["yellow_b"]
+    SYN_PY_DECORATOR: tuple[float, float, float, float] = _P["purple_b"]
 
 
 COLOR = _ColorBag()
