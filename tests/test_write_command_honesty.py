@@ -30,13 +30,18 @@ def _open_a_shader_tab(app: Any) -> Any:
 
 
 def _write(app: Any) -> list[str]:
+    """Every notification the `:w` command pushed, newest first.
+
+    The stack is a `deque(maxlen=5)`, so counting the length before and after misses
+    every push once it is full -- which is the state the suite reaches but a single test
+    run does not. Emptying it first makes the measurement say what it claims to.
+    """
     session = _open_a_shader_tab(app)
-    before = len(app.notifications._stack)
+    app.notifications._stack.clear()
     hotkeys._serve_host_command(
         app, session, HostCommand(HostCommandKind.WRITE, False, "")
     )
-    pushed = list(app.notifications._stack)[: len(app.notifications._stack) - before]
-    return [n.text for n in pushed]
+    return [n.text for n in app.notifications._stack]
 
 
 def test_a_write_that_lands_says_saved(app: Any) -> None:

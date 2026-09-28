@@ -713,8 +713,9 @@ Library footguns specific to the imgui-bundle Python build (currently
   overlapped, so a canvas of stacked `invisible_button`s is a chain: the full-canvas background
   declares it, then each node body declares it, then the ports and overlay buttons come last and
   win. Put the call on the node instead and every node is dead: each drag pans the canvas, which
-  reads like a coordinate bug and is not. Measured on this build (ShaderBox
-  `widgets/pass_graph.py::_draw_canvas`).
+  reads like a coordinate bug and is not. Measured on the imgui node canvas that
+  feature 098 later replaced with the graph-canvas library, so the code that produced
+  this reading is gone; the imgui behaviour it describes is not.
 - **`begin_popup_context_item(str_id)` with an explicit id fires on a right-click ANYWHERE in the
   window.** The binding's own docstring: pass `None` to associate the popup with the previous
   item. The strip's tiles get away with an explicit id because each tile is its own child window;
