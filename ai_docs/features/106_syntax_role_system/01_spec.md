@@ -99,7 +99,7 @@ Review found two real drifts the table missed — `border` `#504944` against `bg
 for measured reasons and nothing records WHICH entry**, so a palette swap silently keeps
 gruvbox values that were chosen against gruvbox greys.
 
-## Design decisions## Design decisions
+## Design decisions
 
 - **D1. Three layers, and a theme change touches only the first.**
   `_P` (named palette: what colours exist) -> `ROLE_COLOR` (what each role looks like) ->
@@ -145,54 +145,37 @@ gruvbox values that were chosen against gruvbox greys.
   language emitted it.
 - **D4. `self`/`cls`/dunders map to `builtin`**, not `keyword` — they are names the language
   provides, which is what `builtin` means, and it keeps `keyword` meaning "reserved word".
-- **D5. The per-language palette STAYS, and it is a decision rather than a leftover.**
-  An earlier draft of this spec said to delete it and use its removal as the proof that
-  roles had been unified. **MEASURED, and that was wrong:** the library exposes 9 syntax
-  slots, 1-6 are its lexers' and only 7/8/9 are the host's. The roles needing a host slot
-  are `engine_uniform`, `script_uniform`, `pass_sampler`, `output`, `ident`,
-  `declaration_type` and `declaration_function` — SEVEN into THREE. It does not fit, and
-  the class/function split the maintainer asked for makes it worse rather than better.
+- **D5. The per-language palette is DELETED, and a role's class is GLOBAL.** This reversed
+  twice and the history matters, because each reversal was a measurement rather than a
+  preference. Draft one said delete it. Draft two measured the budget -- eight roles needing
+  a host class against three -- and kept it as a forced decision. The editor library then
+  widened `Theme.syntax` to `[16]Color`, so classes 10-15 exist and 1-9 did not move.
 
-  So one palette cannot serve both languages, and the per-language palette is what makes
-  the 9-slot budget workable at all: no buffer holds both vocabularies, so a slot may mean
-  an engine uniform in GLSL and a definition in Python. **That is sound, and the thing
-  that makes it sound must be gated** — it is safe only because `get_session` fixes one
-  language per editor.
-  **Revisit if** a buffer can ever hold two languages at once, which is the single premise
-  this rests on.
-- **D6. Slots are DERIVED from role colours, never hand-written** — roles sharing a colour
-  share a slot, and the lexer's own 1-6 are reused where the colour already matches, so a
-  host slot is spent only on a role the lexer has no colour for. Hand-written slots are how
-  7 and 8 came to mean two things.
+  With fifteen classes, every role gets its own number and a class means ONE thing in every
+  buffer. `editor_palette()` takes no argument. The per-language remapping existed only to
+  fit eight roles into three slots and has no other justification, so it goes.
 
-  **THE BUDGET DOES NOT FIT, and this is the feature's blocking constraint.** MEASURED:
-  EIGHT roles cannot ride a lexer slot -- `type`, `declaration_type`,
-  `declaration_function`, `decorator`, `engine_uniform`, `script_uniform`, `pass_sampler`,
-  `output` -- against three host slots. (`decorator` joined the list after review found
-  `PY_DECORATOR` had no role at all; it draws the NUMBER colour today, which is why it
-  looked accounted for.) Per-language it is still short: a GLSL buffer needs 6 and a
-  Python buffer 4, against 3 each. **Asked of the editor session: whether the 9 is a hard
-  constraint or an arbitrary ceiling**, since widening `Theme.syntax` to 16 and using
-  10-15 for host roles would leave 1-9 untouched. The answer decides which design is built:
+  **The premise it rested on is now gated rather than trusted.** The reuse was sound only
+  because one editor holds one language; upstream confirms the language is per handle, one
+  lexer over the whole buffer, with no embedded-snippet, doc-view or diff mode anywhere in
+  the architecture. That is no longer load-bearing here -- but the gate stays, because the
+  SECOND language selector (`tab.kind`) is still independent of the first and nothing
+  asserts they agree.
+  **Revisit if** a buffer can ever hold two languages, which would make a global class
+  number wrong rather than merely unnecessary.
+- **D6. Slots are DERIVED from role colours, never hand-written.** Roles sharing a colour
+  share a class; the lexer's own 1-6 are reused where the colour already matches, so a host
+  class is spent only on a role the lexer has no colour for. Hand-written slots are how 7
+  and 8 came to mean two things.
 
-  - **widening is cheap** -> every role keeps its own colour, and D5's per-language reuse
-    can go away as a bonus rather than as its gate;
-  - **widening is expensive** -> roles COLLAPSE on our side, and the spec must say which
-    pairs share a colour and why. The cheapest collapses, in order of least loss:
-    `script_uniform` onto builtin green (it is already that colour today), then `member`
-    onto `ident` (also already true, and review flagged splitting them as the first thing
-    to drop). That reclaims two. Giving up `type` or the class/function split is NOT on
-    this list -- the first leaves `vec3` and `if` the same colour, and the second was
-    explicitly asked for.
+  **The budget now fits with room.** Eight roles need a host class -- `type`,
+  `declaration_type`, `declaration_function`, `decorator`, `engine_uniform`,
+  `script_uniform`, `pass_sampler`, `output` -- against nine available (7-15). No role is
+  collapsed and nothing the maintainer asked for is given up.
 
-  **Nothing is implemented until this is answered.** With sixteen roles and eight needing a
-  host slot, collapsing our way to three means giving up five distinctions, and the two that
-  are nearly free (`script_uniform` onto builtin, `member` onto `ident` — both already the
-  same colour today) only reclaim two. The remaining three would have to come out of `type`,
-  the class/function split, or `decorator`, and all three are distinctions the maintainer or
-  the review asked for. **If the library cannot widen, the honest answer is that ShaderBox
-  gets fewer semantic colours than it wants, and the spec must name which ones and why** —
-  not quietly pick.
+  A class past 15 is refused rather than clamped, so a ninth host role fails at the call
+  instead of drawing a colour the library invented. The ceiling is counted from the mirrored
+  enum, never written as a literal.
 - **D6a. The four `GRAPH_PORT_*` colour tokens are DELETED, not allowlisted.** Review
   flagged them as surviving a hue swap while breaking a light theme, because `_muted` keeps
   the palette's HUE and substitutes a hardcoded saturation and lightness. Both true -- but
@@ -253,14 +236,18 @@ gruvbox values that were chosen against gruvbox greys.
 
 ## Files
 
-- `shaderbox/theme.py` — `_P` stays the only literal-colour home; the five leaks folded in;
-  `ROLE_COLOR` added; language-prefixed `SYN_*` tokens removed.
+- `shaderbox/theme.py` — `_P` stays the only literal-colour home; the four `_ACCENTS` alpha
+  leaks folded in via `fade()`; `ROLE_COLOR` added; language-prefixed `SYN_*` tokens and the
+  four dead `GRAPH_PORT_*` colour tokens removed.
 - `shaderbox/syntax_colors.py` — `_KIND_ROLE` becomes the hand-written table;
   `kind_color`/`kind_slot` derive from it; `editor_palette()` loses its parameter.
 - `shaderbox/intel/symbols.py` — kinds added only if D3/D4 need them.
 - `shaderbox/intel/python.py` — `PY_DEFINITION` splits into two kinds at the existing
   `isinstance(node, (Function, Class))` branch (D3).
-- Tests: `test_intel_sources.py`, `test_semantic_highlight.py`.
+- `shaderbox/app.py` — `get_session` drops the language argument to `editor_palette`.
+- `shaderbox/notifications.py` — `_DEFAULT_COLOR` becomes a call-time read (D7).
+- `shaderbox/resources/graph_canvas/canvas.theme` — each field names its `_P` entry (D8).
+- Tests: `test_intel_sources.py`, `test_semantic_highlight.py`, plus the palette-swap gate.
 
 ## Gates
 
