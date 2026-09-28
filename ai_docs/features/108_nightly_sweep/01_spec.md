@@ -71,18 +71,34 @@ worked; a capture name with a trailing space resolves to its parent's colour, wh
 real colour. Each is invisible precisely because the failure path returns something of the
 right *shape*.
 
-**Why that matters for the fix:** the remedy for this class is never "handle the error" —
-it is *make the wrong answer impossible to represent*. The theme resolver's five rounds
-are the evidence: four attempts handled a malformed key better, and the fifth made a
-malformed key raise. The repo's own gate rule says the same thing one level up — remove
-the duplicate if you can, gate it if you cannot, name the gap if you can do neither.
+**Why that matters for the fix:** the remedy is to *make the wrong answer impossible to
+represent* — and that is narrower than "never handle the error", which is how this was
+first written and is wrong for this codebase. **A tolerant answer is correct wherever the
+caller is documented to act on it**: `render_pass` falls back when the graph's output is
+stale so a document still previews, `wired_pass` answers `None` so a half-built graph
+stays usable, and a per-keystroke parse of a CSV uniform must accept `"1, 2,"` because
+that is what half-typed input looks like. The rule that survives is about who can TELL:
+where a caller cannot distinguish the failure from a real answer, the type is the defect;
+where the caller acts on the tolerance deliberately, the tolerance is the design.
 
-**Where this argument is weakest, stated so a reviewer can attack it:** the
-delete-pass duplication and the skill contradiction do not really fit the class — the
-first is ordinary drift risk with both halves currently correct, and the second is a
-documentation defect, not a runtime one. They are in this sweep because they are cheap and
-real, not because the class explains them. A wave that stretches the class to cover them
-is over-fitting, and the honest framing is "three of five".
+**The remedy in practice was almost always the return TYPE**, not a handler. A `bool` that
+collapsed "the copy failed" with "nothing to do"; a `None` that meant written, refused and
+raised alike; a loop appending only on success. In each, the call site could not have
+reported the failure however carefully it was written.
+
+**Where this argument is weakest, stated so a reviewer can attack it:** the delete-pass
+duplication and the skill contradiction do not fit the class — the first is ordinary drift
+risk with both halves currently correct, the second a documentation defect. They are in
+this sweep because they are cheap and real, not because the class explains them. The
+honest framing is "three of five".
+
+**And the class is a better PREDICTOR than it is a scan target.** It paid out twice after
+the spec was written — the false `Saved` and the unreported theme failure — but two
+independent fan-outs over the whole package found no further instance by enumerating the
+pattern. Both hits came from following a subsystem whose history already showed the shape.
+**A future wave organised around this class should re-read the subsystems that already
+paid a multi-round arc for it, not re-scan the tree**: the residue of a partial fix is
+what produces the next instance.
 
 ## The constraints, verified here rather than assumed
 

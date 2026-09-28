@@ -254,3 +254,62 @@ Two different things with one word in common.
   unparseable. Surfacing here is the cry-wolf case the spec warns about.
 - **`:wq` closes the tab whether or not the save landed.** True before this sweep, left
   alone; the tab-close path has its own unsaved-changes guard.
+
+## REVIEW ROUND — two opus reviewers, one anchored to the rules, one to the argument
+
+### The rules reviewer found a regression I shipped, and it was worse than the bug
+**W-2's clipboard wave killed the Copy button on every copilot reply.** I folded the
+notification's `app is not None` guard into the click condition, and `_draw_message`
+passes `app` only for the USER bubble — so clicking Copy on an assistant message did
+nothing at all. The wave chartered against "a failure that reaches only a log" shipped an
+action reaching nothing, on the surface people copy from most.
+
+**Both of that wave's gates were green on it.** One drives the helper directly, the other
+greps the AST for `pyperclip.copy`; neither reaches a widget. That is a silence gate with
+no proof of contact — the exact shape this spec warns about, missed by its author. The new
+gate reads the guard on the copy itself.
+
+It also verified all four commit-message claims REPRODUCE, and checked the two
+`fullmatch` sites independently, confirming each fails on its own rather than one being
+pinned by the other. The category that produced 107's two worst findings — a false claim
+in my own commit message — is clean this time.
+
+Two smaller ones applied: two docstrings narrating development history (banned outright),
+one carrying a census the commit had already corrected. Cut, not re-derived.
+
+### And the ordering bug underneath, which is the night's best process lesson
+My `:w` test passed alone and failed in the full suite. The cause was not my test: three
+OTHER tests did `app.notifications.push = <lambda>` without `monkeypatch`, and
+`notifications` is one of the objects `conftest._APP_INIT_OWNS` shares BY IDENTITY across
+the session. The patch outlived its test and swallowed every later notification.
+
+**The suite stayed green for as long as nobody asserted a notification ARRIVED.** A test
+that checks a message appears is rare; the three leaking tests all check one does not.
+So the cost landed on the next person to write a presence assertion, and it read as a bug
+in the new code rather than in the old fixture. Gated by AST on the assignment shape,
+verified by reintroducing one leak and watching it name the file and line.
+
+### The argument reviewer: NARROW the class, and stop scanning for it
+Two findings, both applied to the spec:
+- **The remedy was stated too broadly.** "Never handle the error, make the wrong answer
+  unrepresentable" is wrong for this codebase, which tolerates deliberately in several
+  documented places — `render_pass`'s stale-output fallback, `wired_pass` answering None
+  so a half-built graph stays usable, the per-keystroke CSV parse that must accept
+  half-typed input. The rule that survives is about who can TELL the failure from a real
+  answer.
+- **The class predicts better than it scans.** It paid out twice after the spec was
+  written (the false `Saved`, the unreported theme failure), but two independent fan-outs
+  over the whole package found nothing further by enumerating the pattern. Both hits came
+  from following a subsystem's own history. A future wave should re-read the subsystems
+  that already paid a multi-round arc for this, not re-scan the tree.
+
+### Post-review waves
+| what | commit |
+|---|---|
+| a failed library revert reported as "nothing to restore" | 78e34e66 |
+| the dead Copy button + the shared-fixture leak + its gate | 63340498 |
+| the theme that did not load, now reported | 6f511dec |
+
+## STATUS: CLOSED
+Nine defects fixed, each verified by re-running the break that defeated it. `make gates`
+green, judged by exit code captured unpiped, smoke RAN at every wave.
