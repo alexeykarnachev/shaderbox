@@ -10,6 +10,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 
 from shaderbox.glsl_docs import BUILTINS, KEYWORDS, TYPES, VARIABLES
+from shaderbox.instanced import QUAD_VARYING
 from shaderbox.intel.glsl import (
     buffer_declarations,
     buffer_words,
@@ -22,6 +23,9 @@ from shaderbox.intel.symbols import Symbol, SymbolKind
 from shaderbox.pass_graph import AutoSource, wired_pass
 
 FEEDBACK_SAMPLER = "u_prev"
+_QUAD_VARYING_DOC = (
+    "an instanced pass's per-pixel input, -1..1 from the entity's centre"
+)
 
 
 @dataclass(frozen=True)
@@ -222,6 +226,37 @@ def build_glsl_index(context: GlslContext) -> GlslIndex:
             )
             document.append(replace(symbol, insert_text=""))
             declarations.append(symbol)
+
+        # 104 item 4: `vs_quad` is the one name an author cannot guess, and guessing wrong
+        # is silent -- reaching for `vs_uv` draws a canvas-wide vignette with no error. It
+        # is a GLSL_VARIABLE like a builtin (`gl_FragCoord`), never USER-declared, so it
+        # reuses that kind rather than WIRABLE_SAMPLER's, which names a different question
+        # ("pick a source"). Offered whenever the buffer has not already declared it, in
+        # any shader tab -- a lib file (pass_name is None, this whole block's guard) has no
+        # vertex stage of its own.
+        #
+        # NOT added to `declarations`: that list feeds ONLY the after-`uniform ` completion
+        # site (completion.py's DECLARATION_SITE), and `_declaration_parts` assumes a
+        # three-word `uniform <type> <name>;` shape -- fed an `in vec2 vs_quad;` symbol it
+        # would offer `uniform vec2 vs_quad;`, which is a lie: vs_quad is a varying. This
+        # symbol carries its full `in vec2 vs_quad;` in `insert_text` so a bare-word
+        # completion (typing `vs_` anywhere, not after `uniform `) inserts the whole
+        # declaration the first time and just the name once it exists.
+        #
+        # `declared_names` is `uniform_declarations`-only, which never sees `in vec2
+        # vs_quad;` -- so the check here is `buffer_words`, the same "is this word already
+        # in the text at all" test `plain` uses below, not "is this word a uniform".
+        if QUAD_VARYING not in buffer_words(context.text):
+            declaration = f"in vec2 {QUAD_VARYING};"
+            document.append(
+                Symbol(
+                    QUAD_VARYING,
+                    SymbolKind.GLSL_VARIABLE,
+                    signature=declaration,
+                    doc=_QUAD_VARYING_DOC,
+                    insert_text=declaration,
+                )
+            )
 
     # The fragment output before the plain buffer symbols, so the `out` name is classed as the
     # output rather than picked up as an ordinary word (079 D11). `gl_FragColor` and

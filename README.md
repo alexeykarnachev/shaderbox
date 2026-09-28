@@ -32,6 +32,9 @@ Declare a uniform, save, and the control is there - nothing to register, no UI c
   `#include` - SDF shapes and operators, noise, glow, and a full text stack are already there.
 - **Python on top of GLSL.** A node can carry a script that drives its uniforms every frame, for the
   things a stateless shader cannot do - a physics step, an integrator.
+- **Thousands of entities, one draw call.** Declare a per-entity field as `flat in` and a pass
+  switches from one fragment shader to an instanced quad per entity - a script steers the swarm in
+  numpy, the GPU draws all of it in a single call.
 - **An AI copilot** (optional, bring your own OpenRouter key). It edits your shader, the engine
   recompiles in-process, and the compile errors go straight back to the model - so it fixes its own
   GLSL instead of handing you something broken. Destructive actions wait for a confirm; any turn

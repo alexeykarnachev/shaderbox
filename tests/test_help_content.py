@@ -8,9 +8,11 @@ from shaderbox.commands import CATEGORY_ORDER, COMMAND_SPECS, CommandId, chord_t
 from shaderbox.core import ENGINE_UNIFORM_TYPES
 from shaderbox.help_content import (
     ENGINE_UNIFORM_DOCS,
+    documented_instanced_names,
     help_sections,
     user_facing_engine_uniforms,
 )
+from shaderbox.instanced import ENGINE_INTERNAL_NAMES, USER_FACING_NAMES
 
 
 def test_engine_uniform_docs_cover_every_user_facing_builtin() -> None:
@@ -23,6 +25,34 @@ def test_engine_uniform_section_lists_each_uniform() -> None:
     section = next(s for s in help_sections() if s.key == "engine_uniforms")
     for name in ENGINE_UNIFORM_DOCS:
         assert f"uniform {ENGINE_UNIFORM_TYPES[name]} {name};" in section.snippet
+
+
+def test_every_user_facing_instanced_name_is_documented() -> None:
+    # 104 D4: `instanced.USER_FACING_NAMES` is the partition the engine grew so this gate could
+    # exist at all -- documenting `sb_instanced` (ENGINE_INTERNAL_NAMES) would be the opposite
+    # of that decision. `documented_instanced_names()` reads back what help_content actually
+    # covers, so a name added to USER_FACING_NAMES without prose fails here rather than
+    # shipping silently missing.
+    assert documented_instanced_names() == USER_FACING_NAMES
+
+
+def test_engine_internal_instanced_names_are_absent_from_every_section() -> None:
+    # The other half of D4: sb_instanced and a_corner must NEVER appear, so the partition
+    # cannot erode by someone helpfully "completing" the vocabulary section later.
+    #
+    # Contact proof for the silence: help_sections() is asserted non-trivial (title, snippet
+    # and a body of real length present) BEFORE the absence check runs, so a fixture that
+    # returned nothing at all -- e.g. a broken import short-circuiting to an empty list --
+    # cannot read as "correctly absent". A search for the wrong string and a search that
+    # never ran must not produce the same green.
+    sections = help_sections()
+    assert len(sections) >= 5
+    joined_body = "\n".join(s.body for s in sections)
+    joined_snippet = "\n".join(s.snippet for s in sections)
+    assert len(joined_body) > 500  # real prose was read, not an empty scaffold
+    for name in ENGINE_INTERNAL_NAMES:
+        assert name not in joined_body, name
+        assert name not in joined_snippet, name
 
 
 def test_sections_are_well_formed() -> None:

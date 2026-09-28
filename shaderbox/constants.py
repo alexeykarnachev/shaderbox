@@ -13,12 +13,12 @@ SHADER_LIB_SEED_DIR = RESOURCES_DIR / "shader_lib"
 # starter cloned by "New document" and seeded into an empty project on first run.
 EXAMPLE_ORDER = [
     "53724dbd-8efb-4c09-8c7d-28d626a066e7",  # UV Mango
+    "c1f0a7d2-4b83-4e91-9a52-6d0f3e8b7c14",  # Entity Flock (instanced passes)
     "73ea2431-13f6-41e4-b923-04d846b678b0",  # Media Input
     "f90f5ff9-29c6-4bcf-aee7-090f20542353",  # Text Rendering
     "0b0d16bb-f014-4a85-b155-6be74c33eded",  # Fire
     "8d454b7b-bd48-49dc-aebe-58b9e31cfc28",  # Night City
     "77a84d27-2e5b-406d-8011-ee1cb1a9587c",  # Radiance Cascades (iterated passes)
-    "c1f0a7d2-4b83-4e91-9a52-6d0f3e8b7c14",  # Entity Flock (instanced passes)
 ]
 STARTER_EXAMPLE_ID = EXAMPLE_ORDER[0]
 
