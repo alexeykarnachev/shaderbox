@@ -43,10 +43,17 @@ class Theme:
     def capture(self, name: str) -> Color:
         """The colour a capture draws in, falling back along its dotted parents.
 
-        A name whose ROOT segment the theme never declares is a typo rather than a
-        fallback case, and raises: `@nonsense.thing` resolving quietly to plain text is
-        indistinguishable from a correct mapping, so every gate downstream passes on it.
+        A name the theme cannot account for is a typo rather than a fallback case, and
+        raises: a capture resolving quietly to a plausible colour is indistinguishable
+        from a correct mapping, so every gate downstream passes on it. Two shapes qualify
+        -- a root the theme never declares, and an EMPTY dotted segment, which the walk
+        would otherwise step over in silence (`@variable.` lands on `@variable`, because
+        `rpartition` hands back the parent whether or not a segment followed the dot).
         """
+        if not name.startswith("@") or any(
+            not segment for segment in name[1:].split(".")
+        ):
+            raise ThemeError(f"{self.name}: {name!r} is not a capture name")
         probe = name
         while probe:
             if probe in self.captures:
@@ -55,7 +62,9 @@ class Theme:
             probe = head
         root = name.split(".")[0]
         if root not in self.captures:
-            raise ThemeError(f"{self.name}: no capture {name!r} and no {root!r} to fall back to")
+            raise ThemeError(
+                f"{self.name}: no capture {name!r} and no {root!r} to fall back to"
+            )
         return self.captures[_ROOT_FALLBACK]
 
 
@@ -96,13 +105,13 @@ def parse_theme(text: str, name: str) -> Theme:
             raise ThemeError(f"{name}:{lineno}: {key} defined twice")
         sections[current][key] = value
 
-    palette = {
-        key: _parse_hex(value) for key, value in sections["palette"].items()
-    }
+    palette = {key: _parse_hex(value) for key, value in sections["palette"].items()}
     groups = _resolve(sections["groups"], palette, {}, name)
     captures = _resolve(sections["captures"], palette, groups, name)
     if _ROOT_FALLBACK not in captures:
-        raise ThemeError(f"{name}: no {_ROOT_FALLBACK}, so a capture can fall back nowhere")
+        raise ThemeError(
+            f"{name}: no {_ROOT_FALLBACK}, so a capture can fall back nowhere"
+        )
     return Theme(name=name, palette=palette, groups=groups, captures=captures)
 
 
@@ -123,7 +132,7 @@ def _resolve(
         probe = key
         while True:
             if probe in seen:
-                raise ThemeError(f"{name}: link cycle {' -> '.join(seen + [probe])}")
+                raise ThemeError(f"{name}: link cycle {' -> '.join([*seen, probe])}")
             seen.append(probe)
             value = entries.get(probe)
             if value is None:
@@ -157,5 +166,7 @@ def available_themes() -> list[str]:
 def load_theme(name: str = DEFAULT_THEME) -> Theme:
     path = theme_path(name)
     if not path.is_file():
-        raise ThemeError(f"no theme {name!r} in {_THEME_DIR}; have {available_themes()}")
+        raise ThemeError(
+            f"no theme {name!r} in {_THEME_DIR}; have {available_themes()}"
+        )
     return parse_theme(path.read_text(), name)

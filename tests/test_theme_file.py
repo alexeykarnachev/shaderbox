@@ -54,11 +54,8 @@ _NVIM_GRUVBOX: dict[str, str] = {
 
 
 def _hex(colour: tuple[float, float, float, float]) -> str:
-    return "#%02x%02x%02x" % (
-        round(colour[0] * 255),
-        round(colour[1] * 255),
-        round(colour[2] * 255),
-    )
+    r, g, b = (round(channel * 255) for channel in colour[:3])
+    return f"#{r:02x}{g:02x}{b:02x}"
 
 
 def test_the_shipped_theme_matches_the_editor_it_names() -> None:
@@ -117,7 +114,7 @@ def _swapped_theme(tmp_path: Path) -> Theme:
         if stripped.startswith("["):
             section = stripped
         if section == "[palette]" and "=" in stripped and not stripped.startswith("#"):
-            name, _, value = stripped.partition("=")
+            name, _, _value = stripped.partition("=")
             # A deterministic but totally different hue per entry: distinct from each
             # other so a collision cannot make two captures agree by accident.
             digest = abs(hash(name.strip())) % 0xFFFFFF
@@ -251,3 +248,45 @@ def test_the_shipped_theme_loads_in_a_clean_process() -> None:
     )
     assert result.returncode == 0, result.stderr
     assert int(result.stdout.strip()) > 30
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "@variable.",
+        "@type.",
+        "@function..builtin",
+        "@keyword..",
+        "@.x",
+        "@",
+        "variable",
+        "",
+    ],
+)
+def test_a_malformed_capture_name_raises_rather_than_resolving(name: str) -> None:
+    """An empty dotted segment is a typo, and a typo must not return a colour.
+
+    The walk up the dotted parents cannot see the difference on its own: `rpartition`
+    hands back `@variable` for both `@variable.x` and `@variable.`, so the empty segment
+    is stepped over and the parent's colour comes back looking entirely legitimate. A
+    name built by string concatenation with a missing suffix would draw in a plausible
+    colour with nothing to distinguish it from a correct mapping.
+
+    Falsifier: drop the guard in `Theme.capture` and every name here resolves silently.
+    """
+    theme = load_theme()
+    with pytest.raises(ThemeError, match="not a capture name"):
+        theme.capture(name)
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["@variable", "@constructor", "@variable.parameter", "@function.call.chained"],
+)
+def test_a_well_formed_capture_still_resolves(name: str) -> None:
+    """The other half of the guard: rejecting typos must not reject the real thing.
+
+    `@function.call.chained` is the case that matters -- it is NOT in the theme file, so
+    it exercises the dotted-parent fallback the guard sits in front of.
+    """
+    assert load_theme().capture(name)
