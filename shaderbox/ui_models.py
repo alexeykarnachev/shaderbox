@@ -38,6 +38,7 @@ from shaderbox.paths import (
 )
 from shaderbox.render_shape import DEFAULT_ASPECT, ResolutionMode, fit_to_aspect
 from shaderbox.scripting.keys import StoppedKey
+from shaderbox.theme_file import DEFAULT_THEME
 from shaderbox.ui_regions import ChannelView, DocumentTab
 from shaderbox.util import get_uniform_hash
 
@@ -235,6 +236,10 @@ class EditorSettings(BaseModel):
     # any widget — and a per-key salvage turns an out-of-range value into "that one setting
     # resets", instead of a value the UI could never have produced.
     keymap: EditorKeymap = "vim"
+    # The syntax theme, by the stem of a file in `resources/themes`. A name with no file
+    # falls back to the default at load rather than leaving the editor unpainted -- a
+    # theme deleted from under a saved setting must not take the app down.
+    syntax_theme: str = DEFAULT_THEME
     show_whitespace: bool = False
     show_line_numbers: bool = True
     show_matching_brackets: bool = True

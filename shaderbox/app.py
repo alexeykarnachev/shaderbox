@@ -119,7 +119,7 @@ from shaderbox.shader_lib.file_ops import ShaderLibFileManager
 from shaderbox.shader_lib.seed import sync_shipped_lib
 from shaderbox.shader_lib.tags import ShaderLibTagsStore
 from shaderbox.shader_source import ShaderSource
-from shaderbox.syntax_colors import editor_palette
+from shaderbox.syntax_colors import editor_palette, set_theme
 from shaderbox.tabs import share_state
 from shaderbox.theme import COLOR, SETTINGS_MARK_S, SIZE, apply_theme
 from shaderbox.ui_models import (
@@ -1923,6 +1923,28 @@ class App:
     def apply_editor_settings(self) -> None:
         for session in self.editor_sessions.values():
             self._apply_editor_settings_to(session.editor)
+
+    def apply_syntax_theme(self) -> None:
+        """Switch the syntax theme and re-paint every live editor.
+
+        A handle keeps the palette it was given at construction, so a switch that only
+        rebinds the module leaves every OPEN buffer on the old colours -- the new theme
+        would appear on the next file opened and nowhere else.
+
+        A theme that fails to load (deleted, or over the class budget) leaves the app on
+        the one it had; the setting keeps the name so the user can see what they asked for.
+        """
+        try:
+            set_theme(self.app_state.editor_settings.syntax_theme)
+        except Exception:
+            logger.exception(
+                "syntax theme %r failed to load; keeping the current one",
+                self.app_state.editor_settings.syntax_theme,
+            )
+            return
+        palette = editor_palette()
+        for session in self.editor_sessions.values():
+            session.editor.set_palette(palette)
 
     def is_current_editor_dirty(self) -> bool:
         session = self.get_current_session_if_exists()

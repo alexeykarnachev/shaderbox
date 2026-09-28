@@ -22,6 +22,7 @@ from shaderbox.paths import shader_lib_root
 from shaderbox.popups import Modal
 from shaderbox.shader_lib.seed import reset_to_shipped
 from shaderbox.theme import COLOR, SETTINGS_MARK_S, SIZE, SPACE
+from shaderbox.theme_file import available_themes
 from shaderbox.ui_models import EditorKeymap
 from shaderbox.ui_primitives import (
     NO_FOCUS,
@@ -118,6 +119,16 @@ def _draw_sections(app: App) -> None:
     changed, keymap_idx = imgui.combo("##keymap", keymap_idx, list(_KEYMAPS))
     if changed:
         settings.keymap = _KEYMAPS[keymap_idx]
+
+    themes = available_themes()
+    label_row(app.font_12, "Colors", ctrl_w, label_w)
+    theme_idx = (
+        themes.index(settings.syntax_theme) if settings.syntax_theme in themes else 0
+    )
+    changed, theme_idx = imgui.combo("##syntax_theme", theme_idx, themes)
+    if changed:
+        settings.syntax_theme = themes[theme_idx]
+        app.apply_syntax_theme()
     label_row(app.font_12, "Font size", ctrl_w, label_w)
     settings.font_size = imgui.drag_int(
         "##font_size",

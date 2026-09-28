@@ -59,7 +59,7 @@ class Theme:
         trailing space is not empty, so the walk missed every parent and returned the
         root's colour -- `#ebdbb2` where `#83a598` was asked for.
         """
-        if _CAPTURE_NAME.match(name) is None:
+        if _CAPTURE_NAME.fullmatch(name) is None:
             raise ThemeError(f"{self.name}: {name!r} is not a capture name")
         probe = name
         while probe:

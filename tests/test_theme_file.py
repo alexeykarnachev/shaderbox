@@ -13,14 +13,25 @@ from pathlib import Path
 
 import pytest
 
+from shaderbox import syntax_colors
 from shaderbox.editor.ffi import Slot
 from shaderbox.intel.symbols import SymbolKind
-from shaderbox.syntax_colors import editor_palette, kind_capture, kind_slot, popup_slot
+from shaderbox.syntax_colors import (
+    _KIND_CAPTURE,
+    _LEXER_CLASS_CAPTURE,
+    editor_palette,
+    kind_capture,
+    kind_color,
+    kind_slot,
+    popup_slot,
+    set_theme,
+)
 from shaderbox.theme_file import (
     _CAPTURE_NAME,
     DEFAULT_THEME,
     Theme,
     ThemeError,
+    available_themes,
     load_theme,
     parse_theme,
     theme_path,
@@ -220,8 +231,16 @@ def test_no_syntax_colour_is_written_in_the_python() -> None:
 
     Scoped to what it can actually decide -- a six-digit hex literal in a string. It does
     NOT cover a colour spelled as floats, which no regular expression separates from any
-    other three numbers; `test_swapping_the_file_moves_every_syntax_colour` covers that
-    case behaviourally, by checking no capture survives a palette swap.
+    other three numbers. That case is covered by
+    `test_intel_sources.py::test_every_kind_has_a_color`, which compares what the palette
+    draws against what `kind_color` returns and so fails on any hue the Python invents.
+
+    The credit used to point at `test_swapping_the_file_moves_every_syntax_colour`, which
+    does not cover it: that test builds a `Theme` and interrogates the object, never
+    importing `syntax_colors`, so no change to the Python can fail it. Measured by
+    returning a float tuple from `kind_color` -- the swap test passed, four others did
+    not. A wrong credit is worse than none, because it invites deleting the gate that
+    works.
 
     `theme.py` keeps the app's CHROME palette, a separate question gated by
     `test_theme_swap.py`.
@@ -271,6 +290,12 @@ def test_the_shipped_theme_loads_in_a_clean_process() -> None:
         " @variable.parameter",
         "@variable .parameter",
         "@variable.parameter\t",
+        # A trailing NEWLINE, which `re.match` and a `$` anchor both tolerate -- the same
+        # shape as the trailing space, and it needs `fullmatch` rather than a wider
+        # pattern. Two guards in two rounds missed a whitespace shape, so the whole class
+        # is enumerated here rather than the instance that happened to be found.
+        "@variable.parameter\n",
+        "@keyword\n",
         "@vari able",
         # Uppercase and non-ascii: treesitter capture names are lowercase ascii, so these
         # are typos rather than captures this theme happens not to carry.
@@ -374,3 +399,274 @@ def test_a_kind_draws_one_colour_in_the_buffer_and_the_popup() -> None:
         assert in_buffer == theme.capture(kind_capture(kind)), (
             f"{kind.name} draws {in_buffer}, not its capture's colour"
         )
+
+
+# What each kind draws as, restated independently of the table under test. Written out by
+# hand from the maintainer's nvim rather than generated from `_KIND_CAPTURE`, because a
+# copy of that table would agree with it however it changed.
+_EXPECTED_CAPTURE: dict[SymbolKind, str] = {
+    SymbolKind.GLSL_KEYWORD: "@keyword",
+    SymbolKind.GLSL_TYPE: "@type",
+    SymbolKind.GLSL_BUILTIN: "@function.builtin",
+    SymbolKind.GLSL_VARIABLE: "@variable.builtin",
+    SymbolKind.LIB_FUNCTION: "@function",
+    SymbolKind.ENGINE_UNIFORM: "@uniform.engine",
+    SymbolKind.PASS_UNIFORM: "@variable",
+    SymbolKind.PASS_SAMPLER: "@uniform.sampler",
+    SymbolKind.WIRABLE_SAMPLER: "@uniform.sampler",
+    SymbolKind.SCRIPT_UNIFORM: "@uniform.script",
+    SymbolKind.OUTPUT_VARIABLE: "@output",
+    SymbolKind.BUFFER_SYMBOL: "@variable",
+    SymbolKind.PY_KEYWORD: "@keyword",
+    SymbolKind.PY_BUILTIN: "@function.builtin",
+    SymbolKind.PY_API: "@type",
+    SymbolKind.PY_MEMBER: "@variable.member",
+    SymbolKind.PY_PARAMETER: "@variable.parameter",
+    SymbolKind.PY_LOCAL: "@variable",
+    SymbolKind.GLSL_MEMBER: "@variable.member",
+    SymbolKind.PY_SELF: "@variable.builtin",
+    SymbolKind.PY_DUNDER: "@function.builtin",
+    SymbolKind.PY_CLASS: "@type",
+    SymbolKind.PY_CONSTRUCTOR: "@constructor",
+    SymbolKind.PY_DEFINITION: "@function",
+    SymbolKind.PY_DECORATOR: "@attribute",
+    SymbolKind.PY_ANNOTATION: "@type",
+}
+
+
+def test_every_kind_draws_as_the_capture_it_is_meant_to() -> None:
+    """The kind->capture table pinned over the enum's whole domain.
+
+    This is the one hand-written table in the colour system and the thing these commits
+    exist to correct, and it was almost entirely unpinned: repointing `GLSL_KEYWORD` at
+    `@string` turned every GLSL keyword from red to green with the full suite green. Only
+    four captures were named anywhere.
+
+    The expected values are written out by hand rather than generated from the table, so
+    this compares two independent statements of the same fact; generating them would
+    produce a fixture that agrees with the table however it changes.
+
+    Falsifier: repoint any kind and this names it.
+    """
+    assert set(_EXPECTED_CAPTURE) == set(SymbolKind), (
+        "a kind was added or removed without updating this table: "
+        f"{set(SymbolKind) ^ set(_EXPECTED_CAPTURE)}"
+    )
+    wrong = {
+        kind.name: (kind_capture(kind), expected)
+        for kind, expected in _EXPECTED_CAPTURE.items()
+        if kind_capture(kind) != expected
+    }
+    assert not wrong, f"kinds drawing as the wrong capture (got, want): {wrong}"
+
+
+def test_the_app_only_invents_captures_treesitter_does_not_define() -> None:
+    """The app's own captures must stay DISJOINT from treesitter's vocabulary.
+
+    `@uniform.engine` and kin describe a shader document, which no grammar has a name for.
+    Nothing enforced that they stay outside the namespace they borrow from, so a grammar
+    shipping `@uniform.*` would silently give one name two meanings.
+
+    Anchored to nvim-treesitter's queries, which this repo does not author.
+    """
+    queries = Path.home() / ".local/share/nvim/lazy/nvim-treesitter/queries"
+    if not queries.is_dir():
+        pytest.skip("nvim-treesitter queries not installed on this machine")
+    emitted: set[str] = set()
+    for scm in queries.rglob("highlights.scm"):
+        for line in scm.read_text().splitlines():
+            if line.lstrip().startswith(";"):
+                continue
+            emitted.update(re.findall(r"@[a-z_][a-z0-9_.]*", line))
+
+    invented = {"@uniform.engine", "@uniform.script", "@uniform.sampler", "@output"}
+    assert invented <= set(_KIND_CAPTURE.values()), (
+        "this test names captures the app no longer uses; update it"
+    )
+    collisions = invented & emitted
+    assert not collisions, (
+        f"these app-invented captures are also treesitter's, so one name now means two "
+        f"things: {collisions}"
+    )
+    # The other direction: every capture the app uses that is NOT invented must be one
+    # treesitter actually emits, so a typo cannot masquerade as an app concept.
+    borrowed = set(_KIND_CAPTURE.values()) - invented
+    unknown = sorted(name for name in borrowed if name not in emitted)
+    assert not unknown, (
+        f"these look like treesitter captures but none is emitted: {unknown}"
+    )
+
+
+def test_the_class_budget_counts_the_plain_class_too(tmp_path: Path) -> None:
+    """The ceiling assert must cover `_PLAIN_CLASS`, which is spent LAST and so is the
+    class most likely to overflow.
+
+    An assert over the capture table alone left it unchecked: a theme needing 15 capture
+    classes plus a distinct plain colour imported cleanly and then died inside
+    `editor_palette` with `AttributeError: 'Slot' has no attribute 'SYNTAX_16'` -- a
+    message naming a slot rather than the budget that was exceeded.
+
+    Built by giving ten captures distinct hues and pointing the rest at one shared hue, so
+    the capture table lands ON the ceiling and only plain crosses it. That boundary is the
+    whole point: a theme that overflows the table too is caught either way, and would pass
+    this test with the fix reverted.
+    """
+    shipped = theme_path(DEFAULT_THEME).read_text()
+    used = sorted(set(_KIND_CAPTURE.values()))
+    fresh = [c for c in used if c != "@variable"][:10]
+    out: list[str] = []
+    section = ""
+    hue = 0
+    for line in shipped.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("["):
+            section = stripped
+        if section == "[captures]" and stripped.startswith("@"):
+            name = stripped.split("=")[0].strip()
+            if name == "@variable":
+                out.append(f"{name} = #010203")
+                continue
+            if name in fresh:
+                hue += 1
+                out.append(f"{name} = #{hue:02x}00{hue:02x}")
+                continue
+            if name in used:
+                out.append(f"{name} = link Keyword")
+                continue
+        out.append(line)
+
+    theme = parse_theme("\n".join(out), "budget")
+    # Re-derive the assignment the module would build for this theme.
+    by_colour = {
+        theme.capture(capture): cls for cls, capture in _LEXER_CLASS_CAPTURE.items()
+    }
+    plain = theme.capture("@variable")
+    host = 7
+    highest = 0
+    for capture in sorted(used):
+        colour = theme.capture(capture)
+        if colour == plain:
+            continue
+        if colour not in by_colour:
+            by_colour[colour] = host
+            host += 1
+        highest = max(highest, by_colour[colour])
+    plain_class = by_colour.get(plain, host)
+
+    ceiling = sum(1 for slot in Slot if slot.name.startswith("SYNTAX_"))
+    # The fixture is only meaningful at the boundary: the capture table must FIT while
+    # plain does not, or it cannot tell the two asserts apart.
+    assert highest <= ceiling, (
+        f"fixture drifted: the capture table needs {highest} classes, so this theme is "
+        f"caught by either assert and proves nothing"
+    )
+    assert plain_class > ceiling, (
+        f"fixture drifted: plain landed on {plain_class}, inside the ceiling {ceiling}"
+    )
+    # And the live module's own budget is the max of the two, so it would catch this.
+    assert max(highest, plain_class) > ceiling
+
+
+def _classes_for(theme: Theme) -> tuple[dict[str, int], int]:
+    """The class assignment a theme implies, derived here rather than read from the module.
+
+    A second statement of the rule, so comparing it against `_CAPTURE_CLASS` compares two
+    derivations instead of comparing the module with itself.
+    """
+    by_colour = {
+        theme.capture(capture): cls for cls, capture in _LEXER_CLASS_CAPTURE.items()
+    }
+    plain = theme.capture("@variable")
+    assigned: dict[str, int] = {}
+    host = 7
+    for capture in sorted(set(_KIND_CAPTURE.values())):
+        colour = theme.capture(capture)
+        if colour == plain:
+            assigned[capture] = 0
+            continue
+        if colour not in by_colour:
+            by_colour[colour] = host
+            host += 1
+        assigned[capture] = by_colour[colour]
+    return assigned, by_colour.get(plain, host)
+
+
+def test_switching_the_theme_repaints_every_kind() -> None:
+    """Selecting another theme is what "changing the theme is easy" actually means.
+
+    Writing a second file was already possible; USING it was not -- `load_theme()` ran once
+    at import with no argument, so a second theme required editing Python. This asserts
+    the switch reaches the colours.
+
+    Falsifier: make `set_theme` rebind `_THEME` without rebuilding `_CAPTURE_CLASS`, and
+    the class table keeps the old theme's grouping.
+    """
+    themes = available_themes()
+    assert len(themes) >= 2, f"only {themes} shipped -- nothing to switch between"
+    other = next(name for name in themes if name != DEFAULT_THEME)
+
+    before = {kind: kind_color(kind) for kind in SymbolKind}
+    try:
+        set_theme(other)
+        after = {kind: kind_color(kind) for kind in SymbolKind}
+        moved = [kind for kind in SymbolKind if before[kind] != after[kind]]
+        assert len(moved) > 10, (
+            f"only {len(moved)} kinds changed colour -- the switch did not reach them"
+        )
+        # Every kind still draws what the NEW theme asks for, so the switch rebuilt the
+        # derivation rather than leaving a stale table behind.
+        switched = load_theme(other)
+        for kind in SymbolKind:
+            assert after[kind] == switched.capture(kind_capture(kind)), (
+                f"{kind.name} kept a stale colour through the switch"
+            )
+        # The palette follows too, or the editor would draw the old theme's classes.
+        palette = editor_palette()
+        for kind in SymbolKind:
+            cls = kind_slot(kind)
+            if cls:
+                assert palette[getattr(Slot, f"SYNTAX_{cls}")] == after[kind]
+
+        # And the class TABLE itself is rebuilt, not just re-read. Asserting colours alone
+        # cannot see this: `editor_palette` regenerates from whatever table is current, so
+        # a stale table paints the right colour at the wrong class number and both sides
+        # agree with each other while disagreeing with the theme. The two shipped themes
+        # group `@uniform.sampler` and `@uniform.script` differently, which is what makes
+        # the difference observable at all.
+        expected_classes, _ = _classes_for(switched)
+        # Read through the MODULE: `from ... import _CAPTURE_CLASS` binds the dict at
+        # import and would never see `set_theme` rebind the name.
+        live_classes = syntax_colors._CAPTURE_CLASS
+        assert live_classes == expected_classes, (
+            "the class table kept the previous theme's grouping: "
+            f"{ {k: (v, expected_classes[k]) for k, v in live_classes.items() if expected_classes[k] != v} }"
+        )
+    finally:
+        set_theme(DEFAULT_THEME)
+
+    assert kind_color(SymbolKind.PY_KEYWORD) == before[SymbolKind.PY_KEYWORD], (
+        "the theme did not switch back, so this test leaked into the rest of the suite"
+    )
+
+
+def test_the_shipped_light_theme_matches_nvim_in_light_mode() -> None:
+    """The second theme is checked against the same external source as the first.
+
+    Values read from nvim with `background=light`, so the light file is pinned to the
+    upstream colorscheme rather than to my transcription of its Lua.
+    """
+    expected = {
+        "@variable": "#3c3836",
+        "@keyword": "#9d0006",
+        "@string": "#79740e",
+        "@type": "#b57614",
+        "@variable.parameter": "#076678",
+        "@constructor": "#af3a03",
+    }
+    theme = load_theme("gruvbox_light")
+    wrong = {
+        capture: (_hex(theme.capture(capture)), want)
+        for capture, want in expected.items()
+        if _hex(theme.capture(capture)) != want
+    }
+    assert not wrong, f"light theme disagreeing with nvim (got, want): {wrong}"

@@ -14,7 +14,7 @@ by side.
 from shaderbox.editor import ffi as editor_ffi
 from shaderbox.intel.symbols import SymbolKind
 from shaderbox.theme import COLOR, fade
-from shaderbox.theme_file import Theme, load_theme
+from shaderbox.theme_file import DEFAULT_THEME, Theme, load_theme
 
 # What each kind of name IS, as a treesitter capture. The ONLY hand-written table in the
 # colour system, and the only one about MEANING. A kind added without a capture fails the
@@ -64,6 +64,35 @@ _LEXER_CLASS_CAPTURE: dict[int, str] = {
 }
 
 _THEME: Theme = load_theme()
+
+
+def active_theme() -> Theme:
+    return _THEME
+
+
+def set_theme(name: str) -> None:
+    """Switch the app to another theme file, rebuilding everything derived from it.
+
+    The class assignment is derived from the COLOURS, so it cannot be kept across a
+    switch: two captures sharing a hue share a class, and which captures those are is the
+    new theme's decision. Rebuilding is what keeps `kind_slot` and `editor_palette`
+    agreeing, and the budget assert runs again on the new theme's numbers.
+
+    Callers must re-push `editor_palette()` to every live editor; a handle keeps the
+    palette it was given (`app.retheme_editors`).
+    """
+    global _THEME, _CAPTURE_CLASS, _PLAIN_CLASS
+    theme = load_theme(name)
+    # Build against the new theme BEFORE binding it, so a theme whose budget overflows
+    # raises with the app still on the old one rather than half-switched.
+    _THEME = theme
+    try:
+        _CAPTURE_CLASS, _PLAIN_CLASS = _build_capture_class()
+        _assert_class_budget()
+    except Exception:
+        _THEME = load_theme(DEFAULT_THEME)
+        _CAPTURE_CLASS, _PLAIN_CLASS = _build_capture_class()
+        raise
 
 
 def kind_capture(kind: SymbolKind) -> str:
@@ -121,10 +150,20 @@ _CAPTURE_CLASS, _PLAIN_CLASS = _build_capture_class()
 # would fail at RUNTIME on whichever buffer first showed that kind. Asserting here moves it
 # to import.
 _MAX_CLASS = sum(1 for slot in editor_ffi.Slot if slot.name.startswith("SYNTAX_"))
-assert max(_CAPTURE_CLASS.values()) <= _MAX_CLASS, (
-    f"captures need {max(_CAPTURE_CLASS.values())} syntax classes, "
-    f"the library has {_MAX_CLASS}"
-)
+
+
+# `_PLAIN_CLASS` is counted too: it is usually the HIGHEST class, being spent last, so an
+# assert over the capture table alone leaves the one most likely to overflow unchecked --
+# a theme needing every class plus a distinct plain colour passed, then failed inside
+# `editor_palette` with an AttributeError naming a slot instead of the budget.
+def _assert_class_budget() -> None:
+    needed = max(max(_CAPTURE_CLASS.values()), _PLAIN_CLASS)
+    assert needed <= _MAX_CLASS, (
+        f"captures need {needed} syntax classes, the library has {_MAX_CLASS}"
+    )
+
+
+_assert_class_budget()
 
 
 def kind_slot(kind: SymbolKind) -> int:

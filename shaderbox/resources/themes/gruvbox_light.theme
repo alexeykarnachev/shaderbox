@@ -1,0 +1,108 @@
+# gruvbox light -- second theme, written to exercise the format (task: does a second
+# author's file load and resolve). Palette values are gruvbox.nvim's `light` branch of
+# get_colors()'s color_groups table (lua/gruvbox.lua ~lines 169-193), contrast="".
+#
+# [groups]/[captures] structure is copied unchanged from gruvbox_dark.theme: the format's
+# structural half (which base group each capture links to) is theme-independent, only the
+# palette differs between a dark and a light variant.
+
+[palette]
+bg0          = #fbf1c7
+bg1          = #ebdbb2
+bg2          = #d5c4a1
+bg3          = #bdae93
+bg4          = #a89984
+fg0          = #282828
+fg1          = #3c3836
+fg2          = #504945
+fg3          = #665c54
+fg4          = #7c6f64
+gray         = #928374
+red          = #9d0006
+green        = #79740e
+yellow       = #b57614
+blue         = #076678
+purple       = #8f3f71
+aqua         = #427b58
+orange       = #af3a03
+
+[groups]
+Normal       = fg1
+Comment      = gray
+Constant     = purple
+String       = green
+Character    = purple
+Number       = purple
+Boolean      = purple
+Float        = purple
+Identifier   = blue
+Function     = green
+Statement    = red
+Conditional  = red
+Repeat       = red
+Label        = red
+Operator     = orange
+Keyword      = red
+Exception    = red
+PreProc      = aqua
+Include      = aqua
+Define       = aqua
+Macro        = aqua
+PreCondit    = aqua
+Type         = yellow
+StorageClass = orange
+Structure    = aqua
+Typedef      = yellow
+Special      = orange
+SpecialChar  = orange
+Delimiter    = orange
+Underlined   = blue
+
+[captures]
+@variable            = link Normal
+@variable.builtin    = link Special
+@variable.parameter  = link Identifier
+@variable.member     = link Identifier
+@constant            = link Constant
+@constant.builtin    = link Special
+@module              = link Normal
+@string              = link String
+@character           = link Character
+@number              = link Number
+@number.float        = link Float
+@boolean             = link Boolean
+@function            = link Function
+@function.builtin    = link Special
+@function.call       = link Function
+@function.method     = link Function
+@function.macro      = link Macro
+@constructor         = link Special
+@type                = link Type
+@type.builtin        = link Type
+@type.definition     = link Typedef
+@type.qualifier      = link Type
+@attribute           = link PreProc
+@attribute.builtin   = link Special
+@keyword             = link Keyword
+@keyword.function    = link Keyword
+@keyword.return      = link Keyword
+@keyword.type        = link Keyword
+@keyword.operator    = link Keyword
+@keyword.conditional = link Conditional
+@keyword.repeat      = link Repeat
+@keyword.exception   = link Exception
+@keyword.import      = link Include
+@keyword.directive   = link PreProc
+@operator            = link Operator
+@punctuation.bracket   = link Delimiter
+@punctuation.delimiter = link Delimiter
+@punctuation.special   = link Delimiter
+@comment             = link Comment
+@label               = link Label
+@property            = link Identifier
+@field               = link Identifier
+
+@uniform.engine      = link Identifier
+@uniform.script      = green
+@uniform.sampler     = aqua
+@output              = link Special
