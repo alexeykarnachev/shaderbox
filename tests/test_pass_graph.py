@@ -36,6 +36,7 @@ from shaderbox.pass_graph import (
     plan_passes,
     rank_layout,
     refuse_drop,
+    strip_order,
     wired_pass,
     wiring_with,
 )
@@ -427,11 +428,25 @@ def test_rank_layout_keeps_cycle_members() -> None:
 def test_rank_layout_keeps_group_members_adjacent() -> None:
     # Rank 1 holds b_bright, b_trail (bloom) and an ungrouped `side`; the two members are
     # contiguous whatever strip order says. Falsifier: sort a column by strip order alone.
-    wiring = dict(_BLOOM) | {"side": {"u_scene": "scene"}}
-    sizes = _SIZE | {"side": (100.0, 120.0)}
+    #
+    # The ungrouped pass must sit BETWEEN the two members in STRIP order, or the falsifier
+    # cannot fire: an earlier version used `side`, which sorts after both, so strip order
+    # and group order agreed and sorting by either kept the members adjacent. The test
+    # passed against the bug its own comment names.
+    #
+    # Strip order is topological (`strip_order` -> `plan_passes`), NOT the order of the
+    # wiring dict and not the `names` argument -- so the name is what places it, and
+    # `b_c_side` lands between `b_bright` and `b_trail`. The assertion below pins that,
+    # since a rename would silently restore the useless arrangement.
+    wiring = dict(_BLOOM) | {"b_c_side": {"u_scene": "scene"}}
+    sizes = _SIZE | {"b_c_side": (100.0, 120.0)}
+    strip = strip_order(wiring, wiring)
+    assert strip.index("b_bright") < strip.index("b_c_side") < strip.index("b_trail"), (
+        f"the ungrouped pass does not split the pair in strip order: {strip}"
+    )
     laid = rank_layout(wiring, list(wiring), _BLOOM_GROUPS, sizes, {}, 40.0, 10.0)
     column = sorted(
-        (name for name in ("b_bright", "b_trail", "side")), key=lambda n: laid[n][1]
+        (name for name in ("b_bright", "b_trail", "b_c_side")), key=lambda n: laid[n][1]
     )
     members = [column.index("b_bright"), column.index("b_trail")]
     assert abs(members[0] - members[1]) == 1
