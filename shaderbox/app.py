@@ -412,6 +412,7 @@ class App:
             on_document_source_synced=self._on_document_source_synced,
             on_document_deleted=self._on_document_deleted,
             on_pass_renamed=self._on_pass_renamed,
+            on_key_warning=self._on_script_key_warning,
         )
 
         # The pass list's inline add input (name a new pass).
@@ -722,6 +723,20 @@ class App:
             return
         session.editor.set_text(source)
         session.saved_undo = session.editor.get_undo_index()
+
+    def _on_script_key_warning(
+        self, document_id: str, pass_name: str, name: str, reason: str, message: str
+    ) -> None:
+        # 102 D-F: a script key that does not land WARNS, in the logs and in the
+        # notifications. The engine is headless core and imports no imgui, so it fires this
+        # injected callback instead (D3a) -- this is the UI end of that seam, and without it
+        # the whole feature reaches the log and never the screen.
+        #
+        # Already EDGE-triggered by `_warn`, which fires only when a key's reason changes
+        # (D3), so this runs once per key per failure rather than once per frame. `push`
+        # logs on its own, which is the logs half.
+        where = f"{pass_name}.{name}" if pass_name else name
+        self.notifications.push(f"script: {where} -- {message}", COLOR.STATE_WARN[:3])
 
     def _on_pass_renamed(self, old_path: Path, new_path: Path) -> None:
         # A pass file moved. Everything that refers to it BY NAME OR PATH moves with it here, in

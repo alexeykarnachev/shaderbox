@@ -104,3 +104,27 @@ def test_the_no_fields_verdict_clears_when_the_pass_gains_fields() -> None:
         "outranks the draw and so survives the edit that fixes it, reporting a defect "
         "that no longer exists"
     )
+
+
+def test_the_warn_callback_is_wired_from_the_app_to_notifications() -> None:
+    """102 D-F says a non-landing key warns "in the logs AND in the notifications", and
+    D3a routes it through an injected callback because the engine imports no imgui.
+
+    The flow that built the engine half could not wire the app half -- `app.py` was not its
+    file -- so the seam existed end to end and nothing in the shipped app passed a real
+    callback. Every test passed, and the notification half of the headline behaviour
+    reached nobody. This asserts the wiring, which is the part no engine-side test can see.
+    """
+    import inspect
+
+    from shaderbox.app import App
+
+    construction = inspect.getsource(App.__init__)
+    assert "on_key_warning=" in construction, (
+        "ProjectSession is built without a warn callback -- the engine fires into the "
+        "default no-op and 102's notifications never happen"
+    )
+    handler = inspect.getsource(App._on_script_key_warning)
+    assert "notifications.push" in handler, (
+        "the warn handler does not reach the notification stack"
+    )
