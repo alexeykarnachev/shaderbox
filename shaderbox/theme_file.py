@@ -44,6 +44,11 @@ class Theme:
     palette: dict[str, Color]
     groups: dict[str, Color]
     captures: dict[str, Color]
+    # The editor's own furniture -- background, caret, gutter, status row. A theme that
+    # names none keeps the app's chrome tokens, which is what the dark theme does: it was
+    # BUILT to match them. A light theme cannot, since a light foreground on the app's
+    # near-black ground is unreadable, so it carries its own.
+    chrome: dict[str, Color]
 
     def capture(self, name: str) -> Color:
         """The colour a capture draws in, falling back along its dotted parents.
@@ -90,7 +95,12 @@ def _parse_hex(text: str) -> Color:
 
 def parse_theme(text: str, name: str) -> Theme:
     """Parse a theme file's text. Raises `ThemeError` naming the offending line."""
-    sections: dict[str, dict[str, str]] = {"palette": {}, "groups": {}, "captures": {}}
+    sections: dict[str, dict[str, str]] = {
+        "palette": {},
+        "groups": {},
+        "captures": {},
+        "chrome": {},
+    }
     current: str = ""
     for lineno, raw in enumerate(text.splitlines(), start=1):
         # A `#` opens a comment only at the start of a line: everywhere else it opens a
@@ -115,11 +125,18 @@ def parse_theme(text: str, name: str) -> Theme:
     palette = {key: _parse_hex(value) for key, value in sections["palette"].items()}
     groups = _resolve(sections["groups"], palette, {}, name)
     captures = _resolve(sections["captures"], palette, groups, name)
+    chrome = _resolve(sections["chrome"], palette, groups, name)
     if _ROOT_FALLBACK not in captures:
         raise ThemeError(
             f"{name}: no {_ROOT_FALLBACK}, so a capture can fall back nowhere"
         )
-    return Theme(name=name, palette=palette, groups=groups, captures=captures)
+    return Theme(
+        name=name,
+        palette=palette,
+        groups=groups,
+        captures=captures,
+        chrome=chrome,
+    )
 
 
 def _resolve(

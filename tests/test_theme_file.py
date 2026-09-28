@@ -26,6 +26,7 @@ from shaderbox.syntax_colors import (
     popup_slot,
     set_theme,
 )
+from shaderbox.theme import COLOR
 from shaderbox.theme_file import (
     _CAPTURE_NAME,
     DEFAULT_THEME,
@@ -670,3 +671,99 @@ def test_the_shipped_light_theme_matches_nvim_in_light_mode() -> None:
         if _hex(theme.capture(capture)) != want
     }
     assert not wrong, f"light theme disagreeing with nvim (got, want): {wrong}"
+
+
+def _contrast(fg: tuple[float, ...], bg: tuple[float, ...]) -> float:
+    """WCAG relative-contrast ratio, so a theme's readability is a number not an opinion."""
+
+    def luminance(colour: tuple[float, ...]) -> float:
+        channels = [
+            value / 12.92 if value <= 0.03928 else ((value + 0.055) / 1.055) ** 2.4
+            for value in colour[:3]
+        ]
+        return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+
+    high, low = sorted((luminance(fg), luminance(bg)), reverse=True)
+    return (high + 0.05) / (low + 0.05)
+
+
+def test_every_theme_draws_its_text_on_its_own_background() -> None:
+    """A theme must supply a ground its foregrounds are legible on.
+
+    The light theme shipped selectable and unusable: `editor_palette` took BACKGROUND from
+    `theme.py`, which is near-black, so light foregrounds landed on it at 1.54 -- 22 of 26
+    kinds under the 4.5 floor, and the colour most text is drawn in invisible.
+
+    The bound here is 3.3, not 4.5, and the reason matters: gruvbox light's own worst pair
+    measures 3.33 IN NVIM (`@comment` on `Normal`), so 4.5 would fail the upstream theme
+    this one is a faithful port of. The floor exists to catch a theme drawing on the WRONG
+    ground -- a whole-theme mistake, which lands near 1.5 -- not to second-guess a
+    colorscheme's own taste.
+    """
+    for name in available_themes():
+        set_theme(name)
+        try:
+            background = editor_palette()[Slot.BACKGROUND]
+            worst = min(
+                (_contrast(kind_color(kind), background), kind.name)
+                for kind in SymbolKind
+            )
+            assert worst[0] >= 3.3, (
+                f"{name}: {worst[1]} draws at {worst[0]:.2f} contrast on this theme's own "
+                f"background -- the theme is probably painting on the other theme's ground"
+            )
+        finally:
+            set_theme(DEFAULT_THEME)
+
+
+def test_a_theme_that_names_no_chrome_keeps_the_apps_own() -> None:
+    """The fallback half: the dark theme names no `[chrome]` and must be unaffected.
+
+    Its colours were chosen against `theme.py`'s tokens, so a chrome section it does not
+    have must not change what it draws.
+    """
+    assert not load_theme(DEFAULT_THEME).chrome, (
+        f"{DEFAULT_THEME} now names chrome; this test no longer covers the fallback"
+    )
+    assert editor_palette()[Slot.BACKGROUND] == COLOR.BG_SURFACE
+
+
+def test_a_chrome_key_that_is_not_a_slot_is_refused() -> None:
+    """A misspelled chrome key must fail rather than be dropped in silence.
+
+    A slot the editor does not have is a typo, and a typo that vanishes leaves the theme
+    saying one thing and the screen another -- the same failure the capture guard exists
+    for.
+    """
+    text = theme_path(DEFAULT_THEME).read_text() + "\n[chrome]\nnot_a_slot = bg0\n"
+    written = theme_path("chrome_probe")
+    written.write_text(text)
+    try:
+        with pytest.raises(ThemeError, match="not an editor slot"):
+            set_theme("chrome_probe")
+    finally:
+        written.unlink()
+        set_theme(DEFAULT_THEME)
+
+
+def test_the_chrome_palette_and_the_dark_theme_hold_the_same_hues() -> None:
+    """`theme.py`'s `_P` and the dark theme file's `[palette]` are the same 27 hues, twice.
+
+    They are separate on purpose -- one themes the app's chrome, the other the editor's
+    syntax -- but the dark theme was built to sit inside that chrome, so a hue edited on
+    one side and not the other silently breaks the pairing they were tuned as.
+
+    Scoped to what it can decide: this compares VALUE SETS. The two use different names
+    for the same hue (`aqua_b` against `bright_aqua`, `bg_0h` against `bg0_h`), so it
+    cannot catch a rename, and widening it toward a name map would be inventing a
+    correspondence neither file declares. It catches the case that matters -- a palette
+    edited in one place.
+    """
+    from shaderbox.theme import _P
+
+    chrome = {colour[:3] for colour in _P.values()}
+    syntax = {colour[:3] for colour in load_theme(DEFAULT_THEME).palette.values()}
+    assert chrome == syntax, (
+        f"the two palettes have drifted; only in theme.py: {sorted(chrome - syntax)}, "
+        f"only in {DEFAULT_THEME}: {sorted(syntax - chrome)}"
+    )

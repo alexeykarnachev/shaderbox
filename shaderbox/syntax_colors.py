@@ -14,7 +14,12 @@ by side.
 from shaderbox.editor import ffi as editor_ffi
 from shaderbox.intel.symbols import SymbolKind
 from shaderbox.theme import COLOR, fade
-from shaderbox.theme_file import DEFAULT_THEME, Theme, load_theme
+from shaderbox.theme_file import (
+    DEFAULT_THEME,
+    Theme,
+    ThemeError,
+    load_theme,
+)
 
 # What each kind of name IS, as a treesitter capture. The ONLY hand-written table in the
 # colour system, and the only one about MEANING. A kind added without a capture fails the
@@ -89,6 +94,9 @@ def set_theme(name: str) -> None:
     try:
         _CAPTURE_CLASS, _PLAIN_CLASS = _build_capture_class()
         _assert_class_budget()
+        # Build the palette too: a chrome key naming no slot must fail at the SWITCH, not
+        # on whichever later repaint first touches it.
+        editor_palette()
     except Exception:
         _THEME = load_theme(DEFAULT_THEME)
         _CAPTURE_CLASS, _PLAIN_CLASS = _build_capture_class()
@@ -203,6 +211,9 @@ def editor_palette() -> dict["editor_ffi.Slot", tuple[float, float, float, float
     anyone restating it here.
     """
     palette = _base_palette()
+    # The theme's own chrome, before the syntax classes: a theme that names none keeps the
+    # app's tokens, and one that does gets to decide what its text sits on.
+    _themed_chrome(palette)
     # The lexer's own six FIRST: it pushes class 2 for a string whatever the derivation
     # decided, so a class it emits must carry its colour even when another capture shares
     # that colour and was assigned elsewhere.
@@ -248,3 +259,36 @@ def _base_palette() -> dict["editor_ffi.Slot", tuple[float, float, float, float]
         # Drawn over the glyphs, so translucent; a different hue from the bracket box.
         slot.SEARCH_MATCH: fade(COLOR.ACCENT_ACTIVE, 0.30),
     }
+
+
+# The alpha each translucent slot is drawn at, kept here rather than in the theme file:
+# it is a property of how the editor LAYERS these (a wash over glyphs, a box behind them),
+# not a colour a theme chooses.
+_CHROME_ALPHA: dict[str, float] = {
+    "selection": 0.35,
+    "whitespace": 0.5,
+    "bracket_match": 0.25,
+    "search_match": 0.30,
+}
+
+
+def _themed_chrome(
+    palette: dict["editor_ffi.Slot", tuple[float, float, float, float]],
+) -> None:
+    """Overlay the theme file's own `[chrome]`, for a theme the app's tokens cannot serve.
+
+    The dark theme names none and keeps `theme.py`'s chrome, which it was built to match.
+    A LIGHT theme has to carry its own: the app's ground is near-black, and light
+    foregrounds on it measured 1.54 contrast where 4.5 is the floor -- selectable and
+    unreadable. A theme is only fully a theme if it can say what it sits on.
+    """
+    for key, colour in _THEME.chrome.items():
+        slot_name = key.upper()
+        if not hasattr(editor_ffi.Slot, slot_name):
+            raise ThemeError(
+                f"{_THEME.name}: [chrome] names {key!r}, which is not an editor slot"
+            )
+        alpha = _CHROME_ALPHA.get(key)
+        palette[getattr(editor_ffi.Slot, slot_name)] = (
+            colour if alpha is None else fade(colour, alpha)
+        )

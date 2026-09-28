@@ -106,3 +106,28 @@ Underlined   = blue
 @uniform.script      = green
 @uniform.sampler     = aqua
 @output              = link Special
+
+# The editor's own furniture. A light theme must name this: the app's chrome is built
+# around a near-black ground, and these foregrounds on it measure 1.54 contrast where
+# 4.5 is the floor. A theme that cannot say what its text sits on is not a whole theme.
+#
+# Values are gruvbox.nvim's light mode, read from the running editor.
+[chrome]
+background      = bg0
+text            = fg1
+caret           = orange
+caret_insert    = aqua
+caret_text      = bg0
+selection       = bg2
+gutter_text     = fg4
+gutter_current  = fg2
+filler          = fg4
+status_bg       = bg1
+status_text     = fg2
+status_accent   = orange
+popup_panel     = bg1
+popup_text      = fg3
+popup_selected  = orange
+whitespace      = bg3
+bracket_match   = orange
+search_match    = aqua

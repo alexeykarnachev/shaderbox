@@ -36,12 +36,20 @@ text_bright = fg_0
 # yellow_b, the default accent preset.
 accent = yellow_b
 
-# Port roles taken from the EDITOR's syntax colours, so a uniform on a node
-# is the colour its name is in the code:
+# Port roles take the editor's syntax HUE, so a uniform on a node reads as the
+# same colour family its name is in the code:
 #
-#   input   SYN_PASS_SAMPLER  a sampler bound to another pass
-#   output  SYN_OUTPUT        the fragment output
-#   control SYN_IDENT         a pass uniform
+#   input   @uniform.sampler  a sampler bound to another pass
+#   output  @output           the fragment output
+#   control @variable         a pass uniform
+#
+# `output` matches its capture exactly. `input` does NOT, and deliberately:
+# `@uniform.sampler` is the neutral aqua, which measures 3.66 against this
+# file's `surface` where the bright one measures 5.51 and `output` 4.59. A
+# port is a 6px ring on a tinted row, not a glyph on the editor's ground, so
+# it takes the brighter member of the same hue. Stated because the earlier
+# comment claimed an exact match that stopped being true when the syntax
+# colours moved into a theme file.
 #
 # Not from GRAPH_PORT_*, which are the same hues desaturated for a strip
 # behind a label in a dense panel. On a node row those land between 0.25 and
