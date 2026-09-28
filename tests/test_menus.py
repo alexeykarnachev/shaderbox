@@ -557,14 +557,21 @@ def test_the_lib_trees_armed_delete_is_gone() -> None:
     assert 'imgui.menu_item_simple("Delete")' in tree_source
 
 
-def test_the_lib_delete_still_trashes_and_toasts(app: Any) -> None:
+def test_the_lib_delete_still_trashes_and_toasts(
+    app: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The verb behind the confirm is unchanged: a trash move plus its toast."""
     from shaderbox.paths import shader_lib_root, shader_lib_trash_dir
 
     victim = shader_lib_root() / "menus_probe.glsl"
     victim.write_text("float SB_probe() { return 1.0; }\n", encoding="utf-8")
     pushed: list[str] = []
-    app.notifications.push = lambda text, *a, **kw: pushed.append(text)
+    # Through monkeypatch, so it is UNDONE: `notifications` is one of the objects the app
+    # fixture shares by identity across the session, so a bare assignment here silently
+    # swallows every later test's notifications.
+    monkeypatch.setattr(
+        app.notifications, "push", lambda text, *a, **kw: pushed.append(text)
+    )
 
     app.shader_lib_files.delete_file(victim)
 

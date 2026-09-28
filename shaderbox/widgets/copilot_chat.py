@@ -497,8 +497,13 @@ def _draw_bubble(
         right = origin.x + imgui.get_content_region_avail().x - float(SPACE.SM)
         imgui.set_next_item_allow_overlap()
         imgui.set_cursor_screen_pos((right - side, origin.y))
-        if copy_icon_button(f"copy_{idx}", side) and app is not None:
-            app.notifications.push(copy_to_clipboard(text) or "Copied to clipboard!")
+        if copy_icon_button(f"copy_{idx}", side):
+            # The copy is unconditional; only its REPORT needs the app. An assistant
+            # bubble is drawn without one, so gating the copy on `app` would make the
+            # button on every reply do nothing at all.
+            outcome = copy_to_clipboard(text)
+            if app is not None:
+                app.notifications.push(outcome or "Copied to clipboard!")
         if imgui.is_item_hovered():
             imgui.set_tooltip("Copy")
         if show_revert and app is not None and revert_msg is not None:

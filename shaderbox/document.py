@@ -391,8 +391,7 @@ class Document:
         first remaining one and a document with none has nothing to draw.
 
         Asked by the guard that refuses the delete AND by the menu item that disables it,
-        so the two cannot answer differently. They were once `len(passes) == 1` and
-        `len(passes) > 1` at opposite ends of the call, agreeing by coincidence.
+        so the two cannot answer differently.
         """
         return len(self.passes) > 1
 

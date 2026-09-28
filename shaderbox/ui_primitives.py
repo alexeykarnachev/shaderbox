@@ -1522,9 +1522,7 @@ def copy_to_clipboard(value: str) -> str:
 
     The one place that decides what a failed copy IS. A caller shows the returned text
     and says nothing when it is empty. Returning the reason rather than a bool is what
-    lets a caller distinguish "the copy failed" from "there was nothing to do" -- the
-    two states a single False collapsed, which is why three of the four call sites
-    could not report a failure they were already receiving.
+    lets a caller distinguish "the copy failed" from "there was nothing to do".
     """
     try:
         pyperclip.copy(value)

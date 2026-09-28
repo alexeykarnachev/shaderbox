@@ -525,14 +525,20 @@ def test_the_gear_body_survives_a_rename_mid_frame(app: Any) -> None:
     assert keep_open == [True] * 6
 
 
-def test_a_rejected_rename_snaps_the_buffer_back(app: Any) -> None:
+def test_a_rejected_rename_snaps_the_buffer_back(
+    app: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
     document_id = _document_id(app)
     name = next(iter(app.ui_documents[document_id].document.passes))
     assert app.session.add_pass(document_id, "sibling") == ""
     app.open_pass_settings(name)
 
     pushed: list[str] = []
-    app.notifications.push = lambda text, *a, **kw: pushed.append(text)
+    # Through monkeypatch, so it is UNDONE: `notifications` is shared by identity across
+    # the session, so a bare assignment swallows every later test's notifications.
+    monkeypatch.setattr(
+        app.notifications, "push", lambda text, *a, **kw: pushed.append(text)
+    )
 
     # A name the naming rule rejects, then an existing pass's name: each notifies ONCE and
     # snaps the field back, so the next deactivate cannot re-fire the same rejection.
@@ -581,7 +587,9 @@ def test_add_pass_activates_the_new_pass(app: Any) -> None:
     assert app.pass_draft is None
 
 
-def test_closing_the_gear_on_a_retired_pass_stays_silent(app: Any) -> None:
+def test_closing_the_gear_on_a_retired_pass_stays_silent(
+    app: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
     # The disk sync runs every frame with no popup gate, so the pass the gear targets can be
     # gone by the time the modal closes. Closing must not push a "no such pass" toast at
     # someone who only pressed Escape.
@@ -592,7 +600,11 @@ def test_closing_the_gear_on_a_retired_pass_stays_silent(app: Any) -> None:
     app.pass_settings_name = "gone"
 
     pushed: list[str] = []
-    app.notifications.push = lambda text, *a, **kw: pushed.append(text)
+    # Through monkeypatch, so it is UNDONE: `notifications` is shared by identity across
+    # the session, so a bare assignment swallows every later test's notifications.
+    monkeypatch.setattr(
+        app.notifications, "push", lambda text, *a, **kw: pushed.append(text)
+    )
     app.close_pass_settings()
 
     assert pushed == [], pushed
