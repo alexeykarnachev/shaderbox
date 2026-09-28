@@ -1,8 +1,9 @@
 """The jedi-backed Python side of the intel module (078 D10), on the real stub."""
 
-from shaderbox.intel.python import python_completions, python_lookup
+from shaderbox.intel.python import python_completions, python_lookup, python_spans
 from shaderbox.intel.symbols import SymbolKind
 from shaderbox.scripting.engine import script_stub_for
+from shaderbox.syntax_colors import kind_capture, kind_color
 
 
 def _stub_with(line: str) -> tuple[str, int, int]:
@@ -91,3 +92,71 @@ def test_a_class_object_does_not_offer_the_metaclass_protocol() -> None:
     text, line_index, col = _stub_with("y = Behavior.m")
     names = {s.name for s in python_completions(text, line_index, col)}
     assert "mro" not in names
+
+
+def test_a_definition_takes_the_kind_treesitter_would_give_it() -> None:
+    """`class`, `__init__` and an ordinary `def` are three kinds, because nvim draws three
+    colours: `@type`, `@constructor` and `@function`.
+
+    `__init__` is the one worth pinning. Treesitter's captures are layered and the LAST
+    wins, so it ends at `@constructor` (orange) having passed through `@function.method`
+    (green) -- reading the list top-down gives the wrong answer, which is how it was
+    coloured green before.
+
+    Falsifier: drop the `_CONSTRUCTOR_NAMES` branch and `__init__` comes back green.
+    """
+    source = "\n".join(
+        [
+            "class Behavior(ScriptBehavior):",
+            "    def __init__(self, seed: int):",
+            "        self.seed = seed",
+            "",
+            "    def step(self) -> None:",
+            "        pass",
+            "",
+            "    def __new__(cls):",
+            "        pass",
+        ]
+    )
+    by_name = {span.name: span.kind for span in python_spans(source)}
+    assert by_name["Behavior"] == SymbolKind.PY_CLASS
+    assert by_name["__init__"] == SymbolKind.PY_CONSTRUCTOR
+    assert by_name["__new__"] == SymbolKind.PY_CONSTRUCTOR
+    assert by_name["step"] == SymbolKind.PY_DEFINITION
+    # And the three really are three colours, not three names for one.
+    assert (
+        len(
+            {
+                kind_color(by_name["Behavior"]),
+                kind_color(by_name["__init__"]),
+                kind_color(by_name["step"]),
+            }
+        )
+        == 3
+    )
+
+
+def test_a_parameter_and_a_base_class_take_the_captures_nvim_uses() -> None:
+    """The two the maintainer reported as mismatched: a signature's parameter names and
+    the names inside the inheritance brackets.
+
+    nvim gives a parameter `@variable.parameter` (blue) and a base class `@type` (yellow);
+    both had been drawn as something else. Pinned by CAPTURE rather than by hex, so a
+    theme swap does not break this test -- `test_theme_file.py` owns the hex.
+    """
+    source = "\n".join(
+        [
+            "class Behavior(ScriptBehavior):",
+            "    def __init__(self, seed: int, scale: float = 1.0):",
+            "        pass",
+        ]
+    )
+    spans = python_spans(source)
+    by_name = {span.name: span.kind for span in spans}
+    assert kind_capture(by_name["seed"]) == "@variable.parameter"
+    assert kind_capture(by_name["scale"]) == "@variable.parameter"
+    assert kind_capture(by_name["ScriptBehavior"]) == "@type"
+    # `self` stays the language's own name even in the parameter list.
+    assert kind_capture(by_name["self"]) == "@variable.builtin"
+    # A parameter and a base class are not the same colour, which is the report itself.
+    assert kind_color(by_name["seed"]) != kind_color(by_name["ScriptBehavior"])

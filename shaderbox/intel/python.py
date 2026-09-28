@@ -163,6 +163,10 @@ def python_lookup(text: str, line: int, column: int) -> Symbol | None:
 # ride the word table (105 D2): no parser, no positions, nothing to go stale on an edit.
 _SELF_NAMES: frozenset[str] = frozenset({"self", "cls"})
 
+# The two names treesitter's python grammar draws as `@constructor` rather than
+# `@function.method`, listed by its own `#any-of?` predicate in `highlights.scm`.
+_CONSTRUCTOR_NAMES: frozenset[str] = frozenset({"__init__", "__new__"})
+
 _DUNDER = re.compile(r"^__\w+__$")
 _WORD = re.compile(r"[A-Za-z_]\w*")
 
@@ -208,12 +212,15 @@ def _definition_spans(module: NodeOrLeaf) -> list[SpanSymbol]:
     for node in _walk(module):
         if not isinstance(node, (Function, Class)):
             continue
-        # A class and a function are two ROLES, so they must be two kinds -- the role
-        # table is keyed by role and one kind cannot carry both. The branch above already
-        # distinguishes them structurally.
-        kind = (
-            SymbolKind.PY_CLASS if isinstance(node, Class) else SymbolKind.PY_DEFINITION
-        )
+        # Three kinds because treesitter draws three colours: a `class` name is `@type`,
+        # `__init__` is `@constructor` (the last capture wins, over `@function.method`),
+        # and every other `def` is `@function`.
+        if isinstance(node, Class):
+            kind = SymbolKind.PY_CLASS
+        elif node.name.value in _CONSTRUCTOR_NAMES:
+            kind = SymbolKind.PY_CONSTRUCTOR
+        else:
+            kind = SymbolKind.PY_DEFINITION
         found.append(_span_of(node.name, kind))
     return found
 
@@ -306,4 +313,57 @@ def python_spans(text: str) -> tuple[SpanSymbol, ...]:
     module = parso.parse(text)
     found = _definition_spans(module)
     found.extend(_decorator_and_annotation_spans(module))
+    found.extend(_base_class_spans(module))
+    found.extend(_parameter_spans(module))
     return tuple(found)
+
+
+def _base_class_spans(module: NodeOrLeaf) -> list[SpanSymbol]:
+    """The names a `class` inherits from -- a TYPE at a use site, like an annotation.
+
+    Positional by nature: `ScriptBehavior` in the inheritance list and the same name
+    anywhere else are the same spelling, so the word table cannot tell them apart.
+    """
+    found: list[SpanSymbol] = []
+    for node in _walk(module):
+        if not isinstance(node, Class):
+            continue
+        for child in node.children:
+            if isinstance(child, Operator) and child.value == "(":
+                depth = node.children.index(child)
+                for base in node.children[depth + 1 :]:
+                    if isinstance(base, Operator) and base.value == ")":
+                        break
+                    found.extend(_name_spans(base, SymbolKind.PY_ANNOTATION))
+                break
+    return found
+
+
+def _parameter_name_spans(node: NodeOrLeaf) -> list[SpanSymbol]:
+    # `self` and `cls` are the language's own names wherever they appear, INCLUDING in the
+    # parameter list -- a span here would otherwise override the word table that already
+    # classifies them and colour the first parameter as an ordinary one.
+    if isinstance(node, Name) and node.value in _SELF_NAMES:
+        return _name_spans(node, SymbolKind.PY_SELF)
+    return _name_spans(node, SymbolKind.PY_PARAMETER)
+
+
+def _parameter_spans(module: NodeOrLeaf) -> list[SpanSymbol]:
+    """A function's parameter NAMES -- not its annotations, which `_annotation_spans`
+    already claims as types.
+    """
+    found: list[SpanSymbol] = []
+    for node in _walk(module):
+        if not isinstance(node, BaseNode) or node.type != "param":
+            continue
+        for child in node.children:
+            if isinstance(child, Operator):
+                continue
+            if isinstance(child, BaseNode) and child.type == "tfpdef":
+                # `name : annotation` -- the name only; the annotation is a type and is
+                # claimed by `_annotation_spans`.
+                found.extend(_parameter_name_spans(child.children[0]))
+                break
+            found.extend(_parameter_name_spans(child))
+            break
+    return found

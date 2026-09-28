@@ -24,13 +24,13 @@ from shaderbox.intel.worker import (
     PythonResult,
     PythonWorker,
 )
-from shaderbox.syntax_colors import editor_palette, kind_role, kind_slot
+from shaderbox.syntax_colors import editor_palette, kind_capture, kind_slot
 from shaderbox.tabs.code import (
     PythonFeed,
     accept_python_spans,
     feed_python_word_classes,
 )
-from shaderbox.theme import ROLE_COLOR
+from shaderbox.theme_file import load_theme
 
 # A script with every one of the five cases, at values where they are DISTINGUISHABLE. The
 # names are deliberately reused across roles: `update` is defined once and called once,
@@ -163,10 +163,14 @@ def test_an_import_is_not_a_definition() -> None:
     # `from dataclasses import dataclass` would colour `dataclass` as though the script
     # defined it. Break by reading definitions off `get_names` instead of the parso tree.
     spans = python_spans(SOURCE)
-    # Both DECLARING kinds. A class is a definition too; it draws in a different colour
-    # because a type declaration and a function declaration are two roles, which is about
+    # Every DECLARING kind. A class and a constructor are definitions too; they draw in
+    # different colours because treesitter gives them different captures, which is about
     # colour rather than about what counts as declared here.
-    declaring = {SymbolKind.PY_DEFINITION, SymbolKind.PY_CLASS}
+    declaring = {
+        SymbolKind.PY_DEFINITION,
+        SymbolKind.PY_CLASS,
+        SymbolKind.PY_CONSTRUCTOR,
+    }
     defined = {span.name for span in spans if span.kind in declaring}
     assert "dataclass" not in defined
     assert "math" not in defined
@@ -605,14 +609,18 @@ def test_a_syntax_class_means_one_thing_in_every_buffer() -> None:
     for kind in SymbolKind:
         cls = kind_slot(kind)
         if cls:
-            by_class.setdefault(cls, set()).add(kind_role(kind))
+            by_class.setdefault(cls, set()).add(kind_capture(kind))
 
-    for cls, roles in sorted(by_class.items()):
-        # A class carries one COLOUR, not necessarily one role: roles that share a colour
-        # deliberately share a class, which is what lets the lexer's own six be reused.
-        # `type` and `declaration_type` are the live case -- both yellow, both class 7.
-        colours = {ROLE_COLOR[role] for role in roles}
-        assert len(colours) == 1, f"class {cls} draws {len(colours)} colours: {roles}"
+    theme = load_theme()
+    for cls, captures in sorted(by_class.items()):
+        # A class carries one COLOUR, not necessarily one capture: captures that share a
+        # colour deliberately share a class, which is what lets the lexer's own six be
+        # reused. `@variable.parameter` and `@variable.member` are the live case -- both
+        # blue, both one class.
+        colours = {theme.capture(capture) for capture in captures}
+        assert len(colours) == 1, (
+            f"class {cls} draws {len(colours)} colours: {captures}"
+        )
         # And the palette draws it there, so what is pushed and what is drawn agree.
         assert palette[getattr(Slot, f"SYNTAX_{cls}")] == colours.pop()
 

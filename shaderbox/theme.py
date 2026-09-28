@@ -27,7 +27,7 @@ Color framework (portable to a future non-gruvbox theme):
 
 import re
 import zlib
-from typing import Literal, get_args
+from typing import Literal
 
 from imgui_bundle import imgui
 
@@ -218,11 +218,9 @@ class _ColorBag:
     # accent primary, a state hue, a group tint or SELECT, and three of those meet on one wire.
     GRAPH_HOVER: tuple[float, float, float, float] = _P["fg_0"]
 
-    # Syntax colours are NOT here. A colour means a semantic ROLE, and roles live in
-    # `ROLE_COLOR` below -- one table, keyed by what a name IS rather than by which
-    # language it appeared in. `syntax_colors.py` maps each `SymbolKind` onto a role and
-    # never names a colour, so re-theming is `_P` alone and re-assigning a role is
-    # `ROLE_COLOR` alone.
+    # Syntax colours are NOT here: they live in a theme file, keyed by treesitter capture
+    # name, and are reached through `syntax_colors`. These two are the editor chrome that
+    # happens to be text-coloured.
     SYN_IDENT: tuple[float, float, float, float] = _P["fg_1"]
     SYN_OP: tuple[float, float, float, float] = _P["fg_3"]
 
@@ -631,66 +629,9 @@ def _set_colors(
     style.set_color_(col.modal_window_dim_bg, (0.0, 0.0, 0.0, 0.55))
 
 
-# What a name IS, independent of the language it appears in. A GLSL function declaration
-# and a Python `def` are one role; a `vec3` at a use site and a `Behavior` at its `class`
-# statement are two, because one is the language's own type and the other is a type this
-# buffer declares.
-#
-# The four at the end are about THIS APP's domain rather than about a language, which is
-# why they are roles at all: a uniform the engine drives and one a script drives are
-# different facts about a name, and the editor is where an author learns which.
-SyntaxRole = Literal[
-    "keyword",
-    "type",
-    "builtin",
-    "declaration_type",
-    "declaration_function",
-    "decorator",
-    "member",
-    "ident",
-    "number",
-    "string",
-    "comment",
-    "operator",
-    "engine_uniform",
-    "script_uniform",
-    "pass_sampler",
-    "output",
-]
-SYNTAX_ROLES: tuple[SyntaxRole, ...] = get_args(SyntaxRole)
-
-# The ONE place a role becomes a colour. Every entry is a `_P` lookup, never a literal, so
-# replacing the palette re-themes every surface that draws code -- the editor text, the
-# completion popup, the uniform panel and the graph canvas all read this through
-# `syntax_colors`.
-ROLE_COLOR: dict[SyntaxRole, tuple[float, float, float, float]] = {
-    "keyword": _P["red_b"],
-    "type": _P["yellow_b"],
-    "builtin": _P["green_b"],
-    "declaration_type": _P["yellow_b"],
-    "declaration_function": _P["aqua_b"],
-    # Distinct from `number` (purple_b), which it accidentally shared before this table
-    # existed: a decorator is not a number and the colour had only ever been a free slot.
-    "decorator": _P["orange_n"],
-    # Distinct from `engine_uniform` (blue_b): a member reached through a dot and a uniform
-    # the engine drives are different facts, and one buffer shows both.
-    "member": _P["fg_2"],
-    "ident": _P["fg_1"],
-    "number": _P["purple_b"],
-    "string": _P["green_b"],
-    "comment": _P["gray"],
-    "operator": _P["fg_3"],
-    "engine_uniform": _P["blue_b"],
-    "script_uniform": _P["green_n"],
-    "pass_sampler": _P["aqua_n"],
-    "output": _P["orange_b"],
-}
-
-# Every role has a colour. A member added to the Literal without one would otherwise fail
-# at the first frame that drew it rather than at import.
-assert set(ROLE_COLOR) == set(SYNTAX_ROLES), (
-    f"roles without a colour: {set(SYNTAX_ROLES) - set(ROLE_COLOR)}"
-)
+# The syntax colours moved out of this module: they live in a THEME FILE
+# (`resources/themes/*.theme`), read by `theme_file.load_theme` and reached through
+# `syntax_colors`. This module keeps the app's chrome tokens only.
 
 
 # A `.theme` file may name a palette entry where it would otherwise write three floats:

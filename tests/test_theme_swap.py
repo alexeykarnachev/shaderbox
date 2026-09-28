@@ -61,7 +61,7 @@ _PROBE = [
 
 _REPORT = """
 import json
-from shaderbox.theme import COLOR, ROLE_COLOR
+from shaderbox.theme import COLOR
 
 def hx(c):
     return "#%02x%02x%02x" % (round(c[0]*255), round(c[1]*255), round(c[2]*255))
@@ -77,8 +77,6 @@ for name in dir(COLOR):
         and all(isinstance(c, float) for c in value)
     ):
         out["COLOR." + name] = hx(value)
-for role, colour in ROLE_COLOR.items():
-    out["ROLE." + role] = hx(colour)
 print(json.dumps(out))
 """
 
@@ -119,7 +117,7 @@ def test_the_probe_actually_reached_the_app(swapped: dict[str, str]) -> None:
     other assertion in this file passes for the wrong reason -- a swap that never happened
     reports the same clean result as one that carried perfectly."""
     assert swapped, "the subprocess reported no colours at all"
-    assert len(swapped) > 40, f"only {len(swapped)} colours reported"
+    assert len(swapped) > 30, f"only {len(swapped)} colours reported"
     probe = {c.lower() for c in _PROBE}
     moved = [name for name, colour in swapped.items() if colour.lower() in probe]
     assert len(moved) > 20, (

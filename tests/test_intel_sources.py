@@ -22,7 +22,7 @@ from shaderbox.intel.symbols import SymbolKind, kind_rank
 from shaderbox.paths import DOCUMENT_SCRIPT_BASENAME
 from shaderbox.scripting.engine import ScriptEngine
 from shaderbox.syntax_colors import editor_palette, kind_color, kind_slot
-from shaderbox.theme import ROLE_COLOR
+from shaderbox.theme_file import load_theme
 
 _SHADER = """#version 330
 // uniform float u_commented;
@@ -184,12 +184,12 @@ def test_the_fragment_output_is_scanned_and_the_near_misses_are_not() -> None:
 def test_the_output_variable_reads_orange_and_sorts_with_the_buffers_own_names() -> (
     None
 ):
-    # The ROLE, not a hex and not a class number (079 D11's "generalizable across
-    # themes"). The class is derived from the role's colour, so pinning the number here
-    # would make this test the thing that breaks when a role is added ahead of it --
+    # The CAPTURE, not a hex and not a class number (079 D11's "generalizable across
+    # themes"). The class is derived from the capture's colour, so pinning the number here
+    # would make this test the thing that breaks when a capture is added ahead of it --
     # what matters is that the library draws it in the colour the popup does, which the
     # enum-domain test above asserts for every kind.
-    assert kind_color(SymbolKind.OUTPUT_VARIABLE) == ROLE_COLOR["output"]
+    assert kind_color(SymbolKind.OUTPUT_VARIABLE) == load_theme().capture("@output")
     assert kind_slot(SymbolKind.OUTPUT_VARIABLE) != 0
     assert kind_rank(SymbolKind.OUTPUT_VARIABLE) == kind_rank(SymbolKind.BUFFER_SYMBOL)
 

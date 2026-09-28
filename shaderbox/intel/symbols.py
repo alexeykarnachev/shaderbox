@@ -36,6 +36,8 @@ class SymbolKind(StrEnum):
     PY_API = auto()
     # A member reached through a dot: `context.t`, `math.sin`, `self.phase`.
     PY_MEMBER = auto()
+    # A name bound by a function's signature, at its declaration and nowhere else.
+    PY_PARAMETER = auto()
     # A name the script defines: a class, a function, a variable in scope.
     PY_LOCAL = auto()
     # A vector component reached through a dot: `u_color.rgb`, `uv.x`.
@@ -49,6 +51,8 @@ class SymbolKind(StrEnum):
     # role. Language-neutral: a GLSL `struct` name would be PY_CLASS's role the day GLSL
     # grows one, which is why the roles are not named after Python.
     PY_CLASS = auto()
+    # `__init__` and kin: the name a reader scans for when opening a class.
+    PY_CONSTRUCTOR = auto()
     PY_DEFINITION = auto()
     PY_DECORATOR = auto()
     PY_ANNOTATION = auto()
@@ -90,6 +94,7 @@ _KIND_RANK: dict[SymbolKind, int] = {
     SymbolKind.GLSL_TYPE: 6,
     SymbolKind.PY_LOCAL: 0,
     SymbolKind.PY_MEMBER: 0,
+    SymbolKind.PY_PARAMETER: 0,
     SymbolKind.PY_API: 2,
     SymbolKind.PY_BUILTIN: 5,
     SymbolKind.PY_KEYWORD: 6,
@@ -97,6 +102,7 @@ _KIND_RANK: dict[SymbolKind, int] = {
     # A name the script itself defines sorts with the other document-local names (0); the
     # two fixed vocabularies sort with their language's keywords and builtins.
     SymbolKind.PY_DEFINITION: 0,
+    SymbolKind.PY_CONSTRUCTOR: 0,
     SymbolKind.PY_CLASS: 0,
     SymbolKind.PY_DECORATOR: 0,
     SymbolKind.PY_ANNOTATION: 0,

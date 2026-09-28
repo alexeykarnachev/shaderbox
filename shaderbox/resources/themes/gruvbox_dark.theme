@@ -1,0 +1,134 @@
+# gruvbox dark -- the theme shaderbox ships with.
+#
+# The format is the one vim colorschemes use: a named palette, then highlight
+# groups that either carry a colour or LINK to another group. A link chain
+# resolves to whatever it ends at, so a theme states its structure once and
+# every capture that shares a meaning shares a line.
+#
+# Read by `shaderbox.theme_file.load_theme`. To re-theme, write another file
+# in this format and point the loader at it; nothing in the Python names a
+# colour, so no code changes.
+#
+# Capture names follow treesitter's, which is what editors already speak --
+# `@variable.parameter` means here what it means in nvim, so "it doesn't
+# match my editor" is answerable by reading two files side by side. A capture
+# with no line of its own falls back to its parent (`@function.method` to
+# `@function` to `@variable`), which is treesitter's own rule.
+
+[palette]
+bg0_h        = #161819
+bg0          = #1d2021
+bg0_s        = #222526
+bg1          = #282828
+bg2          = #3c3836
+bg3          = #504945
+bg4          = #665c54
+gray         = #928374
+fg4          = #a89984
+fg3          = #bdae93
+fg2          = #d5c4a1
+fg1          = #ebdbb2
+fg0          = #fbf1c7
+red          = #cc241d
+bright_red   = #fb4934
+green        = #98971a
+bright_green = #b8bb26
+yellow       = #d79921
+bright_yellow = #fabd2f
+blue         = #458588
+bright_blue  = #83a598
+purple       = #b16286
+bright_purple = #d3869b
+aqua         = #689d6a
+bright_aqua  = #8ec07c
+orange       = #d65d0e
+bright_orange = #fe8019
+
+# The vim base groups. Every capture below links into these, so changing what
+# `Identifier` means re-colours parameters, members and fields together --
+# which is the whole reason the indirection exists.
+[groups]
+Normal       = fg1
+Comment      = gray
+Constant     = bright_purple
+String       = bright_green
+Character    = bright_purple
+Number       = bright_purple
+Boolean      = bright_purple
+Float        = bright_purple
+Identifier   = bright_blue
+Function     = bright_green
+Statement    = bright_red
+Conditional  = bright_red
+Repeat       = bright_red
+Label        = bright_red
+Operator     = bright_orange
+Keyword      = bright_red
+Exception    = bright_red
+PreProc      = bright_aqua
+Include      = bright_aqua
+Define       = bright_aqua
+Macro        = bright_aqua
+PreCondit    = bright_aqua
+Type         = bright_yellow
+StorageClass = bright_orange
+Structure    = bright_aqua
+Typedef      = bright_yellow
+Special      = bright_orange
+SpecialChar  = bright_orange
+Delimiter    = bright_orange
+Underlined   = bright_blue
+
+# Treesitter captures. A `link` line points at a group or another capture.
+[captures]
+@variable            = link Normal
+@variable.builtin    = link Special
+@variable.parameter  = link Identifier
+@variable.member     = link Identifier
+@constant            = link Constant
+@constant.builtin    = link Special
+@module              = link Normal
+@string              = link String
+@character           = link Character
+@number              = link Number
+@number.float        = link Float
+@boolean             = link Boolean
+@function            = link Function
+@function.builtin    = link Special
+@function.call       = link Function
+@function.method     = link Function
+@function.macro      = link Macro
+@constructor         = link Special
+@type                = link Type
+@type.builtin        = link Type
+@type.definition     = link Typedef
+@type.qualifier      = link Type
+@attribute           = link PreProc
+@attribute.builtin   = link Special
+@keyword             = link Keyword
+@keyword.function    = link Keyword
+@keyword.return      = link Keyword
+@keyword.type        = link Keyword
+@keyword.operator    = link Keyword
+@keyword.conditional = link Conditional
+@keyword.repeat      = link Repeat
+@keyword.exception   = link Exception
+@keyword.import      = link Include
+@keyword.directive   = link PreProc
+@operator            = link Operator
+@punctuation.bracket   = link Delimiter
+@punctuation.delimiter = link Delimiter
+@punctuation.special   = link Delimiter
+@comment             = link Comment
+@label               = link Label
+@property            = link Identifier
+@field               = link Identifier
+
+# Captures treesitter has no name for, because they are facts about a SHADER
+# document rather than about a language: a uniform the engine drives, a
+# sampler wired to another pass, the one name a fragment shader writes.
+# They are spelled like captures and resolve the same way.
+@uniform.engine      = link Identifier
+@uniform.script      = green
+@uniform.sampler     = aqua
+@output              = link Special
