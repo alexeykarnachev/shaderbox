@@ -27,35 +27,41 @@ feature; brief points at the superseder).
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
 <!-- As of 2026-09-28. -->
-**The instancing wave shipped: 102, 103, 104 and 105, built in parallel against a frozen
-contract.** 102 and 104 are `partial`; their rows say what remains.
+**The instancing wave (102-105) shipped, 106 unified the colour system, 107 swept the gate
+layer.** 102 and 104 stay `partial`; their rows say what remains.
 
-**Two premises measurement reversed, and the rows carry the detail.** I7 is live for additive
-and absent for `screen`, so the UI names the mode to avoid and an inverted gate trips if that
-ever changes. In 105, editor spans are anchored and follow edits, so the burst regime the
-spec predicted does not happen.
+**107's finding is the one to carry forward.** Its spec predicted the weak checks would be
+ones asserting on source text; three were. The dominant shape is worse: a fixture whose case
+gives the correct and the broken implementation the same answer. The signature is a test
+whose own comment names the falsifier, against a fixture that never constructs it -- the
+watcher test passed against the historical bug it was named for. **Reading a test says what
+its author intended; only breaking the code says what it catches.**
 
-**The lesson that cost most.** Four reviewers converged on one class: producers and consumers
-were gated and the call joining them was not, so deleting a wiring site left the suite green.
-A derivation buried in a draw function is one no test can reach, and "unreachable" and
-"correct" look identical from outside.
+Every structural question came back ABSENT, and the live-fact wave closed empty because the
+flagged figures are frozen history. The code's shape is sound; the instruments were the
+subject.
+
+**Open, deliberately not done unattended:** `ui_models.py::save`'s orphan-sweep `keep` flag
+has no observable effect, because an earlier per-uniform unbind resolves every case the
+suite builds. Whether it is load-bearing is a design question.
 
 **ShaderBox is still getting off imgui.** `graph_canvas` owns the node picture, hit-testing
-and gestures (098); imgui owns the window, tab row and menus, and the next surface to move is
-a question, not a plan.
+and gestures (098); the next surface to move is a question, not a plan.
 
-One finding is open and it is upstream's: a canvas node row carrying a widget has its role
-colour covered by the widget's own panel. Reported with the case; no workaround, because
-tinting something adjacent would hide it.
+One finding is upstream's: a canvas node row carrying a widget has its role colour covered
+by the widget's own panel. Reported; no workaround, since tinting something adjacent hides
+it.
 
-**Unmeasured:** the canvas past twenty passes at the GPU; no brake on copilot cost (082); the
-GL thread if the throttle falls short. Annotations and decorators share one colour, which a
-fifth `SymbolKind` would close.
+**Unmeasured:** the canvas past twenty passes at the GPU; no brake on copilot cost (082).
+A light theme is out of scope in 106 -- a palette swap carries hues, not the assumptions
+built on a dark ground.
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 107 | nightly_sweep | done | An unattended pass whose subject turned out to be the GATE layer rather than the source: the structural questions -- misfiling, dependency direction, missing seams, comment rot -- all came back ABSENT, and the live-fact wave closed empty because every flagged figure is frozen history. Mutation breaks across four slices found the real class, and it is not the one the spec predicted: not a check asserting on source text (three instances) but a fixture whose case gives the correct and the broken implementation the same answer. Seven fixed, each verified by re-running the break that defeated it -- the watcher test that passed against the historical bug it was named for, a freeze test whose uniform started at the value it would freeze to, a layout test whose ungrouped pass sorted after both group members, a rename read back off the object the method had just mutated. Spec: `ai_docs/features/107_nightly_sweep/01_spec.md`. |
+| 106 | syntax_role_system | done | A colour means a semantic ROLE, one table, and a theme change touches one layer: `_P` (what colours exist) then `ROLE_COLOR` (what each role looks like) then `_KIND_ROLE` (what each kind IS), with both the colour and the syntax class DERIVED rather than hand-written beside each other. Replaced a vocabulary where one token was named after a language, a decorator drew the number colour because that token happened to be free, and no type role existed at all. The editor library widened `Theme.syntax` to sixteen classes on request, so nothing had to be collapsed and the per-language palette is gone. Re-theming is GATED: the test rewrites the palette into a temp tree and imports it in a subprocess, because three import-time copies make an in-process swap a no-op that passes. A light theme is explicitly out of scope with its reasons named. Spec: `ai_docs/features/106_syntax_role_system/01_spec.md`. |
 | 105 | semantic_highlighting | done | `self` drew plain because the host's only channel into the editor was position-blind -- 302 of 316 identifier occurrences in a real script, `self` being 41. Both halves shipped: `self`/`cls`/dunders on the word table (edit-invariant, no positions needed) and definitions, decorators and annotations as spans, through `ed_set_spans`, which the editor session built and landed mid-wave. Two spec premises fell to measurement: spans are ANCHORED and follow edits, so the predicted colour-drops-to-plain burst regime does not happen and the debounce is justified by head-of-line blocking instead; and parso answers all three positional cases at 6.6 ms against jedi's 7.5, so nothing was deferred. `render_state` gained a span-feed dimension, without which a span answer landing on an idle buffer would never reach the screen at all. Spec: `ai_docs/features/105_semantic_highlighting/01_spec.md`. |
 | 104 | instancing_onramp | partial | Twelve surfaces so an author who was never told about instancing can find it, ordered wrong-text before missing-text. The help modal no longer calls `vs_uv` and the full-screen quad fixed; `vs_quad` is documented; the README and the example ordering landed; the uniforms panel and the graph both mark an instanced pass. The graph badge is a title-string mark, not a struct field: `libgraph_canvas.so` is a vendored binary with no C source in this repo, verified, so the `BodyRow` route the spec anticipated was not buildable here. Review killed a false justification that had shipped in help text -- a `flat in` cannot arrive from a `lib:` include, because the resolver splices function bodies only. **Partial:** item 5 (the script stub's signature) and item 12's blend prose wait on their owning files; `@instances` dict-literal completion has no seam, since script-tab completion is jedi-only and carries no document data. Spec: `ai_docs/features/104_instancing_onramp/01_spec.md`. |
 | 103 | copilot_instancing | done | The copilot was misinformed rather than uninformed: its own dry-run called the shipped Entity Flock example broken. It now writes the generator and reads back statistics -- settled by arithmetic, since 20k entities is ~320 KB against a JSON schema -- with a statistics-only sink on the dry-run path that reports without writing, so the 063 isolation ruling is satisfied rather than bent. `sb_instanced` joined `ENGINE_DRIVEN_UNIFORMS`, which one line fixed across the probe, the stub, `_format_uniforms` and the uniform row. Review found and fixed a live defect in the new code: population motion compared the first sample against the LAST, so a flock that orbits back to where it started reported STATIC -- the same false verdict the feature exists to end, in a narrower window. Spec: `ai_docs/features/103_copilot_instancing/01_spec.md`. |
