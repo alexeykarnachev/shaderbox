@@ -54,6 +54,14 @@ spans -- and no ABI call keeps that promise. The general mechanism is the delive
 planned here and implemented by a separate editor session (D-C), and it needs more syntax
 slots: nine exist and zero are free.
 
+**Two decisions closed the contract's open questions.** A script key that does not land is
+now ONE rule that WARNS -- to the logs and the notifications -- with no branch per case
+(D-F), which reverses 079 D5's silence for every key rather than giving instancing its own
+handling. And `Pass.render` returns what happened for one place to read (D-G), the shared
+root rather than a patch per defect. D-F's blast radius reaches beyond instancing: the
+script engine's skipped/driven/orphan split, two `conventions.md` bullets, and the tests
+that currently pin the silence.
+
 **Next is the split** -- four features in dependency order, contract before copilot before
 on-ramp, with highlighting parallel. Numbering is the implementing session's call.
 

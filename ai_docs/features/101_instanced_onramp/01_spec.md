@@ -89,21 +89,14 @@ error strip empty.
   and whose script sends `@instances` to it reports `soft_errors: []` after a full compile
   and two renders, holds `['pos','radius']` in `pending_instances`, and draws the plain
   fullscreen gradient.
-  **The open question, and it is a boundary question on an existing decision.** Two rules
-  already exist and they disagree here:
-  - *the orphan rule* (079 D5, the script-engine bullet of `conventions.md ## Design decisions`,
-    `engine.py:969`): a key naming a
-    uniform no pass declares is skipped SILENTLY, because writing the script before the
-    shader is normal authoring.
-  - *the reserved-vocabulary rule* (the `@instances` bullet of `conventions.md ## Design decisions`): an unrecognised `@` key is
-    a HARD error, because `@` is engine vocabulary and a mistyped `@instance` otherwise
-    costs a blank frame with an empty strip.
-
-  The code currently applies the first. The stated rationale for the second applies just
-  as well: the result is the same blank-ish frame with the same empty strip. **The
-  session's reading is that `@instances` should be loud, because it is already in the
-  loud namespace** -- but this is 079 D5's boundary, so it is the maintainer's call and
-  is deliberately left open.
+  **ANSWERED by D-F, and answered by generalising rather than by choosing.** Two rules
+  existed and disagreed here -- the orphan rule (079 D5, `engine.py:969`) skipped a key
+  naming no declared uniform SILENTLY, while the reserved-vocabulary rule made an
+  unrecognised `@` key a hard error. D-F collapses both into one: every key that does not
+  land WARNS, to the logs and the notifications, with no branch per case. So this is not
+  "instancing gets its own handling"; instancing stops being a special case, and 079 D5's
+  silence -- which is what hid this defect and is what let two rules disagree -- goes with
+  it. The implementing wave should find ONE site, not one per case.
 - **I2. State (b) has no signal anywhere.** READ: word-boundary grep for instancing
   vocabulary across `shaderbox/` finds nothing in `tabs/`, `panels/`, `popups/`,
   `copilot/`, `help_content.py`, `profiling.py`, `ui_models.py`. Not the error strip
@@ -158,19 +151,43 @@ Five symptoms, one cause: **`Pass.render` is where the population is judged, and
 only return.** No caller reads a verdict, which is exactly why `_instances_error` has
 nowhere to go.
 
-The session's proposal, offered as a candidate and NOT as a decision: the draw returns a
-per-frame outcome —
+The fix, adopted as D-G: the draw returns a per-frame outcome —
 
     InstancedOutcome = drew(n) | fullscreen | empty | refused(why) | not_instanced
 
 — which one surface reads. That would close I2, I3, I4 (the dead field becomes the return
 value), give I5 something to say, and make I1 observable so a rule can be applied to it.
 
-**Treat this sceptically.** A large diff is justified only when the symptom is provably one
-instance of a systemic class and the fix is a shared primitive applied across every instance;
-five symptoms with one cause is that shape. It is ALSO exactly the kind of unifying story that
-sounds right and over-reaches, and the test that keeps it honest is whether the sibling call
-sites are unchanged except for the fix. It wants an adversarial read before it becomes a design.
+**ADOPTED (D-G).** A large diff is justified when the symptom is provably one instance of a
+systemic class and the fix is a shared primitive applied across every instance; five symptoms
+with one cause is that shape. The test that keeps it honest during implementation: the sibling
+call sites must be UNCHANGED except for the fix, which a reviewer or a trace has to show. If
+that cannot be shown the generalisation was speculation -- but the default is the shared root.
+
+---
+
+## What D-F costs beyond instancing
+
+D-F is not an instancing change. It reverses 079 D5 for EVERY script key, so the
+implementing wave touches the whole script-engine reporting path and must expect fallout
+the research did not measure:
+
+- **The `skipped` / `driven` / `orphan_keys` split** (`engine.py:89-96`) was built around
+  silence being a normal outcome. With every non-landing key warning, `orphan_keys` stops
+  being a quiet category and the copilot's `ScriptProbe` (which already reports orphans)
+  changes shape alongside C7.
+- **`conventions.md ## Design decisions` carries 079 D5 in the script-engine bullet and
+  the `@instances` bullet carries the reserved-vocabulary rule.** Both must be rewritten to
+  the single rule in the same wave, or the docs will state the behaviour the code no longer
+  has. This is the "docs are living" rule, and it is the largest doc edit in the wave.
+- **Tests pin the silence.** `tests/test_script_engine.py` and `tests/test_instances_routing.py`
+  assert quiet outcomes for orphan keys (the routing file's own docstring calls the silence
+  "deliberately SILENT (079 D5)"). Those assertions INVERT rather than relax -- each one is a
+  place the new rule must be seen to fire, which is also how the new behaviour gets gated.
+- **Notification volume is the risk to watch.** "Warn on every non-landing key, every frame"
+  is a per-tick event on a path that runs at frame rate. The warning needs to be
+  edge-triggered (on the key's state CHANGING) rather than level-triggered, or an author
+  mid-edit gets a notification per frame. The research did not measure this; the wave must.
 
 ---
 
@@ -615,7 +632,7 @@ Four features, in dependency order. Numbering is D-E, the implementing session's
 
 | Feature | Contents | Gates on |
 |---|---|---|
-| instancing contract | I1–I7. The candidate `InstancedOutcome` below is NOT a settled type | maintainer's I1 boundary call, then an adversarial read of the candidate |
+| instancing contract | I1–I7, via D-F (one warning rule, no branching) and D-G (`InstancedOutcome` at the shared root) | nothing — both decisions are made |
 | copilot integration | C1–C10 | the contract's outcome type, which C1 reads |
 | the on-ramp | D1–D10 | the contract and D-D, so it documents what is true |
 | highlighting | H-requirements above, cross-repo | nothing; parallel from the start |
@@ -631,11 +648,6 @@ with a recorded precedent of shipping broken.
 
 ## Open questions for the maintainer
 
-- **I1's boundary**: does `@instances` reaching a pass with no `flat in` follow the ORPHAN rule
-  (silent, 079 D5) or the RESERVED-VOCABULARY rule (loud, the `@instances` bullet of `conventions.md`)? The session's
-  reading is loud; the decision is 079 D5's boundary and therefore the maintainer's.
-- **Does the unified `InstancedOutcome` proposal survive an adversarial read**, or is the point
-  fix per defect the right size?
 - **Byte offsets or line/col** for the span ABI.
 - **Does the 063 dry-run isolation ruling bend for populations** (C6), and in what shape?
 - **Which of D1–D10 are in, and in what order** once the contract is fixed.
