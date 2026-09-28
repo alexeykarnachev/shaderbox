@@ -4,7 +4,8 @@
     "passes": {
         "swarm": {
             "target": {
-                "dtype": "f2"
+                "dtype": "f2",
+                "blend": "additive"
             }
         }
     }

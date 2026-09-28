@@ -20,7 +20,14 @@ from pydantic import ValidationError
 from shaderbox.constants import DEFAULT_FS_FILE_PATH
 from shaderbox.document import DEFAULT_PASS_NAME, Document, load_graph
 from shaderbox.media import Image
-from shaderbox.pass_graph import PassEntry, PassGraph, PassSource, TargetConfig
+from shaderbox.pass_graph import (
+    BLEND_MODES,
+    BlendMode,
+    PassEntry,
+    PassGraph,
+    PassSource,
+    TargetConfig,
+)
 from shaderbox.paths import (
     DOCUMENT_JSON_BASENAME,
     GRAPH_JSON_BASENAME,
@@ -74,10 +81,20 @@ def _image(path: Path, color: tuple[int, int, int]) -> Path:
 
 
 def test_a_graph_round_trips_every_field(tmp_path: Path) -> None:
+    # `blend` sits away from its own default (`additive`) on purpose (102 D5b): a field left
+    # at its default round-trips whether or not this test's enumeration mentions it at all,
+    # which is exactly the gap that let a new TargetConfig field ship unpinned.
+    non_default_blend: BlendMode = next(
+        m for m in BLEND_MODES if m != TargetConfig().blend
+    )
     graph = PassGraph(
         output="composite",
         passes={
-            "scene": PassEntry(target=TargetConfig(dtype="f4", scale=0.5, wrap=True)),
+            "scene": PassEntry(
+                target=TargetConfig(
+                    dtype="f4", scale=0.5, wrap=True, blend=non_default_blend
+                )
+            ),
             "trail": PassEntry(iterations=3, target=TargetConfig(filter_linear=False)),
             "composite": PassEntry(position=(120.0, -8.5)),
         },
@@ -86,6 +103,40 @@ def test_a_graph_round_trips_every_field(tmp_path: Path) -> None:
     path.write_text(json.dumps(graph.model_dump()))
     assert load_graph(path) == graph
     assert load_graph(path).passes["composite"].position == (120.0, -8.5)
+    assert load_graph(path).passes["scene"].target.blend == non_default_blend
+
+
+def test_a_graph_round_trip_fails_if_a_target_field_is_dropped(tmp_path: Path) -> None:
+    """The enumeration above is BY HAND (`TargetConfig(dtype=..., scale=..., ...)`); this
+    proves the model itself, not the test's memory of it, is what the round-trip checks.
+
+    Walks every `TargetConfig` field, builds a graph with ONE field away from its default,
+    round-trips it through the REAL `model_dump` -> JSON -> `load_graph` path (not hand-built
+    JSON, which would only prove the reader and miss a write-side `exclude=True`), and
+    asserts the loaded value survived -- so a field that fails to persist is caught even if
+    nobody remembers to add it to `test_a_graph_round_trips_every_field` by hand.
+    """
+    field_probe: dict[str, object] = {
+        "scale": 0.5,
+        "dtype": "f4",
+        "filter_linear": False,
+        "wrap": True,
+        "blend": next(m for m in BLEND_MODES if m != TargetConfig().blend),
+    }
+    assert set(field_probe) == set(TargetConfig.model_fields), (
+        f"probe is missing TargetConfig fields: "
+        f"{set(TargetConfig.model_fields) - set(field_probe)}"
+    )
+    for field, non_default_value in field_probe.items():
+        target = TargetConfig().model_copy(update={field: non_default_value})
+        graph = PassGraph(output="main", passes={"main": PassEntry(target=target)})
+        path = tmp_path / f"{field}_{GRAPH_JSON_BASENAME}"
+        path.write_text(json.dumps(graph.model_dump()))
+        loaded_value = getattr(load_graph(path).passes["main"].target, field)
+        assert loaded_value == non_default_value, (
+            f"{field!r} did not survive a round-trip: wrote {non_default_value!r}, "
+            f"loaded {loaded_value!r}"
+        )
 
 
 def test_a_corrupt_position_costs_that_position_and_nothing_else(

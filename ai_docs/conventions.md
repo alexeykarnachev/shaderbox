@@ -609,6 +609,23 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   the checkpoint path in hand: the omission is the invariant, not an oversight, and
   "save should be complete" is the edit that breaks it.
 
+- **Blend mode is a per-pass `TargetConfig` field, applied only on the instanced draw path
+  (feature 102 D5).** `BlendMode` is a `Literal` beside `TargetDtype`, `get_args`-enumerable
+  as `BLEND_MODES` (`pass_graph.py`), with `additive` (`ONE, ONE`) the default so every
+  existing document draws identically to before this field existed; the GL factor pairs live
+  in `blend.py`, separate from `pass_graph.py` because only the former needs a GL context.
+  We decided the pass-settings combo is HIDDEN for a fullscreen pass rather than shown and
+  inert: `Pass.render` clears its target on every call, instanced or not, so a fullscreen
+  pass always draws once onto an empty destination and no mode changes its output. Revisit
+  if that unconditional clear ever becomes conditional. **This reverses only the first of
+  feature 100 decision 7's three claims** ("additive, no depth, no per-frame sort") --
+  "no depth" and "no per-frame sort" were free because additive is order-independent, and
+  under `alpha` they are not: overlapping alpha sprites draw in population order, which is a
+  standing limitation stated in the mode's own tooltip, not left as an unwritten consequence.
+  `TargetConfig.allocates_same_as` (NOT `==`) is what a target-equality check must use, so
+  picking a mode from the combo does not read as a format change and drop a feedback pass's
+  history.
+
 - **A script's bulk data travels under a RESERVED `@` key inside a pass block, and the
   engine owns every buffer (feature 100).** `@instances` carries a dict of named numpy
   columns; `@` cannot begin a GLSL identifier or a pass name, so the namespace is decidable
