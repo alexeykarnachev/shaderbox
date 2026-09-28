@@ -146,14 +146,24 @@ class RevertExecutor:
                     ui_documents[document_id].ui_state.ui_name
                 )
 
+        # A lib revert that does not happen is RECORDED, the way a document's is. Silently
+        # dropping the False left a turn that touched only a lib file reporting "nothing to
+        # restore" while the assistant's edit was still on disk -- the notice asserting the
+        # opposite of the truth.
         for address in cp.snapshotted_libs:
             text = cp.lib_snapshot_text(address)
-            if text is not None and self._revert_lib_file(address, text):
-                result.reverted_libs.append(address)
+            if text is None or not self._revert_lib_file(address, text):
+                result.unrestorable.append(address)
+                result.failed_restores.append(address)
+                continue
+            result.reverted_libs.append(address)
 
         for address in cp.created_libs:
-            if self._revert_created_lib(address):
-                result.reverted_libs.append(address)
+            if not self._revert_created_lib(address):
+                result.unrestorable.append(address)
+                result.failed_restores.append(address)
+                continue
+            result.reverted_libs.append(address)
 
         for document_id in cp.created_scripts:
             if document_id in ui_documents and self._revert_created_script(document_id):

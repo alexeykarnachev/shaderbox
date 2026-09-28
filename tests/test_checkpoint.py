@@ -5,7 +5,11 @@ Pure: no GL, no App. Document snapshots use a fake `save_into` (the real one is 
 from pathlib import Path
 from types import SimpleNamespace
 
-from shaderbox.copilot.checkpoint import CheckpointStore, TurnCheckpoint
+from shaderbox.copilot.checkpoint import (
+    CheckpointStore,
+    RevertResult,
+    TurnCheckpoint,
+)
 
 
 def _fake_document(name: str = "Document") -> object:
@@ -156,3 +160,57 @@ def test_clear_deletes_everything(tmp_path: Path) -> None:
     store.clear()
     assert store.sealed_ids() == []
     assert not tmp_path.exists()  # the whole checkpoints root is gone (decision 4)
+
+
+# ---- RevertResult.as_notice: a revert that did not happen must not read as one ----
+
+
+def test_a_lib_revert_that_failed_does_not_read_as_nothing_to_restore() -> None:
+    """The notice is the ONLY thing the user and the agent see after a revert.
+
+    A turn that touched only a lib file, whose revert then failed, recorded nothing:
+    `reverted_libs` stayed empty and so did `unrestorable`, so `touched_anything` was
+    False and the notice read "nothing to restore for that turn" -- while the assistant's
+    edit was still live on disk. Asserting the opposite of the truth is worse than
+    silence, because the user stops looking.
+
+    Falsifier: drop the `unrestorable`/`failed_restores` append from either lib loop in
+    `revert.py` and this reads "nothing to restore" again.
+    """
+    nothing = RevertResult()
+    assert not nothing.touched_anything
+    assert nothing.as_notice() == "Reverted: nothing to restore for that turn."
+
+    failed = RevertResult(
+        unrestorable=["lib:noise.glsl"], failed_restores=["lib:noise.glsl"]
+    )
+    notice = failed.as_notice()
+    assert "nothing to restore" not in notice, (
+        f"a failed lib revert still read as a no-op: {notice}"
+    )
+    assert "lib:noise.glsl" in notice, f"the notice did not name the file: {notice}"
+    assert "the restore failed" in notice, (
+        f"the notice did not say the restore was ATTEMPTED: {notice}"
+    )
+
+
+def test_the_notice_tells_a_missing_snapshot_apart_from_a_failed_restore() -> None:
+    """Two reasons, two remedies: a retry helps a failed restore and never a missing one.
+
+    Falsifier: fold `failed_restores` back into one "(no snapshot)" clause -- a file the
+    app DID try to restore is then reported as one it never captured, which sends the
+    user looking for a checkpoint that exists.
+    """
+    both = RevertResult(
+        unrestorable=["Document A", "lib:noise.glsl"],
+        failed_restores=["lib:noise.glsl"],
+    )
+    notice = both.as_notice()
+
+    assert "Document A" in notice and "lib:noise.glsl" in notice
+    assert "(no snapshot)" in notice and "(the restore failed)" in notice
+    # The one with a snapshot must not be filed under the reason that has none.
+    no_snapshot_clause = notice.split("(no snapshot)")[0]
+    assert "lib:noise.glsl" not in no_snapshot_clause, (
+        f"a file that WAS captured is reported as never captured: {notice}"
+    )

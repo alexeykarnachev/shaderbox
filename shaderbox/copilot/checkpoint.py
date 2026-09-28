@@ -95,9 +95,18 @@ class RevertResult:
         )
         if self.unrestorable:
             gap = " " if notice else ""
-            notice += (
-                f"{gap}Could not restore {', '.join(self.unrestorable)} (no snapshot)."
-            )
+            # Two reasons, and they are not interchangeable: nothing was captured to
+            # restore FROM, or the restore was attempted and failed. A retry helps only
+            # the second, and `failed_restores` is exactly that subset.
+            missing = [n for n in self.unrestorable if n not in self.failed_restores]
+            if missing:
+                notice += f"{gap}Could not restore {', '.join(missing)} (no snapshot)."
+                gap = " "
+            if self.failed_restores:
+                notice += (
+                    f"{gap}Could not restore {', '.join(self.failed_restores)} "
+                    "(the restore failed)."
+                )
         return notice
 
 
