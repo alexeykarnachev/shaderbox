@@ -192,3 +192,39 @@ both the same answer.** Examples:
 - `SILENT_KEY_FAIL_REASONS` drop is caught by `test_script_warn_path.py`, out of slice.
 - `test_button_tiers.py`'s AST detector matches the literal alias `imgui`; every file
   uses that spelling, so it is equivalent under the actual convention.
+
+## W-1 — FIVE LANDED, each verified by re-running the break that defeated it
+
+| # | what | the break that used to pass |
+|---|---|---|
+| 1 | `theme.py` alpha override | drop the override branch; two fields draw opaque |
+| 2 | `test_keymap_disjoint` (two tests) | make the bind unreachable, keep the string |
+| 3 | `watch.py` root-by-path | revert to `if i == 0` -- the historical bug |
+| 4 | `rename_document` persistence | delete `_save_ui_document` |
+| 5 | `_write_one` last-good freeze | freeze at the live value |
+| 6 | `rank_layout` group anchor | sort a column by strip order alone |
+
+### What the fixtures were actually wrong about
+Not one of these was a missing assertion. Every one asserted the right property against
+a case where BOTH implementations give the same answer:
+- `side` sorted after both group members, so strip order and group order agreed.
+- `u_b` started at 0.0 with no last-good, so "freeze at last-good" and "freeze at live"
+  were the same number.
+- No compile unit had a source ahead of its root, so index 0 always WAS the root.
+- The rename was read back off the object the method had just mutated.
+
+### Three things learned by running, not reading -- each cost an attempt
+- `rank_layout` derives strip order from the WIRING via `plan_passes`, ignoring its own
+  `names` argument. Two attempts to interleave a pass by reordering the dict or the
+  argument changed nothing.
+- The script engine recompiles on an explicit `reload`, never by polling mtime. Writing a
+  new script file and ticking runs the OLD behaviour.
+- A clean tick restores last-good over a live edit, so the "move the live value" step has
+  to come after the last good tick, not before.
+
+### REMAINING
+- the turn time-budget flag (copilot slice)
+- `ui_models.py::save` orphan sweep, masked end-to-end by an earlier unbind
+- W-2: `theme.py::_muted` (dead), `tests/test_graph_view.py`'s eight-helper rig cluster
+- W-3: point `pass_settings.py:140` and `tabs/uniforms.py:61` at `instanced_pass_keys`
+- W-R: `dev_flow.md`'s Module map
