@@ -432,19 +432,24 @@ def test_set_text_drops_the_spans_and_the_revision_moves_so_they_are_re_asked() 
 
 
 def test_a_class_outside_the_palette_is_refused() -> None:
-    # The ceiling is 9 and a class beyond it is REFUSED (-1) rather than clamped, so a host
-    # built against a wider palette than the build has learns it at the call instead of
-    # drawing in a colour the library invented. Every slot `_KIND_SLOT` holds is inside it.
+    # A class beyond the palette is REFUSED (-1) rather than clamped, so a host built
+    # against a wider palette than the build has learns it at the call instead of drawing
+    # in a colour the library invented.
+    #
+    # The ceiling is read from the mirrored enum rather than written here: it moved from 9
+    # to 15 when the library widened `Theme.syntax` to [16]Color, and a hardcoded 9 would
+    # have made this test the thing that fails on a re-vendor instead of the thing that
+    # verifies one.
     editor = _python_editor()
-    assert editor.set_spans([(0, 0, 0, 3, 12)], editor.get_undo_index()) == -1
-    assert editor.set_spans([(0, 0, 0, 3, 9)], editor.get_undo_index()) == 1
-    for kind in (
-        SymbolKind.PY_SELF,
-        SymbolKind.PY_DUNDER,
-        SymbolKind.PY_DEFINITION,
-        SymbolKind.PY_DECORATOR,
-    ):
-        assert 1 <= kind_slot(kind) <= 9, kind
+    # Counted from the mirrored enum's NAMES, not from its values: `SYNTAX_1` is 14 and
+    # `SYNTAX_8` is 25, so the values are not contiguous and subtracting two of them gives
+    # a number in the wrong space. The CLASS is what `set_spans` takes; the slot value is
+    # only where the library indexes its own theme.
+    ceiling = sum(1 for slot in Slot if slot.name.startswith("SYNTAX_"))
+    assert editor.set_spans([(0, 0, 0, 3, ceiling + 1)], editor.get_undo_index()) == -1
+    assert editor.set_spans([(0, 0, 0, 3, ceiling)], editor.get_undo_index()) == 1
+    for kind in SymbolKind:
+        assert 0 <= kind_slot(kind) <= ceiling, kind
     editor.close()
 
 

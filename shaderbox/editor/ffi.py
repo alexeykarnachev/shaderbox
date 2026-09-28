@@ -131,6 +131,16 @@ class Slot(IntEnum):
     # 8 and 9 index them by NAME, never as SYNTAX_1 + n.
     SYNTAX_8 = 25
     SYNTAX_9 = 26
+    # Classes 10-15, appended after Syntax_9 so nothing existing moved. The library's
+    # `Theme.syntax` is [16]Color and refuses a class past 15 rather than clamping it,
+    # so a slot this enum does not name fails at the call instead of drawing something
+    # plausible.
+    SYNTAX_10 = 27
+    SYNTAX_11 = 28
+    SYNTAX_12 = 29
+    SYNTAX_13 = 30
+    SYNTAX_14 = 31
+    SYNTAX_15 = 32
 
 
 class ViewFlag(IntEnum):

@@ -22,7 +22,7 @@ if not LIB.exists():
 
 class Span(ctypes.Structure):
     """Ed_Span: start and exclusive end as 0-based line and codepoint column,
-    and a class 1..9. What ed_set_spans copies in."""
+    and a class 1..15. What ed_set_spans copies in."""
     _fields_ = [("line", ctypes.c_int32), ("col", ctypes.c_int32),
                 ("end_line", ctypes.c_int32), ("end_col", ctypes.c_int32),
                 ("cls", ctypes.c_int32)]
@@ -80,7 +80,7 @@ SLOTS = {
         # number would silently paint the wrong thing. Order here mirrors the
         # enum, so this list is also the assertion that the order held.
         "Syntax_7 Whitespace Bracket_Match Search_Match Caret_Text "
-        "Syntax_8 Syntax_9".split()
+        "Syntax_8 Syntax_9 Syntax_10 Syntax_11 Syntax_12 Syntax_13 Syntax_14 Syntax_15".split()
     )
 }
 
@@ -2174,6 +2174,17 @@ def main() -> int:
     # here instead of in an embedder's theme.
     check("Syntax_8 follows Caret_Text", SLOTS["Syntax_8"], SLOTS["Caret_Text"] + 1)
     check("Syntax_9 follows Syntax_8", SLOTS["Syntax_9"], SLOTS["Syntax_8"] + 1)
+    # The second widening, 10..15, appended after 9 the same way; the
+    # colour round trip below is what says each slot reaches its own class.
+    for n in range(10, 16):
+        check(f"Syntax_{n} follows Syntax_{n - 1}", SLOTS[f"Syntax_{n}"], SLOTS[f"Syntax_{n - 1}"] + 1)
+    rgb = ctypes.c_float(), ctypes.c_float(), ctypes.c_float(), ctypes.c_float()
+    for n in range(10, 16):
+        check(f"Syntax_{n} is a slot this build knows", lib.ed_set_color(h, SLOTS[f"Syntax_{n}"], n / 16.0, 0.0, 0.0, 1.0), True)
+    lib.ed_color(h, SLOTS["Syntax_13"], *[ctypes.byref(c) for c in rgb])
+    check("and each holds its own colour", round(rgb[0].value, 4), round(13 / 16.0, 4))
+    check("a slot past the end refuses", lib.ed_set_color(h, SLOTS["Syntax_15"] + 1, 0.0, 0.0, 0.0, 1.0), False)
+    lib.ed_reset_theme(h)
     lib.ed_set_text(h, b"uniform float uOne;\nvec3 c = uTwo;\nfloat s = uThree;\n")
     DISTINCT = {7: (1.0, 0.0, 1.0), 8: (1.0, 0.0, 0.0), 9: (0.0, 1.0, 0.0)}
     for cls, rgb in DISTINCT.items():
@@ -2271,7 +2282,11 @@ def main() -> int:
     check("the applied set FOLLOWED the edit", coloured(CYAN), {(1, c) for c in range(13, 18)})
     check("a push against the old revision is refused", push([(1, 0, 1, 2, 7)], stale), 0)
     check("and changed nothing", coloured(CYAN), {(1, c) for c in range(13, 18)})
-    check("a class outside 1..9 is refused", push([(1, 0, 1, 2, 10)]), -1)
+    check("a class outside 1..15 is refused", push([(1, 0, 1, 2, 16)]), -1)
+    check("class 15 is inside it", push([(1, 0, 1, 2, 15)]), 1)
+    check("and reads back", cls(1, 0), 15)
+    # Back to the followed span, at the columns the edit above moved it to.
+    push([(1, 13, 1, 18, 8)])
     check("class 0 is refused too", push([(1, 0, 1, 2, 0)]), -1)
     check("and neither changed anything", coloured(CYAN), {(1, c) for c in range(13, 18)})
     check("a push of nothing empties the set", push([]), 1)
