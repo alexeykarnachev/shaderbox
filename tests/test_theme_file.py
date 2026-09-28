@@ -355,8 +355,24 @@ def test_a_well_formed_capture_still_resolves(name: str) -> None:
 
     `@function.call.chained` is the case that matters -- it is NOT in the theme file, so
     it exercises the dotted-parent fallback the guard sits in front of.
+
+    Asserts the VALUE, not merely that one came back. `assert theme.capture(name)` passes
+    on any colour, so a guard that quietly resolved `@variable.parameter` to the root's
+    hue satisfied it -- the shape this file exists to prevent, in the test meant to prevent
+    it. Each name is checked against what the file itself states for it, or for the nearest
+    parent it declares.
     """
-    assert load_theme().capture(name)
+    theme = load_theme()
+    # The colour the FILE gives this name: its own line if it has one, else the nearest
+    # declared parent. Derived from `theme.captures` rather than from `capture()`, so the
+    # method under test is not its own reference.
+    probe = name
+    while probe and probe not in theme.captures:
+        probe, _, _ = probe.rpartition(".")
+    assert probe, f"{name} has no declared ancestor -- pick a name the theme covers"
+    assert theme.capture(name) == theme.captures[probe], (
+        f"{name} resolved to something other than {probe}'s colour"
+    )
 
 
 def test_a_kind_draws_one_colour_in_the_buffer_and_the_popup() -> None:
@@ -498,7 +514,7 @@ def test_the_app_only_invents_captures_treesitter_does_not_define() -> None:
     )
 
 
-def test_the_class_budget_counts_the_plain_class_too(tmp_path: Path) -> None:
+def test_the_class_budget_counts_the_plain_class_too() -> None:
     """The ceiling assert must cover `_PLAIN_CLASS`, which is spent LAST and so is the
     class most likely to overflow.
 
@@ -507,10 +523,13 @@ def test_the_class_budget_counts_the_plain_class_too(tmp_path: Path) -> None:
     `editor_palette` with `AttributeError: 'Slot' has no attribute 'SYNTAX_16'` -- a
     message naming a slot rather than the budget that was exceeded.
 
-    Built by giving ten captures distinct hues and pointing the rest at one shared hue, so
-    the capture table lands ON the ceiling and only plain crosses it. That boundary is the
-    whole point: a theme that overflows the table too is caught either way, and would pass
-    this test with the fix reverted.
+    Driven through the REAL `set_theme`, so the module's own assert is what has to fire.
+    An earlier version re-derived the assignment inline and asserted against its own
+    arithmetic; it passed with `_assert_class_budget` reduced to `pass`, because it never
+    called it -- a test of the test.
+
+    Built so the capture table lands ON the ceiling and only plain crosses it: a theme
+    that overflows the table too is caught either way and would pass with the fix reverted.
     """
     shipped = theme_path(DEFAULT_THEME).read_text()
     used = sorted(set(_KIND_CAPTURE.values()))
@@ -535,37 +554,32 @@ def test_the_class_budget_counts_the_plain_class_too(tmp_path: Path) -> None:
                 out.append(f"{name} = link Keyword")
                 continue
         out.append(line)
+    text = "\n".join(out)
 
-    theme = parse_theme("\n".join(out), "budget")
-    # Re-derive the assignment the module would build for this theme.
-    by_colour = {
-        theme.capture(capture): cls for cls, capture in _LEXER_CLASS_CAPTURE.items()
-    }
-    plain = theme.capture("@variable")
-    host = 7
-    highest = 0
-    for capture in sorted(used):
-        colour = theme.capture(capture)
-        if colour == plain:
-            continue
-        if colour not in by_colour:
-            by_colour[colour] = host
-            host += 1
-        highest = max(highest, by_colour[colour])
-    plain_class = by_colour.get(plain, host)
-
-    ceiling = sum(1 for slot in Slot if slot.name.startswith("SYNTAX_"))
-    # The fixture is only meaningful at the boundary: the capture table must FIT while
+    # The fixture is only meaningful at the boundary: the capture TABLE must fit while
     # plain does not, or it cannot tell the two asserts apart.
-    assert highest <= ceiling, (
-        f"fixture drifted: the capture table needs {highest} classes, so this theme is "
-        f"caught by either assert and proves nothing"
+    classes, plain_class = _classes_for(parse_theme(text, "budget"))
+    ceiling = sum(1 for slot in Slot if slot.name.startswith("SYNTAX_"))
+    assert max(classes.values()) <= ceiling, (
+        f"fixture drifted: the capture table needs {max(classes.values())} classes, so "
+        f"either assert catches it and this proves nothing"
     )
     assert plain_class > ceiling, (
         f"fixture drifted: plain landed on {plain_class}, inside the ceiling {ceiling}"
     )
-    # And the live module's own budget is the max of the two, so it would catch this.
-    assert max(highest, plain_class) > ceiling
+
+    # Now make the MODULE resolve it, so its own assert is the thing under test.
+    written = theme_path("budget_probe")
+    written.write_text(text)
+    try:
+        with pytest.raises(AssertionError, match="syntax classes"):
+            set_theme("budget_probe")
+    finally:
+        written.unlink()
+        set_theme(DEFAULT_THEME)
+
+    # And the app is left on a working theme rather than half-switched.
+    assert kind_color(SymbolKind.PY_KEYWORD) == load_theme().capture("@keyword")
 
 
 def _classes_for(theme: Theme) -> tuple[dict[str, int], int]:
