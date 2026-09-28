@@ -9,11 +9,13 @@ ship a chord with two owners. The audit that decided each cell is
 
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from imgui_bundle import imgui
 
 from shaderbox import commands
+from shaderbox.app import App
 from shaderbox.commands import (
     COMMAND_SPECS,
     DEFAULT_LEADER,
@@ -27,6 +29,7 @@ from shaderbox.commands import (
 from shaderbox.editor.ffi import Editor, KeyCode, Mode
 from shaderbox.editor.input import KeyEvent, KeyMod
 from shaderbox.hotkeys import _RESERVED_CHORDS, _collect_binding, _handle_clipboard
+from shaderbox.ui_models import EditorSettings
 
 _DOCS = Path("shaderbox/resources/editor")
 _VIM_DOC = _DOCS / "vim_coverage.md"
@@ -285,15 +288,56 @@ def test_no_binding_claims_a_chord_the_host_serves_on_false() -> None:
     chord, so `f` here does not collide with the host's Ctrl+F. The check is on how a row
     is REGISTERED, which is what `_apply_editor_settings_to` passes to `ed_bind`.
     """
-    registered = [(key, 0, True) for key, _ in LEADER_BINDINGS]
-    for key, mods, leader in registered:
-        if leader or mods == 0:
-            continue
-        assert key not in _RESERVED_CHORDS["vim"], (
-            f"Ctrl+{key} is registered as a bare chord, so `ed_key` now consumes it and "
-            "the host approximation in `_handle_reserved_chord` stops running"
-        )
-        assert key != "K", "K is served by the host's lookup path on an unconsumed key"
+    # DRIVE the registrar with a spy rather than reading `app.py`'s source. Two earlier
+    # versions of this check were vacuous in different ways: one built its own
+    # `[(key, 0, True) for ...]` list and then skipped every row, so its assertions ran
+    # zero times; the other searched the source for `editor.bind(key, index, leader=True)`,
+    # which survives making that very call unreachable. Only calling the function shows
+    # what it registers.
+    registered: list[tuple[str, int, bool]] = []
+
+    class _BindingSpy:
+        """Records `bind` and absorbs every other editor call.
+
+        Generic rather than a listed set of stubs, so a new setting added to
+        `_apply_editor_settings_to` does not turn this test red for a reason that has
+        nothing to do with what it checks.
+        """
+
+        def bind(self, key: str, index: int, leader: bool = False) -> None:
+            registered.append((key, index, leader))
+
+        def clear_bindings(self) -> None:
+            registered.clear()
+
+        def __getattr__(self, _name: str) -> object:
+            return lambda *args, **kwargs: None
+
+    class _App:
+        # `app_state` is a read-only property on the real App, so the spy stands in for
+        # the whole holder rather than being injected into one.
+        app_state = SimpleNamespace(editor_settings=EditorSettings(keymap="vim"))
+
+    App._apply_editor_settings_to(_App(), _BindingSpy())  # type: ignore[arg-type]
+
+    assert registered, "the registrar bound nothing -- this test reached no call site"
+
+    # EVERY registration must go through the leader prefix. That is what makes a leader
+    # row safe: it is reached after the prefix, never as a bare chord, so it cannot take
+    # a reserved Ctrl chord away from the host approximation that implements it.
+    bare = [key for key, _, leader in registered if not leader]
+    assert not bare, (
+        f"these bindings register as BARE chords, so `ed_key` consumes them and the host "
+        f"approximation in `_handle_reserved_chord` stops running: {bare}"
+    )
+
+    # And the leader table really does contain letters that would be dangerous bare --
+    # without this the check above is satisfied by an empty table.
+    dangerous = {key for key, _ in LEADER_BINDINGS} & (_RESERVED_CHORDS["vim"] | {"K"})
+    assert dangerous, (
+        "the leader table holds no reserved letter, so `leader=True` is protecting "
+        "nothing and this test would pass against an empty registration"
+    )
 
 
 def test_the_registration_shape_is_the_one_the_app_actually_uses() -> None:
@@ -318,7 +362,7 @@ def test_the_host_clipboard_leaves_bare_ctrl_v_to_the_editor() -> None:
     # No app is needed: a handler that declines this event returns before reading one. Passing
     # None is the assertion — if the host ever claims Ctrl+V here, this raises instead of
     # quietly pasting, which is the louder failure.
-    assert not _handle_clipboard(None, editor, event)
+    assert not _handle_clipboard(None, editor, event)  # type: ignore[arg-type]
     assert editor.key(event.code, event.mods, event.text) is True
     assert editor.get_mode() is Mode.VISUAL_BLOCK, (
         "Ctrl+V reached the editor but did not enter blockwise"
