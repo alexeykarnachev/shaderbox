@@ -25,3 +25,32 @@ Six scans, one question each, presence + one example only (no inventories).
   `return build(), False` makes the cache rebuild on every hit while still
   reporting `changed=False`, and `test_the_cache_entry_belongs_to_its_handle`
   stays green. The test reads only the boolean, never the returned index.
+- live facts: **PRESENT**. `dev_flow.md`'s Module map (~800 lines) is a closed-list
+  inventory citing dozens of symbols and paths as current-tense claims. Spot-checked
+  entries still resolve, but nothing gates the section against the code it describes.
+- comment history-narration: **ABSENT**. Searched repo-wide for narration markers;
+  every hit is a single-sentence reason naming a current constraint, often with a
+  measurement. That is the convention working, not a finding.
+- repeating defect class (from 40 commit BODIES): **PRESENT, and it is the night's
+  sharpest finding.** Six instances in five days of ONE shape: *a gate that asserts on
+  SOURCE TEXT or on an import-time copy rather than driving the runtime object, so it
+  reports green while the mechanism underneath is missing.* Instances: b6db29f5
+  (three `inspect.getsource` gates), 3d9727b2 (wiring ungated), e7e7accd (seam complete
+  on one side only), 7645da03 (in-process palette swap is a no-op), 861473ea (same shape,
+  second palette), 3cd8a2a2 (gate read the repair, not the artifact).
+
+### Verified independently by the main session
+- `intel/document.py:41` cache gate is vacuous — break confirmed, suite green.
+- `theme.py::_muted` has no call sites — grep confirmed.
+- `tests/test_keymap_disjoint.py:303` is a SECOND live instance of the class:
+  `assert "editor.bind(key, index, leader=True)" in source`. Replacing the call with
+  `... if False else None` keeps the searched string, kills the binding, and all 14
+  tests pass.
+
+### A blanket ban on `inspect.getsource` would be the WRONG instrument
+Four files use it. Three are AST-based structural checks (`test_button_tiers.py`,
+`test_modal_chrome.py`) or pair the source check with a behavioural assertion
+(`test_probe_clock_and_turn_end.py` asserts `_facts_for(None)` really renders at 0.0).
+Those are correct. The dangerous shape is narrower: a POSITIVE presence assertion on
+source text standing in for behaviour. Absence assertions ("this pattern is gone") are
+also fine — a deleted thing has no runtime to drive.
