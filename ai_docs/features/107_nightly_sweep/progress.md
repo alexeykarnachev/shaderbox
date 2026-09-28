@@ -135,3 +135,60 @@ FALSE TRAILS (do not re-litigate):
   resolver tests are real.
 - A group-tint assertion that looked like a stale-scope fixture: traced and disproved,
   `view.scope` is reset to root after `dissolve_group`. Retracted by instrumentation.
+
+## W-0 COMPLETE — all four slices
+
+| slice | breaks | caught | vacuous |
+|---|---|---|---|
+| copilot | 25 | 22 | 1 |
+| UI / app | 13 | 13 | 0 |
+| editor / intel | 63 | 59 | 4 |
+| engine / core | ~90 | ~76 | 14 |
+
+**The suite is strong where it was written against a spec and weak where a fixture
+happens to satisfy the assertion by accident.** The engine/core slice holds most of the
+yield; the UI slice holds none.
+
+### The recurring sub-shape, which is NOT what the spec predicted
+The spec named "asserts on source text". That is real (3 instances) but the dominant
+shape in the inventory is different and worse: **a fixture that cannot distinguish the
+correct implementation from the broken one, because the case it builds happens to give
+both the same answer.** Examples:
+- `watch.py` root-path match: `path == root_path` -> `i == 0` survives, because no
+  fixture ever builds a multi-source compile unit, so index 0 always IS the root. The
+  file's own docstring narrates this exact historical bug and the test named for it does
+  not construct the case.
+- `pass_graph.py::rank_layout` group anchor: the test's own comment names the falsifier
+  ("sort a column by strip order alone"), and that falsifier survives because the
+  fixture's group members are already strip-adjacent.
+- `instanced.py::_extent_expression`: dropping `/ u_aspect` survives.
+- `canvas_choice_groups` dedup: the fixture never produces a duplicate.
+
+### W-1 ITEMS LANDED
+1. `theme.py::resolve_palette_refs` alpha override — my own, one commit old, no test at
+   all. Two fields (`wire_outline`, `pin_ring`) would have drawn opaque. Fixed + gated;
+   the exact mutation now fails.
+2. `test_keymap_disjoint.py` — BOTH the zero-iteration loop and its source-string
+   sibling. Now drives `_apply_editor_settings_to` with a recording spy. Both breaks
+   caught, including the one that defeated the previous fix.
+
+### W-1 REMAINING, ranked by what a defect would cost
+- `watch.py` root-path (a wrong file reloads a document — user-visible, and a KNOWN
+  historical bug with a test named for it)
+- `copilot/backend.py::rename_document` never re-reads from disk, so a rename that does
+  not persist passes
+- `scripting/engine.py::_write_one` last-good fallback (freezes at the wrong value)
+- `pass_graph.py::rank_layout` group anchor
+- `ui_models.py::save` orphan sweep, masked end-to-end by an earlier unbind
+- the turn time-budget flag (copilot slice)
+
+### FALSE TRAILS — do not re-litigate
+- `_resolve_behavior_class` fallback scan and `_upload_instances`'s `program is None`
+  guard are UNREACHED by any fixture, not vacuous checks. Coverage gaps.
+- `document.py::begin_frame` idempotency: a second independent guard masks it, and the
+  test's own docstring says so.
+- Two `ui_models.py` carry-forward guards are individually equivalent and correctly fail
+  when broken together — genuine defence in depth.
+- `SILENT_KEY_FAIL_REASONS` drop is caught by `test_script_warn_path.py`, out of slice.
+- `test_button_tiers.py`'s AST detector matches the literal alias `imgui`; every file
+  uses that spelling, so it is equivalent under the actual convention.
