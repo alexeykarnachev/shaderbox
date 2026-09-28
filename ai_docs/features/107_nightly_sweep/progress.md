@@ -107,3 +107,31 @@ a tree under a running mutation corrupts its measurement in the other direction.
 **The rule for every future mutating wave: one git worktree per agent, created before
 launch.** A restore-and-verify discipline protects an agent's own sequence and does
 nothing for a concurrent reader.
+
+## W-0 — UI/app slice DONE
+
+**13 breaks, 13 caught, ZERO vacuous.** Several the agent expected to be hollow were
+caught, including the button-tier AST detector, the command-chord prose gate, and an
+absence check that fires even on a planted call inside a comment.
+
+Taken with the copilot slice's 22-of-25, **the suite is in far better shape than the
+premise of this sweep assumed.** W-1 should be a short, named list rather than a broad
+hardening pass.
+
+W-2 item confirmed by the main session: `tests/test_graph_view.py` carries EIGHT dead
+rig helpers as one cluster — `_open_graph`, `_click_at`, `_let_the_double_click_lapse`,
+`_press_key`, `_close_graph`, `_hover_fields`, `_drag_node`, `_park`. The agent listed
+seven; `_park` looks live at four occurrences but is called only from `_hover_fields`
+and `_drag_node`, which are themselves dead, so the whole cluster goes. Commit db68cfb1
+("Retire the imgui canvas the library replaced") moved gesture coverage to
+`test_graph_canvas_gestures.py` and left the rig behind.
+
+FALSE TRAILS (do not re-litigate):
+- `test_button_tiers.py`'s AST detector matches the literal alias `imgui`, so
+  `import imgui_bundle.imgui as ig` would evade it. Every file uses
+  `from imgui_bundle import imgui`, so it is equivalent under the actual convention.
+- `test_uniform_panel.py`'s docstring claims to pin "the row's three states" while the
+  tests drive only the resolver. A documentation overclaim, not a vacuous gate — the
+  resolver tests are real.
+- A group-tint assertion that looked like a stale-scope fixture: traced and disproved,
+  `view.scope` is reset to root after `dissolve_group`. Retracted by instrumentation.
