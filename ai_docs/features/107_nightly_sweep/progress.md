@@ -65,3 +65,45 @@ Two of its complaints were FALSE POSITIVES worth knowing about, because both are
 multi-line regex matches that a per-line grep cannot show: "Phase **1** ... its
 **finding**s" and "W-**2** — **Dead** code" both match a defect-count pattern that is
 looking for "delete the 6 dead symbols". Reworded rather than argued with.
+
+## W-0 — copilot slice DONE
+
+25 breaks, 22 caught, 1 vacuous, 2 false trails. **The copilot suite is strong** —
+the density of real catches here is the finding, and it argues against a broad
+"strengthen the tests" wave.
+
+VACUOUS: `copilot/agent.py::run_turn`'s `time_budget_hit` flag. Setting it to `False`
+while leaving the `break` in place still passes
+`test_turn_time_budget_forces_a_final_reply`. The turn ends either way because the
+fixture scripts only one tool round, so "the budget forced an early stop" and "the
+script ran out" are indistinguishable. A reader would believe the wall-clock budget is
+pinned; only the one-round-ends-after-one-round shape is.
+
+FALSE TRAILS (do not re-litigate):
+- `document.py::canvas_size_for`'s output special-case — equivalent under the fixture,
+  because `TargetConfig().scale` defaults to 1.0 and the test never sets another. A
+  scaled non-output pass would likely expose a real gap; not probed.
+- `shader_lib/parser.py::top_level_names` depth guard — caught by the suite, but the
+  specific nested-`else if` assertion passes without it, since the regex does not match
+  that syntax at any depth.
+
+## PROCESS FAILURE, mine, and it recurred after I had already logged it
+
+I ran four file-mutating W-0 agents against ONE shared working tree. The copilot agent
+reported the hazard unprompted: files outside its slice showed foreign mutations
+appearing and disappearing mid-run, and it could not assert a clean tree at exit
+because siblings were still writing.
+
+I had already written this exact lesson into this file earlier tonight, after a
+reviewer's first measurements were taken against a probe agent's debris. I logged it
+and then did it again at four times the scale.
+
+Consequences seen: a stop-hook caught me reporting status while a sibling's mutation
+was mid-flight; one file showed as modified with byte-identical content (an mtime
+touch); `shaderbox/watch.py` is currently carrying a live unrestored break from an
+agent that is still running, and I am deliberately NOT restoring it, because clearing
+a tree under a running mutation corrupts its measurement in the other direction.
+
+**The rule for every future mutating wave: one git worktree per agent, created before
+launch.** A restore-and-verify discipline protects an agent's own sequence and does
+nothing for a concurrent reader.
