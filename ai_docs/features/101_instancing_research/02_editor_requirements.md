@@ -126,14 +126,23 @@ draws, then fix, and say in the commit which break was tried. A gate that has no
 to fail is not known to work -- and this one has a recorded precedent of passing while
 broken.
 
-Note also that `hl_active` being copy-pasted at three sites is the duplicate to REMOVE
-rather than to guard: one procedure, three callers.
+Note that the `hl_active` expression is repeated at several sites (`:224`, `:235`, `:957`,
+and the gate at `:531`, which is not identical -- it omits the word-table term). We mention it
+only because a change to what activates highlighting has to reach all of them; what to do
+about that is yours.
 
 ## R4 — More syntax classes than exist today
 
 MEASURED: `Theme.syntax` is `[10]Color` (`src/theme.odin:53`), index 0 meaning "no class",
-so nine usable slots. Four are taken by the lexer's own classes (string, comment, number,
-operator). In ShaderBox the remaining five are all assigned. **Zero are free.**
+so nine usable classes. **SIX are the built-in lexers' own** — 1 keyword, 2 string, 3 comment,
+4 number, 5 operator, 6 builtin, as `src/theme.odin:48` and `ffi/README.md:952-954` both
+state. That leaves **three host-assignable (7, 8, 9)**, and ShaderBox has all three: engine
+uniforms, pass samplers, the fragment output. **Zero are free.**
+
+(An earlier draft of this document said "four lexer-owned, five assigned". That reached the
+right total of nine by double-counting 1 and 6 as host assignments — ShaderBox shares those
+two with the lexer rather than owning them. The conclusion was right and the arithmetic was
+not, which matters because this is the number you would size the work from.)
 
 The first consumer needs four more distinctions in one language (a builtin variable like
 `self`, a constructor, a method definition, a type annotation) while keeping every existing
@@ -141,9 +150,22 @@ one. A general mechanism cannot cap a host's vocabulary at the number GLSL happe
 
 `Token_Class` (`src/language.odin:13-21`) has seven members and is deliberately
 language-neutral -- *"adding a language is adding a lexer and a case"*. **It should not need
-to change**: it is the LEXER's vocabulary, and everything here is host-fed. Extending the
-theme's class space is the part that matters. `src/theme.odin:175-182` already maps slots to
-the array by name, which is a hint about how cheap this is, but the count is your call.
+to change**: it is the LEXER's vocabulary, and everything here is host-fed. `src/theme.odin:175-182`
+already maps classes to the array by name, which is a hint about how cheap widening is, but
+the count is your call.
+
+**One option we did not want to foreclose, since it may be cheaper than widening:** the
+ceiling could be per-LANGUAGE rather than global. GLSL does not use every class Python would
+want, and a per-language palette would give a second language its distinctions out of space
+the first is not using, with no change to the array's size. We have no view on which is right
+-- it is named only so the choice is made deliberately rather than by default.
+
+## R4a — Say what a host must not assume about class numbering
+
+Related to R4 and cheap to state: whatever the ceiling becomes, a host needs to know whether
+class numbers are stable across versions of the library, and whether a class it does not
+recognise is safe to push. ShaderBox stores class numbers in its own tables and would like
+them to be a contract rather than an implementation detail.
 
 ## R5 — The first consumer is asynchronous, and that is a design input
 
@@ -157,6 +179,32 @@ the policy for what to do about it -- re-request, or accept a brief mismatch -- 
 library must make the situation detectable rather than silently misapplying a stale set.
 
 Nothing here asks the library to do the async work. It asks it not to assume synchrony.
+
+**A size and rate budget, so this is designed against numbers rather than against a shape.**
+MEASURED on the first consumer: ~300 names on a 123-line script, so **hundreds of spans per
+push**, not thousands. Push rate is at most once per edit burst (ShaderBox will debounce
+rather than push per keystroke). The worst case we care about is a 4000-line buffer. We ask
+for the budget explicitly because `src/word_class.odin:149-156` records this exact class of
+defect being got wrong once — 4000 lines cost 159 ms against the lexer's own 37 before the
+cursor fix — and a span API with no stated size expectation invites the same shape.
+
+## R5a — Say how a span set is replaced, cleared, and what survives `ed_set_text`
+
+Three questions the word table answers and a span API must too, because a host cannot guess
+them: does a push REPLACE the previous set or add to it; is there a clear; and what happens to
+a pushed set when the buffer is replaced wholesale. The word table has all three
+(`ed_clear_word_classes` at `ffi/ffi.odin:230`, replace-on-set at `src/word_class.odin:92`,
+class 0 removes at `:70-73`), which is why it is easy to write against.
+
+## R5b — Say which wins when a span and a word-table entry cover the same identifier
+
+**This one we cannot answer for you, and we cannot proceed without it.** R6 keeps both
+mechanisms, and the first consumer deliberately feeds BOTH for one language: `self` and the
+dunders on the word table, definitions and the rest as spans. So the two channels will cover
+the same buffer and, eventually, the same word. Today `word_classes_apply` fills only gaps the
+lexer left (`src/word_class.odin:21-25, 184-186`); whether host spans are a third tier above
+both, or join that same gap-filling pass, is a CONTRACT question rather than an implementation
+one. Whatever you choose, it wants to be stated rather than emergent.
 
 ## R6 — The word table stays, and keeps its job
 
@@ -178,6 +226,15 @@ ShaderBox will use exactly this split: `self`/`cls`/dunders on the word table (i
 parser, and correct because those names mean the same thing everywhere), spans only for the
 genuinely positional distinctions. GLSL stays entirely on the word table, because there is no
 GLSL parser and the regex index it does have is name-keyed by type.
+
+## A note on R3's configuration
+
+R3 asks for host spans to draw under `Language.None` because that is the configuration the
+README promises them in, and because the library records that exact gate shipping broken once.
+Worth knowing while you weigh it: **ShaderBox itself will not be in that configuration** — it
+sets `Language.Python` on script tabs, so `hl_active` is already true for it. R3 protects the
+generality the documentation claims, not this consumer. We still want it, and we would rather
+say which it is than let it read as the gate guarding our case.
 
 ## Deliverable
 
