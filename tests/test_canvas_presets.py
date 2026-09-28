@@ -20,7 +20,7 @@ from PIL import Image as PILImage
 from shaderbox.constants import DEFAULT_CANVAS_SIZE
 from shaderbox.core import Pass
 from shaderbox.document import DEFAULT_PASS_NAME, Document, as_canvas_size
-from shaderbox.media import Image
+from shaderbox.media import Image, MediaDetails, MediaWithTexture
 from shaderbox.pass_graph import PassEntry, PassGraph, clamp_canvas_size
 from shaderbox.paths import shader_lib_root
 from shaderbox.render_preset import resolve_dims
@@ -263,3 +263,47 @@ def test_a_malformed_canvas_size_falls_back_to_the_default(
     doc = Document(gl=gl_ctx, canvas_size=None)
     assert doc.canvas_size == DEFAULT_CANVAS_SIZE
     doc.release()
+
+
+def test_two_media_of_one_size_offer_a_single_row(gl_ctx: moderngl.Context) -> None:
+    """The builder de-duplicates by SIZE, so two media uniforms of identical dimensions
+    offer one row rather than two.
+
+    No fixture in this file loads media at all, so deleting the `seen` guard passed the
+    whole suite -- the dedup had no case that could tell it from its absence. Two
+    same-sized textures is the smallest one that can.
+    """
+    doc = _one_pass(gl_ctx, (800, 600))
+    render_pass = doc.render_pass
+    texture = gl_ctx.texture((640, 480), 4)
+
+    class _Media(MediaWithTexture):
+        # `MediaWithTexture` is an ABC and the builder reads only `.texture`, so a
+        # stand-in is honest here: loading two real images would test the loader.
+        @property
+        def texture(self) -> moderngl.Texture:
+            return texture
+
+        @property
+        def details(self) -> MediaDetails:
+            raise NotImplementedError
+
+        def update(self, t: float) -> None:
+            pass
+
+        def release(self) -> None:
+            pass
+
+        def save(self, path: Path) -> None:
+            raise NotImplementedError
+
+    try:
+        for name in ("u_media_a", "u_media_b"):
+            render_pass.uniform_values[name] = _Media()
+        sizes = [size for _label, size in _presets(doc)]
+        assert sizes.count((640, 480)) == 1, (
+            f"the same media size is offered {sizes.count((640, 480))} times: {sizes}"
+        )
+    finally:
+        texture.release()
+        doc.release()
