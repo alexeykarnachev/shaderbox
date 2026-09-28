@@ -75,27 +75,33 @@ its tools carry populations — in the only shape the boundary permits.
   (`core.py:629-631`), and it also surfaces to the USER as an editable uniform row. A
   one-line fix at the root corrects the probe, the stub, `_format_uniforms` and the UI at
   once. This is 103's because D1/D5's domain widening is where it belongs, and because the
-  copilot is the consumer that acts on the false report.
+  copilot is the consumer that acts on the false report. **Revisit if** a mode flag ever needs
+  to be script-settable — at which point it stops being engine-owned and the whole
+  reserved-name treatment changes with it.
 - **D4b. The script stub teaches `@instances`.** MEASURED: generating the stub for the flock
   document with its script removed offers `sb_instanced` among the scriptable uniforms and
   mentions `@instances` nowhere. That stub is the copilot's FIRST sight of an instanced
   document (`tools/script.py:116-120`), which makes it more likely first contact than the
   tools C10 names. D4a removes the false offer; this adds the true one. Shares a code site
   with 104 item 5 (the human-facing half) — whichever wave lands first does it, and the other
-  cites it.
+  cites it. **Revisit if** the stub stops being generated from introspection, which is what
+  makes "it can know the pass is instanced" true.
+- **D5. The API doc is fixed AND its gate is widened to a domain that can catch the next
+  drift.** The generated doc asserts every value is plain Python while the engine requires
+  numpy under `@instances`. **Revisit if** the engine's accepted value space stops being
+  enumerable from one place — the gate's domain depends on it being so. Its gate enumerates from `_stub_kind`, which dispatches on
+  `moderngl.Uniform`, so a reserved key is outside its domain BY CONSTRUCTION — the
+  checker-narrows-its-own-domain shape. Fixing the text without fixing the domain leaves the
+  next drift unguarded. The new domain comes from the engine's accepted value space.
+
 - **D6. C9 is 103's work, and 102's outcome does not reach it by itself.** Found in review:
   each spec pointed at the other, and neither owned it. `_probe_frame` (`backend.py:154`)
   calls `document.render(...)` and **discards the return**, computing the facts line from
   pixels. So even with 102's outcome type in place, threading it out of `document.render`
   into `_render_facts_for` and the facts string is copilot-side plumbing. 102 correctly lists
-  copilot work as out of scope; this decision claims it here so it is owned.
-- **D5. The API doc is fixed AND its gate is widened to a domain that can catch the next
-  drift.** The generated doc asserts every value is plain Python while the engine requires
-  numpy under `@instances`. Its gate enumerates from `_stub_kind`, which dispatches on
-  `moderngl.Uniform`, so a reserved key is outside its domain BY CONSTRUCTION — the
-  checker-narrows-its-own-domain shape. Fixing the text without fixing the domain leaves the
-  next drift unguarded. The new domain comes from the engine's accepted value space.
-
+  copilot work as out of scope; this decision claims it here so it is owned. **Revisit if**
+  `probe_render` stops deriving its facts from pixels, which is the reason the outcome has to
+  be threaded rather than read.
 ## What this wave fixes
 
 | id | Defect | Closed by |

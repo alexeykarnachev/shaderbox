@@ -138,10 +138,13 @@ Everything below follows from those two.
   mode**, rather than leaving 100's decision half-standing.
 
   **Three consequences a review found, none obvious:**
-  - **`set_target` reallocates the canvas whenever the target differs** (`core.py:284-299`),
-    which bumps `target_generation`, which `document.py:656-689` reads to DROP the feedback
-    history. So a blend-only change would silently wipe a feedback pass's trail. `set_target`
-    must compare only the allocation-relevant fields.
+  - **A blend-only change would silently wipe a feedback pass's trail, by TWO paths.**
+    `Document.set_pass_target` returns early only when `render_pass.target == target`
+    (`document.py:672`) and otherwise calls `drop_feedback` unconditionally; separately
+    `Pass.set_target` reallocates on any inequality (`core.py:287-299`) and bumps
+    `target_generation`, which `_feedback_canvas` reads at `document.py:797` to drop the
+    history a second way. **Both equality checks must compare only the allocation-relevant
+    fields**, or a mode the user picks from a combo destroys their trail.
   - **Blend is applied only on the instanced path today** — a fullscreen pass returns at
     `core.py:634-636` before the blend block. Decide whether the per-pass control applies to
     fullscreen passes too (a behaviour change to every existing document) or whether the

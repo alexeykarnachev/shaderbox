@@ -112,9 +112,12 @@ off.
 
 `ffi/ffi.odin:531` gates the retokenize block on
 `s.lang != .None || word_classes_len(...) > 0`. With language None and no word table --
-precisely "a host doing its own colouring" -- the block never runs. `hl_active` is computed
-identically at `:224`, `:235` and `:957`, `layout_emit` receives nil when it is false
-(`:548`), and `ed_class_at` short-circuits on it (`:1006`).
+precisely "a host doing its own colouring" -- the block never runs. `hl_active` decides the
+same thing at four sites in THREE different forms: `:224` and `:957` are
+`lang != .None || word_classes_len > 0`; `:235` is `lang != .None` alone, the post-clear form
+inside `ed_clear_word_classes` where the table is empty by construction; and the gate at
+`:531` is a fourth spelling. `layout_emit` receives nil when the flag is false (`:548`), and
+`ed_class_at` short-circuits on it (`:1006`).
 
 **This exact bug has already shipped once, for the word table.** `ffi/ffi.odin:522-527`
 records it verbatim: *"gating the whole block on a language made word classes silently inert
@@ -126,10 +129,8 @@ draws, then fix, and say in the commit which break was tried. A gate that has no
 to fail is not known to work -- and this one has a recorded precedent of passing while
 broken.
 
-Note that the `hl_active` expression is repeated at several sites (`:224`, `:235`, `:957`,
-and the gate at `:531`, which is not identical -- it omits the word-table term). We mention it
-only because a change to what activates highlighting has to reach all of them; what to do
-about that is yours.
+We name the sites only because a change to what activates highlighting has to reach all of
+them, and they do not agree today. What to do about that is yours.
 
 ## R4 — More syntax classes than exist today
 
@@ -164,8 +165,10 @@ the first is not using, with no change to the array's size. We have no view on w
 
 Related to R4 and cheap to state: whatever the ceiling becomes, a host needs to know whether
 class numbers are stable across versions of the library, and whether a class it does not
-recognise is safe to push. ShaderBox stores class numbers in its own tables and would like
-them to be a contract rather than an implementation detail.
+recognise is safe to push. The concrete artifact is `shaderbox/syntax_colors.py::_KIND_SLOT`,
+a literal map from the host's own symbol kinds to class numbers, written into source. A
+renumbering upstream silently recolours every one of them, which is why this wants to be a
+contract rather than an implementation detail.
 
 ## R5 — The first consumer is asynchronous, and that is a design input
 

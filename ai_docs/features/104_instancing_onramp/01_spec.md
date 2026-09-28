@@ -1,10 +1,13 @@
 # 104 — The instancing on-ramp
 
-Feature 100's instanced passes are usable only by someone already told they exist. Ten
+Feature 100's instanced passes are usable only by someone already told they exist. Twelve
 surfaces, all in, ordered by harm.
 
 Research and evidence: `ai_docs/features/101_instancing_research/01_spec.md` (Part 3, D1–D10).
-Gates on 102 and 103, so that what this teaches is true.
+
+**Gates on 102 for ONE item only.** An earlier draft said this feature gates on 102 and 103;
+review measured that no item consumes 103's output at all, and that only item 6 (documenting
+the blend choice) waits on 102. Everything else is unblocked — see D1.
 
 ## Goal
 
@@ -39,7 +42,9 @@ about shaders is false for an instanced pass.
   no icon-font glyph; and on the graph canvas the jitter rule bites, since an overlay using
   `set_cursor_screen_pos` perturbs the parent's content size. `ui_primitives.text_chip` is the
   closest passive shape. Read `/imgui-ui` before drawing either.
-- **D3. A capability badge is per-PASS; a live count is per-FRAME.** Instancing is a property
+- **D3. A capability badge is per-PASS; a live count is per-FRAME.** **Revisit if** a pass's
+  instanced-ness stops being fixed at compile — a per-frame capability would collapse the two
+  halves into one and this split would be wrong rather than merely unnecessary. Instancing is a property
   of a pass, read from the FLATTENED source — so a `flat in` spliced in from a `lib:` include
   counts and the open tab may not reveal it, which is itself a reason the badge earns its
   place. Capability is fixed at compile and belongs on the pass surfaces; the live count is
@@ -59,7 +64,7 @@ about shaders is false for an instanced pass.
   the two cannot drift. That partition is what the gate enumerates from, and building it is
   part of this feature.
 
-## The ten
+## The twelve
 
 | # | Surface | What it needs |
 |---|---|---|
@@ -74,6 +79,9 @@ about shaders is false for an instanced pass.
 | 9 | README | Never mentions it; the scripting bullet names "a physics step, an integrator" and stops at uniform-driving. This is the itch.io pitch. |
 | 10 | examples browser ordering | Entity Flock sorts LAST — and its description is the single best in-app explanation of the feature, gated behind the last gallery item. |
 
+
+| # | Surface | What it needs |
+|---|---|---|
 | 11 | the `Passes` help section | It enumerates every per-pass property — `smooth`, `repeat`, Runs, size, format — and is silent on instancing and on blend. A SECOND help section that is wrong by omission, distinct from item 1's wrong-by-assertion one. |
 | 12 | the pass-settings modal | Where `format`, `scale` and `iterations` are chosen and explained by tooltip. It is the natural home for the blend control 102 D5 requires "in the pass panel", and it fell between items 6 and 7 in an earlier draft. |
 

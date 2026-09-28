@@ -543,6 +543,14 @@ reproduce and is corrected here):
 - jedi is a declared dependency (`pyproject.toml:46`), in-process
   (`intel/python.py:20-26`), and serialized on ONE thread (`worker.py:53-62,92`) with a `WARM`
   kind (`worker.py:23`) and per-kind coalescing carrying a revision (`worker.py:33,66`).
+- **CORRECTED — this claim was wrong, and feature 105's review disproved it by running it.**
+  `get_names` answers THREE of the five cases. A decorator's name and a bare reference to the
+  same name are byte-identical in every field it exposes, and so are an annotation and any
+  other reference — "annotations resolve as statements" is true and useless, because every
+  reference is a statement. **Decorators and annotations need a second producer** (`parso` or
+  `ast`), and the cost figures below were measured against `get_names` alone, so they do not
+  cover it. See `ai_docs/features/105_semantic_highlighting/01_spec.md` D7. The original
+  sentence is kept below for the record, since the three cases it does answer still hold:
 - `Script.get_names(all_scopes=True, definitions=True, references=True)` returns 303 names on
   the flock script and answers **all five cases with line/column**: `self` as `type=param` at
   each definition and `type=statement` at each use, `update` as `type=function` with
