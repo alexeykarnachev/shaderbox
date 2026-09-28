@@ -30,6 +30,7 @@ from shaderbox.editor.ffi import (
     Mode,
     Prim,
     Slot,
+    Span,
     Style,
     ViewFlag,
 )
@@ -542,6 +543,7 @@ def _state(e: Editor, **overrides: Any) -> tuple:
         "marker_fingerprint": (),
         "settings_fingerprint": (),
         "focused": True,
+        "class_feed_revision": 0,
     }
     kwargs.update(overrides)
     return render_state(e, **kwargs)
@@ -607,6 +609,12 @@ def test_render_state_reacts_to_every_editor_dimension() -> None:
     assert should_redraw(base, _state(e, marker_fingerprint=((3, "boom"),)))
     assert should_redraw(base, _state(e, settings_fingerprint=(True,)))
     assert should_redraw(base, _state(e, focused=False))
+    # The host's own colour feed (105 D3). This is the ONE dimension no editor mutation can
+    # stand in for: the panel is a cached texture, and a span or class set pushed while the
+    # buffer stands still moves nothing the editor reports. Every other case above types or
+    # clicks; this one changes nothing about the editor at all, which is exactly the regime
+    # where the colour would otherwise never be painted.
+    assert should_redraw(base, _state(e, class_feed_revision=1))
     e.close()
 
 
@@ -991,14 +999,24 @@ def _upstream_sig(path: Path) -> dict[str, tuple[object, list[object]]]:
     # diverged struct — a stride mismatch across the whole array — read as equal.
     tree = ast.parse(path.read_text())
     namespace: dict[str, Any] = {"ctypes": ctypes}
-    prim_def = next(
-        n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "Prim"
-    )
-    exec(compile(ast.Module([prim_def], []), str(path), "exec"), namespace)
+    # EVERY struct the table names, not just Prim: a signature mentioning a struct this
+    # namespace lacks raises NameError out of the eval below rather than failing as a
+    # mismatch, which is what the `05f90ac` re-vendor's `Span` did.
+    struct_defs = [
+        n
+        for n in tree.body
+        if isinstance(n, ast.ClassDef) and n.name in ("Prim", "Span")
+    ]
+    exec(compile(ast.Module(struct_defs, []), str(path), "exec"), namespace)
     their_prim: type[ctypes.Structure] = namespace["Prim"]
     assert ctypes.sizeof(their_prim) == ctypes.sizeof(Prim), (
         f"vendored Prim is {ctypes.sizeof(their_prim)} bytes, "
         f"ours is {ctypes.sizeof(Prim)} — the primitive stride diverged"
+    )
+    their_span: type[ctypes.Structure] = namespace["Span"]
+    assert ctypes.sizeof(their_span) == ctypes.sizeof(Span), (
+        f"vendored Span is {ctypes.sizeof(their_span)} bytes, "
+        f"ours is {ctypes.sizeof(Span)} — the span stride diverged"
     )
     node = next(
         n.value
@@ -1014,17 +1032,23 @@ def _upstream_sig(path: Path) -> dict[str, tuple[object, list[object]]]:
             compile(ast.Expression(value), str(path), "eval"), namespace
         )
         out[ast.literal_eval(key)] = (
-            _normalise(restype, their_prim),
-            [_normalise(a, their_prim) for a in argtypes],
+            _normalise(restype, their_prim, their_span),
+            [_normalise(a, their_prim, their_span) for a in argtypes],
         )
     return out
 
 
-def _normalise(ctype: object, prim: type[ctypes.Structure]) -> object:
+def _normalise(
+    ctype: object, prim: type[ctypes.Structure], span: type[ctypes.Structure]
+) -> object:
     """POINTER(Prim) is a different object per Prim class, so the two tables can
     only be compared once each side's pointer-to-Prim is named the same thing.
-    The struct itself is compared by size in `_upstream_sig`."""
-    return "POINTER(Prim)" if ctype is ctypes.POINTER(prim) else ctype
+    The structs themselves are compared by size in `_upstream_sig`."""
+    if ctype is ctypes.POINTER(prim):
+        return "POINTER(Prim)"
+    if ctype is ctypes.POINTER(span):
+        return "POINTER(Span)"
+    return ctype
 
 
 def test_the_binding_mirrors_every_export_of_the_vendored_binary() -> None:
@@ -1062,8 +1086,8 @@ def test_the_binding_mirrors_the_upstream_signature_table() -> None:
     upstream = _upstream_sig(probe)
     ours = {
         name: (
-            _normalise(restype, Prim),
-            [_normalise(a, Prim) for a in argtypes],
+            _normalise(restype, Prim, Span),
+            [_normalise(a, Prim, Span) for a in argtypes],
         )
         for name, (restype, argtypes) in _SIG.items()
     }

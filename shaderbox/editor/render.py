@@ -89,15 +89,23 @@ def render_state(
     marker_fingerprint: object,
     settings_fingerprint: object,
     focused: bool,
+    class_feed_revision: int,
 ) -> tuple:
     """Everything a rendered frame depends on. `identity` is the session's path:
     tabs share ONE panel, and without it two fresh files (same revision, cursor,
     mode) compare equal and a tab switch shows stale text. A member added to the
     layout's inputs MUST be added here —
     `tests/test_editor_ffi.py::test_render_state_reacts_to_every_editor_dimension`
-    walks the domain."""
+    walks the domain.
+
+    `class_feed_revision` counts the host's own pushes of semantic colour (105 D3). Nothing
+    the editor reports moves when a class or span set is fed while the text stands still, so
+    without it an answer that lands on an idle buffer never reaches the screen: the panel is
+    a cached texture and the gate below sees an unchanged tuple. It mirrors the library's own
+    `wc_revision`, which exists for that same shape on the library's side of the boundary."""
     return (
         identity,
+        class_feed_revision,
         editor.get_undo_index(),
         editor.get_scroll(),
         editor.get_current_cursor_position(),

@@ -6,9 +6,14 @@ no docstring for a dataclass field."""
 import io
 import re
 import tokenize
+from collections.abc import Iterator
+from dataclasses import dataclass
 
 import jedi
+import parso
 from jedi.api.classes import BaseName, Completion
+from parso.python.tree import Class, Decorator, Function, Name, Operator
+from parso.tree import BaseNode, NodeOrLeaf
 
 from shaderbox.intel.symbols import Symbol, SymbolKind
 from shaderbox.scripting.api_doc import API_NAMES, api_symbol_doc, context_field_gloss
@@ -152,3 +157,147 @@ def python_lookup(text: str, line: int, column: int) -> Symbol | None:
     else:
         kind = SymbolKind.PY_LOCAL
     return Symbol(name.name, kind, signature=signature, doc=doc)
+
+
+# `self` and `cls` mean the same thing wherever they appear, so they are name-keyed facts and
+# ride the word table (105 D2): no parser, no positions, nothing to go stale on an edit.
+_SELF_NAMES: frozenset[str] = frozenset({"self", "cls"})
+
+_DUNDER = re.compile(r"^__\w+__$")
+_WORD = re.compile(r"[A-Za-z_]\w*")
+
+
+def python_word_classes(text: str) -> dict[str, SymbolKind]:
+    """The edit-invariant half of a script's semantic colouring, keyed by spelling.
+
+    `GlslIndex.classes()`'s Python counterpart: the host feeds these through
+    `ed_set_word_class`, where the library re-applies them against new positions on every
+    retokenization. Only names the buffer actually contains are returned, so the table stays
+    the size of the file rather than the size of the vocabulary."""
+    found: dict[str, SymbolKind] = {}
+    for match in _WORD.finditer(text):
+        word = match.group(0)
+        if word in _SELF_NAMES:
+            found[word] = SymbolKind.PY_SELF
+        elif _DUNDER.match(word):
+            found[word] = SymbolKind.PY_DUNDER
+    return found
+
+
+@dataclass(frozen=True)
+class SpanSymbol:
+    """A name at a place: what the word table cannot express. Lines and columns are 0-based,
+    the unit every other host-to-library call uses; `column_end` is exclusive."""
+
+    name: str
+    kind: SymbolKind
+    line: int
+    column: int
+    column_end: int
+
+
+def _definition_spans(module: NodeOrLeaf) -> list[SpanSymbol]:
+    """The name after `def` or `class`, which is the case the word table cannot express:
+    `update` at its definition and `update` two lines down are the same spelling.
+
+    Read off the parso tree rather than jedi's `get_names`, which reports an IMPORTED name as
+    a definition at its import site -- `from dataclasses import dataclass` would colour
+    `dataclass` as though the script defined it. A `Function`/`Class` node is structural, so
+    the import case cannot arise."""
+    found: list[SpanSymbol] = []
+    for node in _walk(module):
+        if not isinstance(node, (Function, Class)):
+            continue
+        found.append(_span_of(node.name, SymbolKind.PY_DEFINITION))
+    return found
+
+
+def _walk(node: NodeOrLeaf) -> Iterator[NodeOrLeaf]:
+    stack: list[NodeOrLeaf] = [node]
+    while stack:
+        current = stack.pop()
+        yield current
+        if isinstance(current, BaseNode):
+            stack.extend(current.children)
+
+
+def _span_of(leaf: Name, kind: SymbolKind) -> SpanSymbol:
+    line, column = leaf.start_pos
+    return SpanSymbol(leaf.value, kind, line - 1, column, column + len(leaf.value))
+
+
+def _name_spans(node: NodeOrLeaf, kind: SymbolKind) -> list[SpanSymbol]:
+    # Every NAME leaf under a subtree, which is what a dotted decorator or a subscripted
+    # annotation (`@a.b`, `dict[str, Any]`) is made of.
+    return [_span_of(leaf, kind) for leaf in _walk(node) if isinstance(leaf, Name)]
+
+
+def _decorator_name_spans(node: NodeOrLeaf) -> list[SpanSymbol]:
+    # The decorator's NAME only: `@a.b.c` is three name leaves and `@a(x)` is one, because
+    # everything from the call's `trailer` onward is an ordinary expression.
+    if not isinstance(node, BaseNode):
+        return _name_spans(node, SymbolKind.PY_DECORATOR)
+    found: list[SpanSymbol] = []
+    for child in node.children:
+        if child.type == "trailer" and not _starts_with_dot(child):
+            break
+        found.extend(_decorator_name_spans(child))
+    return found
+
+
+def _starts_with_dot(node: BaseNode) -> bool:
+    first = node.children[0]
+    return isinstance(first, Operator) and first.value == "."
+
+
+def _annotation_spans(node: BaseNode) -> list[SpanSymbol]:
+    # `: <annotation>` optionally followed by `= <default>`; the default is a value
+    # expression and is not part of the type.
+    found: list[SpanSymbol] = []
+    for child in node.children[1:]:
+        if isinstance(child, Operator) and child.value == "=":
+            break
+        found.extend(_name_spans(child, SymbolKind.PY_DECORATOR))
+    return found
+
+
+def _decorator_and_annotation_spans(module: NodeOrLeaf) -> list[SpanSymbol]:
+    """The two cases jedi cannot answer (105 D7).
+
+    MEASURED: `get_names` reports a decorator's `@property` and a bare reference to
+    `property` identically -- both `type="statement"`, `is_definition()` false, same
+    `description` -- and the same for `float` as an annotation versus `float` anywhere else.
+    The parso tree distinguishes them structurally: a `Decorator` node, an `annassign` under
+    an assignment, a `tfpdef` parameter, a `Function`'s own `annotation`."""
+    found: list[SpanSymbol] = []
+    for node in _walk(module):
+        if isinstance(node, Decorator):
+            # `@`, then the dotted name, then optionally a call. The call's `trailer` hangs
+            # BELOW the name inside an `atom_expr` rather than beside it, so stopping at a
+            # top-level trailer never sees it and a decorator's ARGUMENTS get coloured as
+            # though they were the decorator -- which is what `@register(key=helper)` showed.
+            for child in node.children[1:]:
+                if child.type in ("operator", "newline"):
+                    break
+                found.extend(_decorator_name_spans(child))
+        elif isinstance(node, Function):
+            if node.annotation is not None:
+                found.extend(_name_spans(node.annotation, SymbolKind.PY_DECORATOR))
+        elif isinstance(node, BaseNode) and node.type in ("annassign", "tfpdef"):
+            found.extend(_annotation_spans(node))
+    return found
+
+
+def python_spans(text: str) -> tuple[SpanSymbol, ...]:
+    """Every positional distinction a script's colouring needs, from one parso parse.
+
+    MEASURED on the 123-line flock script: 6.63 ms, against 7.46 ms for jedi's `get_names`
+    alone -- so all three positional cases cost LESS than the one producer an earlier
+    estimate was sized against. `parso.parse` recovers from broken text rather than raising,
+    which matters because a buffer mid-edit is normally unparseable: an unclosed paren, a
+    dangling `def`, a half-typed annotation and an unterminated string all measured between
+    6.26 and 6.74 ms and kept the whole file's structure. A 4x buffer costs 24.9 ms."""
+    module = parso.parse(text)
+    found = _definition_spans(module)
+    found.extend(_decorator_and_annotation_spans(module))
+    return tuple(found)
