@@ -29,9 +29,7 @@ def test_no_ui_module_reaches_through_the_session_to_what_it_owns() -> None:
     `ProjectSession`'s own `self.script_engine.*`, which is not a UI module at all.
     """
     files = [
-        path
-        for directory in _UI_DIRS
-        for path in (_SRC / directory).rglob("*.py")
+        path for directory in _UI_DIRS for path in (_SRC / directory).rglob("*.py")
     ] + [_SRC / "ui.py"]
     assert files, "the fixture found no UI modules -- it never looked at anything"
 
