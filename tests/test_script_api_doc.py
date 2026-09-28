@@ -10,6 +10,7 @@ from pathlib import Path
 
 from shaderbox.copilot.prompt import _context_block
 from shaderbox.copilot.prompt_context import build_context
+from shaderbox.instanced import POSITION_FIELD, RADIUS_FIELD
 from shaderbox.scripting import api_doc
 from shaderbox.scripting.api_doc import (
     _CONTEXT_GLOSS,
@@ -22,7 +23,7 @@ from shaderbox.scripting.api_doc import (
 )
 from shaderbox.scripting.behavior import _INJECTED_NAMES
 from shaderbox.scripting.context import EXPORT_MOUSE, MouseState, ScriptContext
-from shaderbox.scripting.engine import _stub_kind
+from shaderbox.scripting.engine import INSTANCES_KEY, _stub_kind
 from tests._caps import minimal_caps
 
 
@@ -78,6 +79,28 @@ def test_every_stub_kind_type_name_has_a_value_shape_gloss() -> None:
                     returned.add(str(first.value))
     assert returned, "found no type names in _stub_kind"
     assert returned <= set(_VALUE_SHAPE_GLOSS), returned - set(_VALUE_SHAPE_GLOSS)
+
+
+def test_the_instances_value_shape_is_documented_outside_stub_kinds_domain() -> None:
+    # 103 D5: `_stub_kind` dispatches on `moderngl.Uniform`, so the reserved `@instances` key --
+    # which is popped OUT of a script's returned dict before anything ever reaches a
+    # `moderngl.Uniform` (`engine.py::_tick_script`) -- is outside its domain BY CONSTRUCTION. The
+    # test above enumerating from `_stub_kind`'s own AST can therefore never see this shape drift;
+    # this one is sourced independently, from the engine's reserved-key constant and the
+    # instancing module's own reserved field names, never from a copy of the prose.
+    summary = _flat(script_api_summary())
+    assert INSTANCES_KEY in summary, (
+        f"the engine accepts a '{INSTANCES_KEY}' population key that the SCRIPT API block "
+        "never mentions"
+    )
+    assert "numpy" in summary.lower(), (
+        "the doc must say the @instances value shape is numpy arrays, not plain Python -- "
+        "the one exception to the 'all PLAIN PYTHON' value-shape claim above it"
+    )
+    for name in (POSITION_FIELD, RADIUS_FIELD):
+        assert name in summary, (
+            f"'{name}' is a RESERVED entity field name (instanced.py) the doc never names"
+        )
 
 
 def test_the_block_reaches_the_rare_prompt_tier() -> None:

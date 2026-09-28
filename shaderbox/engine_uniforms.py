@@ -3,6 +3,7 @@ intelligence, the documentation modal and the copilot's tables read them without
 renderer."""
 
 from shaderbox.glyph_tables import TABLE_UNIFORMS
+from shaderbox.instanced import MODE_UNIFORM
 
 # Engine-driven: never pass-intrinsic defaults — seed_uniform_values skips them and
 # UIDocument.save excludes them. Two kinds: per-frame values Pass.render() recomputes
@@ -18,6 +19,12 @@ ENGINE_UNIFORM_TYPES: dict[str, str] = {
     "u_pass_iteration": "float",
     "u_pass_iterations": "float",
 }
+# `sb_instanced` (103 D4a) is a THIRD kind: it lives only in the GENERATED vertex stage of an
+# instanced pass (`instanced.py::generate_vertex_source`), never in an author's fragment source,
+# so it does not belong in ENGINE_UNIFORM_TYPES (that dict backs the "must still be declared"
+# prompt line, which would be wrong for a uniform an author never writes). It still has to be in
+# ENGINE_DRIVEN_UNIFORMS: `Pass.render` overwrites it every frame (`core.py:626-631`), so without
+# this a script "driving" it is a silent no-op the probe reports as clean.
 ENGINE_DRIVEN_UNIFORMS: frozenset[str] = frozenset(
-    ENGINE_UNIFORM_TYPES.keys() | TABLE_UNIFORMS.keys()
+    ENGINE_UNIFORM_TYPES.keys() | TABLE_UNIFORMS.keys() | {MODE_UNIFORM}
 )

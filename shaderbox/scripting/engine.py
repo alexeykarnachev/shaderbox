@@ -25,7 +25,7 @@ A real `Document` satisfies it structurally.
 """
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol, TypeGuard
 
@@ -96,6 +96,41 @@ class ScriptProbe:
     orphan_keys: list[tuple[str, str]]
     samples: list[tuple[float, dict[tuple[str, str], Any]]]
     runtime_error: "ScriptError | None" = None
+    # 103 D1/D2: population STATISTICS at each sample time, never the columns themselves (the
+    # values_sink ndarray/dict ban -- 20k entities x 4 f4 columns is ~320 KB against a JSON
+    # schema, so a population can never cross the tool boundary as data). One entry per sample
+    # time, mirroring `samples`; each maps pass name -> (count, {column: (dtype, shape, min,
+    # max)}, verdict). verdict is "" for a population that validated clean, "not validated" when
+    # the pass has not compiled / declares no `flat in` yet (engine.py's `if not fields:` branch
+    # -- never a false zero), or the refusal reason from `validate_population`. count/columns are
+    # 0/empty whenever verdict is non-"".
+    population_samples: list[
+        tuple[
+            float,
+            dict[
+                str,
+                tuple[int, dict[str, tuple[str, tuple[int, ...], float, float]], str],
+            ],
+        ]
+    ] = field(default_factory=list)
+
+
+def _column_stats(
+    columns: Mapping[str, Any],
+) -> dict[str, tuple[str, tuple[int, ...], float, float]]:
+    # 103 D1/D2: reduce a VALIDATED population's real columns to plain-Python statistics
+    # (dtype/shape/range) right where the arrays are in scope -- this is the boundary a
+    # population may not cross as data, so nothing past this function ever holds an ndarray.
+    # An empty column (count 0) has no min/max; reported as (0.0, 0.0) rather than raising.
+    return {
+        name: (
+            str(column.dtype),
+            tuple(column.shape),
+            float(column.min()) if column.size else 0.0,
+            float(column.max()) if column.size else 0.0,
+        )
+        for name, column in columns.items()
+    }
 
 
 def is_scriptable(uniform: object) -> TypeGuard[moderngl.Uniform]:
@@ -581,6 +616,20 @@ class ScriptEngine:
         driven: set[tuple[str, str]] = set()
         skipped: set[tuple[str, str]] = set()
         samples: list[tuple[float, dict[tuple[str, str], Any]]] = []
+        population_stats: dict[
+            str, tuple[int, dict[str, tuple[str, tuple[int, ...], float, float]], str]
+        ] = {}
+        population_samples: list[
+            tuple[
+                float,
+                dict[
+                    str,
+                    tuple[
+                        int, dict[str, tuple[str, tuple[int, ...], float, float]], str
+                    ],
+                ],
+            ]
+        ] = []
         # The probe reports "did this EVER fail across the window", not the final-frame snapshot: the
         # live engine's `errors` dict SELF-HEALS (a good tick pops a key), so a TRANSIENT raise/coercion/
         # orphan that recovers before the last sampled frame would be lost. Accumulate each category
@@ -601,6 +650,7 @@ class ScriptEngine:
                 skipped,
                 frozenset(),
                 values_sink=sink,
+                population_stats_sink=population_stats,
             )
             seen_driven |= driven
             seen_skipped |= skipped
@@ -610,6 +660,7 @@ class ScriptEngine:
                 samples.append(
                     (want[frame], {key: sink[key] for key in driven if key in sink})
                 )
+                population_samples.append((want[frame], dict(population_stats)))
 
         # A driven key's shape failure and a skipped key's refusal (a sampler/block, an unknown
         # pass) are both "this key names something and it did not work" — one list. A skipped key
@@ -642,6 +693,7 @@ class ScriptEngine:
             orphan,
             samples,
             runtime_error=runtime_error,
+            population_samples=population_samples,
         )
 
     def _active_by_pass(
@@ -729,10 +781,23 @@ class ScriptEngine:
         last_skipped: set[tuple[str, str]],
         stopped: frozenset[StoppedKey],
         values_sink: dict[tuple[str, str], Any] | None = None,
+        population_stats_sink: (
+            dict[
+                str,
+                tuple[int, dict[str, tuple[str, tuple[int, ...], float, float]], str],
+            ]
+            | None
+        ) = None,
     ) -> None:
         # `values_sink` (the dry-run path): every uniform-value WRITE lands there, keyed by the (pass,
         # name) pair, + the freeze-fallback READ consults it, so the LIVE document is never written.
         # None = the live tick (write each target pass).
+        # `population_stats_sink` (103 D1/D2, dry-run only): this tick's population STATISTICS, one
+        # entry per pass that named `@instances`, reduced from the real columns right where they are
+        # validated -- the raw arrays never leave this function. Value = (count, {column: (dtype,
+        # shape, min, max)}, verdict); verdict "" = validated clean, else the refusal reason or
+        # "not validated" (compiled with no `flat in` yet, or not compiled). count/columns are 0/{}
+        # whenever verdict is non-"".
         behavior_key = (document_id, "", _SCRIPT_FILE)
         # Every per-key row this document carries is REBUILT each tick: dropped here, so what the
         # phases below write is what stands and a key the script fixed simply is not written
@@ -809,6 +874,10 @@ class ScriptEngine:
         # wrong for engine vocabulary. A mistyped `@instance` would otherwise render a
         # blank frame with an empty error strip.
         populations: dict[str, dict[str, Any]] = {}
+        if population_stats_sink is not None:
+            # Rebuilt every tick like `populations` itself: a pass that sent `@instances` last
+            # tick and stops must not leave a stale statistics row a sampled frame then copies.
+            population_stats_sink.clear()
         for pass_name, block in blocks.items():
             for key in [k for k in block if k.startswith(RESERVED_PREFIX)]:
                 value = block.pop(key)
@@ -839,8 +908,10 @@ class ScriptEngine:
                     # ordinary on frame one, so this stays quiet and the next tick
                     # routes it once a program exists.
                     populations[pass_name] = value
+                    if population_stats_sink is not None:
+                        population_stats_sink[pass_name] = (0, {}, "not validated")
                     continue
-                _, problem = validate_population(fields, value)
+                count, problem = validate_population(fields, value)
                 if problem is not None:
                     errors[(document_id, pass_name, key)] = ScriptError(
                         key, "runtime", problem, pass_name=pass_name
@@ -852,8 +923,16 @@ class ScriptEngine:
                     # the script chose not to send -- and the draw answered a dtype slip
                     # by painting the entity shader over the whole canvas.
                     populations[pass_name] = REFUSED_POPULATION
+                    if population_stats_sink is not None:
+                        population_stats_sink[pass_name] = (0, {}, problem)
                     continue
                 populations[pass_name] = value
+                if population_stats_sink is not None:
+                    population_stats_sink[pass_name] = (
+                        count,
+                        _column_stats(value),
+                        "",
+                    )
         # A bare reserved key names no pass, so the block path would report it as a
         # missing pass -- true and useless. The author forgot the pass, and that is what
         # the message says.

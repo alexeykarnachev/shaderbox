@@ -96,6 +96,7 @@ from shaderbox.exporters.registry import ExporterRegistry
 from shaderbox.exporters.telegram import NEEDS_START_ERROR, TelegramExporter
 from shaderbox.exporters.youtube import YouTubeExporter
 from shaderbox.glyph_tables import TABLE_UNIFORMS
+from shaderbox.instanced_outcome import InstancedOutcome
 from shaderbox.media import (
     MediaWithTexture,
     media_class_for,
@@ -151,9 +152,24 @@ def _probe_target_for(document: Document, render_pass: Pass) -> str | None:
     return next((n for n, p in document.passes.items() if p is render_pass), None)
 
 
+def _probed_pass_outcome(
+    document: Document, target: str | None
+) -> InstancedOutcome | None:
+    # 103 D6/C9: the probed pass's draw outcome for the frame `_probe_frame` just rendered, or
+    # None when 102's outcome seam is not yet live on this Document (`document.py` is another
+    # flow's file this wave; read defensively so this module builds and tests either way).
+    # `document.render` DISCARDS its own draw information today -- this is copilot-side plumbing
+    # to get it out, not a change to how the draw itself decides anything.
+    outcomes = getattr(document, "instanced_outcomes", None)
+    if not outcomes:
+        return None
+    pass_name = target or pass_name_of(document.render_pass.source.path)
+    return next((o for o in outcomes if o.pass_name == pass_name), None)
+
+
 def _probe_frame(
     document: Document, t: float, width: int, height: int, target: str | None = None
-) -> bytes:
+) -> tuple[bytes, InstancedOutcome | None]:
     # The document rendered at ITS OWN size, then box-filtered down to the probe size. Drawing
     # the output pass straight into a probe-sized canvas would give it a `u_resolution` its
     # inputs do not share -- an iterated output pass (a cascade) reads its own previous run at
@@ -161,12 +177,13 @@ def _probe_frame(
     # facts read the buffer bottom-up, as a texture read is. `target` probes one pass of the
     # graph (its ancestors drawn, that pass read) instead of the output.
     document.render(u_time=t, target=target)
+    outcome = _probed_pass_outcome(document, target)
     probed = document.passes[target] if target else document.render_pass
     frame = texture_to_rgba8(probed.canvas.texture)
     small = PILImage.fromarray(frame, "RGBA").resize(
         (width, height), PILImage.Resampling.BOX
     )
-    return small.tobytes()
+    return small.tobytes(), outcome
 
 
 def _stamp_facts(facts: str, t: float) -> str:
@@ -303,6 +320,52 @@ def _driven_on(driven: set[tuple[str, str]], pass_name: str) -> set[str]:
     return {name for pass_, name in driven if pass_ == pass_name}
 
 
+def _entity_field_rows(render_pass: Pass) -> list[str]:
+    # 103 D4: "name type" per `flat in` declaration, [] for an ordinary fullscreen pass -- the
+    # fact both ShaderView and WorkingSetView/PassView carry so the agent can tell an instanced
+    # pass from a fullscreen one with odd inputs on either surface. `getattr` with a default:
+    # several existing tests build a lightweight `types.SimpleNamespace` render_pass stand-in
+    # that predates this field.
+    return [
+        f"{f.name} {f.glsl_type}" for f in getattr(render_pass, "entity_fields", ())
+    ]
+
+
+def _teach_instances_in_stub(stub_text: str, document: Document) -> str:
+    # 103 D4b: `script_stub_for` (engine.py) already drops the false `sb_instanced` offer once
+    # D4a puts it in ENGINE_DRIVEN_UNIFORMS (`_scriptable_uniforms_for` filters that set out) --
+    # this adds the TRUE one it's missing. Appended rather than spliced into the generated
+    # commented block: the stub is regenerated from introspection each read, and this reads the
+    # SAME entity_fields the working set / ShaderView already carry (D4), so it can't drift from
+    # what the pass actually declares. One block per pass that has `flat in` fields.
+    blocks: list[str] = []
+    for pass_name, render_pass in sorted(document.passes.items()):
+        fields = _entity_field_rows(render_pass)
+        if not fields:
+            continue
+        columns = "\n".join(
+            f'            #         # "{f.name}": <a {f.glsl_type} numpy array, shape '
+            f"(N,{'' if f.glsl_type in ('float', 'int', 'uint') else ' components'})>,"
+            for f in render_pass.entity_fields
+        )
+        blocks.append(
+            f'            # "{pass_name}" draws one quad PER ENTITY -- declares: '
+            f"{', '.join(fields)}\n"
+            f'            # "{pass_name}": {{"@instances": {{\n'
+            f"{columns}\n"
+            "            # }},\n"
+        )
+    if not blocks:
+        return stub_text
+    return (
+        f"{stub_text}\n"
+        "# This document has an INSTANCED pass -- one quad drawn per entity, filled with\n"
+        '# numpy arrays under the reserved "@instances" key (one array per declared\n'
+        "# `flat in` field, every field present, dtype f4/i4/u4 checked never cast):\n"
+        "#\n" + "".join(blocks)
+    )
+
+
 def _format_uniforms(
     render_pass: Pass, driven: set[str], wired: Mapping[str, str]
 ) -> list[str]:
@@ -402,10 +465,106 @@ def _dotted(key: tuple[str, str]) -> str:
     return f"{key[0]}.{key[1]}"
 
 
+def _population_samples(
+    probe: ScriptProbe,
+) -> list[
+    tuple[
+        float,
+        dict[
+            str, tuple[int, dict[str, tuple[str, tuple[int, ...], float, float]], str]
+        ],
+    ]
+]:
+    # `population_samples` is 103's addition to ScriptProbe (engine.py, owned by another flow in
+    # this wave); read defensively so this module builds and tests against either the field or an
+    # older ScriptProbe that lacks it.
+    return getattr(probe, "population_samples", [])
+
+
+def _population_facts_lines(probe: ScriptProbe) -> list[str]:
+    # 103 D1/D2: one line per pass that sent `@instances`, off the LAST sample (the most-settled
+    # state a script reaches in the probe window) -- count + per-column dtype/shape/range, or the
+    # honest "not validated" / refusal note. Never the columns themselves: this reads plain-Python
+    # statistics the engine already reduced, nothing here ever touches an ndarray.
+    samples = _population_samples(probe)
+    if not samples:
+        return []
+    _, last = samples[-1]
+    lines: list[str] = []
+    for pass_name in sorted(last):
+        count, columns, verdict = last[pass_name]
+        if verdict:
+            lines.append(f"{pass_name}: population {verdict}")
+            continue
+        cols = ", ".join(
+            f"{name} {dtype} {shape} range [{lo:.3g}, {hi:.3g}]"
+            for name, (dtype, shape, lo, hi) in sorted(columns.items())
+        )
+        lines.append(f"{pass_name}: {count} entities -- {cols}")
+    return lines
+
+
+def _population_motion(probe: ScriptProbe, eps: float) -> list[str]:
+    # (h) what "animating" means for a population: `_uniform_changes` diffs a SCALAR across
+    # samples and cannot express a population's motion. Named observables instead, both already
+    # in the statistics the engine reduces: the entity COUNT (a population that grows/shrinks is
+    # visibly changing) and each column's RANGE (an orbiting flock's `pos` extent shifts frame to
+    # frame even though the count never does). A population whose count and every column's range
+    # hold still across the sampled window is reported STATIC, honestly -- distinct from a scalar
+    # uniform's STATIC, since it is a coarser signal (a population could rearrange within a held
+    # range and read as static here); the line says what was compared.
+    samples = _population_samples(probe)
+    if len(samples) < 2:
+        return []
+    _, first = samples[0]
+    _, last = samples[-1]
+    lines: list[str] = []
+    for pass_name in sorted(set(first) | set(last)):
+        c0 = first.get(pass_name)
+        c1 = last.get(pass_name)
+        if c0 is None or c1 is None:
+            continue
+        count0, cols0, verdict0 = c0
+        count1, cols1, verdict1 = c1
+        if verdict0 or verdict1:
+            continue  # refused/not-validated is reported by _population_facts_lines, not here
+        if count0 != count1:
+            lines.append(
+                f"{pass_name}.@instances: entity count CHANGES across t ({count0} -> "
+                f"{count1}) (ANIMATING)"
+            )
+            continue
+        moved = [
+            name
+            for name in sorted(set(cols0) & set(cols1))
+            if _values_differ(cols0[name][2:], cols1[name][2:], eps)
+        ]
+        if moved:
+            lines.append(
+                f"{pass_name}.@instances: {', '.join(moved)} range CHANGES across t "
+                "(ANIMATING)"
+            )
+        else:
+            lines.append(
+                f"{pass_name}.@instances: entity count and every column's range are "
+                "UNCHANGED across t (STATIC) -- vary a value by context.t if you meant motion"
+            )
+    return lines
+
+
 def _motion_verdict(probe: ScriptProbe, render_line: str, eps: float) -> str:
     # The value-diff motion signal (feature 043): which driven uniforms change across t (exact,
     # GL-free) + ONE render line for the "is it visible / FLAT" honesty case the value-diff misses.
+    # A script driving ONLY a population (no scalar uniform) has an EMPTY `probe.driven` -- a
+    # population never adds to that set (069/103) -- so the "drives 0 uniforms" verdict below is
+    # false for it; `ScriptWriteResult.population_facts` (rendered separately, `_apply_script_text`)
+    # is where that script's real story lives (103 D1/D2/C1).
     if not probe.driven:
+        if _population_samples(probe):
+            return (
+                "drives 0 SCALAR uniforms, but see the population facts below -- a "
+                "population never counts as a driven uniform."
+            )
         return (
             "drives 0 uniforms (update returned an empty dict / only orphan keys). Nothing "
             "animates and every uniform stays manual. Return {name: value} to drive one."
@@ -435,6 +594,19 @@ def _motion_verdict(probe: ScriptProbe, render_line: str, eps: float) -> str:
         )
     lines.append(f"-> {verdict}")
     return "\n".join(lines)
+
+
+def _population_facts_text(probe: ScriptProbe, eps: float) -> str:
+    # 103 D1/D2: the full population story for `ScriptWriteResult.population_facts` -- the
+    # per-pass count/columns/verdict line plus its own ANIMATING/STATIC note (h). Its own field,
+    # separate from `motion_facts`'s scalar-uniform verdict, rather than folded text: a gate
+    # asserting "the count appears" reads a dedicated field instead of parsing a blob, and a
+    # script driving BOTH scalar uniforms and a population gets both verdicts, neither shadowing
+    # the other.
+    facts = _population_facts_lines(probe)
+    if not facts:
+        return ""
+    return "\n".join([*facts, *_population_motion(probe, eps)])
 
 
 class CopilotBackend:
@@ -794,6 +966,7 @@ class CopilotBackend:
                                 _wired_for(document, render_pass),
                             ),
                             errors=_to_error_infos(render_pass.compile_unit.errors),
+                            entity_fields=_entity_field_rows(render_pass),
                         )
                     )
             if bad_passes and not views:
@@ -882,6 +1055,7 @@ class CopilotBackend:
             script_errors=script_errors,
             canvas=_canvas_line(ui_document),
             passes=self._pass_views(full_id, short, document),
+            entity_fields=_entity_field_rows(document.render_pass),
         )
 
     def _pass_views(
@@ -928,6 +1102,7 @@ class CopilotBackend:
                     errors=_to_error_infos(render_pass.compile_unit.errors),
                     is_output=(name == document.graph.output),
                     is_live=name in live,
+                    entity_fields=_entity_field_rows(render_pass),
                 )
             )
         return views
@@ -2198,14 +2373,25 @@ class CopilotBackend:
             # aspect-corrected shaders (u_aspect) differently from the preview.
             cw, ch = document.export_source_size()
             h = min(4 * size, max(8, round(size * ch / cw))) if cw else size
-            raw0 = _probe_frame(document, t, size, h, target)
+            raw0, outcome0 = _probe_frame(document, t, size, h, target)
             # Stamp the sample time: an animated shader's facts change with phase,
             # which otherwise reads as an edit effect.
             line0 = _stamp_facts(render_facts(raw0, size, h), t)
+            # 103 D6/C9: the pixel-derived facts line has no vocabulary for the instanced case
+            # (a refused/no-fields/stale-program pass can still read as an ordinary compiling
+            # pass in pixels). Splice the outcome's own honest line ahead of it when the outcome
+            # says something is WRONG -- `is_healthy` covers "drew"/"fullscreen"/"not_compiled",
+            # the three states where the pixels already tell the true story.
+            if outcome0 is not None and not outcome0.is_healthy:
+                line0 = (
+                    f"instancing: {outcome0.describe()}\n{line0}"
+                    if line0
+                    else (f"instancing: {outcome0.describe()}")
+                )
             if not motion or not line0:
                 return line0
             t2 = COPILOT_ENGINE.render_facts_motion_t
-            raw1 = _probe_frame(document, t2, size, h, target)
+            raw1, _outcome1 = _probe_frame(document, t2, size, h, target)
             a0 = np.frombuffer(raw0, dtype=np.uint8).astype(np.int16)
             a1 = np.frombuffer(raw1, dtype=np.uint8).astype(np.int16)
             if float(np.mean(np.abs(a0 - a1))) < _MOTION_EPS:
@@ -2280,6 +2466,9 @@ class CopilotBackend:
                 if status is not None and status.sentinel_error is not None
                 else []
             )
+            if is_stub:
+                ui_document = self._get_ui_documents()[document_id].document
+                text = _teach_instances_in_stub(text, ui_document)
             return ScriptView(
                 document_id=self._copilot_short_ids().get(document_id, document_id),
                 name=self._get_ui_documents()[document_id].ui_state.ui_name,
@@ -2323,6 +2512,9 @@ class CopilotBackend:
         motion_facts = _motion_verdict(
             probe, render_line, COPILOT_ENGINE.motion_value_eps
         )
+        population_facts = _population_facts_text(
+            probe, COPILOT_ENGINE.motion_value_eps
+        )
         if prev_samples is not None and prev_samples == probe.samples:
             motion_facts += (
                 f"\n{NOOP_FACTS_PREFIX} in the driven values vs the edit before it "
@@ -2342,6 +2534,7 @@ class CopilotBackend:
                 _dotted((p, name)) if p else name for p, name in probe.orphan_keys
             ],
             motion_facts=motion_facts,
+            population_facts=population_facts,
         )
 
     def _script_broken_write(self, document_id: str, error: str) -> ScriptWriteResult:
