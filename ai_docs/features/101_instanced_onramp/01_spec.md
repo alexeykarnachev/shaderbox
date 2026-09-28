@@ -646,8 +646,27 @@ code in this repo: the span API, the slot extension, and the break-it-first inst
 `Language.None` gate -- which is the item most likely to be believed without testing, and the one
 with a recorded precedent of shipping broken.
 
-## Open questions for the maintainer
+**That document is WRITTEN and HANDED OVER: `02_editor_requirements.md`.** It states R1-R6 with
+the evidence behind each and leaves every technical decision -- API shape, coordinate unit,
+storage, merge order, class count -- to the editor session, which owns that repo. The shaderbox
+side is written against whatever it lands on, so the span-ABI question is no longer open here.
 
-- **Byte offsets or line/col** for the span ABI.
-- **Does the 063 dry-run isolation ruling bend for populations** (C6), and in what shape?
-- **Which of D1–D10 are in, and in what order** once the contract is fixed.
+## Open questions
+
+**None blocking.** Every question this research raised has been answered:
+
+- **I1's boundary** and the **`InstancedOutcome` shape** -> D-F and D-G.
+- **The span ABI's coordinate unit, and every other editor-side technical choice** -> the
+  editor session's, via `02_editor_requirements.md`. Do not decide it here.
+- **The 063 dry-run ruling and populations** (C6) -> **the correct solution, not a bend.**
+  063 protects one property: a `dry_run` leaves the live document byte-identical. Reporting
+  is not writing, and `validate_population` already runs before the write is skipped
+  (`engine.py:881`), so the statistics exist at that point. The probe REPORTS the population
+  -- count, per-column dtype/shape/range, the validation verdict -- and still writes nothing.
+  That satisfies 063 as stated rather than weakening it. The implementing wave must gate the
+  isolation itself (a `dry_run` over an instanced document leaves `pending_instances`
+  untouched), because that is the invariant a reporting path could silently break.
+- **Which of D1–D10 are in** -> **all of them.** The list is ten items, none large, and the
+  set is what makes the feature discoverable; shipping a subset leaves an author on a partial
+  on-ramp, which is the state the feature exists to end. Order by the corrected ranking
+  (wrong text, then wrong picture, then wrong verdict, then silence), so D1 and D2 lead.

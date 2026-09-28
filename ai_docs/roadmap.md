@@ -62,6 +62,12 @@ root rather than a patch per defect. D-F's blast radius reaches beyond instancin
 script engine's skipped/driven/orphan split, two `conventions.md` bullets, and the tests
 that currently pin the silence.
 
+**Nothing is open.** The editor-side requirements are written and handed to the editor
+session (`02_editor_requirements.md`, R1-R6 with evidence, every technical choice theirs);
+the copilot probe reports a population without writing one, which satisfies the 063
+isolation ruling as stated rather than bending it; and all ten on-ramp items are in, led by
+the two that are wrong rather than merely missing.
+
 **Next is the split** -- four features in dependency order, contract before copilot before
 on-ramp, with highlighting parallel. Numbering is the implementing session's call.
 
