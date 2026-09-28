@@ -1695,3 +1695,43 @@ def test_importing_the_module_itself_says_to_import_the_names(tmp_path: Path) ->
     )
     assert error is not None
     assert "import the names" in error.message, error.message
+
+
+def test_a_failing_key_freezes_at_LAST_GOOD_not_at_the_live_value(
+    tmp_path: Path,
+) -> None:
+    """The freeze source is the script's own last-good value, not whatever the uniform
+    currently holds.
+
+    Every other freeze test starts from a uniform whose live value EQUALS what last-good
+    would be, so `last_good.get(pair, live)` and a bare `live` return the same number and
+    the two implementations are indistinguishable. This one drives a good tick to
+    establish last-good, then moves the live value behind the engine's back, then fails
+    the key -- so the two sources disagree and only one answer is correct.
+    """
+    # Tick one writes 0.4 cleanly, which becomes last-good.
+    _write_script(tmp_path, _script(update_body="        return {'u_a': 0.4}\n"))
+    document = _FakeDocument([_u("u_a")])
+    eng = _engine(tmp_path, document)
+    eng.tick("n0", document, _ctx(0.0))
+    assert document.uniform_values["u_a"] == 0.4
+
+    # Something else writes the live uniform -- a manual edit, a preset load. The engine's
+    # last-good is still 0.4 and the live value is now 0.9.
+    document.uniform_values["u_a"] = 0.9
+
+    # Tick two fails coercion on that key, so it must freeze at LAST-GOOD. The sleep is
+    # this file's established way of moving the mtime the engine caches on.
+    time.sleep(0.01)
+    _write_script(
+        tmp_path, _script(update_body="        return {'u_a': [1.0, 2.0, 3.0]}\n")
+    )
+    # The engine recompiles on an explicit reload, not by polling mtime.
+    eng.reload("n0", tmp_path / "scripts")
+    eng.tick("n0", document, _ctx(1.0))
+
+    assert eng.errors[("n0", "main", "u_a")].kind == "runtime"
+    assert document.uniform_values["u_a"] == 0.4, (
+        "froze at the LIVE value rather than the script's last-good -- a manual edit "
+        "made between two ticks becomes the value the script falls back to"
+    )

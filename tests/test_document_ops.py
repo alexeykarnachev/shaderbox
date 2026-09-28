@@ -4,6 +4,7 @@ Two layers: the `app`-fixture tests drive the real production backend (glfw — 
 display-less box, run in CI); the standalone-context tests bind the real backend methods to a stub
 (the test_cross_project_tools pattern) so the logic is verified even without a window."""
 
+import json
 import types
 from collections.abc import Iterator
 from pathlib import Path
@@ -23,6 +24,14 @@ def test_rename_document_sets_name_and_keeps_id(app: Any) -> None:
     assert res.ok and res.name == "Renamed Document"
     assert app.ui_documents[document_id].ui_state.ui_name == "Renamed Document"
     assert app.current_document_id == document_id  # id unchanged
+
+    # Read it back OFF DISK. The three assertions above all inspect the in-memory object
+    # the method just mutated, so deleting the `_save_ui_document` call left them green
+    # while the rename never persisted -- the next load would show the old name.
+    on_disk = json.loads(app.session.paths.document_json_for(document_id).read_text())
+    assert on_disk["ui_state"]["ui_name"] == "Renamed Document", (
+        "the rename did not reach document.json, so it is lost on the next load"
+    )
 
 
 def test_rename_empty_name_rejects(app: Any) -> None:
