@@ -283,3 +283,40 @@ path it DID reach. Fixing the fixture usually rewrites the assertions too.
   so the `keep` flag has no observable effect under any fixture the suite builds. Fixing
   it means deciding whether the flag is load-bearing at all — a design question, not a
   test gap, and not one to answer unattended.
+
+## REVIEW ROUND — findings applied, sweep closed
+
+An opus reviewer anchored to the project's RULES rather than to the diff. It ran 22
+mutations, six of them breaks the commits had not named, and reproduced every named one.
+The two HIGH findings were both FALSE CLAIMS IN MY OWN COMMIT MESSAGES, which is the
+category a self-read cannot catch:
+
+1. **W-3's body said consolidation bought coverage.** It did not: hardcoding the settings
+   modal's flag passed all 2226 tests before and after. The refactor bought one SPELLING.
+   Now corrected AND made true -- the draw path's two inline checks go through the
+   predicate, so breaking it fails 13 tests rather than 8.
+2. **The log claimed `test_keymap_disjoint` was fixed for BOTH its vacuous tests.** Only
+   one was. The source-string sibling was byte-identical to its pre-sweep form, and
+   keeping its searched string in a COMMENT while killing the binding passed it. Deleted
+   rather than repaired -- the spy test subsumes it.
+
+Also applied: two comments narrating development history (the project forbids it; four
+others the reviewer examined were judged legitimate and kept, because they explain why a
+fixture has its odd shape); a `# type: ignore` replaced with the honest `App | None`
+signature it was hiding; stale `_muted` references in `test_theme_swap.py`.
+
+**And one finding had fallen out of the ledger entirely**: `canvas_choice_groups`'s dedup
+was named in W-0's shape list and then appeared in no table, no remaining list, no
+deferral. Now gated.
+
+### The sweep's own lesson about sweeps
+A wave's log is written by the person who did the wave, so an entry that is simply ABSENT
+is invisible to them. The reviewer found the leak by walking the inventory against the
+commits rather than reading the log. **Every future sweep should close by diffing its W-0
+inventory against what landed, item by item** -- not by re-reading its own progress file.
+
+## STATUS: CLOSED
+Eight items fixed, each verified by re-running the break that defeated it. One deliberately
+left: `ui_models.py::save`'s orphan-sweep `keep` flag, which has no observable effect under
+any fixture because an earlier unbind resolves every case -- a design question, not a test
+gap, and not one to settle unattended.
