@@ -6,6 +6,7 @@ nothing happen, and have no error to explain it. These drive the real watcher ag
 """
 
 import os
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +19,7 @@ from shaderbox.media import texture_to_rgba8
 from shaderbox.pass_graph import PassEntry, PassGraph
 from shaderbox.paths import PASSES_DIR_NAME, pass_shader_name
 from shaderbox.ui_models import UIDocument, load_document_from_dir
-from shaderbox.watch import reload_document_if_changed
+from shaderbox.watch import _reload_pass_if_changed, reload_document_if_changed
 
 _CONST = """#version 460 core
 in vec2 vs_uv;
@@ -116,12 +117,40 @@ def test_an_unchanged_document_reloads_nothing(
 def test_the_watcher_identifies_a_root_by_path_not_by_index(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
-    # The old rule was "sources[0] is the root". The position happens to be right, but a
-    # positional rule is wrong-by-construction the moment anything reorders that list — so the
-    # watcher matches on the pass's own source path.
+    """The old rule was "sources[0] is the root", and the position happens to be right.
+
+    So asserting `sources[0].path == source.path` is TRUE UNDER BOTH implementations --
+    it pins the coincidence rather than the rule, and reverting the watcher to `i == 0`
+    passed this test. The fixture has to put the root somewhere other than index 0, which
+    no document in this file does naturally.
+    """
     ui_document = _chain_document(gl_ctx, tmp_path)
     render_pass = ui_document.document.passes["a"]
-    assert render_pass.compile_unit.sources[0].path == render_pass.source.path
+    root = render_pass.source.path
+
+    # A second source ahead of the root, as a `lib:` include produces. Only its PATH
+    # matters here: the watcher decides by comparing paths, and never reads the text.
+    decoy = tmp_path / "decoy.glsl"
+    decoy.write_text("// not the root\n")
+    render_pass.compile_unit.sources = [
+        replace(render_pass.compile_unit.sources[0], path=decoy, mtime=0.0),
+        *render_pass.compile_unit.sources,
+    ]
+    assert render_pass.compile_unit.sources[0].path != root, (
+        "fixture did not displace it"
+    )
+
+    # Both look changed on disk, so a positional rule takes the decoy and a path rule
+    # takes the root. What was SYNCED is what tells the two apart.
+    root.write_text(root.read_text() + "\n// touched\n")
+    app = _FakeApp()
+    _reload_pass_if_changed(app, "doc", render_pass)  # type: ignore[arg-type]
+
+    synced = [path for path, _ in app.synced]
+    assert synced == [root], (
+        f"the watcher synced {synced} -- a positional rule would take the first source "
+        f"({decoy.name}) rather than the pass's own root"
+    )
     ui_document.document.release()
 
 
