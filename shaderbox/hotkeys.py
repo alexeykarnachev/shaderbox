@@ -159,11 +159,15 @@ def _serve_host_command(app: App, session: EditorSession, command: HostCommand) 
         )
         return
     dirty = session.editor.get_undo_index() != session.saved_undo
-    if command.kind in (HostCommandKind.WRITE, HostCommandKind.WRITE_QUIT):
-        # App.save is the one funnel: flush + document write to DISK + the
-        # copilot busy gate. A memory-only flush made :w then :q! revert past
-        # the save the user was just told about.
-        app.save()
+    # App.save is the one funnel: flush + document write to DISK + the copilot busy
+    # gate. A memory-only flush made :w then :q! revert past the save the user was just
+    # told about. Announce only what it WROTE: a blocked or failed save has already said
+    # why, and "Saved" on top of that tells the user their edits are safe when they are
+    # not.
+    if (
+        command.kind in (HostCommandKind.WRITE, HostCommandKind.WRITE_QUIT)
+        and app.save()
+    ):
         app.notifications.push("Saved")
     if command.kind in (HostCommandKind.QUIT, HostCommandKind.WRITE_QUIT):
         if command.kind == HostCommandKind.QUIT and dirty and not command.force:

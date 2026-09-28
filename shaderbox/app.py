@@ -644,7 +644,7 @@ class App:
     def _build_command_callbacks(self) -> None:
         self.command_callbacks = {
             CommandId.OPEN_PROJECTS: self.open_projects,
-            CommandId.SAVE: self.save,
+            CommandId.SAVE: self.save_command,
             CommandId.CLEAR_COPILOT_CHAT: self.copilot_clear_chat_confirmed,
             CommandId.OPEN_DOCUMENT_DIR: self.open_current_document_dir,
             CommandId.NEW_DOCUMENT: lambda: self.create_document_from_example(
@@ -2384,15 +2384,25 @@ class App:
         self.notifications.push(f"Document '{ui_document.ui_state.ui_name}' saved")
         return dir
 
-    def save(self) -> None:
-        # The busy gate covers only the document portion (the worker owns the current document
-        # mid-turn); app_state + integrations are user-owned and always persist — the
-        # quit path calls save() regardless of an in-flight turn.
+    def save(self) -> bool:
+        """Persist the current document plus the user-owned stores; True iff the DOCUMENT
+        was written.
+
+        False covers both refusals -- the copilot holds the document mid-turn, or the write
+        raised -- each of which has already told the user why. A caller that announces a
+        save must ask, since announcing one that did not happen is worse than silence.
+
+        The busy gate covers only the document portion (the worker owns the current document
+        mid-turn); app_state + integrations are user-owned and always persist — the
+        quit path calls save() regardless of an in-flight turn.
+        """
+        wrote = False
         if not self._copilot_busy_blocked("Saving"):
             self.flush_current_editor()
             if self.current_document_id:
                 try:
                     self.save_ui_document(self.ui_documents[self.current_document_id])
+                    wrote = True
                 except Exception as e:
                     logger.error(f"Failed to save current document: {e}")
                     self.notifications.push(
@@ -2424,6 +2434,13 @@ class App:
 
         self.integrations_store.save()
         self.app_state.save(self.paths.app_state_file)
+        return wrote
+
+    def save_command(self) -> None:
+        """Ctrl+S: save and say nothing. The command registry holds void callbacks, and
+        this verb announces neither outcome -- both refusals inside `save` have already
+        told the user why, and a success toast on every Ctrl+S would be noise."""
+        self.save()
 
     def save_imgui_ini(self) -> None:
         # Force-flush imgui's layout file at shutdown. imgui otherwise only autosaves on a
