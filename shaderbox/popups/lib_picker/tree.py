@@ -14,7 +14,6 @@ from imgui_bundle import imgui
 from shaderbox.app import App
 from shaderbox.paths import shader_lib_root
 from shaderbox.popups.lib_picker.filtering import (
-    copy_to_clipboard,
     insert_name,
     open_at_decl,
 )
@@ -25,6 +24,7 @@ from shaderbox.ui_primitives import (
     InlineInput,
     InputRowResult,
     context_menu_style,
+    copy_to_clipboard,
     ellipsize,
     name_input_row,
 )
@@ -321,7 +321,9 @@ def _draw_function_context_menu(app: App, fn: ShaderLibFunction) -> bool:
                 open_at_decl(app, fn)
                 close_picker = True
             if imgui.menu_item_simple("Copy name"):
-                copy_to_clipboard(fn.name)
+                app.notifications.push(
+                    copy_to_clipboard(fn.name) or "Copied to clipboard!"
+                )
             is_fav = app.shader_lib_favorites.is_favorite(fn.name)
             if imgui.menu_item_simple("Unfavorite" if is_fav else "Favorite"):
                 app.shader_lib_favorites.toggle(fn.name)

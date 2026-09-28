@@ -5,9 +5,7 @@
 the rest are the actions the tree context menu and the action row invoke.
 """
 
-import pyperclip
 from imgui_bundle import imgui
-from loguru import logger
 
 from shaderbox.app import App
 from shaderbox.editor_types import JumpRequest
@@ -97,10 +95,3 @@ def open_at_decl(app: App, fn: ShaderLibFunction) -> None:
     # directly (e.g. a future shortcut).
     app.open_shader_lib_file(fn.file)
     app.editor_jump_request = JumpRequest(fn.file, fn.line_in_file, 0)
-
-
-def copy_to_clipboard(text: str) -> None:
-    try:
-        pyperclip.copy(text)
-    except pyperclip.PyperclipException as e:
-        logger.warning(f"Could not copy: {e}")

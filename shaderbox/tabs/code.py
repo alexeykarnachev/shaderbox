@@ -933,8 +933,11 @@ def draw_chrome(app: App) -> None:
             if full_file_path.is_relative_to(app.project_dir)
             else full_file_path
         )
-        if draw_copyable_text(str(local_file_path), copy_value=str(full_file_path)):
-            app.notifications.push("Copied to clipboard!")
+        copied = draw_copyable_text(
+            str(local_file_path), copy_value=str(full_file_path)
+        )
+        if copied is not None:
+            app.notifications.push(copied or "Copied to clipboard!")
         if app.is_current_editor_dirty():
             imgui.same_line()
             imgui.text_colored(COLOR.STATE_WARN, "(unsaved)")

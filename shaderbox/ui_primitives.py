@@ -1514,16 +1514,37 @@ def label_row(
     imgui.set_next_item_width(item_width)
 
 
+CLIPBOARD_MISSING = "No clipboard backend \u2014 install xclip or xsel"
+
+
+def copy_to_clipboard(value: str) -> str:
+    """Put `value` on the clipboard; `""` when it landed, else why it did not.
+
+    The one place that decides what a failed copy IS. A caller shows the returned text
+    and says nothing when it is empty. Returning the reason rather than a bool is what
+    lets a caller distinguish "the copy failed" from "there was nothing to do" -- the
+    two states a single False collapsed, which is why three of the four call sites
+    could not report a failure they were already receiving.
+    """
+    try:
+        pyperclip.copy(value)
+    except pyperclip.PyperclipException:
+        logger.warning(CLIPBOARD_MISSING)
+        return CLIPBOARD_MISSING
+    return ""
+
+
 def draw_copyable_text(
     label: str,
     copy_value: str | None = None,
     color: tuple[float, float, float, float] | None = None,
     tooltip: str = "Click to copy",
-) -> bool:
+) -> str | None:
     """Click-to-copy text (the editor file-path / a share link share this).
 
-    Copies `copy_value` (defaults to `label`) to the clipboard on click; returns
-    True iff the copy succeeded. Caller decides whether to surface a notification.
+    `None` when not clicked, `""` when the copy landed, else why it did not -- three
+    states, because a caller that cannot tell a failed copy from an unclicked one
+    cannot report either.
     """
     imgui.push_style_color(imgui.Col_.text, color or COLOR.FG_DIM)
     clicked: bool = imgui.selectable(
@@ -1533,13 +1554,8 @@ def draw_copyable_text(
     if imgui.is_item_hovered():
         imgui.set_tooltip(tooltip)
     if not clicked:
-        return False
-    try:
-        pyperclip.copy(copy_value if copy_value is not None else label)
-        return True
-    except pyperclip.PyperclipException:
-        logger.warning("No clipboard backend (install xclip or xsel)")
-        return False
+        return None
+    return copy_to_clipboard(copy_value if copy_value is not None else label)
 
 
 def draw_link(
@@ -1562,10 +1578,7 @@ def draw_link(
         imgui.set_tooltip("Click to open + copy")
     if not clicked:
         return
-    try:
-        pyperclip.copy(target)
-    except pyperclip.PyperclipException:
-        logger.warning("No clipboard backend (install xclip or xsel)")
+    copy_to_clipboard(target)
     open_target: str = target if "://" in target else f"https://{target}"
     try:
         webbrowser.open(open_target)

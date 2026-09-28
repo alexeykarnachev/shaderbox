@@ -23,12 +23,14 @@ def draw_preview(app: App, selected: ShaderLibFunction | None, root: Path) -> No
     # Click-to-copy file path. The label shows the relative path; the copy
     # value is the absolute on-disk path (more useful for "open in another tool").
     rel = selected.file.relative_to(root)
-    draw_copyable_text(
+    copied = draw_copyable_text(
         str(rel),
         copy_value=str(selected.file),
         color=COLOR.FG_DIM,
         tooltip="Click to copy file path",
     )
+    if copied is not None:
+        app.notifications.push(copied or "Copied to clipboard!")
 
     imgui.text_colored(COLOR.ACCENT_PRIMARY, selected.signature)
 

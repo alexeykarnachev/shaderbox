@@ -40,7 +40,9 @@ def draw_file_details(
                 details.path = file_path
 
     if details.path:
-        draw_copyable_text(details.path)
+        copied = draw_copyable_text(details.path)
+        if copied is not None:
+            app.notifications.push(copied or "Copied to clipboard!")
         caption_text(f"{details.size // 1024} KB")
     else:
         text = "No output file selected"

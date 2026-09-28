@@ -1,8 +1,6 @@
-import contextlib
 import time
 from pathlib import Path
 
-import pyperclip
 from imgui_bundle import imgui, imgui_ctx
 
 from shaderbox.app import App
@@ -23,6 +21,7 @@ from shaderbox.theme import COLOR, SIZE, SPACE, fade
 from shaderbox.ui_primitives import (
     caption_text,
     copy_icon_button,
+    copy_to_clipboard,
     cycle_chip,
     cycle_chip_width,
     danger_button,
@@ -498,9 +497,8 @@ def _draw_bubble(
         right = origin.x + imgui.get_content_region_avail().x - float(SPACE.SM)
         imgui.set_next_item_allow_overlap()
         imgui.set_cursor_screen_pos((right - side, origin.y))
-        if copy_icon_button(f"copy_{idx}", side):
-            with contextlib.suppress(pyperclip.PyperclipException):
-                pyperclip.copy(text)
+        if copy_icon_button(f"copy_{idx}", side) and app is not None:
+            app.notifications.push(copy_to_clipboard(text) or "Copied to clipboard!")
         if imgui.is_item_hovered():
             imgui.set_tooltip("Copy")
         if show_revert and app is not None and revert_msg is not None:
