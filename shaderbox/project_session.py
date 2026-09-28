@@ -73,6 +73,7 @@ from shaderbox.scripting import (
     normalize_script_tabs,
     script_stub_for,
 )
+from shaderbox.scripting.keys import KeyFailReason
 from shaderbox.shader_lib import ShaderLibIndex
 from shaderbox.shader_lib import set_active as set_active_lib_index
 from shaderbox.shader_lib.favorites import ShaderLibFavoritesStore
@@ -112,6 +113,12 @@ def _noop_pass_renamed(old_path: Path, new_path: Path) -> None:
 
 
 def _noop_document_deleted(document_id: str, source_path: Path) -> None:
+    pass
+
+
+def _noop_key_warning(
+    document_id: str, pass_name: str, name: str, reason: KeyFailReason, message: str
+) -> None:
     pass
 
 
@@ -307,6 +314,12 @@ class ProjectSession:
         ] = _noop_document_source_synced,
         on_document_deleted: Callable[[str, Path], None] = _noop_document_deleted,
         on_pass_renamed: Callable[[Path, Path], None] = _noop_pass_renamed,
+        # A script key that does not land (102 D1) reaches the UI through this callback rather
+        # than a notifications.py import: the engine is headless core (`conventions.md`) and
+        # notifications.py imports imgui_bundle. Fires once per EDGE (102 D3), never per frame.
+        on_key_warning: Callable[
+            [str, str, str, KeyFailReason, str], None
+        ] = _noop_key_warning,
     ) -> None:
         self._document_examples_dir = document_examples_dir
         self._starter_example_id = starter_example_id
@@ -321,6 +334,7 @@ class ProjectSession:
         self._on_document_source_synced = on_document_source_synced
         self._on_pass_renamed = on_pass_renamed
         self._on_document_deleted = on_document_deleted
+        self._on_key_warning = on_key_warning
 
         # ---- per-project state, (re)populated by _load ----
         self.paths: ProjectPaths
@@ -346,7 +360,9 @@ class ProjectSession:
 
         # The CPU-script engine (feature 041): per-document uniform-compute behaviors, ticked once
         # per frame before render. Populated per project by _resolve_scripts in load().
-        self.script_engine = ScriptEngine(ENGINE_DRIVEN_UNIFORMS)
+        self.script_engine = ScriptEngine(
+            ENGINE_DRIVEN_UNIFORMS, on_key_warning=self._on_key_warning
+        )
         self.shader_lib_index_revision: int = 0
 
         # Built LAST: _build_copilot_capabilities reads the project-state fields above. The

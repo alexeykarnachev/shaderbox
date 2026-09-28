@@ -158,8 +158,8 @@ def test_dry_run_compile_error_no_tick(tmp_path: Path) -> None:
 
 
 def test_dry_run_orphan_and_per_key_errors(tmp_path: Path) -> None:
-    # u_typo names no active uniform (orphan); u_v is a vec2 the script drives with a bare float
-    # (per-key coercion error). u_x is fine.
+    # u_typo names no active uniform (102 D2: now a `no_such_uniform` warning, not an orphan);
+    # u_v is a vec2 the script drives with a bare float (per-key coercion error). u_x is fine.
     _write_script(
         tmp_path,
         _script(
@@ -169,9 +169,10 @@ def test_dry_run_orphan_and_per_key_errors(tmp_path: Path) -> None:
     document = _FakeDocument([_u("u_x"), _u("u_v", dim=2)])
     eng = _engine(tmp_path, document)
 
-    # The probe surfaces orphans via the RETURN value, never the console: it ticks the script across
-    # ~N frames, so a console warning would spam once per frame (the pong-script regression). 069
-    # deleted the warning outright, so the sink must stay empty for every caller, not just this one.
+    # The probe surfaces its facts via the RETURN value, never the console: it ticks the script
+    # across ~N frames, so a console warning would spam once per frame (the pong-script
+    # regression). 069 deleted the warning outright, so the sink must stay empty for every
+    # caller, not just this one.
     records: list[str] = []
     handle = logger.add(lambda m: records.append(str(m)), level="WARNING")
     try:
@@ -183,7 +184,12 @@ def test_dry_run_orphan_and_per_key_errors(tmp_path: Path) -> None:
     assert any(
         (p, name) == ("main", "u_v") for p, name, _ in probe.per_key_errors
     )  # bad shape
-    assert ("", "u_typo") in probe.orphan_keys  # no such uniform, and no error (079 D5)
+    assert any(
+        (p, name) == ("", "u_typo") for p, name, _ in probe.per_key_errors
+    )  # no such uniform, now a warning (102 D2)
+    assert (
+        probe.orphan_keys == []
+    )  # empties out once every non-landing key errors (102)
     assert not [r for r in records if "shaderbox.scripting.engine" in r]
 
 
@@ -285,10 +291,11 @@ def test_dry_run_empty_dict_drives_nothing(tmp_path: Path) -> None:
     assert probe.driven == set()  # the loud no-op fact source
 
 
-def test_dry_run_reports_the_pass_in_orphan_keys(tmp_path: Path) -> None:
-    # The copilot's write feedback is the only place a headless caller learns the ROUTING verdict, so
-    # an orphan inside a pass block must name that pass. Falsifier: report the bare name — the pass
-    # half of the assertion goes red.
+def test_dry_run_reports_the_pass_in_per_key_errors(tmp_path: Path) -> None:
+    # The copilot's write feedback is the only place a headless caller learns the ROUTING verdict,
+    # so an undeclared key inside a pass block must name that pass. 102 D2 moved this fact from
+    # orphan_keys (silent) to per_key_errors (a warning); the pass-naming requirement carries
+    # over unchanged. Falsifier: report the bare name — the pass half of the assertion goes red.
     _write_script(
         tmp_path,
         _script(
@@ -301,7 +308,8 @@ def test_dry_run_reports_the_pass_in_orphan_keys(tmp_path: Path) -> None:
     probe = eng.dry_run("n0", document, _SAMPLE_TIMES, _FPS)
 
     assert probe.driven == {("paint", "u_x")}  # the block drove paint ALONE
-    assert probe.orphan_keys == [("paint", "u_typo")]
+    assert [(p, name) for p, name, _ in probe.per_key_errors] == [("paint", "u_typo")]
+    assert probe.orphan_keys == []
 
 
 def test_a_cold_dry_run_compiles_and_reports_the_real_driven_set(
@@ -328,13 +336,12 @@ def test_a_cold_dry_run_compiles_and_reports_the_real_driven_set(
     assert moved[0] != moved[-1]
 
 
-def test_a_refused_key_is_a_per_key_error_and_an_undeclared_one_is_not(
+def test_a_refused_key_and_an_undeclared_one_are_both_per_key_errors(
     tmp_path: Path,
 ) -> None:
-    # 079 D5 splits the two states the probe used to report as one list. A key naming a SAMPLER is
-    # refused and stays an error the agent must fix; a key naming nothing yet is a fact, no error.
-    # Falsifier: report the sampler under orphan_keys again — it would reach the agent as "declare
-    # it in the shader first", advice that cannot work for a sampler.
+    # 102 D2 reverses 079 D5's split: a key naming a SAMPLER (`not_scriptable`) and a key
+    # naming nothing yet (`no_such_uniform`) are now BOTH a per_key_errors row -- distinct
+    # reasons, same reporting tier. Falsifier: either drops back to orphan_keys (silent).
     _write_script(
         tmp_path,
         _script(
@@ -346,5 +353,8 @@ def test_a_refused_key_is_a_per_key_error_and_an_undeclared_one_is_not(
 
     probe = eng.dry_run("n0", document, _SAMPLE_TIMES, _FPS)
 
-    assert [(p, name) for p, name, _ in probe.per_key_errors] == [("main", "u_tex")]
-    assert probe.orphan_keys == [("main", "u_soon")]
+    assert sorted((p, name) for p, name, _ in probe.per_key_errors) == [
+        ("main", "u_soon"),
+        ("main", "u_tex"),
+    ]
+    assert probe.orphan_keys == []

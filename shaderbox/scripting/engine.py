@@ -14,6 +14,13 @@ declaring it. Broadcasts apply first and pass blocks second, so specific beats g
 author's insertion order. An unknown pass, or a key no target declares, is a soft error the UI's strip
 shows. `coerce_one` rejects a dict outright, which is what keeps the dispatch unambiguous.
 
+A key that does not land goes through ONE path, `_warn` (102 D1): every non-landing site names a
+`KeyFailReason` (`scripting/keys.py`) and hands it to `_warn`, which is the only place that consults
+`SILENT_KEY_FAIL_REASONS` — the code deciding WHAT to do never branches on WHICH reason. A warning
+reason records a `ScriptError` (the strip's level-triggered row, unchanged) and fires `on_key_warning`
+EDGE-triggered on the reason changing (102 D3); the two silent reasons (`held_uncompiled`,
+`engine_owned`) record neither.
+
 Play/stop (048, pass-qualified by 069): the live tick takes a `stopped` set of `(pass, name)` keys the
 user has frozen for manual edit — a stopped key still ticks the script (state advances, the key stays
 "driven") but its WRITE is skipped, so the manual value sticks. Export ticks a fresh per-export instance
@@ -24,7 +31,7 @@ protocol (a document's `passes` by name, each a `ScriptPass`), so it stays in th
 A real `Document` satisfies it structurally.
 """
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, TypeGuard
@@ -43,7 +50,12 @@ from shaderbox.scripting.behavior import (
 )
 from shaderbox.scripting.context import ScriptContext
 from shaderbox.scripting.errors import ScriptError
-from shaderbox.scripting.keys import REFUSED_POPULATION, StoppedKey
+from shaderbox.scripting.keys import (
+    REFUSED_POPULATION,
+    SILENT_KEY_FAIL_REASONS,
+    KeyFailReason,
+    StoppedKey,
+)
 from shaderbox.uniform_coerce import is_text_array
 
 # The single document script: one stateful class whose update returns a dict driving many uniforms.
@@ -86,10 +98,11 @@ class ScriptProbe:
     # non-dict at some frame (the uniform freezes from there — distinct from a compile error and from a
     # per-key shape error); driven = the real (pass, uniform) pairs the script drove; per_key_errors =
     # shape/coercion failures on real uniforms AND keys the engine refused (a sampler/block, an
-    # unknown pass); orphan_keys = (pass, key) for a key naming no active uniform, which since 079
-    # D5 is a normal authoring state and carries no error — the agent still needs the fact, because
-    # such a key drives nothing; samples = (t, {(pass, name): value}) at each sample time — the
-    # motion signal (values differ across t). Both lists carry "" as the pass for a bare key.
+    # unknown pass); orphan_keys = (pass, key) for a key that landed in NEITHER of the two silent
+    # `KeyFailReason`s (`held_uncompiled`, `engine_owned`) NOR carries an error — since 102 D1/D2
+    # every other non-landing reason now warns (a per_key_errors row), so in ordinary authoring
+    # this list is EMPTY; samples = (t, {(pass, name): value}) at each sample time — the motion
+    # signal (values differ across t). Both lists carry "" as the pass for a bare key.
     compile_error: "ScriptError | None"
     driven: set[tuple[str, str]]
     per_key_errors: list[tuple[str, str, "ScriptError"]]
@@ -182,6 +195,11 @@ class DocumentScripts:
         # script_driven_uniforms) so the stale-clear can pop its error once the key stops being
         # returned. A bare key no pass declares carries "" as its pass.
         self.last_skipped: set[tuple[str, str]] = set()
+        # The edge-trigger state for `_warn` (102 D3): the REASON each (pass, name) warned with
+        # on its last tick, so a key stuck in one reason warns once and a key oscillating between
+        # two warns on every transition. A key absent here has never warned, or its last tick
+        # landed / went silent — both clear the edge, so the next warning fires again.
+        self.last_warned: dict[tuple[str, str], KeyFailReason] = {}
 
 
 def _stub_kind(uniform: moderngl.Uniform) -> tuple[str, str]:
@@ -302,8 +320,25 @@ def script_stub_for(uniforms_by_pass: dict[str, list[moderngl.Uniform]]) -> str:
     )
 
 
+def _noop_key_warning(
+    document_id: str, pass_name: str, name: str, reason: KeyFailReason, message: str
+) -> None:
+    pass
+
+
 class ScriptEngine:
-    def __init__(self, engine_driven: frozenset[str] = frozenset()) -> None:
+    def __init__(
+        self,
+        engine_driven: frozenset[str] = frozenset(),
+        # The single warn path's OUTPUT seam (102 D3a): the engine is headless core and imports
+        # no imgui, so the UI-facing notification rides an injected callback, the same idiom
+        # `ProjectSession` uses for its own `on_*` callbacks. Fires once per EDGE (a key's
+        # `KeyFailReason` changing), never per frame. Defaults to a no-op so a headless/test
+        # engine never has to pass one.
+        on_key_warning: Callable[
+            [str, str, str, KeyFailReason, str], None
+        ] = _noop_key_warning,
+    ) -> None:
         self._documents: dict[str, DocumentScripts] = {}
         # (document_id, pass_name, name) -> the most recent error, for the UI to surface. The
         # script's compile/run error keys on (document_id, "", _SCRIPT_FILE); a per-key
@@ -314,6 +349,7 @@ class ScriptEngine:
         # hardcodes these, so a script on one would silently no-op. Passed in by ProjectSession (NOT
         # imported from core, which pulls in glfw — the headless boundary). Empty in a bare test engine.
         self._engine_driven = engine_driven
+        self._on_key_warning = on_key_warning
 
     def cached_source(self, document_id: str) -> tuple[str, float] | None:
         """The script text the engine last loaded and the mtime it loaded it at, or None:
@@ -403,6 +439,7 @@ class ScriptEngine:
             self.errors.pop((document_id, pass_name, name), None)
         scripts.last_driven = set()
         scripts.last_skipped = set()
+        scripts.last_warned = {}
 
     def _binding_reject(
         self,
@@ -410,12 +447,12 @@ class ScriptEngine:
         name: str,
         active: dict[str, moderngl.Uniform | moderngl.UniformBlock],
     ) -> str | None:
-        # Why a script key can't bind to `name` on `pass_name` (None = it can, or it is simply
-        # absent — `_binds` separates those two). An engine-owned key (u_time…) is dropped SILENTLY
-        # upstream (decision 5), so it never reaches this. Writing the script before the shader
-        # declares the uniform is a normal authoring step (079 D5), so an absent name is no error;
-        # a name that IS declared but is a sampler/block is one. The pass is named in the message:
-        # the same uniform name can be legal on one pass and a sampler on another.
+        # The `not_scriptable` message when a script key names `name` on `pass_name` and `name` IS
+        # declared but is a sampler/block (None = it can bind, or it is simply absent -- `_binds`
+        # separates those two, and an absent name warns as `no_such_uniform` through `_warn`,
+        # not here). An engine-owned key (u_time…) is dropped SILENTLY upstream (`engine_owned`,
+        # 102 D1), so it never reaches this. The pass is named in the message: the same uniform
+        # name can be legal on one pass and a sampler on another.
         uniform = active.get(name)
         if uniform is not None and not is_scriptable(uniform):
             return f"pass '{pass_name}': '{name}' is a sampler/block — not a scriptable value"
@@ -518,6 +555,7 @@ class ScriptEngine:
             scripts.last_driven,
             scripts.last_skipped,
             stopped,
+            scripts=scripts,
         )
 
     def tick_export(
@@ -612,8 +650,11 @@ class ScriptEngine:
                 )
 
         # A driven key's shape failure and a skipped key's refusal (a sampler/block, an unknown
-        # pass) are both "this key names something and it did not work" — one list. A skipped key
-        # with NO error is the 079 D5 state: the shader has yet to declare it.
+        # pass) are both "this key names something and it did not work" — one list. Since 102
+        # D1/D2 every non-landing key carries an error EXCEPT the two silent reasons
+        # (`held_uncompiled`, `engine_owned`), which `_warn` records nowhere -- a skipped key
+        # with no error is now exactly one of those two, never an ordinary orphan (102's blast
+        # radius: `orphan_keys` goes empty in ordinary authoring).
         per_key = [
             (pass_name, name, err)
             for pass_name, name in sorted(seen_driven | seen_skipped)
@@ -649,14 +690,48 @@ class ScriptEngine:
     ) -> dict[str, dict[str, moderngl.Uniform | moderngl.UniformBlock]]:
         # One active-uniform map per READY pass, built once per tick. A pass that has never
         # attempted a compile is absent from the map: `get_active_uniforms` would compile it from
-        # inside the tick, which 066 D1 forbids. Its keys are then simply not declared anywhere,
-        # which since 079 D5 is a silent skip whatever the reason — mid-compile, broken, or a
-        # uniform the author has yet to write.
+        # inside the tick, which 066 D1 forbids -- its keys go through `_warn` as
+        # `held_uncompiled` (silent, 102 D1). A pass that HAS compiled and simply does not
+        # declare the name warns as `no_such_uniform` (102 D2 reverses 079 D5's silence there).
         return {
             pass_name: {u.name: u for u in render_pass.get_active_uniforms()}
             for pass_name, render_pass in document.passes.items()
             if render_pass.script_ready
         }
+
+    def _warn(
+        self,
+        *,
+        document_id: str,
+        pass_name: str,
+        name: str,
+        reason: KeyFailReason,
+        message: str,
+        errors: dict[tuple[str, str, str], ScriptError],
+        skipped: set[tuple[str, str]],
+        scripts: "DocumentScripts | None",
+    ) -> None:
+        # THE single path every non-landing key flows through (102 D1). It consults
+        # SILENT_KEY_FAIL_REASONS -- the only branch on WHICH reason anywhere in this class --
+        # and every other site here just names a reason and calls this. `skipped` always gets
+        # the pair (silent or not): it is the stale-clear's "touched this tick" bookkeeping, not
+        # the warning surface.
+        pair = (pass_name, name)
+        skipped.add(pair)
+        if reason in SILENT_KEY_FAIL_REASONS:
+            if scripts is not None:
+                scripts.last_warned.pop(pair, None)
+            return
+        errors[(document_id, pass_name, name)] = ScriptError(
+            name, "runtime", message, pass_name=pass_name
+        )
+        # Edge-triggered (102 D3): fire only when the reason CHANGES, so a key stuck in one
+        # failure warns once and one oscillating between two reasons warns on each transition.
+        # `scripts` is None for `dry_run`'s isolated tick (102 D3b) -- no live DocumentScripts to
+        # mutate, so the probe never fires the callback and never inherits or leaves edge state.
+        if scripts is not None and scripts.last_warned.get(pair) != reason:
+            scripts.last_warned[pair] = reason
+            self._on_key_warning(document_id, pass_name, name, reason, message)
 
     def _write_one(
         self,
@@ -729,10 +804,17 @@ class ScriptEngine:
         last_skipped: set[tuple[str, str]],
         stopped: frozenset[StoppedKey],
         values_sink: dict[tuple[str, str], Any] | None = None,
+        *,
+        scripts: "DocumentScripts | None" = None,
     ) -> None:
         # `values_sink` (the dry-run path): every uniform-value WRITE lands there, keyed by the (pass,
         # name) pair, + the freeze-fallback READ consults it, so the LIVE document is never written.
         # None = the live tick (write each target pass).
+        # `scripts` (102 D3b): the LIVE DocumentScripts, whose `last_warned` is the edge-trigger
+        # state `_warn` reads and updates. None for `tick_export` and `dry_run` -- both tick an
+        # ISOLATED behavior instance, and edge state living on the live document is exactly what
+        # 063 forbids a probe from mutating. Passing None makes `_warn` skip the callback and the
+        # state write rather than fabricate a throwaway edge history per call.
         behavior_key = (document_id, "", _SCRIPT_FILE)
         # Every per-key row this document carries is REBUILT each tick: dropped here, so what the
         # phases below write is what stands and a key the script fixed simply is not written
@@ -804,48 +886,91 @@ class ScriptEngine:
         }
         # A reserved key is pulled OUT of its block before anything else looks at it. The
         # `@` cannot begin a GLSL identifier or a pass name, so the namespace is decidable
-        # -- and it has to be taken here, because a key naming no uniform is silently an
-        # orphan by 079 D5, which is right for a uniform the shader has yet to declare and
-        # wrong for engine vocabulary. A mistyped `@instance` would otherwise render a
-        # blank frame with an empty error strip.
+        # -- and it has to be taken here, because a bare uniform name reaching the same
+        # point warns as a normal orphan (102 D2), which is wrong for engine vocabulary. A
+        # mistyped `@instance` now WARNS (102 D2 relaxes the old hard error) rather than
+        # rendering a blank frame with an empty error strip.
         populations: dict[str, dict[str, Any]] = {}
         for pass_name, block in blocks.items():
             for key in [k for k in block if k.startswith(RESERVED_PREFIX)]:
                 value = block.pop(key)
                 if key != INSTANCES_KEY:
-                    errors[(document_id, pass_name, key)] = ScriptError(
-                        key,
-                        "runtime",
-                        f"'{key}' is not an engine key -- did you mean "
-                        f"'{INSTANCES_KEY}'?",
+                    self._warn(
+                        document_id=document_id,
                         pass_name=pass_name,
+                        name=key,
+                        reason="unknown_engine_key",
+                        message=(
+                            f"'{key}' is not an engine key -- did you mean "
+                            f"'{INSTANCES_KEY}'?"
+                        ),
+                        errors=errors,
+                        skipped=skipped,
+                        scripts=scripts,
                     )
-                    skipped.add((pass_name, key))
                     continue
                 if not isinstance(value, dict):
-                    errors[(document_id, pass_name, key)] = ScriptError(
-                        key,
-                        "runtime",
-                        f"'{INSTANCES_KEY}' is a dict of named columns, got "
-                        f"{type(value).__name__}",
+                    self._warn(
+                        document_id=document_id,
                         pass_name=pass_name,
+                        name=key,
+                        reason="bad_population",
+                        message=(
+                            f"'{INSTANCES_KEY}' is a dict of named columns, got "
+                            f"{type(value).__name__}"
+                        ),
+                        errors=errors,
+                        skipped=skipped,
+                        scripts=scripts,
                     )
-                    skipped.add((pass_name, key))
                     continue
                 render_pass = document.passes.get(pass_name)
                 fields = getattr(render_pass, "entity_fields", ())
                 if not fields:
-                    # No `flat in` yet, or the pass has not compiled. The second is
-                    # ordinary on frame one, so this stays quiet and the next tick
-                    # routes it once a program exists.
+                    # Split per 102 D1: `active_by_pass` distinguishes a pass that has
+                    # NEVER attempted a compile (absent from the map -- `held_uncompiled`,
+                    # silent) from one that HAS compiled and simply declares no `flat in`
+                    # (`instances_without_fields`, warns). Without `active_by_pass` the two
+                    # are indistinguishable from `entity_fields` alone.
+                    if pass_name in active_by_pass:
+                        self._warn(
+                            document_id=document_id,
+                            pass_name=pass_name,
+                            name=key,
+                            reason="instances_without_fields",
+                            message=(
+                                f"pass '{pass_name}' declares no `flat in` field -- "
+                                f"'{key}' has nothing to populate"
+                            ),
+                            errors=errors,
+                            skipped=skipped,
+                            scripts=scripts,
+                        )
+                    else:
+                        self._warn(
+                            document_id=document_id,
+                            pass_name=pass_name,
+                            name=key,
+                            reason="held_uncompiled",
+                            message="",
+                            errors=errors,
+                            skipped=skipped,
+                            scripts=scripts,
+                        )
                     populations[pass_name] = value
                     continue
                 _, problem = validate_population(fields, value)
                 if problem is not None:
-                    errors[(document_id, pass_name, key)] = ScriptError(
-                        key, "runtime", problem, pass_name=pass_name
+                    self._warn(
+                        document_id=document_id,
+                        pass_name=pass_name,
+                        name=key,
+                        reason="bad_population",
+                        message=problem,
+                        errors=errors,
+                        skipped=skipped,
+                        scripts=scripts,
                     )
-                    skipped.add((pass_name, key))
                     # Mark it REFUSED rather than dropping it. An absent population
                     # legitimately means "draw fullscreen this frame", so clearing the
                     # dict here made a rejected population indistinguishable from one
@@ -859,24 +984,36 @@ class ScriptEngine:
         # the message says.
         for key in [k for k in broadcasts if k.startswith(RESERVED_PREFIX)]:
             broadcasts.pop(key)
-            errors[(document_id, "", key)] = ScriptError(
-                key,
-                "runtime",
-                f"'{key}' belongs INSIDE a pass block: "
-                f'{{"<pass>": {{"{key}": ...}}}}',
+            self._warn(
+                document_id=document_id,
+                pass_name="",
+                name=key,
+                reason="engine_key_misplaced",
+                message=(
+                    f"'{key}' belongs INSIDE a pass block: "
+                    f'{{"<pass>": {{"{key}": ...}}}}'
+                ),
+                errors=errors,
+                skipped=skipped,
+                scripts=scripts,
             )
-            skipped.add(("", key))
         for key in [k for k in raw if k.startswith(RESERVED_PREFIX) and k in blocks]:
             # `{"@instances": {...}}` at the top level is a dict, so it became a BLOCK
             # above rather than a broadcast, and the loop over broadcasts cannot see it.
             blocks.pop(key, None)
-            errors[(document_id, "", key)] = ScriptError(
-                key,
-                "runtime",
-                f"'{key}' belongs INSIDE a pass block: "
-                f'{{"<pass>": {{"{key}": ...}}}}',
+            self._warn(
+                document_id=document_id,
+                pass_name="",
+                name=key,
+                reason="engine_key_misplaced",
+                message=(
+                    f"'{key}' belongs INSIDE a pass block: "
+                    f'{{"<pass>": {{"{key}": ...}}}}'
+                ),
+                errors=errors,
+                skipped=skipped,
+                scripts=scripts,
             )
-            skipped.add(("", key))
 
         # `values_sink` is set only by `dry_run`, whose contract is that the live
         # document is byte-identical afterward. Every uniform write already honours it;
@@ -887,9 +1024,19 @@ class ScriptEngine:
                 render_pass.pending_instances = populations.get(pass_name, {})
 
         for name, value in broadcasts.items():
-            # An engine-owned key (u_time…) is SILENTLY dropped (decision 5): the renderer owns that
-            # slot and a script can't be expected to avoid naming it.
+            # An engine-owned key (u_time…) is the OTHER silent exemption (102 D1): the renderer
+            # owns that slot and a script can't be expected to avoid naming it.
             if name in self._engine_driven:
+                self._warn(
+                    document_id=document_id,
+                    pass_name="",
+                    name=name,
+                    reason="engine_owned",
+                    message="",
+                    errors=errors,
+                    skipped=skipped,
+                    scripts=scripts,
+                )
                 continue
             targets = [
                 (pass_name, active)
@@ -897,14 +1044,14 @@ class ScriptEngine:
                 if self._binds(pass_name, name, active)
             ]
             if not targets:
-                # No pass took the key, for one of two reasons. NOWHERE DECLARED is a normal
-                # authoring step (079 D5): the script names a uniform the shader has yet to
-                # declare, and the shader side already offers the declaration — silent, no row,
-                # including while a pass is mid-compile or broken, where the pass's own compile
-                # error is the thing to read. DECLARED AND REFUSED is the other half of D5: the
-                # name IS a uniform of some pass and is a sampler or a block, which no value can
-                # drive, so it stays an error on that pass. Without this split a bare sampler key
-                # went silent while the same key inside a pass block errored.
+                # No pass took the key, for one of three reasons. DECLARED AND REFUSED: the
+                # name IS a uniform of some pass and is a sampler or a block, which no value
+                # can drive -- `not_scriptable`, one row per refusing pass (a bare sampler key
+                # warns the same as the same key inside a pass block). NOWHERE DECLARED, with
+                # every pass already compiled: `no_such_uniform` (102 D2 reverses 079 D5's
+                # silence here). NOWHERE DECLARED because no pass has compiled at all yet:
+                # `held_uncompiled` (silent) -- indistinguishable from a real orphan without
+                # compiling a not-ready pass, which 066 D1 forbids from inside the tick.
                 refused = [
                     (pass_name, reason)
                     for pass_name, active in sorted(active_by_pass.items())
@@ -913,12 +1060,29 @@ class ScriptEngine:
                     is not None
                 ]
                 for pass_name, reason in refused:
-                    errors[(document_id, pass_name, name)] = ScriptError(
-                        name, "runtime", reason, pass_name=pass_name
+                    self._warn(
+                        document_id=document_id,
+                        pass_name=pass_name,
+                        name=name,
+                        reason="not_scriptable",
+                        message=reason,
+                        errors=errors,
+                        skipped=skipped,
+                        scripts=scripts,
                     )
-                    skipped.add((pass_name, name))
                 if not refused:
-                    skipped.add(("", name))
+                    self._warn(
+                        document_id=document_id,
+                        pass_name="",
+                        name=name,
+                        reason=(
+                            "no_such_uniform" if active_by_pass else "held_uncompiled"
+                        ),
+                        message=f"no pass declares '{name}'",
+                        errors=errors,
+                        skipped=skipped,
+                        scripts=scripts,
+                    )
                 continue
             for pass_name, active in targets:
                 self._write_one(
@@ -938,36 +1102,80 @@ class ScriptEngine:
         for pass_name, block in blocks.items():
             if pass_name not in document.passes:
                 real = ", ".join(sorted(document.passes))
-                errors[(document_id, "", pass_name)] = ScriptError(
-                    pass_name,
-                    "runtime",
-                    f"no pass named '{pass_name}' in this document (passes: {real})",
+                self._warn(
+                    document_id=document_id,
+                    pass_name="",
+                    name=pass_name,
+                    reason="no_such_pass",
+                    message=(
+                        f"no pass named '{pass_name}' in this document (passes: {real})"
+                    ),
+                    errors=errors,
+                    skipped=skipped,
+                    scripts=scripts,
                 )
-                skipped.add(("", pass_name))
                 continue
             active = active_by_pass.get(pass_name)
             if active is None:
-                # Never attempted a compile: HELD for this tick, no error, nothing written. The next
-                # tick recomputes; the first-render sweep admits one such pass per document per frame.
+                # Never attempted a compile: HELD for this tick (`held_uncompiled`, silent). The
+                # next tick recomputes; the first-render sweep admits one such pass per document
+                # per frame. Every key in the block shares the one reason, so `_warn` runs once
+                # per key rather than once for the pass.
+                for name in block:
+                    self._warn(
+                        document_id=document_id,
+                        pass_name=pass_name,
+                        name=name,
+                        reason="held_uncompiled",
+                        message="",
+                        errors=errors,
+                        skipped=skipped,
+                        scripts=scripts,
+                    )
                 continue
             for name, value in block.items():
                 if name in self._engine_driven:
+                    self._warn(
+                        document_id=document_id,
+                        pass_name=pass_name,
+                        name=name,
+                        reason="engine_owned",
+                        message="",
+                        errors=errors,
+                        skipped=skipped,
+                        scripts=scripts,
+                    )
                     continue
-                reason = self._binding_reject(pass_name, name, active)
-                if reason is not None:
+                reason_message = self._binding_reject(pass_name, name, active)
+                if reason_message is not None:
                     # A sampler/block key: record a soft error so the strip surfaces it on the
                     # script tab AND on this pass's shader tab, then SKIP with no write. It goes in
                     # `skipped` NOT `driven` (it names no scriptable uniform, so
                     # script_driven_uniforms must not claim ownership).
-                    errors[(document_id, pass_name, name)] = ScriptError(
-                        name, "runtime", reason, pass_name=pass_name
+                    self._warn(
+                        document_id=document_id,
+                        pass_name=pass_name,
+                        name=name,
+                        reason="not_scriptable",
+                        message=reason_message,
+                        errors=errors,
+                        skipped=skipped,
+                        scripts=scripts,
                     )
-                    skipped.add((pass_name, name))
                     continue
                 if name not in active:
-                    # The pass compiles and does not declare this name: the same normal step as
-                    # a broadcast orphan (079 D5), skipped silently.
-                    skipped.add((pass_name, name))
+                    # The pass compiles and does not declare this name: the same shape as a
+                    # broadcast orphan, and since 102 D2 it warns instead of 079 D5's silence.
+                    self._warn(
+                        document_id=document_id,
+                        pass_name=pass_name,
+                        name=name,
+                        reason="no_such_uniform",
+                        message=f"pass '{pass_name}' declares no uniform '{name}'",
+                        errors=errors,
+                        skipped=skipped,
+                        scripts=scripts,
+                    )
                     continue
                 self._write_one(
                     document_id=document_id,
