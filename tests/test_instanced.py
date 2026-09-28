@@ -365,3 +365,70 @@ def test_every_supported_type_has_an_entry_in_every_table() -> None:
     # refuses is dead weight that reads as a supported type.
     assert set(_ATTRIBUTE_FORMATS) == set(SUPPORTED_TYPES)
     assert set(_COMPONENTS) == set(SUPPORTED_TYPES)
+
+
+def test_a_population_outgrowing_its_buffers_frees_the_vao_it_replaces(
+    gl_ctx: moderngl.Context, tmp_path: Path
+) -> None:
+    """A growing flock must not leak a VertexArray per growth step.
+
+    `_upload_instances` drops `self.vao` so the next frame rebuilds it over the new
+    buffers. The two other sites that retire a live VAO -- `invalidate` and `compile` --
+    release it first; this one did not, so every growth orphaned one. Falsifier: delete
+    the release and keep the `self.vao = None`, which is the code as it stood.
+
+    GL hands released names back out, so the rebuilt VAO landing on the SAME name is what
+    proves the old one was freed rather than forgotten. Comparing the objects would not:
+    moderngl's deferred collection leaves a released VertexArray answering as one.
+    """
+    source = tmp_path / "growing.frag.glsl"
+    source.write_text(
+        """#version 460 core
+in vec2 vs_quad;
+flat in vec2  pos;
+flat in float radius;
+out vec4 frag_color;
+void main(){ if (length(vs_quad) > 1.0) discard; frag_color = vec4(1.0); }
+"""
+    )
+    render_pass = Pass(
+        gl=gl_ctx, source=ShaderSource.load(source), canvas_size=(64, 64)
+    )
+    render_pass.compile()
+    render_pass.render(
+        u_time=0.0,
+        instances={
+            "pos": np.zeros((2, 2), dtype="f4"),
+            "radius": np.full(2, 0.2, dtype="f4"),
+        },
+    )
+    before = render_pass.vao
+    assert before is not None, (
+        "the fixture drew nothing instanced -- it never reached this"
+    )
+    name = before.glo
+    reserved = {n: b.size for n, b in render_pass.instance_buffers.items()}
+    assert reserved, "the fixture allocated no instance buffers"
+
+    # Past the doubled reserve, which is what forces the buffers -- and the VAO over them --
+    # to be replaced rather than rewritten in place.
+    count = max(reserved.values()) * 4
+    render_pass.render(
+        u_time=0.0,
+        instances={
+            "pos": np.zeros((count, 2), dtype="f4"),
+            "radius": np.full(count, 0.2, dtype="f4"),
+        },
+    )
+    grew = any(
+        render_pass.instance_buffers[n].size > size for n, size in reserved.items()
+    )
+    assert grew, (
+        "the population did not outgrow its reserve -- the fixture missed the path"
+    )
+
+    after = render_pass.vao
+    assert after is not None and after is not before, "the VAO was not replaced"
+    assert after.glo == name, (
+        "the replaced VertexArray outlived the population's growth"
+    )

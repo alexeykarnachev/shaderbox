@@ -733,6 +733,8 @@ class Pass:
                 # buffer's contents.
                 buffer = self._gl.buffer(reserve=max(column.nbytes * 2, 1024))
                 self.instance_buffers[entity_field.name] = buffer
+                if self.vao:
+                    self.vao.release()
                 self.vao = None
             buffer.write(column)
         if self.vao is None:
