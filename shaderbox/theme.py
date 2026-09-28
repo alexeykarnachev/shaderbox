@@ -27,7 +27,7 @@ Color framework (portable to a future non-gruvbox theme):
 
 import colorsys
 import zlib
-from typing import Literal
+from typing import Literal, get_args
 
 from imgui_bundle import imgui
 
@@ -49,6 +49,13 @@ def _hex(h: str, a: float = 1.0) -> tuple[float, float, float, float]:
     g = int(h[2:4], 16) / 255.0
     b = int(h[4:6], 16) / 255.0
     return (r, g, b, a)
+
+
+def fade(
+    color: tuple[float, float, float, float], a: float
+) -> tuple[float, float, float, float]:
+    """Same RGB, new alpha — for translucent washes off a solid token."""
+    return (color[0], color[1], color[2], a)
 
 
 def _muted(
@@ -108,10 +115,10 @@ _ACCENTS: dict[
         tuple[float, float, float, float],
     ],
 ] = {
-    "yellow": (_P["yellow_b"], _P["orange_b"], (250 / 255, 189 / 255, 47 / 255, 0.18)),
-    "aqua": (_P["aqua_b"], _P["aqua_n"], (142 / 255, 192 / 255, 124 / 255, 0.18)),
-    "orange": (_P["orange_b"], _P["orange_n"], (254 / 255, 128 / 255, 25 / 255, 0.18)),
-    "blue": (_P["blue_b"], _P["blue_n"], (131 / 255, 165 / 255, 152 / 255, 0.22)),
+    "yellow": (_P["yellow_b"], _P["orange_b"], fade(_P["yellow_b"], 0.18)),
+    "aqua": (_P["aqua_b"], _P["aqua_n"], fade(_P["aqua_b"], 0.18)),
+    "orange": (_P["orange_b"], _P["orange_n"], fade(_P["orange_b"], 0.18)),
+    "blue": (_P["blue_b"], _P["blue_n"], fade(_P["blue_b"], 0.22)),
 }
 
 
@@ -164,12 +171,7 @@ class _ColorBag:
     # accents — overwritten by apply_theme()
     ACCENT_PRIMARY: tuple[float, float, float, float] = _P["yellow_b"]
     ACCENT_ACTIVE: tuple[float, float, float, float] = _P["orange_b"]
-    ACCENT_ALPHA: tuple[float, float, float, float] = (
-        250 / 255,
-        189 / 255,
-        47 / 255,
-        0.18,
-    )
+    ACCENT_ALPHA: tuple[float, float, float, float] = fade(_P["yellow_b"], 0.18)
 
     # selection cue — FIXED (never written by apply_theme); must stay distinct from
     # every accent preset and state hue (see import-time invariant below).
@@ -218,13 +220,6 @@ class _ColorBag:
     # choices follow the EDITOR, so a port reads as what its name reads as in
     # the code -- a sampler bound to a pass is aqua, an output is orange, a
     # builtin uniform is blue.
-    GRAPH_PORT_IN: tuple[float, float, float, float] = _muted(_P["aqua_n"], 0.24, 0.47)
-    GRAPH_PORT_OUT: tuple[float, float, float, float] = _muted(
-        _P["orange_n"], 0.34, 0.50
-    )
-    GRAPH_PORT_BOTH: tuple[float, float, float, float] = _muted(
-        _P["yellow_n"], 0.32, 0.49
-    )
     # The DEFAULT non-wirable row: a value the pass declares that nothing
     # special writes. Neutral on purpose -- the row's own tone already says
     # "no wire reaches this", and a hue here would be a signal with nothing
@@ -235,32 +230,17 @@ class _ColorBag:
     #
     # The engine's blue is `kind_color(ENGINE_UNIFORM)`, where the rest of
     # the app already keeps it, and it reaches the row as an override.
-    GRAPH_PORT_CONTROL: tuple[float, float, float, float] = _muted(
-        _P["bg_4"], 0.05, 0.42
-    )
     # The exclusive hover cue (093): a neutral, because every chromatic palette hue is an
     # accent primary, a state hue, a group tint or SELECT, and three of those meet on one wire.
     GRAPH_HOVER: tuple[float, float, float, float] = _P["fg_0"]
 
-    # Syntax tokens for the inline editor, applied via `syntax_colors.editor_palette`
-    # (the Color->SYNTAX_* slot mapping).
-    SYN_KEYWORD: tuple[float, float, float, float] = _P["red_b"]
-    SYN_BUILTIN: tuple[float, float, float, float] = _P["green_b"]
-    SYN_NUMBER: tuple[float, float, float, float] = _P["purple_b"]
-    SYN_STRING: tuple[float, float, float, float] = _P["green_b"]
-    SYN_COMMENT: tuple[float, float, float, float] = _P["gray"]
-    SYN_UNIFORM: tuple[float, float, float, float] = _P["blue_b"]
-    # What a name IS, beyond the lexer (078 D2): a uniform the script returns, a sampler wired
-    # to another pass. Read by the sampler-source list now and by the intel color table.
-    SYN_SCRIPT_UNIFORM: tuple[float, float, float, float] = _P["green_b"]
-    SYN_PASS_SAMPLER: tuple[float, float, float, float] = _P["aqua_b"]
-    SYN_OUTPUT: tuple[float, float, float, float] = _P["orange_b"]
+    # Syntax colours are NOT here. A colour means a semantic ROLE, and roles live in
+    # `ROLE_COLOR` below -- one table, keyed by what a name IS rather than by which
+    # language it appeared in. `syntax_colors.py` maps each `SymbolKind` onto a role and
+    # never names a colour, so re-theming is `_P` alone and re-assigning a role is
+    # `ROLE_COLOR` alone.
     SYN_IDENT: tuple[float, float, float, float] = _P["fg_1"]
     SYN_OP: tuple[float, float, float, float] = _P["fg_3"]
-    # Python-only, drawn in slots GLSL uses for uniforms and samplers; see
-    # `syntax_colors.editor_palette`, which is per-language.
-    SYN_PY_DEFINITION: tuple[float, float, float, float] = _P["yellow_b"]
-    SYN_PY_DECORATOR: tuple[float, float, float, float] = _P["purple_b"]
 
 
 COLOR = _ColorBag()
@@ -439,13 +419,6 @@ class SPACE:
     MD: int = 8
     LG: int = 16
     XL: int = 24
-
-
-def fade(
-    color: tuple[float, float, float, float], a: float
-) -> tuple[float, float, float, float]:
-    """Same RGB, new alpha — for translucent washes off a solid token."""
-    return (color[0], color[1], color[2], a)
 
 
 # The share of a frame budget at which a measured number stops reading as healthy, and the
@@ -672,3 +645,65 @@ def _set_colors(
 
     # modal veil
     style.set_color_(col.modal_window_dim_bg, (0.0, 0.0, 0.0, 0.55))
+
+
+# What a name IS, independent of the language it appears in. A GLSL function declaration
+# and a Python `def` are one role; a `vec3` at a use site and a `Behavior` at its `class`
+# statement are two, because one is the language's own type and the other is a type this
+# buffer declares.
+#
+# The four at the end are about THIS APP's domain rather than about a language, which is
+# why they are roles at all: a uniform the engine drives and one a script drives are
+# different facts about a name, and the editor is where an author learns which.
+SyntaxRole = Literal[
+    "keyword",
+    "type",
+    "builtin",
+    "declaration_type",
+    "declaration_function",
+    "decorator",
+    "member",
+    "ident",
+    "number",
+    "string",
+    "comment",
+    "operator",
+    "engine_uniform",
+    "script_uniform",
+    "pass_sampler",
+    "output",
+]
+SYNTAX_ROLES: tuple[SyntaxRole, ...] = get_args(SyntaxRole)
+
+# The ONE place a role becomes a colour. Every entry is a `_P` lookup, never a literal, so
+# replacing the palette re-themes every surface that draws code -- the editor text, the
+# completion popup, the uniform panel and the graph canvas all read this through
+# `syntax_colors`.
+ROLE_COLOR: dict[SyntaxRole, tuple[float, float, float, float]] = {
+    "keyword": _P["red_b"],
+    "type": _P["yellow_b"],
+    "builtin": _P["green_b"],
+    "declaration_type": _P["yellow_b"],
+    "declaration_function": _P["aqua_b"],
+    # Distinct from `number` (purple_b), which it accidentally shared before this table
+    # existed: a decorator is not a number and the colour had only ever been a free slot.
+    "decorator": _P["orange_n"],
+    # Distinct from `engine_uniform` (blue_b): a member reached through a dot and a uniform
+    # the engine drives are different facts, and one buffer shows both.
+    "member": _P["fg_2"],
+    "ident": _P["fg_1"],
+    "number": _P["purple_b"],
+    "string": _P["green_b"],
+    "comment": _P["gray"],
+    "operator": _P["fg_3"],
+    "engine_uniform": _P["blue_b"],
+    "script_uniform": _P["green_n"],
+    "pass_sampler": _P["aqua_n"],
+    "output": _P["orange_b"],
+}
+
+# Every role has a colour. A member added to the Literal without one would otherwise fail
+# at the first frame that drew it rather than at import.
+assert set(ROLE_COLOR) == set(SYNTAX_ROLES), (
+    f"roles without a colour: {set(SYNTAX_ROLES) - set(ROLE_COLOR)}"
+)

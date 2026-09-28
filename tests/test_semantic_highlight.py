@@ -24,12 +24,13 @@ from shaderbox.intel.worker import (
     PythonResult,
     PythonWorker,
 )
-from shaderbox.syntax_colors import editor_palette, kind_color, kind_slot
+from shaderbox.syntax_colors import editor_palette, kind_role, kind_slot
 from shaderbox.tabs.code import (
     PythonFeed,
     accept_python_spans,
     feed_python_word_classes,
 )
+from shaderbox.theme import ROLE_COLOR
 
 # A script with every one of the five cases, at values where they are DISTINGUISHABLE. The
 # names are deliberately reused across roles: `update` is defined once and called once,
@@ -162,7 +163,11 @@ def test_an_import_is_not_a_definition() -> None:
     # `from dataclasses import dataclass` would colour `dataclass` as though the script
     # defined it. Break by reading definitions off `get_names` instead of the parso tree.
     spans = python_spans(SOURCE)
-    defined = {span.name for span in spans if span.kind == SymbolKind.PY_DEFINITION}
+    # Both DECLARING kinds. A class is a definition too; it draws in a different colour
+    # because a type declaration and a function declaration are two roles, which is about
+    # colour rather than about what counts as declared here.
+    declaring = {SymbolKind.PY_DEFINITION, SymbolKind.PY_CLASS}
+    defined = {span.name for span in spans if span.kind in declaring}
     assert "dataclass" not in defined
     assert "math" not in defined
     assert {"Rig", "update", "drive", "ready", "__init__"} <= defined
@@ -237,8 +242,7 @@ def test_a_broken_buffer_still_answers() -> None:
         # Not merely "it did not raise": the text BEFORE the break is still classified, which
         # is what makes colour survive typing rather than blinking out at the first bad char.
         assert any(
-            span.name == "Rig" and span.kind == SymbolKind.PY_DEFINITION
-            for span in spans
+            span.name == "Rig" and span.kind == SymbolKind.PY_CLASS for span in spans
         ), broken[-40:]
 
 
@@ -588,23 +592,29 @@ def test_a_spans_job_never_delays_a_completion_job() -> None:
 # --- the palette the four kinds draw in --------------------------------------
 
 
-def test_the_python_kinds_draw_in_the_python_palette() -> None:
-    # Slots 7/8/9 mean an engine uniform and a pass sampler in a shader and a definition and
-    # a decorator in a script. That is safe only because one Editor holds one language, which
-    # `get_session` fixes at creation -- so the assertion is that the two palettes DISAGREE on
-    # the slot, which is the property that would break if a buffer ever held both.
-    python = editor_palette("python")
-    glsl = editor_palette("glsl")
-    # Slots are addressed by NAME, never as `SYNTAX_1 + n`: the enum's values are 14..20 and
-    # then 25, 26, so the arithmetic that looks right is wrong.
-    for kind, slot in (
-        (SymbolKind.PY_DEFINITION, Slot.SYNTAX_7),
-        (SymbolKind.PY_DECORATOR, Slot.SYNTAX_8),
-    ):
-        assert python[slot] != glsl[slot], kind
-        # The class number the host pushes is what indexes the palette, so the kind's slot
-        # and the palette entry it draws in have to be the same one.
-        assert python[slot] == kind_color(kind), kind
+def test_a_syntax_class_means_one_thing_in_every_buffer() -> None:
+    """One palette, and a class carries the same role wherever it is pushed.
+
+    This replaces a test that checked the two PER-LANGUAGE palettes disagreed on slots
+    7/8/9. That arrangement was sound -- one editor holds one language -- but it existed
+    only because nine classes could not hold the roles, and with fifteen it is gone. The
+    property worth pinning now is the opposite one: no class is overloaded.
+    """
+    palette = editor_palette()
+    by_class: dict[int, set[str]] = {}
+    for kind in SymbolKind:
+        cls = kind_slot(kind)
+        if cls:
+            by_class.setdefault(cls, set()).add(kind_role(kind))
+
+    for cls, roles in sorted(by_class.items()):
+        # A class carries one COLOUR, not necessarily one role: roles that share a colour
+        # deliberately share a class, which is what lets the lexer's own six be reused.
+        # `type` and `declaration_type` are the live case -- both yellow, both class 7.
+        colours = {ROLE_COLOR[role] for role in roles}
+        assert len(colours) == 1, f"class {cls} draws {len(colours)} colours: {roles}"
+        # And the palette draws it there, so what is pushed and what is drawn agree.
+        assert palette[getattr(Slot, f"SYNTAX_{cls}")] == colours.pop()
 
 
 @pytest.mark.parametrize(

@@ -42,7 +42,6 @@ from shaderbox.editor.ffi import (
     ChromeFlag,
     CursorPos,
     Editor,
-    Language,
     Style,
     ViewFlag,
     language_for_path,
@@ -1864,13 +1863,10 @@ class App:
             editor = Editor(source.text)
             language = language_for_path(source.path)
             editor.set_language(language)
-            # Per-language (105): slots 7/8/9 are an engine uniform and a pass sampler in a
-            # shader and a definition and a decorator in a script. One editor per source path
-            # with its language fixed right here is what makes that safe -- no buffer holds
-            # both vocabularies.
-            editor.set_palette(
-                editor_palette("python" if language == Language.PYTHON else "glsl")
-            )
+            # One palette: a syntax class means the same thing in every buffer, so this
+            # takes no language. It did take one when the library carried nine classes and
+            # eight roles had to share three.
+            editor.set_palette(editor_palette())
             editor.set_host_completion(True)
             # Not a setting: nothing toggles it, and a fresh handle draws no
             # gutter or status row until it is told to.

@@ -6,115 +6,142 @@ neither the editor nor the symbol taxonomy -- `theme` is colours and
 there; nothing here defines one.
 """
 
-from typing import Literal
-
 from shaderbox.editor import ffi as editor_ffi
 from shaderbox.intel.symbols import SymbolKind
-from shaderbox.theme import COLOR, fade
+from shaderbox.theme import COLOR, ROLE_COLOR, SYNTAX_ROLES, SyntaxRole, fade
+
+# What each kind of name IS. The ONLY hand-written table in the colour system, and the only
+# one about MEANING -- it names no colour and no slot, so re-theming never touches it.
+#
+# `theme.ROLE_COLOR` turns a role into a colour; `_ROLE_CLASS` below turns it into the
+# syntax class the editor library draws it in. A kind added here without a role fails the
+# enum gate before a frame draws it.
+_KIND_ROLE: dict[SymbolKind, SyntaxRole] = {
+    SymbolKind.GLSL_KEYWORD: "keyword",
+    SymbolKind.GLSL_TYPE: "type",
+    SymbolKind.GLSL_BUILTIN: "builtin",
+    SymbolKind.GLSL_VARIABLE: "builtin",
+    SymbolKind.LIB_FUNCTION: "builtin",
+    SymbolKind.ENGINE_UNIFORM: "engine_uniform",
+    SymbolKind.PASS_UNIFORM: "ident",
+    SymbolKind.PASS_SAMPLER: "pass_sampler",
+    SymbolKind.WIRABLE_SAMPLER: "pass_sampler",
+    SymbolKind.SCRIPT_UNIFORM: "script_uniform",
+    SymbolKind.BUFFER_SYMBOL: "ident",
+    SymbolKind.OUTPUT_VARIABLE: "output",
+    SymbolKind.GLSL_MEMBER: "member",
+    SymbolKind.PY_KEYWORD: "keyword",
+    SymbolKind.PY_BUILTIN: "builtin",
+    # The engine PROVIDES these names (`ScriptContext`, `Vec3`), which is what `builtin`
+    # means -- the same argument that puts `self` there rather than on `keyword`.
+    SymbolKind.PY_API: "builtin",
+    SymbolKind.PY_MEMBER: "member",
+    SymbolKind.PY_LOCAL: "ident",
+    SymbolKind.PY_SELF: "builtin",
+    SymbolKind.PY_DUNDER: "builtin",
+    SymbolKind.PY_CLASS: "declaration_type",
+    SymbolKind.PY_DEFINITION: "declaration_function",
+    SymbolKind.PY_DECORATOR: "decorator",
+    SymbolKind.PY_ANNOTATION: "type",
+}
+
+
+def kind_role(kind: SymbolKind) -> SyntaxRole:
+    return _KIND_ROLE[kind]
 
 
 def kind_color(kind: SymbolKind) -> tuple[float, float, float, float]:
-    """The color a kind of name has on a host surface (a source list, a note), the same one
-    its syntax slot draws in the popup and the text (078 D2): the enum test pins that a
-    slotted kind's color IS its slot's palette entry. Language words and types read as the
-    lexer colors them; the engine's uniforms are blue-ish, the script's green-ish, a pass
-    sampler aqua; a kind with no slot is a plain identifier."""
-    return _KIND_COLOR[kind]
+    """The colour a kind draws in, on every surface that shows code.
+
+    Derived from its role, so the editor text, the completion popup, the uniform panel and
+    the graph canvas cannot disagree -- they all arrive here. Nothing in this module names
+    a colour; `theme.ROLE_COLOR` is the one place a role becomes one.
+    """
+    return ROLE_COLOR[_KIND_ROLE[kind]]
 
 
-_KIND_COLOR: dict[SymbolKind, tuple[float, float, float, float]] = {
-    SymbolKind.GLSL_KEYWORD: COLOR.SYN_KEYWORD,
-    SymbolKind.GLSL_TYPE: COLOR.SYN_KEYWORD,
-    SymbolKind.GLSL_BUILTIN: COLOR.SYN_BUILTIN,
-    SymbolKind.GLSL_VARIABLE: COLOR.SYN_BUILTIN,
-    SymbolKind.LIB_FUNCTION: COLOR.SYN_BUILTIN,
-    SymbolKind.ENGINE_UNIFORM: COLOR.SYN_UNIFORM,
-    SymbolKind.PASS_UNIFORM: COLOR.SYN_IDENT,
-    SymbolKind.PASS_SAMPLER: COLOR.SYN_PASS_SAMPLER,
-    SymbolKind.WIRABLE_SAMPLER: COLOR.SYN_PASS_SAMPLER,
-    SymbolKind.SCRIPT_UNIFORM: COLOR.SYN_SCRIPT_UNIFORM,
-    SymbolKind.BUFFER_SYMBOL: COLOR.SYN_IDENT,
-    SymbolKind.OUTPUT_VARIABLE: COLOR.SYN_OUTPUT,
-    SymbolKind.PY_KEYWORD: COLOR.SYN_KEYWORD,
-    SymbolKind.PY_BUILTIN: COLOR.SYN_BUILTIN,
-    SymbolKind.PY_API: COLOR.SYN_KEYWORD,
-    SymbolKind.PY_MEMBER: COLOR.SYN_IDENT,
-    SymbolKind.PY_LOCAL: COLOR.SYN_IDENT,
-    SymbolKind.GLSL_MEMBER: COLOR.SYN_IDENT,
-    SymbolKind.PY_SELF: COLOR.SYN_KEYWORD,
-    SymbolKind.PY_DUNDER: COLOR.SYN_BUILTIN,
-    SymbolKind.PY_DEFINITION: COLOR.SYN_PY_DEFINITION,
-    SymbolKind.PY_DECORATOR: COLOR.SYN_PY_DECORATOR,
+# Which syntax class the library draws each role in. DERIVED from the colours: roles
+# sharing a colour share a class, and a role whose colour the lexer already emits reuses
+# the lexer's own class rather than spending a host one.
+#
+# The lexer owns 1-6 and emits those six colours itself; 7-15 are the host's. Classes are
+# GLOBAL -- one class means one thing in every buffer -- which is possible because the
+# library carries fifteen, and was not when it carried nine.
+_LEXER_CLASS_ROLE: dict[int, SyntaxRole] = {
+    1: "keyword",
+    2: "string",
+    3: "comment",
+    4: "number",
+    5: "operator",
+    6: "builtin",
 }
 
 
-# The library's syntax slot a host-classified identifier draws in (078 D2, D12): the GLSL lexer
-# emits 1 (keywords and types), 4 (numbers), 6 (builtins and functions); a host class fills
-# only the identifiers the lexer left plain. Engine uniforms take slot 7, pass samplers 8;
-# script uniforms and library functions share the builtin green (6); the fragment output takes
-# 9, orange (079 D11). CLASS numbers are contiguous; the SLOTS they draw in are addressed by
-# name (`SYNTAX_8` is 25). 0 is no class: the word stays the lexer's.
-# Every kind names its slot; 0 is the plain text color. The TEXT feed pushes only the host
-# classes (`GlslIndex.classes`), so the language kinds here color popup rows alone.
-_KIND_SLOT: dict[SymbolKind, int] = {
-    SymbolKind.GLSL_KEYWORD: 1,
-    SymbolKind.GLSL_TYPE: 1,
-    SymbolKind.GLSL_BUILTIN: 6,
-    SymbolKind.GLSL_VARIABLE: 6,
-    SymbolKind.LIB_FUNCTION: 6,
-    SymbolKind.ENGINE_UNIFORM: 7,
-    SymbolKind.PASS_UNIFORM: 0,
-    SymbolKind.PASS_SAMPLER: 8,
-    SymbolKind.WIRABLE_SAMPLER: 8,
-    SymbolKind.SCRIPT_UNIFORM: 6,
-    SymbolKind.BUFFER_SYMBOL: 0,
-    SymbolKind.OUTPUT_VARIABLE: 9,
-    SymbolKind.PY_KEYWORD: 1,
-    SymbolKind.PY_BUILTIN: 6,
-    SymbolKind.PY_API: 1,
-    SymbolKind.PY_MEMBER: 0,
-    SymbolKind.PY_LOCAL: 0,
-    SymbolKind.GLSL_MEMBER: 0,
-    # `self`/`cls` read as a keyword, which is what they are in every other editor.
-    SymbolKind.PY_SELF: 1,
-    SymbolKind.PY_DUNDER: 6,
-    SymbolKind.PY_DEFINITION: 7,
-    SymbolKind.PY_DECORATOR: 8,
-}
+def _build_role_class() -> dict[SyntaxRole, int]:
+    by_colour: dict[tuple[float, float, float, float], int] = {
+        ROLE_COLOR[role]: cls for cls, role in _LEXER_CLASS_ROLE.items()
+    }
+    assigned: dict[SyntaxRole, int] = {}
+    host_class = 7
+    for role in SYNTAX_ROLES:
+        colour = ROLE_COLOR[role]
+        # `ident` is the editor's plain text: class 0 means "leave it to the lexer", which
+        # is both correct and free.
+        if colour == ROLE_COLOR["ident"]:
+            assigned[role] = 0
+            continue
+        if colour in by_colour:
+            assigned[role] = by_colour[colour]
+            continue
+        by_colour[colour] = host_class
+        assigned[role] = host_class
+        host_class += 1
+    return assigned
+
+
+_ROLE_CLASS: dict[SyntaxRole, int] = _build_role_class()
+
+# The library refuses a class past its ceiling rather than clamping it, so a role that
+# overflowed would fail at the call -- but it would fail at RUNTIME, on whichever buffer
+# first showed that kind. Asserting here moves it to import.
+_MAX_CLASS = sum(1 for slot in editor_ffi.Slot if slot.name.startswith("SYNTAX_"))
+assert max(_ROLE_CLASS.values()) <= _MAX_CLASS, (
+    f"roles need {max(_ROLE_CLASS.values())} syntax classes, the library has {_MAX_CLASS}"
+)
 
 
 def kind_slot(kind: SymbolKind) -> int:
-    return _KIND_SLOT[kind]
+    """The syntax class the library draws this kind in. 0 means "leave it to the lexer".
 
-
-def editor_palette(
-    language: 'Literal["glsl", "python"]' = "glsl",
-) -> dict["editor_ffi.Slot", tuple[float, float, float, float]]:
-    """The gruvbox palette in libeditor theme slots (feature 067). Applied at
-    editor-session creation; the syntax slots follow the lexer's token classes
-    (1 keyword, 2 string, 3 comment, 4 number, 5 operator, 6 builtin).
-
-    The palette is PER-LANGUAGE because slots 7/8/9 mean different things in a shader and
-    in a script, and the host has exactly one editor per source path with its language
-    already decided at that site (`app.py:get_session`). So Python's four semantic kinds
-    reuse the three host-assignable slots rather than needing a wider theme array -- GLSL
-    does not use them in a `.py` buffer and Python does not use them in a `.frag.glsl` one.
-    Nothing about this needs a library change; the slots were always per-editor.
-
-    That makes `kind_slot` ambiguous on its own: slot 7 is an engine uniform in GLSL and a
-    definition in Python. It is not a collision because no buffer holds both vocabularies,
-    but a reader checking only `_KIND_SLOT` cannot see that, which is why it is said here.
+    Derived from the kind's role, so a kind's colour and the class it is pushed as cannot
+    disagree -- which they did before this table existed, when both were hand-written.
     """
-    slot = editor_ffi.Slot
-    if language == "python":
-        return _base_palette() | {
-            slot.SYNTAX_7: COLOR.SYN_PY_DEFINITION,
-            slot.SYNTAX_8: COLOR.SYN_PY_DECORATOR,
-            # Python has no fragment output; 9 is free for the third positional kind
-            # whenever D7's second producer lands one.
-            slot.SYNTAX_9: COLOR.SYN_OUTPUT,
-        }
-    return _base_palette()
+    return _ROLE_CLASS[_KIND_ROLE[kind]]
+
+
+def editor_palette() -> dict["editor_ffi.Slot", tuple[float, float, float, float]]:
+    """The palette the editor draws with: chrome from `theme.py`, syntax from the roles.
+
+    ONE palette, no language argument. A syntax class means the same thing in every
+    buffer, which the library's fifteen classes make possible -- with nine it did not fit,
+    and slots 7/8/9 meant different things in a shader and in a script.
+
+    The syntax entries are GENERATED from `_ROLE_CLASS`, so a role's colour reaches the
+    screen without anyone restating it here. Classes the roles do not claim keep the plain
+    text colour, which is what the library defaults them to anyway.
+    """
+    palette = _base_palette()
+    # The lexer's own six classes FIRST, each from the role it emits: the lexer pushes
+    # class 2 for a string whatever `_ROLE_CLASS` decided, so a class it emits must carry
+    # its colour even when a role shares that colour and was assigned elsewhere. Without
+    # this, `string` and `builtin` both resolving to class 6 left class 2 unset and every
+    # string drew as plain text.
+    for cls, role in _LEXER_CLASS_ROLE.items():
+        palette[getattr(editor_ffi.Slot, f"SYNTAX_{cls}")] = ROLE_COLOR[role]
+    for role, cls in _ROLE_CLASS.items():
+        if cls:
+            palette[getattr(editor_ffi.Slot, f"SYNTAX_{cls}")] = ROLE_COLOR[role]
+    return palette
 
 
 def _base_palette() -> dict["editor_ffi.Slot", tuple[float, float, float, float]]:
@@ -141,15 +168,6 @@ def _base_palette() -> dict["editor_ffi.Slot", tuple[float, float, float, float]
         # so the unselected rows recede and the accent picks out the row Enter takes.
         slot.POPUP_TEXT: COLOR.FG_MUTED,
         slot.POPUP_SELECTED: COLOR.ACCENT_PRIMARY,
-        slot.SYNTAX_1: COLOR.SYN_KEYWORD,
-        slot.SYNTAX_2: COLOR.SYN_STRING,
-        slot.SYNTAX_3: COLOR.SYN_COMMENT,
-        slot.SYNTAX_4: COLOR.SYN_NUMBER,
-        slot.SYNTAX_5: COLOR.SYN_OP,
-        slot.SYNTAX_6: COLOR.SYN_BUILTIN,
-        slot.SYNTAX_7: COLOR.SYN_UNIFORM,
-        slot.SYNTAX_8: COLOR.SYN_PASS_SAMPLER,
-        slot.SYNTAX_9: COLOR.SYN_OUTPUT,
         slot.WHITESPACE: fade(COLOR.FG_DIM, 0.5),
         slot.BRACKET_MATCH: fade(COLOR.ACCENT_PRIMARY, 0.25),
         # Drawn over the glyphs, so translucent; a different hue from the bracket box.

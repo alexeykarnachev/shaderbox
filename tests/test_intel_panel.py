@@ -10,6 +10,7 @@ from shaderbox.intel.symbols import SymbolKind
 from shaderbox.intel.worker import PythonRequestKind
 from shaderbox.pass_graph import NoSource
 from shaderbox.paths import pass_name_of
+from shaderbox.syntax_colors import kind_slot
 from shaderbox.tabs.code import (
     _consume_lookup_request,
     _drive_completion,
@@ -52,7 +53,12 @@ def test_the_index_colors_engine_uniforms_in_the_text(app: Any) -> None:
     assert index.lookup("u_gain") is not None
     editor.layout((800.0, 600.0), 16.0)
     lib = ensure_loaded()
-    assert lib.ed_class_at(editor._h, 0, 14) == 7, "u_time draws in the engine slot"
+    # The class comes from `kind_slot`, never a literal: it is derived from the role's
+    # colour, so a role added ahead of this one shifts the number without changing what
+    # the test is about.
+    assert lib.ed_class_at(editor._h, 0, 14) == kind_slot(SymbolKind.ENGINE_UNIFORM), (
+        "u_time draws in the engine slot"
+    )
     assert lib.ed_class_at(editor._h, 1, 14) == 0, (
         "a plain uniform keeps the lexer's class"
     )
@@ -115,7 +121,9 @@ def test_a_samplers_class_in_the_text_follows_its_value(app: Any) -> None:
     lib = ensure_loaded()
     _glsl_index_for(app, editor, tab)
     editor.layout((800.0, 600.0), 16.0)
-    assert lib.ed_class_at(editor._h, 0, 18) == 8, "a fresh sampler2D wires by name"
+    assert lib.ed_class_at(editor._h, 0, 18) == kind_slot(SymbolKind.WIRABLE_SAMPLER), (
+        "a fresh sampler2D wires by name"
+    )
     edited.uniform_values["u_paint"] = NoSource()
     _glsl_index_for(app, editor, tab)
     editor.layout((800.0, 600.0), 16.0)

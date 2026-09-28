@@ -1,18 +1,19 @@
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from imgui_bundle import imgui
 from loguru import logger
 
 from shaderbox.theme import COLOR, SPACE
 
-_DEFAULT_COLOR: tuple[float, float, float] = COLOR.STATE_OK[:3]
-
 
 @dataclass
 class _Notification:
     text: str
-    color: tuple[float, float, float] = field(default=_DEFAULT_COLOR)
+    # `None` rather than a module-level snapshot of `COLOR.STATE_OK`: a default argument is
+    # evaluated once at import, so the old constant froze whatever the palette was when
+    # this module first loaded and no later theme change reached it.
+    color: tuple[float, float, float] | None = None
     ttl: float = 5.0
 
 
@@ -23,7 +24,7 @@ class Notifications:
     def push(
         self,
         text: str,
-        color: tuple[float, float, float] = _DEFAULT_COLOR,
+        color: tuple[float, float, float] | None = None,
         ttl: float = 5.0,
     ) -> None:
         logger.debug(f"[notification] {text}")
@@ -58,5 +59,8 @@ class Notifications:
             text_size = imgui.calc_text_size(notification.text)
             x = window_size.x - text_size.x - pad
             imgui.set_cursor_pos((x, current_y))
-            imgui.text_colored((*notification.color, 1.0), notification.text)
+            # Resolved HERE, not at construction: the palette is read when the row is
+            # drawn, so a theme change reaches a notification already on the stack.
+            colour = notification.color or COLOR.STATE_OK[:3]
+            imgui.text_colored((*colour, 1.0), notification.text)
             current_y -= text_size.y + gap

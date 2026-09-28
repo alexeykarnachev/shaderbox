@@ -22,7 +22,7 @@ from shaderbox.intel.symbols import SymbolKind, kind_rank
 from shaderbox.paths import DOCUMENT_SCRIPT_BASENAME
 from shaderbox.scripting.engine import ScriptEngine
 from shaderbox.syntax_colors import editor_palette, kind_color, kind_slot
-from shaderbox.theme import COLOR
+from shaderbox.theme import ROLE_COLOR
 
 _SHADER = """#version 330
 // uniform float u_commented;
@@ -143,35 +143,24 @@ def test_every_kind_is_a_distinct_string() -> None:
 
 
 def test_every_kind_has_a_color() -> None:
-    # The checker-narrowing guard: a kind added to the enum without a color fails here, not
-    # at the first frame that draws it.
-    # Per-LANGUAGE palettes: slots 7/8/9 mean an engine uniform in a shader and a
-    # definition in a script, and no buffer holds both vocabularies (one Editor per source
-    # path, language fixed at creation). So a kind is checked against ITS language's
-    # palette; checking every kind against one palette asserts a collision that cannot
-    # happen and forbids Python from using the slots GLSL leaves free in a `.py` buffer.
-    palettes = {"glsl": editor_palette("glsl"), "python": editor_palette("python")}
-    slots = {
-        1: Slot.SYNTAX_1,
-        2: Slot.SYNTAX_2,
-        3: Slot.SYNTAX_3,
-        4: Slot.SYNTAX_4,
-        5: Slot.SYNTAX_5,
-        6: Slot.SYNTAX_6,
-        7: Slot.SYNTAX_7,
-        8: Slot.SYNTAX_8,
-        9: Slot.SYNTAX_9,
-    }
+    """Every kind has a colour, a rank and a class, and the class DRAWS that colour.
+
+    ONE palette and no language filter. An earlier version checked each kind against its
+    own language's palette, because slots 7/8/9 meant different things in a shader and in
+    a script; a class now means one thing everywhere, so the filter is gone -- and its
+    absence is what proves the roles actually unified rather than being renamed.
+    """
+    palette = editor_palette()
+    ceiling = sum(1 for slot in Slot if slot.name.startswith("SYNTAX_"))
     for kind in SymbolKind:
         assert len(kind_color(kind)) == 4
         assert kind_rank(kind) >= 0  # 079 D2: every kind sorts somewhere
-        slot = kind_slot(kind)
-        assert 0 <= slot <= 9
-        if slot:
-            # One color per kind: what the popup and the text draw is what a host surface
-            # shows, by the palette rather than by coincidence.
-            language = "python" if kind.name.startswith("PY_") else "glsl"
-            assert kind_color(kind) == palettes[language][slots[slot]], kind
+        cls = kind_slot(kind)
+        assert 0 <= cls <= ceiling, kind
+        if cls:
+            # What the popup and the text draw is what a host surface shows, by the
+            # palette rather than by coincidence.
+            assert kind_color(kind) == palette[getattr(Slot, f"SYNTAX_{cls}")], kind
 
 
 def test_the_fragment_output_is_scanned_and_the_near_misses_are_not() -> None:
@@ -195,10 +184,13 @@ def test_the_fragment_output_is_scanned_and_the_near_misses_are_not() -> None:
 def test_the_output_variable_reads_orange_and_sorts_with_the_buffers_own_names() -> (
     None
 ):
-    # The token, not a hex (079 D11's "generalizable across themes"), and slot 9 so the library
-    # draws it in the same color the popup does.
-    assert kind_color(SymbolKind.OUTPUT_VARIABLE) == COLOR.SYN_OUTPUT
-    assert kind_slot(SymbolKind.OUTPUT_VARIABLE) == 9
+    # The ROLE, not a hex and not a class number (079 D11's "generalizable across
+    # themes"). The class is derived from the role's colour, so pinning the number here
+    # would make this test the thing that breaks when a role is added ahead of it --
+    # what matters is that the library draws it in the colour the popup does, which the
+    # enum-domain test above asserts for every kind.
+    assert kind_color(SymbolKind.OUTPUT_VARIABLE) == ROLE_COLOR["output"]
+    assert kind_slot(SymbolKind.OUTPUT_VARIABLE) != 0
     assert kind_rank(SymbolKind.OUTPUT_VARIABLE) == kind_rank(SymbolKind.BUFFER_SYMBOL)
 
 

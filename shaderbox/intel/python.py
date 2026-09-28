@@ -208,7 +208,13 @@ def _definition_spans(module: NodeOrLeaf) -> list[SpanSymbol]:
     for node in _walk(module):
         if not isinstance(node, (Function, Class)):
             continue
-        found.append(_span_of(node.name, SymbolKind.PY_DEFINITION))
+        # A class and a function are two ROLES, so they must be two kinds -- the role
+        # table is keyed by role and one kind cannot carry both. The branch above already
+        # distinguishes them structurally.
+        kind = (
+            SymbolKind.PY_CLASS if isinstance(node, Class) else SymbolKind.PY_DEFINITION
+        )
+        found.append(_span_of(node.name, kind))
     return found
 
 
@@ -257,7 +263,7 @@ def _annotation_spans(node: BaseNode) -> list[SpanSymbol]:
     for child in node.children[1:]:
         if isinstance(child, Operator) and child.value == "=":
             break
-        found.extend(_name_spans(child, SymbolKind.PY_DECORATOR))
+        found.extend(_name_spans(child, SymbolKind.PY_ANNOTATION))
     return found
 
 
@@ -282,7 +288,7 @@ def _decorator_and_annotation_spans(module: NodeOrLeaf) -> list[SpanSymbol]:
                 found.extend(_decorator_name_spans(child))
         elif isinstance(node, Function):
             if node.annotation is not None:
-                found.extend(_name_spans(node.annotation, SymbolKind.PY_DECORATOR))
+                found.extend(_name_spans(node.annotation, SymbolKind.PY_ANNOTATION))
         elif isinstance(node, BaseNode) and node.type in ("annassign", "tfpdef"):
             found.extend(_annotation_spans(node))
     return found
