@@ -10,7 +10,6 @@ from typing import Any
 from unittest import mock
 
 import pytest
-from imgui_bundle import imgui
 
 from shaderbox.pass_graph import NoSource, PassSource
 from shaderbox.ui import update_and_draw
@@ -170,71 +169,6 @@ def _frames(app: Any, n: int) -> None:
 # call separates them; a move and a release arriving in one frame read as a click, so they are
 # separate frames too; and a test that needs the canvas to have drawn asserts `canvas_rect`
 # first, since every geometry field it then reads is written only on a sized frame.
-
-
-def _open_graph(app: Any, document_id: str) -> Any:
-    app.open_graph_for(document_id)
-    _frames(app, 4)
-    view = app.graph_view_for(document_id)
-    assert view.canvas_rect != (0.0, 0.0, 0.0, 0.0), "the canvas never drew"
-    return view
-
-
-def _park(app: Any, point: tuple[float, float], frames: int = 3) -> None:
-    imgui.get_io().add_mouse_pos_event(point[0], point[1])
-    _frames(app, frames)
-
-
-def _click_at(app: Any, point: tuple[float, float]) -> None:
-    _park(app, point)
-    imgui.get_io().add_mouse_button_event(0, True)
-    _frames(app, 2)
-    imgui.get_io().add_mouse_button_event(0, False)
-    _frames(app, 2)
-
-
-def _let_the_double_click_lapse(app: Any) -> None:
-    """Run frames until imgui's double-click window has closed.
-
-    A test's two presses land microseconds apart on almost the same pixel, which imgui reads
-    as ONE double-click -- a real hand aiming from a wire to its badge never does. Frames are
-    free here, and the alternative (moving the mouse far away between presses) would change
-    what the gesture under test is."""
-    deadline = imgui.get_io().mouse_double_click_time + 0.05
-    elapsed = 0.0
-    while elapsed < deadline:
-        elapsed += imgui.get_io().delta_time
-        _frames(app, 1)
-
-
-def _press_key(app: Any, key: Any) -> None:
-    imgui.get_io().add_key_event(key, True)
-    _frames(app, 2)
-    imgui.get_io().add_key_event(key, False)
-    _frames(app, 1)
-
-
-def _close_graph(app: Any, document_id: str) -> None:
-    app.close_editor_for_path(app.paths.graph_json_for(document_id))
-    _frames(app, 1)
-
-
-def _hover_fields(view: Any) -> tuple[Any, Any, Any, Any]:
-    return (view.hovered_port, view.hovered_out, view.hovered_node, view.hovered_wire)
-
-
-def _drag_node(app: Any, view: Any, start: tuple[float, float], dx: float) -> None:
-    # The mouse is walked back to `start` with the button UP first: a second drag begun from
-    # wherever the previous one ended would carry that offset into imgui's drag delta and the
-    # two cases would not measure what they name.
-    _park(app, start)
-    imgui.get_io().add_mouse_button_event(0, True)
-    _frames(app, 2)
-    # The move and the release in SEPARATE frames: in one frame imgui resets the drag before
-    # the frame runs and the pair reads as a click (measured).
-    _park(app, (start[0] + dx, start[1]))
-    imgui.get_io().add_mouse_button_event(0, False)
-    _frames(app, 3)
 
 
 _TYPED = """#version 460 core

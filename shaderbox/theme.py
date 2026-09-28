@@ -25,7 +25,6 @@ Color framework (portable to a future non-gruvbox theme):
   validates the SELECT assignment at import.
 """
 
-import colorsys
 import re
 import zlib
 from typing import Literal, get_args
@@ -57,22 +56,6 @@ def fade(
 ) -> tuple[float, float, float, float]:
     """Same RGB, new alpha — for translucent washes off a solid token."""
     return (color[0], color[1], color[2], a)
-
-
-def _muted(
-    base: tuple[float, float, float, float], saturation: float, lightness: float
-) -> tuple[float, float, float, float]:
-    """A palette hue at a chosen saturation and lightness.
-
-    For a role drawn as a FILL rather than as text. The palette's bright
-    hues are 0.7-1.0 saturated, which reads as a neon bar behind a label;
-    the same hue at 0.2-0.4 reads as a tinted surface. Derived rather than
-    hand-picked so a palette swap carries it, which is the whole contract of
-    `_P` being the only place literal colours live.
-    """
-    h, _, _ = colorsys.rgb_to_hls(base[0], base[1], base[2])
-    r, g, b = colorsys.hls_to_rgb(h, lightness, saturation)
-    return (r, g, b, base[3])
 
 
 # Gruvbox-hard palette: near-black floor (bg_0h) backs surfaces, app bg is bg_0
