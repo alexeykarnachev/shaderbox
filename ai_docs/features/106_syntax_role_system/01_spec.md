@@ -1,5 +1,8 @@
 # 106 — One syntax role system, and a palette that can actually be swapped
 
+**STATUS: SHIPPED.** D1-D8a implemented and gated. D9 (a light theme) is deliberately out
+of scope and carries its own trigger.
+
 **Two requirements, and the second is why the first matters.**
 
 1. A colour means a ROLE, and the role means the same thing in every language and on every
