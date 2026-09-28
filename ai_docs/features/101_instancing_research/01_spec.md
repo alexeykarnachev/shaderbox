@@ -1,14 +1,17 @@
-# 101 — Instancing: contract, copilot, on-ramp, and the highlighting subsystem
+# 101 — Instancing research record
 
-RESEARCH RECORD, not a plan. One session's solo reading plus four adversarial agents,
+RESEARCH RECORD, not a plan. The source of evidence for features 102-105. One session's solo reading plus four adversarial agents,
 every claim checked against the code and the measurements re-run. Nothing here is
 designed and nothing is scheduled.
 
-**This file deliberately holds four features' worth of material.** The split is the next
-session's first job (`## The split`), and the reason it is not done here is that the
-dependency order was only settled at the end of the research: the on-ramp this feature
-was originally filed for turned out to sit ON TOP of an engine contract that is not yet
+**This file holds four features' worth of material, and the split is DONE** -- 102, 103,
+104 and 105 cite it for evidence (`## The split`). It was written whole because the
+dependency order only settled at the end of the research: the on-ramp this feature was
+originally filed for turned out to sit ON TOP of an engine contract that is not yet
 correct, so documenting it first would have documented a broken foundation.
+
+**This file is now a RECORD, not a plan.** Nothing here is scheduled; the four specs carry
+the work.
 
 Provenance, since it decides how much to trust each line: claims marked MEASURED were
 produced by running code, and the agent reports re-ran every one of them. Claims marked
@@ -626,30 +629,25 @@ with a colour and a slot that nothing emits passes clean.
 
 ---
 
-# The split (the next session's first job)
+# The split — DONE
 
-Four features, in dependency order. Numbering is D-E, the implementing session's call.
+The four features are written. This file stays as the RESEARCH RECORD they cite for
+evidence and measurements; it is not itself a plan any more.
 
-| Feature | Contents | Gates on |
+| Feature | Covers | Gates on |
 |---|---|---|
-| instancing contract | I1–I7, via D-F (one warning rule, no branching) and D-G (`InstancedOutcome` at the shared root) | nothing — both decisions are made |
-| copilot integration | C1–C10 | the contract's outcome type, which C1 reads |
-| the on-ramp | D1–D10 | the contract and D-D, so it documents what is true |
-| highlighting | H-requirements above, cross-repo | nothing; parallel from the start |
+| **102** script_reporting_contract | I1–I7, via D-F and D-G | nothing |
+| **103** copilot_instancing | C1–C10 | 102's outcome seam |
+| **104** instancing_onramp | D1–D10 | 102 and 103 |
+| **105** semantic_highlighting | Part 4; requirements in `02_editor_requirements.md` | nothing — parallel |
 
-**Why this order.** I1–I5 and C1–C3 are one class -- *the system knows something is wrong and
-tells no one, or tells the opposite*. Documentation cannot fix either, and shipping the on-ramp
-first would teach a mechanism that misreports its own state.
+**Why this order.** I1–I5 and C1–C3 are one class -- *the system knows something is wrong
+and tells no one, or tells the opposite*. Documentation cannot fix either, and shipping the
+on-ramp first would teach a mechanism that misreports its own state.
 
-**The highlighting feature's deliverable is a REQUIREMENTS DOCUMENT for the editor session**, not
-code in this repo: the span API, the slot extension, and the break-it-first instruction for the
-`Language.None` gate -- which is the item most likely to be believed without testing, and the one
-with a recorded precedent of shipping broken.
-
-**That document is WRITTEN and HANDED OVER: `02_editor_requirements.md`.** It states R1-R6 with
-the evidence behind each and leaves every technical decision -- API shape, coordinate unit,
-storage, merge order, class count -- to the editor session, which owns that repo. The shaderbox
-side is written against whatever it lands on, so the span-ABI question is no longer open here.
+**105 runs in parallel** because it shares no code with the other three. Its editor-side
+requirements are written and are handed to the editor session when that feature starts (D-C),
+not before.
 
 ## Open questions
 
