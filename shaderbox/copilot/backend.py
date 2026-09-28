@@ -339,16 +339,19 @@ def _teach_instances_in_stub(stub_text: str, document: Document) -> str:
         if not fields:
             continue
         columns = "\n".join(
-            f'            #         # "{f.name}": <a {f.glsl_type} numpy array, shape '
+            f'#         "{f.name}": <a {f.glsl_type} numpy array, shape '
             f"(N,{'' if f.glsl_type in ('float', 'int', 'uint') else ' components'})>,"
             for f in render_pass.entity_fields
         )
+        # Flat at column 0 with one comment marker per line. The whole block is a COMMENT
+        # appended after the class, so indenting it to a `return` it does not belong to
+        # would describe a nesting that is not there -- and the model copies this text.
         blocks.append(
-            f'            # "{pass_name}" draws one quad PER ENTITY -- declares: '
+            f'# "{pass_name}" draws one quad PER ENTITY -- declares: '
             f"{', '.join(fields)}\n"
-            f'            # "{pass_name}": {{"@instances": {{\n'
+            f'#     "{pass_name}": {{"@instances": {{\n'
             f"{columns}\n"
-            "            # }},\n"
+            "#     }},\n"
         )
     if not blocks:
         return stub_text
@@ -511,29 +514,36 @@ def _population_motion(probe: ScriptProbe, eps: float) -> list[str]:
     samples = _population_samples(probe)
     if len(samples) < 2:
         return []
+    # The FIRST sample against EVERY later one, as `_uniform_changes` does -- not first
+    # against last. A population that orbits back to where it started, or dips and
+    # returns, is identical at the endpoints and moved throughout: comparing the two ends
+    # reports it STATIC, which is C1's own false verdict in a narrower window.
     _, first = samples[0]
-    _, last = samples[-1]
+    later = [columns for _, columns in samples[1:]]
     lines: list[str] = []
-    for pass_name in sorted(set(first) | set(last)):
+    for pass_name in sorted(set(first).union(*(set(c) for c in later))):
         c0 = first.get(pass_name)
-        c1 = last.get(pass_name)
-        if c0 is None or c1 is None:
+        others = [c[pass_name] for c in later if pass_name in c]
+        if c0 is None or not others:
             continue
         count0, cols0, verdict0 = c0
-        count1, cols1, verdict1 = c1
-        if verdict0 or verdict1:
+        if verdict0 or any(verdict for _, _, verdict in others):
             continue  # refused/not-validated is reported by _population_facts_lines, not here
-        if count0 != count1:
+        changed_count = next((count for count, _, _ in others if count != count0), None)
+        if changed_count is not None:
             lines.append(
                 f"{pass_name}.@instances: entity count CHANGES across t ({count0} -> "
-                f"{count1}) (ANIMATING)"
+                f"{changed_count}) (ANIMATING)"
             )
             continue
-        moved = [
-            name
-            for name in sorted(set(cols0) & set(cols1))
-            if _values_differ(cols0[name][2:], cols1[name][2:], eps)
-        ]
+        moved = sorted(
+            {
+                name
+                for _, cols1, _ in others
+                for name in set(cols0) & set(cols1)
+                if _values_differ(cols0[name][2:], cols1[name][2:], eps)
+            }
+        )
         if moved:
             lines.append(
                 f"{pass_name}.@instances: {', '.join(moved)} range CHANGES across t "

@@ -360,9 +360,7 @@ class ProjectSession:
 
         # The CPU-script engine (feature 041): per-document uniform-compute behaviors, ticked once
         # per frame before render. Populated per project by _resolve_scripts in load().
-        self.script_engine = ScriptEngine(
-            ENGINE_DRIVEN_UNIFORMS, on_key_warning=self._on_key_warning
-        )
+        self.script_engine = self._build_script_engine()
         self.shader_lib_index_revision: int = 0
 
         # Built LAST: _build_copilot_capabilities reads the project-state fields above. The
@@ -380,6 +378,16 @@ class ProjectSession:
             get_source_lock=lambda: self.app_state.copilot_source_lock,
             set_project_source_lock=self._set_project_source_lock,
         )
+
+    def _build_script_engine(self) -> ScriptEngine:
+        """The CPU-script engine, with the warn callback forwarded (102 D3a).
+
+        A method rather than an inline constructor call so the forwarding is reachable
+        from a test without building a whole project: the failure it guards is a
+        constructor that accepts the callback and never passes it on, which no assertion
+        about the signature can see.
+        """
+        return ScriptEngine(ENGINE_DRIVEN_UNIFORMS, on_key_warning=self._on_key_warning)
 
     def _set_project_source_lock(self, lock: SourceLock) -> None:
         # A method rather than a lambda over `self.app_state`: `load` REBINDS that attribute per
