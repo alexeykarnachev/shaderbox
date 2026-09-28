@@ -1,4 +1,4 @@
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import moderngl
@@ -25,9 +25,10 @@ from shaderbox.editor_types import EditorTab, HoverMark, JumpRequest, LookupPopu
 from shaderbox.engine_uniforms import ENGINE_UNIFORM_TYPES
 from shaderbox.help_content import ENGINE_UNIFORM_DOCS
 from shaderbox.intel.index import GlslContext, GlslIndex, build_glsl_index
+from shaderbox.intel.python import SpanSymbol, python_word_classes
 from shaderbox.intel.script import ScriptReturn, returned_uniforms
 from shaderbox.intel.symbols import Symbol
-from shaderbox.intel.worker import PythonRequest, PythonRequestKind
+from shaderbox.intel.worker import PythonRequest, PythonRequestKind, PythonResult
 from shaderbox.media import MediaWithTexture
 from shaderbox.pass_graph import AutoSource, NoSource, PassSource
 from shaderbox.paths import pass_name_of
@@ -49,6 +50,12 @@ from shaderbox.util import format_auto_value
 from shaderbox.widgets import pass_graph
 
 _MAX_ERROR_ROWS = 3
+
+# Per-buffer colour state, keyed by the tab's path. The entry also remembers its EDITOR, the
+# same reason `IntelCache` does: the library's word-class table belongs to a handle, so a
+# handle recreated for the same path has an empty table and must be fed again -- which a
+# cache keyed on the path alone would skip.
+_PYTHON_FEEDS: dict[Path, "PythonFeed"] = {}
 
 
 def _is_script_tab(tab: EditorTab | None) -> bool:
@@ -413,6 +420,144 @@ def _feed_classes(editor: Editor, index: GlslIndex) -> None:
             editor.set_word_class(word, slot)
 
 
+@dataclass
+class PythonFeed:
+    """One script buffer's semantic-colour state (105 D6).
+
+    The GLSL half is synchronous -- `_glsl_index_for` builds the index and `_feed_classes`
+    pushes it in one call, so "index rebuilt" and "classes fed" are the same instant. Python
+    cannot be: the word table is cheap and immediate, but the spans come off a worker thread
+    frames later, so the two halves need their own fingerprints and their own revision.
+
+    `revision` is what `render_state` reads (105 D3). It counts PUSHES, not edits: the editor
+    reports nothing that moves when colour is fed while the text stands still, so an answer
+    landing on an idle buffer would otherwise never be painted."""
+
+    revision: int = 0
+    # The handle the state below describes. A new handle for the same path holds no word
+    # table, so its `word_revision` must not be believed.
+    editor: Editor | None = None
+    # The buffer revision the word table was last fed for. A `None` means nothing has been
+    # fed to this handle yet, which is not the same as having been fed for revision 0.
+    word_revision: int | None = None
+    # The buffer revision a SPANS answer is in hand for, and the set itself. Kept so a
+    # re-push after a handle change or a language switch does not need a new jedi call.
+    span_revision: int | None = None
+    spans: tuple[SpanSymbol, ...] = ()
+    # The revision a SPANS request is out for, so a burst asks once rather than per frame.
+    requested_revision: int | None = None
+    # The revision this path was seen at on the PREVIOUS frame. A revision that survives a
+    # frame is a buffer that stopped moving, which is the debounce (105 D3).
+    idle_revision: int | None = None
+
+
+def _feed_entry(path: Path, editor: Editor) -> PythonFeed:
+    feed = _PYTHON_FEEDS.get(path)
+    if feed is None or feed.editor is not editor:
+        feed = PythonFeed(editor=editor)
+        _PYTHON_FEEDS[path] = feed
+    return feed
+
+
+def feed_python_word_classes(editor: Editor, feed: PythonFeed, text: str) -> bool:
+    """Push `self`, `cls` and the dunders, and say whether anything was pushed (105 D6).
+
+    This is `_feed_classes`'s Python counterpart, and it needs to exist rather than reusing
+    it: `classes()` is defined on `GlslIndex` and filters five GLSL-only kinds, so there was
+    nothing for a script tab to call. The guard at the draw site that keeps `_glsl_index_for`
+    off script tabs is correct and stays -- the GLSL index's fingerprint and `build()` are
+    entirely GLSL, and running it on a script would produce a meaningless index."""
+    revision = editor.get_undo_index()
+    if feed.word_revision == revision:
+        return False
+    feed.word_revision = revision
+    editor.clear_word_classes()
+    for word, kind in python_word_classes(text).items():
+        slot = kind_slot(kind)
+        if slot:
+            editor.set_word_class(word, slot)
+    feed.revision += 1
+    return True
+
+
+def accept_python_spans(editor: Editor, feed: PythonFeed, result: PythonResult) -> bool:
+    """Push a SPANS answer, and let the LIBRARY decide whether it is still current (105 D3b).
+
+    DROP-AND-RE-REQUEST, and the library makes it the only option: `ed_set_spans` takes the
+    `ed_revision` the text was read at and returns 1 applied, 0 that revision is no longer
+    the buffer's -- nothing changed, the previous set stands -- and -1 for a class outside
+    1..9. There is no offset salvage, which is the right call: a set computed before a
+    newline was typed would put every span below that line one row out, so a definition's
+    colour would land on the WRONG word rather than on no word.
+
+    The staleness test is the push itself rather than a host predicate. A host comparison
+    would be a second derivation of the buffer's own version, in a different number space --
+    the host reads `ed_revision`, which is `revision_base + buffer.version` -- so the two
+    could disagree and only the library's answer decides what got drawn.
+
+    An applied set is ANCHORED and follows edits until the next push, so the "colour drops to
+    plain for the whole burst" regime the spec predicted does not happen: between an edit and
+    the debounced answer the previous set keeps colouring the characters it named."""
+    feed.requested_revision = None
+    applied = editor.set_spans(
+        [
+            (span.line, span.column, span.line, span.column_end, kind_slot(span.kind))
+            for span in result.spans
+            if kind_slot(span.kind)
+        ],
+        result.request.revision,
+    )
+    if applied != 1:
+        return False
+    feed.span_revision = result.request.revision
+    feed.spans = result.spans
+    feed.revision += 1
+    return True
+
+
+def _python_feed_for(app: App, editor: Editor, tab: EditorTab) -> PythonFeed:
+    """The script tab's colour feed: the word table on every edit, a span set on idle.
+
+    The two halves compose without coordination, which the library's precedence rule makes
+    true rather than lucky: host spans win where they cover, and the word table fills the
+    identifiers the lexer left plain everywhere else. So `self` and the dunders keep their
+    colour under a span set that says nothing about them."""
+    feed = _feed_entry(tab.path, editor)
+    revision = editor.get_undo_index()
+    text = editor.get_text()
+    feed_python_word_classes(editor, feed, text)
+    _request_python_spans(app, tab, text, revision, feed)
+    return feed
+
+
+def _request_python_spans(
+    app: App, tab: EditorTab, text: str, revision: int, feed: PythonFeed
+) -> None:
+    # Debounced to buffer-idle (105 D3/D3a), which is why this asks on a revision the frame
+    # BEFORE also saw. The justification is LATENCY, not staleness: an applied span set is
+    # anchored and follows edits, so nothing blinks off mid-burst and there is no stale-answer
+    # problem to debounce away. What there is: a SPANS job costs 8.17 ms and a COMPLETE job
+    # 8.19 ms on the ONE worker thread, so asking per keystroke would double the latency of
+    # completion -- a shipped feature -- for colour that is already correct on screen.
+    if feed.span_revision == revision or feed.requested_revision == revision:
+        return
+    if feed.idle_revision != revision:
+        feed.idle_revision = revision
+        return
+    feed.requested_revision = revision
+    cursor = CursorPos(0, 0)
+    app.ensure_python_worker().submit(
+        PythonRequest(
+            PythonRequestKind.SPANS,
+            tab.path,
+            text,
+            cursor.line,
+            cursor.column,
+            revision,
+        )
+    )
+
+
 def _glsl_index_for(app: App, editor: Editor, tab: EditorTab) -> GlslIndex:
     """The buffer's index, rebuilt when its fingerprint moves; a rebuild re-feeds the
     identifier classes that color the text."""
@@ -540,6 +685,15 @@ def _pump_python(app: App, editor: Editor, tab: EditorTab) -> None:
     revision = editor.get_undo_index()
     for result in worker.poll():
         request = result.request
+        if request.kind == PythonRequestKind.SPANS:
+            # Caret-blind (105 D4): spans describe the TEXT, so an arrow key between the
+            # request and the answer must not throw away a correct set. The PATH still has to
+            # agree -- the worker is shared across tabs, and pushing one buffer's spans into
+            # another's handle would colour arbitrary characters. Staleness is the library's
+            # answer, not a predicate here.
+            if request.path == tab.path:
+                accept_python_spans(editor, _feed_entry(tab.path, editor), result)
+            continue
         if not request.matches(tab.path, revision, cursor.line, cursor.column):
             # Dropped: release the latch, so the caret returning to that exact site asks
             # again instead of waiting for an answer that was already thrown away.
@@ -1033,8 +1187,13 @@ def draw(app: App) -> None:
     # (rows > 0): a fresh session's first frame must not record the cursor with
     # rows=0, or a jump into it would never be followed.
     editor.take_scroll_request()  # absolute target; applied by the read itself
-    if tab.kind != "script":
+    if tab.kind == "script":
+        class_feed_revision = _python_feed_for(app, editor, tab).revision
+    else:
         _glsl_index_for(app, editor, tab)
+        # GLSL feeds synchronously inside the index rebuild, so its colour never lands on an
+        # idle buffer and needs no revision of its own.
+        class_feed_revision = 0
     _drive_completion(app, editor, tab)
     _consume_lookup_request(app, editor, tab)
     rows = app.editor_visible_rows
@@ -1066,6 +1225,7 @@ def draw(app: App) -> None:
         marker_fingerprint,
         settings_fingerprint,
         focused,
+        class_feed_revision,
     )
     if app.editor_renderer is None:
         app.editor_renderer = EditorRenderer(

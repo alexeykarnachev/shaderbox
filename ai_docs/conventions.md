@@ -1862,6 +1862,20 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   both are invisible, so a box is more useful than a blank you cannot distinguish from a space.
   `atlas_glyph` renders the fallback box and still advances exactly one cell, so column
   arithmetic never desyncs from buffer content — that is by design, do not ask for it to change.
+- **The `5a56ccf` -> `05f90ac` re-vendor added host SPANS, and its host half was additions
+  only.** Two exports (`ed_set_spans`, `ed_clear_spans`, 108 -> 110, re-derived with `nm -D`
+  rather than taken from the report), no removals, no signature changes, atlas and both docs
+  byte-identical. It obsoletes no host workaround, because the host had no position-keyed
+  channel to work around -- feature 105 was waiting on it.
+  Two facts a later reader will want and cannot get from the signature: an applied span set is
+  ANCHORED and follows edits until the next push, so colour does not blink off between a
+  keystroke and a debounced producer's answer; and `ed_set_text` DROPS the set (while markers
+  survive by line) because spans name characters of a text that is gone. `ed_revision` rises
+  across the set, so a host keyed on it re-requests with no special case.
+  `test_the_binding_mirrors_the_upstream_signature_table` caught the one thing that broke: its
+  namespace exec'd upstream's `Prim` alone, so a signature naming the new `Span` raised
+  NameError out of the eval instead of failing as a mismatch. It now exec's every struct the
+  table names and compares both strides.
 - **A measurement of THIS host's workload comes from this host, never from upstream.** The editor
   repo can measure what the library does with a given input; it cannot know what input we send.
   Both directions have gone wrong once. Upstream measured a 340-candidate completion batch and

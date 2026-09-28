@@ -68,13 +68,26 @@ with ShaderBox as its first client. Not a Python special case, not a shaderbox w
   order, one request at a time, on one thread. A 7.2 ms SPANS job sits in front of a COMPLETE
   job for the same burst, so completion latency — a shipped feature — regresses by up to the
   spans cost on every keystroke. Debounce (D3) or a second queue; decide and measure.
-- **D3b. Decide the revision-mismatch policy.** The research names two, with opposite visible
-  failures, and says the library forces the choice: drop-and-re-request (colour falls to plain
-  during a burst) or push-against-the-current-version (spans smear, because **the library
-  offers no offset adjustment**). The editor requirements hand this to the host, so it is
-  ShaderBox's and an earlier draft left it unmade. Note also that the host's revision is
-  `ed_revision` = `revision_base + buffer.version`, NOT `buffer.version` — the host predicate
-  and the library's span version are different numbers in different spaces.
+- **D3b. DECIDED: drop-and-re-request, and the library decides it rather than a host
+  predicate.** `ed_set_spans` (editor `05f90ac`) takes the `ed_revision` the text was read at
+  and returns 1 applied, 0 that revision is no longer the buffer's — nothing changed, the
+  previous set stands — and -1 for a class outside 1..9. There is no offset salvage, which is
+  the right call: a set computed before a newline was typed would put every span below that
+  line one row out, landing a definition's colour on the WRONG word rather than on no word.
+
+  The staleness test is THE PUSH ITSELF. A host-side comparison would be a second derivation
+  of the buffer's own version in a different number space, and only the library's answer says
+  what got drawn. Gated by `test_a_stale_span_set_is_rejected_rather_than_misapplied`, which
+  asserts both halves: the refusal returns false AND the previously applied set is still
+  colouring its characters afterwards.
+
+  **A correction to the prediction above, measured:** an applied set is ANCHORED in the
+  buffer and follows edits until the next push, so the "colour drops to PLAIN for the whole
+  burst, then snaps back" regime does not happen. Between an edit and the debounced answer
+  the previous set keeps colouring the characters it named. That changes the JUSTIFICATION
+  for the debounce — latency and head-of-line, not staleness. Pinned by
+  `test_an_applied_set_follows_an_edit`. `ed_set_text` DROPS the set, and `ed_revision` rises
+  across it, so the feed re-requests on the next idle frame with no special case.
 - **D4. A span result must not be dropped because the caret moved.** The worker's existing
   match predicate requires caret agreement; spans are a property of the TEXT. A span request
   needs a revision-only predicate.
@@ -114,8 +127,25 @@ with ShaderBox as its first client. Not a Python special case, not a shaderbox w
 | decorators | spans | **NOT jedi — needs `parso` or `ast`** |
 | annotations after `:` and `->` | spans | **NOT jedi — needs `parso` or `ast`** |
 
-**D7. Decorators and annotations need a SECOND producer, and the cost numbers do not cover
-it.** An earlier draft of this spec, and the research it cites, claimed `get_names` answers
+**D7. RESOLVED — all five cases ship, and the second producer costs LESS than the first.**
+parso answers definitions, decorators and annotations from one parse at **6.63 ms** on the
+123-line flock script, against **7.46 ms** for jedi's `get_names` alone — so the positional
+half is cheaper than the producer the original estimate was sized against, and jedi is not on
+the span path at all. On an unparseable buffer, which is the normal state mid-edit, parso
+recovers rather than raising: an unclosed paren, a dangling `def`, a half-typed annotation, an
+unterminated string and a truncated file all measured **6.26–6.74 ms** and kept the whole
+file's structure, so the deferral trigger ("if the second producer's cost on an unparseable
+buffer cannot be bounded") is not met. A 4x buffer costs 24.9 ms.
+
+parso also fixes a defect jedi would have shipped: `get_names` reports an IMPORTED name as a
+definition at its import site, so `from dataclasses import dataclass` would have coloured
+`dataclass` as though the script defined it. The tree says `funcdef`/`classdef` structurally.
+Gated by `test_an_import_is_not_a_definition`.
+
+Annotations and decorators share `PY_DECORATOR`, because the contract froze four kinds and a
+fifth was not mine to add.
+
+The original statement of the problem, which the measurements above resolve: An earlier draft of this spec, and the research it cites, claimed `get_names` answers
 all five cases. Review ran it and it does not: a decorator `@property` and a bare reference to
 `property` are **byte-identical in every field `get_names` exposes** — name, type,
 `is_definition()`, description. The same for `int` as an annotation versus `int` anywhere
@@ -128,9 +158,28 @@ state of a buffer mid-edit. **D3's measurements, D3a's head-of-line analysis and
 requirements' size budget were all sized against `get_names` alone.** Either re-cost against
 the second producer or ship the three cases jedi can answer and say which two are deferred.
 **Trigger for deferring:** if the second producer's cost on an unparseable buffer cannot be
-bounded, decorators and annotations wait.
+bounded, decorators and annotations wait. **NOT MET — see the measurements above.**
 
-**Zero free syntax classes.** Nine exist. **SIX are lexer-owned (1-6: keyword, string,
+**One thing verified rather than assumed: the column unit.** The library wants CODEPOINT
+columns and parso could have reported codepoints, UTF-16 code units or bytes. MEASURED on a
+line with an astral character, where all three differ: parso says 11 where UTF-16 says 14 and
+bytes say 20, and the library's `ed_class_at` agrees with 11 — a span pushed at the byte
+column reads back as class 0. No conversion is needed. Gated by
+`test_the_column_unit_is_codepoints_not_bytes`, whose fixture holds a 3-byte character BEFORE
+the name so the two columns differ by six; at the ASCII defaults they are equal and the gate
+would pass with a byte-based producer.
+
+**Zero free syntax classes GLOBALLY, and that turned out not to be the constraint.** The
+palette is PER-EDITOR, and ShaderBox makes one editor per source path with the language fixed
+at that same site, so slots 7/8/9 mean an engine uniform and a pass sampler in a `.frag.glsl`
+buffer and a definition and a decorator in a `.py` one. No buffer holds both vocabularies, so
+no library change and no theme widening were needed — `editor_palette` takes a language and
+`get_session` passes it. The editor session confirmed the ceiling stays at 9, that the numbers
+index `Theme.syntax` directly and are stable across versions, and that a class beyond 9 is
+REFUSED rather than clamped. The count below is still the right arithmetic for the question it
+answers:
+
+Nine exist. **SIX are lexer-owned (1-6: keyword, string,
 comment, number, operator, builtin)** and three are host-assignable (7, 8, 9) — all three
 already taken here by engine uniforms, pass samplers and the fragment output. An earlier draft
 said "four lexer-owned, five assigned", which reached the right total of nine by
@@ -165,11 +214,17 @@ ShaderBox-side:
   all three that nothing ever produces passes clean.** Four kinds go through that gate, so one
   case per kind asserting it appears on real source. Break by removing the producer while
   leaving colour and slot in place, and watch the enum gate stay green while this one fails.
-- **A stale span set is rejected rather than misapplied** (D3b's policy, once chosen).
+- **A stale span set is rejected rather than misapplied** (D3b), asserting BOTH that the push
+  is refused and that the previously applied set is still colouring its characters afterwards
+  — a return-code assertion alone would miss the second half.
+- **A spans job never delays a completion job** (D3a). Ungated when first written, and found
+  by mutating the queue back to insertion order and watching nothing fail.
+- **The column unit is codepoints** (D7), on a fixture whose byte and codepoint columns differ.
 
 ## Files touched
 
-ShaderBox side only; the editor side is the editor session's and lives in the requirements.
+The editor side landed at `05f90ac` and is vendored here (`ed_set_spans`, `ed_clear_spans`;
+108 -> 110 exports, re-derived with `nm -D`).
 
 - `shaderbox/intel/python.py` — the class/span producer, plus whatever second producer D7
   needs.
@@ -196,7 +251,7 @@ ShaderBox side only; the editor side is the editor session's and lives in the re
 
 ## Open questions for the user
 
-None blocking. The editor-side technical choices belong to that session by D-C. Two decisions
-the builder takes with a measurement rather than a maintainer answer: **D3b's
-revision-mismatch policy** and **D7's second producer** — both were presented as settled in an
-earlier draft and are not.
+None. Both decisions the builder owed a measurement are taken: **D3b** is drop-and-re-request,
+which `ed_set_spans` enforces rather than a host predicate, and **D7** ships all five cases
+because parso answers the three positional ones at 6.63 ms and stays bounded at 6.26-6.74 ms on
+every unparseable buffer tried.

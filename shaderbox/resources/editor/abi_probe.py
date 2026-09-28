@@ -20,6 +20,14 @@ if not LIB.exists():
     sys.exit(f"{LIB} missing -- run `make ffi` first")
 
 
+class Span(ctypes.Structure):
+    """Ed_Span: start and exclusive end as 0-based line and codepoint column,
+    and a class 1..9. What ed_set_spans copies in."""
+    _fields_ = [("line", ctypes.c_int32), ("col", ctypes.c_int32),
+                ("end_line", ctypes.c_int32), ("end_col", ctypes.c_int32),
+                ("cls", ctypes.c_int32)]
+
+
 class Prim(ctypes.Structure):
     _fields_ = [("kind", ctypes.c_int32)] + [
         (n, ctypes.c_float)
@@ -101,6 +109,8 @@ _SIG = {
     "ed_complete_push": (None, [ctypes.c_void_p, ctypes.c_char_p]),
     "ed_complete_push_class": (None, [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int32]),
     "ed_set_word_class": (None, [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int32]),
+    "ed_set_spans": (ctypes.c_int32, [ctypes.c_void_p, ctypes.POINTER(Span), ctypes.c_int32, ctypes.c_uint64]),
+    "ed_clear_spans": (None, [ctypes.c_void_p]),
     "ed_clear_word_classes": (None, [ctypes.c_void_p]),
     "ed_set_color": (ctypes.c_bool, [ctypes.c_void_p, ctypes.c_int32] + [ctypes.c_float] * 4),
     "ed_primitives": (ctypes.c_int32, [ctypes.c_void_p, ctypes.POINTER(Prim), ctypes.c_int32]),
@@ -2199,6 +2209,98 @@ def main() -> int:
     lib.ed_clear_word_classes(h)
     lib.ed_reset_theme(h)
     lib.ed_set_language(h, LANGS["None"])
+
+
+    print("host spans")
+    # Position-keyed classes: which `update` is a definition, which name is a
+    # type annotation. The word table cannot say this, and ffi/README.md has
+    # promised for eleven features that language None leaves host spans alone
+    # while no call let a C host push any. Every check below goes through the
+    # glyphs the host draws, and ed_class_at is read beside them where the
+    # class is the finding.
+    def push(rows, rev=None):
+        arr = (Span * max(1, len(rows)))(*[Span(*r) for r in rows])
+        return lib.ed_set_spans(h, arr, len(rows), lib.ed_revision(h) if rev is None else rev)
+
+    def cls(line, col):
+        lib.ed_layout(h, 0.0, 0.0, 900.0, 900.0, 13.0, False)
+        return lib.ed_class_at(h, line, col)
+
+    def coloured(rgb):
+        """(line, column) of every glyph drawn in rgb."""
+        cw, chh = ctypes.c_float(), ctypes.c_float()
+        count = lib.ed_layout(h, 0.0, 0.0, 900.0, 900.0, 13.0, False)
+        lib.ed_cell_size(h, ctypes.byref(cw), ctypes.byref(chh))
+        out, q = set(), Prim()
+        for i in range(count):
+            lib.ed_primitive(h, i, ctypes.byref(q))
+            if KINDS[q.kind] == "Glyph" and (q.r, q.g, q.b) == rgb:
+                out.add((int(q.y1 // chh.value), int(round(q.x0 / cw.value))))
+        return out
+
+    CYAN = (0.0, 1.0, 1.0)
+    lib.ed_set_color(h, SLOTS["Syntax_7"], *MAGENTA, 1.0)
+    lib.ed_set_color(h, SLOTS["Syntax_8"], *CYAN, 1.0)
+    lib.ed_clear_word_classes(h)
+    # LANGUAGE NONE, the configuration the README promises host spans in and
+    # the one the highlighter's gate has already shipped broken in once (for
+    # the word table). No lexer, no table: only the host's spans can draw.
+    check("language None", lib.ed_set_language(h, LANGS["None"]), True)
+    lib.ed_set_text(h, "def update(self):\n    return h\u00e9llo\n".encode())
+    check("nothing is coloured before a push", coloured(MAGENTA) | coloured(CYAN), set())
+    check("a push against the current revision is applied", push([(0, 4, 0, 10, HOST_SLOT)]), 1)
+    check("and draws under language None", coloured(MAGENTA), {(0, c) for c in range(4, 10)})
+    check("the class reads back at the span's start", cls(0, 4), HOST_SLOT)
+    check("and at its last column", cls(0, 9), HOST_SLOT)
+    check("the end is exclusive", cls(0, 10), 0)
+    # Columns are CODEPOINTS, so a span over `h\u00e9llo` lands on five glyphs
+    # and the two-byte \u00e9 is inside it rather than splitting it.
+    check("a second push replaces the first", push([(1, 11, 1, 16, 8)]), 1)
+    check("a span over multi-byte text covers its glyphs", coloured(CYAN), {(1, c) for c in range(11, 16)})
+    check("and the replaced span is gone", coloured(MAGENTA), set())
+    check("a class reads back inside the multi-byte glyph", cls(1, 12), 8)
+    check("and not past the span", cls(1, 16), 0)
+
+    # STALENESS is decided at the call. The host records ed_revision, computes,
+    # and passes it back; an edit in between means the answer is refused whole
+    # and the host LEARNS it -- the previous set stands, following the edit.
+    stale = lib.ed_revision(h)
+    lib.ed_set_cursor(h, 1, 0)
+    lib.ed_insert_at_cursor(h, b"!!")
+    check("an edit moves the revision", lib.ed_revision(h) != stale, True)
+    check("the applied set FOLLOWED the edit", coloured(CYAN), {(1, c) for c in range(13, 18)})
+    check("a push against the old revision is refused", push([(1, 0, 1, 2, 7)], stale), 0)
+    check("and changed nothing", coloured(CYAN), {(1, c) for c in range(13, 18)})
+    check("a class outside 1..9 is refused", push([(1, 0, 1, 2, 10)]), -1)
+    check("class 0 is refused too", push([(1, 0, 1, 2, 0)]), -1)
+    check("and neither changed anything", coloured(CYAN), {(1, c) for c in range(13, 18)})
+    check("a push of nothing empties the set", push([]), 1)
+    check("so nothing draws", coloured(CYAN), set())
+
+    # PRECEDENCE: the host's span wins over the lexer and over the word table
+    # where it covers, and each shows through where it does not.
+    check("language Python", lib.ed_set_language(h, LANGS["Python"]), True)
+    check("the lexer calls `def` a keyword", cls(0, 0), 1)
+    lib.ed_set_word_class(h, b"update", HOST_SLOT)
+    check("the word table colours `update`", cls(0, 4), HOST_SLOT)
+    push([(0, 0, 0, 3, 8), (0, 4, 0, 10, 9)])
+    check("a host span beats the lexer", cls(0, 0), 8)
+    check("and beats the word table", cls(0, 4), 9)
+    check("the lexer keeps `return`", cls(1, 6), 1)
+    lib.ed_clear_spans(h)
+    check("clear shows the word table again", cls(0, 4), HOST_SLOT)
+    check("and the lexer again", cls(0, 0), 1)
+    lib.ed_clear_word_classes(h)
+
+    # A new text drops the set: the spans named characters that are gone. The
+    # push is under None so the drop is what turns the highlighter off.
+    lib.ed_set_language(h, LANGS["None"])
+    push([(0, 0, 0, 3, 8)])
+    check("a span before set_text draws", coloured(CYAN), {(0, 0), (0, 1), (0, 2)})
+    lib.ed_set_text(h, b"def update(self):\n")
+    check("set_text drops the host spans", coloured(CYAN), set())
+    check("and the class is gone with them", cls(0, 0), 0)
+    lib.ed_set_language(h, LANGS["GLSL"])
 
     print("a completion row carries its class")
     lib.ed_load_atlas(h, b"assets/atlas.json")

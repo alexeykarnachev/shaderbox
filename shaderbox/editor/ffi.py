@@ -51,6 +51,20 @@ class Prim(ctypes.Structure):
 PRIM_STRIDE: int = ctypes.sizeof(Prim)
 
 
+class Span(ctypes.Structure):
+    """One host-pushed position-keyed class: start and exclusive end as a 0-based line and
+    CODEPOINT column, and a class 1..9 indexing the syntax palette. The array is copied on
+    the call, so the host's own memory may die on return."""
+
+    _fields_ = [
+        ("line", ctypes.c_int32),
+        ("col", ctypes.c_int32),
+        ("end_line", ctypes.c_int32),
+        ("end_col", ctypes.c_int32),
+        ("cls", ctypes.c_int32),
+    ]
+
+
 class Kind(IntEnum):
     BACKGROUND = 0
     SELECTION = 1
@@ -224,6 +238,16 @@ _SIG: dict[str, tuple[object, Sequence[object]]] = {
     ),
     "ed_set_word_class": (None, [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int32]),
     "ed_clear_word_classes": (None, [ctypes.c_void_p]),
+    "ed_set_spans": (
+        ctypes.c_int32,
+        [
+            ctypes.c_void_p,
+            ctypes.POINTER(Span),
+            ctypes.c_int32,
+            ctypes.c_uint64,
+        ],
+    ),
+    "ed_clear_spans": (None, [ctypes.c_void_p]),
     "ed_complete_open": (ctypes.c_bool, [ctypes.c_void_p]),
     "ed_complete_count": (ctypes.c_int32, [ctypes.c_void_p]),
     "ed_complete_selected": (ctypes.c_int32, [ctypes.c_void_p]),
@@ -641,6 +665,37 @@ class Editor:
 
     def clear_word_classes(self) -> None:
         self._lib.ed_clear_word_classes(self._h)
+
+    # --- host spans -------------------------------------------------------
+    # For facts about CHARACTERS rather than names: which `update` is a definition and which
+    # a call. Host spans WIN where they cover, over the lexer and over the word table; the
+    # word table still fills the identifiers the lexer left plain elsewhere, so the two
+    # compose with no coordination.
+
+    def set_spans(
+        self, spans: list[tuple[int, int, int, int, int]], revision: int
+    ) -> int:
+        """Replace the span set. Each row is `(line, col, end_line, end_col, cls)`, 0-based
+        line and codepoint column, exclusive end, class 1..9.
+
+        `revision` is what `get_undo_index` reported when the text the spans describe was
+        read. Returns 1 applied, 0 that revision is no longer the buffer's (NOTHING changed
+        and the previous set stands, still following edits), -1 a class outside 1..9.
+
+        An applied set is anchored in the buffer and follows edits until the next push, so
+        colour does not blink off between an edit and a debounced producer's answer.
+        `set_text` DROPS the set, since the spans name characters of a text that is gone."""
+        array = (Span * max(1, len(spans)))(*[Span(*row) for row in spans])
+        return self._lib.ed_set_spans(self._h, array, len(spans), revision)
+
+    def clear_spans(self) -> None:
+        self._lib.ed_clear_spans(self._h)
+
+    def class_at(self, line: int, column: int) -> int:
+        """The syntax class drawn at a 0-based (line, codepoint column), the same numbers the
+        text uses. It answers against the LAST `layout()`, which is where the lexing happens,
+        so 0 means "no class OR not lexed yet" -- call it after a layout."""
+        return self._lib.ed_class_at(self._h, line, column)
 
     def add_marker(
         self,
