@@ -431,7 +431,7 @@ def instanced_pass_keys(document: Document, order: Iterable[str]) -> frozenset[s
     the same field the uniforms panel's badge reads -- one fact, two surfaces.
     """
     return frozenset(
-        pass_key(name) for name in order if document.passes[name].entity_fields
+        pass_key(name) for name in order if document.passes[name].is_instanced
     )
 
 

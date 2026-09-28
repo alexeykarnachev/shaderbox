@@ -57,7 +57,7 @@ def _draw_instanced_badge(app: App, document_id: str) -> None:
     # button: ui_primitives.text_chip, STATE_INFO to match the auto-uniform block's own tone
     # above rather than a new colour invented for one row.
     panel_pass = app.panel_pass(document_id)
-    if not panel_pass.entity_fields:
+    if not panel_pass.is_instanced:
         return
     text_chip("instanced", COLOR.STATE_INFO)
     imgui.dummy((0, SPACE.MD))

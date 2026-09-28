@@ -356,6 +356,20 @@ class Pass:
         return self._black
 
     @property
+    def is_instanced(self) -> bool:
+        """Whether this pass draws one quad per ENTITY rather than one over the canvas.
+
+        The predicate lives here, on the object that owns `entity_fields`, because four
+        surfaces ask it -- the graph mark, the uniform panel chip, the pass-settings modal
+        and the draw itself -- and three of them used to re-spell `bool(p.entity_fields)`
+        inline. They agreed, which is the only reason that was survivable.
+
+        `entity_fields` is populated at compile from the FLATTENED source, so this is true
+        of the pass whatever the open tab is scrolled to.
+        """
+        return bool(self.entity_fields)
+
+    @property
     def script_ready(self) -> bool:
         # Whether the script engine may read this pass's uniforms THIS tick (069). False only while
         # a compile has never been ATTEMPTED — get_active_uniforms would compile it from inside the

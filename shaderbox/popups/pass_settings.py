@@ -137,7 +137,7 @@ def _draw_body(app: App) -> bool:
             entry,
             document.canvas_size,
             is_output=name == document.graph.output,
-            is_instanced=bool(render_pass is not None and render_pass.entity_fields),
+            is_instanced=render_pass is not None and render_pass.is_instanced,
         )
         new_entry = _draw_repeat(app, name, new_entry)
         _apply_entry(app, document_id, name, entry, new_entry)
