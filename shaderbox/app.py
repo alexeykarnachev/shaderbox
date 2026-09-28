@@ -1932,14 +1932,20 @@ class App:
         would appear on the next file opened and nowhere else.
 
         A theme that fails to load (deleted, or over the class budget) leaves the app on
-        the one it had; the setting keeps the name so the user can see what they asked for.
+        the one it had and SAYS SO; the setting keeps the name so the user can see what
+        they asked for.
         """
+        name = self.app_state.editor_settings.syntax_theme
         try:
-            set_theme(self.app_state.editor_settings.syntax_theme)
-        except Exception:
+            set_theme(name)
+        except Exception as e:
             logger.exception(
-                "syntax theme %r failed to load; keeping the current one",
-                self.app_state.editor_settings.syntax_theme,
+                "syntax theme %r failed to load; keeping the current one", name
+            )
+            # The user picked this from a combo and the editors did not change colour;
+            # without a word, an unreadable theme file reads as a broken picker.
+            self.notifications.push(
+                f"Theme {name!r} did not load: {e!s}", COLOR.STATE_ERROR[:3]
             )
             return
         palette = editor_palette()

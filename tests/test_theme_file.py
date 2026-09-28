@@ -10,6 +10,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -780,4 +781,37 @@ def test_the_chrome_palette_and_the_dark_theme_hold_the_same_hues() -> None:
     assert chrome == syntax, (
         f"the two palettes have drifted; only in theme.py: {sorted(chrome - syntax)}, "
         f"only in {DEFAULT_THEME}: {sorted(syntax - chrome)}"
+    )
+
+
+def test_a_theme_that_will_not_load_tells_the_user(
+    app: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The picker is a combo, so a failure the user is not told about reads as a dead UI.
+
+    `set_theme` is careful -- it restores the default and re-raises rather than leaving
+    the app half-switched -- and the caller then caught, logged, and returned. The engine
+    was right and the report was missing, which is the same shape as a failed copy or a
+    blocked save: the failure reaches a log and never a person.
+
+    Falsifier: drop the `notifications.push` from `App.apply_syntax_theme`.
+    """
+    from shaderbox import app as app_module
+
+    def refuse(_name: str) -> None:
+        raise ThemeError("over the class budget")
+
+    monkeypatch.setattr(app_module, "set_theme", refuse)
+    app.app_state.editor_settings.syntax_theme = "nonesuch"
+    app.notifications._stack.clear()
+
+    app.apply_syntax_theme()
+
+    texts = [n.text for n in app.notifications._stack]
+    assert texts, "the failed theme switch said nothing at all"
+    assert any("nonesuch" in text for text in texts), (
+        f"the report did not name the theme the user picked: {texts}"
+    )
+    assert any("budget" in text for text in texts), (
+        f"the report did not carry the reason: {texts}"
     )
