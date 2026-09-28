@@ -20,8 +20,9 @@ enforce: `dev_flow.md ## Documentation discipline`. The cold-context rule: `CLAU
 Each entry: check `Trigger` against what was just touched. **Fired** → resolve it inline in this same
 commit, OR sharpen the trigger with a concrete condition if it's not the moment. **Resolved** (bug
 fixed / deferral closed) → **delete the entry** in the same commit as the fix (no `[RESOLVED]` header
-— git history is authoritative). New deferred fix / "here be dragons" → **add an entry** with a
-concrete trigger (format + good-trigger test in the `todo.md` header).
+— git history is authoritative). A defect this sweep FINDS is fixed in this same wave; its durable
+knowledge goes to the feature spec or `conventions.md`. The file is frozen drain-only and takes no
+new entries, so it only ever shrinks.
 
 ## 2. `ai_docs/conventions.md` — walk it end-to-end
 
@@ -41,7 +42,8 @@ satisfies it. Scope: every file the work touched + every file hosting an invaria
 a random spot-check of files the work did NOT touch. **Comment-noise check is part of this:** flag
 multi-line comments that narrate development history (the bug-we-hit story, the why-we-changed-it
 saga) rather than state a now-fact — compress to ≤1 line + canonical-home pointer, or delete.
-Findings → fix inline OR file as a `todo.md` deferral with a trigger.
+Findings → fix inline; what is durable rather than fixable goes to the feature spec or
+`conventions.md`, never a new `todo.md` entry.
 
 ## 4. Stale refs in touched docs
 
@@ -96,7 +98,7 @@ corrected you twice on the same thing → maybe a missing rule/example. Don't in
 SANITIZE:
 | Step | Outcome |
 |---|---|
-| 1. todo.md walk        | <N walked; X resolved / Y added / "no drift"> |
+| 1. todo.md walk        | <N walked; X resolved / "no drift"> |
 | 2. conventions.md walk | <bullets confirmed; noise-audit findings or "walked, no drift"> |
 | 3. convention audit    | <invariants checked + findings, incl. comment-noise> |
 | 4. stale refs/docs     | <"clean" / fixed: ...> |
