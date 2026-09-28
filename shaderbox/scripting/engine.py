@@ -40,6 +40,7 @@ import moderngl
 from OpenGL.GL import GL_INT, GL_SAMPLER_2D, GL_UNSIGNED_INT
 
 from shaderbox.instanced import validate_population
+from shaderbox.instanced_outcome import InstancedOutcome
 from shaderbox.intel.script import glsl_type_of_value
 from shaderbox.paths import DOCUMENT_SCRIPT_BASENAME
 from shaderbox.scripting.behavior import (
@@ -132,6 +133,12 @@ class ScriptPass(Protocol):
     # becomes GPU state only inside `Pass.render`. It is also why a future off-thread
     # producer changes nothing downstream -- it writes the same slot.
     pending_instances: dict[str, Any]
+
+    # What this pass's last draw did (102 D4). The engine is the only producer that can
+    # decide `no_fields` -- a population offered to a pass declaring no `flat in` and
+    # dropped -- because the draw sees a pass with no entity fields and cannot tell one
+    # was ever offered. The other seven states are written by the draw and by `compile`.
+    last_outcome: InstancedOutcome
 
     # False only while the pass has NEVER ATTEMPTED a compile: the engine skips it this tick rather
     # than forcing a compile from inside the script tick (066 D1). True once a compile was attempted,
@@ -933,6 +940,13 @@ class ScriptEngine:
                     # (`instances_without_fields`, warns). Without `active_by_pass` the two
                     # are indistinguishable from `entity_fields` alone.
                     if pass_name in active_by_pass:
+                        # The engine is the only producer that can decide this state: the
+                        # draw sees a pass with no entity fields and cannot tell a
+                        # population was offered and dropped (102 D4's third producer).
+                        if render_pass is not None:
+                            render_pass.last_outcome = InstancedOutcome(
+                                pass_name, "no_fields"
+                            )
                         self._warn(
                             document_id=document_id,
                             pass_name=pass_name,

@@ -463,6 +463,12 @@ class Pass:
             return
 
         self.compile_unit = unit
+        # A clean compile clears whatever verdict the last one left. `no_fields` outranks
+        # the draw (see `render`), which is what makes a dropped population visible at
+        # all -- and would pin it forever once set, since the author's fix for it is to
+        # declare the `flat in` this very compile just accepted. `_fail_compile` resets it
+        # on the failing path for the same reason.
+        self.last_outcome = InstancedOutcome("", "not_compiled")
 
         if self.program:
             self.program.release()
@@ -637,7 +643,12 @@ class Pass:
         outcome = self._upload_instances(
             instances if instances is not None else self.pending_instances
         )
-        if not stale:
+        # `no_fields` is the ENGINE's verdict (102 D4's third producer) and it is about a
+        # decision already taken: a population was offered to this pass and dropped. The
+        # draw's own answer for the same frame is `fullscreen`, which is a true
+        # description of what it drew and says nothing about the population that never
+        # reached it -- so letting it win restores exactly the silence I1 names.
+        if not stale and self.last_outcome.state != "no_fields":
             self.last_outcome = outcome
         if outcome.state == "refused":
             # Hold the previous frame. The engine already reported why on the strip, and
