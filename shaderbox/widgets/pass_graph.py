@@ -501,6 +501,12 @@ def _library_canvas(
             for name in order
             if document.passes[name].compile_unit.errors
         ),
+        # 104 D3/D8: entity_fields is populated at compile from the FLATTENED source
+        # (core.Pass.compile), the same field the uniforms panel's badge reads -- one
+        # fact, two surfaces.
+        instanced=frozenset(
+            pass_key(name) for name in order if document.passes[name].entity_fields
+        ),
         # A group's hue reaches its members only inside the group's own
         # tab, where they are drawn as themselves. At the root the group is
         # one box already named after itself, so there is no member to

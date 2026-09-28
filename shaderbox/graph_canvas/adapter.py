@@ -179,15 +179,27 @@ def _state_of(
     return NodeState.NORMAL
 
 
-def _title_of(node: "CanvasNode", output: str) -> str:
-    """The node's title, marking the document's OUTPUT in text.
+def _title_of(node: "CanvasNode", output: str, instanced: frozenset[str]) -> str:
+    """The node's title, marking the document's OUTPUT and an INSTANCED pass in text.
 
     A property of the node, so it is said in words rather than spent as a
     fourth ring colour competing with the three interaction states. It is
     also the one mark that survives a node being hovered, selected and
     failing at once, which a colour cannot.
+
+    104 D2a/D2b: the graph canvas is a custom GPU renderer reading a vendored,
+    compiled `libgraph_canvas.so` through a fixed ctypes `Node` struct -- adding a
+    badge FIELD there means owning and rebuilding that library's C source, which
+    this repo does not have. The title string costs neither an FFI change nor a
+    new struct field, and it is the library's own precedent (the OUTPUT arrow
+    above): a node property said in text rather than drawn.
+
+    `instanced` is keyed by pass_key like `failing`, not by node key in general --
+    a box collapses several passes into one node and "is THIS box instanced" has
+    no single answer, so a box's title carries no mark either way.
     """
-    return f"{node.name}  →" if node.key == output else node.name
+    marked = f"{node.name}  ⚡" if node.key in instanced else node.name
+    return f"{marked}  →" if node.key == output else marked
 
 
 def _border_scale_of(name: str, output: str) -> float:
@@ -431,6 +443,7 @@ def pack_nodes(
     hovered: str = "",
     selected: frozenset[str] = frozenset(),
     failing: frozenset[str] = frozenset(),
+    instanced: frozenset[str] = frozenset(),
     tints: Mapping[str, RGBA] | None = None,
 ) -> Packed:
     """Turn one scope's resolved nodes into a frame the library can draw.
@@ -448,6 +461,11 @@ def pack_nodes(
     A GHOST is faded, dashed, and refuses every gesture, so a press falls
     through to the canvas rather than being swallowed by something that does
     nothing.
+
+    `instanced` is keyed by `pass_key` like `failing` (104 D3/D8): a pass's
+    entity fields are read from its FLATTENED compiled source, so a `flat in`
+    spliced in from a `lib:` include marks here even when the shader tab open
+    on screen shows no such line -- which is why the mark exists at all.
 
     `body` gives each pass's non-wirable rows: a uniform the ENGINE writes
     (`u_time`), one the document SCRIPT writes (`u_mouse_pos`), or a plain
@@ -527,7 +545,7 @@ def pack_nodes(
         nodes.append(
             NodeSpec(
                 id=node_id(node.key),
-                title=_title_of(node, output),
+                title=_title_of(node, output, instanced),
                 x=node.pos[0],
                 y=node.pos[1],
                 ports=specs,

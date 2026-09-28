@@ -20,6 +20,14 @@ from shaderbox.commands import (
 from shaderbox.copilot.config import COPILOT_LIMIT_ROWS
 from shaderbox.engine_uniforms import ENGINE_DRIVEN_UNIFORMS, ENGINE_UNIFORM_TYPES
 from shaderbox.glyph_tables import TABLE_UNIFORMS
+from shaderbox.instanced import QUAD_VARYING
+
+# `vs_uv` is D4's other user-facing name, documented in the shader-skeleton section's prose
+# (it is the ORDINARY pass's own varying) rather than in `INSTANCED_VOCAB_DOCS`, which names
+# only the INSTANCED vocabulary. Read together the two dicts cover `USER_FACING_NAMES`, which
+# is what tests/test_help_content.py checks; this constant is the seam the test reads instead
+# of grepping prose for the name.
+_SHADER_SKELETON_NAMES = frozenset({"vs_uv"})
 
 
 @dataclass(frozen=True)
@@ -68,6 +76,45 @@ def _engine_uniform_section() -> HelpSection:
     )
 
 
+# The user-facing instanced-pass vocabulary, documented here rather than folded into the
+# engine-uniform section: `vs_quad` is an `in` VARYING, not a `uniform {type} {name};` row,
+# so it does not fit that section's shape. `vs_uv` is the other name in D4's user-facing
+# set — it stays documented in the shader-skeleton section's prose (it is the ORDINARY
+# pass's own varying, not instanced vocabulary), so this section names only what
+# `user_facing_engine_uniforms`-shaped rows cannot: `QUAD_VARYING`.
+INSTANCED_VOCAB_DOCS: dict[str, str] = {
+    QUAD_VARYING: "the quad-local coordinate, -1..1 from the entity's centre",
+}
+
+
+def documented_instanced_names() -> set[str]:
+    """Every D4 user-facing instanced name this module documents, across both homes:
+    `INSTANCED_VOCAB_DOCS` and the shader-skeleton section's prose. Compared against
+    `instanced.USER_FACING_NAMES` by the covering test, the same shape
+    `user_facing_engine_uniforms()` gives the engine-uniform gate."""
+    return set(INSTANCED_VOCAB_DOCS) | set(_SHADER_SKELETON_NAMES)
+
+
+def _instanced_vocab_section() -> HelpSection:
+    return HelpSection(
+        key="instanced_vocab",
+        title="Instanced passes",
+        body=(
+            "Declare `flat in vec2 pos;` and `flat in float radius;` (the entity's centre "
+            "and half-extent, in clip space) and the pass draws one quad per entity instead "
+            "of one fragment shader over the canvas. Add any other `flat in` field and a "
+            'script fills it per entity under `"@instances"` (see **Passes**).\n'
+            "\n"
+            f"`{QUAD_VARYING}` replaces `vs_uv` as the per-pixel input: {INSTANCED_VOCAB_DOCS[QUAD_VARYING]}."
+        ),
+        snippet=(
+            "flat in vec2  pos;      // the entity's centre, clip space\n"
+            "flat in float radius;   // the entity's half-extent, clip space\n"
+            f"in vec2 {QUAD_VARYING};        // -1..1 from the entity's centre"
+        ),
+    )
+
+
 def _shortcuts_section() -> HelpSection:
     lines: list[str] = []
     for category in CATEGORY_ORDER:
@@ -112,13 +159,16 @@ def help_sections() -> list[HelpSection]:
             key="shader_skeleton",
             title="A ShaderBox shader",
             body=(
-                "Every document is one **fragment shader**. ShaderBox draws a full-screen quad and runs "
-                "your `main()` once per pixel.\n"
+                "Every document is one **fragment shader**. By default ShaderBox draws a "
+                "full-screen quad and runs your `main()` once per pixel — declare a `flat in` "
+                "field instead and the pass switches to one quad per entity (see **Passes**).\n"
                 "\n"
-                "Three things are fixed: the `#version` line (required — nothing is injected for "
-                "you), the `vs_uv` input, and a single `vec4` output. `vs_uv` runs 0..1 across the "
-                "canvas; the output name is up to you (`fs_color` is just what the examples call "
-                "it) since a lone fragment output always binds to location 0.\n"
+                "Two things are fixed: the `#version` line (required — nothing is injected for "
+                "you) and a single `vec4` output. The output name is up to you (`fs_color` is "
+                "just what the examples call it) since a lone fragment output always binds to "
+                "location 0. `vs_uv` is the ordinary pass's input, running 0..1 across the "
+                "canvas; an instanced pass gets `vs_quad` instead, -1..1 from the entity's "
+                "centre.\n"
                 "\n"
                 "Save with `Ctrl+S` and the render updates instantly."
             ),
@@ -134,6 +184,7 @@ def help_sections() -> list[HelpSection]:
             ),
         ),
         _engine_uniform_section(),
+        _instanced_vocab_section(),
         HelpSection(
             key="your_uniforms",
             title="Your uniforms become controls",
@@ -208,7 +259,12 @@ def help_sections() -> list[HelpSection]:
                 "**format** is how much each pixel can hold. `8-bit` clamps to 0-1 and is right "
                 "for a final image; `16-bit float` holds values above 1, which is what bloom and "
                 "feedback need, and is the default; `32-bit float` costs twice the memory and is "
-                "rarely worth it."
+                "rarely worth it.\n"
+                "\n"
+                "A pass that declares a `flat in` field draws one quad per entity instead of one "
+                "fragment shader over the canvas — see **Instanced passes**. The graph and the "
+                "uniforms panel mark an instanced pass so it stays visible even when the "
+                "declaration lives in a library include the open tab does not show."
             ),
         ),
         HelpSection(

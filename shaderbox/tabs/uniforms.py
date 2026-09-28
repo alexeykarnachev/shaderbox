@@ -5,7 +5,7 @@ from shaderbox.glyph_tables import TABLE_UNIFORMS
 from shaderbox.pass_graph import strip_order
 from shaderbox.theme import COLOR, SIZE, SPACE
 from shaderbox.ui_models import UIUniform, UniformSortKey, sort_uniform_hashes
-from shaderbox.ui_primitives import standard_button, text_tab_row
+from shaderbox.ui_primitives import standard_button, text_chip, text_tab_row
 from shaderbox.util import format_auto_value, get_uniform_hash
 from shaderbox.widgets.uniform import draw_ui_uniform, uniform_name_label
 
@@ -50,6 +50,19 @@ def _draw_pass_selector(app: App, document_id: str) -> None:
     imgui.dummy((0, SPACE.MD))
 
 
+def _draw_instanced_badge(app: App, document_id: str) -> None:
+    # 104 D3/D4: a capability badge is per-PASS, read from entity_fields (populated from the
+    # FLATTENED source at compile, 104 D3) -- so a `flat in` spliced in from a `lib:` include
+    # marks here even though the open shader tab shows no such line. A CHIP (104 D2b), not a
+    # button: ui_primitives.text_chip, STATE_INFO to match the auto-uniform block's own tone
+    # above rather than a new colour invented for one row.
+    panel_pass = app.panel_pass(document_id)
+    if not panel_pass.entity_fields:
+        return
+    text_chip("instanced", COLOR.STATE_INFO)
+    imgui.dummy((0, SPACE.MD))
+
+
 def draw(app: App) -> None:
     document_id = app.current_document_id
     if document_id not in app.ui_documents:
@@ -57,6 +70,7 @@ def draw(app: App) -> None:
 
     imgui.spacing()
     _draw_pass_selector(app, document_id)
+    _draw_instanced_badge(app, document_id)
 
     document_ui_state = app.ui_documents[document_id].ui_state
     ui_uniforms = document_ui_state.ui_uniforms
