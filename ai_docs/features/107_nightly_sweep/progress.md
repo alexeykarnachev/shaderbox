@@ -254,3 +254,32 @@ comments rather than a status claim.
 risky form -- and the wave's job was to find out whether the risk had materialised. It has
 not.** Recording that is the wave's output; deleting an accurate doc because its shape is
 risky would have been the error.
+
+## W-1 item seven: the turn time budget — DONE
+
+Scripted one round, so the budget firing and the script running out were the same
+observation. Three rounds now, chosen deliberately: `max_iterations` rounds outlast a DEAD
+budget but also outlast the fake client's script, so the test fails for the wrong reason.
+
+Firing the budget for the first time revealed the path's real shape — it ends on an
+`AgentError` naming the budget and emits NO `AgentTurnDone`. The old assertions were
+written against the ordinary path because the budget had never fired to show otherwise.
+
+**That is the general lesson of this wave**: a fixture that cannot reach a branch also
+cannot tell you what the branch does, so the assertions written beside it describe the
+path it DID reach. Fixing the fixture usually rewrites the assertions too.
+
+## W-2 and W-3 — DONE
+
+- W-2: `theme.py::_muted` (dead since 106 removed its consumers) and the eight-helper rig
+  cluster in `test_graph_view.py`. The deletion orphaned two imports, cleaned in the same
+  commit.
+- W-3: `is_instanced` now lives on `Pass`; the graph, the uniform chip and the settings
+  modal all ask it. Breaking the one predicate fails two surfaces' tests at once; before,
+  each site needed its own break and the settings modal had no coverage at all.
+
+## Remaining, and deliberately NOT done
+- `ui_models.py::save` orphan sweep: masked end-to-end by an earlier per-uniform unbind,
+  so the `keep` flag has no observable effect under any fixture the suite builds. Fixing
+  it means deciding whether the flag is load-bearing at all — a design question, not a
+  test gap, and not one to answer unattended.
