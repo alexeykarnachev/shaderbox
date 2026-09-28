@@ -145,7 +145,7 @@ SUBTRACTION, so a new member cannot default to silence — the direct opposite o
 - `PassEntry.group`'s pydantic pattern is anchored correctly and rejects both newline
   cases — the defect was confined to the two `.match()` call sites.
 
-## W-2 — the silent failure. DONE (d4995e35)
+## W-2 — the silent failure. DONE (744e691a)
 
 The scan found two discarded sentinels; the wave found **five clipboard call sites in
 five spellings** — one notified on success only, two discarded the result, one used
@@ -187,7 +187,7 @@ had no behavioural coverage at all.
 | W-5 | roadmap row 020's two shipped-but-listed items | 5e0fb8e4 |
 | W-1 | the dropped VertexArray | 3a8605f4 |
 | W-3 | the trailing-newline pass name | 7bf51547 |
-| W-2 | the unreported clipboard failure | d4995e35 |
+| W-2 | the unreported clipboard failure | 744e691a |
 | W-6 | the twice-spelled delete rule | ed524fc5 |
 
 ### Two process notes for the next sweep

@@ -867,6 +867,17 @@ class ProjectSession:
         # The scripts/ path for the document script `script.py` (048 — one script per document).
         return self.paths.document_script_for(document_id)
 
+    def cached_script_source(self, document_id: str) -> tuple[str, float] | None:
+        # The script text the engine last loaded and its mtime, for the editor's intelligence
+        # on a shader tab. Forwarded like every other script verb: the UI asks the session.
+        return self.script_engine.cached_source(document_id)
+
+    def script_returned_value_types(
+        self, document_id: str
+    ) -> dict[tuple[str, str], str]:
+        # (pass, name) -> the GLSL type one isolated tick's returned value implies.
+        return self.script_engine.returned_value_types(document_id)
+
     def read_script_source(self, document_id: str) -> tuple[str, bool]:
         # The copilot read_script source (feature 043): the live scripts/script.py text, or — when the
         # document has no script — the AGENT stub (the engine stub + one un-commented math.sin(context.t)

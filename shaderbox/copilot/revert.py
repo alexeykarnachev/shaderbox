@@ -152,7 +152,12 @@ class RevertExecutor:
         # opposite of the truth.
         for address in cp.snapshotted_libs:
             text = cp.lib_snapshot_text(address)
-            if text is None or not self._revert_lib_file(address, text):
+            if text is None:
+                # Nothing was captured to restore FROM, which a retry cannot help.
+                result.unrestorable.append(address)
+                continue
+            if not self._revert_lib_file(address, text):
+                # Captured, and the write refused: the one case a retry can fix.
                 result.unrestorable.append(address)
                 result.failed_restores.append(address)
                 continue

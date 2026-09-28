@@ -382,7 +382,7 @@ def _script_stamp(app: App, document_id: str) -> tuple[str, object] | None:
     session = app.editor_sessions.get(app.session.script_path_for(document_id))
     if session is not None:
         return ("live", session.editor.get_undo_index())
-    cached = app.session.script_engine.cached_source(document_id)
+    cached = app.session.cached_script_source(document_id)
     return None if cached is None else ("disk", cached[1])
 
 
@@ -392,7 +392,7 @@ def _script_text(app: App, document_id: str) -> str:
     session = app.editor_sessions.get(app.session.script_path_for(document_id))
     if session is not None:
         return session.editor.get_text()
-    cached = app.session.script_engine.cached_source(document_id)
+    cached = app.session.cached_script_source(document_id)
     return "" if cached is None else cached[0]
 
 
@@ -623,7 +623,7 @@ def _typed_script_returns(
     if app.editor_script_types_key == cache_key:
         runtime = app.editor_script_types
     else:
-        runtime = app.session.script_engine.returned_value_types(document_id)
+        runtime = app.session.script_returned_value_types(document_id)
         app.editor_script_types_key = cache_key
         app.editor_script_types = runtime
     if not runtime:

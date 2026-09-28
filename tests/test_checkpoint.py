@@ -6,10 +6,12 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from shaderbox.copilot.checkpoint import (
+    _LIB_SNAPSHOT_SUBDIR,
     CheckpointStore,
     RevertResult,
     TurnCheckpoint,
 )
+from shaderbox.copilot.revert import RevertExecutor
 
 
 def _fake_document(name: str = "Document") -> object:
@@ -213,4 +215,52 @@ def test_the_notice_tells_a_missing_snapshot_apart_from_a_failed_restore() -> No
     no_snapshot_clause = notice.split("(no snapshot)")[0]
     assert "lib:noise.glsl" not in no_snapshot_clause, (
         f"a file that WAS captured is reported as never captured: {notice}"
+    )
+
+
+def test_a_lib_with_no_snapshot_is_not_reported_as_a_failed_restore(
+    tmp_path: Path,
+) -> None:
+    """The other half of the partition, driven through `restore_checkpoint` itself.
+
+    `revert.py`'s snapshotted-lib loop filed BOTH "nothing was captured" and "the write
+    refused" into `failed_restores`, so the "(no snapshot)" clause could never name a lib
+    and the notice offered a retry for a checkpoint that does not exist.
+
+    This drives the real loop rather than hand-building a RevertResult: a
+    hand-built one cannot tell the two branches apart, because it IS the thing the
+    branches produce. A first version of this test did exactly that and passed with the
+    branches merged back together.
+
+    Falsifier: append to `failed_restores` in the `text is None` branch.
+    """
+    root = tmp_path / "checkpoints"
+    cp = TurnCheckpoint(turn_id="t1", root=root)
+    (cp.turn_dir / _LIB_SNAPSHOT_SUBDIR).mkdir(parents=True)
+    # Captured at snapshot time, and the file is gone from disk now -- which is exactly
+    # what `lib_snapshot_text` answers None for.
+    cp.snapshotted_libs["lib:gone.glsl"] = "gone.glsl.snap"
+    assert cp.lib_snapshot_text("lib:gone.glsl") is None, (
+        "the fixture built a readable snapshot -- it never reaches the branch"
+    )
+
+    store = SimpleNamespace(get=lambda _turn_id: cp, drop=lambda _turn_id: None)
+    executor = RevertExecutor(
+        get_documents_dir=lambda: tmp_path / "documents",
+        get_trash_dir=lambda: tmp_path / "trash",
+        get_ui_documents=dict,
+        get_checkpoints=lambda: store,
+        get_shader_lib_files=lambda: SimpleNamespace(),
+        set_current_document_id=lambda _id: None,
+        sync_editor_from_disk=lambda _path, _text: None,
+        delete_document_unguarded=lambda _id: "",
+        invalidate_lib_consumers=lambda _path: None,
+    )
+
+    notice = executor.restore_checkpoint("t1").as_notice()
+
+    assert "lib:gone.glsl" in notice
+    assert "(no snapshot)" in notice, f"a lib with no snapshot said otherwise: {notice}"
+    assert "the restore failed" not in notice, (
+        f"a file that was never captured is offered a retry: {notice}"
     )
