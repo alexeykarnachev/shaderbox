@@ -93,9 +93,8 @@ def pass_menu_items(
         if imgui.menu_item_simple("Leave group"):
             app.leave_group(document_id, name)
     imgui.separator()
-    # The last pass of a document cannot go: the delete would leave no output to draw. The
-    # disabled submenu does not open, so nothing inside it is reachable.
-    if imgui.menu_item_simple("Delete", enabled=len(document.passes) > 1):
+    # The disabled submenu does not open, so nothing inside it is reachable.
+    if imgui.menu_item_simple("Delete", enabled=document.can_delete_a_pass):
         app.delete_pass_confirmed(document_id, name)
 
 

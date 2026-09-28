@@ -386,6 +386,17 @@ class Document:
         return next(iter(self.passes.values()))
 
     @property
+    def can_delete_a_pass(self) -> bool:
+        """Whether any pass may go: the last one may not, since `render_pass` takes the
+        first remaining one and a document with none has nothing to draw.
+
+        Asked by the guard that refuses the delete AND by the menu item that disables it,
+        so the two cannot answer differently. They were once `len(passes) == 1` and
+        `len(passes) > 1` at opposite ends of the call, agreeing by coincidence.
+        """
+        return len(self.passes) > 1
+
+    @property
     def graph_errors(self) -> list[GraphError]:
         """Wiring errors from the last render — a cycle, or a pass an input names (D7)."""
         return list(self._graph_errors)

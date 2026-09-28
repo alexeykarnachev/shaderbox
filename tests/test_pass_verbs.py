@@ -124,6 +124,41 @@ def test_add_pass_rejects_a_duplicate_or_unusable_name(app: Any) -> None:
         assert app.session.add_pass(document_id, bad) != "", f"{bad!r} was accepted"
 
 
+def test_the_last_pass_may_not_go_and_both_surfaces_ask_one_predicate(
+    app: Any,
+) -> None:
+    """The guard that refuses and the menu item that disables ask the same question.
+
+    They were once `len(passes) == 1` here and `len(passes) > 1` in the widget --
+    logical inverses at opposite ends of the same call, agreeing by coincidence. A
+    one-character slip in either would have let the menu offer a delete the guard still
+    refuses, or worse, let both drift the same way toward a zero-pass document that
+    `render_pass` cannot draw.
+
+    Falsifier: hardcode either consumer back to its own `len(...)` spelling. Breaking
+    the predicate must fail BOTH, which is the only thing consolidation buys -- pinning
+    one surface leaves the other free.
+    """
+    document_id = _document_id(app)
+    document = app.ui_documents[document_id].document
+    only = next(iter(document.passes))
+    assert len(document.passes) == 1, "the fixture starts with more than one pass"
+
+    assert not document.can_delete_a_pass
+    assert "at least one pass" in app.session.delete_pass(document_id, only)
+    assert only in document.passes, "the refused delete removed it anyway"
+    # The widget's menu item reads the same predicate, so a reader of the source sees
+    # one spelling; asserting the predicate here is asserting what the item is handed.
+    source = inspect.getsource(pass_list.pass_menu_items)
+    assert "document.can_delete_a_pass" in source
+    assert "len(document.passes)" not in source
+
+    app.session.add_pass(document_id, "second")
+    assert document.can_delete_a_pass
+    assert app.session.delete_pass(document_id, only) == ""
+    assert only not in document.passes
+
+
 def test_delete_pass_removes_the_file_and_every_edge_naming_it(app: Any) -> None:
     document_id = _document_id(app)
     app.session.add_pass(document_id, "src")

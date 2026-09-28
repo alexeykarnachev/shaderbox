@@ -1019,7 +1019,7 @@ class ProjectSession:
         document = ui_document.document
         if name not in document.passes:
             return f"no such pass '{name}'"
-        if len(document.passes) == 1:
+        if not document.can_delete_a_pass:
             return "a document needs at least one pass"
         document.passes.pop(name).release()
         # The feedback history is keyed by NAME and owned by the Document, so releasing the pass
