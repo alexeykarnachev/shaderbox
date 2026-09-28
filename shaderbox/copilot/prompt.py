@@ -139,10 +139,12 @@ SCRIPTING (document scripts -- CPU state the shader cannot hold)
   SHADER from u_time and needs NO script. Ask "does this frame's value need last frame's value?":
   yes -> a script; no -> GLSL. One build can need both: script the stateful parts, leave the
   time-pure parts in GLSL.
-- The one special case: HEAVY stateful compute (a cloth Verlet sim, particles, a boids flock) --
-  step the CPU state each frame and push the result as an ARRAY uniform (`Array([..flat..])` ->
-  `uniform vecN arr[M];`), never faked per-pixel. Per-pixel work (noise, ramps, lighting, SDF) stays
-  GLSL. Check the sim's ranges/stability before rendering (a blow-up shows only as a black frame).
+- The one special case: HEAVY stateful compute (a cloth Verlet sim, a flock, crowd/particle motion)
+  -- step the CPU state each frame in numpy and push it to the shader. A POPULATION of many similar
+  things moving independently is INSTANCING (see the INSTANCING block); a small FIXED vector of
+  parameters is an ARRAY uniform (`Array([..flat..])` -> `uniform vecN arr[M];`). Never fake either
+  per-pixel. Per-pixel work (noise, ramps, lighting, SDF) stays GLSL. Check the sim's
+  ranges/stability before rendering (a blow-up shows only as a black frame).
 - INSIDE a script, drive motion from context.t, never context.mouse: mouse is frozen at center on export and
   in the headless probe, so a mouse-driven uniform reads STATIC even when it is correct.
 - A script-DRIVEN uniform is NOT set_uniform-able (a set is overwritten next tick and rejected). To
@@ -356,6 +358,15 @@ def _render_working_set_member(view: WorkingSetView) -> str:
     canvas = f" canvas {view.canvas}" if view.canvas else ""
     uniforms = "\n".join(view.uniforms) if view.uniforms else "(none)"
     errors = format_compile_errors(view.errors) if view.errors else "none"
+    # 103 D4: an instanced pass's `flat in` fields, absent (no line at all) for an ordinary
+    # fullscreen pass -- the fact that tells the agent a pass draws a POPULATION rather than one
+    # quad over the canvas, without ever naming the engine-internal `sb_instanced` switch.
+    entity_line = (
+        f"\nentity fields (this pass draws one quad PER ENTITY -- see INSTANCING): "
+        f"{', '.join(view.entity_fields)}"
+        if view.entity_fields
+        else ""
+    )
     if view.passes:
         # A MULTI-PASS document: its passes ARE its source, so the member header carries the graph
         # and each pass is a sub-section addressed by its own handle. The document-level listing
@@ -372,15 +383,21 @@ def _render_working_set_member(view: WorkingSetView) -> str:
             pass_uniforms = (
                 "\n".join(pass_view.uniforms) if pass_view.uniforms else "(none)"
             )
+            pass_entity_line = (
+                f"\nentity fields (this pass draws one quad PER ENTITY -- see "
+                f"INSTANCING): {', '.join(pass_view.entity_fields)}"
+                if pass_view.entity_fields
+                else ""
+            )
             member += (
                 f"\n=== PASS {pass_view.name} (edit as: {pass_view.address})"
-                f"{output_mark} ===\n{pass_view.listing}\n"
+                f"{output_mark} ==={pass_entity_line}\n{pass_view.listing}\n"
             )
             member += f"uniforms:\n{pass_uniforms}\nerrors:\n{pass_errors}"
     else:
         member = (
-            f"=== {view.name} (id: {view.address}){mark}{canvas} ===\n{view.listing}\n"
-            f"uniforms:\n{uniforms}\nerrors:\n{errors}"
+            f"=== {view.name} (id: {view.address}){mark}{canvas} ==={entity_line}\n"
+            f"{view.listing}\nuniforms:\n{uniforms}\nerrors:\n{errors}"
         )
     if view.script_listing:
         script_errors = (

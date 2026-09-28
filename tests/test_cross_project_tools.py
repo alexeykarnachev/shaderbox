@@ -54,8 +54,10 @@ def test_coerce_rejects_bool() -> None:
 
 def test_engine_driven_set_is_the_documented_set() -> None:
     # Engine-owned, so set_uniform rejects them (020·16 Decision 6): the per-frame
-    # values Document.render() recomputes + the glyph tables Document.compile() writes.
-    # Pin the set so a new engine uniform added to core.py is consciously added here too.
+    # values Document.render() recomputes + the glyph tables Document.compile() writes,
+    # plus `sb_instanced` (103 D4a) -- Pass.render overwrites it every frame too, generated
+    # into an instanced pass's vertex stage and never hand-declared by an author. Pin the set
+    # so a new engine uniform added to core.py is consciously added here too.
     assert {
         "u_time",
         "u_aspect",
@@ -64,6 +66,7 @@ def test_engine_driven_set_is_the_documented_set() -> None:
         "u_pass_iterations",
         "SBT_SPANS",
         "SBT_STROKES",
+        "sb_instanced",
     } == ENGINE_DRIVEN_UNIFORMS
 
 

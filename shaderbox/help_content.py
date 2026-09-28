@@ -20,7 +20,7 @@ from shaderbox.commands import (
 from shaderbox.copilot.config import COPILOT_LIMIT_ROWS
 from shaderbox.engine_uniforms import ENGINE_DRIVEN_UNIFORMS, ENGINE_UNIFORM_TYPES
 from shaderbox.glyph_tables import TABLE_UNIFORMS
-from shaderbox.instanced import QUAD_VARYING
+from shaderbox.instanced import MODE_UNIFORM, QUAD_VARYING
 
 # `vs_uv` is D4's other user-facing name, documented in the shader-skeleton section's prose
 # (it is the ORDINARY pass's own varying) rather than in `INSTANCED_VOCAB_DOCS`, which names
@@ -52,7 +52,10 @@ ENGINE_UNIFORM_DOCS: dict[str, str] = {
 
 
 def user_facing_engine_uniforms() -> set[str]:
-    return set(ENGINE_DRIVEN_UNIFORMS) - set(TABLE_UNIFORMS)
+    # `sb_instanced` (103 D4a) is engine machinery like the glyph tables: generated into an
+    # instanced pass's vertex stage, never hand-declared by an author, so it is excluded the
+    # same way TABLE_UNIFORMS is -- an author who declares it is refused (104 D4).
+    return set(ENGINE_DRIVEN_UNIFORMS) - set(TABLE_UNIFORMS) - {MODE_UNIFORM}
 
 
 def _engine_uniform_section() -> HelpSection:

@@ -66,6 +66,12 @@ class ShaderView:
     listing: str  # cat -n style
     uniforms: list[str]  # "name type = value" rows
     errors: list[CompileErrorInfo]
+    # 103 D4: this pass's `flat in` declarations ("name type"), [] for an ordinary fullscreen
+    # pass. Without this an instanced pass reads as a fullscreen pass with odd inputs and
+    # edit_shader on it is blind -- ShaderView is the surface an agent that never calls
+    # read_shader still misses (WorkingSetView is the more-often-seen one, D4's other half).
+    # Appended with a default so the existing positional construction sites stay valid.
+    entity_fields: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -206,6 +212,11 @@ class WorkingSetView:
     # The document's canvas resolution ("WxH"; "" for a lib view) — the render size the user gets
     # (feature 052). Rendered in the working-set document header so the model can see it.
     canvas: str = ""
+    # 103 D4: this SINGLE-pass document's `flat in` declarations, [] for an ordinary fullscreen
+    # one and [] for a lib view. A multi-pass document carries this per-pass on `PassView`
+    # instead (below) -- the same split `uniforms`/`errors` already use, so the working set stays
+    # the surface an agent sees every step without ever calling read_shader.
+    entity_fields: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -221,6 +232,8 @@ class PassView:
     # False when the output pass does not reach this one, so it never renders. The pass strip
     # dims such a tile for the user; without this the model is the only party that cannot see it.
     is_live: bool = True
+    # 103 D4: this pass's `flat in` declarations, [] for an ordinary fullscreen pass.
+    entity_fields: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -295,6 +308,14 @@ class ScriptWriteResult:
     # EditResult.restored_note). Its own field so a successful restore never reads as
     # applied-with-errors.
     restored_note: str = ""
+    # Population facts (103 D1/D2): one line per pass that received an `@instances` block this
+    # dry-run, e.g. "swarm: 20000 entities -- pos f4 (20000, 2) range [-0.94, 0.93], radius f4
+    # (20000,) range [0.004, 0.014]" or "swarm: population refused -- <why>" or "swarm: not
+    # validated (pass has not compiled yet)". A population can never cross the tool boundary as
+    # DATA (20k entities x 4 f4 columns is ~320 KB against a JSON schema) -- this is STATISTICS
+    # only, computed engine-side off the real columns, which this dataclass never holds. Empty
+    # when the script drove no `@instances` block this dry-run.
+    population_facts: str = ""
 
 
 @dataclass(frozen=True)

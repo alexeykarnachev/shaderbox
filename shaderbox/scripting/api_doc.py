@@ -174,6 +174,38 @@ def _bullet(text: str) -> str:
     )
 
 
+# 103 D3: the instancing block. Sized on the order of the rest of this summary -- one-time prefix
+# cost (both this block and _SYSTEM_PROMPT sit above the DIALOGUE trim). Deliberately never names
+# `sb_instanced`: that uniform is engine-internal, generated into the vertex stage an author never
+# writes, and declaring it is refused (104 D4 binds here too).
+_INSTANCING_BLOCK: str = (
+    "INSTANCING (a POPULATION of similar things drawn in one call, not per-pixel):\n"
+    "- THE WATERSHED: many similar things that MOVE INDEPENDENTLY (a swarm, sparks, debris, "
+    "crowd) -> instancing. A small FIXED vector of parameters (a handful of lights, control "
+    "points) -> an ordinary array uniform (`Array([..flat..])` -> `uniform vecN arr[M];`). "
+    'Ask "is this a population, or a short fixed list?" -- population -> instancing.\n'
+    "- Declare each per-entity value as `flat in <type> <name>;` at the top of the fragment "
+    "shader -- nothing else marks a pass as instanced. `pos` (vec2) and `radius` (float or "
+    "vec2) are RESERVED: the engine places the quad from them, both in CLIP SPACE (-1..1). "
+    "Every OTHER `flat in` is yours (color, phase, size, whatever the shape needs).\n"
+    "- Inside `main()`, `vs_quad` is this ENTITY's own -1..1 quad-local coordinate (0 at its "
+    "centre) -- NOT `vs_uv`, which stays the 0..1 whole-canvas coordinate an ordinary "
+    "fullscreen pass reads. Discard where `length(vs_quad) > 1.0` (or your own quad-space "
+    "test) to keep the entity's shape from being a hard square.\n"
+    '- In `update`, drive the pass with `{"<pass>": {"@instances": {<field>: <array>, ...}}}` '
+    "-- ONE array per declared field, EVERY declared field present (a missing column refuses "
+    "the whole population; an extra one does too). Each array is `(N,)` for a scalar field or "
+    "`(N, components)` for a vecN field, N = entity count, and MUST be C-contiguous "
+    "(`np.ascontiguousarray`) and dtype `f4` for a float/vecN field, `i4` for int/ivecN, `u4` "
+    "for uint/uvecN -- CHECKED, never cast, because numpy's own assignment casts silently.\n"
+    "- Passes fill their per-entity values with plain numpy array ops over the WHOLE population "
+    "at once (no per-entity Python loop -- that is what keeps 20000 of them inside a frame). "
+    "Blending across overlapping entities is the pass's blend mode (additive by default, set "
+    "beside dtype/scale on the pass config) -- additive sums overlaps order-independently; "
+    "alpha is order-DEPENDENT, so entities then draw in population order."
+)
+
+
 def script_api_summary() -> str:
     """The RARE-tier SCRIPT API block: the script contract, the context surface and the legal value
     shapes, rendered from `context.py`."""
@@ -185,12 +217,13 @@ def script_api_summary() -> str:
         "that pass. State on `self.*` persists across frames; a key you omit (or map to None) "
         "stays MANUAL.",
         f"- context: {_context_fields()}.",
-        f"- Legal value shapes, all PLAIN PYTHON (there are no wrapper types): "
-        f"{_dedup_join(_VALUE_SHAPE_GLOSS.values(), '; ')}. An array's length must match the "
-        "uniform's exactly.",
+        f"- Legal value shapes for an ORDINARY uniform key, all PLAIN PYTHON (there are no "
+        f"wrapper types): {_dedup_join(_VALUE_SHAPE_GLOSS.values(), '; ')}. An array's length "
+        'must match the uniform\'s exactly. The ONE exception is the reserved "@instances" key '
+        "(see INSTANCING below), whose value is a dict of NUMPY arrays, not plain Python.",
         f"- `from shaderbox.scripting import {_IMPORT_NAMES}` -- that module and those names are "
         "the ONLY part of shaderbox a script may import; any other shaderbox module raises at "
         "compile. A script is otherwise plain Python -- `import math`, numpy and the stdlib work.",
     ]
     header = "SCRIPT API (generated from shaderbox/scripting -- the Python side of a document script):"
-    return "\n".join([header, *(_bullet(b) for b in bullets)])
+    return "\n".join([header, *(_bullet(b) for b in bullets), "", _INSTANCING_BLOCK])

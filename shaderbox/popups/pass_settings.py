@@ -53,7 +53,6 @@ _BLEND_DESCRIPTIONS: dict[BlendMode, str] = {
     "additive": "glow adds up, order-independent",
     "alpha": "transparency; overlaps are draw-order dependent",
     "opaque": "replaces what's under it",
-    "multiply": "darkens what's under it",
     "screen": "lightens what's under it",
 }
 assert set(_BLEND_DESCRIPTIONS) == set(BLEND_MODES), (
