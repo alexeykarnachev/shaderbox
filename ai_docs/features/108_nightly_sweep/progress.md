@@ -310,6 +310,47 @@ Two findings, both applied to the spec:
 | the dead Copy button + the shared-fixture leak + its gate | 63340498 |
 | the theme that did not load, now reported | 6f511dec |
 
+## LEDGER AUDIT — the close 107 asked every future sweep to do
+
+107 closed with: *"a wave's log is written by the person who did the wave, so an entry
+that is simply ABSENT is invisible to them... diff the W-0 inventory against what landed,
+item by item."* Done by an agent walking the inventory against the commits, not the log.
+
+**One item had fallen out.** `tabs/code.py` reaching `app.session.script_engine.*` past a
+`ProjectSession` that forwards its siblings: recorded as PRESENT in the presence scan,
+never carried into the spec's survey, so no wave owned it and no deferral named it. Fixed,
+with an AST gate over the layering rule the module map states and nothing enforced.
+
+**Two ledger errors, both mine.** W-2 was cited as `d4995e35` in two places -- a pre-amend
+object that is not an ancestor of `dev`, so a reader following it finds no commit. And the
+revert commit's message described a partition (nothing captured vs. the write refused)
+that its diff did not draw; both cases went into `failed_restores`, making the
+"(no snapshot)" clause unreachable for a lib.
+
+Everything else reconciled: every survey item LANDED, every protected item untouched,
+every deferral carrying its stated reason, and thirteen of fourteen commit claims
+reproducing exactly against their own diffs.
+
+### The best lesson of the night came from fixing that partition
+My first gate for it hand-built a `RevertResult` and asserted on its notice. **It passed
+with the branches merged back together**, because a hand-built result IS what the branches
+produce -- the fixture never reached the code it named. I wrote it while fixing that exact
+class, in a sweep about that exact class. The second version drives `restore_checkpoint`
+through an executor built from fakes, and asserts the snapshot really is unreadable before
+asserting anything about the notice.
+
+**Two independent instances of this in one night, both mine** (the other was a `:w` test
+measuring a `deque(maxlen=5)` by its length). The rule that catches it is not "be careful"
+-- it is to make the fixture prove it made contact, as a line of code, before it asserts.
+
+## FINAL BREAK SWEEP — all fixes broken at once
+
+Not one gate at a time: all eight fixes broken in one tree, one suite run. **15 tests
+failed, naming every one of the eight** -- so no gate depends on another's state and none
+was left vacuous by a later edit. Restored from saved originals and verified with
+`git diff --quiet` before anything else ran.
+
 ## STATUS: CLOSED
-Nine defects fixed, each verified by re-running the break that defeated it. `make gates`
-green, judged by exit code captured unpiped, smoke RAN at every wave.
+Ten defects fixed, each verified by re-running the break that defeated it, plus the
+ledger's own two errors. `make gates` green at every wave, judged by exit code captured
+unpiped, smoke RAN rather than skipping.
