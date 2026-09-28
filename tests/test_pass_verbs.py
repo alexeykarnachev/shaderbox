@@ -108,7 +108,19 @@ def test_add_pass_rejects_a_duplicate_or_unusable_name(app: Any) -> None:
     document_id = _document_id(app)
     existing = next(iter(app.ui_documents[document_id].document.passes))
     assert "already exists" in app.session.add_pass(document_id, existing)
-    for bad in ("", "2fast", "has space", "dots.in.it", "slash/es"):
+    # The trailing newline is the one this list was missing, and it is the one that hurt:
+    # `$` matches before it, so the guard's `re.match` accepted `f"{existing}\n"` as a
+    # SECOND pass beside `existing` -- a name the collision check above cannot see, written
+    # to disk as `passes/<name>\n.frag.glsl`. Falsifier: `fullmatch` back to `match`.
+    for bad in (
+        "",
+        "2fast",
+        "has space",
+        "dots.in.it",
+        "slash/es",
+        f"{existing}\n",
+        "new\n",
+    ):
         assert app.session.add_pass(document_id, bad) != "", f"{bad!r} was accepted"
 
 
@@ -200,7 +212,10 @@ def test_rename_rejects_a_taken_or_unusable_name(app: Any) -> None:
     app.session.add_pass(document_id, "b")
     assert "already exists" in app.session.rename_pass(document_id, "a", "b")
     assert app.session.rename_pass(document_id, "a", "no spaces") != ""
+    # A rename refuses "b" and once accepted "b\n", then MOVED the file onto that path.
+    assert app.session.rename_pass(document_id, "a", "b\n") != ""
     assert "a" in app.ui_documents[document_id].document.passes
+    assert "b\n" not in app.ui_documents[document_id].document.passes
 
 
 def test_wiring_is_a_closed_set(app: Any) -> None:

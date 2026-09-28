@@ -14,6 +14,7 @@ from shaderbox.pass_graph import (
     DTYPES,
     MAX_ITERATIONS,
     NAMESPACE_COLLISION,
+    PASS_NAME_RE,
     AutoSource,
     GraphError,
     NoSource,
@@ -601,6 +602,30 @@ def test_group_name_error_covers_the_pattern_and_the_namespace() -> None:
     assert namespace_error("g", {"a"}, {"g"}) == namespace_error("a", {"a"}, {"g"})
     assert namespace_error("g", {"a"}, {"g"}) == NAMESPACE_COLLISION
     assert namespace_error("z", {"a"}, {"g"}) == ""
+
+
+def test_a_trailing_newline_is_not_a_name_at_either_guard() -> None:
+    """`$` matches before a trailing newline, so `re.match` accepts "glow\n".
+
+    Not a cosmetic slip: a pass name is a FILENAME and a graph key, so "glow\n" becomes a
+    second pass beside "glow" that the `name in existing` collision check cannot see, and
+    it writes `passes/glow\n.frag.glsl`. Falsifier: revert either guard's `fullmatch` to
+    `match`.
+
+    This pins the group guard and the regex. The pass-name guard is private to
+    `project_session`, so its own reachable path -- the copilot's `add_pass` -- pins it in
+    `test_copilot_passes.py`. They are two spellings of one rule over one regex, so
+    pinning only one would leave the other free to drift back.
+    """
+    assert PASS_NAME_RE.match("glow\n"), (
+        "the premise moved: `match` no longer accepts it"
+    )
+
+    assert not PASS_NAME_RE.fullmatch("glow\n")
+    assert "group name" in group_name_error("grp\n", {"a"})
+
+    # An INTERIOR newline was already refused, which is why only the trailing one hid.
+    assert "group name" in group_name_error("a\nb", {"x"})
 
 
 @pytest.mark.parametrize(

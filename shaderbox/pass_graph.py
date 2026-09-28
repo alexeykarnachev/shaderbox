@@ -70,7 +70,9 @@ DEFAULT_BLEND: BlendMode = "additive"
 GRAPH_JSON_VERSION = 2
 
 # A pass name is a FILENAME and a graph key, so it stays to the characters both accept. A group
-# name is a pass-name prefix and a border label, so it obeys the same rule.
+# name is a pass-name prefix and a border label, so it obeys the same rule. Asked with
+# `fullmatch`, never `match`: `$` also matches BEFORE a trailing newline, so `match` accepts
+# "glow\n" as a second name beside "glow" that no collision check can see.
 PASS_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _GROUP_PATTERN = r"^([A-Za-z_][A-Za-z0-9_]*)?$"
 
@@ -617,7 +619,7 @@ def group_name_error(group: str, pass_names: Collection[str]) -> str:
     the namespace -- the canvas keys nodes and boxes by name."""
     if not group:
         return ""
-    if not PASS_NAME_RE.match(group):
+    if not PASS_NAME_RE.fullmatch(group):
         return "a group name starts with a letter and holds letters, digits and underscores"
     return namespace_error(group, pass_names, ())
 

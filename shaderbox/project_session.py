@@ -136,7 +136,7 @@ void main() {
 
 
 def _pass_name_error(name: str, existing: dict[str, Pass], graph: PassGraph) -> str:
-    if not PASS_NAME_RE.match(name):
+    if not PASS_NAME_RE.fullmatch(name):
         return (
             "a pass name starts with a letter and holds letters, digits and underscores"
         )
