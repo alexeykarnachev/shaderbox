@@ -144,3 +144,58 @@ SUBTRACTION, so a new member cannot default to silence — the direct opposite o
   `splitlines()` loop that cannot produce one.
 - `PassEntry.group`'s pydantic pattern is anchored correctly and rejects both newline
   cases — the defect was confined to the two `.match()` call sites.
+
+## W-2 — the silent failure. DONE (d4995e35)
+
+The scan found two discarded sentinels; the wave found **five clipboard call sites in
+five spellings** — one notified on success only, two discarded the result, one used
+`contextlib.suppress`, and a fifth had grown its own `copy_to_clipboard` helper inside
+the lib picker. All five advertise "Copy" in a tooltip. None could report a failure.
+
+**The fix is the return TYPE, not a handler per site.** `draw_copyable_text` answered
+`bool`, collapsing "the copy failed" and "there was nothing to do" into one `False` — so
+even the caller that checked the result could not distinguish them. Three states now:
+`None` unclicked, `""` landed, the reason otherwise. One helper owns the `pyperclip`
+call and its message names the fix rather than only reporting a failure.
+
+`draw_link` deliberately ignores the reason: it opens a browser on the same click, so
+that action is visibly not a no-op.
+
+**The AST half of the gate earned its place on its first run**, by failing and naming
+`popups/lib_picker/filtering.py` — the fifth site, which my inventory had missed. I had
+written "four call sites" in the commit draft. Breaks tried: reintroduce an inline
+`pyperclip.copy` in a widget, and make a failed copy answer `""` like a successful one.
+Each fails its own half.
+
+## W-6 — the repeated rule. DONE (ed524fc5)
+
+`Document.can_delete_a_pass`, beside `render_pass` whose docstring already says why the
+last pass cannot go. Both consumers ask it.
+
+**This consolidation does buy coverage, and I checked rather than claiming it** — 107
+closed with a review finding that its equivalent claim was false. Breaking the predicate
+to `> 0` fails FOUR tests across THREE surfaces: the copilot's `delete_pass` tool, the
+menu, and the session verb. Two of those tests already existed and now route through the
+predicate; before, each surface needed its own break and the menu item's enabled state
+had no behavioural coverage at all.
+
+## Status: all six waves landed, gates green at each
+
+| wave | subject | commit |
+|---|---|---|
+| W-4 | the skill instructing a banned todo.md entry | eb32d9de |
+| W-5 | roadmap row 020's two shipped-but-listed items | 5e0fb8e4 |
+| W-1 | the dropped VertexArray | 3a8605f4 |
+| W-3 | the trailing-newline pass name | 7bf51547 |
+| W-2 | the unreported clipboard failure | d4995e35 |
+| W-6 | the twice-spelled delete rule | ed524fc5 |
+
+### Two process notes for the next sweep
+- **`make gates` went red on three of six waves, every time for the same reason**: ruff
+  reformatted a file and exited non-zero for having done so, with pyright at 0 errors.
+  The second run was green each time. The spec's constraint section predicted this
+  exactly; it cost nothing because it was written down beforehand.
+- **My inventory of a class was short in W-2 and the gate caught it, not me.** The
+  lesson is not "count more carefully" — it is that an AST gate over the whole tree finds
+  what a grep-and-read of the sites you already know about cannot, and it is worth
+  writing even when the class looks small enough to enumerate by hand.
