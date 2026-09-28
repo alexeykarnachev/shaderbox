@@ -39,6 +39,7 @@ from shaderbox.instanced import (
     build,
     validate_population,
 )
+from shaderbox.instanced_outcome import InstancedOutcome
 from shaderbox.intel.glsl import EntityField, entity_fields
 from shaderbox.media import MediaWithTexture, Video
 from shaderbox.pass_graph import AutoSource, TargetConfig
@@ -56,11 +57,6 @@ from shaderbox.util import try_to_release
 
 # moderngl's buffer-format spelling per field type. `/i` (divisor 1) is appended at the
 # binding: without it every instance reads row 0 and the whole population stacks.
-# Returned when a population does not match what the shader declares. A distinct value
-# from None, which means "this pass draws fullscreen": conflating the two drew the entity
-# shader over the WHOLE canvas on a wrong dtype, which is the likeliest mistake there is.
-_INVALID_POPULATION = -1
-
 _ATTRIBUTE_FORMATS: dict[str, str] = {
     "float": "1f",
     "vec2": "2f",
@@ -279,7 +275,12 @@ class Pass:
         # engine free of GL and leaves one place for a future off-thread producer to
         # write instead.
         self.pending_instances: dict[str, np.ndarray] = {}
-        self._instances_error: str | None = None
+        # What the last `render()` (or `compile()`, for the two failure states it owns)
+        # decided this pass did. `pass_name` is empty here -- `Pass` does not know its own
+        # name in the graph -- and `Document` rewraps it with the real name when it collects
+        # per-frame outcomes (102 D4a). Defaults to `not_compiled`: frame one of every
+        # document, before any render attempt has produced a real state.
+        self.last_outcome: InstancedOutcome = InstancedOutcome("", "not_compiled")
 
     def set_target(self, target: TargetConfig) -> None:
         """Adopt a new target configuration, reallocating the canvas when its format changed.
@@ -377,9 +378,20 @@ class Pass:
 
         return uniforms
 
+    def _fail_compile(self, unit: "CompileUnit") -> None:
+        # On failure the previous valid `self.program` is preserved, so the preview keeps
+        # rendering while the error strip surfaces diagnostics. Which of the two failure
+        # states this is follows from that same preservation: no `self.program` ever means
+        # this pass has never once compiled clean, and keeping one means the draw that
+        # follows renders it under today's error (102 I5) -- `stale_program` names that.
+        self.compile_unit = unit
+        self.last_outcome = InstancedOutcome(
+            "",
+            "stale_program" if self.program is not None else "compile_failed",
+            detail=unit.error_raw,
+        )
+
     def compile(self) -> None:
-        # On failure the previous valid `self.program` is preserved, so the
-        # preview keeps rendering while the error strip surfaces diagnostics.
         flattened, sources, source_map, resolve_errors = resolve_usage(
             self.source, active_lib_index()
         )
@@ -397,7 +409,7 @@ class Pass:
             unit.error_raw = "\n".join(e.message for e in resolve_errors)
             if unit.error_raw != self.compile_unit.error_raw:
                 logger.error(f"Failed to resolve includes: {unit.error_raw}")
-            self.compile_unit = unit
+            self._fail_compile(unit)
             return
 
         # Read the entity fields from the FLATTENED source, which is what the driver
@@ -419,7 +431,7 @@ class Pass:
                 unit.errors.append(ShaderError(unit.source_map.root_path, 0, str(e)))
                 if unit.error_raw != self.compile_unit.error_raw:
                     logger.error(f"Failed to build the instanced stage: {e}")
-                self.compile_unit = unit
+                self._fail_compile(unit)
                 return
 
         try:
@@ -433,7 +445,7 @@ class Pass:
                 logger.error(f"Failed to compile shader: {e}")
             unit.error_raw = err
             unit.errors = parse_shader_errors(err, unit.source_map)
-            self.compile_unit = unit
+            self._fail_compile(unit)
             return
 
         type_errors = engine_uniform_type_errors(
@@ -447,7 +459,7 @@ class Pass:
             unit.error_raw = "\n".join(e.message for e in type_errors)
             if unit.error_raw != self.compile_unit.error_raw:
                 logger.error(f"Failed to compile shader: {unit.error_raw}")
-            self.compile_unit = unit
+            self._fail_compile(unit)
             return
 
         self.compile_unit = unit
@@ -547,6 +559,13 @@ class Pass:
         if not self.program or not self.vao:
             return
 
+        # A stale program (I5): the last compile attempt for the CURRENT source failed and
+        # `compile()` kept the old one running rather than a fresh recompile. The draw below
+        # still uses it -- that is what "stale" means, the picture does not change -- but the
+        # outcome it reports must stay `stale_program` rather than letting a successful draw
+        # of the OLD program read as an ordinary `drew`/`fullscreen` this frame.
+        stale = bool(self.compile_unit.error_raw)
+
         texture_unit = 0
         # A Pass drawn outside a Document (nothing passes u_time) falls through to the process
         # clock; a Document resolves its own clock before reaching here, and export and the
@@ -615,14 +634,17 @@ class Pass:
                     )
                     self.uniform_values.pop(uniform.name)
 
-        count = self._upload_instances(
+        outcome = self._upload_instances(
             instances if instances is not None else self.pending_instances
         )
-        if count == _INVALID_POPULATION:
+        if not stale:
+            self.last_outcome = outcome
+        if outcome.state == "refused":
             # Hold the previous frame. The engine already reported why on the strip, and
             # drawing the entity shader fullscreen would answer a data mistake with a
             # picture that looks deliberate.
             return
+        count = outcome.count
         if self.entity_fields:
             # The generated stage branches on this, so an unset flag silently takes the
             # fullscreen path and the whole population vanishes with no error.
@@ -646,26 +668,28 @@ class Pass:
 
     def _upload_instances(
         self, instances: "dict[str, np.ndarray] | None"
-    ) -> int | None:
-        """Write this frame's entity columns and return the instance count, or None.
+    ) -> InstancedOutcome:
+        """Write this frame's entity columns and report what this draw did.
 
-        None means "draw fullscreen": a pass declaring no entity fields, or an instanced
-        pass whose script did not produce a population this frame. The columns arrive as a
+        `fullscreen` covers both a pass declaring no entity fields and an instanced pass
+        whose script did not produce a population this frame -- the columns arrive as a
         VALUE and nothing here reads live state, so moving the producer off the render
         thread later changes nothing in this path.
         """
         if instances is REFUSED_POPULATION:
-            # The engine already named the problem on the strip. Holding the previous
-            # frame is the honest answer; drawing fullscreen would dress a data mistake
-            # up as a deliberate picture.
-            return _INVALID_POPULATION
+            # The engine already named the problem on the strip (`ScriptStatus.soft_errors`);
+            # holding the previous frame is the honest answer, and drawing fullscreen would
+            # dress a data mistake up as a deliberate picture.
+            return InstancedOutcome(
+                "", "refused", detail="the script engine refused this population"
+            )
         if not self.entity_fields or not instances or self.program is None:
-            return None
+            return InstancedOutcome("", "fullscreen")
         count, problem = validate_population(self.entity_fields, instances)
         if problem is not None:
-            self._instances_error = problem
-            return _INVALID_POPULATION
-        self._instances_error = None
+            return InstancedOutcome("", "refused", detail=problem)
+        if count == 0:
+            return InstancedOutcome("", "empty", count=0)
         for entity_field in self.entity_fields:
             column = instances[entity_field.name]
             buffer = self.instance_buffers.get(entity_field.name)
@@ -681,7 +705,7 @@ class Pass:
             buffer.write(column)
         if self.vao is None:
             self._build_instanced_vao()
-        return count
+        return InstancedOutcome("", "drew", count=count)
 
     def _build_instanced_vao(self) -> None:
         # Rebuilt only when a buffer is replaced, never per frame: the instance COUNT is a

@@ -33,6 +33,7 @@ from shaderbox.constants import (
     WEBM_CRF_VALUES,
 )
 from shaderbox.core import Canvas, Pass, process_time
+from shaderbox.instanced_outcome import InstancedOutcome
 from shaderbox.media import (
     Image,
     MediaDetails,
@@ -344,6 +345,11 @@ class Document:
         self.script_frame: int = -1
         self.script_time: float | None = None
         self._graph_errors: list[GraphError] = []
+        # What each pass's draw did on the last `render()`, by pass name (102 D4a) -- the
+        # surface a per-frame UI reads, including the live instance COUNT `describe()`
+        # carries (104 D3). Only passes `render()` actually reached this frame are keyed;
+        # a pass off the current output's chain keeps no entry rather than a stale one.
+        self._instanced_outcomes: dict[str, InstancedOutcome] = {}
         # Loading compiles nothing (066 D1), so the first render pays the pass compiles. The
         # live loop reads this to admit first renders one document per frame (066 D2); set on
         # ATTEMPT, not success, so a broken document cannot hog the budget forever — but only
@@ -383,6 +389,16 @@ class Document:
     def graph_errors(self) -> list[GraphError]:
         """Wiring errors from the last render — a cycle, or a pass an input names (D7)."""
         return list(self._graph_errors)
+
+    @property
+    def instanced_outcomes(self) -> dict[str, InstancedOutcome]:
+        """What each pass's draw did on the last `render()`, by pass name (102 D4a).
+
+        An iterated pass reports its LAST iteration only: every iteration draws into the
+        same canvas, swapping it between turns, so the last one is what the canvas -- and
+        therefore any reader of this dict -- actually shows (102 D4b).
+        """
+        return dict(self._instanced_outcomes)
 
     def output_chain_errors(self) -> dict[str, list[ShaderError]]:
         """Compile errors on the passes this document's OUTPUT actually needs.
@@ -1004,6 +1020,15 @@ class Document:
                         inputs=inputs,
                         iteration=iteration,
                         iterations=entry.iterations,
+                    )
+                    # Overwritten on every iteration, last one standing (102 D4b): every
+                    # iteration draws into the same canvas, so the last is what a reader of
+                    # `instanced_outcomes` sees whether it looks now or between iterations.
+                    self._instanced_outcomes[name] = InstancedOutcome(
+                        name,
+                        render_pass.last_outcome.state,
+                        count=render_pass.last_outcome.count,
+                        detail=render_pass.last_outcome.detail,
                     )
                     if not last:
                         # Swap BETWEEN iterations so the next one reads what this one just wrote
