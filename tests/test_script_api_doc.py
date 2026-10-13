@@ -113,22 +113,56 @@ def test_the_block_reaches_the_rare_prompt_tier() -> None:
     assert block.index("SCRIPT API") < block.index("CONVENTIONS")
 
 
-def test_api_doc_reaches_only_for_the_gl_free_half_of_the_package() -> None:
-    # api_doc must never import `engine`/`behavior` (both pull moderngl) — it is built off the main
-    # thread. A runtime sys.modules assertion cannot express this: importing ANY submodule executes
-    # `shaderbox/scripting/__init__.py`, which re-exports the GL half, so the invariant is over this
-    # module's OWN imports.
-    tree = ast.parse(Path(api_doc.__file__).read_text(encoding="utf-8"))
+def _module_imports(path: Path, package_root: Path) -> set[str]:
+    # `from shaderbox.scripting import native_host` names a SUBMODULE, so it resolves to that
+    # module rather than to the package `__init__` (which re-exports the GL half and would be
+    # reported as reached when it is not).
+    tree = ast.parse(path.read_text(encoding="utf-8"))
     reached: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module:
-            reached.add(node.module)
+            package_dir = package_root / node.module.replace(".", "/")
+            submodules = [
+                f"{node.module}.{alias.name}"
+                for alias in node.names
+                if (package_dir / f"{alias.name}.py").is_file()
+            ]
+            reached.update(submodules or [node.module])
         elif isinstance(node, ast.Import):
             reached.update(alias.name for alias in node.names)
-    assert {m for m in reached if m.startswith("shaderbox")} == {
+    return reached
+
+
+def _module_file(module: str, package_root: Path) -> Path:
+    as_path = package_root / module.replace(".", "/")
+    return as_path / "__init__.py" if as_path.is_dir() else as_path.with_suffix(".py")
+
+
+def test_api_doc_reaches_only_for_the_gl_free_half_of_the_package() -> None:
+    # api_doc must never import `engine`/`behavior` (both pull moderngl) — it is built off the main
+    # thread. A runtime sys.modules assertion cannot express this: importing ANY submodule executes
+    # `shaderbox/scripting/__init__.py`, which re-exports the GL half, so the invariant is over the
+    # OWN imports of api_doc and of every shaderbox module those reach, followed to closure -- a
+    # module api_doc imports could otherwise pull the GL half in one step further down.
+    package_root = Path(api_doc.__file__).resolve().parents[2]
+    seen: set[str] = set()
+    pending = ["shaderbox.scripting.api_doc"]
+    everything: set[str] = set()
+    while pending:
+        module = pending.pop()
+        if module in seen:
+            continue
+        seen.add(module)
+        reached = _module_imports(_module_file(module, package_root), package_root)
+        everything |= reached
+        pending.extend(m for m in reached if m.startswith("shaderbox"))
+    assert seen == {
+        "shaderbox.scripting.api_doc",
         "shaderbox.scripting.context",
+        "shaderbox.scripting.native",
+        "shaderbox.scripting.native_host",
     }
-    assert not [m for m in reached if "moderngl" in m or "OpenGL" in m]
+    assert not [m for m in everything if "moderngl" in m or "OpenGL" in m]
 
 
 def test_the_advertised_import_is_one_the_gate_accepts() -> None:

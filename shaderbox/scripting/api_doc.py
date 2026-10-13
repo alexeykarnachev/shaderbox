@@ -6,7 +6,7 @@ Names, signatures and field types come from the code; the semantics beside them 
 fields, every type name `engine.py::_stub_kind` can return must be a key in `_VALUE_SHAPE_GLOSS`,
 and every public `Vec` member plus every operator dunder must reach the rendered text.
 
-This module reaches only for the GL-free halves of the package (`context` + `outputs`) — never
+This module reaches only for the GL-free halves of the package (`context`, `native`) — never
 `engine`/`behavior`, which import `moderngl`. A runtime `sys.modules` assertion cannot express that:
 importing ANY submodule executes the package `__init__`, which re-exports the GL half, so the
 invariant is over this module's OWN imports."""
@@ -16,6 +16,7 @@ from inspect import cleandoc
 from textwrap import fill
 
 from shaderbox.scripting.context import EXPORT_MOUSE, MouseState, ScriptContext
+from shaderbox.scripting.native import NativeError, native
 
 _WRAP_WIDTH: int = 100
 
@@ -101,7 +102,13 @@ _IMPORT_NAMES: str = "ScriptBehavior, ScriptContext"
 # The names the engine injects into every script (`behavior.py::_build_globals`), as the
 # editor's intelligence classes them: the script API, not a local and not a builtin.
 API_NAMES: frozenset[str] = frozenset(
-    {"ScriptBehavior", "ScriptContext", MouseState.__name__}
+    {
+        "ScriptBehavior",
+        "ScriptContext",
+        MouseState.__name__,
+        native.__name__,
+        NativeError.__name__,
+    }
 )
 
 
@@ -131,6 +138,12 @@ def api_symbol_doc(name: str) -> tuple[str, str]:
         return "ScriptContext", _class_help(ScriptContext)
     if name == MouseState.__name__:
         return MouseState.__name__, _class_help(MouseState)
+    if name == native.__name__:
+        return "native(name, *, timeout=2.0, debug=False)", cleandoc(
+            native.__doc__ or ""
+        )
+    if name == NativeError.__name__:
+        return NativeError.__name__, _class_help(NativeError)
     return name, _API_HELP["ScriptBehavior"]
 
 
@@ -224,6 +237,11 @@ def script_api_summary() -> str:
         f"- `from shaderbox.scripting import {_IMPORT_NAMES}` -- that module and those names are "
         "the ONLY part of shaderbox a script may import; any other shaderbox module raises at "
         "compile. A script is otherwise plain Python -- `import math`, numpy and the stdlib work.",
+        "- `native(name)` (also importable from shaderbox.scripting) loads a shared library the "
+        "USER built and put in the document's scripts/ dir; `lib.buffer(shape, dtype)` allocates "
+        "an array it can write, and `lib.call(export, **args)` runs one export, returning a dict "
+        "and raising `NativeError` on failure. You cannot build a library: use `native` only "
+        "where the user's script already does, and keep its calls as they are when editing.",
     ]
     header = "SCRIPT API (generated from shaderbox/scripting -- the Python side of a document script):"
     return "\n".join([header, *(_bullet(b) for b in bullets), "", _INSTANCING_BLOCK])

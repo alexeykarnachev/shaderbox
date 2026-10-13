@@ -217,6 +217,7 @@ def test_a_non_landing_key_reaches_the_app_through_the_whole_seam(
     # forwarding builder that `_resolve_scripts` bypasses still drops every warning after
     # the first project load.
     session.ui_documents = {}
+    session.script_engine = built
     session._resolve_scripts()
     assert session.script_engine._on_key_warning == app.on_key_warning, (
         "_resolve_scripts replaced the engine without the warn callback -- after a "

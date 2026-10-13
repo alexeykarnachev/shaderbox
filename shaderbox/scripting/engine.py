@@ -63,6 +63,8 @@ from shaderbox.uniform_coerce import is_text_array
 # One script per document (048 — the per-uniform `u_<name>__<tag>.py` scheme of 044/047 is removed). The
 # error key is `(document_id, "", _SCRIPT_FILE)`.
 _SCRIPT_FILE = DOCUMENT_SCRIPT_BASENAME
+# The deadline a native call gets inside the completion probe, which runs on the UI thread.
+_PROBE_NATIVE_TIMEOUT = 0.25
 
 # Engine vocabulary inside a returned pass block. `@` cannot begin a GLSL identifier or a
 # pass name, so a reserved key can never collide with a uniform the author declared -- and
@@ -438,6 +440,8 @@ class ScriptEngine:
         # EXISTENCE (048 — no active flag; the file IS the binding). Cheap when nothing changed: a stat.
         scripts = self._documents.get(document_id)
         if scripts is None or scripts.scripts_dir != scripts_dir:
+            if scripts is not None and scripts.behavior is not None:
+                scripts.behavior.release()
             scripts = DocumentScripts(scripts_dir)
             self._documents[document_id] = scripts
 
@@ -456,7 +460,9 @@ class ScriptEngine:
             return
         if scripts.mtime == mtime:
             return
-        behavior = PythonBehavior(_SCRIPT_FILE, body)
+        behavior = PythonBehavior(_SCRIPT_FILE, body, scripts_dir)
+        if scripts.behavior is not None:
+            scripts.behavior.release()
         scripts.behavior = behavior
         scripts.mtime = mtime
         scripts.source = body
@@ -472,6 +478,8 @@ class ScriptEngine:
         # isn't enough) and clear the cached sets so script_driven_uniforms reports nothing. The pair
         # is UNPACKED into the three-tuple error key — composing (document_id, pair) would build a
         # key that never matches, leaving every per-key error behind.
+        if scripts.behavior is not None:
+            scripts.behavior.release()
         scripts.behavior = None
         scripts.mtime = None
         scripts.source = None
@@ -524,15 +532,20 @@ class ScriptEngine:
         else:
             self.errors.pop(key, None)
 
-    def fresh_behavior_for(self, document_id: str) -> PythonBehavior | None:
+    def fresh_behavior_for(
+        self, document_id: str, native_timeout_cap: float | None = None
+    ) -> PythonBehavior | None:
         # A NEW script instance, independent of the live registry's instance — recompiled from the
         # live registry's CACHED source (not a fresh disk read, so an export never sees a half-saved
         # mid-edit file). The export path ticks THIS so an exported integrator starts from a clean
-        # __init__ regardless of live state.
+        # __init__ regardless of live state. The CALLER releases it (`PythonBehavior.release`): it may
+        # hold native hosts.
         scripts = self._documents.get(document_id)
         if scripts is None or scripts.source is None:
             return None
-        return PythonBehavior(_SCRIPT_FILE, scripts.source)
+        return PythonBehavior(
+            _SCRIPT_FILE, scripts.source, scripts.scripts_dir, native_timeout_cap
+        )
 
     def returned_value_types(self, document_id: str) -> dict[tuple[str, str], str]:
         """(pass, name) -> the GLSL type ONE isolated tick's returned value implies.
@@ -542,17 +555,25 @@ class ScriptEngine:
         itself does know, so this runs a FRESH instance for one frame and reads the raw dict —
         before any declaration check, which is the point: the uniform being completed does not
         exist yet. Isolated (`fresh_behavior_for`), so the live document and engine are untouched;
-        a script that raises returns nothing rather than propagating into the editor. Runs once
-        per shader keystroke (the buffer's index rebuild): 0.84 ms for a script looping 20k
-        times, against a live loop that already ticks the same script every frame.
+        a script that raises returns nothing rather than propagating into the editor. The editor
+        caches the answer on the SCRIPT's stamp (`tabs/code.py::_typed_script_returns`), so this
+        runs once per script edit. It runs on the UI thread, so a native call in it gets a short
+        deadline.
         """
-        behavior = self.fresh_behavior_for(document_id)
-        if behavior is None or behavior.error is not None:
+        behavior = self.fresh_behavior_for(
+            document_id, native_timeout_cap=_PROBE_NATIVE_TIMEOUT
+        )
+        if behavior is None:
             return {}
         try:
-            raw = behavior.run(ScriptContext(t=0.0, dt=1.0 / 60.0, frame=0))
-        except Exception:
-            return {}
+            if behavior.error is not None:
+                return {}
+            try:
+                raw = behavior.run(ScriptContext(t=0.0, dt=1.0 / 60.0, frame=0))
+            except Exception:
+                return {}
+        finally:
+            behavior.release()
         if not isinstance(raw, dict):
             return {}
         types: dict[tuple[str, str], str] = {}
@@ -636,9 +657,26 @@ class ScriptEngine:
         # so the live document + live engine state are byte-identical afterward. Returns the driven
         # (pass, name) pairs, per-key + orphan errors, and the driven uniforms' VALUES at each sample.
         compile_error = self.errors.get((document_id, "", _SCRIPT_FILE))
-        behavior = self.fresh_behavior_for(document_id)
-        if behavior is None or compile_error is not None:
+        if compile_error is not None:
             return ScriptProbe(compile_error, set(), [], [], [])
+        behavior = self.fresh_behavior_for(document_id)
+        if behavior is None:
+            return ScriptProbe(None, set(), [], [], [])
+        try:
+            return self._dry_run_with(
+                document_id, document, behavior, sample_times, fps
+            )
+        finally:
+            behavior.release()
+
+    def _dry_run_with(
+        self,
+        document_id: str,
+        document: ScriptTarget,
+        behavior: PythonBehavior,
+        sample_times: tuple[float, ...],
+        fps: int,
+    ) -> ScriptProbe:
 
         # Compile every pass FIRST. 066 D1 forbids compiling from inside the FRAME LOOP; this is a
         # synchronous agent call on the main thread, the same context `_scriptable_uniforms_for`
@@ -1298,7 +1336,15 @@ class ScriptEngine:
         last_skipped.clear()
         last_skipped.update(skipped)
 
+    def release_all(self) -> None:
+        """Stop every native host a live script started and delete its buffers (feature 109)."""
+        for scripts in self._documents.values():
+            if scripts.behavior is not None:
+                scripts.behavior.release()
+
     def drop_document(self, document_id: str) -> None:
-        self._documents.pop(document_id, None)
+        scripts = self._documents.pop(document_id, None)
+        if scripts is not None and scripts.behavior is not None:
+            scripts.behavior.release()
         for key in [k for k in self.errors if k[0] == document_id]:
             self.errors.pop(key, None)

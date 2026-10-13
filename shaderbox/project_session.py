@@ -607,6 +607,7 @@ class ProjectSession:
         # Per project (feature 041): reset the engine, resolve each document's scripts/u_*.py against its
         # active uniforms, and wire each Document's script hooks. The live path re-polls mtimes + re-wires
         # any newly-inserted document via reload_scripts() in ui.py.
+        self.script_engine.release_all()
         self.script_engine = self._build_script_engine()
         for document_id, ui_document in self.ui_documents.items():
             self.script_engine.reload(
@@ -745,6 +746,7 @@ class ProjectSession:
                 yield
             finally:
                 document.on_pre_render = live_hook
+                behavior.release()
 
         return _isolation
 

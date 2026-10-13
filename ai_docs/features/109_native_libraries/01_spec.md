@@ -270,8 +270,8 @@ swap.
   updated in the same wave.
 
 - **D15. The contract ships as source.** `shaderbox/resources/native/` holds
-  `shaderbox_native.h` (C, header-only), `shaderbox_native.odin` (the same, as a package an
-  Odin library imports), and one minimal example per language with its one-line build
+  `shaderbox_native.h` (C, header-only), `shaderbox_native/shaderbox_native.odin` (the same,
+  as a package an Odin library imports), and one minimal example per language with its one-line build
   command. The Odin example shows `context = runtime.default_context()` in each export,
   without which a `proc "c"` export calling ordinary Odin code does not compile. `build.sh`
   already copies the whole `shaderbox/` tree, so nothing changes there. The help modal names
@@ -306,9 +306,16 @@ typedef struct {
     sb_arg  *args;
     char    *error;       /* sb_fail writes here, NUL-terminated                       */
     int32_t  error_cap;   /* bytes, including the NUL; a longer message is truncated   */
+    int32_t  nresults;    /* written by sb_ret_*                                       */
+    sb_arg  *results;     /* filled by sb_ret_*: name, kind and number/integer/data    */
+    int32_t  results_cap;
     int32_t  reserved;
 } sb_call;
 ```
+
+- **Results.** `sb_ret_num(c, name, v)`, `sb_ret_int(c, name, v)` and `sb_ret_str(c, name, s)`
+  append to `results` (32 slots); `lib.call` returns them as a dict. The host copies names and
+  strings after the export returns, so a result string must stay valid until then.
 
 - **Before each call** the host sets `error[0] = 0`. A nonzero return with an empty `error`
   is reported as "`step` returned N without sb_fail"; text written by `sb_fail` before a
@@ -335,12 +342,13 @@ typedef struct {
   - `const char *sb_layout_name(int32_t i)` and `int64_t sb_layout_value(int32_t i)`: entry
     `i` of the table, NULL name past the end. The library's set of names must EQUAL the
     host's -- a missing or an extra name is refused by name, then each value is compared.
-    The 27 entries, in any order (the version is `sb_abi()`'s, not an entry):
+    The 30 entries, in any order (the version is `sb_abi()`'s, not an entry):
     `sizeof.sb_arg`, `sizeof.sb_call`;
     `sb_arg.name`, `sb_arg.kind`, `sb_arg.dtype`, `sb_arg.ndim`, `sb_arg.reserved`,
     `sb_arg.shape`, `sb_arg.data`, `sb_arg.number`, `sb_arg.integer` (offsets);
     `sb_call.abi`, `sb_call.nargs`, `sb_call.args`, `sb_call.error`, `sb_call.error_cap`,
-    `sb_call.reserved` (offsets); `SB_NUMBER`, `SB_INTEGER`, `SB_STRING`, `SB_BUFFER`,
+    `sb_call.nresults`, `sb_call.results`, `sb_call.results_cap`, `sb_call.reserved`
+    (offsets); `SB_NUMBER`, `SB_INTEGER`, `SB_STRING`, `SB_BUFFER`,
     `SB_F32`, `SB_F64`, `SB_I32`, `SB_U32`, `SB_I64`, `SB_U8` (values). The table carries
     offsets, not types, so a field that changes type at the same size and offset passes it;
     `SB_ABI` is the guard for that, and is bumped on any change to the structs.
@@ -425,11 +433,12 @@ commit.
    gone, module handle kept), drop_document, engine replacement, dry run, export, completion
    probe -- and assert the released hosts' pids are gone and their files deleted. Break: drop
    the release call at each site; each makes exactly its own case red.
-9. **Write after release is safe, and a full tmpfs is an error.** Release a handle while its array is still referenced,
-   write the array: the process is alive. Break: back the arrays by `SharedMemory.buf`.
-   Separately, a buffer larger than the free space of a small tmpfs mounted for the test
-   raises at `lib.buffer` (SKIPPED where the test cannot mount one). Break: drop the
-   reservation -- the later write kills the test process with SIGBUS.
+9. **Write after release is safe, and pages are reserved.** Release a handle while its array
+   is still referenced, write the array: the process is alive. Break: back the arrays by
+   `SharedMemory.buf`. Separately, a new buffer's file has its pages allocated
+   (`st_blocks * 512 >= size`), which is what makes a full tmpfs fail at `lib.buffer` rather
+   than at a later write. Mounting a small tmpfs to show the SIGBUS needs root, so the gate
+   checks the allocation itself. Break: drop the reservation -- the file is sparse.
 10. **Dry-run isolation.** A dry run calls an export that writes its buffer; the live
     instance's buffer is unchanged while the dry run's own buffer did change. Break: return
     the live instance's handle from the memo.
@@ -463,16 +472,10 @@ unreadable. Checking whether a pid exists still works.
 
 ## Open questions for the user
 
-1. **Scalar results.** Should an export be able to return named scalars
-   (`sb_ret_num(c, "residual", 1e-4)` → `lib.call(...)` returns `{"residual": 1e-4}`), or is
-   writing into buffers enough? It changes `sb_call` (a results array), so it is settled
-   before the header is written. Recommendation: yes, numbers, integers and strings -- the
-   slow-algorithm case (a status, a count, a string result) wants it.
-2. **Debugging.** The first draft argued an in-process mode was unnecessary because `gdb -p`
-   attaches to the host; the review found this box refuses that (`ptrace_scope=1`), and
-   D5a's `PR_SET_DUMPABLE=0` refuses it everywhere. Recommendation: `native("fluid",
-   debug=True)` -- the host skips `PR_SET_DUMPABLE`, calls `PR_SET_PTRACER_ANY`, has no
-   deadline, and the handle exposes the pid -- which keeps isolation while debugging.
+None. Both were settled at plan-lock on the recommended answers: exports return named scalars
+(The ABI, Results), and `native("fluid", debug=True)` is the debugging mode -- the host skips
+`PR_SET_DUMPABLE`, calls `PR_SET_PTRACER_ANY`, has no deadline, and the handle exposes its pid.
+A debugger then attaches while isolation holds.
 
 ## Review history
 

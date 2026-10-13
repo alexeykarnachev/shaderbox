@@ -19,12 +19,14 @@ Python program."""
 import inspect
 import math
 import traceback
+from pathlib import Path
 from typing import Any, Protocol, TypeGuard
 
 import moderngl
 
 from shaderbox.scripting.context import MouseState, ScriptContext
 from shaderbox.scripting.errors import ScriptError
+from shaderbox.scripting.native import NativeError, NativeOwner, native, owning
 from shaderbox.uniform_coerce import (
     coerce_uniform_value,
     gl_type_label,
@@ -67,7 +69,9 @@ class ScriptBehavior:
 # THE user-facing scripting surface: the only names a script may import, and the same set the
 # engine injects into its globals. Everything else in `shaderbox.scripting` — the engine, the
 # probe, the stub generator — is the app's own machinery that happens to share the package.
-_INJECTED_NAMES = frozenset({"ScriptBehavior", "ScriptContext", "MouseState"})
+_INJECTED_NAMES = frozenset(
+    {"ScriptBehavior", "ScriptContext", "MouseState", "native", "NativeError"}
+)
 
 
 def _import_hint(exc: Exception) -> str:
@@ -149,6 +153,8 @@ def _build_globals(uniform_name: str) -> dict[str, Any]:
         "ScriptBehavior": ScriptBehavior,
         "ScriptContext": ScriptContext,
         "MouseState": MouseState,
+        "native": native,
+        "NativeError": NativeError,
     }
 
 
@@ -202,13 +208,23 @@ class PythonBehavior:
     override / a raising `__init__`) cache a `ScriptError` and freeze permanently until the
     file changes; runtime + shape failures are caught per-tick by the engine."""
 
-    def __init__(self, label: str, body: str) -> None:
+    def __init__(
+        self,
+        label: str,
+        body: str,
+        scripts_dir: Path | None = None,
+        native_timeout_cap: float | None = None,
+    ) -> None:
         # `label` is the binding KEY (the document script's "script.py"): the compile-marker name AND the
-        # name a compile error records under.
+        # name a compile error records under. `scripts_dir` is where `native("name")` looks.
         self.label = label
         self._error: ScriptError | None = None
         self._instance: ScriptBehavior | None = None
         self._cls: type[ScriptBehavior] | None = None
+        # Native handles belong to the phase that created them (feature 109): the module code's
+        # outlive a reset, an instance's do not.
+        self._module_owner = NativeOwner(scripts_dir, native_timeout_cap)
+        self._instance_owner: NativeOwner | None = None
         try:
             code = compile(body, f"<u:{label}>", "exec")
         except SyntaxError as e:
@@ -223,8 +239,12 @@ class PythonBehavior:
 
         ns = _build_globals(label)
         try:
-            exec(code, ns)  # raw exec of the user file — no sandbox (locked posture)
+            with owning(self._module_owner):
+                exec(
+                    code, ns
+                )  # raw exec of the user file — no sandbox (locked posture)
         except Exception as e:
+            self._module_owner.release()
             self._error = ScriptError(
                 label,
                 "compile",
@@ -241,6 +261,7 @@ class PythonBehavior:
                 "no ScriptBehavior subclass found — keep the "
                 "`class Behavior(ScriptBehavior)` line",
             )
+            self._module_owner.release()
             return
         if cls.update is ScriptBehavior.update:
             self._error = ScriptError(
@@ -248,6 +269,7 @@ class PythonBehavior:
                 "compile",
                 f"class {cls.__name__} does not implement update(self, context)",
             )
+            self._module_owner.release()
             return
         arity_error = _check_update_arity(cls)
         if arity_error is not None:
@@ -257,6 +279,7 @@ class PythonBehavior:
                 arity_error,
                 cls.update.__code__.co_firstlineno,
             )
+            self._module_owner.release()
             return
         self._cls = cls
         self._instantiate()
@@ -267,10 +290,18 @@ class PythonBehavior:
         # the binding (else the stale error keeps the engine freezing it forever).
         if self._cls is None:
             return
+        if self._instance_owner is not None:
+            self._instance_owner.release()
+        owner = NativeOwner(
+            self._module_owner.scripts_dir, self._module_owner.timeout_cap
+        )
+        self._instance_owner = owner
         try:
-            self._instance = self._cls()
+            with owning(owner):
+                self._instance = self._cls()
             self._error = None
         except Exception as e:
+            owner.release()
             self._error = ScriptError(
                 self.label,
                 "compile",
@@ -286,7 +317,15 @@ class PythonBehavior:
     def reset(self) -> None:
         # Re-run __init__ on a fresh instance (manual reset / restart) without recompiling.
         # _instantiate no-ops when there's no resolved class (an unrecoverable compile failure).
+        # A module-level native handle survives the reset, and a crashed one gets its host back.
+        self._module_owner.revive()
         self._instantiate()
+
+    def release(self) -> None:
+        """Stop every native host this script started and delete its buffers. Idempotent."""
+        if self._instance_owner is not None:
+            self._instance_owner.release()
+        self._module_owner.release()
 
     def run(self, context: ScriptContext) -> Any:
         # The raw dict the user's update produced this frame (name -> value), NOT yet coerced — the
@@ -296,7 +335,9 @@ class PythonBehavior:
             raise _RuntimeScriptError(
                 ScriptError(self.label, "runtime", "no behavior instance")
             )
-        return self._instance.update(context)
+        assert self._instance_owner is not None
+        with owning(self._instance_owner):
+            return self._instance.update(context)
 
 
 def _all_finite(coerced: object) -> bool:

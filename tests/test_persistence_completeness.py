@@ -112,6 +112,7 @@ def test_the_roster_covers_every_module_that_loads_a_persisted_store() -> None:
         "youtube_util.py",  # builds request bodies
         "youtube.py",  # OAuth client secrets, supplied by the user per-load
         "youtube_api.py",  # OAuth token JSON from google, not a persisted store
+        "native_host.py",  # protocol frames from a library's host process, not a file
     }
 
     loaders = {

@@ -21,11 +21,13 @@ from shaderbox.scripting.engine import (
 )
 from shaderbox.scripting.errors import ScriptError
 from shaderbox.scripting.keys import StoppedKey
+from shaderbox.scripting.native import NativeError, native
 
 __all__ = [
     "EXPORT_MOUSE",
     "Behavior",
     "MouseState",
+    "NativeError",
     "PythonBehavior",
     "ScriptBehavior",
     "ScriptContext",
@@ -39,6 +41,7 @@ __all__ = [
     "StoppedKey",
     "coerce_one",
     "is_scriptable",
+    "native",
     "normalize_script_tabs",
     "script_stub_for",
 ]

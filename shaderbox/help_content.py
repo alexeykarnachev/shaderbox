@@ -204,7 +204,14 @@ def help_sections() -> list[HelpSection]:
                 "document can carry one Python script that drives its uniforms; `Alt+R` creates "
                 "and opens it, or use the Script row's open button in the Document tab. A script "
                 "drives a uniform on every pass that declares it, or names a pass to drive only "
-                "that one."
+                "that one.\n"
+                "\n"
+                "A script can also call a shared library you built yourself, in C, Odin or any "
+                "language that exports C functions: put it next to `script.py` and load it with "
+                '`native("name")`. It runs in its own process, so a crash is reported as a '
+                "script error and the app keeps running, and a rebuild is picked up while the "
+                "document plays. The header, an Odin binding and an example for each language ship "
+                "in ShaderBox's `resources/native/` folder."
             ),
             snippet=(
                 "uniform float u_radius = 0.35;                     // drag\n"

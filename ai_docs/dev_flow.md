@@ -298,7 +298,10 @@ this is the orientation `arch.md` would have been. Reshaped by feature 017.)
   `engine.py` (`ScriptEngine`: per-document registry, `(path,mtime)` cache + cached source, resolve +
   orphan-report (an error-strip row, never a log line), `tick`, `dry_run`, `reset`,
   `fresh_behavior_for`, `script_stub_for`, `script_status`, `is_scriptable`), `keys.py` (`StoppedKey`,
-  the persisted `(pass, uniform)` stop key the engine also takes per tick). The UI reads these via
+  the persisted `(pass, uniform)` stop key the engine also takes per tick), `native.py` (feature 109:
+  `native()`, `NativeLibrary`, `NativeError`, the owners a `PythonBehavior` releases handles with)
+  and `native_host.py` (the stdlib-only child process a library runs in, and the ABI's one
+  definition; `native.py` imports it for that definition, and the child runs it by path). The UI reads these via
   `ProjectSession`. Imports no imgui/glfw/App and no concrete `Document`
   (works against the `ScriptTarget` protocol — a document's passes by name). `ProjectSession` owns it;
   `ui.py` ticks live; export ticks

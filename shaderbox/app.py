@@ -112,6 +112,7 @@ from shaderbox.render_plan import (
     ThrottleState,
 )
 from shaderbox.scripting import EXPORT_MOUSE, MouseState
+from shaderbox.scripting.native import sweep_stale_files
 from shaderbox.shader_errors import ShaderError, next_error_line
 from shaderbox.shader_lib import ShaderLibIndex
 from shaderbox.shader_lib.favorites import ShaderLibFavoritesStore
@@ -401,6 +402,7 @@ class App:
         # to it via @property accessors below. notifier + exporter_registry + shader_lib_files +
         # editor_sessions are injected (the core stays imgui-import-free); the two callbacks route
         # the UI-tail side effects the core can't own (sticky-focus reset, delete-arm clear).
+        sweep_stale_files()
         self.session = ProjectSession(
             document_examples_dir=DOCUMENT_EXAMPLES_DIR,
             starter_example_id=STARTER_EXAMPLE_ID,
@@ -2470,6 +2472,8 @@ class App:
         self.copilot_turn_active = False
 
         self.exporter_registry.release()
+        if hasattr(self, "session"):
+            self.session.script_engine.release_all()
 
         for session in self.editor_sessions.values():
             session.editor.close()

@@ -626,6 +626,29 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   picking a mode from the combo does not read as a format change and drop a feedback pass's
   history.
 
+- **A script calls an author-built native library through ONE C calling convention, in a
+  child process, with buffers the handle owns (feature 109).** `native("name")` loads a shared
+  library from the document's `scripts/` dir; every export is `int32_t fn(sb_call*)` taking NAMED
+  numbers, integers, strings and buffers and returning named scalars. A pointer means nothing in
+  another process, so arbitrary signatures cannot cross, and one shape is what makes the contract
+  the same for every language. The library runs in `scripting/native_host.py`, started by PATH as
+  `python -I -S` so it imports the stdlib only -- `multiprocessing` spawn re-runs the app's
+  `__main__` (`ui.py`) and measured 617 ms with the GL stack loaded in every host. Buffers are
+  plain files mapped by both processes (`np.frombuffer` over an `mmap` pins the mapping); a
+  `SharedMemory.buf` array SEGFAULTS the app when written after close, and a host not started by
+  `multiprocessing` unlinks segments on exit through its own resource tracker. The ABI is defined
+  ONCE, as the ctypes structs in `native_host.py`; a library exports a name/value layout table
+  (`SB_LIBRARY()` in C, importing the Odin package) and the host refuses it on the first entry
+  that differs, so the header, the Odin binding and a hand-written third language are each checked
+  rather than trusted. Handles and buffers belong to the script PHASE that made them
+  (`native.py::NativeOwner`: module code, or one instance) and are released with it at every
+  site a behavior stops being used; `weakref.finalize` is the backstop, not the mechanism. A dead
+  host stays dead until the file changes, the script resets, or it reloads, so a deterministic
+  crash is not a host start per frame. The host sets `PR_SET_DUMPABLE=0` because a core-dump
+  handler held a crashing host for about a second and the parent read it as a timeout.
+  Revisit if the ~50 us round trip is a frame's bottleneck (an in-process mode), or a script needs
+  a CPU-computed field as a texture (an engine-output gap, not an ABI one).
+
 - **A script's bulk data travels under a RESERVED `@` key inside a pass block, and the
   engine owns every buffer (feature 100).** `@instances` carries a dict of named numpy
   columns; `@` cannot begin a GLSL identifier or a pass name, so the namespace is decidable
@@ -671,7 +694,8 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   active flag, no activate step (`is_script_active`/`is_brain_active` retired in 048). **The body is `exec`'d
   VERBATIM** (no AST surgery; the file IS a class def). A script is plain Python — `import math`, numpy and
   the stdlib all work — but of THIS package it sees `shaderbox.scripting` and, in it, `ScriptBehavior`,
-  `ScriptContext` and `MouseState` alone: `_build_globals` hands the exec a narrowed `__import__` (079), so the
+  `ScriptContext`, `MouseState`, `native` and `NativeError` alone (`behavior.py::_INJECTED_NAMES`,
+  which `api_doc.API_NAMES` must equal): `_build_globals` hands the exec a narrowed `__import__` (079), so the
   app's own modules are not a script's to reach. The 048 stub EMITS that explicit import so the surface
   is visible, and `behavior.py::_build_globals` ALSO injects the same names as a FALLBACK so a
   deleted import line degrades gracefully instead of an opaque eager-annotation-eval freeze. An error's
