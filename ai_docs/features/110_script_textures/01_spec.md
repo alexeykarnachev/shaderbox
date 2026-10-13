@@ -462,3 +462,23 @@ port because the self-read check ran first; gate 9's live break could not reach 
 without `last_good`; length 1 disagreed between completion and coercion for lists too. The
 copilot render line's blindness to a field is the same as for a population and moved to Out
 of scope with a trigger.
+
+Post-implementation review, two reviewers (code correctness; architecture, conventions and
+spec fidelity), three rounds to PASS. Found and fixed, each with a gate seen red under its
+break:
+
+- The warning-edge clear added with this feature re-armed any key not skipped, so a fault
+  sent every other frame warned on each return; it re-arms only for a key that landed.
+- `copilot/backend.py::_format_uniforms` marked every driven name before the sampler branch,
+  so the field cell never reached the model; gate 29 had called the helper on a stub.
+- `_motion_verdict`'s population flag was true for every probe (older than 110); facts read
+  only the last sample.
+- First-frame refusal: panel, editor note and copilot cell described a held frame or the
+  wired pass while the draw was black.
+- A good block field left the bare key's refusal on the strip.
+- `script_textures` outlived the field that filled it, first entirely, then when a recompile
+  left the program without the sampler; the prune runs at the top of every draw.
+
+Departures from the text above, accepted: the copilot cell reads
+`(script field WxH, C x dtype)`; the routing is a `_route` method beside `_write_one`, as
+the engine structures every other per-key step.

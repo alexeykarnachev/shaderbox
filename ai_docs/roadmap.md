@@ -29,18 +29,14 @@ feature; brief points at the superseder).
 <!-- As of 2026-10-13. -->
 **Next: a showcase example for 109, Linux only -- a multi-fluid Navier-Stokes simulation in a
 native library.** Several fluids or gases with different properties (density, viscosity,
-diffusion, buoyancy) that push on and mix with each other; the physics is designed with the
-maintainer at the start of that session, and its first step is a spec. Windows gets its build later, on the Windows box,
-where 109's unmeasured Windows paths get their first run.
+diffusion, buoyancy) that push on and mix with each other. The physics is designed with the
+maintainer at the start of that session, and its first step is a spec. Windows gets its build
+later, on the Windows box, where 109's unmeasured Windows paths get their first run.
 
-**The open question that decides its shape: how the field reaches the screen.** A script cannot
-drive a `sampler2D` (`engine.py::_binding_reject`); 109's spec defers closing that gap until "the
-first document that needs a CPU-computed field drawn as an image", which this is. Today's
-alternative is `@instances`, one quad per cell (contract: specs 100 and 102). Settle it with the
-maintainer before writing the solver.
-
-**109 is done:** `native("name")`, the C header, the Odin package and both examples are in
-`shaderbox/resources/native/`; the spec's ABI section is the contract.
+**How the field reaches the screen is settled (110):** the solver writes a 109 buffer, the
+script returns it for a `sampler2D` (`{"<pass>": {"u_density": buf}}`, float32 or uint8,
+row 0 at the bottom), and the pass samples it as a texture. Measured: the call does not grow
+with the buffer, and the upload a draw sees is ~0.2 ms at 256x256 RGBA f32 (110's spec).
 
 **Open, not done unattended:** `ui_models.py::save`'s orphan-sweep `keep` flag has no observable
 effect, and `_delete_document_unguarded`'s `shutil.move` is unguarded after the document is popped.
@@ -50,6 +46,7 @@ Both are design questions. Getting off imgui continues (098); its next surface i
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 110 | script_textures | done | A script returns a numpy array -- a 109 native buffer is one -- for a `sampler2D`, and the pass samples it as a texture that frame over whatever the sampler is wired to, with refusals warned and held at the last good frame and the saved source never touched. Spec: `ai_docs/features/110_script_textures/01_spec.md`. |
 | 109 | native_libraries | done | A script loads a shared library the author built in any language that exports C, through one calling convention (`int32_t fn(sb_call*)`, named buffers and scalars in, named scalars out), and runs it in a stdlib-only child process, so a crash, hang, missing export or ABI mismatch is a script error and a rebuild reloads with the buffers intact. Spec: `ai_docs/features/109_native_libraries/01_spec.md`. |
 | 108 | nightly_sweep | done | An unattended pass over the RUNTIME layer, since 107 had closed the gate layer and the structural questions came back ABSENT again here: dead symbols, duplicated blocks, per-item state left behind on teardown, oversized files and test-suite padding were each checked and each declined, the last three on evidence rather than taste -- a live gate enforces `ui_primitives.py`'s single flat import closure, and `conventions.md` records a maintainer decision against splitting `app.py`. The yield was one shape: a failure that resolves to a WELL-FORMED ANSWER, so nothing downstream can tell. A VertexArray dropped where its two sibling sites release; a clipboard `bool` collapsing "the copy failed" with "nothing to do" across five spellings of one action; `PASS_NAME_RE` asked with `match`, where `$` precedes a trailing newline, so `glow\n` was a second pass beside `glow` on disk and in the graph; `:w` announcing a save the copilot had refused; a library revert reporting "nothing to restore" over an edit still live. The remedy was the return TYPE each time, never a handler -- the call site could not have reported what its answer could not represent -- and the spec names where tolerance is instead the design. Also a committed skill instructing the `todo.md` entry three docs forbid, which is the one defect that reproduces on every invocation. Review found a regression the wave itself shipped, green under both of its own gates. Spec: `ai_docs/features/108_nightly_sweep/01_spec.md`. |
 | 107 | nightly_sweep | done | An unattended pass whose subject turned out to be the GATE layer rather than the source: the structural questions -- misfiling, dependency direction, missing seams, comment rot -- all came back ABSENT, and the live-fact wave closed empty because every flagged figure is frozen history. Mutation breaks across four slices found the real class, and it is not the one the spec predicted: not a check asserting on source text (three instances) but a fixture whose case gives the correct and the broken implementation the same answer. Seven fixed, each verified by re-running the break that defeated it -- the watcher test that passed against the historical bug it was named for, a freeze test whose uniform started at the value it would freeze to, a layout test whose ungrouped pass sorted after both group members, a rename read back off the object the method had just mutated. Spec: `ai_docs/features/107_nightly_sweep/01_spec.md`. |
