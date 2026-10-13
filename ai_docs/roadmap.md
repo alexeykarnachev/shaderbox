@@ -40,12 +40,12 @@ pre-commit's `--all-files` means tracked files; it now covers untracked ones too
 **Carried from 108:** a failure that resolves to a well-formed answer is the class to watch,
 and its remedy is the return TYPE -- the test is whether a caller can TELL.
 
-**Open, deliberately not done unattended:** `ui_models.py::save`'s orphan-sweep `keep` flag
+**Open, not done unattended:** `ui_models.py::save`'s orphan-sweep `keep` flag
 has no observable effect, and `_delete_document_unguarded`'s `shutil.move` is unguarded
 after the document is popped and released. Both are design questions.
 
 **ShaderBox is still getting off imgui.** `graph_canvas` owns the node picture, hit-testing
-and gestures (098); the next surface to move is a question, not a plan.
+and gestures (098); the next surface to move is an open question.
 
 ## Features
 
