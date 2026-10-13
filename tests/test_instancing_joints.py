@@ -213,6 +213,16 @@ def test_a_non_landing_key_reaches_the_app_through_the_whole_seam(
         "engine fires into the no-op and nothing reaches the screen"
     )
 
+    # And the engine a session ENDS with: `load` replaces the one `__init__` built, so a
+    # forwarding builder that `_resolve_scripts` bypasses still drops every warning after
+    # the first project load.
+    session.ui_documents = {}
+    session._resolve_scripts()
+    assert session.script_engine._on_key_warning == app.on_key_warning, (
+        "_resolve_scripts replaced the engine without the warn callback -- after a "
+        "project load every script key warning fires into the no-op"
+    )
+
 
 def test_a_population_that_returns_to_its_start_is_not_reported_static() -> None:
     """A population is diffed FIRST against EVERY later sample, not first against last.
