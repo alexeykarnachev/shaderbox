@@ -27,25 +27,24 @@ feature; brief points at the superseder).
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
 <!-- As of 2026-10-13. -->
-**109 shipped: a script can call a native library the author built.** `native("name")` loads
-it from the document's `scripts/` dir and runs it in a child process; every export takes named
-buffers and scalars, and every failure -- the library's own, a crash, a hang, an ABI mismatch
--- is an ordinary script error while the app keeps running. A rebuild reloads with the buffers
-intact. The contract ships as a C header, an Odin package and one example per language in
-`shaderbox/resources/native/`. The Windows and macOS branches are unmeasured.
+**Next: a showcase example for 109, Linux only -- a multi-fluid Navier-Stokes simulation in a
+native library.** Several fluids or gases with different properties (density, viscosity,
+diffusion, buoyancy) that push on and mix with each other; the physics is designed with the
+maintainer at the start of that session, and its first step is a spec. Windows gets its build later, on the Windows box,
+where 109's unmeasured Windows paths get their first run.
 
-**Found on the way, and fixed:** `make check` passed over new, untracked modules, because
-pre-commit's `--all-files` means tracked files; it now covers untracked ones too.
+**The open question that decides its shape: how the field reaches the screen.** A script cannot
+drive a `sampler2D` (`engine.py::_binding_reject`); 109's spec defers closing that gap until "the
+first document that needs a CPU-computed field drawn as an image", which this is. Today's
+alternative is `@instances`, one quad per cell (contract: specs 100 and 102). Settle it with the
+maintainer before writing the solver.
 
-**Carried from 108:** a failure that resolves to a well-formed answer is the class to watch,
-and its remedy is the return TYPE -- the test is whether a caller can TELL.
+**109 is done:** `native("name")`, the C header, the Odin package and both examples are in
+`shaderbox/resources/native/`; the spec's ABI section is the contract.
 
-**Open, not done unattended:** `ui_models.py::save`'s orphan-sweep `keep` flag
-has no observable effect, and `_delete_document_unguarded`'s `shutil.move` is unguarded
-after the document is popped and released. Both are design questions.
-
-**ShaderBox is still getting off imgui.** `graph_canvas` owns the node picture, hit-testing
-and gestures (098); the next surface to move is an open question.
+**Open, not done unattended:** `ui_models.py::save`'s orphan-sweep `keep` flag has no observable
+effect, and `_delete_document_unguarded`'s `shutil.move` is unguarded after the document is popped.
+Both are design questions. Getting off imgui continues (098); its next surface is undecided.
 
 ## Features
 

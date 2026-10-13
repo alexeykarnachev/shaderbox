@@ -22,10 +22,9 @@ run-bundle:
 # truth for the check config is `.pre-commit-config.yaml`. Both ruff and pyright
 # block on failure.
 #
-# `--all-files` means every TRACKED file, so a module not yet `git add`ed escaped ruff entirely
-# and the gate went green over it. The file list is tracked plus untracked-not-ignored, so a
-# new file is checked from the moment it exists. NUL-separated, so a name with a space or a
-# non-ASCII character reaches the hooks whole.
+# The files are tracked plus untracked-not-ignored (`--all-files` would mean tracked only), so a
+# new module is checked before it is staged; NUL-separated, so any file name reaches the hooks
+# whole. The existence filter drops a tracked file deleted from the working tree.
 check:
 	git ls-files -z --cached --others --exclude-standard \
 		| xargs -0 sh -c 'for f; do [ -e "$$f" ] && printf "%s\0" "$$f"; done' _ \

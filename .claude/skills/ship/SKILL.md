@@ -71,7 +71,7 @@ git merge --ff-only dev          # dev should be a strict descendant; if not, st
 ```
 make release VERSION=<x.y.z>     # bumps pyproject, commits "release: vX.Y.Z", tags vX.Y.Z, runs make check
 ```
-**Footgun:** `make release` runs `make check`, which is `pre-commit run --all-files` — pre-commit
+**Footgun:** `make release` runs `make check`, which runs pre-commit over every file — pre-commit
 hooks (ruff-format, end-of-files) may *modify* files and exit non-zero on the first run after a change,
 which rolls back the version edit. If that happens: the hooks already fixed the tree, so commit the
 fixups (`git commit -am "style: ..."`) and re-run `make release`. To avoid it, ensure `make check` is

@@ -759,11 +759,13 @@ Judge it by the exit code, captured unpiped: `make gates > /tmp/gates.log 2>&1; 
 overwrite each other's log and the second's failure reads as the first's. Concurrent runs each set
 their own `TMPDIR`.
 
-**Stage new files before running it.** `make check` is `pre-commit run --all-files`, and
-pre-commit only sees files git tracks: an UNTRACKED module is skipped by ruff, formatter and
-pyright alike, so a wave that adds a test file gets a green gate on a tree whose new file was
-never linted, and the commit that stages it is red. Two 069 commits landed exactly that way.
-`git add` every new file (or `git add -N` it) before the gate, then judge the exit code.
+**New files are checked before they are staged.** `make check` hands pre-commit every tracked
+file plus every untracked file git does not ignore, NUL-separated, so a new module is linted from
+the moment it exists. `pre-commit run --all-files` means TRACKED files only, and under it a new
+module went unlinted while the gate stayed green -- two 069 commits and feature 109's first commit
+landed that way, past a prose rule to stage first. One asymmetry remains: a FIXABLE violation in
+an untracked file is fixed in place and reported Passed, because pre-commit detects a hook's edits
+by diffing tracked files; an unfixable one fails as usual.
 
 **On a box whose monitors report disconnected, run the gate under `xvfb-run -a`.** `App.__init__`
 aborts inside `glfw.get_video_mode` (`monitor != NULL` assertion) when glfw finds no monitor, so
@@ -773,7 +775,8 @@ context and this repo's `#version 460` shaders segfault it -- `make smoke` does 
 standalone smoke under `xvfb` needs them in the environment. A `skipped` smoke is not a pass.
 
 ### `make check`
-The single canonical lint/typecheck command — delegates to `uv run pre-commit run --all-files`:
+The single canonical lint/typecheck command — delegates to `uv run pre-commit run --files` over
+tracked and untracked-not-ignored files (see `### make gates`):
 ruff fix, ruff format, then **pyright** (chosen over mypy on purpose — fewer false positives, less
 friction; `[tool.pyright]` in `pyproject.toml`, basic mode). `.pre-commit-config.yaml` is the source
 of truth for the config. Run before declaring anything done. Both ruff and pyright **block on

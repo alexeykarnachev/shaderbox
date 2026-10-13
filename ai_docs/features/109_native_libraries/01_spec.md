@@ -375,7 +375,7 @@ class Behavior(ScriptBehavior):
 
 ## Files touched
 
-- `shaderbox/scripting/native.py` — new: `native()`, the handle, buffer files and maps, the
+- `shaderbox/scripting/native_library.py` — new: `native()`, the handle, buffer files and maps, the
   pipe protocol's client side with its reader threads, `NativeError`, ABI verification, the
   stale-file sweep.
 - `shaderbox/scripting/native_host.py` — new, run by path: stdlib only; maps buffer files,
