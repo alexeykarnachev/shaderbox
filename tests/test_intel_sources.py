@@ -196,10 +196,11 @@ def test_the_output_variable_reads_orange_and_sorts_with_the_buffers_own_names()
 
 def test_an_empty_literal_offers_no_declaration() -> None:
     # `uniform float[0] u_x;` does not compile, and the shader side offers a returned key's
-    # declaration as a one-click insertion — so an empty literal must name no shape at all.
-    # Falsifier: return `float[0]` again and this hands the user a line GLSL rejects.
+    # declaration as a one-click insertion — so an empty literal must name no shape at all. A
+    # one-element one neither: `float u_x[1]` has array length 1, which the coercion drives as
+    # a scalar and so refuses the list. Falsifier: return `float[0]` or `float[1]` again.
     assert _literal_type(ast.parse("[]", mode="eval").body) is None
-    assert _literal_type(ast.parse("[1.0]", mode="eval").body) == "float[1]"
+    assert _literal_type(ast.parse("[1.0]", mode="eval").body) is None
 
 
 def test_a_value_infers_the_type_a_literal_would_have() -> None:

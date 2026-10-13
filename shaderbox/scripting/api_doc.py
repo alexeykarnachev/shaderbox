@@ -230,8 +230,11 @@ def script_api_summary() -> str:
         f"- context: {_context_fields()}.",
         f"- Legal value shapes for an ORDINARY uniform key, all PLAIN PYTHON (there are no "
         f"wrapper types): {_dedup_join(_VALUE_SHAPE_GLOSS.values(), '; ')}. An array's length "
-        'must match the uniform\'s exactly. The ONE exception is the reserved "@instances" key '
-        "(see INSTANCING below), whose value is a dict of NUMPY arrays, not plain Python.",
+        "must match the uniform's exactly. Two keys take NUMPY arrays instead: the reserved "
+        '"@instances" key (see INSTANCING below), and a `sampler2D` uniform, which takes an '
+        "(H, W) or (H, W, C) array of float32 or uint8 (normalized) as its texture that frame -- "
+        "row 0 at the bottom, C 1 to 4, C-contiguous, never cast -- and outranks the sampler's wire "
+        "while the script sends it.",
         f"- `from shaderbox.scripting import {_IMPORT_NAMES}` (and `native`, `NativeError` below) "
         "-- that module is the ONLY part of shaderbox a script may import; any other shaderbox "
         "module raises at compile. A script is otherwise plain Python -- `import math`, numpy "

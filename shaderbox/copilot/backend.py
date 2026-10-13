@@ -120,6 +120,7 @@ from shaderbox.render_shape import (
     aspect_of,
     shape_to_preset,
 )
+from shaderbox.script_texture import REFUSED_TEXTURE, texture_layout
 from shaderbox.scripting import (
     ScriptError,
     ScriptProbe,
@@ -418,7 +419,14 @@ def _sampler_reads(render_pass: Pass, name: str, wired: Mapping[str, str]) -> st
     black. Whether a filled edge was chosen or derived from the name is not the model's
     business; an EMPTY one is, because "the user chose black" and "nothing decided yet" call
     for different actions. NEVER the source path (corollary-1: the abs path is a model-visible
-    leak); only dims + kind for media."""
+    leak); only dims + kind for media. A field the script feeds this frame outranks the wire
+    at the draw (110 D4), so it outranks it here too."""
+    field = render_pass.pending_textures.get(name)
+    if field is REFUSED_TEXTURE:
+        return "(script field REFUSED this frame; holds its last good frame)"
+    if field is not None:
+        (width, height), channels, _ = texture_layout(field)
+        return f"(script field {width}x{height}, {channels} x {field.dtype})"
     if name in wired:
         return wired[name]
     value = render_pass.uniform_values.get(name)
@@ -565,10 +573,18 @@ def _motion_verdict(probe: ScriptProbe, render_line: str, eps: float) -> str:
     # false for it; `ScriptWriteResult.population_facts` (rendered separately, `_apply_script_text`)
     # is where that script's real story lives (103 D1/D2/C1).
     if not probe.driven:
-        if _population_samples(probe):
+        fed = [
+            kind
+            for kind, present in (
+                ("population", bool(_population_samples(probe))),
+                ("texture", any(stats for _, stats in probe.texture_samples)),
+            )
+            if present
+        ]
+        if fed:
             return (
-                "drives 0 SCALAR uniforms, but see the population facts below -- a "
-                "population never counts as a driven uniform."
+                f"drives 0 SCALAR uniforms, but see the {' and '.join(fed)} facts below -- "
+                "a population or a script-fed sampler never counts as a driven uniform."
             )
         return (
             "drives 0 uniforms (update returned an empty dict / only orphan keys). Nothing "
@@ -612,6 +628,41 @@ def _population_facts_text(probe: ScriptProbe, eps: float) -> str:
     if not facts:
         return ""
     return "\n".join([*facts, *_population_motion(probe, eps)])
+
+
+def _texture_facts_text(probe: ScriptProbe) -> str:
+    # 110 D8: one line per script-fed sampler off the LAST sample -- shape, dtype, range, or the
+    # refusal -- then its motion, the FIRST sample against EVERY later one as
+    # `_population_motion` decides it, over the content digest: min/max/mean hold still while
+    # an advecting field moves. Statistics only; the field never reaches this module.
+    samples = probe.texture_samples
+    if not samples or not samples[-1][1]:
+        return ""
+    lines: list[str] = []
+    for pair, stats in sorted(samples[-1][1].items()):
+        if stats.verdict:
+            lines.append(f"{_dotted(pair)}: field refused -- {stats.verdict}")
+            continue
+        lines.append(
+            f"{_dotted(pair)}: field {stats.dtype} {stats.shape} range "
+            f"[{stats.minimum:.3g}, {stats.maximum:.3g}] mean {stats.mean:.3g}"
+        )
+    first = samples[0][1]
+    later = [stats for _, stats in samples[1:]]
+    for pair in sorted(first):
+        if first[pair].verdict:
+            continue
+        others = [s[pair] for s in later if pair in s and not s[pair].verdict]
+        if not others:
+            continue
+        if any(other.digest != first[pair].digest for other in others):
+            lines.append(f"{_dotted(pair)}: field CHANGES across t (ANIMATING)")
+        else:
+            lines.append(
+                f"{_dotted(pair)}: field UNCHANGED across t (STATIC) -- vary it by "
+                "context.t if you meant motion"
+            )
+    return "\n".join(lines)
 
 
 class CopilotBackend:
@@ -2520,6 +2571,7 @@ class CopilotBackend:
         population_facts = _population_facts_text(
             probe, COPILOT_ENGINE.motion_value_eps
         )
+        texture_facts = _texture_facts_text(probe)
         if prev_samples is not None and prev_samples == probe.samples:
             motion_facts += (
                 f"\n{NOOP_FACTS_PREFIX} in the driven values vs the edit before it "
@@ -2540,6 +2592,7 @@ class CopilotBackend:
             ],
             motion_facts=motion_facts,
             population_facts=population_facts,
+            texture_facts=texture_facts,
         )
 
     def _script_broken_write(self, document_id: str, error: str) -> ScriptWriteResult:

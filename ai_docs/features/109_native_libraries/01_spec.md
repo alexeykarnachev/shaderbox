@@ -42,11 +42,9 @@ swap.
 - **An in-process mode.** Open question 2 proposes a debug mode on the host instead.
   **Trigger:** a library whose per-call round trip (about 50 us with a handful of
   arguments, measured) is the frame's bottleneck.
-- **A script returning a texture.** A script cannot drive a `sampler2D` today
-  (`engine.py::_binding_reject`), from Python or from a library, so a CPU-side 2D field
-  reaches a shader only as a uniform array or as instances. That is an engine-output gap
-  independent of this feature. **Trigger:** the first document that needs a CPU-computed
-  field drawn as an image.
+- **A script returning a texture.** Closed by feature 110
+  (`ai_docs/features/110_script_textures/01_spec.md`): a script returns a numpy array -- a
+  native buffer is one -- for a `sampler2D`, and the pass samples it that frame.
 - **A native `Behavior` replacing `script.py`.** `behavior.py` anticipates "a future C
   backend implements the same protocol over a `.so`". Not needed: the Python glue around a
   native call is thin, and keeping it means every engine output a script can produce stays

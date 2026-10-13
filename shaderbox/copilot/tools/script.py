@@ -88,11 +88,16 @@ def _format_write_result(result: ScriptWriteResult) -> tuple[bool, str, dict | N
         )
     if not result.driven:
         body = result.motion_facts
-        if result.population_facts:
-            body += f"\n{result.population_facts}"
+        for facts in (result.population_facts, result.texture_facts):
+            if facts:
+                body += f"\n{facts}"
         return True, f"ok -- {body}", None
     head = f"ok -- script compiled clean, drives {', '.join(result.driven)}"
-    tail: list[str] = [result.motion_facts, result.population_facts]
+    tail: list[str] = [
+        result.motion_facts,
+        result.population_facts,
+        result.texture_facts,
+    ]
     for line in result.per_key_errors:
         tail.append(f"-> 1 key skipped: {line}")
     for name in result.orphan_keys:

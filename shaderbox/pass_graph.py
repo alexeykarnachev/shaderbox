@@ -711,14 +711,15 @@ def rank_layout(
     return {name: laid[name] for name in names if name in laid}
 
 
-PortKind = Literal["wired", "unfilled", "none", "media"]
+PortKind = Literal["wired", "unfilled", "none", "media", "script"]
 
 
 @dataclass(frozen=True)
 class Port:
     """One input of a node (092 D1): the sampler, what it reads, and how that reads on the
-    dot -- a pass, nothing yet, black by decision, its own previous frame, or a bound
-    texture."""
+    dot -- a pass, nothing yet, black by decision, a bound texture, or a field the script
+    feeds it this frame. `source` is the pass the wiring names, on a `"script"` port too:
+    the wire is still the user's, only overridden at the draw (110 D7)."""
 
     sampler: str
     kind: PortKind
@@ -730,17 +731,23 @@ def node_ports(
     values: Mapping[str, object],
     wiring_row: Mapping[str, str],
     name: str,
+    script_fed: Collection[str] = (),
 ) -> list[Port]:
     """A node's input ports, one per sampler the COMPILED program declares that reads
     another pass or nothing, in the program's order. A sampler reading the pass itself is
     its feedback, not an input, and has no port (093 W3-5). The state comes from the
     sampler's VALUE, the way the uniforms panel's row decides it: a value that is no source
     kind is a bound texture. A stored row for a sampler the program no longer declares is no
-    port, which is what keeps a drop from writing a row nothing reads."""
+    port, which is what keeps a drop from writing a row nothing reads. A sampler in
+    `script_fed` is a `"script"` port whatever else it is, its own feedback included: the
+    picture it reads this frame is the script's (110 D7)."""
     ports: list[Port] = []
     for sampler in declared:
         value = values.get(sampler, AutoSource())
         source = wiring_row.get(sampler)
+        if sampler in script_fed:
+            ports.append(Port(sampler, "script", None if source == name else source))
+            continue
         if source == name:
             continue
         if source is not None:
@@ -810,7 +817,7 @@ def group_boundary(
     slots: list[tuple[str, Port]] = []
     for member in members:
         for port in ports.get(member, ()):
-            if port.kind == "wired" and port.source in inside:
+            if port.source is not None and port.source in inside:
                 continue
             slots.append((member, port))
     counts: dict[str, int] = {}

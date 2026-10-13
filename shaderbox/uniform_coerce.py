@@ -15,6 +15,20 @@ from OpenGL.GL import (
     GL_BOOL_VEC2,
     GL_BOOL_VEC3,
     GL_BOOL_VEC4,
+    GL_DOUBLE,
+    GL_DOUBLE_MAT2,
+    GL_DOUBLE_MAT3,
+    GL_DOUBLE_MAT4,
+    GL_DOUBLE_VEC2,
+    GL_DOUBLE_VEC3,
+    GL_DOUBLE_VEC4,
+    GL_FLOAT,
+    GL_FLOAT_MAT2,
+    GL_FLOAT_MAT3,
+    GL_FLOAT_MAT4,
+    GL_FLOAT_VEC2,
+    GL_FLOAT_VEC3,
+    GL_FLOAT_VEC4,
     GL_INT,
     GL_INT_VEC2,
     GL_INT_VEC3,
@@ -24,6 +38,18 @@ from OpenGL.GL import (
     GL_UNSIGNED_INT_VEC2,
     GL_UNSIGNED_INT_VEC3,
     GL_UNSIGNED_INT_VEC4,
+    GL_DOUBLE_MAT2x3,
+    GL_DOUBLE_MAT2x4,
+    GL_DOUBLE_MAT3x2,
+    GL_DOUBLE_MAT3x4,
+    GL_DOUBLE_MAT4x2,
+    GL_DOUBLE_MAT4x3,
+    GL_FLOAT_MAT2x3,
+    GL_FLOAT_MAT2x4,
+    GL_FLOAT_MAT3x2,
+    GL_FLOAT_MAT3x4,
+    GL_FLOAT_MAT4x2,
+    GL_FLOAT_MAT4x3,
 )
 
 from shaderbox.util import str_to_unicode
@@ -42,6 +68,43 @@ _SINT_GL_TYPES = frozenset({GL_INT, GL_INT_VEC2, GL_INT_VEC3, GL_INT_VEC4})
 # `bool` and `bvec2` alike.
 _BOOL_GL_TYPES = frozenset({GL_BOOL, GL_BOOL_VEC2, GL_BOOL_VEC3, GL_BOOL_VEC4})
 _INT_GL_TYPES = _UINT_GL_TYPES | _SINT_GL_TYPES | _BOOL_GL_TYPES
+_FLOAT_GL_TYPES = frozenset(
+    {
+        GL_FLOAT,
+        GL_FLOAT_VEC2,
+        GL_FLOAT_VEC3,
+        GL_FLOAT_VEC4,
+        GL_FLOAT_MAT2,
+        GL_FLOAT_MAT3,
+        GL_FLOAT_MAT4,
+        GL_FLOAT_MAT2x3,
+        GL_FLOAT_MAT2x4,
+        GL_FLOAT_MAT3x2,
+        GL_FLOAT_MAT3x4,
+        GL_FLOAT_MAT4x2,
+        GL_FLOAT_MAT4x3,
+    }
+)
+_DOUBLE_GL_TYPES = frozenset(
+    {
+        GL_DOUBLE,
+        GL_DOUBLE_VEC2,
+        GL_DOUBLE_VEC3,
+        GL_DOUBLE_VEC4,
+        GL_DOUBLE_MAT2,
+        GL_DOUBLE_MAT3,
+        GL_DOUBLE_MAT4,
+        GL_DOUBLE_MAT2x3,
+        GL_DOUBLE_MAT2x4,
+        GL_DOUBLE_MAT3x2,
+        GL_DOUBLE_MAT3x4,
+        GL_DOUBLE_MAT4x2,
+        GL_DOUBLE_MAT4x3,
+    }
+)
+# Every uniform type the coercion shapes into a value. An ALLOWLIST: a sampler, image or any
+# type nobody listed here is not a script value, without an enumeration of its own.
+VALUE_GL_TYPES = _FLOAT_GL_TYPES | _DOUBLE_GL_TYPES | _INT_GL_TYPES
 
 
 def is_number(v: object) -> TypeGuard[int | float]:
@@ -105,6 +168,8 @@ def coerce_uniform_value(
     # vecN -> tuple of N; dim==1 array -> flat list of array_length; vecN[M] -> array_length nested
     # dim-tuples. An integer-typed uniform rounds to int (moderngl rejects a float write). None on any
     # mismatch (caller errors). Bools rejected.
+    if isinstance(value, np.ndarray) and value.ndim == 1:
+        value = value.tolist()
     dim = uniform.dimension
     n = uniform.array_length
     is_int = _is_int_uniform(uniform)

@@ -850,9 +850,10 @@ class Document:
     def sampler_source(self, pass_name: str, uniform: str) -> str | None:
         """The pass `uniform` of `pass_name` reads from, or None when it reads no pass.
 
-        The same resolution the renderer binds with (`effective_wiring`). A `NoSource`, a texture
-        the user bound and a name matching no pass all answer None; a user-bound texture is the
-        caller's next question.
+        The same resolution the renderer binds with (`effective_wiring`), unless a script feeds
+        the sampler a field this frame, which the draw binds instead and this does not see
+        (110 D7). A `NoSource`, a texture the user bound and a name matching no pass all answer
+        None; a user-bound texture is the caller's next question.
         """
         return self.effective_wiring().get(pass_name, {}).get(uniform)
 

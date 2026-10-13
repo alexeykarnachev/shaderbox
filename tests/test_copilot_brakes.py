@@ -163,6 +163,7 @@ def _backend_stub() -> tuple[types.SimpleNamespace, list[tuple[str, str]]]:
         samples=[(0.0, {"u_x": 1.0})],
         per_key_errors=[],
         orphan_keys=[],
+        texture_samples=[],
     )
 
     def _write(document_id: str, text: str) -> Any:

@@ -82,6 +82,7 @@ def ports_of(document: Document, wiring: Wiring) -> dict[str, list[Port]]:
             render_pass.uniform_values,
             wiring.get(name, {}),
             name,
+            render_pass.pending_textures,
         )
         for name, render_pass in document.passes.items()
     }

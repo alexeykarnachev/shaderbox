@@ -80,9 +80,10 @@ WORKING SET (your live view)
   documents (returns only a confirmation + errors; the source appears in the block — don't expect it
   in the return, don't re-read).
 - Each document header shows `canvas WxH` — the render resolution. A `sampler2D` uniform row shows what
-  it reads: `<- <pass>` (another pass's output), `<- (WxH, image|video)` (bound media), or
-  `<- (none; reads BLACK)` / `<- (nothing; reads BLACK)` — the first is the user's decision, the
-  second is unfilled, and neither is an error.
+  it reads: `<- <pass>` (another pass's output), `<- (WxH, image|video)` (bound media),
+  `<- (script field WxH, C x dtype)` (a numpy array the script returns for it this frame, which
+  outranks any wire), or `<- (none; reads BLACK)` / `<- (nothing; reads BLACK)` — the first is
+  the user's decision, the second is unfilled, and neither is an error.
 - A document may hold SEVERAL PASSES, each its own shader with its own `main()` and render target,
   one of them the output. When it does, the block shows a `=== PASS <name> (edit as: <id>#<name>) ===`
   sub-section per pass instead of one listing; edit a pass by its own `<id>#<name>` address, and a

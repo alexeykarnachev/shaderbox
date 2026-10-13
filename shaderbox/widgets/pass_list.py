@@ -10,7 +10,7 @@ previous frame). Compile errors show as a red border rather than as text; a samp
 chosen on its own row of the uniforms panel (072).
 """
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 
 from imgui_bundle import imgui
 
@@ -49,15 +49,22 @@ def tiles_per_row(avail: float, tile: float, gap: float) -> int:
     return max(1, int((avail + gap) // (tile + gap)))
 
 
-def _reads(name: str, wiring: Wiring, order: Sequence[str]) -> list[str]:
+def _reads(
+    name: str, wiring: Wiring, order: Sequence[str], script_fed: Collection[str] = ()
+) -> list[str]:
     """The chips under a tile: each pass `name` reads, in strip order, then `prev` when it
     reads its own previous frame. One chip per source pass however many samplers read it.
 
-    `wiring` is what the binder binds (`Document.effective_wiring`), so a source naming a
-    pass that no longer exists, or a row for a sampler the program no longer declares, is
-    no chip -- exactly as the panel row shows it reading black.
+    `wiring` is what the binder binds (`Document.effective_wiring`) unless a script feeds the
+    sampler a field this frame (110 D7), so a sampler in `script_fed` reads no pass. A source
+    naming a pass that no longer exists, or a row for a sampler the program no longer
+    declares, is no chip -- exactly as the panel row shows it reading black.
     """
-    sources = set(wiring.get(name, {}).values())
+    sources = {
+        source
+        for sampler, source in wiring.get(name, {}).items()
+        if sampler not in script_fed
+    }
     chips = [p for p in order if p in sources and p != name]
     if name in sources:
         chips.append(FEEDBACK_CHIP)
@@ -207,7 +214,7 @@ def draw(app: App, document_id: str) -> None:
                 name,
                 document.passes[name],
                 name not in live,
-                _reads(name, wiring, order),
+                _reads(name, wiring, order, document.passes[name].pending_textures),
                 groups[name],
             )
             if groups[name]:

@@ -29,8 +29,9 @@ class StoppedKey(BaseModel, frozen=True):
 
 # Why a script key did not reach a uniform. ONE path in the engine decides this and ONE
 # rule acts on it (102 D1): a key naming a uniform no pass declares, a key naming a pass
-# that does not exist, `@instances` reaching a compiled pass with no `flat in`, a
-# sampler/block key and any sibling not yet enumerated are the SAME case, and the code must
+# that does not exist, `@instances` reaching a compiled pass with no `flat in`, a key on a
+# block or a sampler no script can drive, a field a `sampler2D` refuses (`bad_texture`) and
+# any sibling not yet enumerated are the SAME case, and the code must
 # not be able to tell them apart at the point it decides what to do.
 #
 # It is a `Literal` with a `get_args` tuple rather than an `Enum` so a gate can walk its
@@ -55,6 +56,7 @@ KeyFailReason = Literal[
     "unknown_engine_key",
     "engine_key_misplaced",
     "bad_population",
+    "bad_texture",
     "held_uncompiled",
     "engine_owned",
 ]

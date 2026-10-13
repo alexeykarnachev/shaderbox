@@ -44,6 +44,7 @@ from shaderbox.instanced_outcome import InstancedOutcome
 from shaderbox.intel.glsl import EntityField, entity_fields
 from shaderbox.media import MediaWithTexture, Video
 from shaderbox.pass_graph import DEFAULT_BLEND, AutoSource, TargetConfig
+from shaderbox.script_texture import REFUSED_TEXTURE, texture_layout
 from shaderbox.scripting.keys import REFUSED_POPULATION
 from shaderbox.shader_errors import (
     ShaderError,
@@ -276,6 +277,17 @@ class Pass:
         # engine free of GL and leaves one place for a future off-thread producer to
         # write instead.
         self.pending_instances: dict[str, np.ndarray] = {}
+        # This frame's script-fed fields by sampler name (110 D3), written by the script engine:
+        # the script's own arrays, or `REFUSED_TEXTURE`. `script_textures` is what they become,
+        # one texture per sampler, reallocated only when a field's layout changes. A refused
+        # field binds the texture as it is, which is the last frame that validated.
+        self.pending_textures: dict[str, np.ndarray] = {}
+        self.script_textures: dict[str, moderngl.Texture] = {}
+        # Which slot the textures were last written from and for which samplers, so a pass
+        # drawn several times in one frame (iterations, a thumbnail) uploads each field once.
+        self._uploaded_slot: dict[str, np.ndarray] | None = None
+        self._uploaded_names: set[str] = set()
+        self._failed_script_textures: set[str] = set()
         # What the last `render()` (or `compile()`, for the two failure states it owns)
         # decided this pass did. `pass_name` is empty here -- `Pass` does not know its own
         # name in the graph -- and `Document` rewraps it with the real name when it collects
@@ -348,7 +360,57 @@ class Pass:
         if self._black is not None:
             self._black.release()
             self._black = None
+        for texture in self.script_textures.values():
+            texture.release()
+        self.script_textures.clear()
+        self.pending_textures = {}
+        self._uploaded_slot = None
         self.canvas.release()
+
+    def _script_texture(self, name: str) -> moderngl.Texture | None:
+        """The texture the script feeds sampler `name` this frame, or None when it feeds none.
+
+        A refused field binds the sampler's existing texture -- the last frame that validated
+        -- or black when there is none, never the sampler's own source (110 D5).
+        """
+        field = self.pending_textures.get(name)
+        if field is None:
+            return None
+        if field is REFUSED_TEXTURE:
+            return self.script_textures.get(name) or self._black_texture()
+        if self._uploaded_slot is not self.pending_textures:
+            self._uploaded_slot = self.pending_textures
+            self._uploaded_names = set()
+        texture = self.script_textures.get(name)
+        if name in self._uploaded_names and texture is not None:
+            return texture
+        size, channels, dtype = texture_layout(field)
+        if texture is not None and (
+            texture.size != size
+            or texture.components != channels
+            or texture.dtype != dtype
+        ):
+            texture.release()
+            del self.script_textures[name]
+            texture = None
+        if texture is None:
+            try:
+                texture = self._gl.texture(size, channels, dtype=dtype)
+            except moderngl.Error as e:
+                if name not in self._failed_script_textures:
+                    self._failed_script_textures.add(name)
+                    logger.warning(f"Cannot allocate the script texture '{name}': {e}")
+                return self._black_texture()
+            self._failed_script_textures.discard(name)
+            # A field has no meaning past its edge, and repeat would bleed the opposite edge
+            # into the border texels under linear filtering.
+            texture.repeat_x = False
+            texture.repeat_y = False
+            texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
+            self.script_textures[name] = texture
+        texture.write(field)
+        self._uploaded_names.add(name)
+        return texture
 
     def _black_texture(self) -> moderngl.Texture:
         if self._black is None:
@@ -611,7 +673,12 @@ class Pass:
                 value.bind_to_uniform_block(uniform.index)
 
             elif getattr(uniform, "gl_type", None) == GL_SAMPLER_2D:
-                if isinstance(value, MediaWithTexture):
+                # The script's field outranks the source for this draw (110 D4); `value` stays
+                # the source, so the write-back below never stores the field's texture in it.
+                script_texture = self._script_texture(uniform.name)
+                if script_texture is not None:
+                    texture = script_texture
+                elif isinstance(value, MediaWithTexture):
                     value.update(render_time)
                     texture = value.texture
                 elif isinstance(value, moderngl.Texture):

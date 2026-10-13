@@ -6,6 +6,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from shaderbox.script_texture import texture_problem
+
 
 @dataclass(frozen=True)
 class ScriptReturn:
@@ -53,8 +55,10 @@ def _literal_type(value: ast.expr) -> str | None:
     if length is None:
         return None
     # An empty literal names no shape, and `uniform float[0] u_x;` does not compile — offering it
-    # as a one-click declaration hands the user a broken line.
-    if length == 0:
+    # as a one-click declaration hands the user a broken line. A one-element one names no
+    # declaration that lands: `float u_x[1]` has an array length of 1, which the coercion
+    # drives as a scalar and so refuses the list.
+    if length <= 1:
         return None
     # A vector and a 2-4 element array are the same literal; the vector is what a script writing
     # `[x, y]` almost always means, and the array form spells its length out.
@@ -93,11 +97,13 @@ def glsl_type_of_value(value: object) -> str | None:
         return "int"
     if isinstance(value, float):
         return "float"
+    if isinstance(value, np.ndarray) and value.ndim >= 2:
+        return "sampler2D" if texture_problem(value) is None else None
     try:
         length = len(value)  # type: ignore[arg-type]
     except TypeError:
         return None
-    if length == 0:
+    if length <= 1:
         return None
     # Mirrors `uniform_coerce.is_number`, which cannot be imported here: it pulls in
     # moderngl and this package stays GL-free. A value this offers a declaration for must

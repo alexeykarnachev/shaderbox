@@ -22,6 +22,7 @@ from shaderbox.scripting.keys import (
 
 _GL_FLOAT = 0x1406
 _GL_SAMPLER_2D = 0x8B5E
+_GL_SAMPLER_3D = 0x8B5F
 
 
 def _u(name: str, gl_type: int = _GL_FLOAT) -> types.SimpleNamespace:
@@ -96,6 +97,10 @@ _SCENARIOS: dict[KeyFailReason, tuple[dict[str, _FakePass], str]] = {
         "        return {'u_ghost': 1.0}\n",
     ),
     "not_scriptable": (
+        {"main": _FakePass([_u("u_vol", gl_type=_GL_SAMPLER_3D)])},
+        "        return {'u_vol': 1.0}\n",
+    ),
+    "bad_texture": (
         {"main": _FakePass([_u("u_tex", gl_type=_GL_SAMPLER_2D)])},
         "        return {'u_tex': 1.0}\n",
     ),
@@ -250,12 +255,12 @@ def test_a_persistently_failing_key_warns_n_times_if_made_level_triggered(
 def test_an_oscillating_key_warns_on_each_transition(tmp_path: Path) -> None:
     # A key alternating between two failure reasons across ticks warns on EVERY transition, not
     # once total -- "state" is the reason, not a boolean. Frame parity decides which reason:
-    # even frames drive a sampler (not_scriptable), odd frames name a pass that does not exist
+    # even frames drive a sampler3D (not_scriptable), odd frames name a pass that does not exist
     # (no_such_pass), by rewriting the script's own source between ticks so the SAME (pass,
     # name)-shaped key -- both land on the pass-free slot ("", key) -- flips reason each time.
     scripts_dir = tmp_path / "scripts"
     scripts_dir.mkdir()
-    document = _FakeDocument({"main": _FakePass([_u("u_tex", gl_type=_GL_SAMPLER_2D)])})
+    document = _FakeDocument({"main": _FakePass([_u("u_tex", gl_type=_GL_SAMPLER_3D)])})
     warnings: list[KeyFailReason] = []
     eng = _engine(tmp_path, on_key_warning=lambda doc, p, n, r, m: warnings.append(r))
     bodies = [
@@ -330,6 +335,7 @@ def test_dry_run_breaks_if_edge_state_is_threaded_through_live_scripts(
         behavior,
         {},
         {},
+        set(),
         set(),
         set(),
         frozenset(),

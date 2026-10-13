@@ -317,6 +317,10 @@ class ScriptWriteResult:
     # only, computed engine-side off the real columns, which this dataclass never holds. Empty
     # when the script drove no `@instances` block this dry-run.
     population_facts: str = ""
+    # Script-fed sampler facts (110 D8): one line per (pass, sampler) the script fed a field this
+    # dry-run -- shape, dtype, range, mean, or the refusal -- and whether its content moved
+    # across t. Statistics only, as for populations. Empty when no sampler was fed.
+    texture_facts: str = ""
 
 
 @dataclass(frozen=True)

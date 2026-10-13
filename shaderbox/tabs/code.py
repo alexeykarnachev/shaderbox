@@ -827,6 +827,9 @@ def _note_uniform(
     ui_document = app.ui_documents.get(tab.document_id)
     if edited is None or ui_document is None or word not in edited.uniform_values:
         return "", None
+    script_texture = edited.script_textures.get(word)
+    if word in edited.pending_textures and script_texture is not None:
+        return "", script_texture
     document = ui_document.document
     pass_name = pass_name_of(tab.path)
     source = document.sampler_source(pass_name, word)

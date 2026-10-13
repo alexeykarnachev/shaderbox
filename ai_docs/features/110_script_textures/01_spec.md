@@ -189,7 +189,7 @@ removed, the sampler reads what the user chose for it.
     texture instead of `document.input_texture(...)` for a script-fed sampler.
   - the uniforms panel row keeps its source combo (the source is still the user's, D4); while
     the script feeds it, the preview shows the script's texture and the caption reads
-    `script · W×H · C × dtype`. Picking a source while the sampler PLAYS auto-stops the pair
+    `script · WxH · C x dtype`. Picking a source while the sampler PLAYS auto-stops the pair
     and then writes the pick, the 048 rule for a manual edit of a driven uniform. Two sites:
     a `none` or pass pick calls `set_sampler_source` directly and today stops nothing, so the
     stop is added at that call site; a `file...` pick goes through `new_value`, which the
@@ -197,7 +197,7 @@ removed, the sampler reads what the user chose for it.
     texture branch. The generic auto-stop on `is_item_activated()` cannot cover either: the
     branch's last item is a caption, never activated.
   - the copilot: `copilot/backend.py::_sampler_reads` reports a script-fed sampler as
-    `<- script (W×H C dtype)` rather than the wired pass or `(nothing; reads BLACK)`, and
+    `<- (script field WxH, C x dtype)` (or a REFUSED note) rather than the wired pass or `(nothing; reads BLACK)`, and
     `copilot/prompt.py`'s sampler-row vocabulary names that form.
   Two docstrings that claim the wiring IS what binds become narrower: `Document.sampler_source`
   ("the same resolution the renderer binds with") and `pass_list.py::_reads`; so does 069 D9's
@@ -372,7 +372,8 @@ non-black colour; a gate whose break is only visible against a non-black source 
     `u_prev`, which emits no edge in any of the three views (flat, root, group tab); in the flat view a
     wired script-fed port still has its edge. Break, separately: drop the adapter entry; do
     not pass `script_fed`; leave the flat edge loop testing `kind == "wired"`.
-24. **Pick while playing, combo.** Picking `none` on a playing script-fed sampler stops the
+24. **Pick while playing, combo.** Picking `none` on a playing script-fed sampler whose source
+    is a pass (so the pick is a change) stops the
     pair and writes `NoSource`. Break: no stop at the `set_sampler_source` call site.
 25. **Pick while playing, file.** A `file...` pick on a playing sampler (with the file dialog
     monkeypatched) writes the media. Break: today's `not playing` gate.

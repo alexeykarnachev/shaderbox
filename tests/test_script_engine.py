@@ -744,18 +744,18 @@ def test_a_key_no_pass_declares_warns(tmp_path: Path) -> None:
 
 
 def test_a_bare_sampler_key_errors_like_a_pass_block_one(tmp_path: Path) -> None:
-    # 079 D5 keeps sampler/block keys errors, and the BROADCAST path lost that: `_binds` answers
-    # falsy for "not declared" and for "declared but a sampler" alike, so a bare sampler key went
-    # silent while the same key inside a pass block errored. Falsifier: collapse the two again and
-    # the bare form reports no error.
+    # A number is no field, and the BROADCAST path must refuse it the way the block path does:
+    # it once went silent there while the block form errored. Since 110 a refused field is still
+    # the script's (D6), so the pair is driven AND warns. Falsifier: route a sampler only in the
+    # block loop, and the bare form reports nothing and drives nothing.
     _write_script(tmp_path, _script(update_body="        return {'u_tex': 1.0}\n"))
     document = _FakeDocument([_u("u_a"), _u("u_tex", gl_type=_GL_SAMPLER_2D)])
     eng = _engine(tmp_path, document)
     eng.tick("n0", document, _ctx(0.0))
 
     error = eng.errors[("n0", "main", "u_tex")]
-    assert "sampler" in error.message and error.pass_name == "main"
-    assert ("main", "u_tex") not in eng.script_driven_uniforms("n0")
+    assert "sampler2D" in error.message and error.pass_name == "main"
+    assert ("main", "u_tex") in eng.script_driven_uniforms("n0")
 
 
 def test_a_pass_block_key_that_pass_does_not_declare_warns(
@@ -776,10 +776,11 @@ def test_a_pass_block_key_that_pass_does_not_declare_warns(
     assert ("main", "u_ghost") not in eng.script_driven_uniforms("n0")
 
 
-def test_sampler_key_records_soft_error_and_is_skipped(tmp_path: Path) -> None:
-    # A key naming a sampler (non-scriptable) inside a PASS BLOCK records a soft (document, pass,
-    # name) error naming the pass + is skipped (not driven). Falsifier: the sampler is driven, or no
-    # soft error.
+def test_a_number_for_a_sampler_warns_and_stays_driven(tmp_path: Path) -> None:
+    # A key naming a sampler inside a PASS BLOCK with a value that is no field records a soft
+    # (document, pass, name) error on the strip (it is in `skipped`, which feeds `soft_errors`)
+    # and stays driven, so the row keeps its play/stop button (110 D6). Falsifier: leave a
+    # refused field out of the texture-driven set, or out of `skipped`.
     _write_script(
         tmp_path,
         _script(update_body="        return {'u_a': 0.5, 'main': {'u_tex': 0.1}}\n"),
@@ -788,10 +789,14 @@ def test_sampler_key_records_soft_error_and_is_skipped(tmp_path: Path) -> None:
     eng = _engine(tmp_path, document)
     eng.tick("n0", document, _ctx(0.0))
     assert document.uniform_values["u_a"] == 0.5
+    assert "u_tex" not in document.uniform_values
     err = eng.errors[("n0", "main", "u_tex")]
-    assert err.kind == "runtime" and "sampler" in err.message
+    assert err.kind == "runtime" and "sampler2D" in err.message
     assert err.pass_name == "main"
-    assert ("main", "u_tex") not in eng.script_driven_uniforms("n0")
+    assert ("main", "u_tex") in eng.script_driven_uniforms("n0")
+    status = eng.script_status("n0")
+    assert status is not None
+    assert [(p, n) for p, n, _ in status.soft_errors] == [("main", "u_tex")]
 
 
 def test_a_soft_error_persists_while_the_script_keeps_producing_it(

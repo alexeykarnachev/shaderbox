@@ -43,6 +43,8 @@ from shaderbox.widgets.media_ops import draw_video_filters
 
 _NAME_X = SIZE.CHIP_W + SPACE.MD
 _CTRL_X = _NAME_X + SIZE.UNIFORM_NAME_W + SPACE.MD
+# A script field's texture dtype, named as the script wrote it.
+_FIELD_DTYPE_LABELS: dict[str, str] = {"f4": "float32", "f1": "uint8"}
 
 
 def uniform_name_label(
@@ -317,6 +319,11 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
             SIZE.UNIFORM_CTRL_W,
         )
         changed = picked is not None and picked != index
+        if changed and playing:
+            # A pick is a manual edit of a driven sampler (048), and neither pick site is the
+            # trailing item the generic auto-stop below looks at.
+            app.set_uniform_stopped(document_id, panel_pass_name, name, True)
+            playing = False
         if changed and picked == file_item:
             file_path = _pick_media_file()
             if file_path.suffix.lower() in MEDIA_EXTENSIONS:
@@ -331,7 +338,18 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
             current_value = panel_pass.uniform_values[name]
 
         source_pass = document.sampler_source(panel_pass_name, name)
-        if source_pass is not None:
+        script_texture = panel_pass.script_textures.get(name)
+        if name in panel_pass.pending_textures and script_texture is not None:
+            # The draw binds the script's field over the source this frame (110 D4); the combo
+            # above still shows the source, which is what binds once the script lets go.
+            width, height = script_texture.size
+            _draw_texture_preview(
+                f"u_script_{panel_pass_name}_{name}",
+                script_texture,
+                f"script · {width}x{height} · {script_texture.components} x "
+                f"{_FIELD_DTYPE_LABELS.get(script_texture.dtype, script_texture.dtype)}",
+            )
+        elif source_pass is not None:
             # The picture is of that pass, so its click does what the strip's tile does — the two
             # surfaces show the same thing and agree on what clicking it means.
             if _draw_texture_preview(
@@ -383,9 +401,9 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
             new_value = fn(hidden, list(current_value), change_speed)[1]
 
     # Auto-stop on grab (048 D6): `is_item_activated()` fires ONCE when the user grabs the value
-    # widget (not per drag-frame). Gated on `playing` — only a PLAYING uniform auto-stops, which
-    # defuses the per-branch trailing-item hazard (a texture is non-scriptable → never playing). The
-    # manual edit then applies + sticks (the slot is no longer written by the tick).
+    # widget (not per drag-frame). Gated on `playing` — only a PLAYING uniform auto-stops. The
+    # texture branch's trailing item is a caption, never activated, so its picks stop the pair
+    # themselves. The manual edit then applies + sticks (the slot is no longer written by the tick).
     if playing and imgui.is_item_activated():
         app.set_uniform_stopped(document_id, panel_pass_name, name, True)
         playing = False

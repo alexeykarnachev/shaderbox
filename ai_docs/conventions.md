@@ -459,6 +459,16 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   fresh sampler is `AutoSource()`, never a placeholder picture that a predicate has to recognize.
   Revisit if a source ever needs to carry more than a name (a channel swizzle, a mip level):
   then `PassSource` grows a field, the row grows a key, and nothing else moves.
+  **A script's field is a per-frame override at the draw, never a source (110).** A script
+  returning a numpy array for a `sampler2D` puts it in the pass's `pending_textures` slot, and
+  `Pass.render` binds it over whatever the source resolves to -- the wire, media, or black --
+  for that draw only. Nothing writes it to `uniform_values`, so the saved source is untouched
+  and binds again once the script stops sending, is stopped, or is removed; a field the engine
+  refuses holds the last frame that validated, never the source. The wiring stays the user's
+  (`effective_wiring` does not see the override), so cycle refusal, layout and import plans do
+  not flip with script state; the surfaces that show ONE sampler (the graph port, the strip's
+  chips, the panel row, the editor note, the copilot cell) read the slot. Revisit if a second
+  per-frame producer of textures appears: then the slot wants a name other than "script".
   **An input uniform's NAME is its default wire, and the resolution happens at render time (069
   D9).** A sampler called `u_<pass>` is filled from the pass called `<pass>` when its value is
   undecided; `u_prev` reads the pass's own previous frame, and a name without the `u_` prefix
@@ -466,7 +476,8 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   consumer that needs the WHOLE wiring goes through `Document.effective_wiring` — the renderer's
   binder, the planner, the strip (tile order, live fill, read chips) and the copilot's working
   set — which is what makes "the renderer draws it" and "the strip says it is live" the same
-  claim. The panel row is the one caller that asks per uniform, through `Document.sampler_source`,
+  claim, except where a script field overrides a sampler this frame (110, above), which the
+  per-sampler surfaces read from the pass's slot. The panel row is the one caller that asks per uniform, through `Document.sampler_source`,
   which reads the same wiring. What is SAVED stays only what the user DECIDED: an absent row means
   the name decides, `{"none": true}` is an explicit black the rule must not undo, `{"pass": x}`
   is that pass. A resolved edge never reaches disk, because it would then be indistinguishable
@@ -705,7 +716,8 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   only that key (`(document_id, pass, name)`); a raw throw / non-dict return is behavior-level — freezes every
   pair it drove last frame, records under the sentinel `(document_id, "", "script.py")` (`""` is the
   absent-pass marker a document-level error uses). Every key that does not LAND takes one code path and WARNS
-  (102 D1, reversing 079 D5): a name no pass declares, an unknown pass, a sampler or block, an
+  (102 D1, reversing 079 D5): a name no pass declares, an unknown pass, a block or a sampler
+  no script can drive (`not_scriptable`), a field a `sampler2D` refuses (`bad_texture`, 110), an
   `@instances` reaching a compiled pass with no `flat in`. The code deciding what to do never
   branches on which of those it is — it consults `SILENT_KEY_FAIL_REASONS`, and a gate walks
   `KEY_FAIL_REASONS` so a new reason cannot be added without deciding its tier. TWO reasons do

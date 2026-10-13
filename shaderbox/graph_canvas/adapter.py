@@ -64,6 +64,7 @@ _PIN_BY_KIND: dict[str, tuple[PinShape, PinFill]] = {
     "unfilled": (PinShape.DOT, PinFill.HOLLOW),
     "none": (PinShape.DOT, PinFill.CORED),
     "media": (PinShape.SQUARE, PinFill.FILLED),
+    "script": (PinShape.SQUARE, PinFill.HOLLOW),
 }
 
 
@@ -423,7 +424,7 @@ def flat_view(
     edges: list[CanvasEdge] = []
     for name in order:
         for slot, port in enumerate(ports.get(name, ())):
-            if port.kind != "wired" or port.source is None:
+            if port.source is None:
                 continue
             if port.source not in known or port.source == name:
                 continue
