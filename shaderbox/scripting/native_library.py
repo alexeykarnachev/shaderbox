@@ -46,6 +46,13 @@ DEFAULT_TIMEOUT = 2.0
 # over tens of milliseconds, and loading it mid-write crashes the loading host.
 SETTLE_SECONDS = 0.5
 _STDERR_TAIL = 12
+# A load failure is raised again from memory for this long before `native()` tries the
+# library once more: long enough that naming a broken library in `update` is not a host start
+# per frame, short enough that a transient failure (a busy device) heals on its own.
+RETRY_SECONDS = 2.0
+# A stderr line longer than this is logged in pieces rather than buffered whole.
+_STDERR_LINE_CAP = 65536
+_Stamp = tuple[int, int, int]
 _STDERR_CHUNK = 65536
 _FILE_PREFIX = "sbnative-"
 _STALE_RE = re.compile(rf"^{_FILE_PREFIX}(\d+)-")
@@ -95,23 +102,24 @@ class NativeOwner:
         self.scripts_dir = scripts_dir
         self.timeout_cap = timeout_cap
         self.libraries: dict[tuple[str, float, bool], NativeLibrary] = {}
-        # A load that failed, with the library file's stamp at the time: `native()` raises it
-        # again without starting a host until the file changes, so a broken library named in
-        # `update` costs a stat per frame rather than a host start.
+        # A load that failed: the file's stamp and the time, so `native()` raises it again
+        # without a host start until the file changes or RETRY_SECONDS pass.
         self.failures: dict[
-            tuple[str, float, bool], tuple[tuple[int, int] | None, NativeError]
+            tuple[str, float, bool], tuple[_Stamp | None, float, NativeError]
         ] = {}
         self.buffers: list[_Buffer] = []
         self.released = False
 
     def release(self) -> None:
+        # Libraries first: a buffer of a library this owner is about to stop needs no unmap.
+        # What is left are buffers this phase allocated from a handle that outlives it.
         self.released = True
-        for buffer in self.buffers:
-            buffer.library.forget_buffer(buffer)
-        self.buffers.clear()
         for library in self.libraries.values():
             library.release()
         self.libraries.clear()
+        for buffer in self.buffers:
+            buffer.library.forget_buffer(buffer)
+        self.buffers.clear()
 
     def revive(self) -> None:
         for library in self.libraries.values():
@@ -159,8 +167,12 @@ def native(
     path = _resolve(name, owner.scripts_dir)
     stamp = _file_stamp(path)
     failure = owner.failures.get(key)
-    if failure is not None and failure[0] == stamp:
-        raise NativeError(failure[1].kind, str(failure[1]))
+    if (
+        failure is not None
+        and failure[0] == stamp
+        and time.monotonic() - failure[1] < RETRY_SECONDS
+    ):
+        raise NativeError(failure[2].kind, str(failure[2]))
     effective: float | None = None if debug else timeout
     if owner.timeout_cap is not None:
         effective = (
@@ -171,19 +183,19 @@ def native(
     try:
         library = NativeLibrary(path, effective, debug)
     except NativeError as e:
-        owner.failures[key] = (stamp, e)
+        owner.failures[key] = (stamp, time.monotonic(), e)
         raise
     owner.failures.pop(key, None)
     owner.libraries[key] = library
     return library
 
 
-def _file_stamp(path: Path) -> tuple[int, int] | None:
+def _file_stamp(path: Path) -> _Stamp | None:
     try:
         stat = path.stat()
     except OSError:
         return None
-    return (stat.st_mtime_ns, stat.st_size)
+    return (stat.st_mtime_ns, stat.st_size, stat.st_ino)
 
 
 def _resolve(name: str, scripts_dir: Path | None) -> Path:
@@ -290,20 +302,34 @@ def _read_replies(stream: Any, replies: "queue.Queue[object]") -> None:
 
 def _read_stderr(stream: Any, label: str, tail: collections.deque[str]) -> None:
     # One log record per chunk read, not per line: the app's log sinks are slow enough per
-    # record that a chatty library would otherwise be throttled by its own stderr pipe.
-    pending = b""
+    # record that a chatty library would otherwise be throttled by its own stderr pipe. An
+    # unterminated line is held at most _STDERR_LINE_CAP bytes, so output with no newline
+    # (a progress bar) costs linear time.
+    pending = bytearray()
+
+    def _emit(raw: list[bytes]) -> None:
+        text = [line.decode("utf-8", "replace").rstrip() for line in raw]
+        tail.extend(text)
+        if text:
+            logger.info(f"[native {label}] " + "\n".join(text))
+
     with contextlib.suppress(OSError, ValueError):
         while True:
             chunk = stream.read1(_STDERR_CHUNK)
             if not chunk:
                 break
-            *lines, pending = (pending + chunk).split(b"\n")
-            text = [line.decode("utf-8", "replace").rstrip() for line in lines]
-            tail.extend(text)
-            if text:
-                logger.info(f"[native {label}] " + "\n".join(text))
+            pending += chunk
+            cut = pending.rfind(b"\n")
+            complete: list[bytes] = []
+            if cut >= 0:
+                complete = bytes(pending[:cut]).split(b"\n")
+                del pending[: cut + 1]
+            if len(pending) > _STDERR_LINE_CAP:
+                complete.append(bytes(pending))
+                pending.clear()
+            _emit(complete)
     if pending:
-        tail.append(pending.decode("utf-8", "replace").rstrip())
+        _emit([bytes(pending)])
 
 
 def _exit_description(code: int | None) -> str:
@@ -329,8 +355,8 @@ class NativeLibrary:
         self._buffers: dict[int, _Buffer] = {}
         self._dead: NativeError | None = None
         self._released = False
-        self._loaded_stamp: tuple[int, int] | None = None
-        self._pending_stamp: tuple[int, int] | None = None
+        self._loaded_stamp: _Stamp | None = None
+        self._pending_stamp: _Stamp | None = None
         self._pending_since = 0.0
         self._resources = _Resources()
         self._finalizer = weakref.finalize(self, self._resources.close)
@@ -348,7 +374,7 @@ class NativeLibrary:
 
     # ---- lifecycle ---------------------------------------------------------------------
 
-    def _stamp(self) -> tuple[int, int] | None:
+    def _stamp(self) -> _Stamp | None:
         return _file_stamp(self.path)
 
     def _start(self) -> None:
@@ -438,7 +464,7 @@ class NativeLibrary:
         # The host maps a buffer on first use and keeps it; unmapping is what returns the
         # pages, since an unlinked file's memory lives as long as any mapping of it. A host
         # busy in another thread's call keeps the mapping until it stops instead.
-        if self._resources.host is not None and self._lock.acquire(timeout=0.1):
+        if self._resources.host is not None and self._lock.acquire(blocking=False):
             try:
                 self._request({"op": "unmap", "path": str(buffer.path)}, "unmapping")
             finally:
@@ -560,6 +586,7 @@ class NativeLibrary:
         Numbers, integers, strings and this handle's buffers cross; `None` leaves an argument
         out. Raises `NativeError` on any failure.
         """
+        _check_text("the export name", export)
         packed = [self._encode(name, value) for name, value in args.items()]
         with self._lock:
             if self._released:
@@ -605,6 +632,7 @@ class NativeLibrary:
             return reply
 
     def _encode(self, name: str, value: object) -> list[Any] | None:
+        _check_text(f"argument name {name!r}", name)
         if value is None:
             return None
         if isinstance(value, bool | np.bool_ | int | np.integer):
@@ -617,16 +645,7 @@ class NativeLibrary:
         if isinstance(value, float | np.floating):
             return [name, native_host.SB_NUMBER, float(value)]
         if isinstance(value, str):
-            if "\0" in value:
-                raise NativeError(
-                    "failed", f"argument `{name}` contains a NUL character"
-                )
-            try:
-                value.encode("utf-8")
-            except UnicodeEncodeError as e:
-                raise NativeError(
-                    "failed", f"argument `{name}` is not valid UTF-8: {e}"
-                ) from e
+            _check_text(f"argument `{name}`", value)
             return [name, native_host.SB_STRING, value]
         if isinstance(value, np.ndarray):
             record = self._buffers.get(id(value))
@@ -651,6 +670,17 @@ class NativeLibrary:
             f"argument `{name}` is a {type(value).__name__} -- pass a number, an int, a str "
             "or a buffer from lib.buffer",
         )
+
+
+def _check_text(what: str, text: str) -> None:
+    # A C string carries no length and must be UTF-8: a NUL would silently cut it short, and
+    # an unencodable character would fail inside the host, where it reads as a crash.
+    if "\0" in text:
+        raise NativeError("failed", f"{what} contains a NUL character")
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError as e:
+        raise NativeError("failed", f"{what} is not valid UTF-8: {e}") from e
 
 
 def _pid_alive(pid: int) -> bool:

@@ -570,3 +570,16 @@ follow-up commit:
 - Gates added for export release, `_drop_script`, a moved scripts dir, reset's revive, the log
   line of gate 15, unmapping, the failure memo, a library's child holding stderr, a parent killed
   mid-call, and debug under the probe cap. Each was broken and seen red.
+
+A verification round on the fixes (one reviewer) found every fix closed its own case and found
+narrower defects in the new code, fixed in the next commit: C stdout is now unbuffered in the
+host, so output written just before a crash reaches the crash message; an unterminated final
+stderr line is logged; output with no newline is logged in capped pieces as it streams; names
+are checked for NUL and UTF-8 like values; a load failure is retried after RETRY_SECONDS rather
+than held until the file changes; a phase's buffers release without waiting for a busy host;
+`make check` passes file names NUL-separated. Accepted as named limits rather than fixed: the
+parent watchdog cannot fire while `dlopen` holds the GIL (a constructor that hangs outlives a
+parent killed during that load; `native_host._watch_parent` says so), and a library linked
+against its own C runtime (static musl, or a C++ stream with `sync_with_stdio(false)`) keeps
+buffers the host cannot flush. The loop stopped here: this round's findings were edge cases in
+the fix code, against the previous round's broken mechanisms.

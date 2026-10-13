@@ -25,7 +25,7 @@ from loguru import logger
 
 from shaderbox.constants import RESOURCES_DIR
 from shaderbox.project_session import ProjectSession
-from shaderbox.scripting import ScriptContext, ScriptEngine
+from shaderbox.scripting import ScriptContext, ScriptEngine, native_library
 from shaderbox.scripting.behavior import PythonBehavior
 from shaderbox.scripting.native_library import (
     SETTLE_SECONDS,
@@ -70,6 +70,25 @@ SB_EXPORT int32_t sb_load(sb_call *c) {
 #endif
 
 SB_EXPORT int32_t chatty(sb_call *c) { (void)c; printf("hello from printf\n"); return 0; }
+
+SB_EXPORT int32_t printcrash(sb_call *c) {
+    (void)c;
+    printf("last words\n");
+    volatile int *p = 0;
+    *p = 1;
+    return 0;
+}
+
+SB_EXPORT int32_t noeol(sb_call *c) { (void)c; fputs("final-no-newline", stderr); return 0; }
+
+SB_EXPORT int32_t flood(sb_call *c) {
+    int64_t n = sb_int(c, "bytes", 0);
+    char block[4096];
+    memset(block, 'x', sizeof block);
+    for (int64_t done = 0; done < n; done += (int64_t)sizeof block)
+        fwrite(block, 1, sizeof block, stderr);
+    return 0;
+}
 
 SB_EXPORT int32_t spawn_bg(sb_call *c) { (void)c; return system("sleep 3 &") == 0 ? 0 : 1; }
 
@@ -449,6 +468,110 @@ def test_unflushed_printf_reaches_the_log(owner: NativeOwner) -> None:
         assert _wait_for(lines, "hello from printf")
     finally:
         logger.remove(sink)
+
+
+def test_printf_before_a_crash_is_in_the_crash_message(owner: NativeOwner) -> None:
+    """D12a. The host makes C stdout unbuffered, so output written just before a crash is not
+    lost with the process. Break: drop the setvbuf -- the line dies in the buffer."""
+    with pytest.raises(NativeError) as raised:
+        _open(owner).call("printcrash")
+    assert "last words" in str(raised.value)
+
+
+def test_a_final_line_without_newline_is_logged(owner: NativeOwner) -> None:
+    """D12a. Break: drop the emit of the unterminated remainder at EOF."""
+    lines, sink = _captured_log()
+    try:
+        lib = _open(owner)
+        lib.call("noeol")
+        owner.release()
+        assert _wait_for(lines, "final-no-newline")
+    finally:
+        logger.remove(sink)
+
+
+def test_long_output_without_newlines_is_logged_as_it_streams(
+    owner: NativeOwner,
+) -> None:
+    """D12a. Output with no newline (a progress bar) is logged in capped pieces while it
+    streams, so the reader holds at most one piece. Break: drop the cap -- nothing is logged
+    until the host exits, and the whole stream sits in the reader's memory."""
+    lines, sink = _captured_log()
+    try:
+        lib = _open(owner, timeout=10.0)
+        start = time.monotonic()
+        lib.call("flood", bytes=8 << 20)
+        assert time.monotonic() - start < 2.0
+        assert _wait_for(lines, "x" * 1000)
+    finally:
+        logger.remove(sink)
+
+
+def test_names_must_be_clean_utf8(owner: NativeOwner) -> None:
+    """A surrogate or a NUL in an export or argument name is refused in the parent, and the
+    host keeps running. Break: drop the name checks -- the host dies, or a NUL truncates."""
+    lib = _open(owner)
+    for export, args in (
+        ("con\ud800", {}),
+        ("echo", {"s\0x": 1}),
+        ("echo", {"\ud800": 1}),
+    ):
+        with pytest.raises(NativeError) as raised:
+            lib.call(export, **args)
+        assert raised.value.kind == "failed"
+    assert lib.call("constant") == {"k": 111}
+
+
+def test_a_failed_load_is_retried_after_a_pause(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D6 at `native()`. A transient failure heals without a file change. Break: memoize a
+    failure until the file changes."""
+    _build(tmp_path / "fix.so", ("-DLOAD_FAIL",))
+    monkeypatch.setattr(native_library, "RETRY_SECONDS", 0.2)
+    started: list[Path] = []
+    real_start = NativeLibrary._start
+
+    def _counting(library: NativeLibrary) -> None:
+        started.append(library.path)
+        real_start(library)
+
+    monkeypatch.setattr(NativeLibrary, "_start", _counting)
+    owner = NativeOwner(tmp_path)
+    for _ in range(2):
+        with pytest.raises(NativeError):
+            _open(owner)
+    assert len(started) == 1
+    time.sleep(0.3)
+    with pytest.raises(NativeError):
+        _open(owner)
+    assert len(started) == 2
+    owner.release()
+
+
+def test_releasing_buffers_never_waits_for_a_busy_host(
+    owner: NativeOwner, lib_dir: Path
+) -> None:
+    """D3. While another thread is in a call, a phase's buffers are released at once and the
+    host keeps their mappings until it stops. Break: wait for the lock -- the release blocks
+    on every buffer."""
+    lib = _open(owner, timeout=1.0)
+    instance = NativeOwner(lib_dir)
+    with owning(instance):
+        for _ in range(10):
+            lib.buffer(64, "f4")
+    busy = threading.Thread(target=_call_ignoring, args=(lib, "hang"))
+    busy.start()
+    time.sleep(0.1)
+    start = time.monotonic()
+    instance.release()
+    assert time.monotonic() - start < 0.3
+    busy.join(timeout=3.0)
+
+
+def _call_ignoring(lib: NativeLibrary, export: str) -> None:
+    with contextlib.suppress(NativeError):
+        lib.call(export)
 
 
 def test_released_buffers_are_unmapped_by_a_live_host(

@@ -115,6 +115,7 @@ LAYOUT: dict[str, int] = _layout()
 _PR_SET_DUMPABLE = 4
 _PR_SET_PTRACER = 0x59616D61
 _PR_SET_PTRACER_ANY = ctypes.c_ulong(-1).value
+_IONBF = 2
 
 # The process's C runtime, for flushing stdio after each call. None on Windows, where a
 # library may carry its own runtime and this one could not reach its buffers.
@@ -163,6 +164,16 @@ def _redirect_stdout() -> IO[bytes]:
     # prints is log text, never a reply.
     protocol = os.fdopen(os.dup(1), "wb")
     os.dup2(2, 1)
+    if _LIBC is not None:
+        # Unbuffered, so a library's printf lands before a crash or a kill rather than dying
+        # in a buffer.
+        for symbol in ("stdout", "__stdoutp"):  # glibc and musl; macOS
+            try:
+                stdout_stream = ctypes.c_void_p.in_dll(_LIBC, symbol)
+            except ValueError:
+                continue
+            _LIBC.setvbuf(stdout_stream, None, _IONBF, 0)
+            break
     if sys.platform == "win32":
         # A library writing through GetStdHandle bypasses the C runtime's fd 1.
         kernel32 = ctypes.WinDLL("kernel32")
@@ -325,13 +336,16 @@ def _flush_stdio() -> None:
 def _watch_parent() -> None:
     # The parent's deadline cannot stop a host whose parent is gone, and a host busy in a
     # call never reads the EOF on its request pipe; so the host watches for the parent
-    # itself and exits.
+    # itself and exits. It cannot fire while `dlopen` runs, which holds the GIL: a library
+    # whose constructor hangs outlives a parent killed during that load, and the next app
+    # start's sweep removes its files.
     if sys.platform == "win32":
         kernel32 = ctypes.WinDLL("kernel32")
         synchronize = 0x00100000
         handle = kernel32.OpenProcess(synchronize, False, os.getppid())
-        if handle:
-            kernel32.WaitForSingleObject(handle, 0xFFFFFFFF)
+        if not handle:
+            return
+        kernel32.WaitForSingleObject(handle, 0xFFFFFFFF)
         os._exit(0)
     parent = os.getppid()
     while os.getppid() == parent:

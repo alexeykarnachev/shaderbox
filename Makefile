@@ -24,9 +24,12 @@ run-bundle:
 #
 # `--all-files` means every TRACKED file, so a module not yet `git add`ed escaped ruff entirely
 # and the gate went green over it. The file list is tracked plus untracked-not-ignored, so a
-# new file is checked from the moment it exists.
+# new file is checked from the moment it exists. NUL-separated, so a name with a space or a
+# non-ASCII character reaches the hooks whole.
 check:
-	uv run pre-commit run --files $$(git ls-files --cached --others --exclude-standard | while read -r f; do [ -e "$$f" ] && echo "$$f"; done)
+	git ls-files -z --cached --others --exclude-standard \
+		| xargs -0 sh -c 'for f; do [ -e "$$f" ] && printf "%s\0" "$$f"; done' _ \
+		| xargs -0 uv run pre-commit run --files
 
 # Unit tests. Pure logic (resolve_dims) + GL-backed render glue (render_for,
 # render_media) against a headless standalone moderngl context; app-fixture
