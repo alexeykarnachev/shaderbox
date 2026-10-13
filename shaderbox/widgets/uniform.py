@@ -344,7 +344,9 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
             # refused field draws its last good frame, or black when there is none.
             refused = panel_pass.pending_textures[name] is REFUSED_TEXTURE
             if script_texture is None:
-                caption = "script field refused"
+                caption = (
+                    "script field refused" if refused else "script field: no texture"
+                )
             else:
                 width, height = script_texture.size
                 dtype = TEXTURE_DTYPE_NAMES.get(

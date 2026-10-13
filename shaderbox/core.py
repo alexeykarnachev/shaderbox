@@ -367,22 +367,28 @@ class Pass:
         self._uploaded_slot = None
         self.canvas.release()
 
+    def _adopt_script_slot(self) -> None:
+        """Start drawing from this tick's slot, once per slot, whatever the program declares.
+
+        A texture whose sampler the slot no longer feeds is the frame of a field that stopped
+        -- the script dropped the key, was stopped or was removed, or the sampler left the
+        program -- and holding it would let a later refusal show that old frame, not black.
+        """
+        if self._uploaded_slot is self.pending_textures:
+            return
+        self._uploaded_slot = self.pending_textures
+        self._uploaded_names = set()
+        for stale in [
+            n for n in self.script_textures if n not in self.pending_textures
+        ]:
+            self.script_textures.pop(stale).release()
+
     def _script_texture(self, name: str) -> moderngl.Texture | None:
         """The texture the script feeds sampler `name` this frame, or None when it feeds none.
 
         A refused field binds the sampler's existing texture -- the last frame that validated
         -- or black when there is none, never the sampler's own source (110 D5).
         """
-        if self._uploaded_slot is not self.pending_textures:
-            # A new tick's slot. A texture whose sampler it no longer feeds is the frame of a
-            # field that stopped -- the script dropped the key, was stopped or was removed --
-            # and holding it would let a later refusal show that old frame instead of black.
-            self._uploaded_slot = self.pending_textures
-            self._uploaded_names = set()
-            for stale in [
-                n for n in self.script_textures if n not in self.pending_textures
-            ]:
-                self.script_textures.pop(stale).release()
         field = self.pending_textures.get(name)
         if field is None:
             return None
@@ -667,6 +673,7 @@ class Pass:
         # counts from BOOT, so a shader opened on a long-uptime box starts at whatever the
         # machine had been running for.
         render_time = u_time if u_time is not None else process_time()
+        self._adopt_script_slot()
         self.seed_uniform_values()
         for uniform in self.get_active_uniforms():
             if uniform.name in TABLE_UNIFORMS:  # program-resident, set at compile

@@ -1165,3 +1165,27 @@ def test_a_field_that_stopped_cannot_return_as_a_held_frame(
         _tick(engine, document, frame)
         drawn = _drawn(document, 4, 4)
     assert np.array_equal(drawn, np.zeros((4, 4, 3), "f4"))
+
+
+def test_a_sampler_that_leaves_the_program_releases_its_field(
+    gl_ctx: moderngl.Context, tmp_path: Path
+) -> None:
+    # The prune must run on a draw that reaches no sampler at all, or an edit that removes the
+    # sampler keeps the old frame alive for a later refusal to show.
+    document, engine = _document(
+        tmp_path,
+        gl_ctx,
+        "        if context.frame == 0:\n"
+        f"            return {{'view': {{'u_field': {_field_expr(4, 4, 3)}}}}}\n"
+        "        return {}\n",
+        size=(4, 4),
+    )
+    _tick(engine, document, 0)
+    _drawn(document, 4, 4)
+    view = document.passes["view"]
+    assert view.script_textures
+    view.release_program(_SRC)
+    view.compile()
+    _tick(engine, document, 1)
+    _drawn(document, 4, 4)
+    assert view.script_textures == {}
