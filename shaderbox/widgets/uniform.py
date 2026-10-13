@@ -16,6 +16,7 @@ from shaderbox.intel.symbols import SymbolKind
 from shaderbox.media import MediaWithTexture, Video, media_class_for
 from shaderbox.pass_graph import AutoSource, NoSource, PassSource, wired_pass
 from shaderbox.paths import pass_name_of
+from shaderbox.script_texture import REFUSED_TEXTURE, TEXTURE_DTYPE_NAMES
 from shaderbox.shader_errors import find_uniform_declaration_line
 from shaderbox.syntax_colors import kind_color
 from shaderbox.theme import COLOR, SIZE, SPACE
@@ -43,8 +44,6 @@ from shaderbox.widgets.media_ops import draw_video_filters
 
 _NAME_X = SIZE.CHIP_W + SPACE.MD
 _CTRL_X = _NAME_X + SIZE.UNIFORM_NAME_W + SPACE.MD
-# A script field's texture dtype, named as the script wrote it.
-_FIELD_DTYPE_LABELS: dict[str, str] = {"f4": "float32", "f1": "uint8"}
 
 
 def uniform_name_label(
@@ -339,15 +338,24 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
 
         source_pass = document.sampler_source(panel_pass_name, name)
         script_texture = panel_pass.script_textures.get(name)
-        if name in panel_pass.pending_textures and script_texture is not None:
+        if name in panel_pass.pending_textures:
             # The draw binds the script's field over the source this frame (110 D4); the combo
-            # above still shows the source, which is what binds once the script lets go.
-            width, height = script_texture.size
+            # above still shows the source, which is what binds once the script lets go. A
+            # refused field draws its last good frame, or black when there is none.
+            refused = panel_pass.pending_textures[name] is REFUSED_TEXTURE
+            if script_texture is None:
+                caption = "script field refused"
+            else:
+                width, height = script_texture.size
+                dtype = TEXTURE_DTYPE_NAMES.get(
+                    script_texture.dtype, script_texture.dtype
+                )
+                caption = (
+                    f"script · {width}x{height} · {script_texture.components} x {dtype}"
+                    + (" · refused" if refused else "")
+                )
             _draw_texture_preview(
-                f"u_script_{panel_pass_name}_{name}",
-                script_texture,
-                f"script · {width}x{height} · {script_texture.components} x "
-                f"{_FIELD_DTYPE_LABELS.get(script_texture.dtype, script_texture.dtype)}",
+                f"u_script_{panel_pass_name}_{name}", script_texture, caption
             )
         elif source_pass is not None:
             # The picture is of that pass, so its click does what the strip's tile does — the two

@@ -147,7 +147,10 @@ removed, the sampler reads what the user chose for it.
   (draw fullscreen) and for the same reason -- the return value IS the frame's state. A
   script that wants a still picture returns the same array again, which costs one upload.
   Refused this tick (D2): the draw binds the pass's existing `script_textures` entry -- the
-  last frame that validated -- or black if there is none, never the source. Falling back to
+  last frame that validated -- or black if there is none, never the source. An entry lives
+  only while the script keeps feeding that sampler: a tick whose slot lacks it releases it,
+  so a field that stopped (dropped, stopped, or its script removed) cannot reappear as a
+  later refusal's held frame. Falling back to
   the source would show a different picture because of a data mistake, which is the case
   `REFUSED_POPULATION` exists to prevent.
 

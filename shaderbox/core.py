@@ -373,14 +373,21 @@ class Pass:
         A refused field binds the sampler's existing texture -- the last frame that validated
         -- or black when there is none, never the sampler's own source (110 D5).
         """
+        if self._uploaded_slot is not self.pending_textures:
+            # A new tick's slot. A texture whose sampler it no longer feeds is the frame of a
+            # field that stopped -- the script dropped the key, was stopped or was removed --
+            # and holding it would let a later refusal show that old frame instead of black.
+            self._uploaded_slot = self.pending_textures
+            self._uploaded_names = set()
+            for stale in [
+                n for n in self.script_textures if n not in self.pending_textures
+            ]:
+                self.script_textures.pop(stale).release()
         field = self.pending_textures.get(name)
         if field is None:
             return None
         if field is REFUSED_TEXTURE:
             return self.script_textures.get(name) or self._black_texture()
-        if self._uploaded_slot is not self.pending_textures:
-            self._uploaded_slot = self.pending_textures
-            self._uploaded_names = set()
         texture = self.script_textures.get(name)
         if name in self._uploaded_names and texture is not None:
             return texture

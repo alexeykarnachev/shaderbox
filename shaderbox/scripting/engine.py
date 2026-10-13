@@ -119,8 +119,8 @@ def texture_stats(value: object) -> TextureStats:
     if problem is not None:
         return TextureStats((), "", 0.0, 0.0, 0.0, 0, problem)
     assert isinstance(value, np.ndarray)
-    rows = max(1, value.shape[0] // _DIGEST_SIDE)
-    cols = max(1, value.shape[1] // _DIGEST_SIDE)
+    rows = -(-value.shape[0] // _DIGEST_SIDE)
+    cols = -(-value.shape[1] // _DIGEST_SIDE)
     sample = np.ascontiguousarray(value[::rows, ::cols])
     return TextureStats(
         tuple(value.shape),
@@ -139,8 +139,9 @@ class ScriptProbe:
     # live reload verdict (None = clean). The rest come from an ISOLATED dry-tick (the live document + the
     # live engine state are untouched): runtime_error = the script RAN but `update` raised / returned a
     # non-dict at some frame (the uniform freezes from there — distinct from a compile error and from a
-    # per-key shape error); driven = the real (pass, uniform) pairs the script drove; per_key_errors =
-    # shape/coercion failures on real uniforms AND keys the engine refused (a sampler/block, an
+    # per-key shape error); driven = the real (pass, uniform) VALUE pairs the script drove (a fed
+    # sampler is in `texture_samples` instead); per_key_errors = shape/coercion failures on real
+    # uniforms AND keys the engine refused (a block or an undrivable sampler, a refused field, an
     # unknown pass); orphan_keys = (pass, key) for a key that landed in NEITHER of the two silent
     # `KeyFailReason`s (`held_uncompiled`, `engine_owned`) NOR carries an error — since 102 D1/D2
     # every other non-landing reason now warns (a per_key_errors row), so in ordinary authoring
@@ -299,10 +300,11 @@ class DocumentScripts:
         # (110 D3). Kept apart from `last_driven` because that set is what `_freeze` restores, and
         # a field has no value to restore into a sampler's source.
         self.last_texture_driven: set[tuple[str, str]] = set()
-        # Bad script keys (typo/orphan/unknown pass) that recorded a soft error on the last tick —
-        # tracked separately from last_driven (a bad key must NOT claim ownership in
-        # script_driven_uniforms) so the stale-clear can pop its error once the key stops being
-        # returned. A bare key no pass declares carries "" as its pass.
+        # Script keys that warned on the last tick (typo/orphan/unknown pass/refused field) —
+        # tracked separately from last_driven so the stale-clear can pop the error once the key
+        # stops being returned. A key that names no uniform claims no ownership in
+        # script_driven_uniforms; a refused field does, through `last_texture_driven` (110 D6).
+        # A bare key no pass declares carries "" as its pass.
         self.last_skipped: set[tuple[str, str]] = set()
         # The edge-trigger state for `_warn` (102 D3): the REASON each (pass, name) warned with
         # on its last tick, so a key stuck in one reason warns once and a key oscillating between
@@ -896,6 +898,74 @@ class ScriptEngine:
             scripts.last_warned[pair] = reason
             self._on_key_warning(document_id, pass_name, name, reason, message)
 
+    def _route(
+        self,
+        *,
+        document_id: str,
+        document: ScriptTarget,
+        pass_name: str,
+        name: str,
+        value: object,
+        active: dict[str, moderngl.Uniform | moderngl.UniformBlock],
+        errors: dict[tuple[str, str, str], ScriptError],
+        last_good: dict[tuple[str, str], Any],
+        driven: set[tuple[str, str]],
+        skipped: set[tuple[str, str]],
+        textures: dict[str, dict[str, np.ndarray]],
+        texture_driven: set[tuple[str, str]],
+        stopped: frozenset[StoppedKey],
+        values_sink: dict[tuple[str, str], Any] | None,
+        texture_stats_sink: dict[tuple[str, str], TextureStats] | None,
+        scripts: "DocumentScripts | None",
+    ) -> None:
+        # ONE key at ONE pass that declares it, by the uniform's TYPE (110 D1): a value uniform
+        # takes the coercion, a script-fed sampler takes a field, anything else (a block, an
+        # image, a sampler other than a single sampler2D) is refused. Each pass succeeds or
+        # fails on its own.
+        uniform = active[name]
+        if is_scriptable(uniform):
+            self._write_one(
+                document_id=document_id,
+                pass_name=pass_name,
+                name=name,
+                value=value,
+                render_pass=document.passes[pass_name],
+                active=active,
+                errors=errors,
+                last_good=last_good,
+                driven=driven,
+                stopped=stopped,
+                values_sink=values_sink,
+            )
+        elif is_script_texture(uniform):
+            self._feed_texture(
+                document_id=document_id,
+                pass_name=pass_name,
+                name=name,
+                value=value,
+                textures=textures,
+                texture_driven=texture_driven,
+                stopped=stopped,
+                errors=errors,
+                skipped=skipped,
+                scripts=scripts,
+                texture_stats_sink=texture_stats_sink,
+            )
+        else:
+            self._warn(
+                document_id=document_id,
+                pass_name=pass_name,
+                name=name,
+                reason="not_scriptable",
+                message=(
+                    f"pass '{pass_name}': '{name}' is not a value a script can drive -- a "
+                    f"block, an image or a sampler other than a single sampler2D"
+                ),
+                errors=errors,
+                skipped=skipped,
+                scripts=scripts,
+            )
+
     def _feed_texture(
         self,
         *,
@@ -931,6 +1001,10 @@ class ScriptEngine:
                 skipped=skipped,
                 scripts=scripts,
             )
+        else:
+            # A good field from a pass block wins over a bad one from the bare key this tick,
+            # and so does its verdict, as `_write_one` does for a value.
+            errors.pop((document_id, pass_name, name), None)
         if StoppedKey(pass_name=pass_name, name=name) in stopped:
             return
         textures.setdefault(pass_name, {})[name] = (
@@ -1270,56 +1344,6 @@ class ScriptEngine:
         textures: dict[str, dict[str, np.ndarray]] = {}
         texture_driven: set[tuple[str, str]] = set()
 
-        def route(pass_name: str, name: str, value: object) -> None:
-            # ONE key at ONE pass that declares it, by the uniform's TYPE (110 D1): a value
-            # uniform takes the coercion, a script-fed sampler takes a field, anything else
-            # (a block, another sampler type, a sampler array) is refused. Each pass succeeds
-            # or fails on its own.
-            active = active_by_pass[pass_name]
-            uniform = active[name]
-            if is_scriptable(uniform):
-                self._write_one(
-                    document_id=document_id,
-                    pass_name=pass_name,
-                    name=name,
-                    value=value,
-                    render_pass=document.passes[pass_name],
-                    active=active,
-                    errors=errors,
-                    last_good=last_good,
-                    driven=driven,
-                    stopped=stopped,
-                    values_sink=values_sink,
-                )
-            elif is_script_texture(uniform):
-                self._feed_texture(
-                    document_id=document_id,
-                    pass_name=pass_name,
-                    name=name,
-                    value=value,
-                    textures=textures,
-                    texture_driven=texture_driven,
-                    stopped=stopped,
-                    errors=errors,
-                    skipped=skipped,
-                    scripts=scripts,
-                    texture_stats_sink=texture_stats_sink,
-                )
-            else:
-                self._warn(
-                    document_id=document_id,
-                    pass_name=pass_name,
-                    name=name,
-                    reason="not_scriptable",
-                    message=(
-                        f"pass '{pass_name}': '{name}' is a block or a sampler a script "
-                        f"cannot drive -- only a single sampler2D takes a field"
-                    ),
-                    errors=errors,
-                    skipped=skipped,
-                    scripts=scripts,
-                )
-
         for name, value in broadcasts.items():
             # An engine-owned key (u_time…) is the OTHER silent exemption (102 D1): the renderer
             # owns that slot and a script can't be expected to avoid naming it.
@@ -1357,7 +1381,24 @@ class ScriptEngine:
                 )
                 continue
             for pass_name in declaring:
-                route(pass_name, name, value)
+                self._route(
+                    document_id=document_id,
+                    document=document,
+                    pass_name=pass_name,
+                    name=name,
+                    value=value,
+                    active=active_by_pass[pass_name],
+                    errors=errors,
+                    last_good=last_good,
+                    driven=driven,
+                    skipped=skipped,
+                    textures=textures,
+                    texture_driven=texture_driven,
+                    stopped=stopped,
+                    values_sink=values_sink,
+                    texture_stats_sink=texture_stats_sink,
+                    scripts=scripts,
+                )
 
         for pass_name, block in blocks.items():
             if pass_name not in document.passes:
@@ -1420,7 +1461,24 @@ class ScriptEngine:
                         scripts=scripts,
                     )
                     continue
-                route(pass_name, name, value)
+                self._route(
+                    document_id=document_id,
+                    document=document,
+                    pass_name=pass_name,
+                    name=name,
+                    value=value,
+                    active=active,
+                    errors=errors,
+                    last_good=last_good,
+                    driven=driven,
+                    skipped=skipped,
+                    textures=textures,
+                    texture_driven=texture_driven,
+                    stopped=stopped,
+                    values_sink=values_sink,
+                    texture_stats_sink=texture_stats_sink,
+                    scripts=scripts,
+                )
 
         # The dry-run never writes the live slots (063), as for populations above.
         if values_sink is None:
@@ -1443,9 +1501,11 @@ class ScriptEngine:
         last_texture_driven.clear()
         last_texture_driven.update(texture_driven)
         if scripts is not None:
-            # A key that landed this tick clears its warning edge, so failing again warns again.
-            for pair in [p for p in scripts.last_warned if p not in skipped]:
-                del scripts.last_warned[pair]
+            # A key that LANDED this tick clears its warning edge, so failing again warns
+            # again. One the script did not send keeps it: a key sent only now and then must
+            # not warn each time it comes back with the same fault.
+            for pair in (driven | texture_driven) - skipped:
+                scripts.last_warned.pop(pair, None)
 
     def release_all(self) -> None:
         """Stop every native host a live script started and delete its buffers (feature 109)."""

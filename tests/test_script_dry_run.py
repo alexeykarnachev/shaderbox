@@ -339,8 +339,8 @@ def test_a_cold_dry_run_compiles_and_reports_the_real_driven_set(
 def test_a_refused_key_and_an_undeclared_one_are_both_per_key_errors(
     tmp_path: Path,
 ) -> None:
-    # 102 D2 reverses 079 D5's split: a key naming a SAMPLER (`not_scriptable`) and a key
-    # naming nothing yet (`no_such_uniform`) are now BOTH a per_key_errors row -- distinct
+    # 102 D2 reverses 079 D5's split: a number aimed at a sampler (`bad_texture` since 110) and a
+    # key naming nothing yet (`no_such_uniform`) are now BOTH a per_key_errors row -- distinct
     # reasons, same reporting tier. Falsifier: either drops back to orphan_keys (silent).
     _write_script(
         tmp_path,

@@ -127,6 +127,7 @@ from shaderbox.scripting import (
     ScriptStatus,
     normalize_script_tabs,
 )
+from shaderbox.scripting.engine import TextureStats
 from shaderbox.shader_errors import ShaderError
 from shaderbox.shader_lib import ShaderLibIndex, parser
 from shaderbox.shader_lib.file_ops import ShaderLibFileManager
@@ -387,12 +388,12 @@ def _format_uniforms(
             rows.append(f"{u.name} {label}")
         elif u.name in ENGINE_DRIVEN_UNIFORMS:
             rows.append(f"{u.name} {label} = <set by the engine each frame>")
-        elif u.name in driven:
-            rows.append(f"{u.name} {label} = <driven by script.py>")
         elif label == "sampler2D":
             rows.append(
                 f"{u.name} {label} <- {_sampler_reads(render_pass, u.name, wired)}"
             )
+        elif u.name in driven:
+            rows.append(f"{u.name} {label} = <driven by script.py>")
         else:
             value = render_pass.uniform_values.get(u.name, u.value)
             rows.append(f"{u.name} {label} = {value}")
@@ -423,7 +424,9 @@ def _sampler_reads(render_pass: Pass, name: str, wired: Mapping[str, str]) -> st
     at the draw (110 D4), so it outranks it here too."""
     field = render_pass.pending_textures.get(name)
     if field is REFUSED_TEXTURE:
-        return "(script field REFUSED this frame; holds its last good frame)"
+        if name in render_pass.script_textures:
+            return "(script field REFUSED this frame; holds its last good frame)"
+        return "(script field REFUSED this frame; reads BLACK)"
     if field is not None:
         (width, height), channels, _ = texture_layout(field)
         return f"(script field {width}x{height}, {channels} x {field.dtype})"
@@ -576,7 +579,7 @@ def _motion_verdict(probe: ScriptProbe, render_line: str, eps: float) -> str:
         fed = [
             kind
             for kind, present in (
-                ("population", bool(_population_samples(probe))),
+                ("population", any(passes for _, passes in _population_samples(probe))),
                 ("texture", any(stats for _, stats in probe.texture_samples)),
             )
             if present
@@ -584,7 +587,7 @@ def _motion_verdict(probe: ScriptProbe, render_line: str, eps: float) -> str:
         if fed:
             return (
                 f"drives 0 SCALAR uniforms, but see the {' and '.join(fed)} facts below -- "
-                "a population or a script-fed sampler never counts as a driven uniform."
+                "a population or a script-fed sampler is reported there, not as a value here."
             )
         return (
             "drives 0 uniforms (update returned an empty dict / only orphan keys). Nothing "
@@ -631,31 +634,29 @@ def _population_facts_text(probe: ScriptProbe, eps: float) -> str:
 
 
 def _texture_facts_text(probe: ScriptProbe) -> str:
-    # 110 D8: one line per script-fed sampler off the LAST sample -- shape, dtype, range, or the
-    # refusal -- then its motion, the FIRST sample against EVERY later one as
-    # `_population_motion` decides it, over the content digest: min/max/mean hold still while
-    # an advecting field moves. Statistics only; the field never reaches this module.
-    samples = probe.texture_samples
-    if not samples or not samples[-1][1]:
-        return ""
+    # 110 D8: one line per script-fed sampler off the LAST sample that carries it -- shape,
+    # dtype, range, or the refusal -- then its motion: its FIRST sample against EVERY later one,
+    # as `_population_motion` decides it, over the content digest, since min/max/mean hold
+    # still while an advecting field moves. Statistics only; the field never reaches here.
+    seen: dict[tuple[str, str], list[TextureStats]] = {}
+    for _, stats in probe.texture_samples:
+        for pair, one in stats.items():
+            seen.setdefault(pair, []).append(one)
     lines: list[str] = []
-    for pair, stats in sorted(samples[-1][1].items()):
-        if stats.verdict:
-            lines.append(f"{_dotted(pair)}: field refused -- {stats.verdict}")
+    for pair, history in sorted(seen.items()):
+        last = history[-1]
+        if last.verdict:
+            lines.append(f"{_dotted(pair)}: field refused -- {last.verdict}")
+        else:
+            lines.append(
+                f"{_dotted(pair)}: field {last.dtype} {last.shape} range "
+                f"[{last.minimum:.3g}, {last.maximum:.3g}] mean {last.mean:.3g}"
+            )
+    for pair, history in sorted(seen.items()):
+        valid = [one for one in history if not one.verdict]
+        if len(valid) < 2:
             continue
-        lines.append(
-            f"{_dotted(pair)}: field {stats.dtype} {stats.shape} range "
-            f"[{stats.minimum:.3g}, {stats.maximum:.3g}] mean {stats.mean:.3g}"
-        )
-    first = samples[0][1]
-    later = [stats for _, stats in samples[1:]]
-    for pair in sorted(first):
-        if first[pair].verdict:
-            continue
-        others = [s[pair] for s in later if pair in s and not s[pair].verdict]
-        if not others:
-            continue
-        if any(other.digest != first[pair].digest for other in others):
+        if any(other.digest != valid[0].digest for other in valid[1:]):
             lines.append(f"{_dotted(pair)}: field CHANGES across t (ANIMATING)")
         else:
             lines.append(

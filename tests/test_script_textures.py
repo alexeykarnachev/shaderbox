@@ -23,8 +23,8 @@ from PIL import Image as PILImage
 
 from shaderbox.constants import RESOURCES_DIR
 from shaderbox.copilot.backend import (
+    _format_uniforms,
     _motion_verdict,
-    _sampler_reads,
     _texture_facts_text,
 )
 from shaderbox.core import Pass
@@ -833,7 +833,10 @@ def test_only_a_single_sampler2D_takes_a_field(
         engine.reload("n0", scripts)
         engine.tick("n0", document, ScriptContext(t=0.0, dt=1 / 60, frame=0))
         for name in ("u_vol", "u_cube", "u_int", "u_pair"):
-            assert "block or a sampler" in engine.errors[("n0", "main", name)].message
+            assert (
+                "not a value a script can drive"
+                in engine.errors[("n0", "main", name)].message
+            )
         assert fake.uniform_values == {} and getattr(fake, "pending_textures", {}) == {}
 
 
@@ -899,17 +902,39 @@ def test_a_dry_run_alone_marks_a_fed_sampler_driven(
 # ---- 29. copilot cell --------------------------------------------------------------------
 
 
-def test_the_copilot_reads_a_fed_sampler_as_the_script_s() -> None:
-    fed = types.SimpleNamespace(
-        pending_textures={"u_src": np.zeros((3, 5, 2), np.float32)}, uniform_values={}
+def test_the_copilot_reads_a_fed_sampler_as_the_script_s(
+    gl_ctx: moderngl.Context, tmp_path: Path
+) -> None:
+    # Through the working-set formatter, with the sampler in the driven set exactly as the
+    # backend passes it: the cell has to win over the "driven by script.py" marker to be seen.
+    document, engine = _document(
+        tmp_path,
+        gl_ctx,
+        f"        return {{'view': {{'u_src': {_field_expr(4, 4, 3)}}}}}\n",
+        sampler="u_src",
+        with_src=True,
+        size=(4, 4),
     )
-    assert _sampler_reads(fed, "u_src", {"u_src": "src"}) == (
-        "(script field 5x3, 2 x float32)"
+    _tick(engine, document, 0)
+    _drawn(document, 4, 4)
+    rows = _format_uniforms(
+        document.passes["view"], {"u_src"}, document.effective_wiring()["view"]
     )
-    refused = types.SimpleNamespace(
-        pending_textures={"u_src": REFUSED_TEXTURE}, uniform_values={}
+    assert "u_src sampler2D <- (script field 4x4, 3 x float32)" in rows
+
+
+def test_the_copilot_reads_a_first_frame_refusal_as_black(
+    gl_ctx: moderngl.Context, tmp_path: Path
+) -> None:
+    document, engine = _document(
+        tmp_path, gl_ctx, _GOOD_THEN_F8, sampler="u_src", with_src=True, size=(4, 4)
     )
-    assert "REFUSED" in _sampler_reads(refused, "u_src", {"u_src": "src"})
+    _tick(engine, document, 1)
+    _drawn(document, 4, 4)
+    rows = _format_uniforms(
+        document.passes["view"], {"u_src"}, document.effective_wiring()["view"]
+    )
+    assert "u_src sampler2D <- (script field REFUSED this frame; reads BLACK)" in rows
 
 
 # ---- 30. release -------------------------------------------------------------------------
@@ -1026,3 +1051,117 @@ def test_an_exported_frame_carries_the_field(app: Any, tmp_path: Path) -> None:
     document.render_media(details)
     red = PILImage.open(out).convert("RGBA").getpixel((0, 0))[0]
     assert abs(red - round(0.75 * 255)) <= 1, red
+
+
+# ---- post-implementation review: the fixes it asked for ----------------------------------
+
+
+def _fake_engine(
+    tmp_path: Path, update_body: str
+) -> tuple[ScriptEngine, Any, list[str]]:
+    scripts = tmp_path / "fake_scripts"
+    scripts.mkdir()
+    (scripts / "script.py").write_text(
+        _HEAD
+        + "class Behavior(ScriptBehavior):\n    def update(self, context):\n"
+        + update_body
+    )
+    warnings: list[str] = []
+    engine = ScriptEngine(
+        on_key_warning=lambda doc, p, n, reason, message: warnings.append(reason)
+    )
+    engine.reload("n0", scripts)
+    document = types.SimpleNamespace(
+        passes={
+            "main": _FakePass(
+                [_uniform("u_a", int(GL.GL_FLOAT)), _uniform("u_tex", _GL_SAMPLER_2D)]
+            )
+        }
+    )
+    return engine, document, warnings
+
+
+def test_a_fault_sent_now_and_then_warns_once(tmp_path: Path) -> None:
+    # The same typo returned every other frame is one fault, not one toast per return.
+    engine, document, warnings = _fake_engine(
+        tmp_path,
+        "        return {'u_ghost': 1.0} if context.frame % 2 == 0 else {}\n",
+    )
+    for frame in range(10):
+        engine.tick("n0", document, ScriptContext(t=frame / 60, dt=1 / 60, frame=frame))
+    assert warnings == ["no_such_uniform"]
+
+
+def test_a_field_that_lands_and_fails_again_warns_again(tmp_path: Path) -> None:
+    engine, document, warnings = _fake_engine(
+        tmp_path,
+        "        bad = context.frame in (1, 2, 3, 5)\n"
+        "        f = np.zeros((2, 2)) if bad else np.zeros((2, 2), np.float32)\n"
+        "        return {'main': {'u_tex': f}}\n",
+    )
+    for frame in range(6):
+        engine.tick("n0", document, ScriptContext(t=frame / 60, dt=1 / 60, frame=frame))
+    assert warnings == ["bad_texture", "bad_texture"]
+
+
+def test_an_empty_script_reads_as_driving_nothing(
+    gl_ctx: moderngl.Context, tmp_path: Path
+) -> None:
+    document, engine = _document(tmp_path, gl_ctx, "        return {}\n", size=(4, 4))
+    probe = engine.dry_run("doc", document, (0.0, 0.5), 12)
+    verdict = _motion_verdict(probe, "", 1e-4)
+    assert "Nothing animates" in verdict and "facts below" not in verdict
+
+
+def test_a_field_sent_early_is_still_reported(
+    gl_ctx: moderngl.Context, tmp_path: Path
+) -> None:
+    document, engine = _document(
+        tmp_path,
+        gl_ctx,
+        "        if context.t < 0.9:\n"
+        f"            return {{'view': {{'u_field': {_field_expr(4, 4, 3)}}}}}\n"
+        "        return {}\n",
+        size=(4, 4),
+    )
+    probe = engine.dry_run("doc", document, (0.0, 0.5, 1.0), 12)
+    facts = _texture_facts_text(probe)
+    assert "view.u_field: field float32 (4, 4, 3)" in facts
+    assert "field UNCHANGED across t (STATIC)" in facts
+
+
+def test_a_good_block_field_clears_the_bare_key_s_refusal(
+    gl_ctx: moderngl.Context, tmp_path: Path
+) -> None:
+    document, engine = _document(
+        tmp_path,
+        gl_ctx,
+        "        return {'u_field': np.zeros((4, 4)), "
+        f"'view': {{'u_field': {_field_expr(4, 4, 3)}}}}}\n",
+        size=(4, 4),
+    )
+    _tick(engine, document, 0)
+    assert np.array_equal(_drawn(document, 4, 4), _field(4, 4, 3))
+    status = engine.script_status("doc")
+    assert status is not None and status.soft_errors == []
+
+
+def test_a_field_that_stopped_cannot_return_as_a_held_frame(
+    gl_ctx: moderngl.Context, tmp_path: Path
+) -> None:
+    # Fed, then dropped, then refused: the refusal reads black, not the frame from before the
+    # gap -- that frame belongs to a field the script had stopped sending.
+    document, engine = _document(
+        tmp_path,
+        gl_ctx,
+        "        if context.frame == 0:\n"
+        f"            return {{'view': {{'u_field': {_field_expr(4, 4, 3)}}}}}\n"
+        "        if context.frame == 1:\n"
+        "            return {}\n"
+        "        return {'view': {'u_field': np.zeros((4, 4))}}\n",
+        size=(4, 4),
+    )
+    for frame in range(3):
+        _tick(engine, document, frame)
+        drawn = _drawn(document, 4, 4)
+    assert np.array_equal(drawn, np.zeros((4, 4, 3), "f4"))

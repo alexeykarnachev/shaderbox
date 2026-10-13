@@ -695,9 +695,10 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   this single path; per-uniform private HELPER METHODS inside `update` cover the per-value case). **Per-
   instance state (`self.*`) persists across frames — the reason CPU scripting exists** (a stateless
   `sin(t)` belongs in the shader). Each dict value is validated against the live uniform via the shared
-  `uniform_coerce` — every value is PLAIN PYTHON (a number for a scalar, a list or tuple for a vector,
-  a list flat or as rows for an array, a str for a text uniform), shaped against the live uniform, with
-  no wrapper types to learn (079). The engine
+  `uniform_coerce` — every value is PLAIN PYTHON (a number for a scalar, a list, tuple or 1-D numpy
+  array for a vector, a list flat or as rows for an array, a str for a text uniform), shaped against
+  the live uniform, with no wrapper types to learn (079). Two keys take numpy arrays instead:
+  `@instances` (100) and a `sampler2D`, which takes a field (110). The engine
   (`shaderbox/scripting/`) is repo code owned by `ProjectSession`, imports no imgui/glfw and no concrete
   `Document` type (it works against the `ScriptTarget` protocol — a document's `passes` by name, each a
   `ScriptPass` of `uniform_values` + `get_active_uniforms()` + `script_ready`), so it stays in the 025

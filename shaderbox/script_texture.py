@@ -18,6 +18,12 @@ TEXTURE_DTYPES: dict[np.dtype, str] = {
     np.dtype(np.uint8): "f1",
 }
 
+# moderngl texture dtype -> the numpy name a script wrote, for a caption.
+TEXTURE_DTYPE_NAMES: dict[str, str] = {
+    moderngl_dtype: str(numpy_dtype)
+    for numpy_dtype, moderngl_dtype in TEXTURE_DTYPES.items()
+}
+
 # A field the engine refused this tick, as distinct from one the script did not send: an
 # absent field binds the sampler's own source, a refused one holds the last frame that
 # validated. Compared by IDENTITY.
