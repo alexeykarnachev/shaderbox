@@ -26,51 +26,30 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-09-28. -->
-**The instancing wave (102-105) shipped, 106 unified the colour system, 107 swept the gate
-layer, 108 swept the runtime layer.** 102 and 104 stay `partial`; their rows say what remains.
+<!-- As of 2026-10-13. -->
+**Next: 109, native libraries from a script -- spec drafted, awaiting plan-lock.** A script
+loads a library the author built in any language that exports C, calls any export of the
+shape `int32_t fn(sb_call*)` with named buffers and scalars, and gets every failure --
+the library's own, a crash, a hang, an ABI mismatch -- as an ordinary script error. The
+library runs in a child process with its buffers in shared memory, which is what keeps the
+app alive and lets a rebuild swap the code while the data stays. Three open questions sit at
+the end of the spec.
 
-**108's finding is the one to carry forward.** 107 left the checks strong and the structure
-sound, so 108 asked a different question -- what the code DOES when something goes wrong --
-and found one shape repeatedly: **a failure that resolves to a well-formed answer.** A
-VertexArray dropped rather than released. A clipboard failure whose sentinel could not be
-told from "nothing to do". A trailing newline accepted as a pass name, so `glow\n` became a
-second pass no collision check could see. `:w` announcing a save that was refused. A library
-revert reporting "nothing to restore" over an edit still live on disk.
-
-**The remedy is narrower than "handle the error": it is the return TYPE.** In each case the
-call site could not have reported the failure however carefully it was written. But
-tolerance is correct wherever a caller acts on it deliberately -- `render_pass`'s stale
-output, `wired_pass` on a half-built graph, a per-keystroke parse of half-typed input. The
-test is whether a caller can TELL.
-
-**The class predicts better than it scans.** Two fan-outs over the package found nothing by
-enumerating the pattern; both late hits came from following a subsystem whose history
-already showed it. Re-read what has paid a multi-round arc, rather than re-scanning.
+**Carried from 108:** a failure that resolves to a well-formed answer is the class to watch,
+and its remedy is the return TYPE -- the test is whether a caller can TELL.
 
 **Open, deliberately not done unattended:** `ui_models.py::save`'s orphan-sweep `keep` flag
-has no observable effect, because an earlier per-uniform unbind resolves every case the
-suite builds. And `_delete_document_unguarded`'s `shutil.move` is unguarded AFTER the
-document is popped and released, so a failed move leaves it gone from memory and present on
-disk -- the fix is a design choice about what a partial delete means, across four callers.
-Both are design questions.
+has no observable effect, and `_delete_document_unguarded`'s `shutil.move` is unguarded
+after the document is popped and released. Both are design questions.
 
 **ShaderBox is still getting off imgui.** `graph_canvas` owns the node picture, hit-testing
 and gestures (098); the next surface to move is a question, not a plan.
-
-One finding is upstream's: a canvas node row carrying a widget has its role colour covered
-by the widget's own panel. Reported; no workaround, since tinting something adjacent hides
-it.
-
-**Unmeasured:** the canvas past twenty passes at the GPU; no brake on copilot cost (082).
-A light theme for the app CHROME is out of scope in 106 -- a palette swap carries hues, not
-the assumptions built on a dark ground. The editor's syntax theme is a separate thing and is
-selectable, light included.
 
 ## Features
 
 | # | Name | Status | Brief |
 |---|---|---|---|
+| 109 | native_libraries | pending | A script loads an author-built shared library through one C calling convention and calls it in an isolated host process, so a crash, hang or ABI mismatch is a script error and a rebuild reloads with buffers intact. Spec: `ai_docs/features/109_native_libraries/01_spec.md`. |
 | 108 | nightly_sweep | done | An unattended pass over the RUNTIME layer, since 107 had closed the gate layer and the structural questions came back ABSENT again here: dead symbols, duplicated blocks, per-item state left behind on teardown, oversized files and test-suite padding were each checked and each declined, the last three on evidence rather than taste -- a live gate enforces `ui_primitives.py`'s single flat import closure, and `conventions.md` records a maintainer decision against splitting `app.py`. The yield was one shape: a failure that resolves to a WELL-FORMED ANSWER, so nothing downstream can tell. A VertexArray dropped where its two sibling sites release; a clipboard `bool` collapsing "the copy failed" with "nothing to do" across five spellings of one action; `PASS_NAME_RE` asked with `match`, where `$` precedes a trailing newline, so `glow\n` was a second pass beside `glow` on disk and in the graph; `:w` announcing a save the copilot had refused; a library revert reporting "nothing to restore" over an edit still live. The remedy was the return TYPE each time, never a handler -- the call site could not have reported what its answer could not represent -- and the spec names where tolerance is instead the design. Also a committed skill instructing the `todo.md` entry three docs forbid, which is the one defect that reproduces on every invocation. Review found a regression the wave itself shipped, green under both of its own gates. Spec: `ai_docs/features/108_nightly_sweep/01_spec.md`. |
 | 107 | nightly_sweep | done | An unattended pass whose subject turned out to be the GATE layer rather than the source: the structural questions -- misfiling, dependency direction, missing seams, comment rot -- all came back ABSENT, and the live-fact wave closed empty because every flagged figure is frozen history. Mutation breaks across four slices found the real class, and it is not the one the spec predicted: not a check asserting on source text (three instances) but a fixture whose case gives the correct and the broken implementation the same answer. Seven fixed, each verified by re-running the break that defeated it -- the watcher test that passed against the historical bug it was named for, a freeze test whose uniform started at the value it would freeze to, a layout test whose ungrouped pass sorted after both group members, a rename read back off the object the method had just mutated. Spec: `ai_docs/features/107_nightly_sweep/01_spec.md`. |
 | 106 | syntax_role_system | done | A colour means a semantic ROLE, one table, and a theme change touches one layer: one palette, then a table naming what each role looks like, then a table naming what each kind IS, with both the colour and the syntax class DERIVED rather than hand-written beside each other. The three tables were later replaced by a theme FILE keyed by treesitter capture. Replaced a vocabulary where one token was named after a language, a decorator drew the number colour because that token happened to be free, and no type role existed at all. The editor library widened `Theme.syntax` to sixteen classes on request, so nothing had to be collapsed and the per-language palette is gone. Re-theming is GATED: the test rewrites the palette into a temp tree and imports it in a subprocess, because three import-time copies make an in-process swap a no-op that passes. A light theme is explicitly out of scope with its reasons named. Spec: `ai_docs/features/106_syntax_role_system/01_spec.md`. |
