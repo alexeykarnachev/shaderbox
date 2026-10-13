@@ -12,11 +12,11 @@ importing ANY submodule executes the package `__init__`, which re-exports the GL
 invariant is over this module's OWN imports."""
 
 from collections.abc import Iterable
-from inspect import cleandoc
+from inspect import cleandoc, signature
 from textwrap import fill
 
 from shaderbox.scripting.context import EXPORT_MOUSE, MouseState, ScriptContext
-from shaderbox.scripting.native import NativeError, native
+from shaderbox.scripting.native_library import NativeError, native
 
 _WRAP_WIDTH: int = 100
 
@@ -139,9 +139,7 @@ def api_symbol_doc(name: str) -> tuple[str, str]:
     if name == MouseState.__name__:
         return MouseState.__name__, _class_help(MouseState)
     if name == native.__name__:
-        return "native(name, *, timeout=2.0, debug=False)", cleandoc(
-            native.__doc__ or ""
-        )
+        return f"native{signature(native)}", cleandoc(native.__doc__ or "")
     if name == NativeError.__name__:
         return NativeError.__name__, _class_help(NativeError)
     return name, _API_HELP["ScriptBehavior"]
@@ -234,10 +232,11 @@ def script_api_summary() -> str:
         f"wrapper types): {_dedup_join(_VALUE_SHAPE_GLOSS.values(), '; ')}. An array's length "
         'must match the uniform\'s exactly. The ONE exception is the reserved "@instances" key '
         "(see INSTANCING below), whose value is a dict of NUMPY arrays, not plain Python.",
-        f"- `from shaderbox.scripting import {_IMPORT_NAMES}` -- that module and those names are "
-        "the ONLY part of shaderbox a script may import; any other shaderbox module raises at "
-        "compile. A script is otherwise plain Python -- `import math`, numpy and the stdlib work.",
-        "- `native(name)` (also importable from shaderbox.scripting) loads a shared library the "
+        f"- `from shaderbox.scripting import {_IMPORT_NAMES}` (and `native`, `NativeError` below) "
+        "-- that module is the ONLY part of shaderbox a script may import; any other shaderbox "
+        "module raises at compile. A script is otherwise plain Python -- `import math`, numpy "
+        "and the stdlib work.",
+        "- `native(name)` loads a shared library the "
         "USER built and put in the document's scripts/ dir; `lib.buffer(shape, dtype)` allocates "
         "an array it can write, and `lib.call(export, **args)` runs one export, returning a dict "
         "and raising `NativeError` on failure. You cannot build a library: use `native` only "

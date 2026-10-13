@@ -641,7 +641,7 @@ decisions. Source for the laws: the 2026-06-13 audit, `046_knowledge_base_refact
   (`SB_LIBRARY()` in C, importing the Odin package) and the host refuses it on the first entry
   that differs, so the header, the Odin binding and a hand-written third language are each checked
   rather than trusted. Handles and buffers belong to the script PHASE that made them
-  (`native.py::NativeOwner`: module code, or one instance) and are released with it at every
+  (`native_library.py::NativeOwner`: module code, or one instance) and are released with it at every
   site a behavior stops being used; `weakref.finalize` is the backstop, not the mechanism. A dead
   host stays dead until the file changes, the script resets, or it reloads, so a deterministic
   crash is not a host start per frame. The host sets `PR_SET_DUMPABLE=0` because a core-dump

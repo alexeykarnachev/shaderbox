@@ -15,6 +15,7 @@ import collections
 import contextlib
 import contextvars
 import ctypes
+import math
 import mmap
 import os
 import queue
@@ -45,6 +46,7 @@ DEFAULT_TIMEOUT = 2.0
 # over tens of milliseconds, and loading it mid-write crashes the loading host.
 SETTLE_SECONDS = 0.5
 _STDERR_TAIL = 12
+_STDERR_CHUNK = 65536
 _FILE_PREFIX = "sbnative-"
 _STALE_RE = re.compile(rf"^{_FILE_PREFIX}(\d+)-")
 _HOST_PATH = Path(native_host.__file__)
@@ -93,6 +95,12 @@ class NativeOwner:
         self.scripts_dir = scripts_dir
         self.timeout_cap = timeout_cap
         self.libraries: dict[tuple[str, float, bool], NativeLibrary] = {}
+        # A load that failed, with the library file's stamp at the time: `native()` raises it
+        # again without starting a host until the file changes, so a broken library named in
+        # `update` costs a stat per frame rather than a host start.
+        self.failures: dict[
+            tuple[str, float, bool], tuple[tuple[int, int] | None, NativeError]
+        ] = {}
         self.buffers: list[_Buffer] = []
         self.released = False
 
@@ -149,12 +157,33 @@ def native(
     if existing is not None:
         return existing
     path = _resolve(name, owner.scripts_dir)
+    stamp = _file_stamp(path)
+    failure = owner.failures.get(key)
+    if failure is not None and failure[0] == stamp:
+        raise NativeError(failure[1].kind, str(failure[1]))
     effective: float | None = None if debug else timeout
-    if effective is not None and owner.timeout_cap is not None:
-        effective = min(effective, owner.timeout_cap)
-    library = NativeLibrary(path, effective, debug)
+    if owner.timeout_cap is not None:
+        effective = (
+            owner.timeout_cap
+            if effective is None
+            else min(effective, owner.timeout_cap)
+        )
+    try:
+        library = NativeLibrary(path, effective, debug)
+    except NativeError as e:
+        owner.failures[key] = (stamp, e)
+        raise
+    owner.failures.pop(key, None)
     owner.libraries[key] = library
     return library
+
+
+def _file_stamp(path: Path) -> tuple[int, int] | None:
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return (stat.st_mtime_ns, stat.st_size)
 
 
 def _resolve(name: str, scripts_dir: Path | None) -> Path:
@@ -192,10 +221,8 @@ def _scratch_dir() -> Path:
 
 
 def _unlink(path: Path) -> None:
-    try:
+    with contextlib.suppress(OSError):
         path.unlink()
-    except OSError:
-        pass
 
 
 @dataclass
@@ -235,18 +262,16 @@ class _Resources:
 
 
 def _stop(host: _Host) -> None:
+    # Only stdin is closed here. The reader threads own stdout and stderr, and closing a
+    # stream a reader is blocked on waits for the pipe's EOF -- which never comes while a
+    # process the library started still holds it.
     if host.process.poll() is None:
         host.process.kill()
-    try:
+    with contextlib.suppress(subprocess.TimeoutExpired):
         host.process.wait(timeout=2.0)
-    except subprocess.TimeoutExpired:
-        pass
-    for stream in (host.process.stdin, host.process.stdout, host.process.stderr):
-        if stream is not None:
-            try:
-                stream.close()
-            except OSError:
-                pass
+    if host.process.stdin is not None:
+        with contextlib.suppress(OSError):
+            host.process.stdin.close()
 
 
 def _read_replies(stream: Any, replies: "queue.Queue[object]") -> None:
@@ -264,13 +289,21 @@ def _read_replies(stream: Any, replies: "queue.Queue[object]") -> None:
 
 
 def _read_stderr(stream: Any, label: str, tail: collections.deque[str]) -> None:
-    try:
-        for raw in stream:
-            line = raw.decode("utf-8", "replace").rstrip()
-            tail.append(line)
-            logger.info(f"[native {label}] {line}")
-    except (OSError, ValueError):
-        pass
+    # One log record per chunk read, not per line: the app's log sinks are slow enough per
+    # record that a chatty library would otherwise be throttled by its own stderr pipe.
+    pending = b""
+    with contextlib.suppress(OSError, ValueError):
+        while True:
+            chunk = stream.read1(_STDERR_CHUNK)
+            if not chunk:
+                break
+            *lines, pending = (pending + chunk).split(b"\n")
+            text = [line.decode("utf-8", "replace").rstrip() for line in lines]
+            tail.extend(text)
+            if text:
+                logger.info(f"[native {label}] " + "\n".join(text))
+    if pending:
+        tail.append(pending.decode("utf-8", "replace").rstrip())
 
 
 def _exit_description(code: int | None) -> str:
@@ -316,30 +349,32 @@ class NativeLibrary:
     # ---- lifecycle ---------------------------------------------------------------------
 
     def _stamp(self) -> tuple[int, int] | None:
-        try:
-            stat = self.path.stat()
-        except OSError:
-            return None
-        return (stat.st_mtime_ns, stat.st_size)
+        return _file_stamp(self.path)
 
     def _start(self) -> None:
         self._loaded_stamp = self._stamp()
         copy = _scratch_dir() / (
             f"{_FILE_PREFIX}{os.getpid()}-{uuid.uuid4().hex}{self.path.suffix}"
         )
+        self._resources.copies.add(copy)
         try:
             shutil.copyfile(self.path, copy)
         except OSError as e:
-            self._dead = NativeError("load", f"cannot copy {self.path}: {e}")
+            self._die(NativeError("load", f"cannot copy {self.path}: {e}"))
             return
-        self._resources.copies.add(copy)
         executable = getattr(sys, "_base_executable", sys.executable) or sys.executable
-        process = subprocess.Popen(
-            [executable, "-I", "-S", str(_HOST_PATH)],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
+        try:
+            process = subprocess.Popen(
+                [executable, "-I", "-S", str(_HOST_PATH)],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+        except OSError as e:
+            self._die(
+                NativeError("load", f"cannot start the library's host process: {e}")
+            )
+            return
         replies: queue.Queue[object] = queue.Queue()
         tail: collections.deque[str] = collections.deque(maxlen=_STDERR_TAIL)
         threading.Thread(
@@ -390,6 +425,7 @@ class NativeLibrary:
 
     def release(self) -> None:
         self._released = True
+        self._resources.stop_host()
         for buffer in list(self._buffers.values()):
             self.forget_buffer(buffer)
         self._finalizer()
@@ -399,6 +435,14 @@ class NativeLibrary:
             del self._buffers[id(buffer.array)]
         self._resources.files.discard(buffer.path)
         _unlink(buffer.path)
+        # The host maps a buffer on first use and keeps it; unmapping is what returns the
+        # pages, since an unlinked file's memory lives as long as any mapping of it. A host
+        # busy in another thread's call keeps the mapping until it stops instead.
+        if self._resources.host is not None and self._lock.acquire(timeout=0.1):
+            try:
+                self._request({"op": "unmap", "path": str(buffer.path)}, "unmapping")
+            finally:
+                self._lock.release()
 
     # ---- the protocol ------------------------------------------------------------------
 
@@ -412,10 +456,10 @@ class NativeLibrary:
             return None
         stdin = host.process.stdin
         assert stdin is not None
-        try:
+        # A host that is gone already has its EOF on the way; a stream closed under us by a
+        # release from another thread raises ValueError.
+        with contextlib.suppress(OSError, ValueError):
             native_host.write_frame(stdin, message)
-        except OSError:
-            pass  # the host is gone; its EOF is already on the way
         try:
             reply = host.replies.get(timeout=self.timeout)
         except queue.Empty:
@@ -477,7 +521,7 @@ class NativeLibrary:
             raise NativeError(
                 "load", f"{self.path.name}: this handle has been released"
             )
-        size = int(np.prod(dims)) * np.dtype(normalized).itemsize
+        size = math.prod(dims) * np.dtype(normalized).itemsize
         path = _scratch_dir() / f"{_FILE_PREFIX}{os.getpid()}-{uuid.uuid4().hex}.buf"
         fd = os.open(
             path, os.O_RDWR | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
@@ -534,6 +578,10 @@ class NativeLibrary:
                 f"running `{export}`",
             )
             if reply is None:
+                if self._released:
+                    raise NativeError(
+                        "load", f"{self.path.name}: this handle has been released"
+                    )
                 assert self._dead is not None
                 raise NativeError(self._dead.kind, str(self._dead))
         if not reply.get("ok"):
@@ -573,6 +621,12 @@ class NativeLibrary:
                 raise NativeError(
                     "failed", f"argument `{name}` contains a NUL character"
                 )
+            try:
+                value.encode("utf-8")
+            except UnicodeEncodeError as e:
+                raise NativeError(
+                    "failed", f"argument `{name}` is not valid UTF-8: {e}"
+                ) from e
             return [name, native_host.SB_STRING, value]
         if isinstance(value, np.ndarray):
             record = self._buffers.get(id(value))

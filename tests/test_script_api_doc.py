@@ -159,7 +159,7 @@ def test_api_doc_reaches_only_for_the_gl_free_half_of_the_package() -> None:
     assert seen == {
         "shaderbox.scripting.api_doc",
         "shaderbox.scripting.context",
-        "shaderbox.scripting.native",
+        "shaderbox.scripting.native_library",
         "shaderbox.scripting.native_host",
     }
     assert not [m for m in everything if "moderngl" in m or "OpenGL" in m]

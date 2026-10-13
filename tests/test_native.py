@@ -5,6 +5,8 @@ header. With no compiler every test here is SKIPPED, which is not a pass. Each t
 docstring names the break it must catch.
 """
 
+import contextlib
+import itertools
 import os
 import shutil
 import signal
@@ -19,12 +21,13 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from loguru import logger
 
 from shaderbox.constants import RESOURCES_DIR
 from shaderbox.project_session import ProjectSession
 from shaderbox.scripting import ScriptContext, ScriptEngine
 from shaderbox.scripting.behavior import PythonBehavior
-from shaderbox.scripting.native import (
+from shaderbox.scripting.native_library import (
     SETTLE_SECONDS,
     NativeError,
     NativeLibrary,
@@ -56,6 +59,19 @@ SB_EXPORT int32_t sb_load(sb_call *c) { return sb_fail(c, "no license file"); }
 #ifdef LOAD_HANG
 SB_EXPORT int32_t sb_load(sb_call *c) { (void)c; for (;;) {} }
 #endif
+#ifdef LOCKFILE
+#include <fcntl.h>
+#include <sys/file.h>
+SB_EXPORT int32_t sb_load(sb_call *c) {
+    int fd = open(LOCKFILE, O_CREAT | O_RDWR, 0600);
+    if (fd < 0 || flock(fd, LOCK_EX | LOCK_NB) != 0) return sb_fail(c, "device busy");
+    return 0;
+}
+#endif
+
+SB_EXPORT int32_t chatty(sb_call *c) { (void)c; printf("hello from printf\n"); return 0; }
+
+SB_EXPORT int32_t spawn_bg(sb_call *c) { (void)c; return system("sleep 3 &") == 0 ? 0 : 1; }
 
 SB_EXPORT int32_t fill(sb_call *c) {
     sb_arg *b = sb_buf(c, "buf");
@@ -90,7 +106,7 @@ SB_EXPORT int32_t hang(sb_call *c) { (void)c; for (;;) {} return 0; }
 SB_EXPORT int32_t silent(sb_call *c) { (void)c; return 3; }
 
 SB_EXPORT int32_t shout(sb_call *c) {
-    static const char frame[] = "\x0b\x00\x00\x00{\"ok\":true}";
+    static const char frame[] = "\x0b\x00\x00\x00{\"ok\":true}\n";
     fwrite(frame, 1, sizeof frame - 1, stdout);
     fflush(stdout);
     sb_ret_int(c, "k", 5);
@@ -130,7 +146,7 @@ def _build(
         ],
         check=True,
     )
-    os.replace(built, out)
+    built.replace(out)
     return out
 
 
@@ -168,10 +184,8 @@ def _buffer(owner: NativeOwner, lib: NativeLibrary, n: int = 8) -> np.ndarray:
 def _settle_reload(lib: NativeLibrary, export: str = "constant") -> dict[str, object]:
     """Drive calls across the settle window so a changed file reloads. The first call only
     notices the change; a dead handle still raises there."""
-    try:
+    with contextlib.suppress(NativeError):
         lib.call(export)
-    except NativeError:
-        pass
     time.sleep(SETTLE_SECONDS + 0.1)
     return lib.call(export)
 
@@ -364,6 +378,8 @@ def test_only_the_handles_own_buffers_pass(owner: NativeOwner, lib_dir: Path) ->
         lib.call("echo", s="a\0b")
     with pytest.raises(NativeError, match="int64"):
         lib.call("echo", n=2**64)
+    with pytest.raises(NativeError, match="UTF-8"):
+        lib.call("echo", s="\ud800")
     other.release()
 
 
@@ -397,11 +413,117 @@ def test_the_host_imports_only_the_stdlib(owner: NativeOwner) -> None:
     assert roots.isdisjoint({"shaderbox", "numpy", "moderngl", "glfw", "imgui_bundle"})
 
 
+def _captured_log() -> tuple[list[str], int]:
+    lines: list[str] = []
+    sink = logger.add(lambda message: lines.append(str(message)), format="{message}")
+    return lines, sink
+
+
+def _wait_for(lines: list[str], text: str) -> bool:
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline:
+        if any(text in line for line in lines):
+            return True
+        time.sleep(0.02)
+    return False
+
+
 def test_library_stdout_cannot_corrupt_the_protocol(owner: NativeOwner) -> None:
-    """Gate 15. The export writes a well-formed fake reply to stdout. Break: leave the
-    protocol on fd 1 -- the fake frame is read as the reply, or the call is `crashed` with
-    "protocol corrupted"."""
-    assert _open(owner).call("shout") == {"k": 5}
+    """Gate 15. The export writes a well-formed fake reply to stdout; it reaches the log, and
+    the real reply is what returns. Break: leave the protocol on fd 1 -- the fake frame is
+    read as the reply, or the call is `crashed` with "protocol corrupted"."""
+    lines, sink = _captured_log()
+    try:
+        assert _open(owner).call("shout") == {"k": 5}
+        assert _wait_for(lines, '{"ok":true}')
+    finally:
+        logger.remove(sink)
+
+
+def test_unflushed_printf_reaches_the_log(owner: NativeOwner) -> None:
+    """D12a. A library's printf is fully buffered on a pipe and the host dies by SIGKILL, so
+    the host flushes C stdio after every call. Break: drop that flush."""
+    lines, sink = _captured_log()
+    try:
+        _open(owner).call("chatty")
+        assert _wait_for(lines, "hello from printf")
+    finally:
+        logger.remove(sink)
+
+
+def test_released_buffers_are_unmapped_by_a_live_host(
+    owner: NativeOwner, lib_dir: Path
+) -> None:
+    """D3. A module-level handle outlives an instance's buffers; their pages return only when
+    the host unmaps them. Break: drop the unmap request -- the host keeps the mapping."""
+    lib = _open(owner)
+    instance = NativeOwner(lib_dir)
+    with owning(instance):
+        buf = lib.buffer(1024, "f4")
+    lib.call("fill", buf=buf)
+    assert lib.info()["maps"] == 1
+    instance.release()
+    assert lib.info()["maps"] == 0
+
+
+def test_a_failed_load_is_not_retried_until_the_file_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D6 at `native()`. A broken library named in `update` must not start a host per frame.
+    Break: drop the failure memo -- every call starts one."""
+    _build(tmp_path / "fix.so", ("-DLOAD_FAIL",))
+    started: list[Path] = []
+    real_start = NativeLibrary._start
+
+    def _counting(library: NativeLibrary) -> None:
+        started.append(library.path)
+        real_start(library)
+
+    monkeypatch.setattr(NativeLibrary, "_start", _counting)
+    owner = NativeOwner(tmp_path)
+    for _ in range(5):
+        with pytest.raises(NativeError, match="no license file"):
+            _open(owner)
+    assert len(started) == 1
+    _build(tmp_path / "fix.so")
+    assert _open(owner).call("constant") == {"k": 111}
+    assert len(started) == 2
+    owner.release()
+
+
+def test_stopping_a_host_does_not_wait_for_its_children(owner: NativeOwner) -> None:
+    """D12. A process the library started keeps the host's stderr open. Break: close the
+    readers' streams in `_stop` -- the close waits for that pipe's EOF, three seconds here."""
+    lib = _open(owner)
+    lib.call("spawn_bg")
+    start = time.monotonic()
+    owner.release()
+    assert time.monotonic() - start < 1.5
+
+
+def test_a_parent_killed_mid_call_leaves_no_host(lib_dir: Path) -> None:
+    """D12. A host busy in a call never reads its request pipe's EOF, so it watches for its
+    parent. Break: drop the watchdog -- the hung host outlives the parent."""
+    script = textwrap.dedent(
+        f"""
+        import os, signal, threading, time
+        from pathlib import Path
+        from shaderbox.scripting.native_library import NativeOwner, native, owning
+        with owning(NativeOwner(Path({str(lib_dir)!r}))):
+            lib = native("fix", timeout=30.0)
+        print(lib.pid, flush=True)
+        threading.Thread(target=lambda: lib.call("hang"), daemon=True).start()
+        time.sleep(0.3)
+        os.kill(os.getpid(), signal.SIGKILL)
+        """
+    )
+    run = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
+    assert run.returncode == -signal.SIGKILL
+    host_pid = int(run.stdout.strip())
+    deadline = time.monotonic() + 3.0
+    while not _pid_gone(host_pid) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert _pid_gone(host_pid)
 
 
 def test_sb_load_failure_and_hang_are_load_errors(tmp_path: Path) -> None:
@@ -454,12 +576,13 @@ def test_handles_memoize_and_refuse_outside_a_script(owner: NativeOwner) -> None
 
 
 def test_a_killed_parent_leaves_no_host(lib_dir: Path) -> None:
-    """Gate 16. Break: a host that ignores EOF on its request pipe outlives the parent."""
+    """Gate 16. An idle host whose parent dies exits, through either of two paths: EOF on its
+    request pipe, or the parent watchdog. Break: drop both -- the host outlives the parent."""
     script = textwrap.dedent(
         f"""
         import os, signal, sys
         from pathlib import Path
-        from shaderbox.scripting.native import NativeOwner, native, owning
+        from shaderbox.scripting.native_library import NativeOwner, native, owning
         with owning(NativeOwner(Path({str(lib_dir)!r}))):
             lib = native("fix")
         print(lib.pid, flush=True)
@@ -475,12 +598,32 @@ def test_a_killed_parent_leaves_no_host(lib_dir: Path) -> None:
     assert _pid_gone(host_pid)
 
 
-def test_debug_handles_have_no_deadline(owner: NativeOwner) -> None:
-    """Open question 2. Break: keep the deadline under debug."""
+def test_debug_handles_have_no_deadline(owner: NativeOwner, lib_dir: Path) -> None:
+    """Open question 2: a debug handle's call is not stopped, except under a probe's cap.
+    Break: keep the deadline under debug (the hang ends at 2 s); separately, let debug escape
+    the probe cap."""
     with owning(owner):
-        lib = native("fix", debug=True)
-    assert lib.timeout is None
-    assert lib.call("constant") == {"k": 111}
+        lib = native("fix", debug=True, timeout=0.2)
+    outcome: list[NativeError] = []
+
+    def _hang() -> None:
+        try:
+            lib.call("hang")
+        except NativeError as e:
+            outcome.append(e)
+
+    worker = threading.Thread(target=_hang)
+    worker.start()
+    worker.join(timeout=0.6)
+    assert worker.is_alive(), "a debug call was stopped by a deadline"
+    owner.release()
+    worker.join(timeout=3.0)
+    assert not worker.is_alive()
+
+    capped = NativeOwner(lib_dir, timeout_cap=0.25)
+    with owning(capped):
+        assert native("fix", debug=True).timeout == 0.25
+    capped.release()
 
 
 # ---- the engine: release sites, isolation, errors as script errors -------------------------
@@ -543,6 +686,14 @@ def _hosts(behavior: PythonBehavior) -> tuple[list[int], list[int]]:
     return module, instance
 
 
+def _instance_buf(behavior: PythonBehavior) -> np.ndarray:
+    instance = behavior._instance
+    assert instance is not None
+    buf = instance.__dict__["buf"]
+    assert isinstance(buf, np.ndarray)
+    return buf
+
+
 def _files(behavior: PythonBehavior) -> list[Path]:
     owners = [behavior._module_owner, behavior._instance_owner]
     return [b.path for o in owners if o is not None for b in o.buffers]
@@ -596,7 +747,16 @@ def test_reset_releases_the_instance_and_keeps_the_module(tmp_path: Path) -> Non
     engine.release_all()
 
 
-@pytest.mark.parametrize("site", ["drop_document", "release_all", "resolve_scripts"])
+@pytest.mark.parametrize(
+    "site",
+    [
+        "drop_document",
+        "release_all",
+        "resolve_scripts",
+        "script_deleted",
+        "scripts_dir_moved",
+    ],
+)
 def test_document_and_engine_teardown_release(tmp_path: Path, site: str) -> None:
     """Gate 8 (drop, engine release, project load). Break: drop the release at that site."""
     engine, behavior = _engine(tmp_path)
@@ -606,6 +766,11 @@ def test_document_and_engine_teardown_release(tmp_path: Path, site: str) -> None
         engine.drop_document("n0")
     elif site == "release_all":
         engine.release_all()
+    elif site == "script_deleted":
+        (tmp_path / "scripts" / "script.py").unlink()
+        engine.reload("n0", tmp_path / "scripts")
+    elif site == "scripts_dir_moved":
+        engine.reload("n0", tmp_path / "elsewhere")
     else:
         session = ProjectSession.__new__(ProjectSession)
         session._on_key_warning = lambda *args: None
@@ -631,7 +796,7 @@ def test_probes_release_their_fresh_script(
         behavior = original(document_id, native_timeout_cap)
         if behavior is not None:
             made.append(behavior)
-            made_pids.extend(sum(_hosts(behavior), []))
+            made_pids.extend(list(itertools.chain(*_hosts(behavior))))
             made_files.extend(_files(behavior))
         return behavior
 
@@ -644,7 +809,75 @@ def test_probes_release_their_fresh_script(
         engine.returned_value_types("n0")
     assert made
     _assert_released(made_pids, made_files)
-    assert all(not _pid_gone(pid) for pid in sum(_hosts(live), []))
+    assert all(not _pid_gone(pid) for pid in list(itertools.chain(*_hosts(live))))
+    engine.release_all()
+
+
+def test_an_export_releases_its_fresh_script(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Gate 8 (export). Break: drop the release in `_make_export_isolation`."""
+    engine, _ = _engine(tmp_path)
+    made: list[PythonBehavior] = []
+    original = engine.fresh_behavior_for
+
+    def _spy(
+        document_id: str, native_timeout_cap: float | None = None
+    ) -> PythonBehavior | None:
+        behavior = original(document_id, native_timeout_cap)
+        if behavior is not None:
+            made.append(behavior)
+        return behavior
+
+    monkeypatch.setattr(engine, "fresh_behavior_for", _spy)
+    session = ProjectSession.__new__(ProjectSession)
+    session.script_engine = engine
+    session.ui_documents = {
+        "n0": types.SimpleNamespace(document=types.SimpleNamespace(on_pre_render=None))
+    }
+    with session._make_export_isolation("n0")():
+        assert made
+        pids = list(itertools.chain(*_hosts(made[0])))
+        files = _files(made[0])
+    _assert_released(pids, files)
+    engine.release_all()
+
+
+def test_reset_revives_a_crashed_module_handle(tmp_path: Path) -> None:
+    """D6 through the engine. Break: drop `revive` from `PythonBehavior.reset`."""
+    engine, behavior = _engine(tmp_path)
+    module_lib = next(iter(behavior._module_owner.libraries.values()))
+    with pytest.raises(NativeError):
+        module_lib.call("boom")
+    engine.reset("n0")
+    assert module_lib.call("constant") == {"k": 111}
+    engine.release_all()
+
+
+def test_reload_stops_the_old_hosts_before_the_new_script_loads(tmp_path: Path) -> None:
+    """A library that holds something exclusive in `sb_load` loads again after a script edit.
+    Break: build the new behavior before releasing the old -- `device busy`."""
+    lock = tmp_path / "device.lock"
+    scripts = tmp_path / "scripts"
+    _build(scripts / "fix.so", (f'-DLOCKFILE="{lock}"',))
+    script = (
+        'from shaderbox.scripting import ScriptBehavior, native\nLIB = native("fix")\n'
+    )
+    script += (
+        "class Behavior(ScriptBehavior):\n    def update(self, context) -> dict:\n"
+    )
+    script += "        return {}\n"
+    (scripts / "script.py").write_text(script)
+    engine = ScriptEngine()
+    engine.reload("n0", scripts)
+    first = engine._documents["n0"].behavior
+    assert first is not None and first.error is None, first and first.error
+    (scripts / "script.py").write_text(script + "# edited\n")
+    os.utime(scripts / "script.py", (time.time() + 5, time.time() + 5))
+    engine.reload("n0", scripts)
+    second = engine._documents["n0"].behavior
+    assert second is not None and second is not first
+    assert second.error is None, second.error
     engine.release_all()
 
 
@@ -656,13 +889,13 @@ def test_a_fresh_script_cannot_touch_the_live_buffers(tmp_path: Path) -> None:
     engine.tick(
         "n0", document, types.SimpleNamespace(t=0.0, dt=0.0, frame=0, mouse=None)
     )
-    live_buf: np.ndarray = getattr(live._instance, "buf")
+    live_buf = _instance_buf(live)
     assert live_buf.tolist() == [1.0] * 4
     fresh = engine.fresh_behavior_for("n0")
     assert fresh is not None
     try:
         fresh.run(ScriptContext(t=0.0, dt=0.0, frame=41))
-        assert getattr(fresh._instance, "buf").tolist() == [42.0] * 4
+        assert _instance_buf(fresh).tolist() == [42.0] * 4
         assert live_buf.tolist() == [1.0] * 4
     finally:
         fresh.release()

@@ -537,3 +537,36 @@ closed in the text. Accepted and applied:
 Found at a site this feature edits and fixed separately before it: `_resolve_scripts`
 rebuilt the engine without `on_key_warning`, so after any project load script key warnings
 were dropped.
+
+Post-implementation review, two reviewers on the commit (correctness by probes; spec fidelity,
+conventions, and a library written from the header alone), both PARTIAL. Fixed in the
+follow-up commit:
+
+- `make check` passed over ruff errors in the new modules: `pre-commit run --all-files` checks
+  TRACKED files only, and they were not yet added. The Makefile now passes tracked plus
+  untracked-not-ignored files.
+- Stopping a host closed the readers' pipes, and a close waits for EOF, which a process the
+  library started can withhold indefinitely; `_stop` now closes stdin only.
+- A host killed mid-call outlived its parent: the deadline lives in the parent, and EOF is read
+  only between requests. The host now watches for its parent (D12).
+- The host never unmapped a released buffer, so a module-level handle kept every old buffer's
+  pages through resets; release now sends an `unmap` (D3).
+- A load failure at `native()` started a host on every call; it is memoized against the file's
+  stamp (D6).
+- A library's `printf` never reached the log: stdio buffers fully on a pipe and the host dies
+  by SIGKILL; the host flushes C stdio after every call (D12a).
+- The header's `sb_ret_str` rule said "until your export returns", while the host reads the
+  string after; a stack string came back as garbage. The header and the Odin binding now say
+  the string must outlive the call.
+- `debug=True` escaped the completion probe's cap; a reload built the new script before
+  releasing the old, so a library holding something exclusive in `sb_load` failed every other
+  edit; a lone surrogate in a string killed the host; stderr was logged per line, which the
+  app's sinks throttled into timeouts; `scripts/dogfood/harness.py` never released its fresh
+  behaviors.
+- The module `shaderbox.scripting.native` was shadowed by the re-exported `native()` function;
+  it is `native_library.py`.
+- The header now says where a library goes, how dtypes map, the default deadline and where
+  output lands -- each a gap a first-time author hit.
+- Gates added for export release, `_drop_script`, a moved scripts dir, reset's revive, the log
+  line of gate 15, unmapping, the failure memo, a library's child holding stderr, a parent killed
+  mid-call, and debug under the probe cap. Each was broken and seen red.

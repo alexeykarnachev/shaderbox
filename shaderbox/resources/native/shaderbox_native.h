@@ -19,6 +19,23 @@
  *
  * and call them from script.py with `native("mylib").call("step", vel=..., dt=...)`.
  *
+ * Where it goes: build mylib.so (or libmylib.so) on Linux, mylib.dll on Windows, or
+ * libmylib.dylib on macOS, and put it in the document's scripts/ folder, next to script.py.
+ * `native("mylib")` finds it there; a path also works. Rebuild it while the document plays and
+ * ShaderBox picks up the new code once the file stops changing.
+ *
+ * Buffers: `lib.buffer(shape, dtype)` in the script allocates one. Its dtype arrives as
+ *   "f4" -> SB_F32   "f8" -> SB_F64   "i4" -> SB_I32   "u4" -> SB_U32   "i8" -> SB_I64
+ *   "u1" -> SB_U8
+ * and its shape as sb_arg.ndim and sb_arg.shape.
+ *
+ * Output: write diagnostics to stderr; they reach ShaderBox's log, and the last lines are
+ * quoted when the library crashes. stdout is redirected to the same place.
+ *
+ * Deadline: a call that runs longer than 2 s (`native("mylib", timeout=...)` changes it) is
+ * stopped and reported as a timeout. `native("mylib", debug=True)` removes the deadline and
+ * lets a debugger attach to the process `lib.pid` names.
+ *
  * Rules:
  *   - Every pointer in an sb_call (names, strings, buffer data) is valid for the duration of
  *     the call only. A buffer's CONTENTS persist across calls; its address does not across a
@@ -26,7 +43,8 @@
  *   - Your library's globals do not survive a rebuild: ShaderBox restarts the process that
  *     hosts it. State that must outlive a rebuild belongs in buffers.
  *   - Return 0 for success. Anything else is a failure; set its message with sb_fail.
- *   - A result string passed to sb_ret_str must stay valid until your export returns.
+ *   - A result string passed to sb_ret_str is read AFTER your export returns, so it must
+ *     outlive the call: a string literal or memory your library owns, never a local array.
  *   - The optional export `int32_t sb_load(sb_call *c)` runs after every load, with
  *     nargs = 0 and args = NULL.
  *

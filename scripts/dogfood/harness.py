@@ -648,13 +648,16 @@ class DogfoodHarness:
             for t in times:
                 behavior = engine.fresh_behavior_for(target)
                 if behavior is not None:
-                    for frame in range(round(t * fps) + 1):
-                        engine.tick_export(
-                            target,
-                            document,
-                            ScriptContext(t=frame * dt, dt=dt, frame=frame),
-                            behavior,
-                        )
+                    try:
+                        for frame in range(round(t * fps) + 1):
+                            engine.tick_export(
+                                target,
+                                document,
+                                ScriptContext(t=frame * dt, dt=dt, frame=frame),
+                                behavior,
+                            )
+                    finally:
+                        behavior.release()
                 document.render(u_time=t)
                 cells.append(_strip_cell(document.render_pass.canvas.texture, t, size))
         finally:

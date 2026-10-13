@@ -1,6 +1,6 @@
 """The child process a native library runs in (feature 109).
 
-Started by `native.py` as `python -I -S <this file>`, by PATH, so no package `__init__` runs
+Started by `native_library.py` as `python -I -S <this file>`, by PATH, so no package `__init__` runs
 and nothing from site-packages loads: the host imports the standard library and nothing
 else, and a gate asserts that. It never touches GL.
 
@@ -10,16 +10,20 @@ the library the host points fd 1 at stderr, so a library's `printf` lands in the
 cannot corrupt a reply.
 
 The ABI lives here and only here: the ctypes structures below are what the host builds, and
-`LAYOUT` is what a library's `sb_layout_*` table must equal. `native.py` imports this module
+`LAYOUT` is what a library's `sb_layout_*` table must equal. `native_library.py` imports this module
 for those definitions, which is safe because it is stdlib-only.
 """
 
+import contextlib
 import ctypes
 import json
 import mmap
 import os
 import struct
 import sys
+import threading
+import time
+from pathlib import Path
 from typing import IO, Any
 
 SB_ABI = 1
@@ -112,6 +116,10 @@ _PR_SET_DUMPABLE = 4
 _PR_SET_PTRACER = 0x59616D61
 _PR_SET_PTRACER_ANY = ctypes.c_ulong(-1).value
 
+# The process's C runtime, for flushing stdio after each call. None on Windows, where a
+# library may carry its own runtime and this one could not reach its buffers.
+_LIBC: ctypes.CDLL | None = None if sys.platform == "win32" else ctypes.CDLL(None)
+
 
 def read_frame(stream: IO[bytes]) -> Any:
     """One length-prefixed JSON frame, or None at EOF."""
@@ -139,9 +147,9 @@ def _protect(debug: bool) -> None:
             # process that is not our ancestor.
             libc.prctl(_PR_SET_PTRACER, ctypes.c_ulong(_PR_SET_PTRACER_ANY), 0, 0, 0)
         else:
-            # A crash then skips the core-dump handler (apport, systemd-coredump), which held
-            # the dying process for about a second -- longer than a short deadline, so the
-            # parent read a crash as a timeout.
+            # A crash then skips the core-dump handler (apport, systemd-coredump), which can
+            # hold the dying process for about a second -- longer than a short deadline, so
+            # the parent would read the crash as a timeout.
             libc.prctl(_PR_SET_DUMPABLE, 0, 0, 0, 0)
     elif sys.platform == "win32":
         sem_failcriticalerrors = 0x0001
@@ -169,7 +177,7 @@ def _redirect_stdout() -> IO[bytes]:
 class _Host:
     def __init__(self) -> None:
         self.lib: ctypes.CDLL | None = None
-        self.maps: dict[str, tuple[mmap.mmap, int]] = {}
+        self.maps: dict[str, tuple[mmap.mmap, ctypes.c_char, int]] = {}
         self.error = ctypes.create_string_buffer(ERROR_CAP)
         self.results = (SbArg * RESULTS_CAP)()
 
@@ -181,10 +189,8 @@ class _Host:
         if sys.platform != "win32":
             # The copy is ours alone; unlinking it now means a host killed later leaves
             # nothing behind. The parent deletes it too, for a host that dies in dlopen.
-            try:
-                os.unlink(path)
-            except OSError:
-                pass
+            with contextlib.suppress(OSError):
+                Path(path).unlink()
         refusal = _verify(lib)
         if refusal is not None:
             return {"ok": False, "kind": "load", "message": refusal}
@@ -203,15 +209,27 @@ class _Host:
     def _map(self, path: str, size: int) -> int:
         cached = self.maps.get(path)
         if cached is not None and len(cached[0]) == size:
-            return cached[1]
+            return cached[2]
+        self.unmap(path)
         fd = os.open(path, os.O_RDWR | getattr(os, "O_BINARY", 0))
         try:
             mapping = mmap.mmap(fd, size)
         finally:
             os.close(fd)
-        address = ctypes.addressof(ctypes.c_char.from_buffer(mapping))
-        self.maps[path] = (mapping, address)
+        anchor = ctypes.c_char.from_buffer(mapping)
+        address = ctypes.addressof(anchor)
+        self.maps[path] = (mapping, anchor, address)
         return address
+
+    def unmap(self, path: str) -> None:
+        cached = self.maps.pop(path, None)
+        if cached is None:
+            return
+        mapping = cached[0]
+        # The ctypes view in the entry exports the mmap's buffer; dropping the entry frees it,
+        # and only then can the map close.
+        del cached
+        mapping.close()
 
     def _invoke(
         self, export: str, args: list[list[Any]], no_args: bool = False
@@ -263,6 +281,7 @@ class _Host:
         call.results_cap = RESULTS_CAP
 
         rc = function(ctypes.byref(call))
+        _flush_stdio()
 
         results: dict[str, Any] = {}
         for i in range(max(0, min(call.nresults, RESULTS_CAP))):
@@ -283,9 +302,41 @@ class _Host:
         op = request["op"]
         if op == "call":
             return self._invoke(request["export"], request["args"])
+        if op == "unmap":
+            self.unmap(request["path"])
+            return {"ok": True}
         if op == "info":
-            return {"ok": True, "pid": os.getpid(), "modules": sorted(sys.modules)}
+            return {
+                "ok": True,
+                "pid": os.getpid(),
+                "modules": sorted(sys.modules),
+                "maps": len(self.maps),
+            }
         return {"ok": False, "kind": "load", "message": f"unknown op {op!r}"}
+
+
+def _flush_stdio() -> None:
+    # C stdio buffers fully when fd 1 is a pipe, and a host is stopped with SIGKILL, so a
+    # library's printf would otherwise never reach the log.
+    if _LIBC is not None:
+        _LIBC.fflush(None)
+
+
+def _watch_parent() -> None:
+    # The parent's deadline cannot stop a host whose parent is gone, and a host busy in a
+    # call never reads the EOF on its request pipe; so the host watches for the parent
+    # itself and exits.
+    if sys.platform == "win32":
+        kernel32 = ctypes.WinDLL("kernel32")
+        synchronize = 0x00100000
+        handle = kernel32.OpenProcess(synchronize, False, os.getppid())
+        if handle:
+            kernel32.WaitForSingleObject(handle, 0xFFFFFFFF)
+        os._exit(0)
+    parent = os.getppid()
+    while os.getppid() == parent:
+        time.sleep(0.25)
+    os._exit(0)
 
 
 def _has_export(lib: ctypes.CDLL, name: str) -> bool:
@@ -342,8 +393,11 @@ def main() -> None:
     if first is None:
         return
     _protect(bool(first.get("debug")))
+    threading.Thread(target=_watch_parent, daemon=True).start()
     host = _Host()
-    write_frame(protocol, host.load(first["path"]))
+    reply = host.load(first["path"])
+    _flush_stdio()
+    write_frame(protocol, reply)
     if host.lib is None:
         return
     while True:

@@ -21,7 +21,7 @@ from shaderbox.scripting.engine import (
 )
 from shaderbox.scripting.errors import ScriptError
 from shaderbox.scripting.keys import StoppedKey
-from shaderbox.scripting.native import NativeError, native
+from shaderbox.scripting.native_library import NativeError, native
 
 __all__ = [
     "EXPORT_MOUSE",

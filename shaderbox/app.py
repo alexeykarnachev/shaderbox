@@ -112,7 +112,7 @@ from shaderbox.render_plan import (
     ThrottleState,
 )
 from shaderbox.scripting import EXPORT_MOUSE, MouseState
-from shaderbox.scripting.native import sweep_stale_files
+from shaderbox.scripting.native_library import sweep_stale_files
 from shaderbox.shader_errors import ShaderError, next_error_line
 from shaderbox.shader_lib import ShaderLibIndex
 from shaderbox.shader_lib.favorites import ShaderLibFavoritesStore

@@ -183,7 +183,8 @@ result :: proc(c: ^Call, name: cstring, kind: i32) -> ^Arg {
 }
 
 // Named results, returned to the script as a dict. Each returns 0, or 1 when the result
-// slots are full. A string result must stay valid until the export returns.
+// slots are full. A string result is read AFTER the export returns, so it must outlive the
+// call: a literal or memory the library owns, never a local buffer.
 ret_num :: proc(c: ^Call, name: cstring, value: f64) -> i32 {
 	r := result(c, name, NUMBER)
 	if r == nil {

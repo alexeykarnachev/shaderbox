@@ -21,8 +21,12 @@ run-bundle:
 # Delegates to pre-commit (ruff fix, ruff format, pyright) — the single source of
 # truth for the check config is `.pre-commit-config.yaml`. Both ruff and pyright
 # block on failure.
+#
+# `--all-files` means every TRACKED file, so a module not yet `git add`ed escaped ruff entirely
+# and the gate went green over it. The file list is tracked plus untracked-not-ignored, so a
+# new file is checked from the moment it exists.
 check:
-	uv run pre-commit run --all-files
+	uv run pre-commit run --files $$(git ls-files --cached --others --exclude-standard | while read -r f; do [ -e "$$f" ] && echo "$$f"; done)
 
 # Unit tests. Pure logic (resolve_dims) + GL-backed render glue (render_for,
 # render_media) against a headless standalone moderngl context; app-fixture

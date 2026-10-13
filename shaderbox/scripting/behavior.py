@@ -26,7 +26,7 @@ import moderngl
 
 from shaderbox.scripting.context import MouseState, ScriptContext
 from shaderbox.scripting.errors import ScriptError
-from shaderbox.scripting.native import NativeError, NativeOwner, native, owning
+from shaderbox.scripting.native_library import NativeError, NativeOwner, native, owning
 from shaderbox.uniform_coerce import (
     coerce_uniform_value,
     gl_type_label,

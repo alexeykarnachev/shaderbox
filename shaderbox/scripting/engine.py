@@ -460,9 +460,11 @@ class ScriptEngine:
             return
         if scripts.mtime == mtime:
             return
-        behavior = PythonBehavior(_SCRIPT_FILE, body, scripts_dir)
+        # The old script's native hosts stop BEFORE the new one's module code runs, so a
+        # library that holds something exclusive in `sb_load` can be loaded again.
         if scripts.behavior is not None:
             scripts.behavior.release()
+        behavior = PythonBehavior(_SCRIPT_FILE, body, scripts_dir)
         scripts.behavior = behavior
         scripts.mtime = mtime
         scripts.source = body
