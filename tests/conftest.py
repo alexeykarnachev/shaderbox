@@ -184,6 +184,10 @@ def app(
     for field, value in _app_baseline.items():
         setattr(a, field, copy.copy(value))
     a._init(seed_tmp_project(tmp_path), persist_pointer=False)
+    # The editor-driving tests type vim sequences; the app's own default is the standard
+    # keymap, which a test that wants it sets explicitly.
+    a.app_state.editor_settings.keymap = "vim"
+    a.apply_editor_settings()
     # No main loop in a test: run every marshalled bridge op INLINE (already on the GL thread).
     a.copilot.bridge.run_on_main = lambda fn, timeout=None, defer=False: fn()
     # A turn opens a tool batch before its first edit; a test that calls an edit tool directly

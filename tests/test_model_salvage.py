@@ -19,7 +19,7 @@ from pydantic import BaseModel
 
 from shaderbox.integrations import IntegrationsStore
 from shaderbox.model_salvage import drop_invalid, drop_unknown, load_model
-from shaderbox.ui_models import UIAppState
+from shaderbox.ui_models import EditorSettings, UIAppState
 
 _POPULATED: dict[str, Any] = {
     "current_document_id": "abc-123",
@@ -170,7 +170,7 @@ def test_an_unknown_keymap_resets_only_the_keymap(tmp_path: Path) -> None:
             },
         )
     )
-    assert state.editor_settings.keymap == "vim"
+    assert state.editor_settings.keymap == EditorSettings().keymap
     assert state.editor_settings.font_size == 22
     assert state.editor_settings.tab_size == 8
     assert state.current_document_id == "abc-123"

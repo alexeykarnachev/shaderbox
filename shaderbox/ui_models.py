@@ -235,7 +235,7 @@ class EditorSettings(BaseModel):
     # widget, because a hand-edited or half-written file reaches the loader without passing
     # any widget — and a per-key salvage turns an out-of-range value into "that one setting
     # resets", instead of a value the UI could never have produced.
-    keymap: EditorKeymap = "vim"
+    keymap: EditorKeymap = "standard"
     # The syntax theme, by the stem of a file in `resources/themes`. A name with no file
     # falls back to the default at load rather than leaving the editor unpainted -- a
     # theme deleted from under a saved setting must not take the app down.
