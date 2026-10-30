@@ -27,14 +27,16 @@ feature; brief points at the superseder).
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
 <!-- As of 2026-10-30. -->
+**Shipped: v0.30.0 to itch.io (both channels) and GitHub**, the first itch build since v0.25.0
+and the first with a complete Windows bundle. Projects saved by v0.27.0 load unchanged.
+
 **Next: a showcase example for 109 -- a multi-fluid Navier-Stokes simulation in a native
 library.** Several fluids or gases with different properties (density, viscosity, diffusion,
 buoyancy) that push on and mix with each other. The physics is designed with the maintainer at
 the start of that session, and its first step is a spec.
 
-**Windows builds and runs:** `make gates` and `build.sh` are green on the Windows box, both
-vendored libraries ship a `.dll` beside the `.so` (BUILDING.md), and 109's Windows paths now
-run, with buffers as named sections there (109 spec D3).
+**Install is one step on both platforms:** a fresh-machine run (no uv, no Python, no -dev
+packages) unzips and starts from `run.bat` / `./run.sh` (BUILDING.md).
 
 **How the field reaches the screen is settled (110):** the solver writes a 109 buffer, the
 script returns it for a `sampler2D` (`{"<pass>": {"u_density": buf}}`, float32 or uint8,
