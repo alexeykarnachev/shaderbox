@@ -16,16 +16,26 @@ fail() {
     exit 1
 }
 
-# ShaderBox needs system OpenGL + GLFW libs (the pip glfw wheel does not bundle them).
-libs="$(ldconfig -p 2>/dev/null || true)"
-if ! grep -q "libGL.so" <<<"$libs" || ! grep -q "libglfw" <<<"$libs"; then
-    echo "WARNING: system OpenGL / GLFW libraries (libGL / libglfw) not found."
-    echo "  If launch fails with a GL error, install them:"
-    echo "  Debian/Ubuntu: sudo apt install libgl1 libglfw3"
-    echo "  Fedora:        sudo dnf install mesa-libGL glfw"
-    echo "  Arch:          sudo pacman -S libglvnd glfw"
+# The only system library ShaderBox needs is OpenGL; the glfw wheel carries its own libglfw.
+if ! ldconfig -p 2>/dev/null | grep -q "libGL.so.1"; then
+    echo "WARNING: the system OpenGL library (libGL.so.1) was not found. Install it:"
+    echo "  Debian/Ubuntu: sudo apt install libgl1"
+    echo "  Fedora:        sudo dnf install mesa-libGL"
+    echo "  Arch:          sudo pacman -S libglvnd"
     echo
 fi
+# glfw and PyOpenGL must agree on one window system, and they decide differently: PyOpenGL
+# picks EGL whenever WAYLAND_DISPLAY is set, glfw by XDG_SESSION_TYPE. Both are pinned to
+# X11, which a Wayland desktop serves through XWayland.
+if [ -n "${DISPLAY:-}" ]; then
+    export PYGLFW_LIBRARY_VARIANT="${PYGLFW_LIBRARY_VARIANT:-x11}"
+    export PYOPENGL_PLATFORM="${PYOPENGL_PLATFORM:-glx}"
+fi
+# The shaders are GLSL 4.60. Mesa's software renderer (VMs, WSL, GPUs without a driver)
+# reports 4.5 and refuses them; these overrides let it compile them. A driver that
+# already offers 4.6 is unaffected, and non-Mesa drivers ignore them.
+export MESA_GL_VERSION_OVERRIDE="${MESA_GL_VERSION_OVERRIDE:-4.6}"
+export MESA_GLSL_VERSION_OVERRIDE="${MESA_GLSL_VERSION_OVERRIDE:-460}"
 
 # Check if uv is installed
 if ! command -v uv &> /dev/null; then

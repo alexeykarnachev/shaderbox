@@ -5,46 +5,37 @@ ShaderBox reads its uniforms and auto-builds the sliders, color pickers, and inp
 drive them. It hot-reloads as you type, an optional AI copilot edits your shaders in
 chat, and it exports to images, video, Telegram sticker sets, or YouTube.
 
-## Running it
+## Install and run
 
-### Before you start — what the first run does
+1. **Unzip the download.** Windows: right-click the zip, then **Extract All**. Linux: use your
+   file manager's **Extract**, or `unzip shaderbox-linux.zip` in a terminal (no `unzip`?
+   `python3 -m zipfile -e shaderbox-linux.zip .` does the same).
+2. **Start it** from the unzipped folder:
+   - Windows: double-click **run.bat**.
+   - Linux: open a terminal in the folder and run `./run.sh`.
 
-The **first** launch sets up a private Python environment for ShaderBox:
+That is all. The first start downloads what ShaderBox needs (about 500 MB, a few minutes, once)
+and then opens the app. It needs an internet connection and about 1 GB of free disk. Later
+starts take a few seconds.
 
-- It installs `uv` (a Python tool, from astral.sh) if you don't already have it.
-- It downloads about **500 MB** of dependencies, including a Python runtime.
-- This needs an **internet connection** and roughly **1 GB of free disk**.
-- It happens **once**. Later launches start in a couple of seconds.
+A console window shows the progress and stays open while ShaderBox runs: that is normal, and
+closing it closes the app.
 
-Nothing is installed system-wide — everything lands in a local `.venv` folder next to
-this file. Delete the folder and it's gone.
+**Windows** may show a blue **"Windows protected your PC"** screen the first time. That is
+SmartScreen reacting to an unsigned script; click **More info**, then **Run anyway**.
 
-### Windows
+**Linux** needs the system OpenGL library, which desktops normally have. If the launcher says
+it is missing: `sudo apt install libgl1` (Debian/Ubuntu), `sudo dnf install mesa-libGL`
+(Fedora) or `sudo pacman -S libglvnd` (Arch). If `./run.sh` says "Permission denied", run
+`bash run.sh`.
 
-Double-click **run.bat**.
+### What gets installed where
 
-The first time, Windows may show a blue **"Windows protected your PC"** screen — this is
-SmartScreen reacting to an unsigned script, not a virus warning. Click **More info**, then
-**Run anyway**.
+- ShaderBox's libraries: a `.venv` folder inside the unzipped folder.
+- `uv`, the tool that installs them: `~/.local/bin` (Windows: `%USERPROFILE%\.local\bin`),
+  only if you don't have it already. It also keeps a Python runtime in its own data folder.
 
-### Linux
-
-Open a terminal in this folder and run:
-
-```
-./run.sh
-```
-
-(Double-clicking from a file manager often won't work — it may open the script in a text
-editor or refuse for lack of the execute bit. If `./run.sh` says "Permission denied", run
-`bash run.sh` instead.)
-
-ShaderBox needs the system OpenGL + GLFW libraries. If launch fails with a GL error,
-install them:
-
-- Debian/Ubuntu: `sudo apt install libgl1 libglfw3`
-- Fedora: `sudo dnf install mesa-libGL glfw`
-- Arch: `sudo pacman -S libglvnd glfw`
+To uninstall, delete the unzipped folder (and `uv`, if you don't use it otherwise).
 
 ### If something goes wrong
 
@@ -110,3 +101,6 @@ If the launcher doesn't work, set it up yourself:
 - Install uv: https://docs.astral.sh/uv/
 - `uv sync --no-dev`
 - `uv run --no-dev python ./shaderbox/ui.py`
+
+On Linux, `run.sh` also sets a few graphics variables before that last command; copy them
+from it if you start ShaderBox yourself.

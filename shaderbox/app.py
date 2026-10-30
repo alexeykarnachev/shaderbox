@@ -158,6 +158,27 @@ class ModalId(StrEnum):
     CONFIRM = "confirm"
 
 
+class _GlfwLoader:
+    """moderngl's GL function loader, resolved through glfw's current context.
+
+    moderngl's own loader opens the unversioned `libEGL.so`/`libGL.so`, which most Linux
+    systems carry only with the -dev packages; glfw already holds the window system's
+    library, whichever it is, and resolves core functions too.
+    """
+
+    def load_opengl_function(self, name: str) -> int:
+        return glfw.get_proc_address(name) or 0
+
+    def __enter__(self) -> None:
+        pass
+
+    def __exit__(self, *args: object) -> None:
+        pass
+
+    def release(self) -> None:
+        pass
+
+
 def _create_dir_if_needed(path: Path | str) -> Path:
     path = Path(path)
     if not path.exists():
@@ -259,7 +280,7 @@ class App:
         # moderngl's process-wide default context is bound once, to whatever GL context is
         # current at the first get_context(); this makes it THIS window's, whatever context the
         # process (a test's standalone fixture) had current before.
-        moderngl.init_context()
+        moderngl.init_context(loader=_GlfwLoader())
 
         # moderngl defaults to gc_mode=None, which never frees dropped GL objects: 50 script
         # edits leaked 103 textures / ~206 MiB. "auto" leaves a bounded residual because the
