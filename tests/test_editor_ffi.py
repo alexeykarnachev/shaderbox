@@ -1,4 +1,4 @@
-"""Feature 067: the libeditor binding, the input translation, the drain gates,
+"""The libeditor binding, the input translation, the drain gates,
 and the redraw-gate domain. All headless — the .so needs no GL."""
 
 import ast
@@ -94,9 +94,9 @@ def test_vim_edit_undo_redo() -> None:
 
 
 def test_the_consumed_ctrl_chord_domain_is_eleven() -> None:
-    # The collision domain decision 5 builds on. Editor 4b110f0 grew it from two to eight
-    # (Ctrl+R redo + the six scroll motions in normal, Ctrl+N in insert); 5aa51cd added
-    # Ctrl+V, blockwise visual; d1ef029 added Ctrl+O and Ctrl+I, the jumplist. Every OTHER
+    # The collision domain. The editor grew it from two to eight
+    # (Ctrl+R redo + the six scroll motions in normal, Ctrl+N in insert); then
+    # Ctrl+V, blockwise visual, and Ctrl+O and Ctrl+I, the jumplist. Every OTHER
     # Ctrl chord falls through as False — the registry's food. The host must NOT claim
     # Ctrl+V for paste: `_handle_clipboard` runs before ed_key, so claiming it there leaves
     # blockwise unreachable.
@@ -282,8 +282,8 @@ def test_unfocused_editor_receives_nothing() -> None:
 
 
 def test_a_reserved_chord_the_editor_consumes_is_recorded_in_registry_space() -> None:
-    # Ctrl+R redoes and is recorded, but after 069 W-E no command owns Ctrl+R (OPEN_SCRIPT is
-    # Alt+R), so this half no longer exercises the double-dispatch guard.
+    # Ctrl+R redoes and is recorded, but no command owns Ctrl+R (OPEN_SCRIPT is
+    # Alt+R), so this half does not exercise the double-dispatch guard.
     e = _editor()
     e.feed("dd")  # something to redo after undo
     e.undo()
@@ -297,7 +297,7 @@ def test_a_reserved_chord_the_editor_consumes_is_recorded_in_registry_space() ->
 
 
 def test_insert_ctrl_w_strikes_the_command_that_owns_the_chord() -> None:
-    # The live instance of the double-dispatch guard (067 D15): insert-mode Ctrl+W is the
+    # The live instance of the double-dispatch guard: insert-mode Ctrl+W is the
     # host's word-delete AND Ctrl+W is CLOSE_CODE_TAB's chord, so the consumed-set entry is
     # the only thing stopping one press from both deleting a word and closing the tab. The
     # chord is READ FROM THE SPEC, so a future move breaks this test instead of passing
@@ -353,7 +353,7 @@ def test_popup_open_blocks_the_drain() -> None:
 
 def test_esc_never_defocuses_the_editor() -> None:
     # Esc is vim's modal key: the editor owns it UNCONDITIONALLY while focused
-    # (maintainer decision, 067 manual pass) — idle-NORMAL Esc included, and the
+    # — idle-NORMAL Esc included, and the
     # queue keeps flowing: [Esc, d, d] still deletes a line.
     e = _editor()
     app = _drain_app(e)
@@ -441,9 +441,8 @@ def test_ctrl_f_b_move_cursor_and_e_y_request_view_scroll() -> None:
 
 
 def test_alt_o_reaches_the_app_focused_or_not() -> None:
-    # 069 W-E's rule with the chord 089 moved it to. Ctrl+O was in neither keymap until
-    # editor d1ef029 gave it to the jumplist, which is why OPEN_PROJECTS is on Alt+O now;
-    # what the rule demands of the new chord is that a FOCUSED editor leave it alone, since
+    # Ctrl+O belongs to the editor's jumplist, which is why OPEN_PROJECTS is on Alt+O;
+    # the rule for such a chord is that a FOCUSED editor leaves it alone, since
     # the unfocused case is the drain dropping the queue and says nothing about ownership.
     # The editor binds no Alt letter at all, so the modal is reachable from inside a buffer.
     alt_o = translate_key(glfw.KEY_O, glfw.PRESS, glfw.MOD_ALT)
@@ -610,7 +609,7 @@ def test_render_state_reacts_to_every_editor_dimension() -> None:
     assert should_redraw(base, _state(e, marker_fingerprint=((3, "boom"),)))
     assert should_redraw(base, _state(e, settings_fingerprint=(True,)))
     assert should_redraw(base, _state(e, focused=False))
-    # The host's own colour feed (105 D3). This is the ONE dimension no editor mutation can
+    # The host's own colour feed. This is the ONE dimension no editor mutation can
     # stand in for: the panel is a cached texture, and a span or class set pushed while the
     # buffer stands still moves nothing the editor reports. Every other case above types or
     # clicks; this one changes nothing about the editor at all, which is exactly the regime
@@ -627,7 +626,7 @@ def test_render_state_distinguishes_two_fresh_editors() -> None:
     sa = _state(a, identity=Path("/a.glsl"))
     sb = _state(b, identity=Path("/b.glsl"))
     assert should_redraw(sa, sb)
-    # The falsifier: without identity the two states really would collide.
+    # Without identity the two states would collide.
     assert sa[1:] == sb[1:]
     a.close()
     b.close()
@@ -642,7 +641,7 @@ def test_scroll_moves_the_state() -> None:
     e.close()
 
 
-# --- host-driven completion (feature 067, editor commit f57e8d0) --------------
+# --- host-driven completion --------------
 
 
 def test_completion_flow_open_navigate_accept() -> None:
@@ -703,7 +702,7 @@ def test_completion_state_moves_the_redraw_tuple() -> None:
     e.close()
 
 
-# --- register-clipboard unification (editor commit 4befeaf) -------------------
+# --- register-clipboard unification -------------------
 
 
 def test_yank_reaches_the_system_clipboard(_fake_clipboard: dict[str, str]) -> None:
@@ -757,11 +756,10 @@ def test_consumed_chord_suppresses_the_registry_spec() -> None:
 def test_a_consumed_chord_suppresses_the_projects_modal() -> None:
     """The suppression OPEN_PROJECTS would need if the editor ever claimed its chord.
 
-    At 089 it does not: the chord moved to Alt+O precisely because the editor took Ctrl+O
+    It does not today: the chord moved to Alt+O precisely because the editor took Ctrl+O
     for the jumplist, and the editor binds no Alt letter. So this drives `spec_eligible`
     over whatever chord the table holds rather than a typed one, and stays the guard for
-    the next keymap that grows into it. Falsifier: drop the `editor_consumed_chords`
-    clause from `spec_eligible` and the first assertion returns True.
+    the next keymap that grows into it.
     """
     spec = SPEC_BY_ID[CommandId.OPEN_PROJECTS]
     app = SimpleNamespace(
@@ -811,7 +809,7 @@ def test_build_vertices_expands_quads_and_flags_glyphs() -> None:
     e.close()
 
 
-# --- the sweep round's added coverage (067 review workflow) -------------------
+# --- the sweep round's added coverage -------------------
 
 
 def test_cross_tab_yank_pastes_via_the_clipboard_bridge(
@@ -1002,7 +1000,7 @@ def _upstream_sig(path: Path) -> dict[str, tuple[object, list[object]]]:
     namespace: dict[str, Any] = {"ctypes": ctypes}
     # EVERY struct the table names, not just Prim: a signature mentioning a struct this
     # namespace lacks raises NameError out of the eval below rather than failing as a
-    # mismatch, which is what the `05f90ac` re-vendor's `Span` did.
+    # mismatch.
     struct_defs = [
         n
         for n in tree.body
@@ -1054,7 +1052,7 @@ def _normalise(
 
 def test_the_binding_mirrors_every_export_of_the_vendored_binary() -> None:
     # The mirror rule, in both directions: an unbound export is the rule's own
-    # violation, a bound-but-absent name is the re-vendor regression, named here
+    # violation, a bound-but-absent name is a regression, named here
     # instead of surfacing as an AttributeError out of the binding loop.
     exported = {
         name
@@ -1121,11 +1119,11 @@ def test_every_mirrored_enum_covers_the_vendored_probe_table() -> None:
     # These IntEnums are constructed from raw ints the library returns (`Mode(ed_mode(h))`,
     # `Kind` off the primitive stream), and an IntEnum RAISES on a value it lacks — so a
     # member appended upstream is a CRASH here the first time a user reaches it, not a stale
-    # reading. That is not hypothetical: Mode gained REPLACE (`R`) between 5e0e8a2 and
-    # f738744, and this binding was one re-vendor away from throwing on the first `R`.
+    # reading. That is not hypothetical: Mode gained REPLACE (`R`), which the binding would have
+    # thrown on.
     #
     # Anchored to the vendored probe's own tables rather than to counts written here, so the
-    # NEXT appended member fails at re-vendor time instead of shipping. Upstream gates these
+    # NEXT appended member fails here instead of shipping. Upstream gates these
     # tables against its Odin enums, which is the other half of the same property: theirs
     # keeps the tables honest at the source, this catches a table outgrowing our binding.
     namespace = _probe_tables()
@@ -1164,11 +1162,9 @@ def test_the_scalar_key_constants_match_the_binding() -> None:
 
 
 def test_every_binding_enum_is_gated_against_the_probe() -> None:
-    # The domain check, and the one that has now caught the same defect twice. Enumerating
-    # from the BINDING side is what makes it hold: an earlier version enumerated the probe's
-    # tables and filtered on `isinstance(value, (list, dict))`, which silently skipped KeyCode
-    # and KeyMod because upstream mirrors those as loose scalars — the checker narrowed its own
-    # domain by type. Ask instead: of every IntEnum this binding declares, which one is gated?
+    # The domain check. Enumerating from the BINDING side is what makes it hold: enumerating
+    # the probe's tables and filtering on `isinstance(value, (list, dict))`, would silently skip KeyCode
+    # and KeyMod because upstream mirrors those as loose scalars. Ask instead: of every IntEnum this binding declares, which one is gated?
     gated = {enum.__name__ for enum in _PROBE_TABLE_TO_ENUM.values()}
     gated |= {KeyCode.__name__, KeyMod.__name__}  # the scalar test above
     gated |= {HostCommandKind.__name__}  # test_host_command_kind_covers_the_abi below
@@ -1187,9 +1183,8 @@ def test_every_binding_enum_is_gated_against_the_probe() -> None:
 
 def test_host_command_kind_covers_the_abi() -> None:
     # Upstream mirrors this in NEITHER form -- no probe table, no scalar constants -- so both
-    # gates above are blind to it, and an earlier version of this file exempted it with a claim
-    # that turned out false: that `take_host_command` never constructs the enum from a raw int.
-    # It does (`HostCommandKind(kind)`), guarding only kind == 0, so a fourth ex-command upstream
+    # gates above are blind to it. `take_host_command` constructs the enum from a raw int
+    # (`HostCommandKind(kind)`), guarding only kind == 0, so a fourth ex-command upstream
     # would raise here rather than degrade. Values are pinned against the ABI's own enum, which
     # ships in the vendored keymap doc; 0 is the "no command" sentinel the caller returns None on
     # and is deliberately absent from the binding.
@@ -1207,7 +1202,7 @@ def test_host_command_kind_covers_the_abi() -> None:
 
 def test_a_marker_follows_a_line_inserted_above_it() -> None:
     # Markers anchor like nvim extmarks, so an error band tracks its code
-    # between compiles instead of pointing at the line the code used to be on.
+    # between compiles instead of pointing at the line the code was on.
     e = _editor("\n".join(f"line {i}" for i in range(20)))
     e.add_marker(9, fill=(1.0, 0.0, 0.0, 0.2))
     e.set_cursor(6, 0)
@@ -1220,7 +1215,7 @@ def test_a_marker_follows_a_line_inserted_above_it() -> None:
 
 
 def test_draw_chrome_adds_a_gutter_and_a_status_frame() -> None:
-    # A GLYPH-count comparison is NOT a valid falsifier here: the gutter narrows
+    # A GLYPH-count comparison is NOT a valid check here: the gutter narrows
     # the text viewport, so a wide buffer emits FEWER glyphs under chrome.
     e = _editor("\n".join(f"line {i}" for i in range(20)))
     e.set_chrome_flag(ChromeFlag.LINE_NUMBERS, True)
@@ -1242,7 +1237,7 @@ def test_draw_chrome_adds_a_gutter_and_a_status_frame() -> None:
 
 
 def test_text_origin_moves_right_by_the_gutter_under_chrome() -> None:
-    # The host passes the WHOLE widget to ed_layout now; double-offsetting by a
+    # The host passes the WHOLE widget to ed_layout; double-offsetting by a
     # host-computed gutter would break this identity.
     e = _editor("\n".join(f"line {i}" for i in range(20)))
     e.set_chrome_flag(ChromeFlag.LINE_NUMBERS, True)
@@ -1258,7 +1253,7 @@ def test_text_origin_moves_right_by_the_gutter_under_chrome() -> None:
 
 
 def test_a_marker_text_color_reaches_the_glyph_at_column_0() -> None:
-    # Finding #14's own repro: a keyword in the first cell of an error line.
+    # A keyword in the first cell of an error line.
     # STATE_ERROR and SYN_KEYWORD are one palette entry, so a column-0 glyph
     # left at its syntax color is the exact red-on-red case the override fixes.
     # The caret sits on the second line: the glyph under a normal-mode caret is recolored
@@ -1313,11 +1308,11 @@ def test_the_status_band_sits_below_the_interactive_height() -> None:
     e.close()
 
 
-# --- 071 W-A re-vendor (editor aa8c6719): the four walk items, pinned through the ABI ----------
+# --- library behaviours pinned through the ABI ----------
 
 
 def test_dd_removes_an_empty_last_line() -> None:
-    # 071 #1: the empty last line yielded an empty linewise range and the delete returned before
+    # The empty last line yielded an empty linewise range and the delete returned before
     # its own last-line rule; a non-empty last line always worked.
     e = _editor("a\n")
     e.feed("jdd")
@@ -1359,7 +1354,7 @@ def _search_bands(e: Editor) -> int:
 
 
 def test_search_matches_are_lit_and_esc_puts_them_out() -> None:
-    # D10: hlsearch on by default, incsearch while the line is open, Esc clears and keeps the
+    # hlsearch on by default, incsearch while the line is open, Esc clears and keeps the
     # pattern, n lights again.
     e = _editor("foo bar foo\nbaz")
     assert _search_bands(e) == 0
@@ -1376,7 +1371,7 @@ def test_search_matches_are_lit_and_esc_puts_them_out() -> None:
 
 def test_render_state_reacts_to_the_search_highlight_going_out() -> None:
     # Esc in normal mode clears the search bands and changes no other dimension the fingerprint
-    # reads; the primitive count carries it. Falsifier: drop the count from render_state.
+    # reads; the primitive count carries it.
     e = _editor("foo bar foo")
     e.feed("/foo<CR>")
     e.layout((640.0, 480.0), 16.0)
@@ -1390,7 +1385,7 @@ def test_render_state_reacts_to_the_search_highlight_going_out() -> None:
 def test_search_bands_stop_at_the_status_row() -> None:
     # Editor d2f19556: a decoration drawn after the status Frame is clipped to the text viewport,
     # so the band on the partial last row ends where the status row begins instead of painting
-    # over it. Falsifier: the sixth band ends at 126, past the frame's top at 110.
+    # over it.
     e = Editor("\n".join(f"foo {i}" for i in range(30)))
     e.set_draw_chrome(True)
     e.layout((400.0, 200.0), 16.0)
@@ -1408,7 +1403,7 @@ def test_search_bands_stop_at_the_status_row() -> None:
 
 
 def test_complete_select_minus_one_leaves_nothing_highlighted() -> None:
-    # editor 469eec4: the noselect state for host-pushed batches. Enter then acts as with no
+    # The noselect state for host-pushed batches. Enter then acts as with no
     # popup and closes it; Down picks row 0.
     e = _editor("")
     e.set_host_completion(True)
@@ -1434,7 +1429,7 @@ def test_complete_select_minus_one_leaves_nothing_highlighted() -> None:
 
 
 def test_the_caret_glyph_is_emitted_in_the_caret_text_slot() -> None:
-    # editor 469eec4: reverse video. In normal mode the glyph under the caret takes slot
+    # Reverse video. In normal mode the glyph under the caret takes slot
     # CARET_TEXT's color and the caret quad is opaque; in insert mode the glyph is untouched.
     e = _editor("abc")
     e.set_palette(
@@ -1491,7 +1486,7 @@ def test_two_ex_commands_in_one_frame_both_reach_the_host() -> None:
     e.close()
 
 
-# --- 087 re-vendor (editor 760f8ea): the eighth walk's two library items ------------------------
+# --- search highlights across scrolling ------------------------
 
 
 def test_search_highlights_survive_a_scrolled_view() -> None:
@@ -1549,11 +1544,11 @@ def test_boolean_literals_draw_in_the_keyword_slot() -> None:
         e.close()
 
 
-# --- 089 re-vendor: the ninth walk's jumplist and lexer items ------------------------------------
+# --- jumplist and lexer ------------------------------------
 
 
 def test_the_jumplist_walks_back_and_forward() -> None:
-    # 089 W-E / V12: vim's within-buffer jumplist. `G` is a jump motion, so it pushes the
+    # Vim's within-buffer jumplist. `G` is a jump motion, so it pushes the
     # position it left; `Ctrl+O` walks back to it and `Ctrl+I` forward again. The chord
     # crosses the ABI the way `input.py` translates it -- a CHAR carrying the CTRL mod bit,
     # since no platform emits a char event for Ctrl+letter.
@@ -1595,7 +1590,7 @@ def test_the_jumplist_walks_back_and_forward() -> None:
 
 
 def test_every_documented_builtin_draws_in_the_builtin_slot() -> None:
-    # 089 W-B/W-E / V13: `glsl_docs` and the editor's lexer are two lists of the same thing,
+    # `glsl_docs` and the editor's lexer are two lists of the same thing,
     # and the popup showing a signature for a name that lexes as plain identifier is the
     # visible symptom of their drift. This is the equality check: every name the host
     # documents draws in the slot the host colors builtins with.
@@ -1645,7 +1640,7 @@ def test_every_documented_builtin_draws_in_the_builtin_slot() -> None:
 
 
 def test_a_consumed_ctrl_o_lands_in_the_editors_chords() -> None:
-    # 089 W-E / V14b: the real drain, not the synthetic set of the eligibility test above.
+    # The real drain, not the synthetic set of the eligibility test above.
     # NORMAL-mode Ctrl+O is the jumplist's, so `ed_key` returns true and the chord is
     # recorded in registry space. That recording is what a chord-sharing command would be
     # refused by, and it is why OPEN_PROJECTS moved off Ctrl+O rather than relying on it.

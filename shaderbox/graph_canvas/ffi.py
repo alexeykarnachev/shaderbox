@@ -1,4 +1,4 @@
-"""ctypes binding for the vendored libgraph_canvas.so (feature 098).
+"""ctypes binding for the vendored libgraph_canvas.so.
 
 Leaf module: no imgui, no moderngl, no shaderbox model type. It knows the C ABI
 and nothing about passes or documents, so the pair (this + `render.py`) lifts

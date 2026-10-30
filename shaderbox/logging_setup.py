@@ -9,8 +9,8 @@ from shaderbox.paths import log_dir
 # Two sinks: a terse INFO+ console for at-a-glance flow, and a rotated DEBUG+ file
 # that gets a strict SUPERSET of the console (everything the console sees, plus the
 # lifecycle/diagnostic detail). No module configures sinks itself — call sites only
-# do `from loguru import logger; logger.info(...)`. See conventions.md ## Design
-# decisions (logging is configured once, never per-module).
+# do `from loguru import logger; logger.info(...)`; logging is configured once, never
+# per-module.
 
 _CONSOLE_FORMAT = (
     "<green>{time:HH:mm:ss.SSS}</green> | <level>{level: <7}</level> | "

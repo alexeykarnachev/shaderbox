@@ -1,13 +1,13 @@
-"""The pass strip: one live thumbnail per pass, with the six verbs of D15 reachable from it (065).
+"""The pass strip: one live thumbnail per pass, with the six pass verbs reachable from it.
 
-The list view of the graph (the canvas is 092's tab). Click a tile to make that pass the
+The list view of the graph (the canvas is its own tab). Click a tile to make that pass the
 output; every other verb -- open its shader, its settings modal (`popups/pass_settings.py`,
 where its name, run count and target live), delete, leave its group -- is on the tile's
 context menu, which the graph's node shares.
 
 A tile is a picture, a name, and a row of chips naming the passes it reads (`prev` for its own
 previous frame). Compile errors show as a red border rather than as text; a sampler's source is
-chosen on its own row of the uniforms panel (072).
+chosen on its own row of the uniforms panel.
 """
 
 from collections.abc import Callable, Collection, Sequence
@@ -56,7 +56,7 @@ def _reads(
     reads its own previous frame. One chip per source pass however many samplers read it.
 
     `wiring` is what the binder binds (`Document.effective_wiring`) unless a script feeds the
-    sampler a field this frame (110 D7), so a sampler in `script_fed` reads no pass. A source
+    sampler a field this frame, so a sampler in `script_fed` reads no pass. A source
     naming a pass that no longer exists, or a row for a sampler the program no longer
     declares, is no chip -- exactly as the panel row shows it reading black.
     """
@@ -78,7 +78,7 @@ def pass_menu_items(
     slot: Callable[[], None] | None = None,
 ) -> None:
     """The items of one pass's context menu, shared by the strip's tile and the graph's node
-    (092 D10) so the two surfaces cannot drift. The caller owns the popup itself: the strip
+    so the two surfaces cannot drift. The caller owns the popup itself: the strip
     anchors it with an explicit id (safe there, each tile is its own window), the canvas with
     the previous item.
 
@@ -133,7 +133,7 @@ def _draw_pass_tile(
     border = (
         COLOR.STATE_ERROR if errors else COLOR.ACCENT_PRIMARY if is_output else None
     )
-    # A grouped tile sits inside the run's outline (091 D7): its own border goes and the
+    # A grouped tile sits inside the run's outline: its own border goes and the
     # group's tint fills it faintly; an accent or error border still draws.
     tint = group_tint(group) if group else None
     bg = (*tint[:3], COLOR.GROUP_FILL_ALPHA) if tint is not None else None
@@ -160,14 +160,14 @@ def _draw_pass_tile(
 
     if result.clicked:
         # Picking a tile IS setting the output: the viewer and export follow the graph output,
-        # so one click fully switches what the document shows. The editor pane is left alone
-        # (093 W3-3); the context menu opens the shader.
+        # so one click fully switches what the document shows. The editor pane is left alone;
+        # the context menu opens the shader.
         app.choose_output(document_id, name)
 
 
 def draw(app: App, document_id: str) -> None:
     """The pass strip for one document: the tiles alone. The caption row and the add / import
-    row are the Document tab's; the graph has its own editor tab and draws neither (093 T5)."""
+    row are the Document tab's; the graph has its own editor tab and draws neither."""
     ui_document = app.ui_documents.get(document_id)
     if ui_document is None:
         return
@@ -182,7 +182,7 @@ def draw(app: App, document_id: str) -> None:
     # `or {output}` mirrors the renderer's cycle fallback: with no plannable order it still
     # draws the output alone, so the output tile must not dim.
     output = document.graph.output
-    # The EFFECTIVE wiring: a pass wired only by its uniform's name (069 D9) has no stored row,
+    # The EFFECTIVE wiring: a pass wired only by its uniform's name has no stored row,
     # so planning the rows alone would wash live ancestors grey and hand the strip sorted-name
     # order instead of a topological one.
     wiring = document.effective_wiring()
@@ -236,7 +236,7 @@ def draw(app: App, document_id: str) -> None:
 def _draw_group_outline(
     app: App, group: str, lo: imgui.ImVec2, hi: imgui.ImVec2
 ) -> None:
-    """One run's outline and label (091 D7). The tiles are child windows, which paint over
+    """One run's outline and label. The tiles are child windows, which paint over
     their parent, so both go on the foreground list, clipped to the strip's own window; the
     faint fill behind the tiles goes on the parent's list, where the gaps show it."""
     tint = group_tint(group)

@@ -47,8 +47,8 @@ Declare a uniform, save, and the control is there - nothing to register, no UI c
 Needs [uv](https://docs.astral.sh/uv/):
 
 ```
-uv sync
-uv run python ./shaderbox/ui.py
+uv sync --no-dev
+uv run --no-dev python ./shaderbox/ui.py
 ```
 
 Or grab a build from [itch.io](https://where-is-your-keyboard.itch.io/shaderbox) - it ships as source

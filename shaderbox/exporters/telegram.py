@@ -910,7 +910,7 @@ class TelegramExporter(Exporter):
 
     async def _with_bot(self, op: Callable[[tg.Bot], Awaitable[T]]) -> T:
         # Both pools need the IPv4 bind: get_updates() uses a separate pool that
-        # otherwise dials the dead AAAA (conventions.md ## Known quirks).
+        # otherwise dials the dead AAAA.
         bot = tg.Bot(
             token=self._tg.bot_token,
             request=_ipv4_request(),

@@ -1,9 +1,8 @@
-"""The import plan (091 D4): what copying another document's passes into this one changes,
+"""The import plan: what copying another document's passes into this one changes,
 decided over two wirings and nothing else.
 
-GL-free. Every case is a hand-built `Wiring`; the falsifiers are the bugs an implementer
-would write -- above all skipping the materialization, which leaves a bundle whose every
-inter-pass edge is gone while only its feedback survives, silently.
+GL-free. Every case is a hand-built `Wiring`. Skipping the materialization would leave a
+bundle whose every inter-pass edge is gone while only its feedback survives, silently.
 """
 
 from collections.abc import Collection, Mapping
@@ -45,8 +44,8 @@ def _plan(
 
 
 def test_every_wired_sampler_is_explicit_under_the_new_names() -> None:
-    # (a). Falsifier: skip the materialization and `bloom_composite.u_blur` has no row, so the
-    # name rule looks for a pass called `blur` in the host and reads black.
+    # Without the materialization `bloom_composite.u_blur` has no row, so the name rule
+    # looks for a pass called `blur` in the host and reads black.
     plan = _plan()
     assert isinstance(plan, ImportPlan), plan
     assert plan.renames == {
@@ -99,7 +98,7 @@ def test_an_empty_group_copies_under_bare_names() -> None:
 
 
 def test_a_handover_rewires_that_host_sampler_and_leaves_the_rest() -> None:
-    # (f). Falsifier: hand every reader of the fed pass over regardless of the set.
+    # Only the readers in the handover set are handed over.
     plan = _plan(handovers={("grade", "u_main")})
     assert isinstance(plan, ImportPlan)
     assert plan.handovers == {"grade": {"u_main": "bloom_composite"}}
@@ -109,7 +108,7 @@ def test_a_handover_rewires_that_host_sampler_and_leaves_the_rest() -> None:
 
 
 def test_the_output_moves_only_when_the_fed_pass_was_the_output() -> None:
-    # (g). Falsifier: move it unconditionally.
+    # The output moves only when the fed pass was the output.
     stays = _plan()
     assert isinstance(stays, ImportPlan) and stays.becomes_output is False
     moves = _plan(host_wiring={"main": {}}, host_output="main")
@@ -117,7 +116,7 @@ def test_the_output_moves_only_when_the_fed_pass_was_the_output() -> None:
 
 
 def test_a_source_pass_with_no_edges_still_plans() -> None:
-    # (h). A broken source pass answers an empty wiring; the plan copies it as is.
+    # A broken source pass answers an empty wiring; the plan copies it as is.
     wiring = {**_BLOOM, "blur": {}}
     plan = _plan(source_wiring=wiring)
     assert isinstance(plan, ImportPlan)
@@ -126,8 +125,8 @@ def test_a_source_pass_with_no_edges_still_plans() -> None:
 
 def test_a_handover_onto_a_feeding_pass_is_a_loop_and_rejects() -> None:
     # Two entry points fed by two host passes where one reads the other: the default handover
-    # would make `b` read the bundle that reads `b`. Falsifier: skip the post-import plan and
-    # the loop lands silently (the renderer falls back to drawing the output alone).
+    # would make `b` read the bundle that reads `b`. Without the post-import plan
+    # the loop would land silently (the renderer falls back to drawing the output alone).
     compositor = {"fg": {}, "bg": {}, "mix": {"u_fg": "fg", "u_bg": "bg"}}
     host = {"a": {}, "b": {"u_a": "a"}}
     looped = _plan(

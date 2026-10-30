@@ -4,7 +4,7 @@
 explicitly (the stale-artifact guard in `tabs/share.py`) — without that line the publish
 buttons stay armed on the OLD artifact after a failed re-render, and the user publishes the
 previous render believing it is the new one. This drives the real path: `render_for` fails
-and the guard must fire. Falsifier: delete the guard line and this goes red.
+and the guard must fire.
 """
 
 import types

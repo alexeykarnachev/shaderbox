@@ -1,4 +1,4 @@
-"""Geometry the Document tab and the pass-settings gear depend on (069 W-B).
+"""Geometry the Document tab and the pass-settings gear depend on.
 
 Both facts here are measurable only inside a real imgui frame with the app font loaded,
 which is why they live beside the frame rig rather than in the AST-only prose gate.
@@ -48,9 +48,8 @@ def _gear_sizes(app: Any, frames: int = 6) -> list[tuple[float, float]]:
 
 
 def test_the_gear_keeps_its_width_token_under_auto_resize(app: Any) -> None:
-    # Falsifier: drop the `set_next_window_size_constraints` call and the settled width is
-    # 323 — auto-resize discards the seeded size, so the token would be inert and the next
-    # reader would change 440 and see nothing move.
+    # Auto-resize discards the seeded size; the `set_next_window_size_constraints` call is
+    # what makes the token take effect.
     sizes = _gear_sizes(app)
     settled = sizes[-1]
     assert settled[0] == float(SIZE.PASS_SETTINGS_W), (
@@ -60,8 +59,8 @@ def test_the_gear_keeps_its_width_token_under_auto_resize(app: Any) -> None:
 
 
 def test_the_gear_height_follows_its_content(app: Any) -> None:
-    # The height is NOT the width's fixed token: it is whatever the body needs, which is
-    # what finding #7 asked for (a settings popup that scrolls is itself the defect).
+    # The height is NOT the width's fixed token: it is whatever the body needs, a settings
+    # popup that scrolls is itself the defect.
     sizes = _gear_sizes(app)
     settled = sizes[-1]
     assert settled[1] != float(SIZE.PASS_SETTINGS_W)
@@ -73,11 +72,8 @@ def test_the_auto_name_column_fits_every_engine_uniform(app: Any) -> None:
 
     The Document tab draws these through `clickable_label`, which ELLIPSIZES rather than
     overflowing, so an over-wide name is a SILENT truncation. Measured against the real
-    rasterized face inside a frame, never a hard-coded em ratio: the first version of this
-    check assumed 6.5508px per character where the 12px face advances 7.0, so it passed a
-    19-character name that visibly truncates.
-
-    Falsifier: add a 20-character name to `ENGINE_DRIVEN_UNIFORMS` and this goes red.
+    rasterized face inside a frame, never a hard-coded em ratio: the 12px face advances 7.0px per
+    character, not the 6.5508 an em ratio would give.
     """
     names = sorted(set(ENGINE_DRIVEN_UNIFORMS) - set(TABLE_UNIFORMS))
     assert names, "the engine-uniform set is empty; the walk found nothing to measure"

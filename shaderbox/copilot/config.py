@@ -28,10 +28,10 @@ class CopilotConfig:
     # bigger budget also lengthens the worst single stream, which can only be cut at an iteration
     # boundary — so turn_time_budget_s overshoots further.
     max_tokens_per_turn: int = 30_000
-    # Soft per-edit compile-fix retry budget, distinct from max_iterations (§I2).
+    # Soft per-edit compile-fix retry budget, distinct from max_iterations.
     max_edit_retries: int = 3
     # Consecutive broken-compile edits on ONE file before the engine force-restores it to
-    # its last clean-compiling state (033; 0 = off). The engine streak is per-document and
+    # its last clean-compiling state (0 = off). The engine streak is per-document and
     # session-persistent, the nudge counter is per-turn — nudge-before-restore ordering is
     # best-effort within a turn, not guaranteed across turns/interleavings.
     auto_revert_after_failed_edits: int = 6
@@ -77,13 +77,13 @@ class CopilotEngineConfig:
     """
 
     # Headroom the history trim withholds for the per-turn working-set scratchpad, which is
-    # spliced AFTER the trim runs and is otherwise invisible to it (feature 020·29 D10).
+    # spliced AFTER the trim runs and is otherwise invisible to it.
     scratchpad_reserve_tokens: int = 50_000
-    # Working-set MEMBER cap (feature 056 D3): the add seam evicts the least-recently-touched
+    # Working-set MEMBER cap: the add seam evicts the least-recently-touched
     # address past this, so an accreting turn can't render an unbounded scratchpad. The current
     # document is unioned in regardless, so the rendered set is this + 1 at most. 0 = uncapped.
     copilot_working_set_max_documents: int = 6
-    # Feature 033 enriched results: probe-render facts after clean mutations
+    # Enriched results: probe-render facts after clean mutations
     # (ink/bbox/luma off a tiny offscreen render). Size is the square probe edge.
     render_facts_enabled: bool = True
     render_facts_size: int = 64
@@ -91,7 +91,7 @@ class CopilotEngineConfig:
     # STATIC/ANIMATES verdict — t=0 alone is the worst instant for a ramping effect (blank/cold),
     # which reads as a failed edit; the verdict + the later frame's facts tell the model it develops.
     render_facts_motion_t: float = 1.5
-    # Feature 043 script-write motion probe: the sample times (seconds) the dry-run captures
+    # Script-write motion probe: the sample times (seconds) the dry-run captures
     # driven values at (the value-diff motion verdict), the fps the dry-tick steps at (pinned to
     # the export clock so an integrator accumulates the same way render_video will), and the
     # epsilon below which two sampled values count as unchanged (the static/animating threshold).
@@ -113,19 +113,19 @@ class CopilotEngineConfig:
     # Per-op wait on a worker->main bridge round-trip (UI busy / shutting down).
     bridge_op_timeout_s: float = 5.0
     # Render ops get a longer wait — a video encode freezes the frame loop far past the
-    # 5s default (R3/§5). Used via bridge.run_on_main(fn, timeout=…) by the render tools.
+    # 5s default. Used via bridge.run_on_main(fn, timeout=…) by the render tools.
     render_op_timeout_s: float = 60.0
-    # Publish-await (feature 020·18): the copilot worker polls the exporter's terminal
+    # Publish-await: the copilot worker polls the exporter's terminal
     # progress through trivial bridge ops; this bounds the total wait (a never-terminal
     # stuck upload) and the per-poll sleep between them.
     publish_await_timeout_s: float = 300.0
     publish_poll_interval_s: float = 0.2
-    # Telegram connect-await (feature 020·19): bounds the poll for auth_state to leave LINKING.
+    # Telegram connect-await: bounds the poll for auth_state to leave LINKING.
     telegram_connect_timeout_s: float = 30.0
     # Per-request LLM stream timeout. The OpenAI/httpx default is 600s, so a stalled socket
-    # blocks the worker (non-daemon) for ~10 min and hangs interpreter shutdown (a dogfood hang,
-    # 043). A bounded timeout fails the stream fast; the agent loop catches it as a stream_error
-    # terminal that preserves the turn's summary + spend.
+    # blocks the worker (non-daemon) for ~10 min and hangs interpreter shutdown. A bounded
+    # timeout fails the stream fast; the agent loop catches it as a stream_error terminal
+    # that preserves the turn's summary + spend.
     llm_request_timeout_s: float = 120.0
     # Sent verbatim as OpenRouter `reasoning.effort`. "none" (not "minimal"): gpt-5.1-codex-mini
     # IGNORES "minimal" on tool-bearing requests — reasoning ate ~100% of output tokens — while

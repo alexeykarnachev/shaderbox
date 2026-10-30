@@ -1,12 +1,8 @@
-"""The project verbs, and the two bugs that make them safe (feature 084).
+"""The project verbs, and the two failures that make them safe.
 
-Before this feature a project had ONE verb, `Open project`, which called `_init` directly. Two
-consequences the tests here pin, because the feature turns both from rare into routine: a switch
-saved only the copilot conversation, so it discarded every unsaved editor buffer; and the startup
-staleness check tested the pointer FILE rather than the directory it named, so a pointer at a
-deleted path silently recreated an empty skeleton there and came up blank.
-
-Each test names the break that must turn it red.
+A switch saves every unsaved editor buffer, not only the copilot conversation; and the startup
+staleness check tests the directory the pointer names rather than the pointer FILE, so a pointer
+at a deleted path recovers to the default project instead of recreating an empty skeleton there.
 """
 
 import ast
@@ -50,8 +46,6 @@ def _seed_project(root: Path, name: str, documents: int = 1) -> Path:
 def test_the_list_shows_the_root_and_the_open_project_wherever_it_lives(
     tmp_path: Path,
 ) -> None:
-    # Falsifier: drop the union term — an outside project vanishes from its own switcher, which
-    # is how a project in /tmp stayed invisible while it was the one being worked in.
     root = tmp_path / "projects"
     root.mkdir()
     _seed_project(root, "alpha")
@@ -65,7 +59,6 @@ def test_the_list_shows_the_root_and_the_open_project_wherever_it_lives(
 def test_the_open_project_is_listed_once_when_it_is_inside_the_root(
     tmp_path: Path,
 ) -> None:
-    # Falsifier: append the open project unconditionally — it appears twice.
     root = tmp_path / "projects"
     root.mkdir()
     alpha = _seed_project(root, "alpha")
@@ -73,8 +66,6 @@ def test_the_open_project_is_listed_once_when_it_is_inside_the_root(
 
 
 def test_a_directory_without_documents_is_not_a_project(tmp_path: Path) -> None:
-    # Falsifier: list every child of the root — a stale pre-rename layout (a real one existed,
-    # with `nodes/` and no `documents/`) would be offered as a project.
     root = tmp_path / "projects"
     (root / "not_a_project" / "nodes").mkdir(parents=True)
     assert list_projects(root, None) == []
@@ -89,7 +80,6 @@ def test_a_directory_without_documents_is_not_a_project(tmp_path: Path) -> None:
 def test_a_name_that_is_not_one_path_segment_is_refused(
     tmp_path: Path, name: str
 ) -> None:
-    # Falsifier: accept the string and let mkdir decide — `..` escapes the projects root.
     assert validate_project_name(name, tmp_path) != ""
 
 
@@ -105,7 +95,6 @@ def test_a_good_name_is_accepted(tmp_path: Path) -> None:
 def test_a_deleted_project_moves_to_trash_under_its_bare_name(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    # Falsifier: swap the move for an rmtree — the dir is gone rather than recoverable.
     monkeypatch.setenv("SHADERBOX_DATA_DIR", str(tmp_path / "data"))
     project = _seed_project(tmp_path / "projects", "alpha")
     (project / "documents" / "doc0" / "marker.txt").write_text("recoverable")
@@ -119,8 +108,6 @@ def test_a_deleted_project_moves_to_trash_under_its_bare_name(
 def test_a_second_delete_of_one_name_suffixes_only_the_second(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    # Falsifier: suffix unconditionally — every trashed project reads `alpha_1757178123456`,
-    # where `_delete_document_unguarded` (the scheme this mirrors) keeps the bare name.
     monkeypatch.setenv("SHADERBOX_DATA_DIR", str(tmp_path / "data"))
     root = tmp_path / "projects"
     first = trash_project(_seed_project(root, "alpha"))
@@ -161,8 +148,6 @@ def test_only_two_methods_reach_init(app: Any) -> None:
 
 
 def test_a_switch_flushes_every_dirty_tab_not_just_the_active_one(app: Any) -> None:
-    # Falsifier: flush only the current session — the inactive tab's edit is gone, which is what
-    # `flush_current_editor` alone does (it is hard-wired to current_document_id).
     document_id = app.current_document_id
     app.ensure_shader_tab(document_id)
     first = app.active_tab.path
@@ -193,11 +178,10 @@ def test_a_switch_flushes_every_dirty_tab_not_just_the_active_one(app: Any) -> N
 def test_a_switch_mid_copilot_turn_writes_nothing_at_all(
     app: Any, tmp_path: Path
 ) -> None:
-    # Falsifier: put the busy gate AFTER save() — the project still does not change (save's own
-    # inner gate skips the document and returns), but app_state.json is REWRITTEN on the way
-    # through, which is the half-save. So the assertion is on the file's mtime, not on
-    # project_dir: an assertion on the project alone passes under both orderings and proves
-    # nothing, which is exactly what an earlier version of this test did.
+    # A busy gate placed after save() would leave the project unchanged (save's own inner gate
+    # skips the document and returns) but REWRITE app_state.json on the way through, which is
+    # the half-save. So the assertion is on the file's mtime, not on project_dir: an assertion
+    # on the project alone passes under both orderings and proves nothing.
     other = _seed_project(tmp_path / "projects", "other")
     app.save()  # establish app_state.json on disk
     state_file = app.paths.app_state_file
@@ -217,8 +201,6 @@ def test_a_switch_mid_copilot_turn_writes_nothing_at_all(
 
 
 def test_the_projects_command_replaced_the_open_project_one(app: Any) -> None:
-    # Falsifier: rename the id but leave the old callback row — the registry-coverage test
-    # catches the missing handler, this one catches the retired name surviving.
     assert hasattr(CommandId, "OPEN_PROJECTS")
     assert not hasattr(CommandId, "OPEN_PROJECT")
     assert CommandId.OPEN_PROJECTS in app.command_callbacks
@@ -234,7 +216,6 @@ def test_opening_the_modal_lists_projects_and_selects_the_open_one(app: Any) -> 
 
 
 def test_the_modal_resets_its_transient_state_on_open(app: Any) -> None:
-    # Falsifier: skip the reset — the modal reopens mid-action, with a delete still armed.
     app.projects_delete_armed = Path("/somewhere")
     app.projects_error = "stale"
     app.projects_new_input.open(Path("/somewhere"), "half typed")
@@ -256,9 +237,8 @@ def test_an_open_name_input_owns_escape(app: Any) -> None:
 def test_escape_is_owned_by_an_open_name_input_at_the_close_funnel(app: Any) -> None:
     """The WIRE, not the predicate: `registry.close_modal` must consult the row's `owns_esc`.
 
-    Falsifier: drop `owns_esc` from `projects.MODAL` — Esc then closes the whole modal out
-    from under a half-typed name. The predicate test above passes either way, which is what
-    let that branch survive as dead code through a mutation round.
+    Without `owns_esc` on `projects.MODAL`, Esc closes the whole modal out from under a
+    half-typed name. The predicate test above passes either way.
 
     `close_modal` is what `hotkeys._handle_escape` calls for every modal, so the funnel is
     exercised directly rather than through frames: a second frame-driving App in one process
@@ -273,7 +253,7 @@ def test_escape_is_owned_by_an_open_name_input_at_the_close_funnel(app: Any) -> 
     assert app.modal is ModalId.PROJECTS
 
     # A Close the user CLICKED is forced, so the armed input cannot refuse it (the lib
-    # picker's dead-Close-button bug). Falsifier: drop `forced` from `draw_modal`'s call.
+    # picker's dead-Close-button bug).
     assert close_modal(app, forced=True), "a forced close was refused by an armed input"
     assert app.modal is None
 
@@ -285,8 +265,6 @@ def test_escape_is_owned_by_an_open_name_input_at_the_close_funnel(app: Any) -> 
 
 
 def test_the_open_project_refuses_to_be_deleted(app: Any) -> None:
-    # Falsifier: drop the guard and let the confirm decide — a guard living only in the draw
-    # code is one no headless test can reach.
     assert app.delete_project(app.project_dir) != ""
     assert app.project_dir.is_dir()
 
@@ -301,8 +279,6 @@ def test_deleting_another_project_trashes_it(app: Any, tmp_path: Path) -> None:
 
 
 def test_new_project_defers_the_switch_rather_than_switching_inline(app: Any) -> None:
-    # Falsifier: switch inside the verb — the modal's draw would release every GL texture the
-    # frame already submitted, and imgui would render freed handles.
     before = app.project_dir
     assert app.new_project("fresh") == ""
     assert app.project_dir == before, "the switch must not happen inside the verb"
@@ -334,7 +310,6 @@ def _app_with_pointer_at(tmp_path: Any, monkeypatch: Any, target: Path) -> Any:
 def test_a_dead_pointer_recovers_to_the_default_project(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    # Falsifier: restore the file-exists-only `is_first_launch` — the app loads the dead path.
     dead = tmp_path / "vanished"
     app = _app_with_pointer_at(tmp_path, monkeypatch, dead)
     try:
@@ -346,8 +321,6 @@ def test_a_dead_pointer_recovers_to_the_default_project(
 def test_the_recovery_seeds_rather_than_landing_blank(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    # Falsifier: pass first_run=False on the recovery path — the app comes up with no document,
-    # which is the blank-app symptom D10 exists to prevent.
     app = _app_with_pointer_at(tmp_path, monkeypatch, tmp_path / "vanished")
     try:
         assert app.ui_documents
@@ -358,8 +331,6 @@ def test_the_recovery_seeds_rather_than_landing_blank(
 def test_the_recovery_does_not_recreate_the_dead_path(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    # Falsifier: let ProjectPaths.for_root run on the pointer's own path — it rebuilds the whole
-    # skeleton there with exist_ok=True, which is how a transient loss became permanent.
     dead = tmp_path / "vanished"
     app = _app_with_pointer_at(tmp_path, monkeypatch, dead)
     try:
@@ -371,7 +342,6 @@ def test_the_recovery_does_not_recreate_the_dead_path(
 def test_the_recovery_repoints_the_pointer_at_the_live_project(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    # Falsifier: write the pointer before resolving — it names the dead path forever.
     dead = tmp_path / "vanished"
     app = _app_with_pointer_at(tmp_path, monkeypatch, dead)
     try:
@@ -385,8 +355,6 @@ def test_the_recovery_repoints_the_pointer_at_the_live_project(
 def test_the_recovery_opens_projects_not_examples(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    # Falsifier: leave _init's unconditional open_examples() — the single-field popup mutex means
-    # the gallery wins and the question "which project?" is never asked.
     app = _app_with_pointer_at(tmp_path, monkeypatch, tmp_path / "vanished")
     try:
         assert app.modal is ModalId.PROJECTS
@@ -397,8 +365,8 @@ def test_the_recovery_opens_projects_not_examples(
 def test_a_live_pointer_is_not_treated_as_a_first_launch(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    # The other half of D10: a pointer at a REAL project must still open it, with no gallery and
-    # no Projects modal. Falsifier: treat every pointer as dead.
+    # The other half: a pointer at a REAL project must still open it, with no gallery and
+    # no Projects modal.
     live = _seed_project(tmp_path / "projects", "live")
     app = _app_with_pointer_at(tmp_path, monkeypatch, live)
     try:
@@ -409,8 +377,6 @@ def test_a_live_pointer_is_not_treated_as_a_first_launch(
 
 
 def test_a_busy_refused_new_creates_nothing_and_says_so(app: Any) -> None:
-    # Falsifier: check the copilot gate only in switch_project — new_project returns "" (success),
-    # the directory is created, and the refusal lands a frame later with the user never told.
     root = app.default_projects_root_dir
     before = sorted(p.name for p in root.iterdir())
     app.copilot_turn_active = True
@@ -422,9 +388,6 @@ def test_a_busy_refused_new_creates_nothing_and_says_so(app: Any) -> None:
 
 
 def test_a_blank_pointer_file_is_no_pointer(tmp_path: Path, monkeypatch: Any) -> None:
-    # Falsifier: `Path(text)` on an empty read — that is `Path(".")`, whose is_dir() is True, so
-    # a pointer truncated by a crash mid-write opens the process CWD as a project and mkdirs a
-    # documents/ media/ trash/ renders/ layout inside it.
     data = tmp_path / "data"
     data.mkdir(parents=True)
     monkeypatch.setenv("SHADERBOX_DATA_DIR", str(data))
@@ -445,8 +408,6 @@ def test_a_blank_pointer_file_is_no_pointer(tmp_path: Path, monkeypatch: Any) ->
 def test_the_recovery_modal_is_populated_not_empty(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    # Falsifier: assign popup_state directly and never call open_projects() — the modal opens
-    # with no rows and no selection, so the recovery shows an empty list.
     app = _app_with_pointer_at(tmp_path, monkeypatch, tmp_path / "vanished")
     try:
         assert app.modal is ModalId.PROJECTS
@@ -477,8 +438,7 @@ def test_the_top_bar_row_fits_beside_the_clear_button(app: Any) -> None:
     itself to its widest label ("Read-only", 79). Two places computing one number.
 
     Measured with a REAL font — the whole defect is a text width, so a headless assertion about
-    the label set would have passed throughout. Falsifier: reserve `SIZE.CHIP_W` again and the row
-    runs past `cluster_x`.
+    the label set would have passed throughout.
     """
     imgui.new_frame()
     try:
@@ -521,9 +481,7 @@ def test_the_mode_survives_clear_and_reaches_the_project_file(
 
     `reset_conversation` re-seeds from the persisted value, so any window where the live copy is
     ahead of it is a window where Clear silently reverts the user's choice. Driven through the App
-    -- a session-level test holding the mode as a constant closure cannot see this, which is how
-    the regression shipped. Falsifier: move the persisted write back to `App.save` and Clear reads
-    ASK here.
+    -- a session-level test holding the mode as a constant closure cannot see this.
     """
     _ = tmp_path
     app.copilot.set_source_lock(SourceLock.READ_ONLY)
@@ -563,8 +521,7 @@ def test_a_switch_into_a_never_saved_project_takes_defaults(
 
     Driven through a real switch, because that is the only place it appears: the state is loaded
     in `session.load` and consumed later, so every unit test that builds one project, or that
-    calls `reset_conversation` directly, sees nothing wrong. Falsifier: guard the assignment on
-    `.exists()` again and the second assert reads DENY.
+    calls `reset_conversation` directly, sees nothing wrong.
     """
     app.copilot.set_source_lock(SourceLock.READ_ONLY)
     app.save()
@@ -585,9 +542,8 @@ def test_a_switch_into_a_never_saved_project_takes_defaults(
 def test_the_consuming_half_is_wired(app: Any, tmp_path: Path) -> None:
     """Every verb only REQUESTS a switch; `_tick_frame_state` is what performs it.
 
-    Falsifier: delete the `pending_project_switch` block from `_tick_frame_state` — every verb
-    becomes a no-op that still reports success, and no other test notices, because they all stop
-    at `pending_project_switch is not None`.
+    Without that block every verb would be a no-op that still reports success, and no other
+    test notices, because they all stop at `pending_project_switch is not None`.
 
     The three checks share ONE app on purpose. The imgui font atlas is process-global and its GL
     texture dies with the App that built it, so a test that builds a second one and draws races
@@ -600,14 +556,13 @@ def test_the_consuming_half_is_wired(app: Any, tmp_path: Path) -> None:
     assert app.project_dir == other.resolve()
     assert app.pending_project_switch is None
 
-    # 2. New reaches a SEEDED project through the same path (falsifier: no-op the seed).
+    # 2. New reaches a SEEDED project through the same path
     assert app.new_project("through_the_frame") == ""
     _pump(app)
     assert app.project_dir == app.default_projects_root_dir / "through_the_frame"
     assert app.ui_documents, "a new project must arrive seeded, not blank"
 
-    # 3. the modal draws (falsifier: no `draw_modal(app)` in ui.py — a modal that never
-    # draws cannot close itself, so the state surviving is the signal).
+    # 3. the modal draws
     app.open_projects()
     _pump(app)
     assert app.modal is ModalId.PROJECTS
@@ -615,10 +570,8 @@ def test_the_consuming_half_is_wired(app: Any, tmp_path: Path) -> None:
 
 
 def test_an_armed_delete_clears_when_another_project_is_selected(app: Any) -> None:
-    # D7b calls a stale arm surviving a selection change the worst bug this feature can produce:
-    # Yes then trashes whatever is armed while the user is looking at a different row. The disarm
+    # A stale arm surviving a selection change is the worst failure here: Yes then trashes whatever is armed while the user is looking at a different row. The disarm
     # lives in the row draw, so this drives the state the way the draw does.
-    # Falsifier: drop the `projects_delete_armed = None` line from `_draw_row`'s click branch.
     from shaderbox.popups.projects import _select_row
 
     app.open_projects()

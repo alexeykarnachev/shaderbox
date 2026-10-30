@@ -286,7 +286,7 @@ class App:
         # Esc with no app job.
         self._install_escape_filter()
 
-        # glfw cursors driven directly — imgui cursors are no-op in this backend (conventions.md ## Known quirks)
+        # glfw cursors driven directly — imgui cursors are no-op in this backend
         self.ibeam_cursor = glfw.create_standard_cursor(glfw.IBEAM_CURSOR)
         self.resize_ew_cursor = glfw.create_standard_cursor(glfw.RESIZE_EW_CURSOR)
         self.resize_ns_cursor = glfw.create_standard_cursor(glfw.RESIZE_NS_CURSOR)
@@ -321,7 +321,7 @@ class App:
         # Path-keyed editor sessions: one libeditor instance per opened file. Declared before
         # the session so its get_editor_sessions getter has a target to close over.
         self.editor_sessions: dict[Path, EditorSession] = {}
-        # The editor input pump (feature 067): glfw key/char events queued by the chained
+        # The editor input pump: glfw key/char events queued by the chained
         # callbacks, drained at the top of dispatch_commands while the editor is focused.
         self.editor_key_events: list[KeyEvent] = []
         # Chords (imgui KeyChord ints — the registry's comparison space) the editor consumed
@@ -334,7 +334,7 @@ class App:
         # guaranteed current inside the frame loop).
         self.editor_renderer: EditorRenderer | None = None
         self.editor_panel: EditorPanel | None = None
-        # The graph canvas's GL half, lazy for the same reason (098). One
+        # The graph canvas's GL half, lazy for the same reason. One
         # renderer per context; one `GraphCanvasState` per document, since each
         # carries its own library handle, FBO and view.
         self.graph_renderer: CanvasRenderer | None = None
@@ -357,12 +357,12 @@ class App:
             None
         )
         self.editor_script_types: dict[tuple[str, str], str] = {}
-        # The auto-trigger's bookkeeping (073 W-B): the (path, revision) the driver last saw,
+        # The auto-trigger's bookkeeping: the (path, revision) the driver last saw,
         # so only an EDIT offers, and whether the open popup was offered unasked (Enter then
         # inserts a newline unless the user navigated into the list).
         self.editor_completion_seen: tuple[Path, int] | None = None
         self.editor_completion_auto: bool = False
-        # `K` (073 W-B): the drain raises the request, the panel resolves it into a popup
+        # `K`: the drain raises the request, the panel resolves it into a popup
         # that the next key or click dismisses.
         self.editor_lookup_requested: bool = False
         # The strip's error list as the code panel last drew it (compile errors of the edited
@@ -370,7 +370,7 @@ class App:
         self.editor_errors: list[ShaderError] = []
         self.editor_error_note_pending: bool = False
         self.editor_lookup: LookupPopup | None = None
-        # What the editor knows about each buffer (078 W-A): the per-path index cache, the
+        # What the editor knows about each buffer: the per-path index cache, the
         # one thread that talks to jedi (made on the first script tab), its latest answer for
         # the caret it was asked about, and the last request sent so a frame does not resend.
         self.intel_cache: IntelCache = IntelCache()
@@ -396,7 +396,7 @@ class App:
         # forward reference. Extracting the middle would separate it from its resolution and
         # buy nothing -- there is no control flow in it to simplify.
 
-        # The headless project core (feature 025): owns the pure-core project state (documents,
+        # The headless project core: owns the pure-core project state (documents,
         # app_state, lib index + cross-project stores, working set) AND the copilot cluster
         # (CopilotSession/CopilotBackend/RevertExecutor, built in its own __init__). App forwards
         # to it via @property accessors below. notifier + exporter_registry + shader_lib_files +
@@ -424,7 +424,7 @@ class App:
         self.pass_settings_name: str = ""
         self.pass_settings_name_buf: str = ""
         self.pass_settings_group_buf: str = ""
-        # The import dialog's state (091 D10), None while it is closed.
+        # The import dialog's state, None while it is closed.
         self.import_draft: ImportDraft | None = None
         # The pass whose tile has its delete-✕ armed (the in-cell "Delete?" wash), or "".
         # copilot_focus_pending: one-shot driving window + input focus, consumed at the input draw.
@@ -443,7 +443,7 @@ class App:
         # reconciled to session.state.in_flight each frame in ui.py.
         self.copilot_turn_active: bool = False
         self.copilot_input: str = ""
-        # FILE-gate poll state (feature 052): the open native picker + its request, carried across
+        # FILE-gate poll state: the open native picker + its request, carried across
         # frames while the copilot worker blocks on the pick (ui.py::_pump_file_gate).
         self.file_pick_dialog: pfd.open_file | None = None
         self.file_pick_request: GateRequest | None = None
@@ -524,7 +524,7 @@ class App:
         self.code_hovered_uniform: str = ""
         self.global_fps = 0.0
         self.fps_details_open: bool = False
-        # The frame profiler (088). Records ALWAYS since 090 D9a -- its GPU spans are the
+        # The frame profiler. Records ALWAYS -- its GPU spans are the
         # throttle's cost input, and the measured always-on cost is a +0.005 ms p95 delta. The
         # panel's open state decides only what is DRAWN. `last_profile` holds the last COMPLETE
         # profile, two frames behind because a GPU query read sooner stalls on the GPU.
@@ -536,7 +536,7 @@ class App:
         self.splitter_dragging: bool = False
         self._splitter_press_on_splitter: bool = False
 
-        # The Projects modal (feature 084). All transient: a persisted selected path would be a
+        # The Projects modal. All transient: a persisted selected path would be a
         # second dead-pointer class. `pending_project_switch` is the deferral that keeps the
         # switch out of the popup's own draw; `pending_project_seed` rides with it so a
         # just-created project gets its starter document once the load has happened.
@@ -551,24 +551,24 @@ class App:
         # while the user is typing a name.
         self.projects_input_focused: bool = False
 
-        # The code editor's open tabs (feature 045): an ordered list + the active index. The active
+        # The code editor's open tabs: an ordered list + the active index. The active
         # tab's path is what the editor shows (`current_editor_path`). Document shader, the document script
         # (`script.py`), and lib files are all closable tabs — no pinned first tab. Selecting a
         # document ensures its shader tab. Empty list = no file open.
         self.editor_tabs: list[EditorTab] = []
         self.active_tab_index: int = 0
-        # A one-shot consumed by the native tab bar (047): when active_tab_index is set
+        # A one-shot consumed by the native tab bar: when active_tab_index is set
         # PROGRAMMATICALLY (glyph open / document-select / lib-jump / close), the tab bar must DRIVE
         # imgui's selection via TabItemFlags_.set_selected — imgui ignores a model-side index change
         # and otherwise reports the old tab, reverting the switch. A genuine user click reads back
         # without setting this. Mirrors the document-settings bar's document_tab_select_pending (ui.py).
         self.tab_select_pending: bool = False
-        # The error strip's "+N more" expand state (047 F6), reset whenever the active tab changes
+        # The error strip's "+N more" expand state, reset whenever the active tab changes
         # (an expanded strip on one script shouldn't carry to the next).
         self.errors_expanded: bool = False
 
         # shader_lib_index + the cross-project stores (favorites/tags)
-        # live on self.session (feature 025); App reaches them via the @property forwarders.
+        # live on self.session; App reaches them via the @property forwarders.
 
         # Shader-library file CRUD + picker inline-input/filter state. Owns the file
         # operations; editor-session cleanup flows back via the two callbacks.
@@ -603,7 +603,7 @@ class App:
         def key_callback(
             window: Any, key: int, scancode: int, action: int, mods: int
         ) -> None:
-            # The editor input pump rides the same callback (feature 067): every key
+            # The editor input pump rides the same callback: every key
             # event is offered to the queue; the drain decides per-frame whether the
             # focused editor takes it.
             event = translate_key(key, action, mods)
@@ -612,9 +612,9 @@ class App:
             # Gate only PRESS/REPEAT. A RELEASE always passes: the job can disappear
             # between press and release, and swallowing the release of a forwarded press
             # leaves imgui's Escape logically held — every InputText then self-cancels on
-            # the key-repeat ticks (conventions.md ## Known quirks).
+            # the key-repeat ticks.
             if key == glfw.KEY_ESCAPE and action != glfw.RELEASE:
-                # A focused editor owns Esc WHOLLY (067): the drain already queued it
+                # A focused editor owns Esc WHOLLY: the drain already queued it
                 # above; imgui must not also see the press, or its nav-cancel climbs
                 # out of the editor child and defocuses it (#8059 — the exact
                 # defocus-on-Esc the vim keymap forbids). Popups aren't affected:
@@ -695,7 +695,7 @@ class App:
             CommandId.PREV_PASS: lambda: self.step_output_pass(-1),
         }
 
-    # ---- copilot-cluster forwarders (feature 025) ----
+    # ---- copilot-cluster forwarders ----
     # The CopilotSession/CopilotBackend/RevertExecutor cluster lives on self.session; App keeps
     # only the copilot UI state + the thin revert_turn/recover_deleted_document wrappers below.
 
@@ -728,13 +728,13 @@ class App:
     def _on_script_key_warning(
         self, document_id: str, pass_name: str, name: str, reason: str, message: str
     ) -> None:
-        # 102 D-F: a script key that does not land WARNS, in the logs and in the
+        # A script key that does not land WARNS, in the logs and in the
         # notifications. The engine is headless core and imports no imgui, so it fires this
-        # injected callback instead (D3a) -- this is the UI end of that seam, and without it
+        # injected callback instead -- this is the UI end of that seam, and without it
         # the whole feature reaches the log and never the screen.
         #
-        # Already EDGE-triggered by `_warn`, which fires only when a key's reason changes
-        # (D3), so this runs once per key per failure rather than once per frame. `push`
+        # Already EDGE-triggered by `_warn`, which fires only when a key's reason changes, so
+        # this runs once per key per failure rather than once per frame. `push`
         # logs on its own, which is the logs half.
         where = f"{pass_name}.{name}" if pass_name else name
         self.notifications.push(f"script: {where} -- {message}", COLOR.STATE_WARN[:3])
@@ -770,7 +770,7 @@ class App:
         """
         ui_document = self.ui_documents[document_id]
         document = ui_document.document
-        # An explicit pick on the Uniforms tab wins (083): without it the panel could only ever
+        # An explicit pick on the Uniforms tab wins: without it the panel could only ever
         # reach a pass that was open in the editor or on screen, and tuning a third one meant
         # opening its tab first. A stale name (a rename, a deleted pass) falls through.
         chosen = ui_document.ui_state.panel_pass
@@ -820,7 +820,7 @@ class App:
         self.forget_render_state(document_id)
 
     def forget_render_state(self, document_id: str) -> None:
-        """Drop every ephemeral per-document entry the render decoupling keeps (090).
+        """Drop every ephemeral per-document entry the render decoupling keeps.
 
         Called when a document GOES AWAY, never when it merely drops out of one frame's set:
         an interval that lost its hysteresis counter for a frame would restart at 1 and pay the
@@ -859,7 +859,7 @@ class App:
     def revert_turn(self, msg: Message) -> None:
         # MAIN THREAD (the chat's Revert button on a user message, gated on not-in-flight). Restore
         # every document the turn touched to its pre-turn state, drop the message's turn_id so the
-        # button retires, note the revert to the agent, persist (feature 020·30).
+        # button retires, note the revert to the agent, persist.
         if not msg.turn_id or self.copilot.state.in_flight:
             return
         result = self.revert_executor.restore_checkpoint(msg.turn_id)
@@ -986,7 +986,7 @@ class App:
         return False
 
     def cycle_code_tab(self) -> None:
-        # Ctrl+Tab is global (071 D8). On an unfocused editor the first press only focuses it,
+        # Ctrl+Tab is global. On an unfocused editor the first press only focuses it,
         # so the tab the eye is on stays; every press while focused cycles forward through the
         # open tabs in the order the tab row shows them (the model list follows imgui's drag
         # order). set_active_tab drives imgui's selection via tab_select_pending.
@@ -1180,7 +1180,7 @@ class App:
         self._open_modal(ModalId.PASS_SETTINGS)
 
     def commit_pass_group(self) -> None:
-        """Write the gear's group buffer to the open pass (091 D9); a refusal toasts and
+        """Write the gear's group buffer to the open pass; a refusal toasts and
         restores the buffer."""
         document_id = self.current_document_id
         name = self.pass_settings_name
@@ -1245,7 +1245,7 @@ class App:
         self.ensure_shader_tab(document_id, name, focus_editor=True)
 
     def open_add_pass(self) -> None:
-        # The settings modal in create mode (078 D5): a draft the modal edits, made real only
+        # The settings modal in create mode: a draft the modal edits, made real only
         # by `create_pass_from_draft`; Escape and Cancel both reach `close_pass_settings`,
         # which drops it.
         document_id = self.current_document_id
@@ -1288,7 +1288,7 @@ class App:
         self.choose_output(document_id, name)
         return True
 
-    # ---- the import dialog (091 D10) ----
+    # ---- the import dialog ----
 
     def open_import_passes(self) -> None:
         if self._copilot_busy_blocked("Importing passes"):
@@ -1343,7 +1343,7 @@ class App:
             compile_pending_passes(host.document)
 
     def host_readers_of(self, fed: str) -> set[tuple[str, str]]:
-        """The host's `(pass, sampler)` pairs that read `fed`: the default handovers (D6)."""
+        """The host's `(pass, sampler)` pairs that read `fed`: the default handovers."""
         ui_document = self.ui_documents.get(self.current_document_id)
         if ui_document is None:
             return set()
@@ -1445,7 +1445,7 @@ class App:
     def default_project_dir(self) -> Path:
         return _create_dir_if_needed(self.default_projects_root_dir / "default")
 
-    # ---- ProjectSession forwarders (feature 025) ----
+    # ---- ProjectSession forwarders ----
     # App owns one ProjectSession (the headless project core) and forwards project state +
     # ops to it. Explicit @property (not __getattr__) so pyright sees the surface. Reads only —
     # the writes all happen inside _init / release / rebuild via self.session.X directly.
@@ -1560,10 +1560,10 @@ class App:
         self.rgb_view = ChannelBlit(RGB_FS)
 
         self.frame_idx = 0
-        # Wall-clock of the previous script-engine tick (feature 040), for the per-frame dt.
+        # Wall-clock of the previous script-engine tick, for the per-frame dt.
         self.last_tick_time = 0.0
 
-        # The render decoupling's per-document state (090), all EPHEMERAL and all keyed by
+        # The render decoupling's per-document state, all EPHEMERAL and all keyed by
         # document id, so a project switch starts them empty:
         #   viewer_region     the size the viewer DREW the document image at last frame, the
         #                     ONE source every Auto document fits its aspect into (revision 1);
@@ -1571,12 +1571,12 @@ class App:
         #                     `_tick_frame_state`, and None until the first frame has drawn
         #   pending_resolution a Fixed W x H the Document tab committed INSIDE the draw phase,
         #                     applied by step 4 of the next frame -- a resize there would
-        #                     release textures imgui is still holding (the 084 D5 hazard)
+        #                     release textures imgui is still holding (the texture-release hazard)
         #   auto_size_states  the damping counters behind each Auto size
         #   throttle_states   the hysteresis counters behind each interval
         #   document_costs    the last measured cost per document, written in step 3 alone
         #   render_plan       this frame's intervals and phases, or None before the first plan
-        #   graph_views       the graph canvas's pan/zoom/selection per document (092 D2),
+        #   graph_views       the graph canvas's pan/zoom/selection per document,
         #                     created on first use and dropped with the document in
         #                     forget_render_state
         self.graph_views: dict[str, GraphViewState] = {}
@@ -1586,8 +1586,8 @@ class App:
         self.throttle_states: dict[str, ThrottleState] = {}
         self.document_costs: dict[str, CostRecord] = {}
         self.render_plan: RenderPlan | None = None
-        # The live cursor over the current document's preview, fed into the script tick as context.mouse
-        # (feature 042). Updated from the preview hit-test in ui.py; defaults to center (the
+        # The live cursor over the current document's preview, fed into the script tick as context.mouse.
+        # Updated from the preview hit-test in ui.py; defaults to center (the
         # export value) until the preview is hovered. One frame stale by construction (tick runs
         # before the preview draws) — harmless, like dt.
         self.script_mouse: MouseState = EXPORT_MOUSE
@@ -1609,7 +1609,7 @@ class App:
         if first_run and not self.ui_documents:
             self.session.seed_starter_document(self.set_current_document_id)
 
-        # The tabs the last session had open (093 W2-2), before the fallback below: a record
+        # The tabs the last session had open, before the fallback below: a record
         # whose file is gone or whose document this project does not hold is dropped, so the
         # fallback still runs when nothing survives. No session is restored — the draw creates
         # one lazily, as it does for a tab opened by hand.
@@ -1635,7 +1635,7 @@ class App:
         # A project that has never saved a tab set shows its current document's shader rather
         # than a blank editor; a stale pointer at a deleted document reselects a live one. This
         # and document creation are the two places a shader tab opens by itself -- a document
-        # SWITCH opens nothing (093 W7, the rule W3-3 set for clicks). A user who closed every
+        # SWITCH opens nothing, as a click on a tile does not. A user who closed every
         # tab saved that empty set and gets it back: the fallback is for a first open, not for
         # an empty editor.
         if not self.editor_tabs and not self.app_state.tabs_persisted:
@@ -1695,8 +1695,8 @@ class App:
         )
 
     def get_emoji_font(self, size: int) -> Any:
-        # Monochrome glyphs only — this imgui-bundle build can't rasterize color emoji
-        # (conventions.md ## Known quirks). Added at atlas-build time, never mid-frame.
+        # Monochrome glyphs only — this imgui-bundle build can't rasterize color emoji.
+        # Added at atlas-build time, never mid-frame.
         fonts = imgui.get_io().fonts
         return fonts.add_font_from_file_ttf(
             str(RESOURCES_DIR / "fonts" / "NotoEmoji" / "NotoEmoji-Regular.ttf"),
@@ -1705,7 +1705,7 @@ class App:
 
     @property
     def current_editor_path(self) -> Path | None:
-        # The active tab's path (feature 045), or None when no tab is open.
+        # The active tab's path, or None when no tab is open.
         if not (0 <= self.active_tab_index < len(self.editor_tabs)):
             return None
         return self.editor_tabs[self.active_tab_index].path
@@ -1741,7 +1741,7 @@ class App:
             return
         document = self.ui_documents[document_id].document
         render_pass = document.passes.get(pass_name) or document.render_pass
-        # Opening a pass in the editor is itself a pick, so it RECORDS that pass (083) exactly as
+        # Opening a pass in the editor is itself a pick, so it RECORDS that pass exactly as
         # a tile click does: one piece of state behind every surface that acts on "the pass".
         self.set_panel_pass(document_id, pass_name_of(render_pass.source.path))
         self._focus_or_add_tab(
@@ -1817,7 +1817,7 @@ class App:
         self.open_shader_lib_file(path)
 
     def open_script_for(self, document_id: str, focus_editor: bool = False) -> None:
-        # Open the document's `script.py` in a tab, lazily creating it if absent (048 — one script per
+        # Open the document's `script.py` in a tab, lazily creating it if absent (one script per
         # document). The next reload_scripts binds it. Frozen mid-copilot-turn (a write races the reload).
         if self.copilot_turn_active:
             return
@@ -1840,7 +1840,7 @@ class App:
         )
 
     def open_graph_for(self, document_id: str, focus_editor: bool = False) -> None:
-        # Summon the document's pass graph into the editor pane as its own tab (093 T1, T4).
+        # Summon the document's pass graph into the editor pane as its own tab.
         # The path is the document's `graph.json`, so every path-keyed pass-through works
         # unchanged; the tab has NO EditorSession and nothing here creates one. Frozen
         # mid-copilot-turn like its `open_script_for` sibling.
@@ -1857,7 +1857,7 @@ class App:
 
     def get_session(self, source: ShaderSource) -> EditorSession:
         # Lazy-create a session bound to this source's path (the stable identity);
-        # `source.text` is the initial buffer text. The language is suffix-aware (045): a `.py`
+        # `source.text` is the initial buffer text. The language is suffix-aware: a `.py`
         # script gets Python highlighting, everything else GLSL (unknown suffixes fall back
         # to GLSL — host policy).
         session = self.editor_sessions.get(source.path)
@@ -1901,7 +1901,7 @@ class App:
 
     def _apply_editor_settings_to(self, editor: Editor) -> None:
         # Every editor setting but font_size flows through here; font_size reaches the
-        # editor only as ed_layout's px_per_em via the render path (feature 067).
+        # editor only as ed_layout's px_per_em via the render path.
         settings: EditorSettings = self.app_state.editor_settings
         # First: set_style replaces the whole chrome with that style's defaults, so a
         # set_chrome_flag before it would be discarded.
@@ -1961,7 +1961,7 @@ class App:
         return session.editor.get_undo_index() != session.saved_undo
 
     def is_tab_dirty(self, tab: EditorTab) -> bool:
-        # Per-tab unsaved state for the native tab bar's dirty dot (047) — reads the tab's own
+        # Per-tab unsaved state for the native tab bar's dirty dot — reads the tab's own
         # session (not the active one). A tab whose session was evicted reads clean.
         session = self.editor_sessions.get(tab.path)
         if session is None:
@@ -1987,7 +1987,7 @@ class App:
         return self.python_worker
 
     def format_current_editor(self) -> None:
-        """Format the active buffer with its language's formatter (078 D9): one undo step,
+        """Format the active buffer with its language's formatter: one undo step,
         the caret kept on its line. A formatter's refusal (a syntax error) toasts and
         changes nothing."""
         session = self.get_current_session_if_exists()
@@ -2084,11 +2084,11 @@ class App:
             )
             logger.error(f"Failed to open directory {document_dir}: {e}")
 
-    # --- Script UI (feature 048): thin App-side wrappers over the headless ProjectSession ---
+    # --- Script UI: thin App-side wrappers over the headless ProjectSession ---
     def set_uniform_stopped(
         self, document_id: str, pass_name: str, name: str, stopped: bool
     ) -> None:
-        # The per-uniform play/stop toggle + the auto-stop-on-manual-edit (048): freeze/resume the
+        # The per-uniform play/stop toggle + the auto-stop-on-manual-edit: freeze/resume the
         # script's write to this uniform ON THIS PASS. Frozen mid-copilot-turn (a flag flip races
         # the reload poll).
         if self.copilot_turn_active:
@@ -2096,7 +2096,7 @@ class App:
         self.session.set_uniform_stopped(document_id, pass_name, name, stopped)
 
     def set_document_all_stopped(self, document_id: str, stopped: bool) -> None:
-        # The whole-document play/stop toggle (048): freeze/resume every driven uniform at once. Frozen
+        # The whole-document play/stop toggle: freeze/resume every driven uniform at once. Frozen
         # mid-copilot-turn.
         if self.copilot_turn_active:
             return
@@ -2106,13 +2106,13 @@ class App:
         self.app_state.channel_view = next_channel_view(self.app_state.channel_view)
 
     def choose_output(self, document_id: str, name: str) -> None:
-        """The pass becomes the document's output, and the editor pane is left alone (093 S15).
+        """The pass becomes the document's output, and the editor pane is left alone.
 
         The canvas's click takes this half alone: opening a shader tab there would evict the
         graph tab the click was made on.
 
         Picking a pass IS picking it to work on, so this records the choice as the panel pass
-        (083's explicit pick). Everything that acts on "the pass" -- the uniforms panel, `Open
+        (the explicit pick). Everything that acts on "the pass" -- the uniforms panel, `Open
         shader`, `Pass settings` -- then reads that ONE piece of state, whichever surface the
         pick came from. Clearing it here instead would leave `panel_pass` falling through to
         the active shader TAB, so `Open shader` would resolve to the tab already open and
@@ -2134,7 +2134,7 @@ class App:
         return view
 
     def graph_canvas_for(self, document_id: str) -> GraphCanvasState:
-        """The library-backed canvas for one document (098). One per document:
+        """The library-backed canvas for one document. One per document:
         each carries its own handle, FBO and view."""
         state = self.graph_canvases.get(document_id)
         if state is None:
@@ -2143,7 +2143,7 @@ class App:
         return state
 
     def arrange_graph(self, document_id: str) -> None:
-        """Lay every pass of the document out by rank and store it (092 D9): one placement,
+        """Lay every pass of the document out by rank and store it: one placement,
         one save, then the current scope fits once more."""
         ui_document = self.ui_documents.get(document_id)
         if ui_document is None:
@@ -2173,7 +2173,7 @@ class App:
     def drop_wire(
         self, document_id: str, producer: str, consumer: str, sampler: str
     ) -> str:
-        """A wire dropped from `producer`'s output onto `consumer.sampler` (092 D12): the one
+        """A wire dropped from `producer`'s output onto `consumer.sampler`: the one
         write path the canvas has for a read. Refused before anything is written when the
         read would close a loop (the pure planner over the hypothetical wiring) or when the
         sampler holds a bound texture (the write would release it). Returns the refusal, or
@@ -2195,8 +2195,8 @@ class App:
         )
 
     def unwire(self, document_id: str, consumer: str, sampler: str) -> str:
-        """The wire into `consumer.sampler` removed, by its mid-curve ✕ or the Delete key
-        (093 W2-4): the sampler reads black by decision."""
+        """The wire into `consumer.sampler` removed, by its mid-curve ✕ or the Delete key:
+        the sampler reads black by decision."""
         return self.session.set_sampler_source(
             document_id, consumer, sampler, NoSource()
         )
@@ -2204,11 +2204,11 @@ class App:
     def set_graph_uniform(
         self, document_id: str, pass_name: str, name: str, value: tuple[float, ...]
     ) -> None:
-        """A uniform dragged on the graph canvas (098).
+        """A uniform dragged on the graph canvas.
 
         The same two steps the uniforms panel takes for the same edit: a
         manual write to a SCRIPT-DRIVEN uniform auto-stops the script for
-        that slot first (048), or the next tick overwrites what the user
+        that slot first, or the next tick overwrites what the user
         just set and the drag reads as broken. Then the value is written.
 
         Frozen mid-copilot-turn, like every other document write.
@@ -2251,7 +2251,7 @@ class App:
     def commit_graph_positions(
         self, document_id: str, moved: Mapping[str, tuple[float, float]]
     ) -> None:
-        """The release of a drag on the library-backed canvas (098): the
+        """The release of a drag on the library-backed canvas: the
         positions it reported, written ONCE.
 
         The library owns the gesture and reports a position every frame, so
@@ -2273,7 +2273,7 @@ class App:
             self.notifications.push(error)
 
     def group_selection(self, document_id: str, group: str) -> str:
-        """Put the canvas's selected passes in `group` (092 D14): one validated write."""
+        """Put the canvas's selected passes in `group`: one validated write."""
         view = self.graph_view_for(document_id)
         error = self.session.set_pass_groups(document_id, sorted(view.selection), group)
         if error:
@@ -2281,7 +2281,7 @@ class App:
         return error
 
     def dissolve_group(self, document_id: str, group: str) -> str:
-        """Clear `group` off every member (092 D16), one write; the inverse of Group."""
+        """Clear `group` off every member, one write; the inverse of Group."""
         ui_document = self.ui_documents.get(document_id)
         if ui_document is None:
             return f"no such document '{document_id}'"
@@ -2295,7 +2295,7 @@ class App:
         return error
 
     def leave_group(self, document_id: str, name: str) -> str:
-        """Take one pass out of its group (091 D9), the strip's and the canvas's shared menu
+        """Take one pass out of its group, the strip's and the canvas's shared menu
         item, routed here so every canvas write is an App verb."""
         error = self.session.set_pass_group(document_id, name, "")
         if error:
@@ -2303,8 +2303,8 @@ class App:
         return error
 
     def step_output_pass(self, step: int) -> None:
-        # Next / previous pass walk the strip's drawn order and wrap, setting the output alone
-        # (the rule W3-3 set for clicks): the editor pane is left as it is.
+        # Next / previous pass follow the strip's drawn order and wrap, setting the output alone
+        # as a click on a tile does: the editor pane is left as it is.
         document_id = self.current_document_id
         ui_document = self.ui_documents.get(document_id)
         if ui_document is None:
@@ -2387,7 +2387,7 @@ class App:
         dir_name: str | None = None,
     ) -> Path:
         # The user-initiated save path: toast. The copilot's mid-turn saves go straight to the
-        # core (session.save_ui_document) and deliberately don't toast (feature 025 decision 7).
+        # core (session.save_ui_document) and deliberately don't toast.
         dir = self.session.save_ui_document(ui_document, root_dir, dir_name)
         self.notifications.push(f"Document '{ui_document.ui_state.ui_name}' saved")
         return dir
@@ -2540,7 +2540,7 @@ class App:
             self.imgui_renderer.shutdown()
         imgui.destroy_context()
 
-    # ---- projects (feature 084) -----------------------------------------------------------
+    # ---- projects -----------------------------------------------------------
 
     def flush_all_dirty_editors(self) -> int:
         """Persist every dirty tab, not only the active one. Returns how many FAILED.
@@ -2596,7 +2596,7 @@ class App:
         # The modal never switches inside its own draw: a popup body runs AFTER the editor panel
         # and the document image have pushed their textures into the draw list, so releasing them
         # there leaves imgui rendering freed GL names. `_tick_frame_state` consumes this before
-        # any drawing (084 D5).
+        # any drawing.
         self.pending_project_switch = path
 
     def switch_project(self, path: Path) -> None:

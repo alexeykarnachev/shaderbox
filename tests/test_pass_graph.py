@@ -1,4 +1,4 @@
-"""The GL-free pass-graph model and its planner (065 stage 1).
+"""The GL-free pass-graph model and its planner.
 
 Every plan built here goes through `_plan`, which asserts the plan invariants -- above all that a
 shared ancestor appears ONCE in the order. A pass drawn N times renders the CORRECT picture and
@@ -151,7 +151,7 @@ def test_a_consumer_of_a_cycle_is_reported_and_left_unordered() -> None:
 
 
 def test_an_unfilled_input_is_not_an_error_and_the_pass_still_draws() -> None:
-    # D3's graceful degradation: a source naming a pass that does not exist reads black, so a
+    # Graceful degradation: a source naming a pass that does not exist reads black, so a
     # half-built graph stays usable while you build it. `wired_pass` is where it becomes "no
     # read", so the wiring the planner sees never names a missing pass.
     assert wired_pass(PassSource("nope"), "u_src", "blur", {"blur"}) is None
@@ -166,13 +166,13 @@ def test_wired_pass_over_every_state() -> None:
     passes = {"df", "jfa", "edge"}
     assert wired_pass(PassSource("jfa"), "u_df", "edge", passes) == "jfa"
     assert wired_pass(PassSource("gone"), "u_df", "edge", passes) is None
-    # Undecided: the NAME decides (069 D9), when it names a pass that exists.
+    # Undecided: the NAME decides, when it names a pass that exists.
     assert wired_pass(AutoSource(), "u_df", "edge", passes) == "df"
     assert wired_pass(AutoSource(), "u_df", "edge", {"jfa"}) is None
-    # No `u_` prefix, no auto edge -- D9's rule is about `u_<pass>` names.
+    # No `u_` prefix, no auto edge -- the rule is about `u_<pass>` names.
     assert wired_pass(AutoSource(), "df", "edge", passes) is None
-    # The feedback exception wins over a sibling that happens to be called `prev`: D9 writes
-    # `u_prev` down as reading yourself, so that is the branch a user can predict.
+    # The feedback exception wins over a sibling that happens to be called `prev`: `u_prev`
+    # is defined as reading yourself, so that is the branch a user can predict.
     assert (
         wired_pass(AutoSource(), "u_prev", "cascade", {"cascade", "prev"}) == "cascade"
     )
@@ -223,7 +223,7 @@ def test_output_pass_is_none_when_it_names_nothing_among_several() -> None:
 
 
 def test_target_defaults_are_the_measured_safe_ones() -> None:
-    # f2, linear, clamp — 063 measured f1 saturating at 255 where f2 reached 7.0, and moderngl's
+    # f2, linear, clamp — f1 measured saturating at 255 where f2 reached 7.0, and moderngl's
     # repeat default is wrong for a feedback border.
     target = TargetConfig()
     assert target.dtype == DEFAULT_DTYPE == "f2"
@@ -277,7 +277,7 @@ def test_the_spec_schema_round_trips() -> None:
     assert PassGraph(**graph.model_dump()) == graph
     assert graph.output_pass == "composite"
     assert graph.passes["composite"].target.dtype == "f1"
-    # What fills the inputs is each sampler's value, not the file (072): the wiring the planner
+    # What fills the inputs is each sampler's value, not the file: the wiring the planner
     # takes is built beside the graph.
     wiring = {
         "scene": {},
@@ -299,7 +299,7 @@ def test_an_empty_graph_plans_to_nothing() -> None:
     assert PassGraph().output_pass is None
 
 
-# --- 068: iteration count -------------------------------------------------------------
+# --- iteration count -------------------------------------------------------------
 
 
 def test_iterations_are_bounded() -> None:
@@ -314,9 +314,8 @@ def test_iterations_are_bounded() -> None:
 
 
 def test_graph_edits_preserve_fields_they_do_not_name() -> None:
-    # with_target once REBUILT the entry field-by-field, so retargeting reset iterations 9 -> 1
-    # and a JFA chain silently degraded. The falsifier is any edit verb that constructs a
-    # PassEntry instead of copying one.
+    # Retargeting must keep iterations 9 as 9, or a JFA chain silently degrades. Any edit
+    # verb must copy the PassEntry, not construct one.
     graph = PassGraph(
         output="jfa",
         passes={"jfa": PassEntry(iterations=9, target=TargetConfig(dtype="f4"))},
@@ -328,7 +327,7 @@ def test_graph_edits_preserve_fields_they_do_not_name() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 091 -- entry points, the group slug
+# entry points, the group slug
 # ---------------------------------------------------------------------------
 
 
@@ -340,8 +339,7 @@ def test_entry_points_are_the_passes_reading_no_other_pass() -> None:
     }
     assert pass_graph.entry_points(bloom) == ["scene"]
     # A self-read is feedback, not an input: its OWN wiring, since in every real shape the
-    # self-reader also reads a sibling and the bug is invisible there. Falsifier: counting the
-    # self-read as an input answers [].
+    # self-reader also reads a sibling and the bug is invisible there.
     assert pass_graph.entry_points({"acc": {"u_prev": "acc"}}) == ["acc"]
     assert pass_graph.entry_points(
         {"fg": {}, "bg": {}, "mix": {"u_fg": "fg", "u_bg": "bg"}}
@@ -353,8 +351,6 @@ def test_entry_points_are_the_passes_reading_no_other_pass() -> None:
 
 
 def test_group_slug_is_the_first_word_made_legal() -> None:
-    # Falsifier: `2D SDF` -> `2d`, which fails PASS_NAME_RE and rejects every import from it
-    # over a name the user never typed.
     assert pass_graph.group_slug("Bloom Chain") == "bloom"
     assert pass_graph.group_slug("Radiance Cascades") == "radiance"
     assert pass_graph.group_slug("2D SDF") == "g_2d"
@@ -363,7 +359,7 @@ def test_group_slug_is_the_first_word_made_legal() -> None:
         assert pass_graph.PASS_NAME_RE.match(pass_graph.group_slug(name))
 
 
-# ---- the graph canvas's pure half (092) ----------------------------------------------------
+# ---- the graph canvas's pure half ----------------------------------------------------
 
 # The bloom fixture as a host sees it: scene feeds the bundle, final reads its output.
 _BLOOM: dict[str, dict[str, str]] = {
@@ -385,7 +381,6 @@ def _ports_of(wiring: dict[str, dict[str, str]]) -> dict[str, list[Port]]:
 
 
 def test_rank_layout_puts_producers_left_of_consumers() -> None:
-    # Falsifier: rank by insertion order -- `final` sits before `b_comp` in a shuffled dict.
     shuffled = dict(reversed(list(_BLOOM.items())))
     laid = rank_layout(shuffled, list(_BLOOM), _BLOOM_GROUPS, _SIZE, {}, 40.0, 10.0)
     for consumer, row in _BLOOM.items():
@@ -402,7 +397,6 @@ def test_rank_layout_is_deterministic_over_dict_order() -> None:
 
 
 def test_rank_layout_places_only_the_names_asked_for() -> None:
-    # Falsifier: return a position for every name, which would overwrite a drag.
     placed = {"scene": (5.0, 5.0), "final": (900.0, 5.0)}
     laid = rank_layout(
         _BLOOM, ["b_bright", "b_blur"], _BLOOM_GROUPS, _SIZE, placed, 40.0, 10.0
@@ -411,7 +405,6 @@ def test_rank_layout_places_only_the_names_asked_for() -> None:
 
 
 def test_rank_layout_keeps_cycle_members() -> None:
-    # Falsifier: lay out `plan.order` alone -- the two members vanish from the picture.
     wiring = {"a": {"u_b": "b"}, "b": {"u_a": "a"}, "c": {}}
     laid = rank_layout(
         wiring,
@@ -428,12 +421,11 @@ def test_rank_layout_keeps_cycle_members() -> None:
 
 def test_rank_layout_keeps_group_members_adjacent() -> None:
     # Rank 1 holds b_bright, b_trail (bloom) and an ungrouped `side`; the two members are
-    # contiguous whatever strip order says. Falsifier: sort a column by strip order alone.
+    # contiguous whatever strip order says.
     #
-    # The ungrouped pass must sit BETWEEN the two members in STRIP order, or the falsifier
-    # cannot fire: an earlier version used `side`, which sorts after both, so strip order
-    # and group order agreed and sorting by either kept the members adjacent. The test
-    # passed against the bug its own comment names.
+    # The ungrouped pass must sit BETWEEN the two members in STRIP order, or the test
+    # cannot fail: a pass that sorts after both would leave strip order and group order in
+    # agreement, so sorting by either would keep the members adjacent.
     #
     # Strip order is topological (`strip_order` -> `plan_passes`), NOT the order of the
     # wiring dict and not the `names` argument -- so the name is what places it, and
@@ -454,15 +446,14 @@ def test_rank_layout_keeps_group_members_adjacent() -> None:
 
 
 def test_node_ports_come_from_the_program_never_the_stored_rows() -> None:
-    # Falsifier: build the list from `values` keys -- the dead `u_gone` row grows a port.
     values: dict[str, object] = {"u_gone": PassSource("scene"), "u_src": AutoSource()}
     ports = node_ports(["u_src"], values, {"u_src": "scene"}, "cons")
     assert [p.sampler for p in ports] == ["u_src"]
 
 
 def test_node_ports_classify_every_state_and_skip_the_self_read() -> None:
-    # W3-5: `u_prev` (or any sampler sourced to its own pass) is feedback, not an input, so
-    # it grows no port. Falsifier: append the self-read as a port of any kind.
+    # `u_prev` (or any sampler sourced to its own pass) is feedback, not an input, so
+    # it grows no port.
     values: dict[str, object] = {
         "u_prev": AutoSource(),
         "u_none": NoSource(),
@@ -528,7 +519,7 @@ def test_group_boundary_over_a_split_group() -> None:
 
 def test_group_boundary_over_a_member_whose_sampler_reads_nothing() -> None:
     # The severed chain (mutations case 1): b_comp's u_blur resolves to nothing after b_blur
-    # goes. Falsifier: drop the "or unfilled" clause -- the port disappears from the box.
+    # goes.
     wiring = {k: v for k, v in _BLOOM.items() if k != "b_blur"}
     wiring["b_comp"] = {"u_scene": "scene", "u_trail": "b_trail"}
     ports = _ports_of(wiring)
@@ -541,8 +532,7 @@ def test_group_boundary_over_a_member_whose_sampler_reads_nothing() -> None:
 
 
 def test_a_terminal_box_still_has_its_bundle_output_port() -> None:
-    # Nothing outside reads any member. Falsifier: make the bundle output conditional on an
-    # outside reader -- the mutations review's case 2, a box with a picture and no dot.
+    # Nothing outside reads any member.
     wiring = {k: v for k, v in _BLOOM.items() if k != "final"}
     boundary = group_boundary(_BLOOM_MEMBERS, _ports_of(wiring), wiring, "scene")
     assert boundary.outputs == ["b_comp"] and boundary.bundle == "b_comp"
@@ -568,9 +558,9 @@ def test_refuse_drop_refuses_every_cycle_and_allows_every_legal_drop() -> None:
     assert refuse_drop(chain, "c", "u_a2", "a") == ""  # the diamond
     assert refuse_drop(chain, "a", "u_l", "loner") == ""  # unrelated
     assert refuse_drop(chain, "b", "u_prev", "b") == ""  # feedback
-    # Falsifier: refuse only when the culprit is an endpoint. The planner names `a` as the
-    # culprit for a drop whose endpoints are `c` and `a`, and would name a third pass on a
-    # longer loop; the whole-list check is what makes every case refuse.
+    # The planner names `a` as the culprit for a drop whose endpoints are `c` and `a`, and
+    # would name a third pass on a longer loop; the whole-list check is what makes every case
+    # refuse.
     longer = wiring_with(chain, "loner", "u_c", "c")
     assert refuse_drop(longer, "a", "u_loner", "loner")
 
@@ -609,8 +599,7 @@ def test_a_trailing_newline_is_not_a_name_at_either_guard() -> None:
 
     Not a cosmetic slip: a pass name is a FILENAME and a graph key, so "glow\n" becomes a
     second pass beside "glow" that the `name in existing` collision check cannot see, and
-    it writes `passes/glow\n.frag.glsl`. Falsifier: revert either guard's `fullmatch` to
-    `match`.
+    it writes `passes/glow\n.frag.glsl`. Either guard must use `fullmatch`, not `match`.
 
     This pins the group guard and the regex. The pass-name guard is private to
     `project_session`, so its own reachable path -- the copilot's `add_pass` -- pins it in
@@ -639,8 +628,6 @@ def test_a_trailing_newline_is_not_a_name_at_either_guard() -> None:
     ],
 )
 def test_a_position_is_bounded_on_the_model(position: tuple[float, float]) -> None:
-    # Falsifier: a bare `tuple[float, float]`, which the persistence review measured accepting
-    # NaN and 1e30.
     with pytest.raises(ValidationError):
         PassEntry(position=position)
 
@@ -652,6 +639,5 @@ def test_a_legal_position_is_accepted_and_carried_by_the_funnel() -> None:
     assert placed.passes["a"].iterations == 3
     assert placed.passes["c"].position == (1.0, 1.0)
     assert placed.with_group("a", "g").passes["a"].position == (12.0, -34.5)
-    # Falsifier: `model_copy(update=...)`, which skips the field's bounds.
     with pytest.raises(ValidationError):
         graph.with_positions({"a": (1e30, 0.0)})

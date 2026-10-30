@@ -1,4 +1,4 @@
-"""ASCII transliteration of copilot text for the imgui chat font (feature 020 - 20 D2).
+"""ASCII transliteration of copilot text for the imgui chat font.
 
 The chat font (AnonymousPro) is loaded through imgui-bundle 1.92's dynamic atlas. It has
 em-dash / ellipsis / smart quotes / Latin-1 accents, but NOT arrows (U+2192 etc.) - and an

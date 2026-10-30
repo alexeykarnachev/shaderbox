@@ -1,11 +1,11 @@
 """The pass graph: which passes a document has, how each target is configured, which pass is the
-output, and the planner that orders the draw (065, reshaped by 072).
+output, and the planner that orders the draw.
 
 A document holds several passes forming a DAG. Each pass is its own `.glsl` file with its own
 `main()` and its own render target; one pass is the document's output. A pass declares an input
-as an ordinary `uniform sampler2D`, and that sampler's VALUE says what fills it (072): a
+as an ordinary `uniform sampler2D`, and that sampler's VALUE says what fills it: a
 `PassSource` names a pass, a `NoSource` reads black by decision, an `AutoSource` lets the
-sampler's NAME decide (069 D9), and a texture the user bound is itself. `wired_pass` is the one
+sampler's NAME decide, and a texture the user bound is itself. `wired_pass` is the one
 function that turns a value into "the pass this sampler reads", and the planner takes the
 resulting WIRING (pass -> uniform -> pass), so nothing here knows about textures or GL.
 
@@ -37,7 +37,7 @@ from typing import Annotated, Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-# f2, not f1: 063 measured f1 saturating at 255 on the FIRST accumulate pass where f2 reached
+# f2, not f1: f1 was measured saturating at 255 on the FIRST accumulate pass where f2 reached
 # exactly 7.0, so the safe value is the default and f1 is the opt-in. clamp inverts moderngl's
 # repeat_x/y=True, which is wrong for a feedback border.
 TargetDtype = Literal["f1", "f2", "f4"]
@@ -50,18 +50,17 @@ DEFAULT_SCALE = 1.0
 
 # How a pass's draw combines with what is already in its target. Permanent on-disk
 # vocabulary the moment it ships, and this project writes no migrations -- so the set is
-# decided in the spec (102 D5), not by whoever wires the combo.
+# fixed here, not by whoever wires the combo.
 #
-# `additive` was feature 100's hardcoded `ONE, ONE`, and it is the default so every
-# existing document draws identically. It reverses only the FIRST of 100 decision 7's three
-# claims: "no depth" and "no per-frame sort" were free BECAUSE additive is
+# `additive` is the hardcoded `ONE, ONE` blend and the default, so every existing document
+# draws identically. "No depth" and "no per-frame sort" are free BECAUSE additive is
 # order-independent, and under `alpha` they are not -- overlapping alpha sprites draw in
 # population order, which is a standing limitation of that mode and is stated where an
 # author meets it rather than left as a consequence nobody wrote down.
 # No `multiply`. It is the mode people expect to find and it cannot work here: its factors
 # are (DST_COLOR, ZERO) and `Pass.render` clears its target to black unconditionally before
 # every draw, so the result is src*0 + dst*0 for every pixel and every source colour. It
-# would ship as a control that draws nothing, which is the failure D5 names as worse than
+# would ship as a control that draws nothing, which is worse than
 # having no control. Revisit if a pass ever draws onto something it did not clear.
 BlendMode = Literal["additive", "alpha", "opaque", "screen"]
 BLEND_MODES: tuple[BlendMode, ...] = get_args(BlendMode)
@@ -80,7 +79,7 @@ _GROUP_PATTERN = r"^([A-Za-z_][A-Za-z0-9_]*)?$"
 # effect: JFA needs ceil(log2(max_dim)) and a cascade stack ceil(log4(diagonal)) + 1.
 MAX_ITERATIONS = 64
 
-# A node's stored place on the graph canvas (092 D6), in canvas units at zoom 1. Bounded on the
+# A node's stored place on the graph canvas, in canvas units at zoom 1. Bounded on the
 # model because `graph.json` type-checks nothing: a NaN would poison every bounding box the
 # canvas computes and 1e30 would put a node past any reachable pan.
 MAX_GRAPH_COORD = 100_000.0
@@ -159,7 +158,7 @@ class TargetConfig(BaseModel):
 class PassEntry(BaseModel):
     """One pass's graph entry: how its target is configured and how many times it runs.
 
-    What fills its inputs is not here: that is each sampler's VALUE (072, `wired_pass`).
+    What fills its inputs is not here: that is each sampler's VALUE (`wired_pass`).
     """
 
     model_config = ConfigDict(frozen=True)
@@ -177,10 +176,10 @@ class PassEntry(BaseModel):
     # assuming one warns falsely on the other. The shader's author knows its base; the engine
     # only knows the number.
     iterations: int = Field(default=1, ge=1, le=MAX_ITERATIONS)
-    # The group this pass belongs to, or "" (091). A label and nothing more: a group exists
+    # The group this pass belongs to, or "". A label and nothing more: a group exists
     # while a pass carries its name, so there is no member list to keep in step with this.
     group: str = Field(default="", pattern=_GROUP_PATTERN)
-    # Where the graph canvas draws this pass (092 D6): None means never placed, and the canvas
+    # Where the graph canvas draws this pass: None means never placed, and the canvas
     # lays such a pass out by rank every frame. Written only by a drag or by Arrange.
     position: tuple[GraphCoord, GraphCoord] | None = None
 
@@ -291,7 +290,7 @@ class NoSource:
 
 @dataclass(frozen=True)
 class AutoSource:
-    """A sampler nobody decided about: its NAME fills it at bind time (069 D9), or it reads
+    """A sampler nobody decided about: its NAME fills it at bind time, or it reads
     black."""
 
 
@@ -303,11 +302,11 @@ Wiring = Mapping[str, Mapping[str, str]]
 
 
 def _auto_source(uniform: str, consumer: str) -> str:
-    """The pass `uniform`'s NAME points at, or `""` when the name says nothing (069 D9).
+    """The pass `uniform`'s NAME points at, or `""` when the name says nothing.
 
-    `u_prev` reads the consumer itself -- the feedback exception D9 writes down, which wins over
+    `u_prev` reads the consumer itself -- the feedback exception, which wins over
     a sibling pass that happens to be called `prev`. A name without the `u_` prefix names no
-    pass: D9's rule is about `u_<pass>`, and a bare `tex` is outside it.
+    pass: the name rule is about `u_<pass>`, and a bare `tex` is outside it.
     """
     if uniform == _FEEDBACK_UNIFORM:
         return consumer
@@ -323,7 +322,7 @@ def wired_pass(
     no pass: a `NoSource`, a texture the user bound, or a name that matches no pass.
 
     A `PassSource` naming a pass that does not exist reads black rather than raising: that is
-    what keeps a half-built graph usable while you build it (065 D3).
+    what keeps a half-built graph usable while you build it.
 
     GL-free: `passes` are NAMES and `source` is only inspected by type, so nothing here compiles,
     binds or touches a context.
@@ -408,7 +407,7 @@ def plan_passes(wiring: Wiring) -> tuple[PassPlan, list[GraphError]]:
             # every path that reaches it.
             return True
         if mark == 2:
-            # Memoized on the failing side too, so the walk stays linear: without it, every root
+            # Memoized on the failing side too, so the traversal stays linear: without it, every root
             # downstream of a cycle re-walks the whole failed region.
             return False
         if mark == 0:
@@ -441,7 +440,7 @@ def plan_passes(wiring: Wiring) -> tuple[PassPlan, list[GraphError]]:
 def assert_plan_invariants(plan: PassPlan, wiring: Wiring) -> None:
     """Assert everything the renderer relies on. Run on EVERY plan a test builds.
 
-    The memoization bug this exists for reads as slow rather than wrong, so a test that only
+    A broken memoization reads as slow rather than wrong, so a test that only
     eyeballs pixels cannot see it; the observable is the ORDER, and it must be checked every time
     rather than in one dedicated test.
     """
@@ -534,7 +533,7 @@ def strip_order(names: Iterable[str], wiring: Wiring) -> list[str]:
 
 
 def entry_points(wiring: Wiring) -> list[str]:
-    """The passes of `wiring` that read no OTHER pass: a bundle's inputs (091 D3).
+    """The passes of `wiring` that read no OTHER pass: a bundle's inputs.
 
     A self-read is feedback, not an input, so a pass reading only its own previous frame is a
     root. Sorted by name, like everything the planner answers.
@@ -547,8 +546,7 @@ def entry_points(wiring: Wiring) -> list[str]:
 
 
 def readers_of(wiring: Wiring, fed: str) -> set[tuple[str, str]]:
-    """The `(pass, sampler)` pairs of `wiring` that read `fed`: an import's default handovers
-    (091 D6)."""
+    """The `(pass, sampler)` pairs of `wiring` that read `fed`: an import's default handovers."""
     return {
         (name, uniform)
         for name, reads in wiring.items()
@@ -558,7 +556,7 @@ def readers_of(wiring: Wiring, fed: str) -> set[tuple[str, str]]:
 
 
 def group_slug(name: str) -> str:
-    """A group name prefilled from a document's display name (091 D2): the first word,
+    """A group name prefilled from a document's display name: the first word,
     lowercased, made legal as a pass-name prefix."""
     words = name.split()
     word = re.sub(r"[^A-Za-z0-9_]", "_", words[0].lower()) if words else ""
@@ -572,7 +570,7 @@ def group_slug(name: str) -> str:
 def group_runs(order: Sequence[str], groups: Mapping[str, str]) -> list[list[str]]:
     """`order` cut into runs of consecutive passes sharing one non-empty group; an ungrouped
     pass is a run of one. By ADJACENCY, never by name: a group an outside pass interrupts is
-    two runs, which is what the strip draws (091 D7)."""
+    two runs, which is what the strip draws."""
     runs: list[list[str]] = []
     for name in order:
         group = groups.get(name, "")
@@ -593,7 +591,7 @@ def step_in_order(order: Sequence[str], current: str, step: int) -> str | None:
     return order[(order.index(current) + step) % len(order)]
 
 
-# ---- the graph canvas's pure half (092) ----------------------------------------------------
+# ---- the graph canvas's pure half ----------------------------------------------------
 # Everything the canvas decides that is not a pixel: where an unplaced pass goes, which ports
 # a node has and in what state, what a group's box exposes, whether a drop may land, and
 # which edges a cycle message names. Pure over names, sampler values and a wiring, so a test
@@ -606,7 +604,7 @@ NAMESPACE_COLLISION = "a pass and a group cannot share a name"
 def namespace_error(
     candidate: str, pass_names: Collection[str], group_names: Collection[str]
 ) -> str:
-    """The one namespace passes and groups share (092 D17): `candidate`, about to become a
+    """The one namespace passes and groups share: `candidate`, about to become a
     pass name or a group name, may not already be the other kind. Both directions call this,
     so the predicate and its message exist once."""
     if candidate in pass_names or candidate in group_names:
@@ -615,7 +613,7 @@ def namespace_error(
 
 
 def group_name_error(group: str, pass_names: Collection[str]) -> str:
-    """Why `group` may not be written, or `""` when it may (092 D17): the pattern first, then
+    """Why `group` may not be written, or `""` when it may: the pattern first, then
     the namespace -- the canvas keys nodes and boxes by name."""
     if not group:
         return ""
@@ -646,7 +644,7 @@ def rank_layout(
     gap_x: float,
     gap_y: float,
 ) -> dict[str, tuple[float, float]]:
-    """Where each of `names` goes (092 D6): columns by `graph_ranks`, left to right at `gap_x`;
+    """Where each of `names` goes: columns by `graph_ranks`, left to right at `gap_x`;
     within a column, group members adjacent, then by the mean y of the pass's predecessors
     (a placed predecessor contributes its stored y), then strip order; rows at `gap_y`, each
     column centered on the tallest. Every pass of `wiring` is laid out so the picture is the
@@ -716,10 +714,10 @@ PortKind = Literal["wired", "unfilled", "none", "media", "script"]
 
 @dataclass(frozen=True)
 class Port:
-    """One input of a node (092 D1): the sampler, what it reads, and how that reads on the
+    """One input of a node: the sampler, what it reads, and how that reads on the
     dot -- a pass, nothing yet, black by decision, a bound texture, or a field the script
     feeds it this frame. `source` is the pass the wiring names, on a `"script"` port too:
-    the wire is still the user's, only overridden at the draw (110 D7)."""
+    the wire is still the user's, only overridden at the draw."""
 
     sampler: str
     kind: PortKind
@@ -735,12 +733,12 @@ def node_ports(
 ) -> list[Port]:
     """A node's input ports, one per sampler the COMPILED program declares that reads
     another pass or nothing, in the program's order. A sampler reading the pass itself is
-    its feedback, not an input, and has no port (093 W3-5). The state comes from the
+    its feedback, not an input, and has no port. The state comes from the
     sampler's VALUE, the way the uniforms panel's row decides it: a value that is no source
     kind is a bound texture. A stored row for a sampler the program no longer declares is no
     port, which is what keeps a drop from writing a row nothing reads. A sampler in
     `script_fed` is a `"script"` port whatever else it is, its own feedback included: the
-    picture it reads this frame is the script's (110 D7)."""
+    picture it reads this frame is the script's."""
     ports: list[Port] = []
     for sampler in declared:
         value = values.get(sampler, AutoSource())
@@ -770,7 +768,7 @@ class BoxPort:
 
 @dataclass(frozen=True)
 class Boundary:
-    """What a group's box exposes at the root (092 D5): every member slot that reads outside
+    """What a group's box exposes at the root: every member slot that reads outside
     the group or nothing, every member read from outside plus the bundle output, and the
     member whose picture the box shows."""
 
@@ -780,7 +778,7 @@ class Boundary:
 
 
 def bundle_output(members: Sequence[str], wiring: Wiring, output: str) -> str:
-    """The member a box stands for (092 D5): the document output when it is a member; else the
+    """The member a box stands for: the document output when it is a member; else the
     first member (strip order) an outside pass reads; else the last member no member reads;
     else the last member. Total: a box always has a picture."""
     if output in members:
@@ -853,7 +851,7 @@ def wiring_with(
 
 
 def refuse_drop(wiring: Wiring, consumer: str, sampler: str, producer: str) -> str:
-    """Why a wire from `producer` into `consumer.sampler` may not land, or `""` (092 D12):
+    """Why a wire from `producer` into `consumer.sampler` may not land, or `""`:
     the hypothetical wiring is planned and ANY error refuses, since the culprit the planner
     names need not be either endpoint. A self-read is feedback and passes."""
     errors = plan_passes(wiring_with(wiring, consumer, sampler, producer))[1]
@@ -866,7 +864,7 @@ def refuse_drop(wiring: Wiring, consumer: str, sampler: str, producer: str) -> s
 
 
 def cycle_edges(errors: Sequence[GraphError]) -> set[tuple[str, str]]:
-    """The `(producer, consumer)` pairs on every cycle the planner reported (092 D11). One
+    """The `(producer, consumer)` pairs on every cycle the planner reported. One
     pass per cycle carries the trail (`a -> b -> a` reads: `a` reads `b`, `b` reads `a`); the
     victims' messages name no edge."""
     edges: set[tuple[str, str]] = set()

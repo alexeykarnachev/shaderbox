@@ -61,9 +61,8 @@ def pair(gl_ctx: moderngl.Context, tmp_path: Path) -> tuple[Pass, Pass]:
 def test_the_graph_computes_its_instanced_set_from_real_passes(
     pair: tuple[Pass, Pass],
 ) -> None:
-    """104 item 8. The adapter is gated by passing `instanced` in by hand; nothing asserted
-    that the widget COMPUTES it. Deleting the computation left 2216 tests green, so the
-    mark would disappear from the app with the suite passing.
+    """The adapter is gated by passing `instanced` in by hand; this asserts that the widget
+    COMPUTES it.
 
     This calls the widget's own expression against real compiled passes, so a fixture that
     never reached an instanced pass fails on the first assertion rather than reporting an
@@ -93,8 +92,8 @@ def test_the_graph_computes_its_instanced_set_from_real_passes(
 def test_both_copilot_views_carry_entity_fields_from_a_real_pass(
     pair: tuple[Pass, Pass],
 ) -> None:
-    """103 D4. Both view tests built their dataclasses by hand and asserted the argument
-    they had just passed, so removing all three wiring sites left the suite green.
+    """View tests that build their dataclasses by hand only assert the argument they just
+    passed, so they cannot see the wiring.
 
     `_entity_field_rows` is the function both views call; this asserts it discriminates on
     real compiled passes, which is the fact the views carry.

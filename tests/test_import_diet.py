@@ -1,4 +1,4 @@
-"""Heavy SDKs stay off the app's import path (066 D3).
+"""Heavy SDKs stay off the app's import path.
 
 `openai` (~0.23s) and the google-auth stack (~0.11s) are needed only for a copilot turn and a
 YouTube Connect/upload, so they import lazily behind their seams (`copilot/llm/openrouter.py`,

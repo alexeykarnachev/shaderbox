@@ -1,4 +1,4 @@
-"""Feature 050: the probe-render clock default (t=0), the probe_render read tool, and the
+"""The probe-render clock default (t=0), the probe_render read tool, and the
 cause-aware forced turn-end nudge. GL-free - the render is stubbed; we assert the CLOCK and the
 tool/nudge wiring, not pixels."""
 
@@ -29,7 +29,7 @@ def _facts_for(t: float | None) -> str:
         read=lambda: b"\x00" * (64 * 64 * 4),
     )
     document = types.SimpleNamespace(
-        # The probe matches the aspect of what an EXPORT would render (090 D5): the stored pair
+        # The probe matches the aspect of what an EXPORT would render: the stored pair
         # under Fixed, the live canvas under Auto, where no pair exists.
         export_source_size=lambda: (64, 64),
         render_pass=types.SimpleNamespace(
@@ -63,13 +63,12 @@ def test_auto_probe_default_clock_is_literal_zero() -> None:
 
 def test_explicit_probe_t_survives_the_default_flip() -> None:
     # A caller passing its own t (the script probe, probe_render) still renders at THAT t after the
-    # default became 0.0. Falsifier: the flip clobbers the explicit path.
+    # default became 0.0.
     assert _facts_for(2.5).startswith("rendered_at=2.5")
 
 
 def test_probe_render_tool_is_ungated_and_non_mutating() -> None:
-    # The aimable look is a FREE read - never gated, never mutating (vs render_image). Falsifier:
-    # routed through the gated render path.
+    # The aimable look is a FREE read - never gated, never mutating (vs render_image).
     (defn,) = inspect_tools(minimal_caps())
     assert defn.name == "probe_render"
     assert defn.mutating is False
@@ -78,7 +77,7 @@ def test_probe_render_tool_is_ungated_and_non_mutating() -> None:
 
 def test_probe_render_in_registry_and_reaches_capability() -> None:
     # The (document, t) wire: both args must reach the capability verbatim, and the facts string comes
-    # back as the whole model-facing result. Falsifier: a dropped/renamed arg.
+    # back as the whole model-facing result.
     calls: list[tuple[str, float]] = []
     caps = minimal_caps(
         probe_render=lambda n, t: (
@@ -93,9 +92,8 @@ def test_probe_render_in_registry_and_reaches_capability() -> None:
 
 
 def test_forced_turn_end_nudge_names_engine_cause_and_denies_user_pause() -> None:
-    # Feature 050: a forced turn-end must tell the model the ENGINE cause so it owns the stop, not
-    # crediting the user with a pause. Falsifier: the cause string / "not a user pause" disclaimer
-    # is absent (the generic nudge that produced "you're right to pause now").
+    # A forced turn-end must tell the model the ENGINE cause so it owns the stop, not
+    # crediting the user with a pause.
     nudge = _final_reply_nudge("You reached the per-turn limit of 16 tool-call steps")
     assert "16 tool-call steps" in nudge
     assert "not a pause the user asked for" in nudge.lower()

@@ -34,7 +34,7 @@ def resolve_tag_prefix_matches(app: App, prefixes: list[str]) -> list[str]:
 
 def draw_favs_and_reset_row(app: App) -> None:
     # Yellow Favs pill (active=solid, inactive=faded): a filter, so a pill. Reset is a VERB
-    # over those filters, so it takes a button tier (079 D12) and appears only when a tag is
+    # over those filters, so it takes a button tier and appears only when a tag is
     # disabled.
     if pill_button(
         "Favs##favs_toggle",

@@ -12,7 +12,7 @@ from shaderbox.render_preset import FitPolicy, RenderPreset, ResolutionPolicy
 
 
 class ResolutionMode(StrEnum):
-    """How a document's live render size is decided (090 D1, revision 1).
+    """How a document's live render size is decided.
 
     AUTO: the document stores an ASPECT and no size at all; its live canvas is the viewer
     region fitted to that aspect, and it follows every window and panel resize. FIXED: the

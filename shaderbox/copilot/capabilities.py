@@ -66,10 +66,10 @@ class ShaderView:
     listing: str  # cat -n style
     uniforms: list[str]  # "name type = value" rows
     errors: list[CompileErrorInfo]
-    # 103 D4: this pass's `flat in` declarations ("name type"), [] for an ordinary fullscreen
+    # This pass's `flat in` declarations ("name type"), [] for an ordinary fullscreen
     # pass. Without this an instanced pass reads as a fullscreen pass with odd inputs and
     # edit_shader on it is blind -- ShaderView is the surface an agent that never calls
-    # read_shader still misses (WorkingSetView is the more-often-seen one, D4's other half).
+    # read_shader still misses (WorkingSetView is the more-often-seen one).
     # Appended with a default so the existing positional construction sites stay valid.
     entity_fields: list[str] = field(default_factory=list)
 
@@ -82,7 +82,7 @@ class SetUniformResult:
     ok: bool
     error: str = ""
     type_label: str = ""
-    # Probe-render facts for the frame with the new value applied (feature 033).
+    # Probe-render facts for the frame with the new value applied.
     render_facts: str = ""
 
 
@@ -109,7 +109,7 @@ class SwitchDocumentResult:
 
 @dataclass(frozen=True)
 class PassOpResult:
-    # A pass verb's outcome (feature 076). ok=True carries `table`, the document's pass table as
+    # A pass verb's outcome. ok=True carries `table`, the document's pass table as
     # the model should read it back (name, runs, target, which is the output); ok=False carries
     # `error` (no such document / bad name / out-of-range runs / the last pass).
     ok: bool
@@ -119,7 +119,7 @@ class PassOpResult:
 
 @dataclass(frozen=True)
 class DocumentOpResult:
-    # Shared result for the small document-file ops (feature 052): rename (name set) and set_canvas_size
+    # Shared result for the small document-file ops: rename (name set) and set_canvas_size
     # (width/height = the APPLIED, clamped size). ok=False carries `error` (no such document / bad size).
     ok: bool
     error: str = ""
@@ -130,7 +130,7 @@ class DocumentOpResult:
 
 @dataclass(frozen=True)
 class MediaBindResult:
-    # The result of a bind_media / unbind_media op (feature 052), carried back to the worker through
+    # The result of a bind_media / unbind_media op, carried back to the worker through
     # the FILE gate. NO absolute path: the picked path is consumed on the main thread inside the bind
     # and never reaches this object (corollary-1 by construction). `basename` is the source filename
     # (no directory) — safe to echo. `cancelled` = the user dismissed the picker.
@@ -145,7 +145,7 @@ class MediaBindResult:
 
 @dataclass(frozen=True)
 class DocumentImportResult:
-    # import_document outcome (feature 052 slice 4), carried back through the FILE gate. NO source path:
+    # import_document outcome, carried back through the FILE gate. NO source path:
     # the picked file is read on the main thread inside import_picked_document. `basename` = the source
     # filename (no directory). `document_id` = the new document's short id; `errors` = its post-compile errors.
     ok: bool = False
@@ -158,7 +158,7 @@ class DocumentImportResult:
 
 @dataclass(frozen=True)
 class LibFileResult:
-    # delete_lib_file outcome (feature 052). ok=False carries `error` (no such lib file).
+    # delete_lib_file outcome. ok=False carries `error` (no such lib file).
     ok: bool
     error: str = ""
 
@@ -197,22 +197,22 @@ class WorkingSetView:
     is_lib: bool
     uniforms: list[str]  # "name type = value" rows (document only; [] for a lib)
     errors: list[CompileErrorInfo]
-    # The document's scripts/script.py live source (cat -n; "" = no script) + its compile/run error
-    # (feature 043). One script drives EVERY pass (069 D3), so this listing is document-wide even on
+    # The document's scripts/script.py live source (cat -n; "" = no script) + its compile/run error.
+    # One script drives EVERY pass, so this listing is document-wide even on
     # a multi-pass document. Appended (defaulted) so existing constructors stay valid; a lib view
     # leaves both at default. Rendered as a "=== <document> SCRIPT ===" sub-section only when
     # script_listing is set.
     script_listing: str = ""
     script_errors: list[CompileErrorInfo] = field(default_factory=list)
-    # One entry per pass when the document has MORE THAN ONE (D11): its own listing, uniforms and
+    # One entry per pass when the document has MORE THAN ONE: its own listing, uniforms and
     # errors, rendered as sub-sections the way SCRIPT already is. A single-pass document leaves
     # this empty and its one pass IS `listing`/`uniforms`/`errors` above, so the common case is
     # byte-identical to what the model saw before the graph existed.
     passes: list["PassView"] = field(default_factory=list)
-    # The document's canvas resolution ("WxH"; "" for a lib view) — the render size the user gets
-    # (feature 052). Rendered in the working-set document header so the model can see it.
+    # The document's canvas resolution ("WxH"; "" for a lib view) — the render size the user gets.
+    # Rendered in the working-set document header so the model can see it.
     canvas: str = ""
-    # 103 D4: this SINGLE-pass document's `flat in` declarations, [] for an ordinary fullscreen
+    # This SINGLE-pass document's `flat in` declarations, [] for an ordinary fullscreen
     # one and [] for a lib view. A multi-pass document carries this per-pass on `PassView`
     # instead (below) -- the same split `uniforms`/`errors` already use, so the working set stays
     # the surface an agent sees every step without ever calling read_shader.
@@ -232,7 +232,7 @@ class PassView:
     # False when the output pass does not reach this one, so it never renders. The pass strip
     # dims such a tile for the user; without this the model is the only party that cannot see it.
     is_live: bool = True
-    # 103 D4: this pass's `flat in` declarations, [] for an ordinary fullscreen pass.
+    # This pass's `flat in` declarations, [] for an ordinary fullscreen pass.
     entity_fields: list[str] = field(default_factory=list)
 
 
@@ -254,13 +254,13 @@ class EditResult:
     # The honest "no standalone compile" note for a lib: edit target. Empty for a document
     # edit (which returns real errors).
     lib_note: str = ""
-    # Feature 033 enriched results: structural compile hints (range bookkeeping,
+    # Enriched results: structural compile hints (range bookkeeping,
     # initializer counts, brace balance) and the probe-render facts line on a
     # clean compile. Both engine-computed, both ride the tool result text.
     error_hints: tuple[str, ...] = ()
     render_facts: str = ""
     # Set when the engine force-restored the file to its last clean state after N
-    # consecutive broken edits (033) — dominates the result message.
+    # consecutive broken edits — dominates the result message.
     restored_note: str = ""
     # True when the matched span would verbatim-overwrite an interior comment the
     # whitespace-invariant match can't see — refused so author content isn't silently
@@ -268,16 +268,16 @@ class EditResult:
     comment_loss: bool = False
     # The RESOLVED target's display label ("document 'Wave' (f90f)" / "lib:a.glsl"), set once
     # the target resolved — so a failure names WHICH file was checked (an empty target
-    # silently means the current document, the dogfooded giveup cause).
+    # silently means the current document).
     target_label: str = ""
-    # Whole-file rewrite fact (feature 039): the top-level functions/declarations the
+    # Whole-file rewrite fact: the top-level functions/declarations the
     # rewrite REMOVED, appended to the result so a truncated rewrite is loud. "" otherwise.
     rewrite_note: str = ""
 
 
 @dataclass(frozen=True)
 class ScriptView:
-    # read_script result (feature 043): the document's scripts/script.py source line-numbered + its
+    # read_script result: the document's scripts/script.py source line-numbered + its
     # compile/run error. is_stub = the document had no script, so `listing` is the generated stub (not
     # persisted) the agent adapts; document_id resolves the document it belongs to.
     document_id: str
@@ -289,11 +289,11 @@ class ScriptView:
 
 @dataclass(frozen=True)
 class ScriptWriteResult:
-    # write_script result (feature 043). ok=False + error for an unresolvable target. On ok=True the
+    # write_script result. ok=False + error for an unresolvable target. On ok=True the
     # compile/motion facts are the synchronous feedback: compile_error (a Python SyntaxError/etc., the
     # tool fixes it like a shader compile), driven (the uniforms it now drives, each as
     # `pass.uniform` — empty = the loud no-op fact), per_key_errors (named + why) and orphan_keys
-    # (just the names — EMPTY in ordinary authoring since 102 D1: every non-landing key now
+    # (just the names — EMPTY in ordinary authoring: every non-landing key now
     # carries an error except the two provably-silent reasons, so only those reach this list), both in the
     # same dotted form with a bare key no pass declares staying a bare name, motion_facts (the value-diff
     # verdict + the one ink/FLAT render line — the headless "is it animating" signal). The dotted
@@ -309,7 +309,7 @@ class ScriptWriteResult:
     # EditResult.restored_note). Its own field so a successful restore never reads as
     # applied-with-errors.
     restored_note: str = ""
-    # Population facts (103 D1/D2): one line per pass that received an `@instances` block this
+    # Population facts: one line per pass that received an `@instances` block this
     # dry-run, e.g. "swarm: 20000 entities -- pos f4 (20000, 2) range [-0.94, 0.93], radius f4
     # (20000,) range [0.004, 0.014]" or "swarm: population refused -- <why>" or "swarm: not
     # validated (pass has not compiled yet)". A population can never cross the tool boundary as
@@ -317,7 +317,7 @@ class ScriptWriteResult:
     # only, computed engine-side off the real columns, which this dataclass never holds. Empty
     # when the script drove no `@instances` block this dry-run.
     population_facts: str = ""
-    # Script-fed sampler facts (110 D8): one line per (pass, sampler) the script fed a field this
+    # Script-fed sampler facts: one line per (pass, sampler) the script fed a field this
     # dry-run -- shape, dtype, range, mean, or the refusal -- and whether its content moved
     # across t. Statistics only, as for populations. Empty when no sampler was fed.
     texture_facts: str = ""
@@ -419,7 +419,7 @@ class CopilotCapabilities(Protocol):
         self, name: str, value: object, document: str, /
     ) -> SetUniformResult: ...
 
-    # ---- scripting (feature 043): the document script authoring surface ----
+    # ---- scripting: the document script authoring surface ----
     # read_script returns the document's scripts/script.py source (a fresh document returns the generated
     # stub, unpersisted). write_script create-or-overwrites the whole script, recompiles, dry-runs it,
     # and returns the compile + motion facts. Both marshal main-thread (the dry-tick reads the GL
@@ -447,7 +447,7 @@ class CopilotCapabilities(Protocol):
     # on it. Stamps freshness so a follow-up edit lands.
     def switch_document(self, document: str, /) -> SwitchDocumentResult: ...
 
-    # ---- document file ops (feature 052 slice 3) — checkpoint-revertable document.json mutations ----
+    # ---- document file ops — checkpoint-revertable document.json mutations ----
     # rename_document sets the display name; set_canvas_size sets the document's render resolution (clamped,
     # returns the applied size). document "" = current. duplicate_document forks a document (dir copy incl.
     # media/script) into a fresh id, returning the create_document shape (short id, post-compile errors,
@@ -464,7 +464,7 @@ class CopilotCapabilities(Protocol):
     # consumers recompile with a missing-SB_* error next step. Destructive => always gated.
     def delete_lib_file(self, path: str, /) -> LibFileResult: ...
 
-    # ---- passes (feature 076): the pass list's verbs, for the copilot ----
+    # ---- passes: the pass list's verbs, for the copilot ----
     # A pass is created from a stub (the copilot then write_shader's its `<id>#<name>` address),
     # configured (runs per frame, target dtype/scale/filter/wrap, the output choice, a rename),
     # or deleted (gated). Every result carries the document's pass table so the model reads the
@@ -497,7 +497,7 @@ class CopilotCapabilities(Protocol):
     ) -> PassOpResult: ...
     def delete_pass(self, document: str, name: str, /) -> PassOpResult: ...
 
-    # ---- media / textures (feature 052 slice 2) ----
+    # ---- media / textures ----
     # bind_media validates the sampler, then BLOCKS on a FILE gate while the UI opens the OS file
     # picker; the main thread does the load+bind and answers with a path-free MediaBindResult (the
     # abs path never crosses back to the worker). unbind_media resets a sampler to the default image
@@ -505,7 +505,7 @@ class CopilotCapabilities(Protocol):
     def bind_media(self, document: str, uniform: str, /) -> MediaBindResult: ...
     def unbind_media(self, document: str, uniform: str, /) -> MediaBindResult: ...
 
-    # Import a .glsl off the user's disk (feature 052 slice 4): opens the file picker, reads the file
+    # Import a .glsl off the user's disk: opens the file picker, reads the file
     # on the main thread, and creates a document from it. Reuses the FILE gate; the source path never
     # reaches the worker.
     def import_document(self, switch_to: bool, /) -> DocumentImportResult: ...
@@ -519,7 +519,7 @@ class CopilotCapabilities(Protocol):
         self, document: str, seconds: float, fps: int, shape: RenderShape, /
     ) -> RenderResult: ...
 
-    # The aimable read-side probe (feature 050): a one-line facts string off a tiny offscreen
+    # The aimable read-side probe: a one-line facts string off a tiny offscreen
     # render at a chosen `t` (default 0.0). UN-gated + non-mutating, unlike render_image. The
     # returned text is ready to read (the facts line, or an honest error/empty note).
     def probe_render(self, document: str, t: float, /) -> str: ...

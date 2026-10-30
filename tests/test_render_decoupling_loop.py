@@ -1,4 +1,4 @@
-"""The throttle and the Auto sizing as the LOOP runs them (090 D2, D6, D9, D10).
+"""The throttle and the Auto sizing as the LOOP runs them.
 
 Every check here is a wiring check. `plan_render_set`, `fit_to_aspect` and `apply_damping`
 are pure and tested on their own in `test_render_plan.py`; what cannot be seen there is whether
@@ -33,7 +33,7 @@ from tests.conftest import seed_extra_document
 
 # This module drives real frames, so it gets its own worker: the imgui font atlas is per
 # PROCESS and a second App that renders a full frame in one interpreter dies on a texture the
-# first released (`conventions.md ## Known quirks`).
+# first released.
 pytestmark = pytest.mark.xdist_group("gl_frames_render_decoupling")
 
 
@@ -122,7 +122,7 @@ def _count_begin_frames(app: Any, monkeypatch: Any) -> dict[str, int]:
 
 
 # ---------------------------------------------------------------------------
-# V7 / V8 -- the throttle is wired, and off it restores today's set
+# The throttle is wired, and off it restores today's set
 # ---------------------------------------------------------------------------
 
 
@@ -165,8 +165,7 @@ def test_an_expensive_current_document_advances_once_in_twelve_frames(
 def test_the_throttle_off_advances_every_document_every_frame(
     app: Any, monkeypatch: Any
 ) -> None:
-    # Falsifier: ignore `is_throttle_documents` and the 100 ms document advances once, not
-    # twelve times. Without the `frame_idx` bump in `_drive` this would pass vacuously -- it
+    # Without the `frame_idx` bump in `_drive` this would pass vacuously -- it
     # would be green even with the throttle wired wrong.
     app.app_state.is_throttle_documents = False
     _freeze_costs(app, monkeypatch)
@@ -183,12 +182,10 @@ def test_the_throttle_off_advances_every_document_every_frame(
 def test_the_confirm_modal_pauses_the_normal_render_set(
     app: Any, monkeypatch: Any
 ) -> None:
-    """A new mutex member is a new member of the render plan's domain (093 W4).
+    """A new mutex member is a new member of the render plan's domain.
 
     `ModalId.CONFIRM` is not the pass-settings exception, so it pauses the document set like
-    every other modal. Falsifier: add a CONFIRM branch to `planned_set_mode` or to the
-    render chain's `elif` -- the document then keeps rendering behind a destructive confirm,
-    which is the one moment its GPU cost buys nothing.
+    every other modal.
     """
     _freeze_costs(app, monkeypatch)
     app.request_confirm(
@@ -217,8 +214,7 @@ def test_a_throttled_document_behind_the_pass_settings_modal_is_gated_too(
     # The THIRD render branch. The pass-settings modal keeps the current document rendering
     # behind it, and that branch read no interval while step 8 gated the same document's
     # `begin_frame` -- so the throttle was inert exactly where a user sits adjusting an
-    # expensive graph, and its feedback pass took many renders per integration step. Falsifier:
-    # remove the `renders_this_frame` guard from the PASS_SETTINGS branch and this counts 24.
+    # expensive graph, and its feedback pass took many renders per integration step.
 
     _freeze_costs(app, monkeypatch)
     _plant_cost(app, app.current_document_id, 100.0)
@@ -251,15 +247,14 @@ def test_a_throttled_document_behind_the_pass_settings_modal_is_gated_too(
 
 
 # ---------------------------------------------------------------------------
-# V3a -- the loop applies the damping, not the raw request
+# The loop applies the damping, not the raw request
 # ---------------------------------------------------------------------------
 
 
 def test_the_loop_damps_a_drag_ramp_instead_of_resizing_every_frame(
     app: Any, monkeypatch: Any
 ) -> None:
-    # `apply_damping` being correct says nothing about whether the loop calls it. Falsifier:
-    # pass the raw request to `set_canvas_size` and this counts ~60 resizes instead of a handful.
+    # `apply_damping` being correct says nothing about whether the loop calls it.
     document_id = app.current_document_id
     document = app.ui_documents[document_id].document
     document.resolution_mode = ResolutionMode.AUTO
@@ -288,8 +283,7 @@ def test_a_stationary_region_settles_whatever_the_canvas_bounds_do(
     # The damping compares its request against `canvas_size`, which `set_canvas_size` CLAMPS.
     # A region resolving outside 16..4096 is therefore a size the canvas can never equal, so
     # every frame read as "past the dead band" and re-entered the resize funnel forever, with
-    # the damping state permanently disarmed. Falsifier: drop the `clamped_size` call in
-    # `_resolve_resolutions` and the two out-of-bounds cases report 30 calls instead of 1.
+    # the damping state permanently disarmed.
     document = app.ui_documents[app.current_document_id].document
     document.resolution_mode = ResolutionMode.AUTO
     document.aspect = (4, 3)
@@ -304,15 +298,14 @@ def test_a_stationary_region_settles_whatever_the_canvas_bounds_do(
 
 
 # ---------------------------------------------------------------------------
-# V9 (revision 1) -- the viewer region is the ONE size source
+# The viewer region is the ONE size source
 # ---------------------------------------------------------------------------
 
 
 def test_the_viewer_records_the_region_it_drew_the_document_image_at(app: Any) -> None:
     # The one recorder left, and cutting it is SILENT: `_resolve_resolutions` skips Auto
     # documents while the region is None, so every document simply keeps its loaded size and
-    # nothing else fails. Falsifier: delete the `app.viewer_region = ...` assignment in
-    # `_draw_document_image` and this stays None.
+    # nothing else fails.
 
     app.ui_documents[
         app.current_document_id
@@ -333,8 +326,7 @@ def test_every_auto_document_renders_at_the_viewer_region_not_only_the_current_o
 ) -> None:
     # Revision 1's core: ONE size source. Before it, a non-current document was sized by
     # whichever surface happened to draw it, so a document nothing had drawn yet stayed at its
-    # loaded size -- which is how a new document rendered 64x64 and square. Falsifier: size
-    # only `app.current_document_id` in `_resolve_resolutions` and the sibling keeps its own.
+    # loaded size -- which is how a new document rendered 64x64 and square.
     other = seed_extra_document(app, "sibling-0000-4000-8000-000000000004")
     for document_id in (app.current_document_id, other):
         document = app.ui_documents[document_id].document
@@ -373,8 +365,6 @@ def test_an_auto_document_fits_its_aspect_inside_the_viewer(
 ) -> None:
     # The fit is the whole of Auto sizing, and it must hold on BOTH sides of the aspect --
     # a rule that only handles the wider case letterboxes correctly and crops the other way.
-    # Falsifier: compare the region's ratio the wrong way round in `fit_to_aspect` and the
-    # wider and taller cases swap answers.
     document = app.ui_documents[app.current_document_id].document
     document.resolution_mode = ResolutionMode.AUTO
     document.aspect = aspect
@@ -385,8 +375,7 @@ def test_an_auto_document_fits_its_aspect_inside_the_viewer(
 
 def test_an_auto_document_keeps_its_size_until_the_viewer_has_drawn(app: Any) -> None:
     # Before the first frame nothing knows the region, and a document must not resize to a
-    # guess. Falsifier: treat a None region as (0, 0) and every document collapses to the
-    # minimum canvas on frame one.
+    # guess.
     document = app.ui_documents[app.current_document_id].document
     document.resolution_mode = ResolutionMode.AUTO
     before = document.canvas_size
@@ -395,7 +384,7 @@ def test_an_auto_document_keeps_its_size_until_the_viewer_has_drawn(app: Any) ->
     assert document.canvas_size == before
 
 
-# V9a -- a throttled example is actually skipped in the popup's set
+# A throttled example is actually skipped in the popup's set
 # ---------------------------------------------------------------------------
 
 
@@ -404,8 +393,6 @@ def test_a_throttled_example_renders_less_often_than_a_cheap_one(
 ) -> None:
     # The popup's set is an ALTERNATIVE to `tick_documents`, so an interval computed for an
     # example id has to be read by the EXAMPLES branch or it is read by nothing at all.
-    # Falsifier: render the examples loop without the `(frame_idx + phase) % k` gate and both
-    # examples advance every frame while the plan's intervals look perfect.
 
     ids = list(app.ui_document_examples)[:2]
     if len(ids) < 2:
@@ -444,15 +431,13 @@ def test_a_throttled_example_renders_less_often_than_a_cheap_one(
 
 
 # ---------------------------------------------------------------------------
-# V10 / V10a -- the chip and the panel rows
+# The chip and the panel rows
 # ---------------------------------------------------------------------------
 
 
 def test_the_chip_carries_the_current_documents_own_rate(
     app: Any, monkeypatch: Any
 ) -> None:
-    # Falsifier: pass `document_fps=None` unconditionally at the `fps_overlay` call -- every
-    # prose gate still passes and the chip silently never shows the second number.
 
     _freeze_costs(app, monkeypatch)
     _plant_cost(app, app.current_document_id, 100.0)
@@ -476,8 +461,7 @@ def test_the_chip_carries_the_current_documents_own_rate(
 
 
 def test_the_panel_rows_match_documents_by_id_not_by_title(app: Any) -> None:
-    # Two documents sharing a title are two rows with their OWN numbers. Falsifier: match a
-    # `document:` span through its title and one row takes the other's interval.
+    # Two documents sharing a title are two rows with their OWN numbers.
 
     root = Span("frame", cpu_ms=20.0)
     root.children.append(Span("document:aaa", cpu_ms=40.0, gpu_ms=40.0))
@@ -505,14 +489,12 @@ def test_the_panel_rows_match_documents_by_id_not_by_title(app: Any) -> None:
 
 
 # ---------------------------------------------------------------------------
-# V11 -- GPU spans record with the panel closed
+# GPU spans record with the panel closed
 # ---------------------------------------------------------------------------
 
 
 def test_gpu_spans_record_while_the_panel_is_closed(app: Any) -> None:
-    # The throttle's cost input is the profiler, so recording cannot follow the panel (D9a).
-    # Falsifier: restore `app.profiler.enabled = app.fps_details_open` and `last_profile`
-    # carries no `document:` child with a GPU number.
+    # The throttle's cost input is the profiler, so recording cannot follow the panel.
 
     app.fps_details_open = False
     for _ in range(4):
@@ -527,9 +509,8 @@ def test_gpu_spans_record_while_the_panel_is_closed(app: Any) -> None:
 
 
 def test_the_costs_refresh_from_the_profile(app: Any) -> None:
-    # Step 3 is the ONE write site (D7), and it is what turns a recorded span into the plan's
-    # input. Falsifier: drop the refresh and `document_costs` stays empty forever, so every
-    # document plans at k = 1 whatever it costs.
+    # Step 3 is the ONE write site, and it is what turns a recorded span into the plan's
+    # input.
 
     app.document_costs.clear()
     for _ in range(6):
@@ -540,14 +521,12 @@ def test_the_costs_refresh_from_the_profile(app: Any) -> None:
 
 
 # ---------------------------------------------------------------------------
-# V13 -- the copilot's explicit size sticks across a frame
+# The copilot's explicit size sticks across a frame
 # ---------------------------------------------------------------------------
 
 
 def test_the_copilots_canvas_size_survives_the_next_frame(app: Any) -> None:
-    # An explicit pixel request switches the document to Fixed (D5). Falsifier: leave the mode
-    # Auto and the next frame's resolution step resizes it back to the viewer's region -- the
-    # tool silently does nothing while every one of its own assertions passes.
+    # An explicit pixel request switches the document to Fixed.
     document_id = app.current_document_id
     result = app.copilot_backend.set_canvas_size(document_id, 128, 200)
     assert result.ok and (result.width, result.height) == (128, 200)
@@ -569,8 +548,7 @@ def test_a_pickers_commit_applies_on_the_next_tick_not_inside_the_draw(
     # The R2 hazard: `_apply_canvas_size` runs INSIDE the draw phase, after the viewer pushed
     # the output texture into this frame's draw list, so a resize there releases textures imgui
     # is still holding -- now the output canvas AND every feedback history. The commit therefore
-    # parks and step 4 applies it. Falsifier: resize in place at the picker and this test's
-    # first assertion (the canvas has NOT moved yet) goes red.
+    # parks and step 4 applies it.
 
     document_id = app.current_document_id
     ui_document = app.ui_documents[document_id]
@@ -593,8 +571,6 @@ def test_a_pickers_commit_applies_on_the_next_tick_not_inside_the_draw(
 def test_closing_a_document_forgets_its_ephemeral_render_state(app: Any) -> None:
     # Every per-document dict the feature keeps is keyed by id and would otherwise hold an
     # entry for a document nothing can render, including a cost the plan would still read.
-    # Falsifier: drop the `forget_render_state` call from `_on_document_deleted` and the four
-    # entries survive the delete.
     other = seed_extra_document(app, "closeme-0000-4000-8000-000000000003")
     # A region, or no Auto document is ever sized and  stays empty.
     app.viewer_region = (800.0, 600.0)
@@ -616,9 +592,8 @@ def test_closing_a_document_forgets_its_ephemeral_render_state(app: Any) -> None
 
 
 def test_switching_to_fixed_seeds_the_pair_from_the_live_canvas(app: Any) -> None:
-    # A mode switch must never jump the picture (revision 1 D3). Auto -> Fixed keeps the size
+    # A mode switch must never jump the picture). Auto -> Fixed keeps the size
     # the document is rendering at RIGHT NOW, not the pair it happened to be saved with.
-    # Falsifier: seed `resolution` from anything else and the canvas jumps on the switch.
 
     ui_document = app.ui_documents[app.current_document_id]
     document = ui_document.document
@@ -637,8 +612,7 @@ def test_switching_to_fixed_seeds_the_pair_from_the_live_canvas(app: Any) -> Non
 
 
 def test_switching_to_auto_seeds_the_aspect_from_the_live_canvas(app: Any) -> None:
-    # The mirror: Fixed -> Auto keeps the SHAPE, so only the sizing rule changes. Falsifier:
-    # leave `aspect` alone and the document snaps to whatever shape it last had under Auto.
+    # The mirror: Fixed -> Auto keeps the SHAPE, so only the sizing rule changes.
 
     ui_document = app.ui_documents[app.current_document_id]
     document = ui_document.document
@@ -660,8 +634,7 @@ def test_switching_to_auto_seeds_the_aspect_from_the_live_canvas(app: Any) -> No
 def test_a_new_document_opens_wide_and_sizes_itself_to_the_viewer(app: Any) -> None:
     # The bug this revision exists for: a new document showed 64x64 and rendered SQUARE. A new
     # document is a copy of the starter example, so its arrival shape is the starter's; nothing
-    # is assigned here. Falsifier: give the starter a square aspect, or skip non-current
-    # documents in `_resolve_resolutions`, and this goes red.
+    # is assigned here.
     before = set(app.ui_documents)
     app.create_document_from_example(STARTER_EXAMPLE_ID)
     (document_id,) = set(app.ui_documents) - before
@@ -687,16 +660,13 @@ def test_the_starter_document_is_the_fixture_it_claims_to_be(app: Any) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 091 D11 -- the planned set under the import dialog
+# The planned set under the import dialog
 # ---------------------------------------------------------------------------
 
 
 def test_the_import_dialog_plans_the_open_tabs_documents(
     app: Any, monkeypatch: Any
 ) -> None:
-    # Falsifier: leave `_tick_frame_state`'s gate untouched and the project tab renders only
-    # the current document, so a never-rendered card stays black; or leave the render chain's
-    # `elif EXAMPLES` untouched and the Examples tab renders nothing at all.
     other = seed_extra_document(app, "other-0000-4000-8000-000000000002")
     app.app_state.is_render_all_documents = True
     _freeze_costs(app, monkeypatch)
@@ -725,7 +695,7 @@ def test_the_import_dialog_plans_the_open_tabs_documents(
 
 
 # ---------------------------------------------------------------------------
-# 093 W6 -- the script ticks when the document renders, on the document's own clock
+# The script ticks when the document renders, on the document's own clock
 # ---------------------------------------------------------------------------
 
 
@@ -747,12 +717,9 @@ def _record_ticks(app: Any, monkeypatch: Any) -> list[tuple[str, Any]]:
 def test_a_throttled_documents_script_ticks_once_per_render_with_the_gap_as_dt(
     app: Any, monkeypatch: Any
 ) -> None:
-    """A tick is a render (093 W6, reversing 090 D8). The maintainer's drawing script returned
+    """A tick is a render. A drawing script returned
     the previous and current cursor to stroke a line between them; ticking every UI frame while
     rendering every twelfth drew one frame's worth of stroke per render and left gaps.
-
-    Falsifier: tick `tick_documents` instead of the rendered set in step 7 -- the k = 12
-    document ticks twelve times in twelve frames.
     """
     other = seed_extra_document(app, "cheap-0000-4000-8000-000000000001")
     _freeze_costs(app, monkeypatch)
@@ -787,8 +754,6 @@ def test_the_cursors_previous_position_anchors_at_the_documents_last_tick(
 ) -> None:
     """Between two ticks the cursor keeps moving; the position the next tick reads as `prev`
     is the one the previous tick saw, not the previous UI frame's.
-
-    Falsifier: drop the re-anchor after `session.tick` in step 7.
     """
     _freeze_costs(app, monkeypatch)
     _plant_cost(app, app.current_document_id, 100.0)
@@ -818,7 +783,7 @@ def test_the_cursors_previous_position_anchors_at_the_documents_last_tick(
 
 
 # ---------------------------------------------------------------------------
-# 093 W7 -- the viewer is a box; the control panel does not move with the aspect
+# The viewer is a box; the control panel does not move with the aspect
 # ---------------------------------------------------------------------------
 
 
@@ -841,12 +806,7 @@ def _control_panel_y(app: Any, monkeypatch: Any, frames: int = 3) -> float:
 def test_the_control_panel_holds_still_across_an_aspect_change(
     app: Any, monkeypatch: Any
 ) -> None:
-    """The viewer's box height depends on the panel alone; the picture is fitted inside it.
-
-    Falsifier: anchor the control panel at `image_min.y + image_height` again -- a 21:9
-    picture is shorter than a 1:1 one in the same box (the box is 16:9, so 1:1 is
-    height-bound and 21:9 width-bound), and the panel climbs by the difference.
-    """
+    """The viewer's box height depends on the panel alone; the picture is fitted inside it."""
     ui_document = app.ui_documents[app.current_document_id]
     ui_document.ui_state.aspect = (1, 1)
     ui_document.document.aspect = (1, 1)
@@ -869,8 +829,6 @@ def test_the_viewer_box_follows_the_splitter_not_the_aspect(
 ) -> None:
     """The box's height is the panel's width at `VIEWER_BOX_ASPECT`: a narrower right side
     hands the freed height to the panels below, and only the splitter can do that.
-
-    Falsifier: size the box from the room above the panel alone -- the two splits agree.
     """
     ui_document = app.ui_documents[app.current_document_id]
     ui_document.ui_state.aspect = (1, 1)

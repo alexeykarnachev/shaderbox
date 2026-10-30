@@ -1,4 +1,4 @@
-"""Cross-project copilot tool mechanics (feature 020·16) — pure / GL-free.
+"""Cross-project copilot tool mechanics — pure / GL-free.
 
 Covers the parts the agent-loop fakes don't: uniform-value coercion + the engine-driven
 reject set, and the live-source lib-create path (the index must see a function in a
@@ -53,9 +53,9 @@ def test_coerce_rejects_bool() -> None:
 
 
 def test_engine_driven_set_is_the_documented_set() -> None:
-    # Engine-owned, so set_uniform rejects them (020·16 Decision 6): the per-frame
+    # Engine-owned, so set_uniform rejects them: the per-frame
     # values Document.render() recomputes + the glyph tables Document.compile() writes,
-    # plus `sb_instanced` (103 D4a) -- Pass.render overwrites it every frame too, generated
+    # plus `sb_instanced` -- Pass.render overwrites it every frame too, generated
     # into an instanced pass's vertex stage and never hand-declared by an author. Pin the set
     # so a new engine uniform added to core.py is consciously added here too.
     assert {
@@ -82,7 +82,7 @@ def _lib_manager(root: Path) -> ShaderLibFileManager:
 
 def test_resolve_copilot_path_rejects_traversal(tmp_path: Path, monkeypatch) -> None:
     # The copilot lib path guard reuses shader_lib_root + a relative_to check — a "../" escape
-    # is rejected (020·16 Decision 5), a normal name resolves under the root with .glsl.
+    # is rejected, a normal name resolves under the root with .glsl.
     monkeypatch.setattr(
         "shaderbox.shader_lib.file_ops.shader_lib_root", lambda: tmp_path
     )
@@ -94,7 +94,7 @@ def test_resolve_copilot_path_rejects_traversal(tmp_path: Path, monkeypatch) -> 
 
 
 def test_copilot_lib_create_writes_live_source(tmp_path: Path, monkeypatch) -> None:
-    # The crux of Decision 5: a copilot-created lib file holds LIVE (uncommented) source, so
+    # The crux: a copilot-created lib file holds LIVE (uncommented) source, so
     # the index extracts a function from it — unlike create_file_in's commented stub which
     # yields zero functions. We write a real SB_ function and assert ShaderLibIndex sees it.
     monkeypatch.setattr(

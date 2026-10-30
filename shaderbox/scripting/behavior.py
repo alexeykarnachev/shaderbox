@@ -1,11 +1,11 @@
-"""The script-language seam (feature 041). A script file is a user-finalized CLASS subclassing
+"""The script-language seam. A script file is a user-finalized CLASS subclassing
 `ScriptBehavior`, with `update(self, context) -> dict`; per-instance state (`self.*`)
 persists across frames — the reason CPU scripting exists (stateless work belongs in the shader).
 The engine iterates `Behavior` objects and never knows the language; a future C backend implements
 the same protocol over a `.so`.
 
 `PythonBehavior` compiles the file VERBATIM (no rewrite — an error's lineno points at the user's
-real source, the 039 ghost stays dead), resolves the `ScriptBehavior` subclass, instantiates it
+real source), resolves the `ScriptBehavior` subclass, instantiates it
 ONCE, and calls `.update(context)` each tick. The exec namespace is `ScriptBehavior`, the `ScriptContext` alias
 and `MouseState`, over builtins whose `__import__` is narrowed: a script is plain Python and the
 stdlib works, but of THIS package it sees `shaderbox.scripting` and, in it, those three names
@@ -144,7 +144,7 @@ def _script_builtins() -> dict[str, Any]:
 def _build_globals(uniform_name: str) -> dict[str, Any]:
     # The names a script body + its eager method annotations resolve against. A script is plain
     # Python — the stdlib is in scope — but of THIS package it sees `shaderbox.scripting` alone
-    # (`_script_import`). The 048 stub emits the explicit import so the available types are
+    # (`_script_import`). The stub emits the explicit import so the available types are
     # VISIBLE; these injected names are the FALLBACK so a user who deletes the import line still
     # resolves `Vec2`/`ScriptContext`/… instead of an opaque eager-annotation-eval compile-freeze.
     return {
@@ -221,7 +221,7 @@ class PythonBehavior:
         self._error: ScriptError | None = None
         self._instance: ScriptBehavior | None = None
         self._cls: type[ScriptBehavior] | None = None
-        # Native handles belong to the phase that created them (feature 109): the module code's
+        # Native handles belong to the phase that created them: the module code's
         # outlive a reset, an instance's do not.
         self._module_owner = NativeOwner(scripts_dir, native_timeout_cap)
         self._instance_owner: NativeOwner | None = None
@@ -355,7 +355,7 @@ def coerce_one(value: object, uniform: moderngl.Uniform, error_name: str) -> obj
     # `error_name` is the uniform NAME a shape mismatch records under (the GLSL-type label for the
     # hint is derived internally). Raises _RuntimeScriptError on a mismatch; the engine freezes.
     # A dict is never a uniform value — that invariant is what makes the engine's value-type
-    # dispatch between a pass block and a broadcast key unambiguous (069 D3), so it is checked
+    # dispatch between a pass block and a broadcast key unambiguous, so it is checked
     # here rather than left to the coercion.
     if isinstance(value, dict):
         raise _RuntimeScriptError(

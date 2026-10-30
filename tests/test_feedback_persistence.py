@@ -1,9 +1,8 @@
-"""A feedback pass continues from where it was across a restart (feature 089, W-C).
+"""A feedback pass continues from where it was across a restart.
 
-`Document._feedback` starts empty on every load, so before this a self-reading pass came back
-black on every app start -- the accumulated canvas the maintainer had drawn into was gone. Now
-`UIDocument.save` writes each history's newest frame as `feedback/<pass>.bin` and
-`Document.load_from_dir` seeds the history back from it.
+`Document._feedback` starts empty on every load, so a self-reading pass would come back
+black on every app start without a saved frame. `UIDocument.save` writes each history's newest frame as
+`feedback/<pass>.bin` and `Document.load_from_dir` seeds the history back from it.
 
 Raw bytes throughout, never `texture_to_rgba8`: the state being kept is an accumulator whose
 values sit outside [0, 1] on an `f2` target, which a tonemapped 8-bit round trip would clamp and
@@ -58,7 +57,7 @@ _BROKEN = """#version 460 core
 this is not glsl
 """
 
-# At or above MIN_CANVAS_PX: `Document.__init__` clamps like `set_canvas_size` does (096 F7),
+# At or above MIN_CANVAS_PX: `Document.__init__` clamps like `set_canvas_size` does,
 # so a document written below the floor is stored AT the floor and the scaled pass no longer
 # halves the number this file asserts.
 _CANVAS = (32, 32)
@@ -120,7 +119,7 @@ def _metadata(dir: Path) -> dict[str, Any]:
         return json.load(f)
 
 
-# --- V5: the round trip -------------------------------------------------------------------
+# --- the round trip -------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("dtype", ["f1", "f2", "f4"])
@@ -161,7 +160,7 @@ def test_a_feedback_pass_resumes_where_it_stopped(
     )
 
 
-# --- V7: the write and the sweep ----------------------------------------------------------
+# --- the write and the sweep ----------------------------------------------------------
 
 
 def test_a_save_writes_the_newest_frame_and_its_block(
@@ -275,7 +274,7 @@ def test_a_copilot_snapshot_carries_the_feedback_dir(
     )
 
 
-# --- V8: the mismatch and the lifetime ----------------------------------------------------
+# --- the mismatch and the lifetime ----------------------------------------------------
 
 
 def test_a_feedback_entry_that_does_not_match_is_ignored(
@@ -287,8 +286,8 @@ def test_a_feedback_entry_that_does_not_match_is_ignored(
     ui_document.save(dir.parent, dir.name)
 
     metadata = _metadata(dir)
-    # A size that DISAGREES with the graph's, whatever _SCALED is -- the literal that used to
-    # sit here became the correct size when the fixture moved above MIN_CANVAS_PX.
+    # A size that DISAGREES with the graph's, whatever _SCALED is -- a literal here would
+    # equal the correct size once the fixture sits above MIN_CANVAS_PX.
     metadata["feedback"]["trail"]["size"] = [_SCALED[0] * 2, _SCALED[1] * 2]
     (dir / DOCUMENT_JSON_BASENAME).write_text(json.dumps(metadata))
 

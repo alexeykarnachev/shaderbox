@@ -1,7 +1,7 @@
 """A save with no live program must not write away the document's tuned uniform values.
 
 `UIDocument.save` rebuilds `document.json["uniforms"]` from `get_active_uniforms()`. A
-program-less pass is the ORDINARY state, not an exotic one: compiles are lazy (066 D1), and
+program-less pass is the ORDINARY state, not an exotic one: compiles are lazy, and
 `release_program()` — the file watcher's path on an external shader edit — nulls the program
 without recompiling. Two guards keep that state from writing `"uniforms": {}` over every value
 the user dialled in: the save path compiles on demand, and a pass whose SOURCE is broken (no

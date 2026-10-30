@@ -182,7 +182,7 @@ def _draw_sections(app: App) -> None:
         imgui.tree_pop()
 
     # One-shot: the focus request fired into this frame's draws; clear so it doesn't re-grab
-    # focus every frame (which a modal reads as a dismiss — /imgui-ui §8).
+    # focus every frame (which a modal reads as a dismiss).
     app.settings_focus = ""
 
     imgui.dummy((0.0, SPACE.MD))

@@ -1,9 +1,9 @@
 """Every worker↔main thread the app spawns must be abandonable at shutdown.
 
-`conventions.md` states the teardown contract: `cancel_all()`/STOP to release blocked
+The teardown contract is `cancel_all()`/STOP to release blocked
 waiters, then `join(timeout)`, and on a timeout you ABANDON the survivor. Abandoning only
 works if the thread is a daemon — a non-daemon survivor is re-joined by interpreter
-`_shutdown` and blocks process exit for as long as it stays blocked (the 043 headless hang).
+`_shutdown` and blocks process exit for as long as it stays blocked (a headless hang).
 
 The check enumerates the spawn sites from the source rather than from a hand-listed roster,
 so a NEW worker defaults INTO the denominator instead of being silently outside it.
@@ -41,8 +41,6 @@ def _thread_spawns() -> list[tuple[str, int, bool | None]]:
 
 
 def test_the_enumeration_actually_finds_the_known_workers() -> None:
-    # Falsifier for the check itself: if the AST walk silently matched nothing, every
-    # assertion below would pass vacuously (the "checker that narrows its own domain" family).
     # Both exporters spawn through the shared ExporterWorker, so worker.py is their site.
     spawns = _thread_spawns()
     modules = {module for module, _, _ in spawns}

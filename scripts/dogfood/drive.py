@@ -8,7 +8,7 @@ driver reads before composing the next message.
     uv run python scripts/dogfood/drive.py --project <dir> --note "..." --axis fidelity --turn 3 "ask"
     uv run python scripts/dogfood/drive.py --project <dir> --end built "summary"
 
-`SHADERBOX_DATA_DIR` is read at import like every harness command (the `/dogfood` skill, §1).
+`SHADERBOX_DATA_DIR` is read at import like every harness command.
 The message is one turn; the driver reads the summary and composes the next -- this is a
 command, not a script of replies.
 """

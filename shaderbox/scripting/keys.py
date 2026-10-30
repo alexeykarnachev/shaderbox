@@ -1,4 +1,4 @@
-"""The (pass, uniform) key the script engine and the persisted stop set share (069 D3).
+"""The (pass, uniform) key the script engine and the persisted stop set share.
 
 It lives in the engine's own package rather than beside `UIDocumentState`, because the engine takes
 a `frozenset[StoppedKey]` per tick and `ui_models` imports the concrete `Document` — the engine may
@@ -19,7 +19,7 @@ REFUSED_POPULATION: dict[str, Any] = {}
 
 class StoppedKey(BaseModel, frozen=True):
     # One (pass, uniform) the user has STOPPED. A pair, not a name: the same uniform name on two
-    # passes is two independently stoppable rows (069 D3). `frozen=True` in the CLASS ARGS, not in a
+    # passes is two independently stoppable rows. `frozen=True` in the CLASS ARGS, not in a
     # `model_config`, because the engine holds these in a set and only this form makes the generated
     # `__hash__` visible to the type checker. `pass_name`, not `pass`, on disk as in code — `pass` is
     # a Python keyword and cannot be an attribute.
@@ -28,13 +28,13 @@ class StoppedKey(BaseModel, frozen=True):
 
 
 # Why a script key did not reach a uniform. ONE path in the engine decides this and ONE
-# rule acts on it (102 D1): a key naming a uniform no pass declares, a key naming a pass
+# rule acts on it: a key naming a uniform no pass declares, a key naming a pass
 # that does not exist, `@instances` reaching a compiled pass with no `flat in`, a key on a
 # block or a sampler no script can drive, a field a `sampler2D` refuses (`bad_texture`) and
 # any sibling not yet enumerated are the SAME case, and the code must
 # not be able to tell them apart at the point it decides what to do.
 #
-# It is a `Literal` with a `get_args` tuple rather than an `Enum` so a gate can walk its
+# It is a `Literal` with a `get_args` tuple rather than an `Enum` so a gate can enumerate its
 # domain the way `TARGET_DTYPES` is walked (`pass_graph.py:44-45`) -- which is the whole
 # reason it exists as a type instead of as seventeen branches in `_tick_script`. A gate
 # enumerating from a hand-written list narrows its own domain silently; one enumerating
@@ -47,7 +47,7 @@ class StoppedKey(BaseModel, frozen=True):
 #   - `engine_owned`: the engine owns the slot (`u_time`...) and a script cannot be
 #     expected to avoid naming it.
 # Revisit if a THIRD non-warning case appears -- at which point the rule shape is wrong and
-# wants re-deriving rather than a third exemption (102 D1).
+# wants re-deriving rather than a third exemption.
 KeyFailReason = Literal[
     "no_such_pass",
     "no_such_uniform",

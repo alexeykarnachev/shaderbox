@@ -1,12 +1,9 @@
-"""No call site passes a field its model does not declare (079 final review).
+"""No call site passes a field its model does not declare.
 
 A pydantic model whose `extra` is unset DROPS an unknown key in silence. The persisted models
 must stay that way — `extra="forbid"` would make an older `document.json` fail to load, which
-the persistence posture forbids — so the guard belongs on the CALL SITES instead.
-
-Two of these had already shipped: `PassEntry(inputs=...)` in the smoke canary (072 removed
-`inputs`, so the canary armed nothing and passed anyway) and `TargetConfig(persist=True)` in a
-test whose name still promised "and persists". Both read as correct and did nothing.
+the persistence posture forbids — so the guard belongs on the CALL SITES instead. A call passing a field the model no longer
+declares reads as correct and does nothing.
 """
 
 import ast
@@ -78,8 +75,7 @@ def test_the_sweep_finds_construction_sites_to_check() -> None:
 
 
 def test_no_call_site_names_a_field_its_model_dropped() -> None:
-    # Falsifier: pass a field a model does not declare — `PassEntry(inputs={})` or
-    # `TargetConfig(persist=True)` — and this names the file, the model and the keyword.
+    # A field a model does not declare, e.g. `PassEntry(inputs={})`, is named with its file, model and keyword.
     models = _models()
     unknown = [
         f"{path.relative_to(_ROOT)}:{line} — {model}({keyword}=...) is not a field of {model}"
@@ -90,7 +86,7 @@ def test_no_call_site_names_a_field_its_model_dropped() -> None:
 
 
 def test_the_walk_reaches_the_models_that_persist() -> None:
-    # The check above can only see models this walk imports. These are the ones whose `extra`
+    # The check above can only see models the scan imports. These are the ones whose `extra`
     # is unset — the persisted shapes, which must stay loadable from an older file and so
     # cannot take `extra="forbid"`. They are exactly the models a dropped keyword can hide in.
     reachable = _models()

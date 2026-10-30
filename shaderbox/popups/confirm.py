@@ -1,4 +1,4 @@
-"""The confirm modal: one client for every destructive verb (093 W4).
+"""The confirm modal: one client for every destructive verb.
 
 `App.request_confirm` builds the request at the verb, so the confirm names its target
 identically from a menu, a bar item, a button, a chord and the palette.

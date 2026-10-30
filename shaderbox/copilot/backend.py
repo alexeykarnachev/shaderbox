@@ -1,5 +1,5 @@
 """The copilot capability backend — the worker-facing implementation of every
-`CopilotCapabilities` method (feature 023, extracted from `app.py`).
+`CopilotCapabilities` method extracted from `app.py`.
 
 `CopilotBackend` owns the document/edit/uniform/render/publish/telegram verbs the copilot
 worker calls. It does NOT import `App` (the no-`TYPE_CHECKING` rule): every dependency
@@ -157,7 +157,7 @@ def _probe_target_for(document: Document, render_pass: Pass) -> str | None:
 def _probed_pass_outcome(
     document: Document, target: str | None
 ) -> InstancedOutcome | None:
-    # 103 D6/C9: the probed pass's draw outcome for the frame `_probe_frame` just rendered.
+    # The probed pass's draw outcome for the frame `_probe_frame` just rendered.
     # `document.render` DISCARDS its own draw information, so this is copilot-side plumbing to
     # get it out -- not a change to how the draw decides anything.
     pass_name = target or pass_name_of(document.render_pass.source.path)
@@ -259,7 +259,7 @@ def _edit_error_hints(
     return hints
 
 
-# D9: one whole-file rewrite per file per step — an earlier edit this batch changed the
+# One whole-file rewrite per file per step — an earlier edit this batch changed the
 # content the rewrite was composed from. `edit_tool` names the substring editor for the
 # artifact kind (a script write must not steer at edit_shader).
 def _batch_guard_reason(edit_tool: str) -> str:
@@ -299,7 +299,7 @@ class _CopilotEditTarget:
 def _canvas_line(ui_document: UIDocument) -> str:
     """The working set's canvas line: what the document is shaped by, and what it renders at.
 
-    Under Auto the document stores an ASPECT and no size (090 revision 1), so the pair is the
+    Under Auto the document stores an ASPECT and no size, so the pair is the
     LIVE canvas and the aspect is the thing the user set -- reporting a stored pair there would
     name a number the model does not carry.
     """
@@ -312,13 +312,13 @@ def _canvas_line(ui_document: UIDocument) -> str:
 
 
 def _driven_on(driven: set[tuple[str, str]], pass_name: str) -> set[str]:
-    # The uniform NAMES the script drives on one pass, out of the document-scoped (pass, name) set
-    # (069). `_format_uniforms` formats one pass, so it keeps its name-keyed signature.
+    # The uniform NAMES the script drives on one pass, out of the document-scoped (pass, name) set.
+    # `_format_uniforms` formats one pass, so it keeps its name-keyed signature.
     return {name for pass_, name in driven if pass_ == pass_name}
 
 
 def _entity_field_rows(render_pass: Pass) -> list[str]:
-    # 103 D4: "name type" per `flat in` declaration, [] for an ordinary fullscreen pass -- the
+    # "name type" per `flat in` declaration, [] for an ordinary fullscreen pass -- the
     # fact both ShaderView and WorkingSetView/PassView carry so the agent can tell an instanced
     # pass from a fullscreen one with odd inputs on either surface. `getattr` with a default:
     # several existing tests build a lightweight `types.SimpleNamespace` render_pass stand-in
@@ -329,11 +329,11 @@ def _entity_field_rows(render_pass: Pass) -> list[str]:
 
 
 def _teach_instances_in_stub(stub_text: str, document: Document) -> str:
-    # 103 D4b: `script_stub_for` (engine.py) already drops the false `sb_instanced` offer once
-    # D4a puts it in ENGINE_DRIVEN_UNIFORMS (`_scriptable_uniforms_for` filters that set out) --
+    # `script_stub_for` (engine.py) already drops the false `sb_instanced` offer once
+    # ENGINE_DRIVEN_UNIFORMS holds it (`_scriptable_uniforms_for` filters that set out) --
     # this adds the TRUE one it's missing. Appended rather than spliced into the generated
     # commented block: the stub is regenerated from introspection each read, and this reads the
-    # SAME entity_fields the working set / ShaderView already carry (D4), so it can't drift from
+    # SAME entity_fields the working set / ShaderView already carry, so it can't drift from
     # what the pass actually declares. One block per pass that has `flat in` fields.
     blocks: list[str] = []
     for pass_name, render_pass in sorted(document.passes.items()):
@@ -375,7 +375,7 @@ def _format_uniforms(
     # Engine glyph tables are skipped outright: their u.value is ~14KB of stroke data the agent
     # can neither set nor learn from. A `driven` uniform shows a marker, not a phantom value: the
     # copilot path never ticks the script, so its uniform_values entry is the stale manual default —
-    # showing it as a number contradicts the write that said the script drives it (feature 043).
+    # showing it as a number contradicts the write that said the script drives it.
     # An engine-driven uniform (u_aspect, u_resolution, the pass counters) shows a marker for the
     # same reason: its cache entry is whatever the last render wrote, 0.0 before any -- a model
     # read `u_aspect float = 0.0` and rebuilt its layout around it.
@@ -409,7 +409,7 @@ def _sampler_uniform_names(render_pass: Pass) -> list[str]:
 
 
 def _wired_for(document: Document, render_pass: Pass) -> Mapping[str, str]:
-    # What the binder fills on THIS pass: uniform -> the pass it reads (072). The name rule
+    # What the binder fills on THIS pass: uniform -> the pass it reads. The name rule
     # resolves from a COMPILED program, so every caller compiles the pass first; asked about a
     # never-compiled pass this reports its name-wired samplers as BLACK.
     return document.effective_wiring().get(pass_name_of(render_pass.source.path), {})
@@ -421,7 +421,7 @@ def _sampler_reads(render_pass: Pass, name: str, wired: Mapping[str, str]) -> st
     business; an EMPTY one is, because "the user chose black" and "nothing decided yet" call
     for different actions. NEVER the source path (corollary-1: the abs path is a model-visible
     leak); only dims + kind for media. A field the script feeds this frame outranks the wire
-    at the draw (110 D4), so it outranks it here too."""
+    at the draw, so it outranks it here too."""
     field = render_pass.pending_textures.get(name)
     if field is REFUSED_TEXTURE:
         if name in render_pass.script_textures:
@@ -469,7 +469,7 @@ def _uniform_changes(
 
 
 def _dotted(key: tuple[str, str]) -> str:
-    # `pass.uniform` for the agent to READ (069). Display only — never parsed back, and never a key
+    # `pass.uniform` for the agent to READ. Display only — never parsed back, and never a key
     # grammar (the script addresses a pass by a nested dict, not by a dotted string).
     return f"{key[0]}.{key[1]}"
 
@@ -484,14 +484,12 @@ def _population_samples(
         ],
     ]
 ]:
-    # `population_samples` is 103's addition to ScriptProbe (engine.py, owned by another flow in
-    # this wave); read defensively so this module builds and tests against either the field or an
-    # older ScriptProbe that lacks it.
+    # Read defensively: a ScriptProbe (engine.py) without `population_samples` yields no samples.
     return getattr(probe, "population_samples", [])
 
 
 def _population_facts_lines(probe: ScriptProbe) -> list[str]:
-    # 103 D1/D2: one line per pass that sent `@instances`, off the LAST sample (the most-settled
+    # One line per pass that sent `@instances`, off the LAST sample (the most-settled
     # state a script reaches in the probe window) -- count + per-column dtype/shape/range, or the
     # honest "not validated" / refusal note. Never the columns themselves: this reads plain-Python
     # statistics the engine already reduced, nothing here ever touches an ndarray.
@@ -528,7 +526,7 @@ def _population_motion(probe: ScriptProbe, eps: float) -> list[str]:
     # The FIRST sample against EVERY later one, as `_uniform_changes` does -- not first
     # against last. A population that orbits back to where it started, or dips and
     # returns, is identical at the endpoints and moved throughout: comparing the two ends
-    # reports it STATIC, which is C1's own false verdict in a narrower window.
+    # reports it STATIC, a false verdict.
     _, first = samples[0]
     later = [columns for _, columns in samples[1:]]
     lines: list[str] = []
@@ -569,12 +567,12 @@ def _population_motion(probe: ScriptProbe, eps: float) -> list[str]:
 
 
 def _motion_verdict(probe: ScriptProbe, render_line: str, eps: float) -> str:
-    # The value-diff motion signal (feature 043): which driven uniforms change across t (exact,
+    # The value-diff motion signal: which driven uniforms change across t (exact,
     # GL-free) + ONE render line for the "is it visible / FLAT" honesty case the value-diff misses.
     # A script driving ONLY a population (no scalar uniform) has an EMPTY `probe.driven` -- a
-    # population never adds to that set (069/103) -- so the "drives 0 uniforms" verdict below is
+    # population never adds to that set -- so the "drives 0 uniforms" verdict below is
     # false for it; `ScriptWriteResult.population_facts` (rendered separately, `_apply_script_text`)
-    # is where that script's real story lives (103 D1/D2/C1).
+    # is where that script's real story lives.
     if not probe.driven:
         fed = [
             kind
@@ -621,7 +619,7 @@ def _motion_verdict(probe: ScriptProbe, render_line: str, eps: float) -> str:
 
 
 def _population_facts_text(probe: ScriptProbe, eps: float) -> str:
-    # 103 D1/D2: the full population story for `ScriptWriteResult.population_facts` -- the
+    # The full population story for `ScriptWriteResult.population_facts` -- the
     # per-pass count/columns/verdict line plus its own ANIMATING/STATIC note (h). Its own field,
     # separate from `motion_facts`'s scalar-uniform verdict, rather than folded text: a gate
     # asserting "the count appears" reads a dedicated field instead of parsing a blob, and a
@@ -634,7 +632,7 @@ def _population_facts_text(probe: ScriptProbe, eps: float) -> str:
 
 
 def _texture_facts_text(probe: ScriptProbe) -> str:
-    # 110 D8: one line per script-fed sampler off the LAST sample that carries it -- shape,
+    # One line per script-fed sampler off the LAST sample that carries it -- shape,
     # dtype, range, or the refusal -- then its motion: its FIRST sample against EVERY later one,
     # as `_population_motion` decides it, over the content digest, since min/max/mean hold
     # still while an advecting field moves. Statistics only; the field never reaches here.
@@ -715,16 +713,16 @@ class CopilotBackend:
         # dead store an own later line overwrites, a text-only change) — the value-diff is the only
         # channel that can catch it (frame-pair facts are pace-blind).
         self._last_script_samples: dict[str, object] = {}
-        # 033 force-restore bookkeeping: per-document consecutive broken-compile edits +
+        # Force-restore bookkeeping: per-document consecutive broken-compile edits +
         # the last source text that compiled clean (the restore target).
         self._broken_streak: dict[str, int] = {}
         self._last_clean: dict[str, str] = {}
-        # The script analog of the shader force-restore (033): N consecutive broken-compile/runtime
+        # The script analog of the shader force-restore: N consecutive broken-compile/runtime
         # script writes on ONE document -> revert to its last clean-probing source. A script has TWO failure
         # modes (compile + runtime), so it is at least as prone to a broken-edit loop as a shader.
         self._script_broken_streak: dict[str, int] = {}
         self._script_last_clean: dict[str, str] = {}
-        # Oscillation brake (review cycle 2): recent source-state hashes per document —
+        # Oscillation brake: recent source-state hashes per document —
         # an edit that returns the file to an earlier state is flagged as a fact.
         self._state_history: dict[str, list[int]] = {}
         self._document_examples_dir = document_examples_dir
@@ -756,7 +754,7 @@ class CopilotBackend:
         # document's script keys as ("script", document_id) so it can't collide with a document address.
         self._batch_mutated: set[str | tuple[str, str]] = set()
         self._get_active_checkpoint = get_active_checkpoint
-        # The pass list's verbs (065 D15), each mutating the live document AND saving.
+        # The pass list's verbs, each mutating the live document AND saving.
         self._pass_add = pass_add
         self._pass_delete = pass_delete
         self._pass_rename = pass_rename
@@ -776,9 +774,9 @@ class CopilotBackend:
         # Lazy: the bridge lives on the CopilotSession, built AFTER the backend. Resolved at turn-time.
         return self._get_bridge()
 
-    # ---- rollback checkpoint capture (feature 020·30) ----
+    # ---- rollback checkpoint capture ----
     # All run main-thread inside the bridge _on_main blocks, BEFORE the mutation. Best-effort:
-    # TurnCheckpoint's own try/except swallows a capture failure so the edit never fails (decision 10).
+    # TurnCheckpoint's own try/except swallows a capture failure so the edit never fails.
 
     def _capture_document(self, document_id: str) -> None:
         # Serialize the LIVE document (not the stale on-disk dir — set_uniform never writes document.json).
@@ -796,7 +794,7 @@ class CopilotBackend:
         cp.snapshot_script(document_id, self._get_script_path(document_id))
 
     def _capture_script(self, document_id: str) -> None:
-        # Pre-write capture for a script-mutating tool (043): snapshot a pre-existing script.py into
+        # Pre-write capture for a script-mutating tool: snapshot a pre-existing script.py into
         # the document snapshot dir (restored by the document's full-dir swap), or mark a created-this-turn
         # script for delete-on-revert. Best-effort, runs main-thread before the write.
         cp = self._get_active_checkpoint()
@@ -927,7 +925,7 @@ class CopilotBackend:
             )
         return entries
 
-    # ---- cross-project reads (feature 020·16) ----
+    # ---- cross-project reads ----
 
     def read_shaders(self, document_ids: list[str]) -> list[ShaderView]:
         # Marshalled (compile + uniform read are GL). Per handle: compile, read source + uniforms +
@@ -998,10 +996,10 @@ class CopilotBackend:
                     if render_pass.program is None:
                         render_pass.compile()
                     if kind == "document":
-                        # One working-set member is one DOCUMENT (D11) — a pass read touches its
+                        # One working-set member is one DOCUMENT — a pass read touches its
                         # document, never a per-pass member.
                         self._working_set_add(full_id)
-                    # A document-scoped set of (pass, name) pairs (069): filter to this pass's own
+                    # A document-scoped set of (pass, name) pairs: filter to this pass's own
                     # name — a uniform driven only on `paint` is not driven here.
                     driven = (
                         _driven_on(self._get_script_driven_uniforms(full_id), name)
@@ -1051,7 +1049,7 @@ class CopilotBackend:
             if current and current in self._get_ui_documents():
                 ordered.append(current)
             for address in self._working_set_reader():
-                # A pass address collapses to its document: one member is one DOCUMENT (D11), so
+                # A pass address collapses to its document: one member is one DOCUMENT, so
                 # an 8-pass document can never evict its own passes out of the size cap.
                 document_address = split_pass_address(address)[0]
                 if document_address not in ordered:
@@ -1130,7 +1128,7 @@ class CopilotBackend:
         # every name-wired sampler as BLACK on the first read of a freshly opened document.
         for render_pass in document.passes.values():
             _sampler_uniform_names(render_pass)
-        # The EFFECTIVE wiring (069 D9, 072): a sampler the name rule fills has no stored row,
+        # The EFFECTIVE wiring: a sampler the name rule fills has no stored row,
         # and telling the model it reads BLACK while the renderer fills it is a false fact.
         wiring = document.effective_wiring()
         # The passes the output actually reaches (the strip's own `live` set): an unreachable pass
@@ -1150,7 +1148,7 @@ class CopilotBackend:
                     name=name,
                     address=pass_address(handle, name),
                     listing=_number_lines(render_pass.source.text),
-                    # Per PASS (069): the driven set is document-scoped pairs, so each pass gets
+                    # Per PASS: the driven set is document-scoped pairs, so each pass gets
                     # only what the script drives ON IT — the same uniform name on a sibling pass
                     # keeps its real value rather than a phantom marker.
                     uniforms=_format_uniforms(
@@ -1255,7 +1253,7 @@ class CopilotBackend:
             )
         return bodies
 
-    # ---- cross-project mutations (feature 020·16) ----
+    # ---- cross-project mutations ----
 
     def set_uniform(self, name: str, value: object, document: str) -> SetUniformResult:
         # Set a uniform value on a document (marshalled: validation + try_to_release touch GL). The write
@@ -1290,7 +1288,7 @@ class CopilotBackend:
                     error=f"document has no active uniform '{name}' — read_shader it to see its "
                     "uniforms",
                 )
-            # The tool addresses the OUTPUT pass, so the reject asks the output PAIR (069): a
+            # The tool addresses the OUTPUT pass, so the reject asks the output PAIR: a
             # uniform of the same name driven on another pass is a legitimate manual edit here. It
             # sits below the resolution so a name absent from the output pass gets the "no active
             # uniform" answer rather than the script-driven one.
@@ -1298,7 +1296,7 @@ class CopilotBackend:
                 pass_name_of(target.render_pass.source.path),
                 name,
             ) in self._get_script_driven_uniforms(document_id):
-                # One script per document (048): a driven uniform is always computed by the document script.
+                # One script per document: a driven uniform is always computed by the document script.
                 return SetUniformResult(
                     ok=False,
                     error=f"'{name}' is script-driven (the document script computes its value each "
@@ -1489,7 +1487,7 @@ class CopilotBackend:
             self._capture_document(
                 document_id
             )  # pre-change rollback snapshot (best-effort)
-            # An explicit pixel request is a FIXED one (090 D5): left on Auto, the next frame's
+            # An explicit pixel request is a FIXED one: left on Auto, the next frame's
             # resolution step would resize the document back to the panel and the tool would
             # silently have done nothing.
             ui_document.ui_state.resolution_mode = ResolutionMode.FIXED
@@ -1508,7 +1506,7 @@ class CopilotBackend:
 
         return self._bridge.run_on_main(_on_main)
 
-    # ---- passes (feature 076) ----
+    # ---- passes ----
 
     def _pass_table(self, document_id: str) -> str:
         # The document's pass table as the model reads it back: one row per pass in graph order,
@@ -1985,7 +1983,7 @@ class CopilotBackend:
         )
 
     def probe_render(self, document: str, t: float) -> str:
-        # The aimable read-side probe (feature 050): the one-line facts string the edit path
+        # The aimable read-side probe: the one-line facts string the edit path
         # produces, at a chosen `t` (default 0.0 = the export clock). UN-gated + non-mutating - the
         # render-blind agent glances here as often as it likes, vs render_image (gated, writes a
         # deliverable file).
@@ -2146,7 +2144,7 @@ class CopilotBackend:
             exporter.current_default_pack()
         )
 
-    # ---- Telegram connect + pack CRUD (feature 020·19) ----
+    # ---- Telegram connect + pack CRUD ----
 
     def _copilot_telegram(self) -> "TelegramExporter | None":
         exporter = self._get_exporter_registry().get("telegram")
@@ -2296,14 +2294,14 @@ class CopilotBackend:
             ok=False, error="delete is taking too long — check the Share tab"
         )
 
-    # ---- edit / compile-feedback (target-addressable: document or lib: file, 020·16) ----
+    # ---- edit / compile-feedback (target-addressable: document or lib: file) ----
 
     def apply_shader_edit(
         self, old_str: str, new_str: str, replace_all: bool, target: str
     ) -> EditResult:
         # Match + replace against the target's live source, recompile (document) / write (lib), persist,
         # refresh the editor — one bridge round-trip (matching on main = no staleness window). 0/ambiguous
-        # match mutates nothing. A substring edit skips the D9 guard (matches by text) but records its
+        # match mutates nothing. A substring edit skips the whole-file-rewrite guard (matches by text) but records its
         # target as batch-mutated so a later same-batch whole-file rewrite is caught.
         def _on_main() -> EditResult:
             tgt = self._copilot_resolve_target(target, allow_create=False)
@@ -2363,7 +2361,7 @@ class CopilotBackend:
         streak: int,
         matches: int,
     ) -> EditResult:
-        # The 033 unstick: N consecutive broken edits -> put the file back at its last
+        # The unstick: N consecutive broken edits -> put the file back at its last
         # clean-compiling state and tell the agent as a fact. Resets the streak so the
         # next broken run gets a fresh budget. Keyed by the working-set ADDRESS, which names one
         # FILE: a document's passes are separate files, so a document-id key would restore one
@@ -2412,10 +2410,10 @@ class CopilotBackend:
         cache_key: str = "",
         target: str | None = None,
     ) -> str:
-        # Best-effort probe render -> one facts line (feature 033). Runs on the main
+        # Best-effort probe render -> one facts line. Runs on the main
         # thread (bridge-marshalled callers) with the GL context current. Never raises
         # into the edit path — facts are advisory. `t` is the render clock, DEFAULT 0.0 (the
-        # export clock the user renders, NOT wall-clock — feature 050: a wall-clock probe drifts
+        # export clock the user renders, NOT wall-clock: a wall-clock probe drifts
         # with app uptime, so its facts can't be correlated with what the user sees). ONE source
         # for both document.render(u_time=) AND the stamp, so a caller passing its sample time (a
         # script probe, the probe_render tool) can't disagree with the rendered frame.
@@ -2434,7 +2432,7 @@ class CopilotBackend:
             # Stamp the sample time: an animated shader's facts change with phase,
             # which otherwise reads as an edit effect.
             line0 = _stamp_facts(render_facts(raw0, size, h), t)
-            # 103 D6/C9: the pixel-derived facts line has no vocabulary for the instanced case
+            # The pixel-derived facts line has no vocabulary for the instanced case
             # (a refused/no-fields/stale-program pass can still read as an ordinary compiling
             # pass in pixels). Splice the outcome's own honest line ahead of it when the outcome
             # says something is WRONG -- `is_healthy` covers "drew"/"fullscreen"/"not_compiled",
@@ -2478,19 +2476,19 @@ class CopilotBackend:
         document: Document,
         samples: list[tuple[float, dict[tuple[str, str], object]]],
     ) -> str:
-        # ONE corroborating render (feature 043): render the mid sample's driven values AT the mid
+        # ONE corroborating render: render the mid sample's driven values AT the mid
         # sample's TIME to answer "did the values produce visible ink, or is it FLAT / off-screen / a
         # uniform the shader ignores?" — the honesty case a value-diff alone misses. The render clock IS
         # mid[0] (not wall-clock), so a u_time-reading shader renders the frame the values came from.
         # Rebinds EACH pass's uniform_values to a merged copy (the live dict OBJECTs are never
-        # mutated; sampler/Video values are shared and may advance a frame, same as the 033 facts
+        # mutated; sampler/Video values are shared and may advance a frame, same as the facts
         # probe), restores them in finally. Advisory — never raises.
         if not samples or not COPILOT_ENGINE.render_facts_enabled:
             return ""
         mid = samples[len(samples) // 2]
         saved = {name: p.uniform_values for name, p in document.passes.items()}
         try:
-            # The sample is keyed by (pass, name) since 069, so the merge is per pass: a value the
+            # The sample is keyed by (pass, name), so the merge is per pass: a value the
             # script drives on a non-output pass must reach THAT pass for the render to show what
             # the values describe.
             for pass_name, render_pass in document.passes.items():
@@ -2598,7 +2596,7 @@ class CopilotBackend:
 
     def _script_broken_write(self, document_id: str, error: str) -> ScriptWriteResult:
         # A broken script write/edit (compile OR runtime). After N in a row, restore the last clean
-        # source + tell the agent (the 033 force-restore, ported to scripts). Mirrors the shader path.
+        # source + tell the agent (the force-restore, ported to scripts). Mirrors the shader path.
         streak = self._script_broken_streak.get(document_id, 0) + 1
         self._script_broken_streak[document_id] = streak
         limit = COPILOT_CONFIG.auto_revert_after_failed_edits

@@ -1,7 +1,7 @@
-"""The per-request context breakdown (075 W-1): what each prompt tier contributed to ONE LLM
+"""The per-request context breakdown what each prompt tier contributed to ONE LLM
 request, measured where the request is assembled.
 
-Falsifiers, each named: (1) a block added to `build_blocks` without a breakdown entry -- the
+Cases: (1) a block added to `build_blocks` without a breakdown entry -- the
 coverage is enumerated from the block list, never from a hardcoded set; (2) a breakdown emitted
 at build time -- the working set renders empty then and is spliced live per iteration, so the
 entry must carry the LIVE splice and change when the splice changes; (3) the breakdown altering

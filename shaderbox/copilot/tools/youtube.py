@@ -4,7 +4,7 @@ from shaderbox.copilot.capabilities import CopilotCapabilities
 from shaderbox.copilot.gate import GateKind
 from shaderbox.copilot.tools.base import EmptyArgs, GatePolicy, ToolDefinition
 
-# The YouTube connect tool (feature 020·21). set_youtube_credentials is CONFIG-gated: the chat renders
+# The YouTube connect tool. set_youtube_credentials is CONFIG-gated: the chat renders
 # the exporter's EXISTING draw_config_ui() inline (paste client_secret + Connect, the same widgets as
 # Settings) + a Cancel button. The gate blocks until the panel reaches connected (auto-resolved) or the
 # user cancels; the handler then only reports the outcome. Mirrors the Telegram connect shape, but the
@@ -36,7 +36,7 @@ def youtube_tools(caps: CopilotCapabilities) -> list[ToolDefinition]:
 
     def already_connected_precheck(args: dict[str, Any]) -> str | None:
         # If YouTube is already connected, skip the panel entirely (don't pop a setup gate for a
-        # connection that exists) — exactly like the publish precheck handoffs (feature 020·18).
+        # connection that exists) — exactly like the publish precheck handoffs.
         _ = args
         if caps.youtube_connected():
             return "YouTube is already connected — no setup needed; you can publish."

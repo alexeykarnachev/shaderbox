@@ -1,9 +1,9 @@
-"""Feature 058: a force-ended turn's closing reply carries a FRESH measurement of the frame.
+"""A force-ended turn's closing reply carries a FRESH measurement of the frame.
 
 All three observed dishonest limit-endings happened on the forced-reply path, which summarized from
 intentions alone. When the turn authored a render, the engine probes the last-authored document once
 (free, numeric) and splices the facts into the nudge — so the model states the net result from the
-measurements. Falsifier for each path: cut the splice and these go red. Deterministic (scripted fake
+measurements. Deterministic (scripted fake
 client, faked probe) — no GL, no live tokens."""
 
 import threading
@@ -175,7 +175,7 @@ def test_no_render_authored_means_no_probe_and_no_line() -> None:
 
 
 def test_forced_reply_facts_carry_the_legend_when_they_are_the_turns_first() -> None:
-    # D7 (059): the legend routes through the SAME per-turn flag as the tool-result splice, so a
+    # The legend routes through the SAME per-turn flag as the tool-result splice, so a
     # forced-end reply whose probe is the turn's first facts line is not left glossing nothing.
     scripts: list[list[LLMStreamEvent]] = [
         _EDIT,

@@ -1,4 +1,4 @@
-"""What a script may return for a `sampler2D`, decided once (feature 110).
+"""What a script may return for a `sampler2D`, decided once.
 
 The engine refuses with it, the draw allocates from it and completion offers a declaration
 from it, so all three agree by construction. GL-free: the script engine and the intel

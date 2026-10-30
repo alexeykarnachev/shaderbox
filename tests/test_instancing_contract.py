@@ -1,4 +1,4 @@
-"""The contract features 102-105 are built against: the shared vocabulary, gated.
+"""The shared instancing vocabulary, gated.
 
 Every check here guards a type three or more flows read. They are in one file rather than
 spread across the feature test modules because the thing under test is the CONTRACT -- a
@@ -68,13 +68,12 @@ def test_every_target_field_is_classified_by_allocates_same_as() -> None:
 
 
 def test_every_blend_mode_has_a_gl_mapping() -> None:
-    # Break: delete a mode's entry in `blend.py` and this fails at import.
     for mode in BLEND_MODES:
         src, dst = blend_func_for(mode)
         assert isinstance(src, int) and isinstance(dst, int)
     # Opaque is the mode that must not combine with what is already there; if it maps to
-    # the additive pair, the measurement that made I6 real (an opaque overlap must not
-    # double) cannot be taken.
+    # the additive pair, an opaque overlap
+    # could not be shown not to double.
     assert blend_func_for("opaque") != blend_func_for("additive")
 
 
@@ -86,7 +85,7 @@ def test_key_fail_reasons_partition_into_warning_and_silent() -> None:
         KEY_FAIL_REASONS
     )
     assert not set(WARNING_KEY_FAIL_REASONS) & SILENT_KEY_FAIL_REASONS
-    # 102 D1: exactly two exemptions, and a THIRD means the rule shape wants re-deriving
+    # exactly two exemptions, and a THIRD means the rule shape wants re-deriving
     # rather than another member here.
     assert len(SILENT_KEY_FAIL_REASONS) == 2, (
         "a third silent reason means 'warn unless...' is the wrong rule shape (102 D1)"
@@ -96,7 +95,7 @@ def test_key_fail_reasons_partition_into_warning_and_silent() -> None:
 def test_instanced_states_partition_into_healthy_and_reportable() -> None:
     assert set(INSTANCED_STATES) >= HEALTHY_INSTANCED_STATES
     reportable = set(INSTANCED_STATES) - HEALTHY_INSTANCED_STATES
-    # The five states the research found that nothing in the app could say (101 I1-I5).
+    # The five states nothing else in the app could say.
     assert reportable == {
         "empty",
         "refused",
@@ -108,7 +107,7 @@ def test_instanced_states_partition_into_healthy_and_reportable() -> None:
 
 def test_every_outcome_state_describes_itself_distinctly() -> None:
     """A surface renders `describe()`, so two states reading identically would be two
-    pictures the user cannot tell apart -- which is the defect class 102 exists to end.
+    pictures the user cannot tell apart -- the defect class this contract exists to end.
 
     Presence of each is not distinctness of all: the set comparison is what catches a
     collision, and checking each string is non-empty would pass one.
@@ -122,14 +121,13 @@ def test_every_outcome_state_describes_itself_distinctly() -> None:
     assert len(set(lines.values())) == len(INSTANCED_STATES), (
         f"two states describe identically: {lines}"
     )
-    # The count must survive into the text: 104 D3 reads a live entity count off this.
+    # The count must survive into the text: the live entity count is read off this.
     assert "7" in lines["drew"]
 
 
 def test_reserved_names_partition_covers_every_name() -> None:
-    """104 D4: the engine must be able to say which reserved names are documentable.
-    `RESERVED_NAMES` is derived from the two halves, so they cannot drift -- break it by
-    making the union a literal again and dropping a name from one half."""
+    """The engine must be able to say which reserved names are documentable.
+    `RESERVED_NAMES` is derived from the two halves, so they cannot drift."""
     assert USER_FACING_NAMES | ENGINE_INTERNAL_NAMES == RESERVED_NAMES
     assert not USER_FACING_NAMES & ENGINE_INTERNAL_NAMES
     # The two that must never be documented, named so a widening argues with a test.

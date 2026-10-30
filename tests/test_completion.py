@@ -1,4 +1,4 @@
-"""Completion policy over the intel index (073 W-B, re-based in 078 W-A): what the code
+"""Completion policy over the intel index what the code
 panel offers and when, on the pure providers and through the real driver."""
 
 from typing import Any
@@ -145,10 +145,10 @@ def test_a_lib_tab_keeps_its_own_declared_names_after_uniform() -> None:
 
 
 def test_an_identifier_site_offers_the_buffers_own_names_first() -> None:
-    # Finding 6: `u_gain` is declared and read, `u_time` declared; both are offered, and
-    # never only `u_time`. A declared name inserts as itself, an undeclared one as a name.
-    # 079 D2 makes the title literal: the buffer's own name leads, then the engine's in
-    # alphabetical order. Falsifier: rank the engine's uniforms first and `u_gain` slides down.
+    # `u_gain` is declared and read, `u_time` declared; both are offered, and never
+    # only `u_time`. A declared name inserts as itself, an undeclared one as a name. The
+    # title is literal: the buffer's own name leads, then the engine's in alphabetical
+    # order.
     found = _texts(offer(_context(line_before_caret="vec3 color = u_", prefix="u_")))
     assert found[0] == "u_gain"
     assert found.index("u_aspect") < found.index(
@@ -223,7 +223,7 @@ def test_the_script_tab_offers_what_the_worker_answered() -> None:
                 python_candidates=members,
             )
         )
-    ) == ["dt", "t"]  # same kind, so alphabetical (079 D2)
+    ) == ["dt", "t"]  # same kind, so alphabetical
     assert (
         offer(
             _context(
@@ -315,7 +315,7 @@ def test_uniform_space_opens_the_builtin_list(app: Any) -> None:
     assert editor.complete_selected() == -1, "unasked: nothing highlighted"
     editor.key(KeyCode.DOWN)
     editor.key(KeyCode.ENTER)
-    assert editor.get_text().startswith("uniform float u_aspect;")  # first by 079 D2
+    assert editor.get_text().startswith("uniform float u_aspect;")
     editor.close()
 
 
@@ -455,11 +455,10 @@ def test_the_generated_table_covers_the_builtins_a_shader_uses() -> None:
 
 
 def test_the_generated_table_names_the_gl4_vocabulary() -> None:
-    # 089 W-B: the table is the gl4 refpages, named from each prototype rather than from
+    # The table is the gl4 refpages, named from each prototype rather than from
     # the page's refname. `fma` is gl4-only; `noise1` and `packUnorm2x16` sit on family
     # pages (`noise.xml`, `packUnorm.xml`) whose refname matches no prototype, so keying on
-    # the refname dropped both pages whole. Falsifier: regenerate against es3.0 (no `fma`)
-    # or key on the refname again (no `noise1`, no `packUnorm2x16`).
+    # the refname dropped both pages whole.
     for name in ("fma", "noise1", "packUnorm2x16"):
         assert name in BUILTINS, name
     # A geometry-stage verb is not callable from a fragment shader, so it is not offered.
@@ -468,8 +467,7 @@ def test_the_generated_table_names_the_gl4_vocabulary() -> None:
 
 def test_the_variable_table_is_the_fragment_stage() -> None:
     # The 4.60 spec's 7.1.5 declaration block, exactly: the generator's `_FRAGMENT_VARIABLES`
-    # filter. Falsifier: a vertex- or compute-stage page reaching the table (`gl_VertexID`,
-    # `gl_WorkGroupID`), or the filter dropped.
+    # filter.
     assert set(VARIABLES) == {
         "gl_FragCoord",
         "gl_FrontFacing",
@@ -490,7 +488,6 @@ def test_the_variable_table_is_the_fragment_stage() -> None:
 
 def test_the_glsl_provider_offers_a_builtin_variable() -> None:
     # The reach needs no provider change: `_glsl_words` returns the index's words whole.
-    # Falsifier: the variables absent from the index (the offer is empty).
     found = _texts(
         offer(_context(line_before_caret="  vec2 p = gl_Fr", prefix="gl_Fr"))
     )
@@ -508,9 +505,7 @@ def test_the_index_answers_for_a_glsl_builtin() -> None:
 
 
 def test_candidates_sort_by_kind_then_name() -> None:
-    # 079 D2: the document's own vocabulary first, the language's last, alphabetical inside
-    # each tier. Falsifier: drop the sort in `offer` and the list comes back in provider order,
-    # which puts the library's functions above the buffer's own names.
+    # the document's own vocabulary first, the language's last, alphabetical inside each tier.
     found = offer(_context(prefix="u_", explicit=True))
     ranks = [kind_rank(symbol.kind) for symbol in found]
     assert ranks == sorted(ranks), _texts(found)
@@ -523,9 +518,8 @@ def test_candidates_sort_by_kind_then_name() -> None:
 
 
 def test_a_float_literals_dot_is_not_a_member_site() -> None:
-    # 079 D4 / finding 6: `1.` asked jedi, which answered with the keywords that may follow an
-    # expression. A member site is a dot after a NAME or a closing bracket. Falsifier: restore
-    # the `\.\w*` alternative and the first four go True.
+    # `1.` asked jedi, which answered with the keywords that may follow an
+    # expression. A member site is a dot after a NAME or a closing bracket.
     for line in ("x = 1.", "x = 0x1f.", "1_000.", "2j."):
         assert not PYTHON_SITE.search(line), line
     for line in ("x.", "f().", "a[0].", "context.t", "obj.attr.", "self.pha"):
@@ -548,7 +542,7 @@ def _member_index() -> GlslIndex:
 
 
 def test_a_dot_after_a_vector_offers_its_components() -> None:
-    # The maintainer's report: typing `u_color.` showed nothing. Every single component of
+    # Typing `u_color.` offers components. Every single component of
     # each set comes, plus the leading runs; the sets never mix, which GLSL forbids.
     offered = _texts(
         offer(_context(line_before_caret="  q = u_color.", index=_member_index()))
@@ -673,7 +667,7 @@ def test_the_members_reach_the_popup_in_component_order() -> None:
 
 
 def test_ordinary_candidates_still_sort_by_kind_then_name() -> None:
-    # The member exemption is narrow: everything else keeps 079 D2's ordering, so a member
+    # The member exemption is narrow: everything else keeps the ordinary ordering, so a member
     # site's special case cannot leak into an identifier site.
     offered = offer(
         _context(

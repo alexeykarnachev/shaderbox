@@ -239,7 +239,7 @@ class Video(MediaWithTexture):
     @property
     def texture(self) -> moderngl.Texture:
         if self._texture is None:
-            # A capture parked at end-of-stream grabs nothing and retrieves None, which used to
+            # A capture parked at end-of-stream grabs nothing and retrieves None, which would
             # crash inside cvtColor and take the whole document load down with it. Rewind and retry:
             # the first frame is always a valid one to show.
             if not self._cap.grab():

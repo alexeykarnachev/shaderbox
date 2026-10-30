@@ -1,4 +1,4 @@
-"""glfw -> ed_key translation (feature 067). Pure functions, no App import —
+"""glfw -> ed_key translation. Pure functions, no App import —
 the drain that consumes these events lives in `hotkeys.py` (the keyboard home).
 
 Three event shapes cross into the editor:

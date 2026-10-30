@@ -1,4 +1,4 @@
-"""The panel drives the library and hands back a texture (feature 098).
+"""The panel drives the library and hands back a texture.
 
 The framing and the view round-trip are what a headless test can decide; the
 pointer translation needs an imgui frame and is covered by the widget's own
@@ -156,10 +156,9 @@ def test_a_view_moving_drag_pans_at_the_right_rate(gl_ctx: moderngl.Context) -> 
     `view_moving` only to suppress hover -- so panning is the host's.
 
     The RATE is asserted, not merely the direction: `pan` is canvas space, so
-    a 120px drag moves it 120/zoom, and the fixture's zoom is not 1. An
-    earlier version asserted `> 0` and stayed green with the division
-    dropped, which would pan at the wrong speed under the hand and error
-    nowhere.
+    a 120px drag moves it 120/zoom, and the fixture's zoom is not 1. A
+    bare `> 0` stays green with the division dropped, which would pan at
+    the wrong speed under the hand and error nowhere.
 
     The press must land where the library does NOT claim the pointer, because
     a pan is decided at the press now. A fixture aiming at a node gets no pan
@@ -328,7 +327,7 @@ def test_a_button_the_canvas_is_not_under_never_reaches_the_library() -> None:
     """A click on a context-menu item drawn OVER the canvas is not a node
     click, and a drag elsewhere in the app is not a pan.
 
-    This is the sharpest bug the review found: a `Clicked` runs
+    A `Clicked` runs
     `App.choose_output`, which writes the document -- so every use of the
     node context menu persisted a change to the graph. Coordinates are
     canvas-local, so a pointer outside the region still lands on a node.
@@ -446,7 +445,7 @@ def test_a_hovered_row_lights_up(gl_ctx: moderngl.Context) -> None:
     screen position before framing is not where it ends up -- a coordinate
     is valid only for the frame state it was measured in. Measuring the
     sweep under one view and the pixels under another reports zero every
-    time, which is what three wrong findings on this bug all were.
+    time.
 
     The pointer also JIGGLES by a hundredth of a pixel: a hover reached
     while nothing moves leaves the stale hover and the current one in
@@ -642,7 +641,7 @@ def test_a_read_only_row_answers_the_pointer(gl_ctx: moderngl.Context) -> None:
 
     It was a LABEL, which draws no field: the pointer crossed it and
     nothing changed, so an engine uniform read as a dead patch of node
-    and the maintainer spent a session trying to drag one. Measured, the
+    and a user could spend a session trying to drag one. Measured, the
     read-only row moved 0 subpixels under the pointer while the editable
     row beside it moved 10721.
 

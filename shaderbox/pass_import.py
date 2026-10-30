@@ -1,4 +1,4 @@
-"""The import plan: what copying another document's passes into this one changes (091 D4).
+"""The import plan: what copying another document's passes into this one changes.
 
 Pure and GL-free, importing `pass_graph` only. The session executes the plan; this decides it,
 so every rejection and every rewired sampler is testable with two wirings and no context.
@@ -7,7 +7,7 @@ A copied pass keeps its shader text; what changes is its NAME (the group name pr
 stored SOURCE of every sampler the source wiring filled, written explicitly under the new
 names because the name rule (`u_blur` reads `blur`) does not survive the prefix. An entry point
 the host feeds is not copied: its readers point at the host pass instead, and the host's own
-readers of that pass are handed to the bundle's output (D6).
+readers of that pass are handed to the bundle's output.
 """
 
 from collections.abc import Collection, Mapping
@@ -32,9 +32,9 @@ class ImportPlan:
     sources: dict[str, dict[str, str]]
     # the bundle's output under its host name
     output: str
-    # HOST pass -> sampler -> `output`: the readers handed over (D6)
+    # HOST pass -> sampler -> `output`: the readers handed over
     handovers: dict[str, dict[str, str]] = field(default_factory=dict)
-    # the document's output moves to `output` (D6)
+    # the document's output moves to `output`
     becomes_output: bool = False
 
 

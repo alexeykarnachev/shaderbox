@@ -13,19 +13,19 @@ EditorTabKind = Literal["shader", "script", "lib", "graph"]
 
 @dataclass(frozen=True)
 class EditorTab:
-    # One open file in the code-editor's tab bar (feature 045; 048 collapsed to one script per document).
+    # One open file in the code-editor's tab bar (one script per document).
     # `path` is the on-disk file (the EditorSession key); the tab LABEL is derived from the document name
     # (tab_label), but the imgui `##id` keys on the stable path. `kind` selects the semantic
     # label + the error tint. For a script/shader/graph tab, `document_id` addresses the document; "" for
     # lib tabs. A `graph` tab has NO EditorSession: its path is the document's `graph.json`, which keys
-    # every path-keyed pass-through, and nothing edits it as text (093 T1).
+    # every path-keyed pass-through, and nothing edits it as text.
     path: Path
     kind: EditorTabKind
     document_id: str = ""
 
 
 class TabRecord(BaseModel):
-    """One open tab as it persists (093 W2-2), beside the live `EditorTab` it mirrors.
+    """One open tab as it persists, beside the live `EditorTab` it mirrors.
 
     A separate shape rather than making `EditorTab` a model: the live tab is a frozen
     dataclass used as a dict-free value all over the draw layer, and `path` on disk is a

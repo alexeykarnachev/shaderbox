@@ -1,4 +1,4 @@
-"""The uniforms panel's sampler rows show what the sampler reads (071 W-D, D9).
+"""The uniforms panel's sampler rows show what the sampler reads.
 
 The resolver is the document's; the row draws from its answer, so pinning the answer on the
 shipped Radiance Cascades example pins the row's three states."""
@@ -56,8 +56,7 @@ def test_a_wired_sampler_names_its_pass_and_an_unwired_one_reads_black(
     # A pass that declares no such sampler, and a pass that does not exist.
     assert document.sampler_source("paint", "u_paint") is None
     assert document.sampler_source("nope", "u_paint") is None
-    # The NAME rule (069 D9): an undecided `u_cascade` reads `cascade`. Falsifier: resolve
-    # from the rows alone.
+    # The NAME rule: an undecided `u_cascade` reads `cascade`.
     composite["u_cascade"] = AutoSource()
     assert document.sampler_source("composite", "u_cascade") == "cascade"
     del composite["u_cascade"]
@@ -70,7 +69,7 @@ def test_a_self_reading_sampler_shows_the_history_the_shader_reads(
 ) -> None:
     # `cascade` reads itself through `u_prev`: the renderer binds the feedback history (the
     # previous frame), which after the frame-boundary swap is a different texture from the live
-    # canvas. The row must show that one. Falsifier: hand the row the live canvas.
+    # canvas. The row must show that one.
     shutil.copytree(_RC, tmp_path / "rc")
     document = load_document_from_dir(tmp_path / "rc").document
     _online(document)

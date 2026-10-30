@@ -1,4 +1,4 @@
-"""ScriptEngine.dry_run — the synchronous copilot feedback probe (feature 043). Pure, no GL (a
+"""ScriptEngine.dry_run — the synchronous copilot feedback probe. Pure, no GL (a
 SimpleNamespace stands in for moderngl.Uniform). Covers the make-or-break canaries: live state is
 byte-identical after a dry_run (no corruption), an integrator's sampled values ADVANCE across the
 sample times (the continuous tick accumulates self.* — the false-STATIC class), a closed-form motion
@@ -78,7 +78,7 @@ def _engine(tmp: Path, document: _FakeDocument) -> ScriptEngine:
 
 def test_dry_run_does_not_corrupt_live_state(tmp_path: Path) -> None:
     # The no-corruption canary: a dry_run ticks an isolated script; the live document + live engine state
-    # must be byte-identical afterward. Falsifier: any of them changes -> the sink leaked.
+    # must be byte-identical afterward.
     _write_script(
         tmp_path,
         _script(update_body="        return {'u_x': 0.5 + 0.3 * context.t}\n"),
@@ -100,8 +100,8 @@ def test_dry_run_does_not_corrupt_live_state(tmp_path: Path) -> None:
 
 def test_dry_run_integrator_advances_across_samples(tmp_path: Path) -> None:
     # THE make-or-break canary: an integrator (self.* accumulates) sampled by dry_run must show its
-    # value ADVANCING across t. Falsifier: identical samples -> the probe did N independent single
-    # ticks instead of one continuous tick (the figure-8-drift false-STATIC).
+    # value ADVANCING across t, i.e. the probe runs one continuous tick sequence rather than N independent single
+    # ticks (which would read as false-STATIC).
     _write_script(
         tmp_path,
         _script(
@@ -158,7 +158,7 @@ def test_dry_run_compile_error_no_tick(tmp_path: Path) -> None:
 
 
 def test_dry_run_orphan_and_per_key_errors(tmp_path: Path) -> None:
-    # u_typo names no active uniform (102 D2: now a `no_such_uniform` warning, not an orphan);
+    # u_typo names no active uniform (a `no_such_uniform` warning, not an orphan);
     # u_v is a vec2 the script drives with a bare float (per-key coercion error). u_x is fine.
     _write_script(
         tmp_path,
@@ -170,8 +170,8 @@ def test_dry_run_orphan_and_per_key_errors(tmp_path: Path) -> None:
     eng = _engine(tmp_path, document)
 
     # The probe surfaces its facts via the RETURN value, never the console: it ticks the script
-    # across ~N frames, so a console warning would spam once per frame (the pong-script
-    # regression). 069 deleted the warning outright, so the sink must stay empty for every
+    # across ~N frames, so a console warning would spam once per frame (a pong script
+    # would flood it). The warning is gone entirely, so the sink must stay empty for every
     # caller, not just this one.
     records: list[str] = []
     handle = logger.add(lambda m: records.append(str(m)), level="WARNING")
@@ -186,17 +186,14 @@ def test_dry_run_orphan_and_per_key_errors(tmp_path: Path) -> None:
     )  # bad shape
     assert any(
         (p, name) == ("", "u_typo") for p, name, _ in probe.per_key_errors
-    )  # no such uniform, now a warning (102 D2)
-    assert (
-        probe.orphan_keys == []
-    )  # empties out once every non-landing key errors (102)
+    )  # no such uniform, now a warning
+    assert probe.orphan_keys == []  # empties out once every non-landing key errors
     assert not [r for r in records if "shaderbox.scripting.engine" in r]
 
 
 def test_dry_run_runtime_raise_surfaces(tmp_path: Path) -> None:
     # A script that COMPILES but `update` raises at a later frame (an integrator blow-up): the probe
-    # must carry the runtime_error, NOT report a false ANIMATING off the crash-frozen values. Falsifier:
-    # runtime_error is None -> the crash is swallowed and the verdict lies.
+    # must carry the runtime_error, NOT report a false ANIMATING off the crash-frozen values.
     _write_script(
         tmp_path,
         _script(
@@ -222,7 +219,7 @@ def test_dry_run_runtime_raise_surfaces(tmp_path: Path) -> None:
 def test_dry_run_transient_runtime_raise_surfaces(tmp_path: Path) -> None:
     # A TRANSIENT crash: update raises only at frame 3, then recovers. The live errors dict self-heals
     # (a good tick pops the key), so a final-frame snapshot would SWALLOW it. The probe must accumulate
-    # "did it EVER fail across the window". Falsifier: runtime_error is None -> the transient is lost.
+    # "did it EVER fail across the window".
     _write_script(
         tmp_path,
         _script(
@@ -270,7 +267,7 @@ def test_dry_run_transient_per_key_error_surfaces(tmp_path: Path) -> None:
 
 def test_dry_run_colliding_sample_times_keeps_earliest(tmp_path: Path) -> None:
     # Two sample times rounding to the SAME frame must not drop a sample; setdefault keeps the
-    # earliest. Falsifier: the first sample's t is 0.04 (a dict-comp would keep the last).
+    # earliest.
     _write_script(tmp_path, _script(update_body="        return {'u_x': context.t}\n"))
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
@@ -293,9 +290,8 @@ def test_dry_run_empty_dict_drives_nothing(tmp_path: Path) -> None:
 
 def test_dry_run_reports_the_pass_in_per_key_errors(tmp_path: Path) -> None:
     # The copilot's write feedback is the only place a headless caller learns the ROUTING verdict,
-    # so an undeclared key inside a pass block must name that pass. 102 D2 moved this fact from
-    # orphan_keys (silent) to per_key_errors (a warning); the pass-naming requirement carries
-    # over unchanged. Falsifier: report the bare name — the pass half of the assertion goes red.
+    # so an undeclared key inside a pass block must name that pass. This fact lives in
+    # per_key_errors (a warning), not orphan_keys (silent).
     _write_script(
         tmp_path,
         _script(
@@ -316,11 +312,10 @@ def test_a_cold_dry_run_compiles_and_reports_the_real_driven_set(
     tmp_path: Path,
 ) -> None:
     # `write_script_source` reloads then probes with no render in between, so on a document whose
-    # passes have never rendered the probe used to hand the agent three false facts at once: an empty
+    # passes have never rendered the probe would hand the agent three false facts at once: an empty
     # driven set (the deliberate "loud no-op"), an orphan naming a uniform the shader DOES declare,
     # and STATIC from empty samples. `dry_run` is a synchronous agent call, not the frame loop, so it
-    # compiles first (066 D1 constrains the frame loop only). Falsifier: drop that compile — driven
-    # goes empty, orphan_keys grows the row, and every sample dict is empty.
+    # compiles first.
     _write_script(tmp_path, _script(update_body="        return {'u_x': context.t}\n"))
     document = _FakeDocument({"seed": [_u("u_x")], "out": [_u("u_x")]})
     for render_pass in document.passes.values():
@@ -339,9 +334,9 @@ def test_a_cold_dry_run_compiles_and_reports_the_real_driven_set(
 def test_a_refused_key_and_an_undeclared_one_are_both_per_key_errors(
     tmp_path: Path,
 ) -> None:
-    # 102 D2 reverses 079 D5's split: a number aimed at a sampler (`bad_texture` since 110) and a
+    # A number aimed at a sampler (`bad_texture`) and a
     # key naming nothing yet (`no_such_uniform`) are now BOTH a per_key_errors row -- distinct
-    # reasons, same reporting tier. Falsifier: either drops back to orphan_keys (silent).
+    # reasons, same reporting tier, never orphan_keys (silent).
     _write_script(
         tmp_path,
         _script(

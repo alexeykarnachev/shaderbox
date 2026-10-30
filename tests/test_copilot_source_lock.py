@@ -1,4 +1,4 @@
-"""Feature 083: the copilot's per-session source lock.
+"""The copilot's per-session source lock.
 
 A locked session confirms each project-changing call through the SAME gate funnel every
 destructive tool already uses; an unlocked one asks nothing. The three answers differ in what
@@ -70,8 +70,7 @@ def _answer_with(gate: GateChannel, answers: list[GateResponse]) -> _GatePump:
     #
     # It keeps answering past the prepared list, with DENY. That matters: a regression that opens
     # MORE gates than expected would otherwise leave the worker blocked on a request nobody
-    # answers, and the test would hang forever instead of failing -- which is exactly what
-    # happened while mutation-testing this file. A count assert then reports the surplus.
+    # answers, and the test would hang forever instead of failing. A count assert then reports the surplus.
     opened = [0]
     stop = threading.Event()
 
@@ -163,8 +162,7 @@ def _gates(events: list[Any]) -> list[AgentGateOpened]:
 
 
 def test_a_locked_session_confirms_a_source_edit_before_it_runs() -> None:
-    # The falsifier for the whole feature: with the lock on and the answer DENY, the edit must not
-    # reach the capability at all. Unlock (the next test) and the same script edits without asking.
+    # Unlock (the next test) and the same script edits without asking.
     events, edits, _ = _run(
         [_EDIT, _DONE],
         lock=SourceLock.ASK,
@@ -186,8 +184,7 @@ def test_an_unlocked_session_asks_nothing() -> None:
 
 def test_allow_answers_one_call_and_leaves_the_mode_alone() -> None:
     # ALLOW is per-CALL: two edits, two answers, two gates. The mode is the top bar's, and no gate
-    # answer changes it -- 086 removed the session-wide answer precisely because a blocking card is
-    # the wrong place to set a horizon.
+    # answer changes it -- a blocking card is the wrong place to set a horizon.
     events, edits, registry = _run(
         [_EDIT, _EDIT, _DONE],
         lock=SourceLock.ASK,
@@ -223,7 +220,7 @@ def test_no_gate_answer_can_change_the_mode() -> None:
 
 
 def test_one_deny_answers_for_the_rest_of_the_turn() -> None:
-    # 085's headline: the user's single "no" covers the turn, not the call. Two edits in two
+    # The user's single "no" covers the turn, not the call. Two edits in two
     # SEPARATE responses (each script entry is its own batch), so a latch wrongly scoped per-batch
     # fails here while a single-batch test would pass either way.
     events, edits, _ = _run(
@@ -290,7 +287,7 @@ def test_a_confirm_no_on_another_tool_does_not_latch_the_source_lock() -> None:
 
 
 def test_an_armed_lock_declines_without_asking() -> None:
-    # The maintainer's second sentence: a lock he set deliberately is already the answer. No gate
+    # A lock the user set deliberately is already the answer. No gate
     # card, no edit. ASK (the session default) still asks -- that is the other tests above.
     events, edits, _ = _run([_EDIT, _DONE], lock=SourceLock.READ_ONLY, answers=[])
     assert not _gates(events), "an armed lock is the answer; asking re-asks it"
@@ -389,7 +386,7 @@ def test_each_mode_does_what_its_chip_says() -> None:
 
 
 def test_deny_reaches_the_refusal_rather_than_skipping_the_gate_block() -> None:
-    # The trap D4a names. The refusal lives INSIDE `if must_confirm(...)` and `execute` sits
+    # The refusal lives INSIDE `if must_confirm(...)` and `execute` sits
     # outside it, so a must_confirm that excused DENY would route the call past the refusal and
     # RUN the edit. This drives the predicate directly, because the behavioral test above would
     # also go red for the opposite bug and could not tell the two apart.
@@ -599,8 +596,8 @@ def test_a_model_that_keeps_calling_a_withheld_tool_is_stopped() -> None:
 def test_a_load_of_a_withheld_tool_is_refused_in_the_real_loop() -> None:
     """Driven through `run_turn`'s interception, not through `assemble_specs`.
 
-    The spec requires the LOADER to refuse and say why; a test that only drives the spec builder
-    leaves that requirement unheld, and gutting the refusal keeps the suite green. A mixed request
+    The LOADER must refuse and say why; a test that only drives the spec builder
+    leaves that unheld, and gutting the refusal keeps the suite green. A mixed request
     must report BOTH halves — a model told only about the refusal would silently hold the tool
     that did load.
     """
@@ -629,7 +626,7 @@ def test_the_load_tools_catalogue_never_advertises_a_withheld_tool() -> None:
     """The catalogue is baked at build time, before any mode exists, so it would otherwise INVITE
     a call the filter then refuses: the model loads, is told no, calls anyway, is refused again.
 
-    Three wasted turns, and the last of them used to say "user declined" about a decision nobody
+    Three wasted turns, and the last of them says "user declined" about a decision nobody
     made. Asserted against `is_withheld` rather than a list, so a tool joining the withheld set
     leaves the catalogue automatically.
     """
@@ -696,15 +693,15 @@ def test_a_headless_session_is_locked_like_any_other() -> None:
     assert not session.registry.must_confirm("read_shader")
     # ASK specifically, not merely "not OFF": must_confirm answers True for ARMED too, so a
     # default flipped to ARMED would pass every other assertion here while making a fresh session
-    # refuse every edit in silence -- the exact failure D2 exists to prevent.
+    # refuse every edit in silence -- the failure the default exists to prevent.
     assert session.state.source_lock is SourceLock.ASK, (
         "a fresh session asks; it does not refuse"
     )
 
 
 def test_the_locks_two_fields_agree_at_every_lifecycle_point() -> None:
-    # V4, and the check that was specified and then not written -- which is exactly how a session
-    # shipped drawing a closed padlock over a registry that confirmed nothing. The two fields are
+    # The padlock and the registry must agree, or the UI draws a closed padlock over a registry
+    # that confirms nothing. The two fields are
     # born from two DIFFERENT defaults (ChatState at ASK, a bare registry OFF), so agreement
     # is something the one writer must establish, never something construction gives for free.
     #

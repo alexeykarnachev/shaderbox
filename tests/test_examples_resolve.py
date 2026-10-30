@@ -1,4 +1,4 @@
-"""Examples <-> shipped-lib coherence (feature 051). Both tests are GL-free and run against the
+"""Examples <-> shipped-lib coherence. Both tests are GL-free and run against the
 SEED lib (`resources/shader_lib/`), never the user's live root — the live root can carry helpers
 that never shipped (the one-way-seed divergence), and an example must resolve on a FRESH install.
 
@@ -11,7 +11,7 @@ i = ShaderLibIndex.build(SHADER_LIB_SEED_DIR); \\
 open('tests/shader_lib_api_lock.json', 'w').write(json.dumps( \\
 {n: f.signature for n, f in sorted(i.functions.items())}, indent=2) + '\\n')"
 
-Shipped `SB_*` is supersede-don't-mutate (conventions.md): regenerating over a signature CHANGE
+Shipped `SB_*` is supersede-don't-mutate: regenerating over a signature CHANGE
 needs a conscious reason; regenerating over an ADDITION is routine.
 """
 
@@ -37,10 +37,10 @@ def test_examples_resolve_clean() -> None:
 
 
 def test_every_example_input_uniform_names_its_source() -> None:
-    # 069 D9: an input uniform is named after the pass it reads (`u_<pass>`), and feedback is
+    # An input uniform is named after the pass it reads (`u_<pass>`), and feedback is
     # `u_prev`, so the name rule wires it and the example ships no row for it. A shipped example
     # that stores a pass row under a role name (`u_src`, `u_lit`) teaches the opposite of what
-    # the engine does, so the examples are the gate (072: the row lives in `document.json`).
+    # the engine does, so the examples are the gate.
     documents = sorted(DOCUMENT_EXAMPLES_DIR.glob("*/document.json"))
     assert documents, "no shipped example documents found"
     for path in documents:

@@ -1,4 +1,4 @@
-"""The jedi worker's contract (078 D10): newest request per kind wins, an answer is applied
+"""The jedi worker's contract: newest request per kind wins, an answer is applied
 only to the caret it was asked for, and a dropped answer releases the latch so the site is
 asked again."""
 

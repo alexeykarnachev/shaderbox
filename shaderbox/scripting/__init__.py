@@ -1,4 +1,4 @@
-"""The CPU-script engine (feature 041) — a uniform becomes a first-class object with a per-tick
+"""The CPU-script engine — a uniform becomes a first-class object with a per-tick
 stateful behavior class (`update(self, context) -> <typed output>`). Public surface the headless
 ProjectSession drives."""
 

@@ -1,11 +1,9 @@
-"""The render plan's arithmetic and the Auto-size damping (090 D3, D6).
+"""The render plan's arithmetic and the Auto-size damping.
 
-GL-free and imgui-free, because `render_plan.py` is. The worked examples in the spec's *The
-plan function* table ARE this file's first test: each row is the input, the exact interval and
-the exact phase, so a change to the rule has to change a number the spec also carries.
-
-Each test names the falsifier it was born against, since a throttle that returns plausible
-intervals is exactly the shape a passing suite cannot distinguish from a broken one.
+GL-free and imgui-free, because `render_plan.py` is. The worked examples
+are this file's first test: each row is the input, the exact interval and the exact phase.
+A throttle that returns plausible intervals is the shape a passing suite cannot distinguish
+from a broken one, so each test pins exact numbers.
 """
 
 import pytest
@@ -24,7 +22,7 @@ from shaderbox.render_plan import (
 )
 from shaderbox.render_shape import aspect_label, fit_to_aspect, reduce_aspect
 
-_PERIOD = 16.7  # ms, the spec's frame period for every worked example
+_PERIOD = 16.7  # ms, the frame period for every worked example
 _BUDGET = 0.5
 
 
@@ -55,7 +53,7 @@ def _flat(cost_ms: float, ids: list[str]) -> dict[str, CostRecord]:
 
 
 # ---------------------------------------------------------------------------
-# V1 -- the spec's nine worked examples, each on its exact interval and phase
+# The nine worked examples, each on its exact interval and phase
 # ---------------------------------------------------------------------------
 
 
@@ -68,8 +66,7 @@ def test_a_current_document_inside_the_budget_renders_every_frame() -> None:
 
 
 def test_a_hundred_millisecond_current_document_lands_on_twelve() -> None:
-    # Example 2: ceil(100 / 8.35) = ceil(11.976) = 12. Falsifier: `ceil` -> `floor` returns 11,
-    # which is an interval whose cost does NOT fit the budget -- the whole point of the ceiling.
+    # Example 2: ceil = ceil(11.976) = 12.
     plan = _converged(_flat(100.0, ["c"]), "c", ["c"])
     assert plan.intervals == {"c": 12}
     assert plan.document_fps["c"] == pytest.approx(4.99, abs=0.02)
@@ -77,8 +74,7 @@ def test_a_hundred_millisecond_current_document_lands_on_twelve() -> None:
 
 def test_the_current_document_takes_the_budget_before_the_previews_do() -> None:
     # Example 3: current 40 ms -> k = 5 using 8.0 ms, leaving 0.35 ms; three 5 ms previews share
-    # it at f = 1.4 -> k = 43. Falsifier: split the budget BEFORE the current document takes its
-    # share and the previews come back at k = 5, twelve times too often.
+    # it at f = 1.4 -> k = 43.
     costs = _flat(5.0, ["a", "b", "d"]) | _flat(40.0, ["c"])
     plan = _converged(costs, "c", ["c", "a", "b", "d"])
     assert plan.intervals == {"c": 5, "a": 43, "b": 43, "d": 43}
@@ -94,7 +90,7 @@ def test_twenty_cheap_previews_share_the_remainder() -> None:
 
 
 def test_a_fixed_full_resolution_preview_is_made_affordable_by_the_remainder() -> None:
-    # Example 5: a Fixed 100 ms document shown as a thumbnail still costs 100 ms (D10), and the
+    # Example 5: a Fixed 100 ms document shown as a thumbnail still costs 100 ms, and the
     # remainder rule is what makes it affordable -- k = 23, so it renders rarely.
     costs = _flat(4.0, ["c"]) | _flat(100.0, ["f"])
     plan = _converged(costs, "c", ["c", "f"])
@@ -102,7 +98,7 @@ def test_a_fixed_full_resolution_preview_is_made_affordable_by_the_remainder() -
 
 
 def test_the_throttle_off_returns_todays_set_exactly() -> None:
-    # Example 6. Falsifier: ignore the flag and the previews come back at 43.
+    # Example 6.
     costs = _flat(5.0, ["a", "b", "d"]) | _flat(40.0, ["c"])
     plan = _converged(costs, "c", ["c", "a", "b", "d"], enabled=False)
     assert set(plan.intervals.values()) == {1}
@@ -117,8 +113,7 @@ def test_a_full_budget_gives_the_current_document_the_whole_frame() -> None:
 
 
 def test_an_unmeasured_set_renders_every_frame() -> None:
-    # Example 8: the first frames, before any cost has been recorded (D7: no record -> k = 1).
-    # Falsifier: treat a missing record as an infinite cost and frame 0 throttles everything.
+    # Example 8: the first frames, before any cost has been recorded (no record -> k = 1).
     plan = _converged({}, "c", ["c", "a", "b"])
     assert set(plan.intervals.values()) == {1}
 
@@ -126,7 +121,6 @@ def test_an_unmeasured_set_renders_every_frame() -> None:
 def test_the_interval_cap_binds_every_document_not_only_the_zero_fps_case() -> None:
     # Example 9: ten 5 ms previews behind a 40 ms current document compute f = 0.42, whose
     # uncapped interval is round(60 / 0.42) = 143 -- a tile refreshing once every 2.4 s.
-    # Falsifier: clamp only the f = 0 case and this returns 143.
     previews = [f"p{i}" for i in range(10)]
     costs = _flat(5.0, previews) | _flat(40.0, ["c"])
     plan = _converged(costs, "c", ["c", *previews])
@@ -136,14 +130,13 @@ def test_the_interval_cap_binds_every_document_not_only_the_zero_fps_case() -> N
 
 
 # ---------------------------------------------------------------------------
-# V2 -- hysteresis
+# Hysteresis
 # ---------------------------------------------------------------------------
 
 
 def test_a_cost_hovering_at_the_boundary_never_moves_the_interval() -> None:
     # 8.0 and 8.6 ms sit either side of the 8.35 ms budget, so the computed k alternates 1, 2,
-    # 1, 2 ... and the LIVE interval must never move. Falsifier: apply the candidate at once and
-    # the document's rate flickers every frame.
+    # 1, 2 ... and the LIVE interval must never move.
     states: dict[str, ThrottleState] = {}
     seen: set[int] = set()
     for frame in range(20):
@@ -157,7 +150,7 @@ def test_a_cost_hovering_at_the_boundary_never_moves_the_interval() -> None:
 
 def test_a_steady_cost_moves_the_interval_on_exactly_the_fourth_frame() -> None:
     # The window is the point: a `k` may not act on a number the ring has not finished
-    # reporting (088 D2's two-frame read lag). Falsifier: window of 1 and it moves on frame 1.
+    # reporting.
     states: dict[str, ThrottleState] = {}
     moved_on: list[int] = []
     for frame in range(1, 10):
@@ -170,14 +163,14 @@ def test_a_steady_cost_moves_the_interval_on_exactly_the_fourth_frame() -> None:
 
 
 # ---------------------------------------------------------------------------
-# V2a -- same-k documents land on different frames
+# Same-k documents land on different frames
 # ---------------------------------------------------------------------------
 
 
 def test_three_same_interval_previews_take_three_different_frames() -> None:
     # Without a phase offset every preview at k = 43 renders on the same frame_idx, so one
     # frame in 43 carries all three hitches and 42 carry none -- the opposite of what spacing
-    # them out is for. Falsifier: drop the phase and `admitted` holds one frame with three.
+    # them out is for.
     costs = _flat(5.0, ["a", "b", "d"]) | _flat(40.0, ["c"])
     plan = _converged(costs, "c", ["c", "a", "b", "d"])
     interval = plan.intervals["a"]
@@ -192,7 +185,7 @@ def test_three_same_interval_previews_take_three_different_frames() -> None:
 
 
 # ---------------------------------------------------------------------------
-# V3 -- the damping, pure
+# The damping, pure
 # ---------------------------------------------------------------------------
 
 
@@ -202,8 +195,6 @@ def _drag_ramp() -> list[tuple[int, int]]:
 
 
 def test_a_drag_ramp_reallocates_a_handful_of_times_not_every_frame() -> None:
-    # Falsifier: drop the dead band and every one of the ~60 steps reallocates the canvas and
-    # every feedback history with it.
     state = AutoSizeState()
     current = (764, 573)
     applied: list[tuple[int, int]] = []
@@ -220,7 +211,6 @@ def test_a_drag_ramp_reallocates_a_handful_of_times_not_every_frame() -> None:
 def test_a_size_held_still_lands_even_inside_the_dead_band() -> None:
     # The drag ends a few pixels off the last applied size, which the dead band alone would
     # never apply -- so the document would render at the wrong size for as long as it is shown.
-    # Falsifier: drop the stability clause and `answers` stays all None.
     state = AutoSizeState()
     current = (800, 600)
     requested = (810, 608)  # inside 5 % on both axes
@@ -254,15 +244,13 @@ def test_the_span_key_the_writer_makes_is_the_one_the_reader_parses() -> None:
     # The key joining a profiler span to a document was declared in TWO modules, the writer's
     # and the reader's: changing one alone left the panel silently treating every document row
     # as an ordinary span, and no test could see it because both constructed their spans from a
-    # literal. Falsifier: give either helper its own prefix and the round trip stops closing.
+    # literal.
     document_id = "77a84d27-2e5b-406d-8011-ee1cb1a9587c"
     assert document_id_of_span(document_span_name(document_id)) == document_id
 
 
 def test_a_span_that_measures_something_else_names_no_document() -> None:
     # The reader is also the DETECTOR: `_plan_tree` asks it whether a child is a document row.
-    # Falsifier: return the whole name instead of None and every `pass:` span becomes a
-    # document row carrying a plan lookup that can never hit.
     for name in ("pass:blur", "ui:draw", "frame", "script", "documents"):
         assert document_id_of_span(name) is None, name
 
@@ -288,9 +276,7 @@ def test_an_aspect_is_stored_in_lowest_terms(
     ratio: tuple[int, int], expected: tuple[int, int]
 ) -> None:
     # One shape, one spelling: a document persisting `32:18` would compare unequal to the
-    # `16:9` chip that set it, so the chip would never light. Falsifier: clamp the terms BEFORE
-    # dividing by the gcd and 1280x960 comes back 25:24 instead of 4:3 -- which is the bug this
-    # was written against.
+    # `16:9` chip that set it, so the chip would never light.
     assert reduce_aspect(ratio) == expected
 
 
@@ -307,8 +293,7 @@ def test_an_aspect_is_stored_in_lowest_terms(
 def test_an_aspect_fits_inside_a_region_on_whichever_axis_runs_out(
     region: tuple[float, float], aspect: tuple[int, int], expected: tuple[int, int]
 ) -> None:
-    # The whole of Auto sizing. Falsifier: compare the two ratios the wrong way round and the
-    # wide and tall cases swap, which crops instead of letterboxing.
+    # The whole of Auto sizing.
     assert fit_to_aspect(region, aspect) == expected
 
 
@@ -326,6 +311,5 @@ def test_an_aspect_fits_inside_a_region_on_whichever_axis_runs_out(
     ],
 )
 def test_a_size_is_named_by_its_aspect(size: tuple[int, int], expected: str) -> None:
-    # The Fixed-mode readout. Falsifier: drop the preset snap and 1920x1088 reads `30:17`;
-    # widen the tolerance past a few percent and a 3:2 photo starts claiming to be 16:9.
+    # The Fixed-mode readout.
     assert aspect_label(size) == expected

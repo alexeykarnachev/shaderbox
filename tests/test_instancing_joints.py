@@ -4,10 +4,8 @@ Each test drives a path no single flow could build or gate alone: the script eng
 decides a state the draw cannot see, the draw decides states the engine cannot see, and a
 surface reads both.
 
-Every test here drives real objects. An earlier version asserted against
-`inspect.getsource(...)` for three of them, and a reviewer broke all three by keeping the
-searched text and deleting the mechanism -- the defect these gates exist to catch,
-reproduced inside the gates themselves.
+Every test here drives real objects: a test that searches source text for a word passes
+when the text is kept and the mechanism deleted.
 """
 
 from pathlib import Path
@@ -64,9 +62,8 @@ def test_no_fields_survives_the_frame_that_follows_it(
 
     Both verdicts are true of the same frame -- the draw really did draw a full-screen
     quad -- but only the engine's is about the population, and letting the draw win is
-    exactly the silence I1 names. Driven through a REAL draw: an earlier version read
-    `render`'s source for the word `no_fields`, and a reviewer broke it by keeping the
-    word and deleting the mechanism.
+    exactly the silence the `refused` state exists to end. Driven through a REAL draw, since
+    reading `render`'s source for the word `no_fields` passes with the mechanism deleted.
     """
     render_pass = _pass_at(gl_ctx, tmp_path / "plain.frag.glsl", _PLAIN_FRAGMENT)
     assert render_pass.program is not None
@@ -84,7 +81,7 @@ def test_no_fields_survives_the_frame_that_follows_it(
 
 
 def test_every_blend_mode_round_trips_through_a_target_config() -> None:
-    # F3 gates this against graph.json; here it is the type itself, so a mode that cannot
+    # Here it is the type itself, so a mode that cannot
     # survive validation is caught even if no example document uses it yet.
     for mode in BLEND_MODES:
         config = TargetConfig(blend=mode)
@@ -92,10 +89,10 @@ def test_every_blend_mode_round_trips_through_a_target_config() -> None:
 
 
 def test_a_blend_change_alone_never_reallocates() -> None:
-    """The two-path feedback wipe (102 D5), asserted where both paths read it.
+    """The two-path feedback wipe, asserted where both paths read it.
 
     `Document.set_pass_target` and `Pass.set_target` both decide reallocation, and both
-    asked `==` before this wave. A blend-only change must be invisible to both.
+    compare target configs. A blend-only change must be invisible to both.
     """
     base = TargetConfig()
     for mode in BLEND_MODES:
@@ -105,7 +102,7 @@ def test_a_blend_change_alone_never_reallocates() -> None:
 
 @pytest.mark.parametrize("dtype", ["f1", "f2", "f4"])
 def test_a_population_column_must_be_f4_i4_or_u4(dtype: str) -> None:
-    """The dtype contract is CHECKED, never cast (100). The copilot's prompt block states
+    """The dtype contract is CHECKED, never cast. The copilot's prompt block states
     this rule, so it is gated here rather than only in the text that teaches it."""
     from shaderbox.instanced import EntityField, validate_population
 
@@ -174,12 +171,11 @@ class _FakeApp:
 def test_a_non_landing_key_reaches_the_app_through_the_whole_seam(
     tmp_path: Path,
 ) -> None:
-    """102 D-F: a non-landing key warns in the logs AND in the notifications, routed
-    through an injected callback because the engine imports no imgui (D3a).
+    """A non-landing key warns in the logs AND in the notifications, routed
+    through an injected callback because the engine imports no imgui.
 
-    Traverses the whole seam, engine to notification stack. An earlier version searched
-    `App.__init__` and the handler for two substrings, and severing the MIDDLE link in
-    `project_session.py` -- which is in neither searched function -- left it green.
+    Traverses the whole seam, engine to notification stack, so severing the MIDDLE link in
+    `project_session.py` turns it red.
     """
     from shaderbox.engine_uniforms import ENGINE_DRIVEN_UNIFORMS
     from shaderbox.project_session import ProjectSession
@@ -203,8 +199,7 @@ def test_a_non_landing_key_reaches_the_app_through_the_whole_seam(
 
     # The MIDDLE link, and the reason this test exists: `ProjectSession` must hand the
     # callback to the engine it builds. Asserting the parameter merely EXISTS passes when
-    # the constructor accepts it and drops it on the floor -- which is the shape a
-    # reviewer used to defeat the previous version of this gate.
+    # the constructor accepts it and drops it on the floor.
     session = ProjectSession.__new__(ProjectSession)
     session._on_key_warning = app.on_key_warning
     built = ProjectSession._build_script_engine(session)
@@ -268,15 +263,14 @@ def test_the_instanced_stub_hint_is_valid_python(
 ) -> None:
     """The stub is text the model COPIES, so it has to parse.
 
-    An earlier version carried a doubled comment marker on every column line
-    (`#         #`) and indented the whole block to a `return` it merely sits after,
-    describing a nesting that is not there. Both are invisible to `ast.parse`, since a
-    comment parses whatever it says, so they are asserted against the text.
+    A doubled comment marker on a column line (`#         #`) or an indented block under a
+    `return` it merely sits after would describe a nesting that is not there. Both are
+    invisible to `ast.parse`, since a comment parses whatever it says, so they are asserted
+    against the text.
 
     The `}}` in the snippet is CORRECT and deliberately not asserted against: the line
-    opens `{"@instances": {`, so two closing braces is what balances it. A review read it
-    as an f-string escaping bug, and checking the braces actually balance is the
-    assertion that distinguishes the two readings.
+    opens `{"@instances": {`, so two closing braces is what balances it. It reads like an
+    f-string escaping bug, so the assertion checks that the braces actually balance.
     """
     import ast
 

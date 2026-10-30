@@ -2,7 +2,7 @@
 and read three ways -- completion candidates, `K`, the classes that color the text.
 
 The buffer is the source of truth for what is declared: a uniform the body never reads is
-still declared here (finding 6 of 078). A sampler's class follows its VALUE joined to the
+still declared here. A sampler's class follows its VALUE joined to the
 graph's pass names through `wired_pass`, never the compiled program's sampler set.
 """
 
@@ -84,9 +84,8 @@ class GlslIndex:
         }
 
 
-# The fragment outputs a buffer never declares. `gl_FragColor` used to lex as BUILTIN in the
-# editor library, which hid it from the host class; the library dropped it at `38cadbc`, since
-# 460 core removed the name outright and a builtin it is not.
+# The fragment outputs a buffer never declares. `#version 460` core removed `gl_FragColor`
+# outright, so the editor library does not lex it as a builtin and the host classes it.
 _BUILTIN_OUTPUTS: tuple[str, ...] = ("gl_FragColor", "gl_FragData")
 
 
@@ -227,7 +226,7 @@ def build_glsl_index(context: GlslContext) -> GlslIndex:
             document.append(replace(symbol, insert_text=""))
             declarations.append(symbol)
 
-        # 104 item 4: `vs_quad` is the one name an author cannot guess, and guessing wrong
+        # `vs_quad` is the one name an author cannot guess, and guessing wrong
         # is silent -- reaching for `vs_uv` draws a canvas-wide vignette with no error. It
         # is a GLSL_VARIABLE like a builtin (`gl_FragCoord`), never USER-declared, so it
         # reuses that kind rather than WIRABLE_SAMPLER's, which names a different question
@@ -259,7 +258,7 @@ def build_glsl_index(context: GlslContext) -> GlslIndex:
             )
 
     # The fragment output before the plain buffer symbols, so the `out` name is classed as the
-    # output rather than picked up as an ordinary word (079 D11). `gl_FragColor` and
+    # output rather than picked up as an ordinary word. `gl_FragColor` and
     # `gl_FragData` are the builtin spellings, declared by nobody.
     for out in output_declarations(context.text):
         document.append(

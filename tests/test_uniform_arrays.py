@@ -1,4 +1,4 @@
-"""Array-uniform coercion (feature 020·23) — the probe-pinned shapes set_uniform must emit so a
+"""Array-uniform coercion — the probe-pinned shapes set_uniform must emit so a
 uint text array (u_text), a float[N], and a vecN[M] write to moderngl correctly (or reject cleanly,
 never silently corrupt). Pure: a SimpleNamespace stands in for moderngl.Uniform (the matrix is shape
 logic, not a GL write — the GL write is verified in-app + by the headless probe)."""
@@ -86,11 +86,10 @@ def test_uint_array_stays_int_for_document_json_round_trip() -> None:
     assert isinstance(out, list) and all(isinstance(x, int) for x in out)
 
 
-# ---- gl_type_label: the ONE label producer (feature 060) ----
+# ---- gl_type_label: the ONE label producer ----
 # The copilot's project map and its set_uniform reject message both read this. A second producer in
 # copilot/backend.py collapsed every non-uint type to "float", so an ivec3 was advertised as "vec3"
-# and the agent wrote floats into an int uniform. Falsifier: reintroduce that fallthrough and the
-# int/ivec3/uvec3/int[4] rows below go red.
+# and the agent wrote floats into an int uniform.
 
 
 def test_int_family_labels_are_not_collapsed_to_float() -> None:

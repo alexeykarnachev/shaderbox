@@ -1,4 +1,4 @@
-"""The motion-verdict honesty helpers (feature 043), unit-tested without GL. These are the value-diff
+"""The motion-verdict honesty helpers, unit-tested without GL. These are the value-diff
 side of the make-or-break "is it animating" signal: drives-0, STATIC, ANIMATING, and the per-uniform
 "which one is constant" detail — the four ways the agent reads its own animation headlessly. The one
 corroborating pixel render (the visible/FLAT case) is GL and exercised live in the dogfood drive."""
@@ -39,7 +39,7 @@ def test_values_differ_scalar_and_nested() -> None:
 
 
 def test_uniform_changes_detects_motion() -> None:
-    # Keyed by the (pass, uniform) PAIR since 069: the same name on two passes is two series.
+    # Keyed by the (pass, uniform) PAIR: the same name on two passes is two series.
     samples = [
         (0.0, {("main", "u_x"): 0.0}),
         (0.5, {("main", "u_x"): 0.3}),
@@ -60,7 +60,7 @@ def test_verdict_drives_nothing_is_loud() -> None:
 
 
 def test_verdict_animating_names_changing_and_constant() -> None:
-    # The agent reads the dotted `pass.uniform` form (069) — display only, never parsed back.
+    # The agent reads the dotted `pass.uniform` form — display only, never parsed back.
     samples = [
         (0.0, {("main", "u_x"): 0.0, ("main", "u_c"): 0.7}),
         (0.5, {("main", "u_x"): 0.3, ("main", "u_c"): 0.7}),
@@ -94,7 +94,7 @@ def test_verdict_carries_the_render_line() -> None:
     assert "ANIMATING" in verdict  # both facts present for the agent to reconcile
 
 
-# ---- the edit_script indent-aware matcher + splice (feature 043) ----
+# ---- the edit_script indent-aware matcher + splice ----
 
 
 def test_exact_match_fast_path() -> None:
@@ -159,10 +159,10 @@ def test_reindent_shifts_block() -> None:
 
 def test_structural_splice_always_produces_parseable_python() -> None:
     # The indent-forgiving fallback exists precisely for the case where the model quotes a body
-    # at a different indent than the file has. It used to double the first line's indent there,
-    # so the copilot wrote a syntax error onto the exact path meant to rescue it. Parse the
-    # result rather than pattern-match it — a shape assertion missed this for the same reason
-    # the substring assertion above did.
+    # at a different indent than the file has. Doubling the first line's indent there
+    # would write a syntax error onto the exact path meant to rescue it. Parse the
+    # result rather than pattern-match it — a shape assertion would miss that, as the
+    # substring assertion above would.
     src = (
         "class Behavior(ScriptBehavior):\n"
         "    def update(self, context):\n"
@@ -181,11 +181,10 @@ def test_structural_splice_always_produces_parseable_python() -> None:
 
 
 def test_exact_match_keeps_the_line_indent_it_replaces() -> None:
-    # 082: the two match paths had incompatible span conventions and the splice applied the
-    # structural one to both. The exact path returned `src.find(old_str)` -- indent INSIDE the
+    # The two match paths use different span conventions, and the splice must keep the
+    # exact path's indent. The exact path returns `src.find(old_str)` -- indent INSIDE the
     # span -- while splice_script strips the replacement's own first-line indent, so a correct
-    # 4-space block came back at column 0 and broke the file. A model then spent fourteen
-    # edit_script calls trying to repair a def the tool itself had stranded.
+    # 4-space block came back at column 0 and broke the file.
     src = "class A:\n    def _step(self):\n        # c\n        p += 1\n"
     old = "    def _step(self):\n        # c\n        p += 1"
     new = "    def _step(self):\n        p += 1"

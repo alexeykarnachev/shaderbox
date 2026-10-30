@@ -1,4 +1,4 @@
-"""Dogfood rig (features 026/027): the headless copilot-engine harness + scenarios + runs.
+"""Dogfood rig: the headless copilot-engine harness + scenarios + runs.
 
 `from scripts.dogfood import DogfoodHarness` resolves here, LAZILY (PEP 562): the harness module
 is imported only when that name is actually read, so `import scripts.dogfood.analyze` /
@@ -14,7 +14,7 @@ from typing import Any
 
 _LAZY: tuple[str, ...] = ("DogfoodHarness",)
 # No `__all__`: with the name resolved lazily it is not statically present in this module, and
-# pyright then reports it as an unsupported dunder-all entry. `__dir__` is PEP 562's own answer for
+# pyright then reports it as an unsupported dunder-all entry. `__dir__` (PEP 562) is the answer for
 # discoverability (tab-completion, `dir()`, `help()`) and costs no static-analysis lie.
 
 

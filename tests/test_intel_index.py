@@ -1,4 +1,4 @@
-"""The GLSL index (078 W-A): the buffer is the source, a sampler follows its value, the
+"""The GLSL index: the buffer is the source, a sampler follows its value, the
 script's returns and the other passes become declarations to offer."""
 
 import subprocess
@@ -120,8 +120,8 @@ def test_lookup_and_classes_and_the_lib_file_shape() -> None:
         "u_tint": SymbolKind.SCRIPT_UNIFORM,
         "u_phase": SymbolKind.SCRIPT_UNIFORM,
         "SB_hash": SymbolKind.LIB_FUNCTION,
-        # The fragment outputs (079 D11), orange in the text since the editor library dropped
-        # `gl_FragColor` from its builtins at `38cadbc`.
+        # The fragment outputs, orange in the text since the editor library dropped
+        # `gl_FragColor` from its builtins.
         "gl_FragColor": SymbolKind.OUTPUT_VARIABLE,
         "gl_FragData": SymbolKind.OUTPUT_VARIABLE,
     }
@@ -130,9 +130,8 @@ def test_lookup_and_classes_and_the_lib_file_shape() -> None:
 
 
 def test_a_builtin_variable_is_its_own_kind_carrying_every_declaration() -> None:
-    # 089 W-B / D3: `in vec4 gl_FragCoord` is neither a call signature nor the one name the
-    # shader writes, so it is `GLSL_VARIABLE`. Falsifier: `_language_symbols` stops emitting
-    # from `VARIABLES` (the lookup is None, as it was before 089).
+    # `in vec4 gl_FragCoord` is neither a call signature nor the one name the
+    # shader writes, so it is `GLSL_VARIABLE`.
     index = build_glsl_index(_context())
     coord = index.lookup("gl_FragCoord")
     assert coord is not None

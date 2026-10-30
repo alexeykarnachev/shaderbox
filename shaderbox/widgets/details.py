@@ -81,7 +81,7 @@ def draw_resolution_details(
     details.width = new_width
     details.height = new_height
 
-    # What an export would actually render its source at (090 D5): the stored pair under
+    # What an export would actually render its source at: the stored pair under
     # Fixed, the live canvas under Auto, where the document carries no pair. These presets are
     # a shortcut to "what I am looking at", so under Auto following the viewer is the point.
     source = ui_document.document.export_source_size()

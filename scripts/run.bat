@@ -32,7 +32,7 @@ if not exist ".venv" (
     echo First run: downloading Python dependencies ^(~500 MB, incl. a Python runtime^).
     echo Needs internet + ~1 GB free disk. Happens once; may take a few minutes -- please wait...
     echo.
-    uv sync
+    uv sync --no-dev
     if errorlevel 1 goto :sync_failed
 
     echo Dependencies installed successfully!
@@ -40,7 +40,7 @@ if not exist ".venv" (
 )
 
 echo Starting ShaderBox...
-uv run python ./shaderbox/ui.py
+uv run --no-dev python ./shaderbox/ui.py
 if %errorlevel% neq 0 goto :app_failed
 
 endlocal

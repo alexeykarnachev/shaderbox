@@ -1,4 +1,4 @@
-"""An Auto resize keeps the picture, on the live canvas AND on every feedback history (090 D4).
+"""An Auto resize keeps the picture, on the live canvas AND on every feedback history.
 
 The trap this exists for is silent by construction. `Canvas.set_size` is release-then-allocate,
 so resizing the LIVE canvas blanks it; the next `_swap_feedback` trades that blank into the
@@ -45,8 +45,8 @@ void main() {
 """
 
 # The OUTPUT, and it feeds back too (`u_prev` reads the pass's own previous frame): the output
-# canvas is the one `set_canvas_size` used to blank, and its history is what the next swap
-# trades that blank into -- the exact pair D4 exists for.
+# canvas is the one `set_canvas_size` could blank, and its history is what the next swap
+# trades that blank into -- the exact pair that matters.
 _SHOW = """#version 460 core
 in vec2 vs_uv;
 uniform sampler2D u_trail;
@@ -93,8 +93,7 @@ def _write_document(dir: Path) -> Path:
             {
                 "uniforms": {},
                 # FIXED, so the document's live size is the pair this fixture names rather
-                # than whatever region the viewer would have handed an Auto document (090
-                # revision 1). The resample under test is the same either way.
+                # than whatever region the viewer would have handed an Auto document. The resample under test is the same either way.
                 "ui_state": {"resolution_mode": "fixed", "resolution": list(_CANVAS)},
             }
         )
@@ -182,13 +181,10 @@ def test_a_resize_keeps_the_live_canvas_and_every_history(
 ) -> None:
     """The picture survives a resize on BOTH canvases, and no texture is leaked or freed early.
 
-    Falsifiers, each applied at `Document.set_canvas_size` / `resample_canvas`: resample only
-    the history and the live canvas comes back blank, so the next swap trades a blank into the
-    history and the far corner reads black; release the old canvas BEFORE allocating the new one
-    and the blit samples a freed texture; skip the release and the live count climbs per resize;
-    swap the one-quad draw for `copy_framebuffer` and the far corner reads black while a mean
-    check still passes; resample the scaled pass to the DOCUMENT size and its history comes back
-    at the wrong dimensions.
+    Covers `Document.set_canvas_size` / `resample_canvas`: the live canvas and the history are
+    both resampled, the old canvas is released only AFTER the new one is allocated, none is
+    leaked, the far corner is checked as well as the mean, and a scaled pass is resampled to its
+    own size rather than the DOCUMENT size.
     """
     ui_document = _loaded(tmp_path)
     document = ui_document.document
@@ -240,8 +236,7 @@ def test_a_seeded_history_at_another_size_is_resampled_not_dropped(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
     # Under Auto the size a save wrote is whatever the panel was then, so the load's size match
-    # stops being a rejection and becomes the resample target (090 D4). Falsifier: keep the
-    # strict size match and a document saved at one panel size opens black at another.
+    # stops being a rejection and becomes the resample target.
     ui_document = _loaded(tmp_path)
     document_dir = tmp_path / "doc"
     ui_document.save(document_dir.parent, dir_name=document_dir.name)
@@ -268,8 +263,7 @@ def test_a_dtype_mismatch_is_still_refused(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
     # Size is rescalable; FORMAT is not. A stored `f1` frame written into an `f2` target is not a
-    # picture at another size, it is other bytes. Falsifier: resample a dtype mismatch too and a
-    # history loads as noise with no warning.
+    # picture at another size, it is other bytes.
     ui_document = _loaded(tmp_path)
     document_dir = tmp_path / "doc"
     ui_document.save(document_dir.parent, dir_name=document_dir.name)
@@ -293,8 +287,6 @@ def test_an_auto_document_opens_at_its_aspect_not_at_its_stored_pair(
     The stored pair is what a switch to Fixed seeds from and nothing else, so opening at it
     would render the document at a size its mode does not use -- and a pair left over from an
     older shape would render it at the WRONG shape until the first tick corrected it.
-    Falsifier: pass `ui_state.resolution` as the loader's size whatever the mode, and the
-    aspect assertion below goes red while the pair one passes.
     """
 
     document_dir = tmp_path / "doc"
@@ -344,9 +336,6 @@ def test_a_resize_reaches_a_pass_that_is_not_the_output_yet(
     document while `show` is the output, click the other pass, and it renders at the stale
     size -- clicking away and back "fixes" it, because the trip through non-output is what
     lets `render` correct it.
-
-    Falsifier: drop the per-pass loop from `set_canvas_size` and `trail` below stays at the
-    size it was born with.
     """
     ui_document = load_document_from_dir(_write_document(tmp_path / "doc"))
     document = ui_document.document
@@ -356,7 +345,7 @@ def test_a_resize_reaches_a_pass_that_is_not_the_output_yet(
     # resizes a document whose other pass has not drawn since.
     #
     # The stale size is established HERE rather than inherited from the load: a load now conforms
-    # every pass to its graph (096), so relying on it to leave one mis-sized made this check
+    # every pass to its graph, so relying on it to leave one mis-sized made this check
     # vacuous -- which its own guard below reported the moment that changed.
     document.passes[other].canvas.set_size((16, 16))
     before = document.passes[other].canvas.texture.size

@@ -1,4 +1,4 @@
-"""The generated SCRIPT API block the copilot prompt's RARE tier carries (feature 059 D3) — the
+"""The generated SCRIPT API block the copilot prompt's RARE tier carries — the
 Python side of a document script, rendered FROM the live types so the block cannot drift from them.
 
 Names, signatures and field types come from the code; the semantics beside them are authored, and
@@ -44,7 +44,7 @@ _EXPORT_MOUSE_AT: str = f"{EXPORT_MOUSE.x:g},{EXPORT_MOUSE.y:g}"
 # `mouse` MUST keep the freeze caveat: a script driven off the cursor reads STATIC in every probe and
 # every export even when it is correct.
 #
-# TWO renderings of one table, because the readers differ (079 D3). `_CONTEXT_GLOSS` is the PROMPT's:
+# TWO renderings of one table, because the readers differ. `_CONTEXT_GLOSS` is the PROMPT's:
 # terse, one clause, and it costs tokens on every request carrying the RARE tier. `_CONTEXT_HELP` is
 # what a person reads in the editor's `K` note — full sentences, one fact per line, no `;`-joined
 # lists. Every field is in both; the completeness test walks the dataclass against each.
@@ -113,7 +113,7 @@ API_NAMES: frozenset[str] = frozenset(
 
 
 # What `K` shows for each injected API name: a summary line, a blank line, then the detail
-# (PEP 257 with the Google layout, 079 D3). `ScriptContext` and `MouseState` read their class docstrings,
+# (PEP 257 with the Google layout). `ScriptContext` and `MouseState` read their class docstrings,
 # so the concept has one authored home.
 _API_HELP: dict[str, str] = {
     "ScriptBehavior": (
@@ -127,7 +127,7 @@ _API_HELP: dict[str, str] = {
 
 
 def _class_help(cls: type) -> str:
-    # The class's own docstring — one authored home per concept (079 D3), so `K` on `ScriptContext` reads
+    # The class's own docstring — one authored home per concept, so `K` on `ScriptContext` reads
     # what `context.py` says rather than a second summary that can drift from it.
     return cleandoc(cls.__doc__ or "")
 
@@ -185,10 +185,10 @@ def _bullet(text: str) -> str:
     )
 
 
-# 103 D3: the instancing block. Sized on the order of the rest of this summary -- one-time prefix
+# the instancing block. Sized on the order of the rest of this summary -- one-time prefix
 # cost (both this block and _SYSTEM_PROMPT sit above the DIALOGUE trim). Deliberately never names
 # `sb_instanced`: that uniform is engine-internal, generated into the vertex stage an author never
-# writes, and declaring it is refused (104 D4 binds here too).
+# writes, and declaring it is refused.
 _INSTANCING_BLOCK: str = (
     "INSTANCING (a POPULATION of similar things drawn in one call, not per-pixel):\n"
     "- THE WATERSHED: many similar things that MOVE INDEPENDENTLY (a swarm, sparks, debris, "

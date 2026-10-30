@@ -2,7 +2,7 @@
 
 The reserved `@` namespace exists so a mistyped engine key cannot be mistaken for a
 uniform the shader has yet to declare -- that case now WARNS the same as any other
-non-landing key (102 D1/D2 reverse 079 D5's silence and its own hard error alike), which
+non-landing key (rather than staying silent or raising a hard error), which
 is right for an author mid-edit and right for engine vocabulary too, where a blank frame
 with an empty error strip was the cost of staying silent.
 """

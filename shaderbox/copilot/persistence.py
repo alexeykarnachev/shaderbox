@@ -115,14 +115,14 @@ class _MessageModel(BaseModel):
     gate_kind: str = "confirm"
     # Optional + defaulted so a pre-field file loads as None.
     result_widget: _ResultWidgetModel | None = None
-    # The user message's turn id, keying its rollback checkpoint (feature 020·30). Defaulted so a
+    # The user message's turn id, keying its rollback checkpoint. Defaulted so a
     # pre-field file loads with no turn_id (no Revert button — the checkpoint dirs are gone anyway).
     turn_id: str = ""
-    # role == "turn_snippet": the per-tool step list + this turn's own stats (feature 028 F06).
+    # role == "turn_snippet": the per-tool step list + this turn's own stats.
     # Defaulted so a pre-v9 file loads with an empty snippet / no stats.
     steps: list[_StepRecordModel] = []
     snippet_stats: _TurnStatsModel | None = None
-    # Resolved gate's outcome token (feature 034 F03). Defaulted so a pre-v10 file (whose
+    # Resolved gate's outcome token. Defaulted so a pre-v10 file (whose
     # outcome is baked into text) loads with no structured outcome — renders as plain text.
     gate_outcome: str = ""
     model_config = {"extra": "forbid"}

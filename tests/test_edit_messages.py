@@ -145,9 +145,9 @@ def test_edit_error_hints_suppress_brace_hint_on_foreign_errors(
 
 
 def test_edit_error_hints_keep_brace_hint_for_local_errors(tmp_path: Path) -> None:
-    # 059 D2 falsifier (ii): _to_error_infos keeps the ABSOLUTE path on the info object, so the
+    # _to_error_infos keeps the ABSOLUTE path on the info object, so the
     # own-file guard still matches — a same-file error gets no cross-file note and keeps the brace
-    # hint. Label the value object instead of labelling at render time and this goes red.
+    # hint. The label is applied at render time, not stored on the value object.
     edited = tmp_path / "shader.frag.glsl"
     infos = _to_error_infos([ShaderError(path=edited, line=0, message="syntax error")])
     assert _cross_file_note(edited, infos) == ""
@@ -156,13 +156,13 @@ def test_edit_error_hints_keep_brace_hint_for_local_errors(tmp_path: Path) -> No
     assert not any("which this shader pulls in" in h for h in hints)
 
 
-# ---- the model-facing error label (059 D2 item 4) ----
+# ---- the model-facing error label ----
 
 
 def test_compile_errors_render_a_lib_address_not_a_filesystem_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # 059 D2 falsifier (i), lib half: the agent must still be able to tell WHICH lib file broke —
+    # Lib half: the agent must still be able to tell WHICH lib file broke —
     # the `lib:` address it already edits by is the label, never the absolute path.
     root = tmp_path / "lib"
     monkeypatch.setattr("shaderbox.copilot.error_render.shader_lib_root", lambda: root)
@@ -175,7 +175,7 @@ def test_compile_errors_render_a_lib_address_not_a_filesystem_path(
 def test_compile_errors_render_a_document_source_as_its_short_id(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # 059 D2 falsifier (i), document half: a document source renders as the short id the project map uses.
+    # Document half: a document source renders as the short id the project map uses.
     monkeypatch.setattr(
         "shaderbox.copilot.error_render.shader_lib_root", lambda: tmp_path / "lib"
     )

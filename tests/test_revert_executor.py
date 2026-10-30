@@ -1,15 +1,15 @@
-"""Restore-side characterization for the copilot turn-rollback (feature 020·30). The capture half
+"""Restore-side characterization for the copilot turn-rollback. The capture half
 has coverage in test_checkpoint.py; this exercises RevertExecutor.restore_checkpoint end-to-end
 through a real App — the live-Document / GL / ui_documents reload the executor performs.
 
 Runs against a throwaway tmp project (NOT the shared projects/dev sandbox): snapshot_document ->
 save_ui_document writes into the project's checkpoints dir, so an in-sandbox App would corrupt the
-maintainer's project. Needs a GL context.
+user's project. Needs a GL context.
 
 These run IN-PROCESS. They must not be marked `forked`: the `app` fixture leaves an open X11
 display socket, and a forked child inherits it — two processes on one Xlib connection kills it
-(`XIO: fatal IO error`), so every test after the first `app` module fails. The GL bleed that once
-justified forking (a deleted program left GL-current) is handled at its source by the
+(`XIO: fatal IO error`), so every test after the first `app` module fails. A deleted program left GL-current is
+handled at its source by the
 `glUseProgram(0)` suppress in `core.py::Document.invalidate`."""
 
 from typing import Any
@@ -21,7 +21,7 @@ def test_restore_checkpoint_reverts_an_edited_document(app: Any) -> None:
     original = document.render_pass.source.text
 
     # Capture the pre-edit snapshot the way the backend does at an edit seam (rebind=False keeps
-    # the live document's source.path on the project, not the snapshot dir — feature 020·30), then seal.
+    # the live document's source.path on the project, not the snapshot dir), then seal.
     app.copilot.checkpoints.open("turn_x", "edit it")
     cp = app.copilot.checkpoints.active
     assert cp is not None
@@ -72,7 +72,7 @@ def test_restore_document_from_trash_missing_is_false(app: Any) -> None:
 
 
 def _capture_document_with_script(app: Any, document_id: str) -> None:
-    # Mirror the backend's pre-write capture for a document that already has a script (043): snapshot
+    # Mirror the backend's pre-write capture for a document that already has a script: snapshot
     # the document AND carry its scripts/script.py into the snapshot dir.
     cp = app.copilot.checkpoints.active
     cp.snapshot_document(

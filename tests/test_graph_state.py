@@ -1,4 +1,4 @@
-"""The graph canvas's pure pieces, decided without imgui (092 D3; 098).
+"""The graph canvas's pure pieces, decided without imgui.
 
 What is left here after the library took the drawing and the gestures: which
 scope the tabs show, what a group is called, and how big a node is. The wire

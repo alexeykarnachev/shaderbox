@@ -21,7 +21,7 @@ _TESTS = Path(__file__).resolve().parent
 
 
 def test_no_test_assigns_over_a_shared_app_collaborator() -> None:
-    """Falsifier: write `app.notifications.push = lambda ...` in any test file.
+    """No test assigns over a shared app collaborator.
 
     Matches an assignment whose target is an attribute reached through one of the shared
     objects, which is the shape that leaks. `monkeypatch.setattr(app.notifications, ...)`

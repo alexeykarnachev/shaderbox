@@ -1,7 +1,7 @@
 """The copilot chat focus-grab guard (no GL, no imgui).
 
 A background window that calls set_next_window_focus() every frame while a popup is open
-dismisses that popup — imgui reads the focus-steal as a close (/imgui-ui §8). The cold-start
+dismisses that popup — imgui reads the focus-steal as a close. The cold-start
 gate (no key) exposed it: the focus-pending latch is set on open but its usual consumer (the
 transcript's set_keyboard_focus_here) never runs without a key, so the chat re-grabbed focus
 every frame and the Settings modal flickered open/closed, dimming everything with no content.

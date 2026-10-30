@@ -1,4 +1,4 @@
-"""Buffer formatting (078 D9, D11): the shipped formatters and the one-undo-step apply."""
+"""Buffer formatting: the shipped formatters and the one-undo-step apply."""
 
 import types
 from typing import Any
@@ -288,7 +288,7 @@ def test_format_command_is_one_undo_step_and_keeps_the_caret_line(app: Any) -> N
 
 
 def test_the_script_stub_is_a_fixed_point_of_the_formatter() -> None:
-    # 079 D10: `Ctrl+Shift+I` on a fresh script must change nothing. The stub emitted one blank
+    # `Ctrl+Shift+I` on a fresh script must change nothing. The stub emitted one blank
     # line between the import block and the class where ruff wants two.
     def _u(name: str, dim: int = 1, n: int = 1) -> Any:
         return types.SimpleNamespace(

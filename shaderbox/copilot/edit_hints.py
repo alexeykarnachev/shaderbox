@@ -1,8 +1,8 @@
-"""Engine-computed facts appended to edit-tool results (feature 033).
+"""Engine-computed facts appended to edit-tool results.
 
 Pure text/pixel analysis — no GL, no imgui. The compiler says WHAT broke; the
-hints say WHY in terms the model can act on (the dominant dogfood failure class:
-an edit that leaves a duplicated declaration or an unbalanced brace behind).
+hints say WHY in terms the model can act on (most often an edit that leaves a
+duplicated declaration or an unbalanced brace behind).
 Render facts are the agent's only sight: scalar truths about the latest clean
 frame, computed from raw RGBA bytes the backend reads off a tiny probe canvas.
 """

@@ -9,8 +9,7 @@ from shaderbox.copilot.gate import GateKind, SourceLock
 # thread -> single-writer, no lock. The worker bridges its writes via events.
 #
 # `source_lock` is main-thread-only like the rest of this, written through
-# CopilotSession.set_source_lock (086 removed the one worker-side writer along with the
-# session-wide unlock answer that called it).
+# CopilotSession.set_source_lock (there is no worker-side writer).
 
 MessageRole = Literal[
     "user", "assistant", "tool_status", "error", "pending_action", "turn_snippet"
@@ -148,7 +147,7 @@ class ChatState:
     # Last completed turn's stats; drives the header context gauge. Persisted (ConversationStore v7),
     # restored on load, reset by Clear.
     last_turn: TurnStats | None = None
-    # What the copilot does with a source edit (086): ALLOW runs it, ASK confirms each call,
+    # What the copilot does with a source edit: ALLOW runs it, ASK confirms each call,
     # READ_ONLY withholds the writing tools from the request entirely. The live copy the chip
     # draws, and the one CopilotSession.set_source_lock writes alongside the registry's (which the
     # gate reads on the worker) and the project's persisted copy.

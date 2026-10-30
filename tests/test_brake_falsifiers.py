@@ -1,6 +1,6 @@
 """The copilot brakes react to their config value.
 
-A knob with a reader but no falsifier is indistinguishable from a dead one: the suite stays
+A knob with a reader but no test that moves it is indistinguishable from a dead one: the suite stays
 green whatever it is set to, so a later change to its semantics has nothing to catch it.
 These drive each brake's reader rather than merely reading the field back — a test that
 builds its input FROM the cap can only prove the reader agrees with itself.
@@ -14,10 +14,9 @@ from tests._caps import minimal_caps
 
 
 def test_gating_is_a_two_state_decision() -> None:
-    # GatePolicy.BULK ("confirm when a list arg exceeds bulk_gate_threshold") was built in
-    # 020 and never adopted: no tool ever declared it, so requires_gate's BULK branch was
-    # unreachable and its threshold unfalsifiable. Removed in 061 along with the knob. What
-    # remains is a two-state decision, and this pins that — a third policy would need a
+    # A BULK policy ("confirm when a list arg exceeds a threshold") would have no tool
+    # declaring it, so its branch in requires_gate would be unreachable and its threshold
+    # untestable. The decision is two-state, and this pins that — a third policy would need a
     # reachable reader and a test that drives it.
     assert {p.name for p in GatePolicy} == {"NONE", "ALWAYS"}
 
@@ -33,7 +32,7 @@ def test_gating_is_a_two_state_decision() -> None:
     assert "read_shader" not in gated
 
 
-# The source lock's domain (083). The lock EXCLUDES two ungated mutators that already block on a
+# The source lock's domain. The lock EXCLUDES two ungated mutators that already block on a
 # native file picker as their first act: locking them would put a three-button card in front of a
 # file dialog, two prompts for one call. `telegram_connect` mutates but touches no project source.
 _LOCK_EXCLUDED: set[str] = {"telegram_connect", "bind_media", "import_document"}
@@ -85,7 +84,7 @@ def test_the_lock_widens_must_confirm_and_leaves_requires_gate_alone() -> None:
         "the lock must not reclassify a source edit as irreversible"
     )
     # DENY claims the call just as ASK does -- must_confirm stays a bool and says "this needs
-    # permission", never "and here is how we get it" (085 D2a). The loop is what turns a DENY mode
+    # permission", never "and here is how we get it". The loop is what turns a DENY mode
     # into a refusal, and that refusal lives INSIDE the gate block, so a must_confirm that went
     # False here would route the call straight past it and RUN the edit the mode forbids.
     registry.source_lock = SourceLock.READ_ONLY

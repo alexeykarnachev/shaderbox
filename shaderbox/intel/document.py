@@ -1,4 +1,4 @@
-"""Per-buffer index cache (078 W-A): an index is rebuilt only when its fingerprint -- the
+"""Per-buffer index cache: an index is rebuilt only when its fingerprint -- the
 cheap inputs it is a function of -- changes, and the caller learns whether it did, so the
 color feed re-pushes exactly then. An entry belongs to one editor HANDLE: the library's
 word-class table is per handle, so a handle recreated for the same path must be fed again,

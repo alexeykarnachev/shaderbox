@@ -1,13 +1,13 @@
-"""The headless project core (feature 025).
+"""The headless project core.
 
 `ProjectSession` owns the project-lifecycle + copilot state that has no UI/GL dependency — the
-state and methods the copilot backend reaches that App used to own directly. It imports no
+state and methods the copilot backend reaches that would otherwise live on App. It imports no
 imgui/glfw (the headless invariant): every UI side effect of a project mutation flows back to the
 owner through injected `on_*` callbacks the core invokes (the `ShaderLibFileManager` idiom), so the
 core never touches notifications, editor sessions, or any imgui state itself.
 
 App constructs one `ProjectSession` and forwards project state/ops to it via explicit
-`@property` accessors; a headless harness (feature 026) constructs it directly on a standalone
+`@property` accessors; a headless harness constructs it directly on a standalone
 EGL context, passing no `on_*` callbacks (they default to no-ops). A moderngl context must be
 current on the constructing thread before any document load (Document/Canvas do
 `self._gl = gl or moderngl.get_context()`).
@@ -88,7 +88,7 @@ from shaderbox.ui_models import (
 )
 from shaderbox.util import get_uniform_hash, select_next_value, try_to_release
 
-# Prepended to the engine stub when the COPILOT reads a script-less document (feature 043). The actor
+# Prepended to the engine stub when the COPILOT reads a script-less document. The actor
 # copies verbatim, so a no-op commented stub teaches the binding but not MOTION — this gives one
 # concrete context.t-driven pattern to adapt (a reference, not a body to save back unchanged).
 _AGENT_STUB_EXAMPLE = (
@@ -142,7 +142,7 @@ def _pass_name_error(name: str, existing: dict[str, Pass], graph: PassGraph) -> 
         )
     if name in existing:
         return f"'{name}' already exists"
-    # One namespace for passes and groups (092 D17): the graph canvas keys both by name.
+    # One namespace for passes and groups: the graph canvas keys both by name.
     return namespace_error(
         name, (), {entry.group for entry in graph.passes.values() if entry.group}
     )
@@ -166,7 +166,7 @@ class ImportResult:
 def compile_pending_passes(document: Document) -> list[str]:
     """Compile every pass of `document` that has never been attempted; the names whose compile
     has FAILED, before or now. A never-compiled pass answers its wiring with explicit rows
-    only (066 D1), so a plan over it would take every pass for a root."""
+    only, so a plan over it would take every pass for a root."""
     for render_pass in document.passes.values():
         if render_pass.program is None and not render_pass.compile_unit.errors:
             render_pass.compile()
@@ -207,8 +207,8 @@ def _graph_renamed(graph: PassGraph, old: str, new: str) -> PassGraph:
     )
 
 
-# ---- projects (feature 084) --------------------------------------------------------------
-# A project is a DIRECTORY, and its name is that directory's name (D3) -- nothing inside carries
+# ---- projects --------------------------------------------------------------
+# A project is a DIRECTORY, and its name is that directory's name -- nothing inside carries
 # an identity that could disagree with the path holding it. So these are all plain disk
 # operations with no App and no GL in them, which is what keeps them testable headlessly.
 
@@ -228,7 +228,7 @@ def is_project_dir(path: Path) -> bool:
 
 
 def list_projects(root: Path, open_dir: Path | None = None) -> list[ProjectInfo]:
-    """Every project under `root`, plus `open_dir` when it lives somewhere else (D4).
+    """Every project under `root`, plus `open_dir` when it lives somewhere else.
 
     The union term is what keeps a project opened from an arbitrary folder visible in its own
     switcher instead of vanishing from it. There is no recents file: a directory listing cannot
@@ -314,9 +314,9 @@ class ProjectSession:
         ] = _noop_document_source_synced,
         on_document_deleted: Callable[[str, Path], None] = _noop_document_deleted,
         on_pass_renamed: Callable[[Path, Path], None] = _noop_pass_renamed,
-        # A script key that does not land (102 D1) reaches the UI through this callback rather
-        # than a notifications.py import: the engine is headless core (`conventions.md`) and
-        # notifications.py imports imgui_bundle. Fires once per EDGE (102 D3), never per frame.
+        # A script key that does not land reaches the UI through this callback rather
+        # than a notifications.py import: the engine is headless core and
+        # notifications.py imports imgui_bundle. Fires once per EDGE, never per frame.
         on_key_warning: Callable[
             [str, str, str, KeyFailReason, str], None
         ] = _noop_key_warning,
@@ -358,7 +358,7 @@ class ProjectSession:
         self._copilot_working_set: list[str] = []
         self._copilot_working_set_evicted: list[str] = []
 
-        # The CPU-script engine (feature 041): per-document uniform-compute behaviors, ticked once
+        # The CPU-script engine: per-document uniform-compute behaviors, ticked once
         # per frame before render. Populated per project by _resolve_scripts in load().
         self.script_engine = self._build_script_engine()
         self.shader_lib_index_revision: int = 0
@@ -380,7 +380,7 @@ class ProjectSession:
         )
 
     def _build_script_engine(self) -> ScriptEngine:
-        """The CPU-script engine, with the warn callback forwarded (102 D3a).
+        """The CPU-script engine, with the warn callback forwarded.
 
         A method rather than an inline constructor call so the forwarding is reachable
         from a test without building a whole project: the failure it guards is a
@@ -502,7 +502,7 @@ class ProjectSession:
         self._document_json_mtimes.pop(document_id, None)
         self.script_engine.drop_document(
             document_id
-        )  # free its behaviors + stale errors (feature 041)
+        )  # free its behaviors + stale errors
         if document_id in self._copilot_working_set:
             self._copilot_working_set.remove(document_id)
         self._on_document_deleted(document_id, path)
@@ -567,7 +567,7 @@ class ProjectSession:
     def load(self, project_dir: Path) -> None:
         # Load the project's state: paths, lib index, documents + examples, app_state,
         # integrations. A moderngl context must already be current (canvas + texture-asset
-        # allocation) — but nothing COMPILES here: passes compile on first need (066 D1).
+        # allocation) — but nothing COMPILES here: passes compile on first need.
         self.ui_documents.clear()
         # The working set names the OUTGOING project's documents; carried across, it hands the
         # agent ids the incoming project does not have.
@@ -604,7 +604,7 @@ class ProjectSession:
         self._resolve_scripts()
 
     def _resolve_scripts(self) -> None:
-        # Per project (feature 041): reset the engine, resolve each document's scripts/u_*.py against its
+        # Per project: reset the engine, resolve each document's scripts/u_*.py against its
         # active uniforms, and wire each Document's script hooks. The live path re-polls mtimes + re-wires
         # any newly-inserted document via reload_scripts() in ui.py.
         self.script_engine.release_all()
@@ -713,7 +713,7 @@ class ProjectSession:
     def _make_export_isolation(
         self, document_id: str
     ) -> Callable[[], contextlib.AbstractContextManager[None]]:
-        # The factory Document.render_media enters around EVERY export (feature 041). It swaps the document's
+        # The factory Document.render_media enters around EVERY export. It swaps the document's
         # on_pre_render to tick a FRESH behavior set (recompiled from cached source, independent of the
         # live instances) so an exported integrator starts from a clean __init__ regardless of how long
         # the live preview ran, and restores the live hook in finally. Because render_media itself
@@ -802,7 +802,7 @@ class ProjectSession:
             )
 
     def _stopped_for(self, document_id: str) -> frozenset[StoppedKey]:
-        # The (pass, uniform) pairs frozen for manual edit this frame (048): the document's explicit
+        # The (pass, uniform) pairs frozen for manual edit this frame: the document's explicit
         # `stopped_uniforms` UNION every driven pair when the document is `all_stopped`. Built fresh each
         # tick (never cached across the tick/draw boundary) and passed to the engine as a param — the
         # engine never learns UIDocumentState (the headless boundary holds, as `engine_driven` does).
@@ -821,7 +821,7 @@ class ProjectSession:
         return frozenset(stopped)
 
     def get_script_status(self, document_id: str) -> ScriptStatus | None:
-        # The document script's UI status for 042's strip (sentinel error + driven count + homeless
+        # The document script's UI status for the script strip (sentinel error + driven count + homeless
         # soft-key errors), or None when the document has no script.py.
         return self.script_engine.script_status(document_id)
 
@@ -839,9 +839,9 @@ class ProjectSession:
     ) -> dict[str, list[moderngl.Uniform]]:
         # Per PASS, the uniforms a script can drive: scriptable + not engine-owned. The engine
         # silently drops a script key naming an engine uniform, so listing one as a stub example
-        # invites a silent no-op (the legibility gap 048 targets). This COMPILES every pass, which is
+        # invites a silent no-op (the legibility gap). This COMPILES every pass, which is
         # correct here and only here: both callers are user/agent actions (create_script,
-        # read_script_source), never the frame loop 066 D1 constrains.
+        # read_script_source), never the frame loop.
         document = self.ui_documents[document_id].document
         return {
             pass_name: [
@@ -853,8 +853,8 @@ class ProjectSession:
         }
 
     def create_script(self, document_id: str) -> Path:
-        # Write the document script `script.py` + return its path; the next reload_scripts binds it (048 —
-        # the file's existence IS the binding, no activate step). The skeleton is the engine's stub
+        # Write the document script `script.py` + return its path; the next reload_scripts binds it
+        # (the file's existence IS the binding, no activate step). The skeleton is the engine's stub
         # (explicit imports + an empty-dict body + the document's uniforms as commented examples).
         scripts_dir = self.paths.scripts_dir_for(document_id)
         scripts_dir.mkdir(parents=True, exist_ok=True)
@@ -866,7 +866,7 @@ class ProjectSession:
         return path
 
     def script_path_for(self, document_id: str) -> Path:
-        # The scripts/ path for the document script `script.py` (048 — one script per document).
+        # The scripts/ path for the document script `script.py` (one script per document).
         return self.paths.document_script_for(document_id)
 
     def cached_script_source(self, document_id: str) -> tuple[str, float] | None:
@@ -881,7 +881,7 @@ class ProjectSession:
         return self.script_engine.returned_value_types(document_id)
 
     def read_script_source(self, document_id: str) -> tuple[str, bool]:
-        # The copilot read_script source (feature 043): the live scripts/script.py text, or — when the
+        # The copilot read_script source: the live scripts/script.py text, or — when the
         # document has no script — the AGENT stub (the engine stub + one un-commented math.sin(context.t)
         # example, so the actor has a concrete animating pattern to copy). The stub is NOT persisted;
         # returns (text, is_stub).
@@ -892,7 +892,7 @@ class ProjectSession:
         return _AGENT_STUB_EXAMPLE + stub, True
 
     def write_script_source(self, document_id: str, new_text: str) -> ScriptProbe:
-        # The copilot write_script (feature 043): overwrite (or create) scripts/script.py, reload so
+        # The copilot write_script: overwrite (or create) scripts/script.py, reload so
         # the compile verdict is live, then dry-run for the tick-gated facts. Returns the probe; the
         # backend renders it into the tool result + the motion facts.
         path = self.script_path_for(document_id)
@@ -911,7 +911,7 @@ class ProjectSession:
         )
 
     def script_source_view(self, document_id: str) -> tuple[str, ScriptStatus | None]:
-        # The working-set script sub-view (feature 043): the live script source ("" = no script) + its
+        # The working-set script sub-view: the live script source ("" = no script) + its
         # script status (sentinel error for the working-set error line). GL-free reads.
         path = self.script_path_for(document_id)
         if not path.is_file():
@@ -921,7 +921,7 @@ class ProjectSession:
     def uniform_is_driven(self, document_id: str, pass_name: str, name: str) -> bool:
         # Whether the script TARGETS this uniform ON THIS PASS (playing OR stopped) — the gate for
         # showing the row's play/stop button at all (a never-scripted MANUAL uniform shows nothing).
-        # Reads the engine's last-tick driven pairs (decision 4/10).
+        # Reads the engine's last-tick driven pairs.
         return (pass_name, name) in self.script_engine.script_driven_uniforms(
             document_id
         )
@@ -983,8 +983,7 @@ class ProjectSession:
         # Archive the live conversation (recoverable), delete checkpoints, reset to a fresh empty
         # chat + persist the empty store. No-op mid-turn (the reset_conversation invariant needs an
         # idle worker). The copilot resumes with ZERO memory of prior turns — only the documents on disk
-        # remain. App.copilot_clear_chat forwards here; the dogfood harness calls it for a
-        # context-wipe (a fresh agent on an existing project).
+        # remain. App.copilot_clear_chat forwards here.
         if self.copilot.state.in_flight:
             return
         archive_conversation(
@@ -994,7 +993,7 @@ class ProjectSession:
         self.copilot.reset_conversation()
         self.copilot.save_conversation(self.paths.copilot_conversation_path)
 
-    # ---- the pass graph's verbs (D15; 091 and 092 added theirs) --------------------------
+    # ---- the pass graph's verbs --------------------------
     # Every one mutates the live document AND saves, so `passes/` and `graph.json` never
     # disagree with what is on screen. Each returns an error string, or "" on success.
 
@@ -1039,7 +1038,7 @@ class ProjectSession:
         # does not release it -- without this it outlives every reference to it.
         document.drop_feedback(name)
         # Every sampler that named it goes back to undecided: a source left pointing at a deleted
-        # pass would read black (D3), which is silent -- the panel's own delete must not leave
+        # pass would read black, which is silent -- the panel's own delete must not leave
         # that behind.
         document.forget_pass_sources(name)
         document.graph = _graph_without(document.graph, name, document.passes)
@@ -1062,7 +1061,7 @@ class ProjectSession:
         if error:
             return error
         # A rename can CREATE a read: a sibling's `u_<new>` resolves by the name rule where it
-        # resolved to nothing before, and that read can close a loop (092 D18). Planned before
+        # resolved to nothing before, and that read can close a loop. Planned before
         # the file moves, refused with the planner's message, the same guard a wire drop has.
         loop = plan_passes(document.wiring_if_renamed(old, new))[1]
         if loop:
@@ -1074,7 +1073,7 @@ class ProjectSession:
                 ),
                 loop[0].message,
             )
-        # Transactional (D15): the file, every sampler that names it, the output choice, and the
+        # Transactional: the file, every sampler that names it, the output choice, and the
         # open editor tab move together. Any one of them left behind fails SILENTLY -- a source
         # naming a pass that no longer exists just reads black.
         render_pass = document.passes.pop(old)
@@ -1107,17 +1106,18 @@ class ProjectSession:
     def set_sampler_source(
         self, document_id: str, pass_name: str, uniform: str, source: SamplerSource
     ) -> str:
-        """Decide what `pass_name`'s `uniform` reads: a pass, black, or nothing decided (072).
+        """Decide what `pass_name`'s `uniform` reads: a pass, black, or nothing decided.
 
-        A closed set by construction: a `PassSource` must name one of the document's own passes,
-        which is what makes SHADERed's positional-slot footgun impossible here. A `NoSource` is a
-        DECISION -- "this sampler reads black" -- and it survives a reload, so the name rule
-        (069 D9) does not re-wire it; an `AutoSource` returns the sampler to undecided. A texture
-        the user bound is written by its own pickers (the panel, the copilot's `bind_media`)
-        into the same slot, so choosing a source here replaces it -- and releases it. That is
-        deliberate for the panel's combo, a per-sampler pick the user is looking at; the graph
-        canvas refuses a wire dropped on a media-bound port before reaching here (092 D15),
-        because a drag is a coarser gesture than a pick. The asymmetry is by design.
+        A closed set by construction: a `PassSource` must name one of the document's own
+        passes, which is what makes SHADERed's positional-slot footgun impossible here. A
+        `NoSource` is a DECISION -- "this sampler reads black" -- and it survives a reload, so
+        the name rule does not re-wire it; an `AutoSource` returns the sampler to undecided.
+        A texture the user bound is written by its own pickers (the panel, the copilot's
+        `bind_media`) into the same slot, so choosing a source here replaces it -- and
+        releases it. That is deliberate for the panel's combo, a per-sampler pick the user is
+        looking at; the graph canvas refuses a wire dropped on a media-bound port before
+        reaching here, because a drag is a coarser gesture than a pick. The asymmetry is by
+        design.
         """
         ui_document = self.ui_documents.get(document_id)
         if ui_document is None:
@@ -1150,7 +1150,7 @@ class ProjectSession:
         document_id: str,
         positions: Mapping[str, tuple[float, float] | None],
     ) -> str:
-        """Place passes on the graph canvas (092 D6): the one writer of `position`, called
+        """Place passes on the graph canvas: the one writer of `position`, called
         once per gesture with every pass the gesture moved, so a drag or an Arrange is one
         save. `None` un-places a pass (the canvas lays it out by rank again)."""
         ui_document = self.ui_documents.get(document_id)
@@ -1168,14 +1168,14 @@ class ProjectSession:
         return ""
 
     def set_pass_group(self, document_id: str, name: str, group: str) -> str:
-        """Put `name` in `group`, or take it out of every group with `""` (091 D9)."""
+        """Put `name` in `group`, or take it out of every group with `""`."""
         return self.set_pass_groups(document_id, [name], group)
 
     def set_pass_groups(
         self, document_id: str, names: Collection[str], group: str
     ) -> str:
         """Put every pass of `names` in `group` (`""` = in no group), validated once through
-        `group_name_error` and saved once (092 D14): a Group or a Dissolve on the canvas is
+        `group_name_error` and saved once: a Group or a Dissolve on the canvas is
         one write, and a refusal writes nothing."""
         ui_document = self.ui_documents.get(document_id)
         if ui_document is None:
@@ -1202,7 +1202,7 @@ class ProjectSession:
         substitutions: Mapping[str, str],
         handovers: Collection[tuple[str, str]],
     ) -> ImportResult:
-        """Copy `source`'s passes into `document_id` under `group` (091 D5).
+        """Copy `source`'s passes into `document_id` under `group`.
 
         `substitutions` feeds an entry point of the source from a host pass instead of copying
         it; `handovers` are the host's `(pass, sampler)` pairs that then read the bundle's
@@ -1295,7 +1295,7 @@ class ProjectSession:
             {**host.graph.passes, **entries},
             output=plan.output if plan.becomes_output else None,
         )
-        # An import can hand the output role to a pass carrying a scale (091): same rule, same
+        # An import can hand the output role to a pass carrying a scale: same rule, same
         # home as the promotion and the delete.
         host.conform_canvases()
         for host_pass, rows in plan.handovers.items():
@@ -1330,7 +1330,7 @@ class ProjectSession:
         )
 
     def set_pass_iterations(self, document_id: str, name: str, iterations: int) -> str:
-        """How many times `name` draws per frame (068). Rejects an out-of-range count rather
+        """How many times `name` draws per frame. Rejects an out-of-range count rather
         than clamping: the slider cannot produce one, so a bad value came from a hand-edited
         `graph.json` or a tool, and silently substituting a different number would hide it."""
         ui_document = self.ui_documents.get(document_id)
@@ -1350,7 +1350,7 @@ class ProjectSession:
 
     def seed_starter_document(self, seed_current: Callable[[str], None]) -> None:
         # First-run only: seed a starter into an empty project. A document load + save + select;
-        # `seed_current` is the owner's set-current hook (the setter lives in App until C3).
+        # `seed_current` is the owner's set-current hook (the setter lives in App).
         starter_dir = self._document_examples_dir / self._starter_example_id
         if not starter_dir.is_dir():
             logger.warning(f"Starter example missing ({starter_dir}); skipping seed")

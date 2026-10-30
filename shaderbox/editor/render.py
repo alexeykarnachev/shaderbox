@@ -1,4 +1,4 @@
-"""moderngl renderer for the editor's primitive array (feature 067).
+"""moderngl renderer for the editor's primitive array.
 
 One shared MTSDF program + atlas texture per GL context; one `EditorPanel`
 per drawn editor region owning an FBO texture the imgui side presents via
@@ -98,7 +98,7 @@ def render_state(
     `tests/test_editor_ffi.py::test_render_state_reacts_to_every_editor_dimension`
     walks the domain.
 
-    `class_feed_revision` counts the host's own pushes of semantic colour (105 D3). Nothing
+    `class_feed_revision` counts the host's own pushes of semantic colour. Nothing
     the editor reports moves when a class or span set is fed while the text stands still, so
     without it an answer that lands on an idle buffer never reaches the screen: the panel is
     a cached texture and the gate below sees an unchanged tuple. It mirrors the library's own

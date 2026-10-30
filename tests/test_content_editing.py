@@ -1,4 +1,4 @@
-"""Content-addressed editing tools (feature 039).
+"""Content-addressed editing tools.
 
 Two layers, both GL-free:
 - the REAL backend methods (apply_full_rewrite / apply_shader_edit / the persist seam),
@@ -266,7 +266,7 @@ def test_persist_normalizes_crlf() -> None:
 
 
 def test_persist_force_restores_after_streak_on_real_path() -> None:
-    # The 033 unstick end-to-end on the REAL persist + _force_restore: N consecutive
+    # The unstick end-to-end on the REAL persist + _force_restore: N consecutive
     # broken edits put the file back at its last clean state and reset the streak.
     writes: list[str] = []
     document = types.SimpleNamespace(
@@ -322,7 +322,7 @@ def test_persist_force_restores_after_streak_on_real_path() -> None:
 
 
 def test_script_force_restores_after_streak() -> None:
-    # The 033 unstick ported to SCRIPTS (043 dogfood gap): N consecutive broken script
+    # The unstick ported to SCRIPTS: N consecutive broken script
     # writes/edits restore the last clean source + reset the streak. A script breaks two ways
     # (compile + runtime); both count.
     from shaderbox.scripting import ScriptError, ScriptProbe
@@ -365,7 +365,7 @@ def test_script_force_restores_after_streak() -> None:
     assert stub._script_broken_streak["n1"] == 0  # fresh budget after the restore
 
 
-# ---- the REAL apply_shader_edit: deletion by quotation (the restored 038 contract) ----
+# ---- the REAL apply_shader_edit: deletion by quotation  ----
 
 
 def _edit_method(source: str) -> tuple[dict[str, str], "types.FunctionType"]:
@@ -597,7 +597,7 @@ def _clean_script_stub(sample_sets: list[list]) -> types.SimpleNamespace:
 def test_script_edit_with_identical_samples_reports_a_value_noop() -> None:
     # The script twin of the shader's "changed NOTHING on screen": an edit whose sampled driven
     # values match the previous clean edit's (a dead store overwritten downstream, a text-only
-    # change) gets a truthful no-op line. Falsifier: drop the compare and this goes red.
+    # change) gets a truthful no-op line.
     same = [(0.0, {"u_x": 1.0}), (0.5, {"u_x": 2.0})]
     stub = _clean_script_stub([list(same), list(same)])
     apply = CopilotBackend._apply_script_text.__get__(stub)

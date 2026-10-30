@@ -1,16 +1,16 @@
-"""Per-turn rollback checkpoints for the copilot (feature 020·30).
+"""Per-turn rollback checkpoints for the copilot.
 
 A `TurnCheckpoint` records, for one user turn, what the copilot mutated so a later Revert can
-restore the pre-turn state. The capture is BEST-EFFORT (a capture failure never fails the edit —
-feature 020·30 decision 10) and runs main-thread inside the backend's bridge `_on_main` blocks,
+restore the pre-turn state. The capture is BEST-EFFORT (a capture failure never fails the edit) and runs
+main-thread inside the backend's bridge `_on_main` blocks,
 keyed on the active turn id.
 
 This module owns only the DATA (the index + the per-document serialized snapshots on disk under
 `<checkpoints_root>/<turn_id>/`). The RESTORE orchestration lives in `copilot/revert.py`
 (`RevertExecutor`) because reload-and-replace touches live `Document` / GL / editor state, reached via
-injected callbacks (decisions 1-2). A captured document snapshot is a full `save_ui_document` serialize of the LIVE document — NOT
-a copy of the possibly-stale on-disk dir — because `set_uniform` writes only in-memory
-`uniform_values`, never `document.json` (decision 2).
+injected callbacks. A captured document snapshot is a full `save_ui_document` serialize
+of the LIVE document — NOT a copy of the possibly-stale on-disk dir — because
+`set_uniform` writes only in-memory `uniform_values`, never `document.json`.
 """
 
 import hashlib
@@ -137,7 +137,7 @@ class TurnCheckpoint:
     created_scripts: list[str] = field(default_factory=list)
     # The current-document id before this turn's first switch_document (reverse = switch back). "" = unset.
     pre_switch_document_id: str | None = None
-    # NAMES of documents whose capture FAILED (decision 10) — Revert reports them un-restorable.
+    # NAMES of documents whose capture FAILED — Revert reports them un-restorable.
     failed_documents: list[str] = field(default_factory=list)
 
     @property
@@ -371,12 +371,12 @@ class CheckpointStore:
 
     def prune_to(self, live_turn_ids: set[str]) -> None:
         # Retention: drop any sealed checkpoint whose user Message is no longer in the live
-        # conversation (decision 14).
+        # conversation.
         for tid in [t for t in self._sealed if t not in live_turn_ids]:
             self.drop(tid)
 
     def clear(self) -> None:
-        # Clear-the-chat (decision 4): delete every snapshot outright, no archive.
+        # Clear-the-chat: delete every snapshot outright, no archive.
         for cp in self._sealed.values():
             cp.delete_files()
         self._sealed.clear()

@@ -1,4 +1,4 @@
-"""Unit tests for the 033 enriched-result facts — pure text/pixel, no GL."""
+"""Unit tests for the enriched-result facts — pure text/pixel, no GL."""
 
 from shaderbox.copilot.edit_hints import compile_hints, render_facts
 from shaderbox.copilot.edit_match import comment_only_spans
@@ -185,7 +185,7 @@ def test_render_facts_bbox_and_orientation() -> None:
     assert bottom_row.startswith("9")
 
 
-# ---- comment-only edit fallback (034: comments are editable content) ----
+# ---- comment-only edit fallback (comments are editable content) ----
 
 
 def test_comment_only_old_str_matches_by_text() -> None:

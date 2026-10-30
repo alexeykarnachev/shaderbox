@@ -253,8 +253,7 @@ class Attempt:
     model: str = ""
     sha: str = ""
     # The tree was modified when the attempt opened, so `sha` names code the run did not execute.
-    # Recorded since the store's first version and dropped on read until 081 — a write-only
-    # integrity signal is indistinguishable from one nobody wrote.
+    # A write-only integrity signal is indistinguishable from one nobody wrote, so it is read back.
     dirty: bool = False
     ended: str = ""
     outcome: str = ""

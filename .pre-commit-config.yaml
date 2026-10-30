@@ -23,8 +23,13 @@ repos:
         language: system
         types: [python]
         pass_filenames: false
-        # NO path argument: a path on the command line OVERRIDES `[tool.pyright] include`, so
+        # NO path argument: a path on the command line OVERRIDES the `include` in `pyrightconfig.json`, so
         # `pyright shaderbox` silently un-widens the checked set and the scripts go unchecked
         # while the gate stays green. Let the config decide what is checked.
         entry: uv run pyright
         verbose: true
+      - id: check-comments
+        name: comments carry no process references
+        language: system
+        pass_filenames: false
+        entry: uv run python scripts/check_comments.py

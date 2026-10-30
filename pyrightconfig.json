@@ -1,0 +1,13 @@
+{
+  "venvPath": ".",
+  "venv": ".venv",
+  "pythonVersion": "3.12",
+  "include": ["shaderbox", "scripts", ".claude/skills", "dogfood"],
+  "exclude": [
+    "shaderbox/resources/editor/abi_probe.py",
+    "scripts/dogfood/runs",
+    "scripts/agent_hub/generate.py",
+    "scripts/dogfood/drive.py",
+    "scripts/dogfood/verify_script_engine.py"
+  ]
+}

@@ -1,4 +1,4 @@
-"""104 item 4: `vs_quad` is offered to autocomplete. Before this, the one name an author
+"""`vs_quad` is offered to autocomplete. Before this, the one name an author
 cannot guess was offered nowhere -- reaching for `vs_uv` instead draws a canvas-wide
 vignette with no error, so a silent wrong guess was the only path.
 """

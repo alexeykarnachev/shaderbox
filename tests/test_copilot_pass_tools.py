@@ -1,7 +1,7 @@
-"""The copilot's pass tools (feature 076): add_pass / set_pass / delete_pass over the session's
+"""The copilot's pass tools: add_pass / set_pass / delete_pass over the session's
 pass verbs, so a multi-pass document can be authored without a human at the pass list.
 
-Falsifiers: a pass added by the tool must exist on disk (`passes/<name>.glsl`) and in
+Covered: a pass added by the tool must exist on disk (`passes/<name>.glsl`) and in
 `graph.json` with the runs and target given; set_pass must change only the fields given; the
 result must carry the pass table the model reads back; a rejected name, an out-of-range run count
 and the last pass must come back as errors, not silent no-ops; the registry must expose all three
@@ -100,7 +100,7 @@ def test_delete_pass_removes_it_but_never_the_last(app: Any) -> None:
 
 
 def test_the_pass_verbs_are_mutating_with_delete_lazy_and_gated() -> None:
-    # 081 D6: add_pass/set_pass are eager — a lazy load grows the tools array mid-turn, and that
+    # add_pass/set_pass are eager — a lazy load grows the tools array mid-turn, and that
     # array precedes every message, so the whole cached prefix dies for one added schema.
     # delete_pass stays lazy: it is destructive, gated, and rare.
     registry = build_registry(minimal_caps())
@@ -147,7 +147,7 @@ def test_an_edit_to_a_non_output_pass_is_probed_as_that_pass(app: Any) -> None:
 
 
 def test_an_invalid_argument_names_the_field_that_was_wrong(app: Any) -> None:
-    # 081 D11: pydantic hands the offending field in `loc` and the message threw it away, so
+    # pydantic hands the offending field in `loc` and the message threw it away, so
     # "Extra inputs are not permitted" read as a complaint about the VALUE — one model rewrote
     # the same payload's content three times before dropping the extra key.
     registry = build_registry(app.copilot_backend)
@@ -190,8 +190,6 @@ def test_the_render_tools_refuse_a_pass_address_by_name(app: Any) -> None:
 
 
 def test_set_pass_group_lands_and_echoes(app: Any) -> None:
-    # 091 D9. Falsifier: drop the group from the table's format string, or accept an illegal
-    # name silently.
     document_id = app.current_document_id
     backend = app.copilot_backend
     assert backend.add_pass("", "glow", None, None, None, None, None, False).ok

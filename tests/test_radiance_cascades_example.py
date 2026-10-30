@@ -1,11 +1,8 @@
-"""The shipped Radiance Cascades document renders bounced light (068).
+"""The shipped Radiance Cascades document renders bounced light.
 
-The check that matters is NOT "it renders something": 063's own RC attempt rendered convincing
-shadows while every merge direction read the wrong slot. So this asserts the shape of the
+The check that matters is NOT "it renders something": a wrong merge can render convincing
+shadows while every merge direction reads the wrong slot. So this asserts the shape of the
 result -- light where nothing emits, darkness behind an occluder -- rather than a mean.
-
-The numerical check against brute force lives in `ai_docs/features/068_radiance_cascades/
-oracle.py`, which shares this document's scene and merge.
 """
 
 import os
@@ -56,7 +53,7 @@ def _render(context: moderngl.Context, frames: int = 24):
     analytic now, so the honest test is to load it and render it exactly as the app does.
     """
     # Through `load_document_from_dir`, the app's own loader: it parses `ui_state` first and
-    # resolves the effective live size from the persisted mode (090 D1). `Document.load_from_dir`
+    # resolves the effective live size from the persisted mode. `Document.load_from_dir`
     # alone takes the size as a parameter and would open this document at the 64x64 default,
     # where every pixel assertion below addresses a texel that does not exist.
     doc = load_document_from_dir(_DOC).document
@@ -77,7 +74,7 @@ def test_every_pass_compiles_and_the_graph_is_clean(gl_ctx: moderngl.Context) ->
 
 def test_the_document_lights_pixels_that_emit_nothing(gl_ctx: moderngl.Context) -> None:
     # The claim of global illumination: a texel with no emitter on it is still lit, because
-    # light reached it. Falsifier: a document that only drew its emitters leaves this black.
+    # light reached it.
     doc = _render(gl_ctx)
     img = texture_to_rgba8(doc.render_pass.canvas.texture)
     # Left of the wall, below the warm light, well away from any emitter.

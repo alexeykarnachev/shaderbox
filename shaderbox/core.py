@@ -217,7 +217,7 @@ def _canvas_kwargs_for(target: TargetConfig | None) -> dict[str, Any]:
 
 
 class Pass:
-    """One shader, one target, one draw: the unit that compiles and renders (065).
+    """One shader, one target, one draw: the unit that compiles and renders.
 
     Owns its source and compiled program, its own `CompileUnit` (so an error carries the right
     file and line), its own render target, and its own uniform values. What a DOCUMENT owns --
@@ -241,7 +241,7 @@ class Pass:
             if source is not None
             else ShaderSource.load(self._DEFAULT_FS_FILE_PATH)
         )
-        # No target given => Canvas's own 8-bit defaults. TargetConfig's f2 (D9) is what a pass
+        # No target given => Canvas's own 8-bit defaults. TargetConfig's f2 is what a pass
         # IN A GRAPH gets, and applying it to an unconfigured pass would silently reformat every
         # document's canvas, which the whole export path reads as 8-bit.
         self.target: TargetConfig | None = target
@@ -258,8 +258,8 @@ class Pass:
         self.first_render_done: bool = False
         self.uniform_values: dict[str, Any] = {}
         # What a sampler reads when its value is a source and no document bound a texture for
-        # it: a pass drawn on its own has no pass to read, and an unfilled input reads BLACK
-        # (065 D3), never a picture.
+        # it: a pass drawn on its own has no pass to read, and an unfilled input reads BLACK,
+        # never a picture.
         self._black: moderngl.Texture | None = None
         self.compile_unit: CompileUnit = CompileUnit.empty(self.source)
         self.program: moderngl.Program | None = None
@@ -277,7 +277,7 @@ class Pass:
         # engine free of GL and leaves one place for a future off-thread producer to
         # write instead.
         self.pending_instances: dict[str, np.ndarray] = {}
-        # This frame's script-fed fields by sampler name (110 D3), written by the script engine:
+        # This frame's script-fed fields by sampler name, written by the script engine:
         # the script's own arrays, or `REFUSED_TEXTURE`. `script_textures` is what they become,
         # one texture per sampler, reallocated only when a field's layout changes. A refused
         # field binds the texture as it is, which is the last frame that validated.
@@ -291,7 +291,7 @@ class Pass:
         # What the last `render()` (or `compile()`, for the two failure states it owns)
         # decided this pass did. `pass_name` is empty here -- `Pass` does not know its own
         # name in the graph -- and `Document` rewraps it with the real name when it collects
-        # per-frame outcomes (102 D4a). Defaults to `not_compiled`: frame one of every
+        # per-frame outcomes. Defaults to `not_compiled`: frame one of every
         # document, before any render attempt has produced a real state.
         self.last_outcome: InstancedOutcome = InstancedOutcome("", "not_compiled")
 
@@ -387,7 +387,7 @@ class Pass:
         """The texture the script feeds sampler `name` this frame, or None when it feeds none.
 
         A refused field binds the sampler's existing texture -- the last frame that validated
-        -- or black when there is none, never the sampler's own source (110 D5).
+        -- or black when there is none, never the sampler's own source.
         """
         field = self.pending_textures.get(name)
         if field is None:
@@ -446,15 +446,15 @@ class Pass:
 
     @property
     def script_ready(self) -> bool:
-        # Whether the script engine may read this pass's uniforms THIS tick (069). False only while
+        # Whether the script engine may read this pass's uniforms THIS tick. False only while
         # a compile has never been ATTEMPTED — get_active_uniforms would compile it from inside the
-        # frame loop, which 066 D1 forbids, so the engine holds its keys for a tick instead. True
+        # frame loop, which is forbidden, so the engine holds its keys for a tick instead. True
         # once attempted, whether it succeeded or FAILED: a failed attempt is never retried, so
         # holding it on `program is None` would silence its keys for the life of the source.
         return self.program is not None or bool(self.compile_unit.error_raw)
 
     def get_active_uniforms(self) -> list[moderngl.Uniform | moderngl.UniformBlock]:
-        # Lazy compile (066 D1): nothing compiles at load, so the first consumer that needs
+        # Lazy compile: nothing compiles at load, so the first consumer that needs
         # the program pulls it here. A FAILED attempt is not retried — its errors stick in
         # compile_unit until invalidate() resets it (a source or lib change); render() keeps
         # its own per-call retry. Seeding rides the compile so every consumer keeps the
@@ -477,7 +477,7 @@ class Pass:
         # rendering while the error strip surfaces diagnostics. Which of the two failure
         # states this is follows from that same preservation: no `self.program` ever means
         # this pass has never once compiled clean, and keeping one means the draw that
-        # follows renders it under today's error (102 I5) -- `stale_program` names that.
+        # follows renders it under today's error -- `stale_program` names that.
         self.compile_unit = unit
         self.last_outcome = InstancedOutcome(
             "",
@@ -645,8 +645,8 @@ class Pass:
         source (`PassSource`, `NoSource`, `AutoSource`) and that `inputs` does not fill reads
         black.
 
-        `iteration` / `iterations` reach the shader as `u_pass_iteration` / `u_pass_iterations`
-        (068). The INDEX is handed over, never a value derived from it -- a `u_jfa_offset` would
+        `iteration` / `iterations` reach the shader as `u_pass_iteration` / `u_pass_iterations`.
+        The INDEX is handed over, never a value derived from it -- a `u_jfa_offset` would
         be one algorithm wearing an engine uniform's name, and the shader's own
         `iterations - 1.0 - iteration` (the cascade stack's level) is one line.
         """
@@ -659,7 +659,7 @@ class Pass:
         if not self.program or not self.vao:
             return
 
-        # A stale program (I5): the last compile attempt for the CURRENT source failed and
+        # A stale program: the last compile attempt for the CURRENT source failed and
         # `compile()` kept the old one running rather than a fresh recompile. The draw below
         # still uses it -- that is what "stale" means, the picture does not change -- but the
         # outcome it reports must stay `stale_program` rather than letting a successful draw
@@ -687,7 +687,7 @@ class Pass:
                 value.bind_to_uniform_block(uniform.index)
 
             elif getattr(uniform, "gl_type", None) == GL_SAMPLER_2D:
-                # The script's field outranks the source for this draw (110 D4); `value` stays
+                # The script's field outranks the source for this draw; `value` stays
                 # the source, so the write-back below never stores the field's texture in it.
                 script_texture = self._script_texture(uniform.name)
                 if script_texture is not None:
@@ -743,11 +743,12 @@ class Pass:
         outcome = self._upload_instances(
             instances if instances is not None else self.pending_instances
         )
-        # `no_fields` is the ENGINE's verdict (102 D4's third producer) and it is about a
-        # decision already taken: a population was offered to this pass and dropped. The
-        # draw's own answer for the same frame is `fullscreen`, which is a true
-        # description of what it drew and says nothing about the population that never
-        # reached it -- so letting it win restores exactly the silence I1 names.
+        # `no_fields` is the ENGINE's verdict (the third producer of per-frame outcomes)
+        # and it is about a decision already taken: a population was offered to this pass
+        # and dropped. The draw's own answer for the same frame is `fullscreen`, which is
+        # a true description of what it drew and says nothing about the population that
+        # never reached it -- so letting it win brings back the silent drop of an offered
+        # population.
         if not stale and self.last_outcome.state != "no_fields":
             self.last_outcome = outcome
         if outcome.state == "refused":

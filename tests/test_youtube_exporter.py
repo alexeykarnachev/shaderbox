@@ -203,7 +203,7 @@ def test_size_gate_rejects_mismatched_artifact() -> None:
     exp = YouTubeExporter()
     document_canvas: tuple[int, int] = (1920, 1080)
 
-    # The gate resolves against the size an EXPORT renders its source at (090 D5): the stored
+    # The gate resolves against the size an EXPORT renders its source at: the stored
     # pair under Fixed, the live canvas under Auto, where the document carries no pair.
     class _Document:
         def export_source_size(self) -> tuple[int, int]:

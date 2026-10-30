@@ -157,7 +157,7 @@ def sort_uniform_hashes(
 class UIDocumentState(BaseModel):
     ui_name: str = ""
 
-    # How the live render size is decided (090 D1, revision 1). Under AUTO the document owns an
+    # How the live render size is decided. Under AUTO the document owns an
     # ASPECT and no size: its live canvas is the viewer region fitted to that aspect and follows
     # every resize. Under FIXED the `resolution` pair IS the live size and the user edits it.
     # Each field is meaningful in ONE mode; the other is what a switch seeds from, so a mode
@@ -166,15 +166,15 @@ class UIDocumentState(BaseModel):
     aspect: tuple[int, int] = DEFAULT_ASPECT
     resolution: tuple[int, int] = DEFAULT_CANVAS_SIZE
     # A human/agent-facing one-line summary of what a document (esp. a shipped EXAMPLE) is for;
-    # on a shipped example's document.json it's maintainer-authored, read-only.
+    # on a shipped example's document.json it's authored with the example, read-only.
     description: str = ""
 
     render_media_details: MediaDetails = MediaDetails()
     ui_uniforms: dict[int, UIUniform] = {}
 
-    # The pass whose uniforms the Uniforms tab edits (083). "" = follow the active shader tab,
+    # The pass whose uniforms the Uniforms tab edits. "" = follow the active shader tab,
     # which is what App.panel_pass derives and what a tile click sets. A stored name is the
-    # maintainer's explicit pick from the tab's selector, and lets him tune a pass that is neither
+    # user's explicit pick from the tab's selector, and lets them tune a pass that is neither
     # open in the editor nor the one on screen. A name no pass carries falls back to the derived
     # answer rather than erroring — the same place a rename leaves it.
     panel_pass: str = ""
@@ -189,7 +189,7 @@ class UIDocumentState(BaseModel):
         default=DEFAULT_TEMPORAL_SIGMA, gt=0.0
     )
 
-    # Play/stop (feature 048; pass-qualified by 069): the (pass, uniform) pairs the user has STOPPED
+    # Play/stop, pass-qualified: the (pass, uniform) pairs the user has STOPPED
     # — frozen for manual edit. A stopped pair's script value is not applied (the script still ticks;
     # the manual value sticks). Stored as a LIST, not a set: UIDocument.save serializes via
     # model_dump() -> json.dump, which raises on a Python set. Coerced to a frozenset per-frame in
@@ -223,7 +223,7 @@ class UIDocumentState(BaseModel):
                 try:
                     UIUniform(**row)
                 except ValidationError:
-                    # Per ROW: one malformed row used to cost every
+                    # Per ROW: one malformed row must not cost every
                     # tuned value on the document, because the dict is validated as a whole.
                     logger.warning(f"Dropped unreadable uniform row '{key}'")
                     uniforms.pop(key)
@@ -261,7 +261,7 @@ class UIAppState(BaseModel):
     # which skips the save()/release() tail and costs the user their session state.
     global_target_fps: int = Field(default=60, ge=30, le=240)
 
-    # The document throttle (090 D11), beside the target fps because both are properties of the
+    # The document throttle, beside the target fps because both are properties of the
     # machine rather than of the project. Off means today's behavior: every displayed document
     # renders every frame. The budget is the share of wall time ALL documents together may take.
     is_throttle_documents: bool = True
@@ -273,7 +273,7 @@ class UIAppState(BaseModel):
     # window resize; the feed above flexes). Clamped at draw.
     copilot_input_h: float = Field(default=48.0, ge=0.0)
 
-    # The editor's open tabs and which was active (093 W2-2), mirrored from the live list by
+    # The editor's open tabs and which was active, mirrored from the live list by
     # `App.save` and restored on launch. The active tab is held by PATH, not by index: a record
     # whose file is gone is dropped on restore, which shifts every later position.
     editor_tabs: list[TabRecord] = []
@@ -291,11 +291,11 @@ class UIAppState(BaseModel):
     channel_view: ChannelView = ChannelView.COLOR
     is_copilot_open: bool = False
     copilot_layout: CopilotLayout = CopilotLayout.CORNER
-    # What the copilot does with a source edit (086). Per PROJECT and persisted, which is what
+    # What the copilot does with a source edit. Per PROJECT and persisted, which is what
     # makes it a mode the user sets once rather than a guard he re-answers every session.
     copilot_source_lock: SourceLock = SourceLock.ASK
 
-    # Keyboard rebindings (feature 018): CommandId value -> chord int. Holds ONLY
+    # Keyboard rebindings: CommandId value -> chord int. Holds ONLY
     # bindings that differ from the spec default, so "absent = default" stays
     # meaningful across saves and a future default change can reach old states.
     key_bindings: dict[str, int] = {}
@@ -341,7 +341,7 @@ def _uniform_entry(
     uniform: moderngl.Uniform | moderngl.UniformBlock,
     value: Any,
 ) -> Any:
-    """One uniform's serialized form, writing its asset under `<kind>/<pass>/` (D16)."""
+    """One uniform's serialized form, writing its asset under `<kind>/<pass>/`."""
     if getattr(uniform, "gl_type", None) == GL_SAMPLER_2D:
         # A sampler whose value is a SOURCE owns no file: a file left by a PREVIOUS bind is
         # deleted with the row (load ignores it, but it would linger on disk and ride along
@@ -426,7 +426,7 @@ class UIDocument(BaseModel):
         }
 
         # The uniform block below is rebuilt from the LIVE programs, and compiles are lazy
-        # (066 D1) — so compile on demand here, or a never-rendered document would save with
+        # — so compile on demand here, or a never-rendered document would save with
         # nothing to enumerate and every tuned value written away as {}. A pass whose SOURCE
         # is broken still has no program afterwards: its rows are carried forward from disk
         # (per pass below; the whole block here when every pass is broken).
@@ -495,8 +495,8 @@ class UIDocument(BaseModel):
             meta["ui_state"] = self.ui_state.model_dump()
 
         # ----------------------------------------------------------------
-        # Save uniforms, keyed by PASS then by uniform. Each pass owns its uniforms (D4), so two
-        # passes may both bind `u_tex`; assets are namespaced by pass for the same reason (D16),
+        # Save uniforms, keyed by PASS then by uniform. Each pass owns its uniforms, so two
+        # passes may both bind `u_tex`; assets are namespaced by pass for the same reason,
         # since a flat layout would have them overwrite each other and the sweep below would
         # delete the survivor's file.
         for pass_name, render_pass in self.document.passes.items():
@@ -547,7 +547,7 @@ class UIDocument(BaseModel):
 
         # ----------------------------------------------------------------
         # The newest frame of every feedback pass, so a self-reading document continues from
-        # where it was across a restart (089 D4). OUTSIDE the `if live:` guard above: a document
+        # where it was across a restart. OUTSIDE the `if live:` guard above: a document
         # whose source is broken still holds its seeded history and must carry it, the way its
         # uniform rows are carried forward. The files that survive are exactly the passes with
         # a history -- a feedback file is referenced by no uniform, so the asset sweep above
@@ -609,7 +609,7 @@ def _load_ui_state(ui_state_dict: dict[str, Any], dir_name: str) -> UIDocumentSt
 
 def load_document_from_dir(document_dir: Path) -> UIDocument:
     # `ui_state` is parsed FIRST, then the effective live size resolved from it and handed to
-    # the loader (090 D1): the size decides how every pass and every feedback seed is allocated,
+    # the loader: the size decides how every pass and every feedback seed is allocated,
     # so it cannot be discovered after the Document is built.
     #
     # Under AUTO the document stores no size, and the size it will RENDER at is the viewer's
@@ -655,14 +655,14 @@ def load_documents_from_dir(root_dir: Path) -> dict[str, UIDocument]:
 
 @dataclass
 class ImportDraft:
-    """The import dialog's transient state (091 D10): which source is picked, the group name
+    """The import dialog's transient state: which source is picked, the group name
     being typed, and the entry-point decisions. `rejection` is the plan's message as of the
     last drawn frame, empty while the plan is valid, so the Import button and a test read the
     same thing."""
 
     examples_tab: bool = False
     # One-shot: the tab bar selects the draft's tab on its next draw (imgui owns the selection
-    # and ignores a model-side change, /imgui-ui §8); the read-back waits until it has.
+    # and ignores a model-side change); the read-back waits until it has.
     tab_select_pending: bool = True
     source_id: str = ""
     group_buf: str = ""
@@ -673,7 +673,7 @@ class ImportDraft:
 
 @dataclass
 class PassDraft:
-    """A pass being made in the settings modal (078 D5): its name and entry live here until
+    """A pass being made in the settings modal: its name and entry live here until
     `Create` turns them into a pass; dropping the draft makes nothing."""
 
     name_buf: str = ""
@@ -684,7 +684,7 @@ class PassDraft:
 
 @dataclass(frozen=True)
 class ConfirmRequest:
-    """One destructive verb awaiting its confirm (093 W4).
+    """One destructive verb awaiting its confirm.
 
     `title` is the question, naming the verb and its target; `verb` labels the button that
     runs `on_confirm`. Built by the `App` verb, so the confirm reads the same from a menu,

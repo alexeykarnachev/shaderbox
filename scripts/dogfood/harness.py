@@ -1,13 +1,13 @@
-"""Headless dogfood harness for the copilot ENGINE (feature 026).
+"""Headless dogfood harness for the copilot ENGINE.
 
-A HAND-DRIVEN driver: a human (Claude) imports this, constructs a real `ProjectSession`
+A HAND-DRIVEN driver: a human imports this, constructs a real `ProjectSession`
 on a standalone EGL context (no App, no glfw window), drives `session.copilot` turn by
 turn against a REAL LLM, renders documents to small PNGs, and EYEBALLS them. The judge is the
 human reading the printed events / the trace transcript + looking at the rendered images —
 there are NO code assertions and no pass/fail. The point is dogfooding: surface where the
 copilot is weak, where context wastes tokens, what's missing from context.
 
-Built on feature 025's `ProjectSession` (the headless project + copilot core). Runs on ANY
+Built on `ProjectSession` (the headless project + copilot core). Runs on ANY
 display-less box where glfw can't open a window but a standalone EGL context reaches a GPU or
 software GL — a Pi (V3D), a WSL/Linux box (Mesa), a CI runner. Not Pi-specific: all it needs is
 EGL + the MESA `#version 460` overrides + `OPENROUTER_API_KEY` + network to OpenRouter.
@@ -20,7 +20,7 @@ key comes from the `OPENROUTER_API_KEY` env var (export it before running). The 
 `CopilotIntegration.model` (the in-tree default); set `OPENROUTER_MODEL` only to override it.
 
 A caller-provided `SHADERBOX_DATA_DIR` wins (the module-top `setdefault` no-ops) — that is the
-RESUME seam (feature 027): set it (+ pass `project_dir`) on the COMMAND LINE before `uv run`, never
+RESUME seam: set it (+ pass `project_dir`) on the COMMAND LINE before `uv run`, never
 in-script after import (the env block runs at import). All run artifacts live under
 `scripts/dogfood/runs/`.
 
@@ -42,13 +42,13 @@ Usage (from a REPL / chat-driven loop, with OPENROUTER_API_KEY exported):
     png = h.render()                            # 400x400 PNG of the current document
     # ...open png with Read, eyeball it...
 
-Interactive one-blocking-call-per-turn (feature 027): resume a prior run + emit a structured
+Interactive one-blocking-call-per-turn: resume a prior run + emit a structured
 JSON turn-result, so a fresh process per turn keeps full state via disk:
 
     h = DogfoodHarness.create(project_dir=Path("scripts/dogfood/runs/proj-XXXX"))
     h.send("..."); h.drive_until_idle(); h.dump(Path("scripts/dogfood/runs/turn.json"))
 
-The dogfooding station (feature 075) records a run from the trace-listener seam: after
+The dogfooding station records a run from the trace-listener seam: after
 `h.start_experiment(id, intent=, mode=)` (turn 1 only — a pointer file in the project dir carries it
 to every resumed process), each `dump()` appends the turn, its renders and one context breakdown per
 LLM request to `dogfood/runs/<id>/events.jsonl` and rebuilds the site. `note` / `end_attempt` /
@@ -67,13 +67,13 @@ from pathlib import Path
 from typing import Any
 
 # All dogfood run artifacts (data dir, per-run project dirs, JSON dumps, traces, PNGs) live
-# under scripts/dogfood/runs/ — one consolidated, gitignored home (feature 027).
+# under scripts/dogfood/runs/ — one consolidated, gitignored home.
 _RUNS_DIR = Path(__file__).resolve().parent / "runs"
 _RUNS_DIR.mkdir(parents=True, exist_ok=True)
 
 # --- env MUST be set before the shaderbox imports below (paths.app_data_dir reads it at
 # --- import time; the MESA overrides are read at EGL context creation). A caller-set
-# --- SHADERBOX_DATA_DIR wins — the resume seam (feature 027). The mkdtemp is guarded, not a
+# --- SHADERBOX_DATA_DIR wins — the resume seam. The mkdtemp is guarded, not a
 # --- setdefault default: a default argument is evaluated EAGERLY, so a resume would still cut
 # --- a stray empty runs/data-* dir it never uses. -----------------------------------------
 if not os.environ.get("SHADERBOX_DATA_DIR"):
@@ -168,7 +168,7 @@ class DogfoodHarness:
             0  # incremental JSON slice (dump) — separate from printing
         )
         self._last_render_path = ""  # echoed in the dump payload if a turn rendered
-        # The dogfooding station (075): None until start_experiment/start_attempt, or a resume
+        # The dogfooding station: None until start_experiment/start_attempt, or a resume
         # of a project whose pointer file names one. Once set, dump() records the turn.
         self.station: StationRecorder | None = None
         self._media_seen: dict[str, int] = self._media_snapshot()
@@ -272,7 +272,7 @@ class DogfoodHarness:
     def _copilot(self) -> CopilotSession:
         return self.session.copilot
 
-    # ---- the dogfooding station (feature 075) ----
+    # ---- the dogfooding station ----
 
     def start_experiment(
         self,
@@ -399,7 +399,7 @@ class DogfoodHarness:
         self._copilot.answer_gate(False)
         print("    [declined]")
 
-    # ---- FILE gate (feature 052): auto-answer a bind_media/import_document pick ----
+    # ---- FILE gate: auto-answer a bind_media/import_document pick ----
 
     def _pump_file_gate(self) -> None:
         """Auto-answer a mid-turn FILE gate (bind_media / import_document) with a CANNED asset — the
@@ -458,7 +458,7 @@ class DogfoodHarness:
         Uses the DIRECT context-thread render (`render_at` at t=0) — GL on the owning thread, no
         bridge — so it is robust on any GL backend (the bridge-marshalled `render_image` path is
         flaky under WSL software-GL: slow first-draw vs the op timeout). The COPILOT's own gated
-        `render_image` tool is exercised separately when the AGENT calls it (see /dogfood §1a) — this
+        `render_image` tool is exercised separately when the AGENT calls it — this
         helper does not need to route through it just to give the driver a PNG to look at.
         """
         return self.render_at(0.0, document_id, size=size)
@@ -472,7 +472,7 @@ class DogfoodHarness:
         shape: RenderShape = RenderShape.NATIVE,
     ) -> str:
         """Render a SHORT WebM (the deliverable a scripted animation produces) and return its
-        path so the driver can send it to the maintainer. Uses the REAL `render_video` capability — it
+        path so the driver can send it to the user. Uses the REAL `render_video` capability — it
         animates the CPU-script engine frame by frame from t=0 (the same path the agent's render_video
         rides), so a script-driven document moves across the clip. Off-thread + bridge drain like `render`.
         Keep `seconds` small — a video freezes the loop and large frames are slow on V3D, so a
@@ -554,9 +554,9 @@ class DogfoodHarness:
         return str(art.path)
 
     def render_at(self, t: float, document_id: str = "", *, size: int = 400) -> str:
-        """Tick the CPU-script engine to `t`, then render the document at that `t` to a PNG (feature
-        040 determinism check). Unlike `render` (the copilot tool, fixed at the exporter's t=0),
-        this advances the engine clock so a scripted uniform animates — the seam decision 4 needs.
+        """Tick the CPU-script engine to `t`, then render the document at that `t` to a PNG (determinism
+        check). Unlike `render` (the copilot tool, fixed at the exporter's t=0),
+        this advances the engine clock so a scripted uniform animates.
         GL runs on THIS (context-owning) thread; no bridge marshalling (no copilot worker involved).
         """
         target = document_id or self.session.current_document_id
@@ -580,7 +580,7 @@ class DogfoodHarness:
         return str(out_path)
 
     def export_at(self, t: float, document_id: str = "", *, size: int = 400) -> str:
-        """Render a document at `t` through the EXPORT-ISOLATION seam (feature 041): entering the document's
+        """Render a document at `t` through the EXPORT-ISOLATION seam: entering the document's
         `export_isolation()` (the same factory Document.render_media enters) swaps on_pre_render to a FRESH
         per-export behavior set, so a stateful script starts from a clean __init__ regardless of how
         long the live preview ran. Unlike `render_at` (the LIVE tick path), this proves export-state
@@ -723,7 +723,7 @@ class DogfoodHarness:
     def _latest_render_on_disk(self) -> str:
         # The truthful render pointer: harness renders set _last_render_path, but
         # AGENT-initiated render_image never did (and a bridge-timeout could lose it
-        # while the file still landed) — so report the newest file in renders/ (033).
+        # while the file still landed) — so report the newest file in renders/.
         renders = self.session.paths.renders_dir
         try:
             latest = max(
@@ -764,7 +764,7 @@ class DogfoodHarness:
         finally:
             self._ctx.release()
 
-    # ---- interactive (feature 027): persist + structured turn-result ----
+    # ---- interactive: persist + structured turn-result ----
 
     def dump(self, path: Path) -> dict[str, object]:
         """Persist the conversation, then write a structured JSON turn-result to `path`.
@@ -781,7 +781,7 @@ class DogfoodHarness:
         self.session.app_state.save(self.session.paths.app_state_file)
         # Persist every document (uniform VALUES live in document.json, written only on save) — without
         # this each per-turn process loses the previous turn's set_uniform values, forcing the
-        # agent to re-set them and burn its step budget (033; observed exp-1 turn 3).
+        # agent to re-set them and burn its step budget.
         for ui_document in self.session.ui_documents.values():
             self.session.save_ui_document(ui_document)
         msgs = cop.state.messages

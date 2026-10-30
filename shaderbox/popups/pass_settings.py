@@ -1,12 +1,12 @@
 """The pass-settings modal: a pass's name, how many times it runs, and the target it draws
-into (065, 068), and the one place a pass is CREATED (078 D5).
+into, and the one place a pass is CREATED.
 
 These are set-up-once choices, and as an always-open block under the strip they spent the
 panel's vertical budget on rows nobody touches after the first minute. The modal opens from a
 tile's gear, the tile's context menu, and from `add pass` — in create mode it edits a draft
 (`App.pass_draft`) that becomes a pass only on `Create`; `Cancel` or Escape makes nothing.
 What a pass READS is not here: a sampler's source is chosen on its own row of the uniforms
-panel (072).
+panel.
 """
 
 from imgui_bundle import imgui
@@ -47,7 +47,7 @@ _FORMAT_LABELS = [label for _, label, _ in _FORMATS]
 _FORMAT_CODES = [code for code, _, _ in _FORMATS]
 
 # What a blend mode MEANS, keyed off BLEND_MODES so a new mode fails loudly here rather than
-# drawing with no tooltip. `alpha` names its own ordering limitation (102 D5): additive's
+# drawing with no tooltip. `alpha` names its own ordering limitation: additive's
 # "no per-frame sort" was free because additive is order-independent, and alpha is not.
 _BLEND_DESCRIPTIONS: dict[BlendMode, str] = {
     "additive": "glow adds up, order-independent; saturates on an 8-bit target",
@@ -189,7 +189,7 @@ def _existing_groups(graph: PassGraph) -> list[str]:
 def _draw_group(
     app: App, id_: str, group: str, existing: list[str]
 ) -> tuple[str, bool]:
-    """The group row (091 D9): a field beside a picker of the document's groups. Returns the
+    """The group row: a field beside a picker of the document's groups. Returns the
     buffer as the row left it and whether it was committed this frame (Enter, leaving the
     field, or a pick)."""
     label_row(app.font_12, "group", _CTRL_W, _ROW_LABEL_W)
@@ -297,7 +297,7 @@ def _draw_target(
         new_target = new_target.model_copy(update={"wrap": tile})
 
     if is_instanced:
-        # Blend is applied only on the instanced draw path today (102 D5) -- a fullscreen
+        # Blend is applied only on the instanced draw path today -- a fullscreen
         # pass clears and draws once with nothing already in the target, so the control
         # would show and do nothing there. Hidden rather than shown-and-inert.
         label_row(app.font_12, "blend", _CTRL_W, _ROW_LABEL_W)
@@ -319,7 +319,7 @@ def _draw_target(
 
 
 def _draw_repeat(app: App, name: str, entry: PassEntry) -> PassEntry:
-    # How many times this pass draws per frame (068). Named for what it does to the picture --
+    # How many times this pass draws per frame. Named for what it does to the picture --
     # "runs" of the same shader, each seeing the one before it -- not for the model field.
     imgui.separator_text("Runs")
 

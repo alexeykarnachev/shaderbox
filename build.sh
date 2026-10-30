@@ -41,6 +41,9 @@ ROOT_FILES=(pyproject.toml uv.lock .python-version)
 # platform suffix (.so on Linux, .dll on Windows).
 NATIVE_LIBS=(editor/libeditor graph_canvas/libgraph_canvas)
 
+# Files under shaderbox/resources/ that only the repo's tests and vendoring read.
+DEV_ONLY_RESOURCES=(editor/abi_probe.py editor/vim_coverage.md editor/standard_keymap.md editor/VERSION)
+
 # Forbidden patterns — if any match in a staged tree, the build aborts.
 FORBIDDEN_NAMES=(CLAUDE.md Makefile .pre-commit-config.yaml itch-config BUILDING.md)
 FORBIDDEN_PATHS=(ai_docs .claude .github __pycache__ .git .venv .ruff_cache .mypy_cache)
@@ -59,6 +62,9 @@ stage_common() {
         else
             rm -f "$stage/shaderbox/resources/$lib.dll"
         fi
+    done
+    for lib in "${DEV_ONLY_RESOURCES[@]}"; do
+        rm -f "$stage/shaderbox/resources/$lib"
     done
     # Strip Python bytecode (stale .pyc for deleted modules must not ship).
     find "$stage/shaderbox" -type d -name __pycache__ -prune -exec rm -rf {} +
@@ -87,6 +93,9 @@ verify_clean() {
             exit 1
         }
     done
+    for name in "${DEV_ONLY_RESOURCES[@]}"; do
+        [ -e "$stage/shaderbox/resources/$name" ] && { echo "✗ FORBIDDEN dev-only resource in bundle: $name"; exit 1; }
+    done
     for name in "${FORBIDDEN_NAMES[@]}"; do
         hit="$(find "$stage" -name "$name" -print -quit)"
         [ -n "$hit" ] && { echo "✗ FORBIDDEN file in bundle: $hit"; exit 1; }
@@ -109,6 +118,8 @@ build_platform() {
 
     stage_common "$stage" "$platform"
     cp "scripts/$launcher" "$stage/"
+    # cmd.exe misparses labels in a batch file with LF endings, whatever the checkout did.
+    [ "$launcher" = "run.bat" ] && sed -i 's/\r*$/\r/' "$stage/run.bat"
     [ "$launcher" = "run.sh" ] && chmod +x "$stage/run.sh"
 
     verify_clean "$stage" "$platform"

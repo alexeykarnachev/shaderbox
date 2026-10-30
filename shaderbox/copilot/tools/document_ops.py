@@ -11,7 +11,7 @@ from shaderbox.copilot.tools.base import (
     ToolDefinition,
 )
 
-# Document file-management tools (feature 052 slice 3): rename / resize-canvas / duplicate. All mutate
+# Document file-management tools: rename / resize-canvas / duplicate. All mutate
 # document.json (checkpoint-revertable via the backend's _capture_document / mark_created), handle-addressed
 # by document id, no gate.
 

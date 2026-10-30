@@ -1,8 +1,8 @@
-"""The `K` / `F8` note's geometry (079 W-A, D1 D13).
+"""The `K` / `F8` note's geometry.
 
-The note used to be `always_auto_resize`, which imgui sizes from the PREVIOUS frame's content:
-moving `K` from one symbol to another drew the new note inside the old note's box for one frame
-and settled on the next. That is the blink the maintainer filed. The size is now measured, so a
+With `always_auto_resize` imgui would size the note from the PREVIOUS frame's content:
+moving `K` from one symbol to another would draw the new note inside the old note's box for one frame
+and settle on the next, a one-frame blink. The size is measured instead, so a
 note's box is a function of its own content and nothing else — which is what these assert.
 """
 
@@ -27,8 +27,6 @@ def _note_size(title: str, body: str, value: str = "") -> tuple[float, float]:
 
 
 def test_a_notes_size_does_not_lag_a_frame_behind_its_content(app: Any) -> None:
-    # Falsifier: restore `always_auto_resize` — the tall note's FIRST frame reports the short
-    # note's height, so `tall_first` and `tall_settled` differ.
     short = "vec3 mix(vec3 a, vec3 b, float t)"
     tall = "\n".join(f"a wrapped line of documentation number {i}" for i in range(8))
 
@@ -43,8 +41,7 @@ def test_a_notes_size_does_not_lag_a_frame_behind_its_content(app: Any) -> None:
 
 
 def test_a_long_value_is_cut_rather_than_widening_the_note(app: Any) -> None:
-    # A long array uniform's value must not overflow the note (finding 3). Falsifier: drop the
-    # `ellipsize` and the note grows past its width token.
+    # A long array uniform's value must not overflow the note.
     long_value = ", ".join(str(i / 7.0) for i in range(40))
     imgui.new_frame()
     imgui.begin("rig")
@@ -85,8 +82,7 @@ def _note_geometry(
 def test_a_note_is_tall_enough_for_every_api_docstring(app: Any) -> None:
     # `K` on `ScriptContext` clipped its last lines. imgui advances the cursor by an item's height PLUS
     # `item_spacing.y` after EVERY item, the last one included, so N items cost N gaps — the
-    # measurement counted N-1 and came up exactly one gap short. Falsifier: drop the trailing
-    # gap from any one branch and the note that uses it clips.
+    # measurement counted N-1 and came up exactly one gap short.
     padding = imgui.get_style().window_padding.y
     for name in sorted(API_NAMES):
         title, body = api_symbol_doc(name)
@@ -116,8 +112,7 @@ def test_a_tall_note_stays_on_screen(app: Any) -> None:
 def test_a_note_anchored_low_flips_above_the_caret(app: Any) -> None:
     # Capping alone keeps a note on screen but leaves it a sliver when the caret is near the
     # bottom: the room BELOW is what the cap is measured against. Flipping uses the room above
-    # instead. Falsifier: drop the flip and a note two rows from the bottom is ~40px tall rather
-    # than showing its text.
+    # instead, so a note two rows from the bottom still shows its text.
     screen = imgui.get_io().display_size.y
     tall = "\n".join(f"line {i} of a long docstring" for i in range(80))
     top, height, _, _ = _note_geometry((50.0, screen - 40.0), "Title", tall)

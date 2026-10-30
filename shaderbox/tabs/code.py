@@ -63,7 +63,7 @@ def _is_script_tab(tab: EditorTab | None) -> bool:
 
 
 def tab_label(app: App, tab: EditorTab) -> str:
-    # The display label for a tab (048): document-derived so two documents' tabs are distinguishable
+    # The display label for a tab: document-derived so two documents' tabs are distinguishable
     # ("<document> (<pass>)" / "<document> (script)"), a lib by "library - <file>". The on-disk filename is
     # the same constant for every document, so the bare name can't tell tabs apart. Falls back to a short
     # id slice when the document has no name. The imgui ##id keys on the stable path, NOT this label.
@@ -79,14 +79,14 @@ def tab_label(app: App, tab: EditorTab) -> str:
     if tab.kind == "script":
         return f"{document_name} (script)"
     # Before the pass fallthrough: a graph tab's path is `graph.json`, on which
-    # `pass_name_of` would answer a filename rather than a pass (093 T1).
+    # `pass_name_of` would answer a filename rather than a pass.
     if tab.kind == "graph":
         return f"{document_name} (graph)"
     return f"{document_name} ({pass_name_of(tab.path)})"
 
 
 def _draw_tab_row(app: App) -> None:
-    # The editor's tab row (047): a native imgui tab bar — drag-reorder, x-close, unsaved dot, an
+    # The editor's tab row: a native imgui tab bar — drag-reorder, x-close, unsaved dot, an
     # error-tinted tab, and overflow scroll + a ▾ list popup. Labels come from tab_label, the one
     # funnel this row and the chrome both use.
     # A genuine click is read back into active_tab_index; a PROGRAMMATIC switch (glyph open /
@@ -208,9 +208,9 @@ def _pass_for_tab(app: App, tab: EditorTab) -> Pass | None:
 
 def _script_errors_for(app: App, tab: EditorTab) -> list[ShaderError]:
     # Adapt the active script tab's engine errors into the shader-error shape so they render through
-    # the SAME bottom strip as compile errors (045 decision 7), click-to-jump into the script file.
+    # the SAME bottom strip as compile errors, click-to-jump into the script file.
     # The script is ONE file, so its tab shows EVERY soft error whatever pass it names — its author
-    # wants all of them — each prefixed with the pass it concerns (069).
+    # wants all of them — each prefixed with the pass it concerns.
     out: list[ShaderError] = []
     status = app.session.get_script_status(tab.document_id)
     if status is not None:
@@ -227,7 +227,7 @@ def _script_errors_for_pass(
     app: App, tab: EditorTab, pass_name: str
 ) -> list[ShaderError]:
     # The script's soft errors that name THIS shader tab's pass, shown under the pass's own compile
-    # errors (069). No pass prefix — the tab already says which pass it is. The rows carry the SCRIPT
+    # errors. No pass prefix — the tab already says which pass it is. The rows carry the SCRIPT
     # path, not the shader's, because that is where the fix is; the click branch opens it first (a
     # jump request for a non-current file is discarded as stale). The sentinel stays on the script
     # tab: it belongs to no pass, and repeating it on every shader tab is noise.
@@ -327,7 +327,7 @@ def _consume_jump(app: App, editor: Editor, current_path: Path) -> bool:
 
 
 def _visible_error_rows(app: App, n: int) -> int:
-    # How many error rows the strip shows: all of them when expanded (047 F6), else capped.
+    # How many error rows the strip shows: all of them when expanded, else capped.
     return n if app.errors_expanded else min(n, _MAX_ERROR_ROWS)
 
 
@@ -339,7 +339,7 @@ def _draw_error_strip(
     caret_line: int,
 ) -> None:
     # The caret's own error row draws selected, so the line under the cursor and its message
-    # in the strip read as one thing (078 D3); the popup is `F8`'s alone.
+    # in the strip read as one thing; the popup is `F8`'s alone.
     at_caret = error_at_line(errors, caret_line)
     imgui.push_style_color(imgui.Col_.child_bg, COLOR.BG_SURFACE)
     if imgui.begin_child("##shader_errors", size=(0.0, height)):
@@ -364,7 +364,7 @@ def _draw_error_strip(
                     app.open_script_for(tab.document_id)
                 app.editor_jump_request = JumpRequest(err.path, err.line, 0)
         if n > _MAX_ERROR_ROWS:
-            # Clickable toggle (F6): expand to all errors / collapse back to the cap.
+            # Clickable toggle: expand to all errors / collapse back to the cap.
             extra = n - _MAX_ERROR_ROWS
             more = "show less" if app.errors_expanded else f"+{extra} more"
             imgui.push_style_color(imgui.Col_.text, COLOR.FG_DIM)
@@ -422,14 +422,14 @@ def _feed_classes(editor: Editor, index: GlslIndex) -> None:
 
 @dataclass
 class PythonFeed:
-    """One script buffer's semantic-colour state (105 D6).
+    """One script buffer's semantic-colour state.
 
     The GLSL half is synchronous -- `_glsl_index_for` builds the index and `_feed_classes`
     pushes it in one call, so "index rebuilt" and "classes fed" are the same instant. Python
     cannot be: the word table is cheap and immediate, but the spans come off a worker thread
     frames later, so the two halves need their own fingerprints and their own revision.
 
-    `revision` is what `render_state` reads (105 D3). It counts PUSHES, not edits: the editor
+    `revision` is what `render_state` reads. It counts PUSHES, not edits: the editor
     reports nothing that moves when colour is fed while the text stands still, so an answer
     landing on an idle buffer would otherwise never be painted."""
 
@@ -447,7 +447,7 @@ class PythonFeed:
     # The revision a SPANS request is out for, so a burst asks once rather than per frame.
     requested_revision: int | None = None
     # The revision this path was seen at on the PREVIOUS frame. A revision that survives a
-    # frame is a buffer that stopped moving, which is the debounce (105 D3).
+    # frame is a buffer that stopped moving, which is the debounce.
     idle_revision: int | None = None
 
 
@@ -460,7 +460,7 @@ def _feed_entry(path: Path, editor: Editor) -> PythonFeed:
 
 
 def feed_python_word_classes(editor: Editor, feed: PythonFeed, text: str) -> bool:
-    """Push `self`, `cls` and the dunders, and say whether anything was pushed (105 D6).
+    """Push `self`, `cls` and the dunders, and say whether anything was pushed.
 
     This is `_feed_classes`'s Python counterpart, and it needs to exist rather than reusing
     it: `classes()` is defined on `GlslIndex` and filters five GLSL-only kinds, so there was
@@ -481,7 +481,7 @@ def feed_python_word_classes(editor: Editor, feed: PythonFeed, text: str) -> boo
 
 
 def accept_python_spans(editor: Editor, feed: PythonFeed, result: PythonResult) -> bool:
-    """Push a SPANS answer, and let the LIBRARY decide whether it is still current (105 D3b).
+    """Push a SPANS answer, and let the LIBRARY decide whether it is still current.
 
     DROP-AND-RE-REQUEST, and the library makes it the only option: `ed_set_spans` takes the
     `ed_revision` the text was read at and returns 1 applied, 0 that revision is no longer
@@ -496,7 +496,7 @@ def accept_python_spans(editor: Editor, feed: PythonFeed, result: PythonResult) 
     could disagree and only the library's answer decides what got drawn.
 
     An applied set is ANCHORED and follows edits until the next push, so the "colour drops to
-    plain for the whole burst" regime the spec predicted does not happen: between an edit and
+    plain for the whole burst" regime does not happen: between an edit and
     the debounced answer the previous set keeps colouring the characters it named."""
     feed.requested_revision = None
     applied = editor.set_spans(
@@ -533,7 +533,7 @@ def _python_feed_for(app: App, editor: Editor, tab: EditorTab) -> PythonFeed:
 def _request_python_spans(
     app: App, tab: EditorTab, text: str, revision: int, feed: PythonFeed
 ) -> None:
-    # Debounced to buffer-idle (105 D3/D3a), which is why this asks on a revision the frame
+    # Debounced to buffer-idle, which is why this asks on a revision the frame
     # BEFORE also saw. The justification is LATENCY, not staleness: an applied span set is
     # anchored and follows edits, so nothing blinks off mid-burst and there is no stale-answer
     # problem to debounce away. What there is: a SPANS job costs 8.17 ms and a COMPLETE job
@@ -686,7 +686,7 @@ def _pump_python(app: App, editor: Editor, tab: EditorTab) -> None:
     for result in worker.poll():
         request = result.request
         if request.kind == PythonRequestKind.SPANS:
-            # Caret-blind (105 D4): spans describe the TEXT, so an arrow key between the
+            # Caret-blind: spans describe the TEXT, so an arrow key between the
             # request and the answer must not throw away a correct set. The PATH still has to
             # agree -- the worker is shared across tabs, and pushing one buffer's spans into
             # another's handle would colour arbitrary characters. Staleness is the library's
@@ -748,7 +748,7 @@ def _drive_completion(app: App, editor: Editor, tab: EditorTab) -> None:
     # Host-driven autocomplete (pushing IS opening; the built-in buffer-word source is
     # suppressed at session creation, so the popup shows only what the providers say).
     # Three ways in: the deliberate Ctrl+N / Ctrl+P (explicit), a keystroke in insert mode
-    # that changed the buffer (auto, 073 W-B), and a re-filter while the popup stays open
+    # that changed the buffer (auto), and a re-filter while the popup stays open
     # and the prefix moves. Runs BEFORE layout so the popup primitives appear the same frame.
     _pump_python(app, editor, tab)
     revision = editor.get_undo_index()
@@ -758,11 +758,11 @@ def _drive_completion(app: App, editor: Editor, tab: EditorTab) -> None:
         app.editor_completion_requested = False
         _offer_completion(app, editor, tab, explicit=True)
     elif editor.complete_open():
-        # The popup now SURVIVES a typed character while the caret stays in the word it
-        # opened on (editor b2080f2), so this is the re-filter and no longer a reopen: only
+        # The popup SURVIVES a typed character while the caret stays in the word it
+        # opened on, so this is the re-filter, not a reopen: only
         # a moved prefix re-offers, and a keystroke with nothing new to say leaves the popup
         # alone. Re-offering unconditionally would rebuild the list per keystroke, since
-        # `complete_begin` means "new list" -- which is the blink the branch here used to be.
+        # `complete_begin` means "new list" -- which would blink.
         prefix = editor.complete_prefix()
         if prefix != app.editor_completion_prefix:
             _offer_completion(app, editor, tab, explicit=not app.editor_completion_auto)
@@ -828,7 +828,7 @@ def _note_uniform(
     if edited is None or ui_document is None or word not in edited.uniform_values:
         return "", None
     if word in edited.pending_textures:
-        # The script's field binds over the source this frame (110 D4); a field refused before
+        # The script's field binds over the source this frame; a field refused before
         # any frame validated draws black, so there is no picture to show.
         return "", edited.script_textures.get(word)
     document = ui_document.document
@@ -915,7 +915,7 @@ def _offer_completion(app: App, editor: Editor, tab: EditorTab, explicit: bool) 
 def draw_chrome(app: App) -> None:
     # Host things only: the active tab's file + dirty/compiled state + Open dir.
     # The mode badge, the ruler and the `:`/`/`/`?` line are drawn by the library
-    # inside the editor rect (feature 069 W-F).
+    # inside the editor rect.
     tab = app.active_tab
     if tab is None:
         imgui.text_colored(COLOR.FG_DIM, "No file open")
@@ -1029,7 +1029,7 @@ def layout_following_cursor(
 
 
 def _draw_graph_tab(app: App, tab: EditorTab) -> None:
-    """A graph tab's body: the pane's focus bookkeeping, then the canvas (093 T2).
+    """A graph tab's body: the pane's focus bookkeeping, then the canvas.
 
     Setting `editor_focused` is what makes `Ctrl+W` close this tab and `Ctrl+Tab` cycle onto
     it. The error list is cleared because a graph tab has none, and a stale one from the
@@ -1060,7 +1060,7 @@ def draw(app: App) -> None:
 
     tab = app.active_tab
     # Before the `ui_document is None` guard: a graph tab of a NON-current document must
-    # still draw, and it needs no editor session at all (093 T2).
+    # still draw, and it needs no editor session at all.
     if tab is not None and tab.kind == "graph":
         _draw_graph_tab(app, tab)
         return
@@ -1073,9 +1073,8 @@ def draw(app: App) -> None:
 
     session = app.editor_sessions.get(current_path)
     if session is None:
-        # Always keyed by the TAB's own path. A shader tab used to load the document's output
-        # pass instead, which was the same file back when a document had one — with several it
-        # meant every pass tab showed the output's source.
+        # Always keyed by the TAB's own path: with several passes, loading the document's output
+        # pass instead would show the output's source in every pass tab.
         session = (
             app.open_shader_lib_file(current_path)
             if tab.kind == "lib"
@@ -1089,7 +1088,7 @@ def draw(app: App) -> None:
     editor.set_read_only_enabled(app.copilot_turn_active)
 
     # The error strip shows the active tab's errors in ONE place + style: a shader/lib tab's
-    # compile errors, or a script tab's engine errors adapted to the same shape (045 decision 7).
+    # compile errors, or a script tab's engine errors adapted to the same shape.
     # Compile errors FIRST: a shader that does not compile is why nothing else works, and the strip
     # caps its visible rows, so the ordering decides what an unexpanded strip shows.
     errors = (
@@ -1116,7 +1115,7 @@ def draw(app: App) -> None:
         n = len(errors)
         # The rows actually drawn: the "N errors" header (n>1) + the visible error rows (capped or
         # all when expanded) + the "+N more"/"show less" toggle (n>_MAX). Matches _draw_error_strip
-        # exactly, so no dead trailing row (047 F5).
+        # exactly, so no dead trailing row.
         rows = (n > 1) + _visible_error_rows(app, n) + (n > _MAX_ERROR_ROWS)
         # Measure in the strip's own font (font_12), not the ambient UI font.
         imgui.push_font(app.font_12, app.font_12.legacy_size)
@@ -1185,7 +1184,7 @@ def draw(app: App) -> None:
     # button focuses the child on click.
     focused = imgui.is_window_focused(imgui.FocusedFlags_.child_windows)
 
-    # View reconciliation, then layout (editor 4b110f0): apply a keymap-issued
+    # View reconciliation, then layout: apply a keymap-issued
     # view scroll (Ctrl+E/Y, zz/zt/zb — consumed by reading), then follow the
     # cursor when a MOTION or an EDIT moved it outside the view (Ctrl+D, a jump,
     # plain j below the fold, `o` on the last line; ed_layout clamps but never
@@ -1271,9 +1270,9 @@ def draw(app: App) -> None:
         app.editor_focused = False
         app.editor_was_ever_focused = False
 
-    # Drive the glfw cursor directly — imgui cursors are no-op here (conventions.md ## Known
-    # quirks). is_item_hovered respects popup-blocking. NOT over the editor when the floating
-    # chat is hovered: it owns its own cursor.
+    # Drive the glfw cursor directly — imgui cursors are no-op here. is_item_hovered
+    # respects popup-blocking. NOT over the editor when the floating chat is hovered: it
+    # owns its own cursor.
     cursor_over_editor = hovering and not app.copilot_hovered
     if cursor_over_editor:
         app.want_cursor = app.ibeam_cursor

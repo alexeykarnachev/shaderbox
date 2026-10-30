@@ -60,7 +60,7 @@ class CommandCategory(StrEnum):
     """The menu a command lives under. One per OBJECT the verb acts on, in the order a
     desktop app's bar reads: the app's files and its settings, the open document, its
     passes, the code editor, what is shown, and help. The same grouping is the cheatsheet's,
-    the rebinder's and the documentation modal's (`ai_docs/features/093_refinement/06_command_system.md`)."""
+    the rebinder's and the documentation modal's."""
 
     FILE = "File"
     DOCUMENT = "Document"
@@ -75,7 +75,7 @@ CATEGORY_ORDER: list["CommandCategory"] = list(CommandCategory)
 
 class CommandScope(StrEnum):
     # A scope names the surface a command belongs to; each surface then reads it with the
-    # test its own input model allows, so the two gates differ ON PURPOSE (093 M2). A CHORD
+    # test its own input model allows, so the two gates differ ON PURPOSE. A CHORD
     # fires on focus (hotkeys.spec_eligible), which the keyboard has. A MENU ITEM enables on
     # the surface merely being open (menus.menu_enabled), because the click that opened the
     # menu has already cleared the focus a chord reads -- so the focus test would grey out
@@ -203,8 +203,8 @@ COMMAND_SPECS: list[CommandSpec] = [
     ),
     CommandSpec(CommandId.JUMP_NEXT_ERROR, "Next error", _chord(K.f8), C.EDITOR),
     # Ctrl+Tab is ours: imgui's built-in window-cycle needs nav_enable_keyboard, which is
-    # off app-wide (069 W-E D4). WindowFlags_.no_nav_focus on the main window and the chat
-    # keeps it that way if nav is ever turned back on. Scope GLOBAL on purpose (071 D8): the
+    # off app-wide. WindowFlags_.no_nav_focus on the main window and the chat
+    # keeps it that way if nav is ever turned back on. Scope GLOBAL on purpose: the
     # handler focuses an unfocused editor first and cycles only while focused.
     CommandSpec(
         CommandId.CYCLE_CODE_TAB,
@@ -303,19 +303,18 @@ def command_label(command_id: CommandId) -> str:
     return SPEC_BY_ID[command_id].label
 
 
-# The vim keymap's leader sequences (editor da8a850): `<leader>` plus a key, claimed from the
+# The vim keymap's leader sequences: `<leader>` plus a key, claimed from the
 # editor and arriving back as a command id. The editor's registry is int-keyed and opaque to
 # it, so the id is this list's INDEX -- stable for a session, never persisted, and never the
 # StrEnum's name, which would need a string across the ABI for nothing.
 #
 # The leader is a setting only in the sense that the editor takes it as one; nothing exposes
-# it yet (the maintainer's call: a rebinding UI is a separate feature). Space is vim's usual
-# choice and the maintainer's own.
+# it yet (a rebinding UI is a separate feature). Space is vim's usual choice.
 DEFAULT_LEADER: str = " "
 
 # Command reached by `<leader><key>`. A new sequence is a row here, not new code.
 LEADER_BINDINGS: list[tuple[str, CommandId]] = [
-    # Matches the maintainer's nvim, where `<leader>f` is conform.nvim's format. The
+    # Matches nvim, where `<leader>f` is conform.nvim's format. The
     # registry chord (Ctrl+Shift+I) keeps working -- this is a second way in, not a move.
     ("f", CommandId.FORMAT_BUFFER),
 ]

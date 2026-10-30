@@ -1,4 +1,4 @@
-"""The host's line markers survive edits (078, the maintainer's Ctrl+Shift+I finding): the
+"""The host's line markers survive edits: the
 library moves a marker with the text it marks, so a whole-buffer replace that keeps the cursor
 on its line must still re-push the cursor-line band."""
 
@@ -69,7 +69,7 @@ def test_the_cursor_band_follows_dd_then_u() -> None:
 def test_a_dirty_buffer_carries_no_error_markers() -> None:
     # An error's line is the line at the last COMPILE, and the host re-pushes those numbers on
     # every edit, so a band would sit on whatever code has since moved under it. Typing above
-    # an error is the case the maintainer reported twice. Dropping them while dirty is the
+    # an error is the common case. Dropping them while dirty is the
     # whole fix: the compiler has not seen the new text, so no better line exists to move to.
     errors = [ShaderError(Path("x.glsl"), 3, "undefined variable")]
     assert _errors_worth_marking(errors, buffer_is_dirty=False) == errors

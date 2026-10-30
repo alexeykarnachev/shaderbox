@@ -1,4 +1,4 @@
-"""In-app help content as DATA (feature 055).
+"""In-app help content as DATA.
 
 Sections are built at call time so the two generated ones — engine uniforms and keyboard shortcuts —
 read their facts from the code that owns them (`ENGINE_DRIVEN_UNIFORMS`, `COMMAND_SPECS`) instead of
@@ -22,7 +22,7 @@ from shaderbox.engine_uniforms import ENGINE_DRIVEN_UNIFORMS, ENGINE_UNIFORM_TYP
 from shaderbox.glyph_tables import TABLE_UNIFORMS
 from shaderbox.instanced import MODE_UNIFORM, QUAD_VARYING
 
-# `vs_uv` is D4's other user-facing name, documented in the shader-skeleton section's prose
+# `vs_uv` is the other user-facing instanced name, documented in the shader-skeleton section's prose
 # (it is the ORDINARY pass's own varying) rather than in `INSTANCED_VOCAB_DOCS`, which names
 # only the INSTANCED vocabulary. Read together the two dicts cover `USER_FACING_NAMES`, which
 # is what tests/test_help_content.py checks; this constant is the seam the test reads instead
@@ -52,9 +52,9 @@ ENGINE_UNIFORM_DOCS: dict[str, str] = {
 
 
 def user_facing_engine_uniforms() -> set[str]:
-    # `sb_instanced` (103 D4a) is engine machinery like the glyph tables: generated into an
+    # `sb_instanced` is engine machinery like the glyph tables: generated into an
     # instanced pass's vertex stage, never hand-declared by an author, so it is excluded the
-    # same way TABLE_UNIFORMS is -- an author who declares it is refused (104 D4).
+    # same way TABLE_UNIFORMS is -- an author who declares it is refused.
     return set(ENGINE_DRIVEN_UNIFORMS) - set(TABLE_UNIFORMS) - {MODE_UNIFORM}
 
 
@@ -81,7 +81,7 @@ def _engine_uniform_section() -> HelpSection:
 
 # The user-facing instanced-pass vocabulary, documented here rather than folded into the
 # engine-uniform section: `vs_quad` is an `in` VARYING, not a `uniform {type} {name};` row,
-# so it does not fit that section's shape. `vs_uv` is the other name in D4's user-facing
+# so it does not fit that section's shape. `vs_uv` is the other name in the user-facing
 # set — it stays documented in the shader-skeleton section's prose (it is the ORDINARY
 # pass's own varying, not instanced vocabulary), so this section names only what
 # `user_facing_engine_uniforms`-shaped rows cannot: `QUAD_VARYING`.
@@ -91,7 +91,7 @@ INSTANCED_VOCAB_DOCS: dict[str, str] = {
 
 
 def documented_instanced_names() -> set[str]:
-    """Every D4 user-facing instanced name this module documents, across both homes:
+    """Every user-facing instanced name this module documents, across both homes:
     `INSTANCED_VOCAB_DOCS` and the shader-skeleton section's prose. Compared against
     `instanced.USER_FACING_NAMES` by the covering test, the same shape
     `user_facing_engine_uniforms()` gives the engine-uniform gate."""

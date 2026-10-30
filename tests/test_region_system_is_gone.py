@@ -1,4 +1,4 @@
-"""The 019 region system is gone (069 W-E D4), and the flags that outlived it stayed.
+"""The region system is gone, and the flags that outlived it stayed.
 
 Two halves. The NEGATIVE one greps for retired names, which pyright cannot see inside a
 comment or a string. The POSITIVE one asserts that every container reaching a Tab stop still
@@ -19,7 +19,7 @@ WHAT IT COVERS, measured rather than claimed: of the five `no_nav_inputs` sites,
 flag from `ui.py`'s `document_settings` or from `copilot_chat.py`'s `_WINDOW_FLAGS` turns this
 test red. The other three -- `code_editor`, `copilot_bar`, `document_preview_grid` -- stay
 green, because none of them contains a Tab stop TODAY: the editor is a rendered image, the bar
-holds only buttons, and `preview_cell` holds a `selectable`. That is not a hole in the walk,
+holds only buttons, and `preview_cell` holds a `selectable`. That is not a hole in the traversal,
 it is the truth about those containers, and it follows from a second measurement: with
 `nav_enable_keyboard` OFF, Tab lands only on text-entry widgets (`_FOCUSABLE`), never on
 `button` / `checkbox` / `combo` / `selectable`. So those three flags are defensive -- they
@@ -211,8 +211,8 @@ def _resolve_flags(
 def _table_callees(tree: ast.Module) -> dict[str, set[str]]:
     """Table name -> the function references parked in it. `ui.py`'s `_NODE_TABS` holds one
     `<tab>.draw` per `DocumentTab` member, which the panel invokes as `draw_tab(app)` after
-    unpacking the table -- a name the walk can never resolve by itself, and the only route from
-    `document_settings` to the uniform sliders (`uniforms_tab.draw` since 083). Keyed by table so
+    unpacking the table -- a name the traversal can never resolve by itself, and the only route from
+    `document_settings` to the uniform sliders (`uniforms_tab.draw`). Keyed by table so
     a container inherits only the tables it actually iterates."""
     out: dict[str, set[str]] = {}
     for node in ast.walk(tree):
@@ -290,11 +290,11 @@ def _descendants(body: list[ast.stmt]) -> set[int]:
     return {id(node) for stmt in body for node in ast.walk(stmt)}
 
 
-# --------------------------------------------------------------- the reachability walk
+# --------------------------------------------------------------- the reachability traversal
 
 _MAX_DEPTH = 6
 
-# A callee that opens its own TOP-LEVEL window or popup starts a new Tab ring, so the walk
+# A callee that opens its own TOP-LEVEL window or popup starts a new Tab ring, so the traversal
 # stops there: the main window "reaches" the emoji picker's input only through
 # `draw_emoji_picker`, whose `modal_window` is a separate popup the caller's flag cannot
 # reach. A nested `begin_child` is NOT a boundary -- it inherits the ancestor's

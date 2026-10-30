@@ -1,6 +1,6 @@
-"""A document round-trips its graph, its passes and its per-pass assets (065 stage 4).
+"""A document round-trips its graph, its passes and its per-pass assets.
 
-The spec's persistence checks 10-12. `graph.json` is app-written derived state, so the salvage is
+`graph.json` is app-written derived state, so the salvage is
 per KEY: a malformed pass entry costs that pass's wiring, never the document, and a document that
 loads unwired still opens with its shaders intact — which is what makes it fixable.
 
@@ -81,7 +81,7 @@ def _image(path: Path, color: tuple[int, int, int]) -> Path:
 
 
 def test_a_graph_round_trips_every_field(tmp_path: Path) -> None:
-    # `blend` sits away from its own default (`additive`) on purpose (102 D5b): a field left
+    # `blend` sits away from its own default (`additive`) on purpose: a field left
     # at its default round-trips whether or not this test's enumeration mentions it at all,
     # which is exactly the gap that let a new TargetConfig field ship unpinned.
     non_default_blend: BlendMode = next(
@@ -142,8 +142,8 @@ def test_a_graph_round_trip_fails_if_a_target_field_is_dropped(tmp_path: Path) -
 def test_a_corrupt_position_costs_that_position_and_nothing_else(
     tmp_path: Path,
 ) -> None:
-    # 092 D6. Through `load_graph`, never `load_model` (a pass NAME reads as an unknown key
-    # to the generic walker). Falsifier: validate the entry whole -- `iterations` goes too.
+    # Through `load_graph`, never `load_model` (a pass NAME reads as an unknown key
+    # to the generic walker).
     path = tmp_path / GRAPH_JSON_BASENAME
     path.write_text(
         json.dumps(
@@ -176,7 +176,7 @@ def test_a_document_round_trips_its_graph_and_passes(
     _write_document(document_dir, {"a": _PLAIN, "b": _SAMPLER}, graph)
     loaded = load_document_from_dir(document_dir)
     loaded.document.render_pass.uniform_values["u_amount"] = 0.75
-    # The source is a uniform row (072): `u_tex` names no pass, so the wire is an explicit one.
+    # The source is a uniform row: `u_tex` names no pass, so the wire is an explicit one.
     loaded.document.render_pass.uniform_values["u_tex"] = PassSource("a")
     loaded.save(document_dir.parent, document_dir.name, rebind=False)
 
@@ -273,7 +273,7 @@ def test_an_unknown_graph_key_is_dropped_and_the_rest_survives(
 def test_a_malformed_pass_file_costs_that_pass_not_the_document(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
-    # D14. A pass whose SOURCE does not compile is still a pass — it loads and reports its error.
+    # A pass whose SOURCE does not compile is still a pass — it loads and reports its error.
     # The document is only lost when it has no readable pass file at all.
     document_dir = tmp_path / "doc"
     _write_document(document_dir, {"ok": _PLAIN, "broken": "this is not glsl at all"})
@@ -309,7 +309,7 @@ def test_a_graph_entry_naming_a_missing_file_is_dropped(
 def test_two_passes_binding_the_same_sampler_name_keep_separate_media(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
-    # D16: with uniforms pass-scoped, a FLAT asset layout would have the two `u_tex` files
+    # With uniforms pass-scoped, a FLAT asset layout would have the two `u_tex` files
     # overwrite each other and the orphan sweep would delete the survivor's.
     document_dir = tmp_path / "doc"
     _write_document(
@@ -341,8 +341,7 @@ def test_two_passes_binding_the_same_sampler_name_keep_separate_media(
 def test_the_orphan_sweep_is_scoped_to_one_pass(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
-    # A save must not reach into a sibling pass's asset dir. Falsifier: a sweep keyed by asset
-    # NAME alone deletes `right/u_tex.png` because `left` no longer references that name.
+    # A save must not reach into a sibling pass's asset dir.
     document_dir = tmp_path / "doc"
     _write_document(
         document_dir,
@@ -452,7 +451,6 @@ def test_a_corrupt_document_json_costs_its_metadata_not_the_document(
     # `relative_to` raised inside a draw call. The app's own saves are not atomic, so it can
     # produce exactly this file by dying mid-write.
     #
-    # Falsifier: restore the bare `json.load` and every case below raises.
     source = (
         Path(__file__).resolve().parent.parent
         / "shaderbox"
@@ -471,7 +469,6 @@ def test_a_corrupt_document_json_costs_its_metadata_not_the_document(
 
 
 def test_a_group_round_trips_and_an_absent_key_reads_empty(tmp_path: Path) -> None:
-    # 091 D1. Falsifier: rebuild the entry from a fresh `PassEntry()` on load.
     grouped = PassGraph(
         output="a", passes={"a": PassEntry(group="fx"), "b": PassEntry()}
     )

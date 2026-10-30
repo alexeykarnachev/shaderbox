@@ -11,7 +11,7 @@ from shaderbox.copilot.tools.base import (
 )
 from shaderbox.pass_graph import MAX_ITERATIONS
 
-# The pass list's verbs for the copilot (feature 076): add / configure / delete a pass of a
+# The pass list's verbs for the copilot: add / configure / delete a pass of a
 # multi-pass document. All lazy (the long tail beside the document-file ops), handle-addressed by
 # document id; delete is gated. A pass's SOURCE is edited through the ordinary edit tools at its
 # `<id>#<name>` address — these tools only shape the graph around it.

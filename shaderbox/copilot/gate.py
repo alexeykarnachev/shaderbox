@@ -14,10 +14,8 @@ class GateKind(StrEnum):
     CONFIRM = auto()  # a Yes/No confirmation
     CREDENTIAL = auto()  # an inline secret field for a missing integration key
     CONFIG = auto()  # an inline integration setup panel (reuses the exporter's draw_config_ui) + Cancel
-    FILE = (
-        auto()
-    )  # a native OS file picker (feature 052); its own channel slot, drawn UI-side
-    SOURCE_LOCK = auto()  # the source lock's own card (083): Allow / Deny, not Yes/No
+    FILE = auto()  # a native OS file picker; its own channel slot, drawn UI-side
+    SOURCE_LOCK = auto()  # the source lock's own card: Allow / Deny, not Yes/No
 
 
 @dataclass(frozen=True)
@@ -35,7 +33,7 @@ class GateRequest:
 
 
 class SourceLock(StrEnum):
-    # What the copilot does with a source edit (086): a MODE the user sets, shown as one cycling
+    # What the copilot does with a source edit: a MODE the user sets, shown as one cycling
     # chip in the chat's top bar and persisted per project. READ_ONLY is not a refusal -- the
     # source tools are absent from the request and the prompt says so, so there is nothing to
     # refuse. Distinct from LockAnswer.DENY below, which IS a refusal and keeps that name.
@@ -45,7 +43,7 @@ class SourceLock(StrEnum):
 
 
 class LockAnswer(StrEnum):
-    # A SOURCE_LOCK gate's two answers (083, cut to two by 086). The card asks about the call in
+    # A SOURCE_LOCK gate's two answers. The card asks about the call in
     # front of you; the HORIZON is the mode, set on the top bar rather than while an agent blocks.
     # Kept off `approved` because DENY also latches for the rest of the turn.
     ALLOW = auto()
@@ -89,7 +87,7 @@ class GateChannel:
         # the copilot stays latched and every later turn is queued and never runs.
         self._lock: threading.Lock = threading.Lock()
         self._generation: int = 0
-        # FILE gate: a SEPARATE slot (feature 052). A FILE gate is raised mid-`execute` (no
+        # FILE gate: a SEPARATE slot. A FILE gate is raised mid-`execute` (no
         # AgentGateOpened yield), so it can't ride the CONFIRM/CREDENTIAL `_pending`/`take_pending`
         # path (which pump_events drives off that yield); the UI polls this slot every frame instead.
         self._file_pending: queue.Queue[_GatePending] = queue.Queue()
@@ -130,7 +128,7 @@ class GateChannel:
         self._current = None
 
     def ask_file(self, request: GateRequest) -> GateResponse:
-        # WORKER THREAD (feature 052). Enqueue a FILE request onto its own slot + block until the UI
+        # WORKER THREAD. Enqueue a FILE request onto its own slot + block until the UI
         # poll answers or cancel fires.
         with self._lock:
             generation = self._generation
@@ -144,21 +142,21 @@ class GateChannel:
         return pending.response
 
     def take_file_pending(self) -> GateRequest | None:
-        # MAIN THREAD (feature 052). The next FILE request awaiting the OS picker, or None.
+        # MAIN THREAD. The next FILE request awaiting the OS picker, or None.
         try:
             return self._file_pending.get_nowait().request
         except queue.Empty:
             return None
 
     def file_gate_active(self) -> bool:
-        # MAIN THREAD (feature 052). True while a worker is blocked on a FILE pick. Goes False the
+        # MAIN THREAD. True while a worker is blocked on a FILE pick. Goes False the
         # instant cancel_all fires (Stop/reset) — the UI poll checks this so a dialog still open when
         # the turn was cancelled is ABANDONED (its late pick never mutates a document, never mis-wires the
         # next turn's gate).
         return self._file_current is not None
 
     def answer_file(self, response: GateResponse) -> None:
-        # MAIN THREAD (feature 052). Fill the current FILE pending + unblock the worker. A late answer
+        # MAIN THREAD. Fill the current FILE pending + unblock the worker. A late answer
         # after cancel_all is a no-op (the guard below), so a pick that lands after Stop is dropped.
         pending = self._file_current
         if pending is None:

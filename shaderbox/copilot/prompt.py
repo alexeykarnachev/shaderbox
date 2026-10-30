@@ -15,7 +15,7 @@ from shaderbox.copilot.prompt_context import CopilotContext
 # Threshold-only char->token ratio (no in-tree tokenizer; real counts arrive only post-send).
 # Measured against 475 billed requests across seven models: the implied divisor is 3.39-3.85, so 4
 # under-counts real input by ~11% — the unsafe direction for a budget check. Deliberately ungated
-# (081 D14): a band test on the constant asserts the number back at itself. What would be worth
+# A band test on the constant asserts the number back at itself. What would be worth
 # pinning is that this module and context_breakdown share ONE value, which the import already makes
 # structural.
 CHARS_PER_TOKEN: float = 3.6
@@ -307,7 +307,7 @@ def _sanitize(text: str) -> str:
     return "".join(c for c in text if ord(c) not in _CONTROL_CHARS)
 
 
-# Appended to the project block ONLY when the source tools are withheld (086). A FACT about this
+# Appended to the project block ONLY when the source tools are withheld. A FACT about this
 # session's capabilities, on the channel the model already reads -- not a standing rule, which is
 # why it is absent in every other mode rather than a permanent clause everyone pays for.
 _READ_ONLY_NOTICE = (
@@ -359,7 +359,7 @@ def _render_working_set_member(view: WorkingSetView) -> str:
     canvas = f" canvas {view.canvas}" if view.canvas else ""
     uniforms = "\n".join(view.uniforms) if view.uniforms else "(none)"
     errors = format_compile_errors(view.errors) if view.errors else "none"
-    # 103 D4: an instanced pass's `flat in` fields, absent (no line at all) for an ordinary
+    # an instanced pass's `flat in` fields, absent (no line at all) for an ordinary
     # fullscreen pass -- the fact that tells the agent a pass draws a POPULATION rather than one
     # quad over the canvas, without ever naming the engine-internal `sb_instanced` switch.
     entity_line = (

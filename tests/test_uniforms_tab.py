@@ -1,8 +1,7 @@
-"""Feature 083: the Uniforms tab and its pass selector.
+"""The Uniforms tab and its pass selector.
 
-The panel used to reach only a pass that was open in the editor or on screen; tuning a third one
-meant opening its tab first. An explicit pick now wins over that derivation, and a stale pick
-falls back to it rather than erroring.
+The panel derives its pass from the one open in the editor or on screen. An explicit pick wins
+over that derivation, and a stale pick falls back to it rather than erroring.
 """
 
 import json
@@ -47,7 +46,7 @@ def _two_pass_document(app: Any) -> str:
 
 
 def test_an_explicit_pass_pick_wins_over_the_active_tab(app: Any) -> None:
-    # The whole point of W-D: reach a pass that is neither the output nor open in the editor.
+    # Reach a pass that is neither the output nor open in the editor.
     document_id = _two_pass_document(app)
     document = app.ui_documents[document_id].document
     derived = app.panel_pass(document_id)
@@ -67,9 +66,7 @@ def test_opening_a_shader_tab_records_its_pass_as_the_pick(app: Any) -> None:
     that acts on "the pass" reads the one piece of state.
 
     Opening a pass in the editor IS picking it, so it records that pass rather than clearing
-    the pick. Clearing left `panel_pass` falling through to the active TAB, which made `Open
-    shader` resolve to the shader already on screen. Falsifier: clear it again here and
-    test_pass_navigation's open-while-another-is-open case fails.
+    the pick, so `Open shader` does not resolve to the shader already on screen.
     """
     document_id = _two_pass_document(app)
     document = app.ui_documents[document_id].document
@@ -102,9 +99,8 @@ def _second_name(app: Any, document_id: str) -> str:
 
 
 def test_a_click_on_a_name_in_the_row_writes_the_pick(app: Any) -> None:
-    # W-B: the selector is a row of clickable names, so what this pins is the WIRE -- a real
-    # click on the second name reaching `set_panel_pass`. Falsifier: delete the
-    # `set_panel_pass` call from `_draw_pass_selector` and `panel_pass` stays "".
+    # The selector is a row of clickable names, so this pins the wire: a real click on the
+    # second name reaching `set_panel_pass`.
     document_id = _two_pass_document(app)
     target = _second_name(app, document_id)
     app.set_panel_pass(document_id, "")

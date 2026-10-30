@@ -1,7 +1,6 @@
 """I7: `f1` (8-bit, clamps 0-1) plus additive is an unguarded saturation trap, and six of
-seven shipped examples set `dtype: f1`. 102 D5 says D-D (blend becoming a real per-pass
-choice) PROBABLY dissolves it, but the spec forbids un-hedging that claim without a gate:
-this file is that gate.
+seven shipped examples set `dtype: f1`. A real per-pass blend choice might dissolve it, but
+that cannot be claimed without a gate: this file is that gate.
 
 **I7 is LIVE, measured with the real `blend.blend_func_for` (not the hardcoded `ONE, ONE`
 `core.py` draws today):** a dense overlapping population (20 entities) on an `f1` target
@@ -31,7 +30,7 @@ from shaderbox.shader_source import ShaderSource
 
 # A dense cluster of entities, all overlapping at the canvas center, each writing a small
 # additive contribution -- 20 entities x 0.5 alpha-equivalent is well past what an 8-bit
-# additive accumulation survives (063 measured f1 saturating on the FIRST accumulate pass
+# additive accumulation survives (f1 measured saturating on the FIRST accumulate pass
 # where f2 reached exactly 7.0; this fixture pushes harder still, deliberately).
 _ENTITY_FRAGMENT = """#version 460 core
 in vec2 vs_quad;
@@ -87,13 +86,12 @@ def _center_pixel(render_pass: Pass) -> np.ndarray:
 def test_an_f1_target_does_not_saturate_under_each_blend_mode(
     gl_ctx: moderngl.Context, tmp_path: Path, blend: BlendMode
 ) -> None:
-    """The gate I7's spec text requires: a dense overlapping population on an `f1` target
+    """A dense overlapping population on an `f1` target
     must not clamp every channel to 1.0 under any mode. A value of exactly 1.0 is not itself
-    proof of saturation (a mode could legitimately reach full white) -- the falsifier is
-    comparing the DENSE population against a SPARSE one of the same mode: saturation is
-    "adding more entities stopped changing the result," which only a two-population
-    comparison can show, matching the maintainer's rule against a single-sample extremum
-    standing in for a distribution question.
+    proof of saturation (a mode could legitimately reach full white). The test compares the
+    DENSE population against a SPARSE one of the same mode: saturation is "adding more
+    entities stopped changing the result," which only a two-population comparison can show,
+    where a single-sample extremum cannot.
     """
     dense = _center_pixel(_f1_pass(gl_ctx, tmp_path, blend))
 
@@ -131,9 +129,8 @@ def test_an_f1_target_does_not_saturate_under_each_blend_mode(
         # 20 entities must read brighter than 2, or the extra 18 contributed NOTHING.
         #
         # I7 IS LIVE, and this assertion is inverted to record that rather than dropped to
-        # hide it. 102 predicted D5's per-pass blend MIGHT dissolve I7 and forbade
-        # un-hedging the claim: "if the gate says otherwise, I7 is live and needs its own
-        # fix". It says otherwise. MEASURED: on an `f1` target 20 additive entities and 2
+        # hide it. A per-pass blend might have dissolved I7; it does not.
+        # MEASURED: on an `f1` target 20 additive entities and 2
         # both read exactly 1.0, so a denser population is indistinguishable from a
         # sparser one.
         #

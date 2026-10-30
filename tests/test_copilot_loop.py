@@ -1,6 +1,6 @@
 """The copilot agent loop against a fake LLM client — no GL, no live tokens.
 
-Reproduces the §16.5 worked trace (read shader -> edit breaks compile -> read the
+Reproduces a worked trace (read shader -> edit breaks compile -> read the
 source-mapped error -> fix -> clean) and asserts the loop calls the tools in order,
 feeds results back, and terminates on the clean compile with the final text.
 """
@@ -226,7 +226,7 @@ def test_edit_compile_feedback_self_correction() -> None:
 
 
 def test_edit_applies_despite_whitespace_divergence() -> None:
-    # Feature 020 · 13: an old_str that differs from the source ONLY in inter-token
+    # An old_str that differs from the source ONLY in inter-token
     # whitespace (the 6-vs-4-space spiral) now token-MATCHES and applies — it does not
     # 0-match and fall to the hint path. The seeded source is "vec3 p = u_pos;"; the
     # model sends it with collapsed/extra spaces.
@@ -287,7 +287,7 @@ def test_edit_not_found_is_a_tool_error() -> None:
 
 
 def test_repeated_failed_edits_stop_at_retry_cap() -> None:
-    # §I2 self-correction cap (feature 020 · 12 B/C): a model that keeps sending an
+    # Self-correction cap: a model that keeps sending an
     # old_str that never matches must STOP at max_edit_retries, not loop to
     # max_iterations, and the turn must end with an AgentError the user sees.
     fail_edit = _tool_call(
@@ -454,7 +454,7 @@ def test_applies_but_broken_thrash_nudges_not_giveup() -> None:
 
 def test_max_iterations_cutoff_surfaces_as_error() -> None:
     # A non-edit tool that keeps getting called (read loop) must hit max_iterations and
-    # surface an AgentError so the chat shows why it stopped (feature 020 · 12 C).
+    # surface an AgentError so the chat shows why it stopped.
     read = _tool_call("cr", "read_shader", "{}")
     scripts: list[list[LLMStreamEvent]] = [read] * (COPILOT_CONFIG.max_iterations + 5)
     caps = _fake_caps(edit_errors=[])
@@ -477,7 +477,7 @@ def test_max_iterations_cutoff_surfaces_as_error() -> None:
 
 
 def test_max_iterations_streams_a_final_no_tools_reply() -> None:
-    # 033: budget exhaustion must end with the model addressing the user, not a canned
+    # Budget exhaustion must end with the model addressing the user, not a canned
     # error — the engine runs one extra NO-TOOLS stream and commits a normal TurnDone.
     read = _tool_call("cr", "read_shader", "{}")
     scripts: list[list[LLMStreamEvent]] = [read] * COPILOT_CONFIG.max_iterations
@@ -550,7 +550,7 @@ def test_torn_final_stream_keeps_stats_and_summary() -> None:
 
 
 def test_empty_length_cutoff_gets_a_final_reply() -> None:
-    # 033: a hidden-reasoning burn (finish=length, zero text, zero tools) forces the
+    # A hidden-reasoning burn (finish=length, zero text, zero tools) forces the
     # same no-tools reply instead of ending the turn silent.
     scripts: list[list[LLMStreamEvent]] = [
         [LLMDone("length")],
@@ -621,7 +621,7 @@ def test_stale_shutdown_sentinel_does_not_strand_turn(tmp_path: Path) -> None:
 
 
 def test_turn_snippet_collects_steps_not_status_lines(tmp_path: Path) -> None:
-    # F06: tool cards fold into ONE turn_snippet (square per call), NOT a tool_status line each.
+    # Tool cards fold into ONE turn_snippet (square per call), NOT a tool_status line each.
     # A card carrying an actionable widget keeps its own visible tool_status line.
     from shaderbox.copilot.agent import AgentTurnDone
     from shaderbox.copilot.session import CopilotSession
@@ -700,7 +700,7 @@ def test_errored_turn_leaves_snippet_finished_not_live(tmp_path: Path) -> None:
 
 
 def test_snippet_square_language() -> None:
-    # F09: the bar's (color, pulse) list across turn states. A pulsing gray head is shown from
+    # The bar's (color, pulse) list across turn states. A pulsing gray head is shown from
     # frame 1 (no jitter); a clean turn caps with an info-blue answer square (so a zero-tool reply
     # is one blue square); an error/cancel turn (no stats) adds no cap.
     from shaderbox.copilot.state import Message, StepRecord, TurnStats
@@ -743,7 +743,7 @@ def test_snippet_square_language() -> None:
 
 
 def test_terminal_carries_nl_summary_not_tool_tail() -> None:
-    # feature 020·28: the terminal event carries an engine-derived NL TurnSummary, NOT the tool tail.
+    # The terminal event carries an engine-derived NL TurnSummary, NOT the tool tail.
     # A read_shader turn (non-mutating) yields the agent's reply + the read document in `documents`, no ledger.
     caps = _fake_caps(edit_errors=[[]])
     registry = build_registry(caps)
@@ -910,7 +910,7 @@ def _is_incompatible_error(events: list[AgentEvent]) -> bool:
 
 
 def test_silent_finish_after_tool_gets_final_reply_not_incompatible() -> None:
-    # An EMPTY-text terminal finish after a successful tool routes through the 033
+    # An EMPTY-text terminal finish after a successful tool routes through the
     # final no-tools reply; a client that stays silent there ends in the honest
     # cannot-reply error — never the tool-incompatibility one (the model proved it
     # can call tools), and never a silent empty TurnDone.
@@ -922,7 +922,7 @@ def test_silent_finish_after_tool_gets_final_reply_not_incompatible() -> None:
 
 
 def test_snippet_tooltip_collapses_identical_consecutive_steps() -> None:
-    # 034 F05: a run of identical (tool, outcome) steps shows as ONE "4-13" row;
+    # A run of identical (tool, outcome) steps shows as ONE "4-13" row;
     # an outcome flip or a different tool breaks the run; non-consecutive repeats don't merge.
     from shaderbox.copilot.state import StepRecord
     from shaderbox.widgets.copilot_chat import _collapsed_steps
@@ -964,7 +964,7 @@ class _CapturingClient(_FakeClient):
 
 
 def test_clean_edit_streak_fact_escalates_past_soft_threshold() -> None:
-    # The render-blind spree brake (feature 050): consecutive CLEAN edits on ONE file ride an
+    # The render-blind spree brake: consecutive CLEAN edits on ONE file ride an
     # ESCALATING per-file fact once past the SOFT threshold (replacing the blown-past one-shot
     # nudge) - it fires on EVERY edit past the line, not once, while staying under the hard stop.
     edit = _tool_call(
@@ -1056,7 +1056,7 @@ def test_clean_edit_hard_stop_force_ends_turn() -> None:
 
 def test_write_shader_resets_clean_streak() -> None:
     # write_shader (the sanctioned whole-file convergence) RESETS a file's clean-edit streak, so
-    # the corrective rewrite the soft fact STEERS toward never trips the hard stop (feature 050).
+    # the corrective rewrite the soft fact STEERS toward never trips the hard stop.
     edit = _tool_call(
         "cx",
         "edit_shader",
@@ -1096,7 +1096,7 @@ def test_write_shader_resets_clean_streak() -> None:
 
 class _CancellingClient:
     # Streams text deltas, but sets `cancel` partway through the FIRST stream — models a Stop /
-    # release landing mid-stream on a slow response (043 hang). The agent's per-delta cancel must
+    # release landing mid-stream on a slow response. The agent's per-delta cancel must
     # break the stream and terminate the turn WITHOUT firing the tool call that follows.
     model = "test-model"
 
@@ -1239,7 +1239,7 @@ _STREAK_HINT = "clean edits to this file in a row"
 
 
 def test_render_facts_legend_rides_only_the_first_facts_result() -> None:
-    # D7 (059): the legend is spliced onto the FIRST facts-bearing result of the TURN and only that
+    # The legend is spliced onto the FIRST facts-bearing result of the TURN and only that
     # one — it decodes the non-self-glossing terms once, beside the line, instead of riding STATIC on
     # every request or repeating per result. It must also land BETWEEN the facts and any hint
     # appended to the same result: "[how to read the line above]" pointing at a streak nudge would
@@ -1309,7 +1309,7 @@ def test_render_facts_legend_absent_from_a_turn_that_never_renders() -> None:
 
 
 def test_zero_call_claim_gets_one_retry_with_tools() -> None:
-    # 081 D4: a reply with prose and NO tool call all turn is the one shape no brake sees — every
+    # A reply with prose and NO tool call all turn is the one shape no brake sees — every
     # other counter lives inside the tool loop — and it is where a model narrates work it never
     # did. The engine states what it executed and gives one more step WITH tools.
     scripts: list[list[LLMStreamEvent]] = [
@@ -1391,9 +1391,9 @@ def test_a_turn_that_used_a_tool_is_not_retried() -> None:
 
 
 def test_the_gauge_reports_what_the_turn_actually_billed() -> None:
-    # 081 D9: context_tokens is iteration 0's input, and the tooltip printed it beside cost_usd,
-    # which IS the turn total — two numbers on different bases in one tooltip. On the worst turn
-    # of the 077 corpus that read ~24k against 495,773 billed. Context is re-sent whole per
+    # context_tokens is iteration 0's input, and the tooltip printed it beside cost_usd,
+    # which IS the turn total — two numbers on different bases in one tooltip. On a long
+    # turn that read ~24k against 495,773 billed. Context is re-sent whole per
     # iteration, so a multi-step turn bills many times its standing context.
     from shaderbox.copilot.state import context_gauge_readout
 

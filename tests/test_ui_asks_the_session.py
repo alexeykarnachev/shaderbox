@@ -1,6 +1,6 @@
 """The UI asks `ProjectSession`, never the collaborator it owns.
 
-`dev_flow.md`'s module map says the UI reads the script engine VIA `ProjectSession`, and
+The UI reads the script engine VIA `ProjectSession`, and
 `ProjectSession` forwards every script verb -- `script_status`, `has_script`,
 `script_path_for`, `read_script_source` and the rest. Three sites in `tabs/code.py`
 reached two attributes deep to `app.session.script_engine.*` instead, while the same file
@@ -22,7 +22,7 @@ _OWNED = frozenset({"script_engine", "copilot_backend", "app_state"})
 
 
 def test_no_ui_module_reaches_through_the_session_to_what_it_owns() -> None:
-    """Falsifier: write `app.session.script_engine.anything(...)` in a UI module.
+    """Fails on `app.session.script_engine.anything(...)` in a UI module.
 
     Matches `<...>.session.<owned>.<...>`, the two-deep reach. A UI module naming
     `app.session.<verb>()` is the sanctioned form and does not match, and so does

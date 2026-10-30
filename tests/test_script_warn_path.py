@@ -1,10 +1,10 @@
-"""The single warn path (102 D1/D3): every non-landing script key flows through ONE function,
+"""The single warn path: every non-landing script key flows through ONE function,
 `ScriptEngine._warn`, that takes a `KeyFailReason` and decides silent-vs-warning by consulting
 `SILENT_KEY_FAIL_REASONS` — the only branch on WHICH reason anywhere in the engine. Covers: every
 `WARNING_KEY_FAIL_REASONS` member actually warns (enumerated from the contract's own `get_args`
 tuple, never a hand-written list); the two `SILENT_KEY_FAIL_REASONS` members are asserted AS
-exemptions; the warning is edge-triggered on the reason (102 D3); `dry_run` never mutates or
-inherits the live edge-trigger state (102 D3b); the injected `on_key_warning` callback fires
+exemptions; the warning is edge-triggered on the reason; `dry_run` never mutates or
+inherits the live edge-trigger state; the injected `on_key_warning` callback fires
 per-edge, never per-frame.
 """
 
@@ -211,7 +211,7 @@ def test_breaking_an_exemption_by_widening_silence_fails_the_partition_gate() ->
     assert len(widened) == 3
 
 
-# ---- edge-triggered, not level-triggered (102 D3) -------------------------------------------
+# ---- edge-triggered, not level-triggered -------------------------------------------
 
 
 def test_a_persistently_failing_key_warns_once(tmp_path: Path) -> None:
@@ -283,7 +283,7 @@ def test_an_oscillating_key_warns_on_each_transition(tmp_path: Path) -> None:
     assert set(warnings) == {"not_scriptable", "no_such_pass"}
 
 
-# ---- dry_run does not mutate or inherit edge-trigger state (102 D3b) -----------------------
+# ---- dry_run does not mutate or inherit edge-trigger state -----------------------
 
 
 def test_dry_run_does_not_fire_the_warning_callback(tmp_path: Path) -> None:
@@ -300,8 +300,6 @@ def test_dry_run_does_not_fire_the_warning_callback(tmp_path: Path) -> None:
 def test_dry_run_does_not_mutate_live_edge_state(tmp_path: Path) -> None:
     # The live tick establishes edge state for a warning key; a subsequent dry_run must leave
     # that state (and therefore the live document's future warn/no-warn behaviour) untouched.
-    # Falsifier: dry_run's isolated tick writes into the SAME DocumentScripts.last_warned the
-    # live tick reads, and this dict differs before/after.
     _write_script(tmp_path, "        return {'u_ghost': 1.0}\n")
     document = _FakeDocument({"main": _FakePass([_u("u_a")])})
     eng = _engine(tmp_path)
@@ -319,7 +317,7 @@ def test_dry_run_breaks_if_edge_state_is_threaded_through_live_scripts(
     tmp_path: Path,
 ) -> None:
     # Mutation half: call `_tick_script` for the probe WITH `scripts=` pointing at the live
-    # DocumentScripts (the bug D3b forbids) and watch the isolation assertion above fail.
+    # DocumentScripts (what the isolation prevents) and watch the isolation assertion above fail.
     _write_script(tmp_path, "        return {'u_ghost': 1.0}\n")
     document = _FakeDocument({"main": _FakePass([_u("u_a")])})
     eng = _engine(tmp_path)

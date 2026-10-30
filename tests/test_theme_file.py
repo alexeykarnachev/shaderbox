@@ -74,11 +74,7 @@ def _hex(colour: tuple[float, float, float, float]) -> str:
 
 
 def test_the_shipped_theme_matches_the_editor_it_names() -> None:
-    """Every capture resolves to what nvim's gruvbox resolves it to.
-
-    Falsifier: point `@constructor` at `Function` instead of `Special` and this fails
-    naming it -- which is the mismatch that took four rounds to find by eye.
-    """
+    """Every capture resolves to what nvim's gruvbox resolves it to."""
     theme = load_theme()
     wrong = {
         capture: (_hex(theme.capture(capture)), expected)
@@ -237,13 +233,6 @@ def test_no_syntax_colour_is_written_in_the_python() -> None:
     `test_intel_sources.py::test_every_kind_has_a_color`, which compares what the palette
     draws against what `kind_color` returns and so fails on any hue the Python invents.
 
-    The credit used to point at `test_swapping_the_file_moves_every_syntax_colour`, which
-    does not cover it: that test builds a `Theme` and interrogates the object, never
-    importing `syntax_colors`, so no change to the Python can fail it. Measured by
-    returning a float tuple from `kind_color` -- the swap test passed, four others did
-    not. A wrong credit is worse than none, because it invites deleting the gate that
-    works.
-
     `theme.py` keeps the app's CHROME palette, a separate question gated by
     `test_theme_swap.py`.
     """
@@ -284,9 +273,9 @@ def test_the_shipped_theme_loads_in_a_clean_process() -> None:
         "@",
         "variable",
         "",
-        # Whitespace inside a segment. `@variable.parameter ` is the one that got past an
-        # earlier guard: its segments are not EMPTY, so an empty-segment check waves it
-        # through, and the walk then matches no parent and returns the ROOT's colour --
+        # Whitespace inside a segment. `@variable.parameter ` is the one an
+        # empty-segment check misses: its segments are not EMPTY, so an empty-segment check waves it
+        # through, and the lookup then matches no parent and returns the ROOT's colour --
         # `#ebdbb2` where `#83a598` was asked for. A plausible colour, and the wrong one.
         "@variable.parameter ",
         " @variable.parameter",
@@ -313,8 +302,6 @@ def test_a_malformed_capture_name_raises_rather_than_resolving(name: str) -> Non
     that looks entirely legitimate. `@variable.parameter ` returning the root's `#ebdbb2`
     instead of `#83a598` is the live shape -- one trailing space, a plausible answer, and
     nothing to distinguish it from a correct mapping.
-
-    Falsifier: drop the guard in `Theme.capture` and every name here resolves silently.
     """
     theme = load_theme()
     with pytest.raises(ThemeError, match="not a capture name"):
@@ -388,9 +375,6 @@ def test_a_kind_draws_one_colour_in_the_buffer_and_the_popup() -> None:
     The comparison is between the two SURFACES for one kind, which differ only in the
     property under test; comparing either against a constant would pass whichever way the
     bug fell.
-
-    Falsifier: push `kind_slot` in the popup instead of `popup_slot` and the three plain
-    kinds go back to drawing the popup's grey.
     """
     palette = editor_palette()
     theme = load_theme()
@@ -420,7 +404,7 @@ def test_a_kind_draws_one_colour_in_the_buffer_and_the_popup() -> None:
 
 
 # What each kind draws as, restated independently of the table under test. Written out by
-# hand from the maintainer's nvim rather than generated from `_KIND_CAPTURE`, because a
+# hand from the nvim theme rather than generated from `_KIND_CAPTURE`, because a
 # copy of that table would agree with it however it changed.
 _EXPECTED_CAPTURE: dict[SymbolKind, str] = {
     SymbolKind.GLSL_KEYWORD: "@keyword",
@@ -463,8 +447,6 @@ def test_every_kind_draws_as_the_capture_it_is_meant_to() -> None:
     The expected values are written out by hand rather than generated from the table, so
     this compares two independent statements of the same fact; generating them would
     produce a fixture that agrees with the table however it changes.
-
-    Falsifier: repoint any kind and this names it.
     """
     assert set(_EXPECTED_CAPTURE) == set(SymbolKind), (
         "a kind was added or removed without updating this table: "
@@ -527,9 +509,8 @@ def test_the_class_budget_counts_the_plain_class_too(
     message naming a slot rather than the budget that was exceeded.
 
     Driven through the REAL `set_theme`, so the module's own assert is what has to fire.
-    An earlier version re-derived the assignment inline and asserted against its own
-    arithmetic; it passed with `_assert_class_budget` reduced to `pass`, because it never
-    called it -- a test of the test.
+    Re-deriving the assignment inline and asserting against its own arithmetic would pass
+    with `_assert_class_budget` reduced to `pass`, because it never calls it.
 
     Built so the capture table lands ON the ceiling and only plain crosses it: a theme
     that overflows the table too is caught either way and would pass with the fix reverted.
@@ -616,9 +597,6 @@ def test_switching_the_theme_repaints_every_kind() -> None:
     Writing a second file was already possible; USING it was not -- `load_theme()` ran once
     at import with no argument, so a second theme required editing Python. This asserts
     the switch reaches the colours.
-
-    Falsifier: make `set_theme` rebind `_THEME` without rebuilding `_CAPTURE_CLASS`, and
-    the class table keeps the old theme's grouping.
     """
     themes = available_themes()
     assert len(themes) >= 2, f"only {themes} shipped -- nothing to switch between"
@@ -800,8 +778,6 @@ def test_a_theme_that_will_not_load_tells_the_user(
     the app half-switched -- and the caller then caught, logged, and returned. The engine
     was right and the report was missing, which is the same shape as a failed copy or a
     blocked save: the failure reaches a log and never a person.
-
-    Falsifier: drop the `notifications.push` from `App.apply_syntax_theme`.
     """
     from shaderbox import app as app_module
 

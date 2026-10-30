@@ -34,7 +34,7 @@ class _LoadToolsArgs(ToolArgs):
     )
 
 
-# Tools that REMOVE source. Excluded from `locks_source` (083 D6) because they always confirm,
+# Tools that REMOVE source. Excluded from `locks_source` because they always confirm,
 # which is right for a gate and wrong for READ_ONLY: a mode that forbids editing must forbid
 # deleting first.
 _DESTRUCTIVE_TOOLS: frozenset[str] = frozenset(
@@ -60,7 +60,7 @@ def _validation_message(exc: ValidationError) -> str:
 class ToolRegistry:
     def __init__(self, definitions: list[ToolDefinition]) -> None:
         self._by_name: dict[str, ToolDefinition] = {d.name: d for d in definitions}
-        # The source lock (083, a user-set mode since 086), read by `must_confirm` on the WORKER
+        # The source lock, read by `must_confirm` on the WORKER
         # thread. Defaults ALLOW here on purpose, where a SESSION defaults ASK: a registry built
         # bare (every test does) is an inert catalogue, and gating it by default would silently
         # change what those tests measure.
@@ -72,7 +72,7 @@ class ToolRegistry:
 
     def assemble_specs(self, loaded: set[str]) -> list[LLMToolSpec]:
         # The `tools=` for a turn iteration: the eager core + any lazily-loaded tools, SORTED by name
-        # so the block is byte-stable (prefix-cacheable) regardless of load order (feature 052 §3).
+        # so the block is byte-stable (prefix-cacheable) regardless of load order.
         #
         # READ_ONLY withholds the source-writing tools entirely rather than refusing their calls
         # afterwards: a model that cannot see a tool does not spend a call discovering it is barred,
@@ -117,7 +117,7 @@ class ToolRegistry:
     def is_withheld(self, name: str) -> bool:
         """Is this tool absent from the request entirely, rather than merely gated?
 
-        `locks_source` (083 D6's enumerated set) PLUS the destructive tools. The lock's own roster
+        `locks_source`'s enumerated set PLUS the destructive tools. The lock's own roster
         excludes those because they already confirm every time, which is the right answer for a
         gate and the wrong one for a mode: a project the user called read-only must not let the
         copilot DELETE a shader, which is the most write-like act there is. Render and publish
@@ -130,7 +130,8 @@ class ToolRegistry:
     def destroys_source(self, name: str) -> bool:
         # Named rather than a substring match on "delete": a tool called delete_* that removed
         # something other than source would be swept in silently, and one named otherwise would
-        # be missed. The set is asserted against the registry in the brake falsifiers.
+        # be missed. The set is asserted against the registry in
+        # tests/test_brake_falsifiers.py.
         return name in _DESTRUCTIVE_TOOLS
 
     def is_lazy(self, name: str) -> bool:
@@ -183,7 +184,7 @@ class ToolRegistry:
     def must_confirm(self, name: str) -> bool:
         """Does this call need the user's permission at all? The agent loop's one question.
 
-        Deliberately a BOOL over three lock states (085): whether the permission is ASKED for or
+        Deliberately a BOOL over three lock states: whether the permission is ASKED for or
         refused outright also depends on the turn's deny latch, which is the loop's state and not
         the registry's -- a three-valued answer here could only ever be half of one.
 
@@ -196,7 +197,7 @@ class ToolRegistry:
 
     def status_for(self, name: str, args: dict[str, Any] | None) -> str:
         # Live status-pill phrase. `args` is the seam for arg-aware phrasing
-        # ("Editing gradient...", 020/11 §2.3) — unused until that lands.
+        # ("Editing gradient...") — currently unused.
         _ = args
         tool = self._by_name.get(name)
         return tool.label_live if tool is not None else name

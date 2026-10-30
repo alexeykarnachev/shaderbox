@@ -1,11 +1,10 @@
-"""The frame profiler's tree, its GPU ring, and the wire from the live loop (feature 088).
+"""The frame profiler's tree, its GPU ring, and the wire from the live loop.
 
 The CPU half runs anywhere. The GL half needs a real context and skips without one; the
 `update_and_draw` test drives a hidden-window `App` the way `scripts/smoke.py` does.
 
-Each test names the falsifier it was born against in its own body, because a timer that
-returns plausible numbers is exactly the shape a passing suite cannot distinguish from a
-broken one.
+A timer that returns plausible numbers is the shape a passing suite cannot tell from a
+broken one, so each test pins an exact value.
 """
 
 import os
@@ -29,8 +28,8 @@ from shaderbox.profiling import (
 )
 from shaderbox.widgets.fps_panel import profile_rows_plan
 
-# This module drives real frames, so it gets a worker of its own (`conventions.md ## Known
-# quirks`): two Apps that both render a full frame in one process die on the font atlas.
+# This module drives real frames, so it gets a worker of its own:
+# two Apps that both render a full frame in one process die on the font atlas.
 pytestmark = pytest.mark.xdist_group("gl_frames_profiling")
 
 _RED = """#version 460 core
@@ -83,12 +82,11 @@ def _burn(gl: moderngl.Context, clears: int) -> None:
 
 
 # ---------------------------------------------------------------------------
-# V1 -- the tree's shape
+# the tree's shape
 # ---------------------------------------------------------------------------
 
 
 def test_a_nested_cpu_span_lands_under_its_parent() -> None:
-    # Falsifier: pop the wrong span in `_pop` and `b` lands beside `a` under the root.
     profiler = Profiler()
     profiler.begin_frame()
     with profiler.cpu("a"), profiler.cpu("b"):
@@ -127,7 +125,7 @@ def test_two_same_named_siblings_under_one_parent_are_two_spans() -> None:
 
 
 # ---------------------------------------------------------------------------
-# V2 -- a nested GPU span raises before it can lie
+# a nested GPU span raises before it can lie
 # ---------------------------------------------------------------------------
 
 
@@ -157,9 +155,6 @@ def _count_queries(gl: moderngl.Context, monkeypatch: Any, created: list[Any]) -
 
 
 def test_a_gpu_span_inside_another_raises(gl_ctx: moderngl.Context) -> None:
-    # Falsifier: delete the assert in `Profiler.gpu` and this sees no raise -- and the
-    # numbers go wrong in silence, which is the whole reason the assert is there (the outer
-    # query reads garbage, the inner 0, `ctx.error` GL_INVALID_OPERATION, no exception).
     profiler = Profiler()
     profiler.begin_frame()
     with pytest.raises(AssertionError):
@@ -183,14 +178,11 @@ def test_the_nested_gpu_span_raises_before_its_query_begins(
 
 
 # ---------------------------------------------------------------------------
-# V3 -- the read lands two frames late
+# the read lands two frames late
 # ---------------------------------------------------------------------------
 
 
 def test_a_gpu_span_reads_two_frames_late(gl_ctx: moderngl.Context) -> None:
-    # Falsifier: read one frame late (drop RING_DEPTH to 2 and read at N+1) and the
-    # "still None after frame 2" assertion fails -- which is also the read that measured a
-    # 22.3 ms stall under load, the reason the ring is three deep.
     profiler = Profiler()
     profiler.begin_frame()
     with profiler.gpu("pass:heavy"):
@@ -202,6 +194,8 @@ def test_a_gpu_span_reads_two_frames_late(gl_ctx: moderngl.Context) -> None:
     assert heavy is not None
     assert heavy.gpu_ms is None
 
+    # Reading at frame N+1 would be too early: a 22.3 ms stall under load was measured,
+    # which is why the ring is three deep.
     profiler.begin_frame()
     profiler.end_frame()
     assert heavy.gpu_ms is None
@@ -221,9 +215,6 @@ def test_two_same_named_gpu_siblings_under_one_parent_read_their_own_loads(
     pending pass's chain), so two `document:X` spans sit under the root and each carries its
     own `pass:main`. The sibling ORDINAL in the ring key is what keeps them apart.
 
-    Falsifier: hard-code `ordinal = 0` in `_push` and the first sibling reads None -- the
-    second's query overwrites its ring slot, and one query begun twice in a frame reports
-    only the second block.
     """
     profiler = Profiler()
     profiler.begin_frame()
@@ -253,8 +244,6 @@ def test_two_same_named_gpu_siblings_under_one_parent_read_their_own_loads(
 def test_same_name_under_two_parents_reads_two_distinct_loads(
     gl_ctx: moderngl.Context,
 ) -> None:
-    # V3a. Falsifier: key the ring by NAME rather than by path and the first span reads
-    # 0.0 -- one query object begun twice in a frame reports only the second block.
     profiler = Profiler()
     profiler.begin_frame()
     with profiler.cpu("light"), profiler.gpu("pass:a"):
@@ -280,15 +269,13 @@ def test_same_name_under_two_parents_reads_two_distinct_loads(
 
 
 # ---------------------------------------------------------------------------
-# V4 -- a disabled profiler costs nothing
+# a disabled profiler costs nothing
 # ---------------------------------------------------------------------------
 
 
 def test_a_disabled_profiler_creates_no_query_and_no_tree(
     gl_ctx: moderngl.Context, monkeypatch: Any
 ) -> None:
-    # Falsifier: create the query eagerly in `gpu(...)` (before the `enabled` check) and the
-    # count is 1000 instead of 0.
     profiler = Profiler(enabled=False)
     created: list[Any] = []
     _count_queries(gl_ctx, monkeypatch, created)
@@ -308,7 +295,7 @@ def test_the_null_profiler_is_disabled() -> None:
 
 def test_disabling_drops_the_query_ring(gl_ctx: moderngl.Context) -> None:
     # `moderngl.Query` has no `release()` and no `__del__`, so the ring's only eviction rule
-    # is the disable. Falsifier: leave `_ring` standing in the setter and it keeps its key.
+    # is the disable.
     profiler = Profiler()
     profiler.begin_frame()
     with profiler.gpu("pass:x"):
@@ -328,8 +315,7 @@ def test_a_toggle_mid_span_does_not_disturb_the_open_span(
     """Disabling from inside an open span leaves that span able to close.
 
     This is the live shape: `ui.py` writes `app.profiler.enabled` from inside the `ui` span,
-    because the panel that toggles it is drawn there. Falsifier: act on the flag in the
-    setter and the enclosing span's `finally` pops an empty stack (`IndexError`).
+    because the panel that toggles it is drawn there.
     """
     profiler = Profiler()
     profiler.begin_frame()
@@ -346,7 +332,7 @@ def test_a_toggle_mid_span_does_not_disturb_the_open_span(
 
 
 # ---------------------------------------------------------------------------
-# V5 -- a document reports its passes
+# a document reports its passes
 # ---------------------------------------------------------------------------
 
 
@@ -375,8 +361,6 @@ def _two_pass_document(gl: moderngl.Context, tmp_path: Path) -> Any:
 def test_a_two_pass_document_yields_one_span_per_pass(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
-    # Falsifier: move the `gpu(...)` inside the iteration loop and `second` appears three
-    # times with count 1 instead of once with count 3.
     document = _two_pass_document(gl_ctx, tmp_path)
     profiler = Profiler()
     profiler.begin_frame()
@@ -392,8 +376,7 @@ def test_a_document_rendered_twice_in_one_frame_yields_its_passes_twice(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
     # The live loop's own shape: both render sites name the span `document:<name>`, so the two
-    # parents are same-name siblings too. Falsifier: merge same-name siblings and the second
-    # render vanishes -- the tree reports one document where two were drawn.
+    # parents are same-name siblings too.
     document = _two_pass_document(gl_ctx, tmp_path)
     profiler = Profiler()
     profiler.begin_frame()
@@ -411,9 +394,8 @@ def test_a_document_rendered_twice_in_one_frame_yields_its_passes_twice(
 def test_an_export_render_opens_no_span(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
-    # The seam's whole point (088 D3): a render that takes the default reports nowhere, so
-    # an export's passes cannot land in whatever live frame they ran inside. Falsifier: make
-    # the profiler a module-level active object and this render joins the open frame.
+    # The seam's whole point: a render that takes the default reports nowhere, so
+    # an export's passes cannot land in whatever live frame they ran inside.
     document = _two_pass_document(gl_ctx, tmp_path)
     profiler = Profiler()
     profiler.begin_frame()
@@ -425,11 +407,10 @@ def test_an_export_render_opens_no_span(
 
 
 # ---------------------------------------------------------------------------
-# V6 and V7 -- the wire from the live loop, and the abort path closing its root
+# the wire from the live loop, and the abort path closing its root
 #
-# One test, one App: only ONE test per process may drive `ui.update_and_draw`
-# (`conventions.md ## Known quirks`), and both facts are properties of that loop rather than
-# of the profiler alone.
+# One test, one App: only ONE test per process may drive `ui.update_and_draw`,
+# and both facts are properties of that loop rather than of the profiler alone.
 # ---------------------------------------------------------------------------
 
 
@@ -530,14 +511,9 @@ def test_the_wire_and_the_abort_path(app: Any, monkeypatch: Any) -> None:
     """`update_and_draw` with the panel open leaves a complete profile on `app.last_profile`,
     and an aborted frame still closes its root so the next tree is flat.
 
-    This is the "defined is not wired" check, and its falsifiers are: cut `profiler=app.profiler`
-    at a render site in `ui.py` and that site's `document:` span is still there while its
-    `pass:` child is gone; construct `App`'s profiler disabled and `last_profile` stays None;
-    replace the `with app.profiler.frame()` with a bare
-    `begin_frame()` / `end_frame()` pair and the aborted frame never publishes; act on the
-    `enabled` flag in the setter instead of at the frame boundary and closing the panel
-    raises `IndexError: pop from empty list`; drop `_publish`'s ordering check and the
-    published index walks backwards across the abort.
+    This is the "defined is not wired" check: the profiler reaches every render site in
+    `ui.py`, closing the panel leaves recording on, and the published index never walks
+    backwards across the abort.
     """
     from shaderbox.ui import update_and_draw
 
@@ -607,8 +583,7 @@ def test_the_wire_and_the_abort_path(app: Any, monkeypatch: Any) -> None:
     assert [s for s in modal_documents[0].children if s.name.startswith("pass:")]
 
     # The panel draws the AVERAGE, so the loop must be feeding it -- the smoothed tree
-    # carries the same shape as the raw one. Falsifier: cut the `feed` call in
-    # `update_and_draw` and the smoother stays empty while the panel is open.
+    # carries the same shape as the raw one.
     averaged = app.profile_smoother.smoothed()
     assert averaged is not None, "the loop never fed the smoother"
     assert _names(averaged.children) == _names(behind.children)
@@ -616,8 +591,7 @@ def test_the_wire_and_the_abort_path(app: Any, monkeypatch: Any) -> None:
     # What the PANEL is handed is the average, not the raw frame. The two agree on shape, so
     # the discriminator is identity: the smoother is seeded with a childless root at an index
     # no live frame reaches, and the overlay is drawn BEFORE the loop's own feed, so the
-    # averaged tree still carries that seed while the raw one carries the frame. Falsifier:
-    # pass `app.last_profile` at the `fps_overlay` call and the overlay reads the live tree.
+    # averaged tree still carries that seed while the raw one carries the frame.
     app.profile_smoother.feed(_profile(10_000, 500.0))
     handed = _capture_the_overlays_profile(app, monkeypatch)
     assert handed is not None
@@ -626,10 +600,9 @@ def test_the_wire_and_the_abort_path(app: Any, monkeypatch: Any) -> None:
         "that is the frame itself, not the average"
     )
 
-    # V11 -- the panel draws from the PLAN, and the plan is handed the same smoothed tree
+    # the panel draws from the PLAN, and the plan is handed the same smoothed tree
     # and the live target. Without this seam a sort or a color inside the draw loop would be
-    # unfalsifiable: the overlay spy above sees only what goes IN. Falsifier: cut the
-    # `profile_rows_plan` call from `fps_overlay` and no call is recorded.
+    # unfalsifiable: the overlay spy above sees only what goes IN.
     app.profile_smoother.feed(_profile(10_001, 500.0))
     calls = _capture_the_plan_call(app, monkeypatch)
     assert calls, "the overlay drew without planning its rows"
@@ -641,10 +614,9 @@ def test_the_wire_and_the_abort_path(app: Any, monkeypatch: Any) -> None:
     )
     assert planned_target == app.app_state.global_target_fps
 
-    # Closing the panel stops the DRAW, never the recording (090 D9a): the GPU spans are the
+    # Closing the panel stops the DRAW, never the recording: the GPU spans are the
     # throttle's cost input, so they are what the plan reads on every frame whether or not
-    # anyone is looking. Falsifier: restore `app.profiler.enabled = app.fps_details_open` and
-    # both assertions go red -- the profiler disables and its ring empties.
+    # anyone is looking.
     _close_the_panel(app, monkeypatch)
     update_and_draw(app)
     update_and_draw(app)
@@ -660,7 +632,7 @@ def test_the_wire_and_the_abort_path(app: Any, monkeypatch: Any) -> None:
 
 
 # ---------------------------------------------------------------------------
-# V8 -- the panel's exponential average
+# the panel's exponential average
 #
 # GL-free: the smoother reads a tree and writes a tree, so these build their profiles by
 # hand rather than measuring anything.
@@ -688,8 +660,6 @@ def test_a_jittering_span_converges_and_never_moves_more_than_the_factor() -> No
     would leave the assertion true for every value that constant could take, which is the one
     shape a passing run cannot tell from a broken one. The constant is pinned separately.
 
-    Falsifier: build the smoother with `smoothing=1.0` -- the raw numbers straight through --
-    and the per-step assertion fails on the first step, which moves the whole 8 ms gap.
     """
     smoother = ProfileSmoother()
     previous: float | None = None
@@ -715,9 +685,7 @@ def test_the_shipped_factor_is_the_one_the_step_bound_was_written_against() -> N
 
 
 def test_feeding_one_profile_twice_applies_it_once() -> None:
-    # The live shape: the panel sees `last_complete` repeat while the ring fills. Falsifier:
-    # drop the `profile.index == self._fed_index` check and the second feed pulls the average
-    # a second step toward 9, so the two readings differ.
+    # The live shape: the panel sees `last_complete` repeat while the ring fills.
     smoother = ProfileSmoother()
     smoother.feed(_profile(0, 20.0, 1.0))
     repeated = _profile(1, 20.0, 9.0)
@@ -730,8 +698,6 @@ def test_feeding_one_profile_twice_applies_it_once() -> None:
 
 
 def test_a_span_seen_for_the_first_time_seeds_at_its_raw_value() -> None:
-    # Falsifier: seed at 0.0 (start the blend from a missing key as zero) and a pass that
-    # appears mid-run climbs from nothing, reading 2.0 ms on its first frame instead of 8.0.
     smoother = ProfileSmoother()
     smoother.feed(_profile(0, 20.0))
     smoother.feed(_profile(1, 20.0, 8.0))
@@ -743,9 +709,7 @@ def test_a_span_absent_from_the_newest_profile_leaves_the_smoothed_tree() -> Non
 
     The tree's SHAPE is the newest profile's, so the row's disappearance is structural; what
     a merge would keep is the stale AVERAGE behind the key, which is why the second half is
-    the half with teeth. Falsifier: keep the previous frame's keys (`self._cpu.update(...)`
-    instead of replacing it) and the returning pass resumes the deleted one's average,
-    reading 8.0 ms on its first frame where the raw value is 20.0.
+    the half with teeth.
     """
     smoother = ProfileSmoother()
     smoother.feed(_profile(0, 20.0, 4.0))
@@ -760,8 +724,7 @@ def test_a_span_absent_from_the_newest_profile_leaves_the_smoothed_tree() -> Non
 
 def test_reset_empties_the_average() -> None:
     # The disable path: the profiler drops its whole state at the frame boundary and the
-    # average goes with it. Falsifier: make `reset` a no-op and the panel re-opens showing
-    # the last session's numbers, and the first new frame blends into them.
+    # average goes with it.
     smoother = ProfileSmoother()
     smoother.feed(_profile(0, 20.0, 4.0))
     smoother.reset()
@@ -771,8 +734,7 @@ def test_reset_empties_the_average() -> None:
 
 
 def test_two_same_named_siblings_smooth_separately() -> None:
-    # The ring's own key shape, reused: `name#ordinal` per level. Falsifier: key by name
-    # alone and the two siblings share one average, so the light one reads the heavy one's.
+    # The ring's own key shape, reused: `name#ordinal` per level.
     smoother = ProfileSmoother()
     for index in range(20):
         root = Span("frame", cpu_ms=20.0)
@@ -788,7 +750,7 @@ def test_two_same_named_siblings_smooth_separately() -> None:
 
 
 # ---------------------------------------------------------------------------
-# V10 -- the panel's cost order (feature 089 D8)
+# the panel's cost order
 #
 # GL-free: `by_cost` reads a list and writes a list, and the plan is a pure function of a
 # tree, so these build their spans by hand.
@@ -796,15 +758,13 @@ def test_two_same_named_siblings_smooth_separately() -> None:
 
 
 def test_by_cost_puts_the_costliest_first() -> None:
-    # Falsifier: drop `reverse=True` and recording order comes back as 1, 2, 3.
     children = [Span("a", cpu_ms=1.0), Span("b", cpu_ms=3.0), Span("c", cpu_ms=2.0)]
     assert _names(by_cost(children)) == ["b", "c", "a"]
 
 
 def test_by_cost_ranks_a_gpu_span_by_its_gpu_number() -> None:
     # The headline number is what the row PRINTS, so a GPU span sorts by its GPU time even
-    # where its wall is larger. Falsifier: key on `cpu_ms` and the cheap GPU span, whose
-    # CPU issue cost is the highest of the three, leads.
+    # where its wall is larger.
     children = [
         Span("gpu_light", cpu_ms=9.0, gpu_ms=1.0),
         Span("cpu_mid", cpu_ms=4.0),
@@ -814,14 +774,12 @@ def test_by_cost_ranks_a_gpu_span_by_its_gpu_number() -> None:
 
 
 def test_equal_costs_keep_recording_order() -> None:
-    # Falsifier: an unstable sort, or a tie-break on the name, and the two 5 ms spans swap.
     children = [Span("first", cpu_ms=5.0), Span("second", cpu_ms=5.0)]
     assert _names(by_cost(children)) == ["first", "second"]
 
 
 def test_by_cost_leaves_the_instrument_alone() -> None:
-    # The profile is what was measured, so only the reader sorts. Falsifier: sort in place
-    # (`children.sort(...)`) and the recorded tree is reordered under every other consumer.
+    # The profile is what was measured, so only the reader sorts.
     children = [Span("a", cpu_ms=1.0), Span("b", cpu_ms=3.0)]
     sorted_children = by_cost(children)
     assert sorted_children is not children
@@ -830,7 +788,6 @@ def test_by_cost_leaves_the_instrument_alone() -> None:
 
 def test_the_plans_tree_is_cost_ordered_with_other_last() -> None:
     # The order reaches the panel through the plan, which is what the draw loop walks.
-    # Falsifier: iterate `span.children` in the plan and the rows come out a, b, c.
     root = Span("frame", cpu_ms=20.0)
     root.children.append(Span("pass:a", cpu_ms=1.0))
     root.children.append(Span("pass:b", cpu_ms=3.0))
@@ -854,7 +811,6 @@ def test_the_plans_tree_is_cost_ordered_with_other_last() -> None:
 
 def test_the_plan_indents_a_child_under_its_parent() -> None:
     # Depth is the plan's, so the draw loop only multiplies it by the spacing token.
-    # Falsifier: pass a constant depth in `_plan_tree` and the tree flattens.
     root = Span("frame", cpu_ms=20.0)
     outer = Span("document:one", cpu_ms=10.0)
     outer.children.append(Span("pass:inner", cpu_ms=6.0))
@@ -866,14 +822,14 @@ def test_the_plan_indents_a_child_under_its_parent() -> None:
         titles={"one": "One"},
     )
     depths = {row.name: row.depth for row in rows}
-    # A `document:` row carries the TITLE the id maps to (090 D7), never the span name.
+    # A `document:` row carries the TITLE the id maps to, never the span name.
     assert depths["One"] == 0
     assert depths["pass:inner"] == 1
 
 
 def test_the_gap_before_the_tree_is_marked_on_the_first_tree_row() -> None:
     # The draw reads the boundary off the row, so the panel never re-derives which rows
-    # lead. Falsifier: stop setting the flag and no row carries it.
+    # lead.
     root = Span("frame", cpu_ms=20.0)
     root.children.append(Span("pass:a", cpu_ms=1.0))
     root.children.append(Span("pass:b", cpu_ms=3.0))

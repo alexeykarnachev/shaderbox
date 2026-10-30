@@ -1,4 +1,4 @@
-"""The intel index through the real code panel (078 W-A): the color feed on a shader tab and
+"""The intel index through the real code panel: the color feed on a shader tab and
 the jedi worker's answers on a script tab, both driven the way a frame drives them."""
 
 import time

@@ -1,7 +1,7 @@
 """Closing a tab keeps the SAME file active.
 
-`active_tab_index` used to be only CLAMPED after a removal, which keeps the index valid but
-not the identity: removing a tab to the LEFT shifts every later tab down one, so the index
+`active_tab_index` must follow the file, not just stay CLAMPED after a removal, which keeps
+the index valid but not the identity: removing a tab to the LEFT shifts every later tab down one, so the index
 silently addresses a different file. `flush_current_editor()` then flushes the wrong tab on
 Ctrl+S and on quit — the user loses edits to the file they were looking at.
 

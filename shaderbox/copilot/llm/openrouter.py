@@ -22,7 +22,7 @@ _OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 
 def _to_wire_message(m: LLMMessage) -> dict[str, Any]:
-    # content="" + tool_calls breaks grok (the wire wants null content). Coerce (§J5).
+    # content="" + tool_calls breaks grok (the wire wants null content). Coerce.
     wire: dict[str, Any] = {"role": m.role}
     wire["content"] = m.content if (m.content or not m.tool_calls) else None
     if m.tool_call_id is not None:
@@ -79,7 +79,7 @@ def _refuses_reasoning_setting(exc: Exception) -> bool:
 
 
 def _log_upstream_error(exc: Exception) -> None:
-    # NEVER log the response body (§J4) — OpenRouter error bodies echo the prompt, which
+    # NEVER log the response body — OpenRouter error bodies echo the prompt, which
     # carries the user's shader source + the key context. Status/class only.
     status = getattr(exc, "status_code", None)
     logger.error(f"copilot LLM upstream error: {type(exc).__name__} status={status}")
@@ -88,7 +88,7 @@ def _log_upstream_error(exc: Exception) -> None:
 class OpenRouterLLMClient(LLMClient):
     """OpenRouter via the `openai` SDK. Key + model are read LIVE through getters (NOT
     captured) so a project switch that reloads IntegrationsStore — or a key entered
-    mid-turn via the credential widget — is seen on the next stream call (§U7).
+    mid-turn via the credential widget — is seen on the next stream call.
 
     Egress is automatic (default dual-stack). A transparent IPv4 fallback for a
     dead-IPv6 route is an impl detail handled inside the client — never a user setting.
@@ -122,9 +122,8 @@ class OpenRouterLLMClient(LLMClient):
             raise CopilotConfigError(
                 "no OpenRouter model set (Settings -> Integrations)"
             )
-        # The `openai` SDK imports lazily (066 D3): ~0.23s of import rides the first stream
-        # call on the copilot worker thread instead of every app start. The sanctioned
-        # lazy-SDK seams are listed in conventions.md ## Design decisions.
+        # The `openai` SDK imports lazily: ~0.23s of import rides the first stream
+        # call on the copilot worker thread instead of every app start.
         from openai import APIStatusError
 
         model = self._get_model()
@@ -180,7 +179,7 @@ class OpenRouterLLMClient(LLMClient):
             f"tools={len(tools) if tools else 0} max_tokens={max_tokens}"
         )
 
-        # Bound the TOTAL wait, not one attempt (043 hang). The SDK default is 600s AND it silently
+        # Bound the TOTAL wait, not one attempt. The SDK default is 600s AND it silently
         # RETRIES (max_retries=2 -> x3) — a bare-float timeout also clobbers the 5s connect default to
         # the full value. So: an explicit httpx.Timeout (small connect, llm_request_timeout_s for
         # read/write/pool) + max_retries=0 (a copilot turn wants a fast-fail stream_error, not three
@@ -207,7 +206,7 @@ class OpenRouterLLMClient(LLMClient):
                     output_tokens=chunk.usage.completion_tokens,
                     reasoning_tokens=getattr(details, "reasoning_tokens", 0) or 0,
                     cached_tokens=getattr(prompt_details, "cached_tokens", 0) or 0,
-                    # usage.cost is OpenRouter-specific + can be None per-chunk (§J7).
+                    # usage.cost is OpenRouter-specific + can be None per-chunk.
                     cost_usd=getattr(chunk.usage, "cost", 0.0) or 0.0,
                 )
             if not chunk.choices:
@@ -231,7 +230,7 @@ class OpenRouterLLMClient(LLMClient):
                     started.add(idx)
                     yield LLMToolCallStarted(index=idx, id=b["id"], name=b["name"])
 
-        # Completion emitted at stream end (arguments fully accumulated, §J8).
+        # Completion emitted at stream end (arguments fully accumulated).
         for idx in sorted(builders):
             b = builders[idx]
             yield LLMToolCallCompleted(

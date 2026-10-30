@@ -1,4 +1,4 @@
-"""Feature 087 W-B: the pass selector's row of clickable names.
+"""The pass selector's row of clickable names.
 
 The row carries its state by color alone, so the hover color is chosen BEFORE the item is
 submitted -- a `selectable` has no pre-hover to read. That makes the predicted rect part of
@@ -71,8 +71,7 @@ def _rounded(color: tuple[float, float, float, float]) -> tuple[float, ...]:
 def test_the_hover_color_covers_the_whole_rect_imgui_gave_the_item(app: Any) -> None:
     # The rect a `selectable` claims is the text outset by half an item spacing on each side,
     # so a prediction of the bare text rect leaves a live margin that answers clicks while
-    # reading dim. Falsifier: predict `origin -> origin + (width, line_height_with_spacing)`
-    # and the left edge measures FG_DIM while imgui reports the item hovered.
+    # reading dim.
     names = ["main", "second"]
     parked = _drive(names, 600.0, (500.0, 250.0))
     (_, (rect_min, rect_max)) = parked["second"]
@@ -93,8 +92,6 @@ def test_the_hover_color_covers_the_whole_rect_imgui_gave_the_item(app: Any) -> 
 
 
 def test_a_row_too_long_for_the_panel_wraps_inside_the_content_region(app: Any) -> None:
-    # Falsifier: make the `same_line` unconditional -- every name then stays on line one and
-    # the row runs past the window's right edge.
     names = ["alpha", "bravo", "charlie", "delta"]
     drawn = _drive(names, 200.0, (500.0, 250.0))
     tops = [drawn[name][1][0][1] for name in names]
@@ -120,8 +117,6 @@ def test_a_row_too_long_for_the_panel_wraps_inside_the_content_region(app: Any) 
 def test_a_wrapped_row_measures_the_full_width_not_the_first_rows_remainder(
     app: Any,
 ) -> None:
-    # Falsifier: drop the `avail = get_content_region_avail().x` re-read on the wrap branch
-    # and a wrapped row is measured against the leader's remainder, fitting one name fewer.
     names = ["aaaa", "bbbb", "cccc", "dddd", "eeee", "ffff", "gggg", "hhhh"]
 
     def lead() -> None:

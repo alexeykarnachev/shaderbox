@@ -1,10 +1,9 @@
-"""No app chord means two things (069 W-E D7).
+"""No app chord means two things.
 
 Every GLOBAL `CommandSpec` chord is absent from both editor keymaps' chord lists, read out
 of the vendored docs rather than out of a list retyped here — a retyped list stops tracking
-the artifact, and a re-vendor that grows a keymap must turn this red rather than silently
-ship a chord with two owners. The audit that decided each cell is
-`ai_docs/features/069_tutorial_walk_findings/02_keybindings.md`.
+the artifact, and a vendored keymap update that grows a keymap must turn this red rather than silently
+ship a chord with two owners.
 """
 
 import re
@@ -58,7 +57,7 @@ _NAMED = {
 }
 
 # Floors, not equalities, against the 16 and 13 measured at the vendored VERSION: a
-# re-vendor that ADDS a chord must fail the disjointness assertion, not the parse.
+# keymap update that ADDS a chord must fail the disjointness assertion, not the parse.
 _VIM_FLOOR = 14
 _STD_FLOOR = 12
 
@@ -215,7 +214,7 @@ def test_an_id_outside_the_table_names_nothing() -> None:
 
 
 def test_the_leader_sequence_reaches_the_command_and_the_chord_still_does() -> None:
-    # The maintainer asked for `<leader>f` ALONGSIDE Ctrl+Shift+I, not instead of it.
+    # `<leader>f` reaches the command ALONGSIDE Ctrl+Shift+I, not instead of it.
     # Driven through the real editor: arm the leader, send the key, drain.
     editor = Editor("abc def\n")
     editor.set_leader(DEFAULT_LEADER)
@@ -234,7 +233,7 @@ def test_the_leader_sequence_reaches_the_command_and_the_chord_still_does() -> N
 
 
 def test_the_leader_never_fires_where_a_command_is_in_flight() -> None:
-    # The guards the library promises (editor da8a850), pinned HERE because this host is
+    # The guards the library promises, pinned HERE because this host is
     # what breaks if they regress: an operand and an operator each consume the space
     # before the binding table is consulted, and a bare space moves nothing.
     # `r<Space>` is the one that fails when the guard is placed above the awaiting
@@ -257,7 +256,7 @@ def test_the_leader_never_fires_where_a_command_is_in_flight() -> None:
 
 def test_two_sequences_in_one_feed_both_survive() -> None:
     # The ABI slot holds ONE and a completing key OVERWRITES it during the feed, so where
-    # the drain sits decides whether a sequence is lost. Measured (editor 09e3e59): an armed
+    # the drain sits decides whether a sequence is lost. Measured: an armed
     # leader survives a drain, so a leader pressed at the end of one frame completes at the
     # start of the next -- three keys across two frames, ordinary typing. Draining once
     # after the feed, even in a loop, yields only the SECOND id; draining beside each key
@@ -280,7 +279,7 @@ def test_no_binding_claims_a_chord_the_host_serves_on_false() -> None:
 
     `_drain_editor_input` treats an unconsumed key as its own: `_handle_reserved_chord`
     approximates vim's insert-mode chords (Ctrl+U, Ctrl+W, ...) and `_is_lookup_key` serves
-    `K`. Since editor e6ddfbc a host binding SHADOWS the built-in and reports consumed --
+    `K`. A host binding SHADOWS the built-in and reports consumed --
     the point of it -- so a binding registered with Ctrl over one of those letters would
     take the key away from the fallback that implements it, silently.
 
@@ -338,10 +337,10 @@ def test_no_binding_claims_a_chord_the_host_serves_on_false() -> None:
 
 
 def test_the_host_clipboard_leaves_bare_ctrl_v_to_the_editor() -> None:
-    """`Ctrl+V` is blockwise visual (editor 5aa51cd), and `_handle_clipboard` runs BEFORE
+    """`Ctrl+V` is blockwise visual, and `_handle_clipboard` runs BEFORE
     `ed_key` — so claiming it there does not merely shadow the mode, it makes it unreachable.
 
-    This is the host half of a re-vendor that grew a keymap, and no editor-side gate can see
+    This is the host half of a keymap that grew, and no editor-side gate can see
     it: upstream's suite proves `Ctrl+V` enters blockwise while the key never arrives. The
     outcome is what is measured — the mode the editor actually reaches — not the handler's
     return value. Paste keeps `Ctrl+Shift+V`, where vim's terminal-style paste lives anyway.

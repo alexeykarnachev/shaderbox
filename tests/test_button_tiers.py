@@ -1,6 +1,6 @@
-"""The button system's two invariants (079 D12).
+"""The button system's two invariants.
 
-The maintainer's finding was that the app's buttons did not read as one family: a text-only
+The app's buttons must read as one family: a text-only
 tier blurred into the prose around it, and enough sites bypassed the primitives that fixing
 the tier would not have fixed the app. So the tier set is capped and the bypass is gated.
 """
@@ -14,7 +14,7 @@ from shaderbox import ui_primitives
 
 _PACKAGE = Path(ui_primitives.__file__).parent
 
-# The four tiers every labelled verb in the app takes (079 D12). Chips and pills are a
+# The four tiers every labelled verb in the app takes. Chips and pills are a
 # different thing — a tag, a filter, a mode selector — and are counted separately.
 _TIERS: frozenset[str] = frozenset(
     {"standard_button", "primary_button", "danger_button", "toggle_button"}
@@ -70,8 +70,6 @@ def _raw_button_calls() -> dict[tuple[str, str], list[int]]:
 
 
 def test_no_site_hand_rolls_a_button_outside_the_primitives() -> None:
-    # Falsifier: put an `imgui.button("Save")` in any panel — it lands here with no reason
-    # beside it, which is the point: a bypass is what let the app drift out of one family.
     unlisted = {
         where: lines
         for where, lines in _raw_button_calls().items()
@@ -94,10 +92,9 @@ def test_every_listed_exception_still_exists() -> None:
 
 
 def test_the_tier_set_stays_at_four() -> None:
-    # 079 D12 caps it: a site that needs a fifth is a design question, not a new primitive.
+    # The set is capped: a site that needs a fifth is a design question, not a new primitive.
     # Every labelled button primitive is either one of the four tiers, one of the two chip/pill
     # shapes (a tag or a filter, not a verb), or a thin wrapper that forwards to a tier.
-    # Falsifier: add a fifth labelled primitive with its own styling and it lands in `extra`.
     labelled = {
         name: function
         for name, function in vars(ui_primitives).items()

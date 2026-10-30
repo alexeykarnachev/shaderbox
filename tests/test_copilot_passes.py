@@ -1,4 +1,4 @@
-"""The copilot can see and address a document's passes (065 stage 8, D11).
+"""The copilot can see and address a document's passes.
 
 Three things had to change together, and each is useless alone: the ADDRESS scheme gained a
 `<document>#<pass>` kind, the working set shows a document's passes as sub-sections (one member is
@@ -165,7 +165,7 @@ def test_a_pass_s_wiring_is_shown_including_what_is_unwired(app: Any) -> None:
     views, _ = app.copilot_backend.read_working_set()
     view = next(v for v in views if not v.is_lib)
     composite = next(p for p in view.passes if p.name == "composite")
-    # An unfilled input reads black (D3), which is silent on screen — so it is stated here. An
+    # An unfilled input reads black, which is silent on screen — so it is stated here. An
     # explicit none reads differently from an undecided one: the model can respect the first and
     # should fill the second.
     assert "u_src sampler2D <- (none; reads BLACK)" in composite.uniforms
@@ -179,7 +179,7 @@ def test_a_pass_s_wiring_is_shown_including_what_is_unwired(app: Any) -> None:
 
 
 def test_a_pass_wired_only_by_its_uniform_name_is_shown_as_filled(app: Any) -> None:
-    # 069 D9: `u_scene` beside a pass `scene` is filled by the renderer with no stored edge, so
+    # `u_scene` beside a pass `scene` is filled by the renderer with no stored edge, so
     # telling the model it reads BLACK would be a false fact on the channel it acts from.
     document_id = _two_pass(app)
     document = app.ui_documents[document_id].document
@@ -217,8 +217,7 @@ def test_the_member_row_resolves_after_the_compile_that_finds_the_samplers(
     # The member view's own uniform rows (every document, not only a multi-pass one) resolve the
     # wiring through `_wired_for`, and the name rule reads from a COMPILED program: asked about
     # a never-compiled output pass, the row would say its name-wired sampler reads BLACK. The
-    # working-set builder compiles first; this pins that it does. Falsifier: drop the compile
-    # loop from `_copilot_document_working_view`.
+    # working-set builder compiles first; this pins that it does.
     document_id = _two_pass(app)
     app.session.set_sampler_source(document_id, "composite", "u_src", AutoSource())
     document = app.ui_documents[document_id].document
@@ -244,7 +243,7 @@ def test_a_single_pass_document_renders_exactly_as_before(app: Any) -> None:
 
 
 def test_a_pass_address_in_the_working_set_collapses_to_its_document(app: Any) -> None:
-    # One member is one DOCUMENT (D11): an 8-pass document must not be able to evict its own
+    # One member is one DOCUMENT: an 8-pass document must not be able to evict its own
     # passes out of the six-slot cap. Driven on a NON-current document, since the current one is
     # unioned in regardless and would hide a per-pass member.
     document_id = _two_pass(app)
@@ -320,7 +319,7 @@ def test_a_document_with_a_broken_non_output_pass_reports_errors(app: Any) -> No
 
 
 def test_read_shader_addressed_to_a_pass_returns_that_pass(app: Any) -> None:
-    # 081 D1: read_shaders compiled the OUTPUT pass only, so a `<id>#<pass>` read — the address
+    # read_shaders compiled the OUTPUT pass only, so a `<id>#<pass>` read — the address
     # every edit tool takes — came back as "no such document(s)" and a non-output pass was
     # unreadable by any tool.
     document_id = _two_pass(app)
@@ -353,7 +352,7 @@ def test_a_bare_read_still_returns_the_output_pass(app: Any) -> None:
 
 
 def test_a_multi_pass_example_reads_every_pass(app: Any) -> None:
-    # 081 D1: the shipped Radiance Cascades example is six passes and the output one is the
+    # the shipped Radiance Cascades example is six passes and the output one is the
     # presentation step, so an example read that returned only it handed the model 28 of 287
     # lines — the technique it was pointed at was unreachable by every tool.
     examples = app.copilot_backend._get_ui_document_examples()
@@ -373,7 +372,7 @@ def test_a_multi_pass_example_reads_every_pass(app: Any) -> None:
 
 
 def test_an_unreachable_pass_says_so_in_the_working_set(app: Any) -> None:
-    # 081 D10: the pass strip already dims a pass the output does not reach (its `live` set), but
+    # the pass strip already dims a pass the output does not reach (its `live` set), but
     # PassView carried no such field, so the model was the only party that could not see it — and
     # four dead stubs survived every end-of-mission sweep turn, one still wired as a live node.
     document_id = _two_pass(app)

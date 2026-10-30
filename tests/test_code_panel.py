@@ -1,8 +1,8 @@
-"""The code panel's cursor follow and its tab order (071 W-B).
+"""The code panel's cursor follow and its tab order.
 
 The follow and the order permutation are imgui-free helpers, tested against the vendored
 editor and a bare tab list; Ctrl+Tab's focus rule is driven through the real frame loop with
-injected imgui input, the way the walk's repro was."""
+injected imgui input, as a user would."""
 
 from types import SimpleNamespace
 from typing import Any
@@ -40,8 +40,7 @@ def _caret_is_drawn_above_the_status_row(e: Editor, size: tuple[float, float]) -
 def _added_line_stays_in_view(keys: str) -> None:
     # An edit that adds a line at the bottom while the last line is on the bottom row: the new
     # line is not in the previous layout, so a follow that runs before this frame's layout clamps
-    # to the old last line and leaves the caret under the status row. Falsifier: run the follow
-    # before the layout -- `G` already lands short, and the caret quad sits on the status row.
+    # to the old last line and leaves the caret under the status row.
     e, size, rows = _editor_with_status_row(10)
     e.feed("G")
     last = code_tab.layout_following_cursor(e, size, 16.0, rows, None)

@@ -37,7 +37,7 @@ def test_added_dir_appears(app: Any) -> None:
     app.session.sync_documents_from_disk()
 
     assert new_id in app.ui_documents
-    # Loaded lazily (066 D1): no program yet, and the first need compiles it.
+    # Loaded lazily: no program yet, and the first need compiles it.
     render_pass = app.ui_documents[new_id].document.render_pass
     assert render_pass.program is None
     assert render_pass.get_active_uniforms() != []
@@ -45,8 +45,7 @@ def test_added_dir_appears(app: Any) -> None:
 
 def test_half_written_dir_does_not_crash(app: Any) -> None:
     # A dir with document.json but no shader yet (a document mid-creation on disk) must NOT crash the sync
-    # nor get added; it appears once the shader lands. Regression: an unguarded load FileNotFound'd
-    # and took down the frame loop.
+    # nor get added; it appears once the shader lands.
     documents_dir = app.paths.documents_dir
     new_id = "half-written-document"
     shutil.copytree(documents_dir / STARTER_EXAMPLE_ID, documents_dir / new_id)
@@ -97,7 +96,7 @@ def test_changed_document_json_reloads(app: Any) -> None:
     app.session.sync_documents_from_disk()
 
     # The stored pair is what the reload picked up. The live canvas is NOT it: this document is
-    # Auto, so it opens at its aspect fitted to a region (090 revision 1) and the pair is only
+    # Auto, so it opens at its aspect fitted to a region and the pair is only
     # what a switch to Fixed would seed from.
     assert app.ui_documents[target].document.resolution == (123, 123)
 

@@ -1,8 +1,8 @@
-"""The Document tab's canvas presets menu (069 W-A).
+"""The Document tab's canvas presets menu.
 
-What the menu offers and where each entry comes from: the squares W-H's first tutorial step
+What the menu offers and where each entry comes from: the squares the first tutorial step
 depends on, the named video shapes single-homed in `render_shape.py`, and any bound texture's
-size across ALL passes. Building the list forces no compile (066 D1) and no entry can be
+size across ALL passes. Building the list forces no compile and no entry can be
 silently altered by the clamp on its way through `_apply_canvas_size`.
 
 Needs a real GL context, like every other module that builds a Document.
@@ -92,8 +92,8 @@ def _document(
 def _presets(doc: Document) -> list[tuple[str, tuple[int, int]]]:
     """Every FIXED row of the canvas popup, flattened out of its aspect groups.
 
-    The popup groups by ratio and leads each group with `Auto` (093 W8); what these tests are
-    about is the sizes it offers, which is the same set the flat list used to be.
+    The popup groups by ratio and leads each group with `Auto`; what these tests are
+    about is the sizes it offers.
     """
     groups = canvas_choice_groups(UIDocument(document=doc))
     return [
@@ -130,7 +130,7 @@ def _loaded_document(root: Path, size: tuple[int, int]) -> UIDocument:
 
 
 def test_the_square_presets_include_512(gl_ctx: moderngl.Context) -> None:
-    # W-H's "Before you start" step names 512 x 512; drop 512 and that step is unperformable.
+    # The tutorial's "Before you start" step names 512 x 512; drop 512 and that step is unperformable.
     doc = _one_pass(gl_ctx)
     presets = _presets(doc)
     assert ("512x512", (512, 512)) in presets
@@ -168,7 +168,7 @@ def test_the_video_shapes_come_from_the_shape_table(gl_ctx: moderngl.Context) ->
             (1, 1),
         )
         # The row drops the ratio its own group caption already names, so the table's
-        # spelling is trimmed the same way before the lookup (093 W8).
+        # spelling is trimmed the same way before the lookup.
         row_label = label.rsplit(" (", 1)[0]
         assert by_label[row_label] == expected, label
         assert [lbl for lbl, _ in presets].count(row_label) == 1, label
@@ -202,7 +202,7 @@ def test_a_bound_texture_is_offered_and_the_default_image_is_not(
 
 
 def test_building_the_presets_compiles_nothing(gl_ctx: moderngl.Context) -> None:
-    # get_active_uniforms() compiles a never-attempted pass (066 D1); on the Document tab that
+    # get_active_uniforms() compiles a never-attempted pass; on the Document tab that
     # is the whole graph on the first frame, invisible because it renders correctly.
     doc = _document(
         gl_ctx,
@@ -221,11 +221,9 @@ def test_building_the_presets_compiles_nothing(gl_ctx: moderngl.Context) -> None
 def test_each_size_is_offered_once(gl_ctx: moderngl.Context) -> None:
     """A size appears in exactly one group, once.
 
-    The current size IS offered now (093 W8): the rows are grouped by ratio, and hiding the one
+    The current size IS offered now: the rows are grouped by ratio, and hiding the one
     the document currently sits at would leave a gap in its own group. What must not happen is
-    the same pair arriving twice -- from the squares and a video shape, or from two textures.
-    Falsifier: drop the `seen` set and 512x512 doubles for a document already at it.
-    """
+    the same pair arriving twice -- from the squares and a video shape, or from two textures."""
     for size in ((512, 512), (1280, 720)):
         doc = _one_pass(gl_ctx, size=size)
         offered = [preset for _, preset in _presets(doc)]
@@ -255,8 +253,8 @@ def test_a_malformed_canvas_size_falls_back_to_the_default(
 ) -> None:
     # A hand-edited document.json never passes a widget; a bad pair costs the default, not a
     # raise. The guard that answers for it is `Document.__init__`'s parameter coercion, which is
-    # where a malformed number still reaches the engine (090 D1 dropped the top-level key, so
-    # `ui_state.resolution` is pydantic's to reject and the loader's default to replace).
+    # where a malformed number still reaches the engine (`ui_state.resolution` is
+    # pydantic's to reject and the loader's default to replace).
     assert as_canvas_size([1280]) is None
     assert as_canvas_size("1280x960") is None
     assert as_canvas_size([1280, "960"]) is None

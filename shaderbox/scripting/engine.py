@@ -1,33 +1,32 @@
-"""The CPU-script engine (feature 041, redesigned by 048 to ONE script per document) — repo code owned
-by the headless ProjectSession.
+"""The CPU-script engine, owned by the headless ProjectSession.
 
 Per document it resolves a single `documents/<id>/scripts/script.py` (the document script) whose
 `update(self, context) -> dict` drives MANY uniforms across MANY passes from ONE stateful instance. The
 engine compiles it once (cached by `(path, mtime)`, holding its own state instance), and on each `tick`
-calls `update`, routes the returned dict per 069 D3, coerces each value against the live uniform of the
+calls `update`, routes the returned dict, coerces each value against the live uniform of the
 target pass, and writes it into that pass's `uniform_values` BEFORE `Pass.render()` reads them. A broken
 script never raises into the frame loop: the uniform freezes at last-good and a `ScriptError` is recorded.
 
-Routing (069 D3): the VALUE's type decides. A `dict` value is a PASS BLOCK — `{"paint": {"u_b": v}}`
+Routing: the VALUE's type decides. A `dict` value is a PASS BLOCK — `{"paint": {"u_b": v}}`
 drives that pass alone. Any other value is a BROADCAST — a bare key drives that uniform on every pass
 declaring it. Broadcasts apply first and pass blocks second, so specific beats general regardless of the
 author's insertion order. An unknown pass, or a key no target declares, is a soft error the UI's strip
 shows. `coerce_one` rejects a dict outright, which is what keeps the dispatch unambiguous.
 
-A key that does not land goes through ONE path, `_warn` (102 D1): every non-landing site names a
+A key that does not land goes through ONE path, `_warn`: every non-landing site names a
 `KeyFailReason` (`scripting/keys.py`) and hands it to `_warn`, which is the only place that consults
 `SILENT_KEY_FAIL_REASONS` — the code deciding WHAT to do never branches on WHICH reason. A warning
 reason records a `ScriptError` (the strip's level-triggered row, unchanged) and fires `on_key_warning`
-EDGE-triggered on the reason changing (102 D3); the two silent reasons (`held_uncompiled`,
+EDGE-triggered on the reason changing; the two silent reasons (`held_uncompiled`,
 `engine_owned`) record neither.
 
-Play/stop (048, pass-qualified by 069): the live tick takes a `stopped` set of `(pass, name)` keys the
+Play/stop: the live tick takes a `stopped` set of `(pass, name)` keys the
 user has frozen for manual edit — a stopped key still ticks the script (state advances, the key stays
 "driven") but its WRITE is skipped, so the manual value sticks. Export ticks a fresh per-export instance
 with NO stopped set (an export always plays the script).
 
 The engine imports no imgui/glfw/App and no concrete type — it works against the `ScriptTarget`
-protocol (a document's `passes` by name, each a `ScriptPass`), so it stays in the 025 headless core.
+protocol (a document's `passes` by name, each a `ScriptPass`), so it stays in the headless core.
 A real `Document` satisfies it structurally.
 """
 
@@ -63,7 +62,7 @@ from shaderbox.scripting.keys import (
 from shaderbox.uniform_coerce import VALUE_GL_TYPES, is_text_array
 
 # The single document script: one stateful class whose update returns a dict driving many uniforms.
-# One script per document (048 — the per-uniform `u_<name>__<tag>.py` scheme of 044/047 is removed). The
+# One script per document. The
 # error key is `(document_id, "", _SCRIPT_FILE)`.
 _SCRIPT_FILE = DOCUMENT_SCRIPT_BASENAME
 # The deadline a native call gets inside the completion probe, which runs on the UI thread.
@@ -87,7 +86,7 @@ def normalize_script_tabs(text: str) -> str:
 
 @dataclass(frozen=True)
 class ScriptStatus:
-    # The document script's UI-facing state (feature 042's strip). sentinel_error is the script's
+    # The document script's UI-facing state. sentinel_error is the script's
     # compile/run failure (it drives nothing when set); soft_errors are (pass, key, error) for
     # homeless keys (typo/orphan) that name no real uniform row. A bare key no pass declares
     # carries "" as its pass.
@@ -135,7 +134,7 @@ def texture_stats(value: object) -> TextureStats:
 
 @dataclass(frozen=True)
 class ScriptProbe:
-    # The synchronous feedback a copilot write_script reads back (feature 043). compile_error is the
+    # The synchronous feedback a copilot write_script reads back. compile_error is the
     # live reload verdict (None = clean). The rest come from an ISOLATED dry-tick (the live document + the
     # live engine state are untouched): runtime_error = the script RAN but `update` raised / returned a
     # non-dict at some frame (the uniform freezes from there — distinct from a compile error and from a
@@ -143,8 +142,8 @@ class ScriptProbe:
     # sampler is in `texture_samples` instead); per_key_errors = shape/coercion failures on real
     # uniforms AND keys the engine refused (a block or an undrivable sampler, a refused field, an
     # unknown pass); orphan_keys = (pass, key) for a key that landed in NEITHER of the two silent
-    # `KeyFailReason`s (`held_uncompiled`, `engine_owned`) NOR carries an error — since 102 D1/D2
-    # every other non-landing reason now warns (a per_key_errors row), so in ordinary authoring
+    # `KeyFailReason`s (`held_uncompiled`, `engine_owned`) NOR carries an error — every other
+    # non-landing reason warns (a per_key_errors row), so in ordinary authoring
     # this list is EMPTY; samples = (t, {(pass, name): value}) at each sample time — the motion
     # signal (values differ across t). Both lists carry "" as the pass for a bare key.
     compile_error: "ScriptError | None"
@@ -153,7 +152,7 @@ class ScriptProbe:
     orphan_keys: list[tuple[str, str]]
     samples: list[tuple[float, dict[tuple[str, str], Any]]]
     runtime_error: "ScriptError | None" = None
-    # 103 D1/D2: population STATISTICS at each sample time, never the columns themselves (the
+    # Population STATISTICS at each sample time, never the columns themselves (the
     # values_sink ndarray/dict ban -- 20k entities x 4 f4 columns is ~320 KB against a JSON
     # schema, so a population can never cross the tool boundary as data). One entry per sample
     # time, mirroring `samples`; each maps pass name -> (count, {column: (dtype, shape, min,
@@ -170,7 +169,7 @@ class ScriptProbe:
             ],
         ]
     ] = field(default_factory=list)
-    # 110 D8: a script-fed sampler's STATISTICS at each sample time, never the field. One entry
+    # A script-fed sampler's STATISTICS at each sample time, never the field. One entry
     # per sample time, mirroring `samples`; each maps (pass, sampler) -> TextureStats. A
     # sampler pair is in neither `driven` nor `samples`: a field has no value to compare.
     texture_samples: list[tuple[float, dict[tuple[str, str], TextureStats]]] = field(
@@ -181,7 +180,7 @@ class ScriptProbe:
 def _column_stats(
     columns: Mapping[str, Any],
 ) -> dict[str, tuple[str, tuple[int, ...], float, float]]:
-    # 103 D1/D2: reduce a VALIDATED population's real columns to plain-Python statistics
+    # Reduce a VALIDATED population's real columns to plain-Python statistics
     # (dtype/shape/range) right where the arrays are in scope -- this is the boundary a
     # population may not cross as data, so nothing past this function ever holds an ndarray.
     # An empty column (count 0) has no min/max; reported as (0.0, 0.0) rather than raising.
@@ -210,7 +209,7 @@ def is_scriptable(uniform: object) -> TypeGuard[moderngl.Uniform]:
 
 
 def is_script_texture(uniform: object) -> TypeGuard[moderngl.Uniform]:
-    # A sampler a script can feed a field to (110 D1): one `sampler2D`, not an array of them.
+    # A sampler a script can feed a field to: one `sampler2D`, not an array of them.
     return (
         not isinstance(uniform, moderngl.UniformBlock)
         and getattr(uniform, "gl_type", None) == GL_SAMPLER_2D
@@ -223,24 +222,24 @@ class ScriptPass(Protocol):
     uniform_values: dict[str, Any]
 
     # This frame's entity columns, or empty. Plain arrays by field name: the engine stays
-    # GL-free (025) and the draw owns every buffer, so a population is DATA here and
+    # GL-free and the draw owns every buffer, so a population is DATA here and
     # becomes GPU state only inside `Pass.render`. It is also why a future off-thread
     # producer changes nothing downstream -- it writes the same slot.
     pending_instances: dict[str, Any]
 
-    # This frame's script-fed fields, by sampler name (110 D3): the script's own arrays, or
+    # This frame's script-fed fields, by sampler name: the script's own arrays, or
     # `REFUSED_TEXTURE` for one the engine refused. Data here, a texture only inside
     # `Pass.render`, for the same reasons as `pending_instances`.
     pending_textures: dict[str, np.ndarray]
 
-    # What this pass's last draw did (102 D4). The engine is the only producer that can
+    # What this pass's last draw did. The engine is the only producer that can
     # decide `no_fields` -- a population offered to a pass declaring no `flat in` and
     # dropped -- because the draw sees a pass with no entity fields and cannot tell one
     # was ever offered. The other seven states are written by the draw and by `compile`.
     last_outcome: InstancedOutcome
 
     # False only while the pass has NEVER ATTEMPTED a compile: the engine skips it this tick rather
-    # than forcing a compile from inside the script tick (066 D1). True once a compile was attempted,
+    # than forcing a compile from inside the script tick. True once a compile was attempted,
     # whether it succeeded (route normally) or FAILED (an empty active map, so its keys take the
     # ordinary orphan path and the user reads why on the strip). Read-only, so a `Pass` satisfying it
     # with a property is accepted.
@@ -297,16 +296,16 @@ class DocumentScripts:
         # reset-time __init__ failure can still freeze the prior frame's keys.
         self.last_driven: set[tuple[str, str]] = set()
         # The sampler pairs the script fed a field to on its last tick, a refused field included
-        # (110 D3). Kept apart from `last_driven` because that set is what `_freeze` restores, and
+        # Kept apart from `last_driven` because that set is what `_freeze` restores, and
         # a field has no value to restore into a sampler's source.
         self.last_texture_driven: set[tuple[str, str]] = set()
         # Script keys that warned on the last tick (typo/orphan/unknown pass/refused field) —
         # tracked separately from last_driven so the stale-clear can pop the error once the key
         # stops being returned. A key that names no uniform claims no ownership in
-        # script_driven_uniforms; a refused field does, through `last_texture_driven` (110 D6).
+        # script_driven_uniforms; a refused field does, through `last_texture_driven`.
         # A bare key no pass declares carries "" as its pass.
         self.last_skipped: set[tuple[str, str]] = set()
-        # The edge-trigger state for `_warn` (102 D3): the REASON each (pass, name) warned with
+        # The edge-trigger state for `_warn`: the REASON each (pass, name) warned with
         # on its last tick, so a key stuck in one reason warns once and a key oscillating between
         # two warns on every transition. A key absent here has never warned, or its last tick
         # landed / went silent — both clear the edge, so the next warning fires again.
@@ -336,8 +335,7 @@ def _stub_kind(uniform: moderngl.Uniform) -> tuple[str, str]:
     return "float", "0.0"
 
 
-# Scoped docstrings (045 E1; 048 documents the dict contract + play/stop; 079 D3 sets the style:
-# PEP 257 with the Google layout, one fact per line, no `;`-joined lists). The per-frame context
+# Scoped docstrings: PEP 257 with the Google layout, one fact per line, no `;`-joined lists. The per-frame context
 # reference is NOT repeated here — `K` on `context` or on a field is the one authored home
 # (`api_doc.py`), and a copy in the stub is a copy that drifts.
 _UPDATE_DOC = (
@@ -373,13 +371,13 @@ _INIT_DOC = (
 
 
 def _script_import_line() -> str:
-    # The explicit import line atop the stub (048 decision 8). Two names, and they are the whole
+    # The explicit import line atop the stub. Two names, and they are the whole
     # importable surface: a script returns plain Python, so there are no value types to import.
     return "from shaderbox.scripting import ScriptBehavior, ScriptContext\n"
 
 
 def script_stub_for(uniforms_by_pass: dict[str, list[moderngl.Uniform]]) -> str:
-    # The ready-to-edit document script (044; 048; 069 routes it across passes): one stateful class
+    # The ready-to-edit document script, routed across passes: one stateful class
     # whose update returns a dict driving MANY uniforms across MANY passes. update returns an EMPTY
     # dict by default (a fresh script drives nothing — every uniform stays manual); each pass's
     # scriptable uniforms are listed as a COMMENTED block so the user sees what's available + the two
@@ -443,7 +441,7 @@ class ScriptEngine:
     def __init__(
         self,
         engine_driven: frozenset[str] = frozenset(),
-        # The single warn path's OUTPUT seam (102 D3a): the engine is headless core and imports
+        # The single warn path's OUTPUT seam: the engine is headless core and imports
         # no imgui, so the UI-facing notification rides an injected callback, the same idiom
         # `ProjectSession` uses for its own `on_*` callbacks. Fires once per EDGE (a key's
         # `KeyFailReason` changing), never per frame. Defaults to a no-op so a headless/test
@@ -473,17 +471,17 @@ class ScriptEngine:
         return scripts.source, scripts.mtime
 
     def script_driven_uniforms(self, document_id: str) -> set[tuple[str, str]]:
-        # The (pass, name) pairs the script drove on its last tick (decision 10 — only known after a
+        # The (pass, name) pairs the script drove on its last tick (only known after a
         # tick). Used by the copilot set_uniform reject + the UI's play/stop button gate (a pair here
         # is script-targeted: playing or stopped).
-        # A script-fed sampler counts (110 D4): its row gets the same play/stop button.
+        # A script-fed sampler counts: its row gets the same play/stop button.
         document = self._documents.get(document_id)
         if document is None:
             return set()
         return document.last_driven | document.last_texture_driven
 
     def script_status(self, document_id: str) -> "ScriptStatus | None":
-        # The document script's UI status (feature 042), or None when the document has no script.py. Whether a
+        # The document script's UI status, or None when the document has no script.py. Whether a
         # script is bound, its sentinel compile/run error (drives zero rows when set), the count of real
         # uniforms it drove last tick, and its HOMELESS soft-key errors (typo/orphan keys naming no row).
         document = self._documents.get(document_id)
@@ -509,7 +507,7 @@ class ScriptEngine:
     def reload(self, document_id: str, scripts_dir: Path) -> None:
         # Discover + (re)compile the document's `script.py` if its mtime changed (a recompile makes a
         # FRESH instance — state resets on edit), drop it if the file vanished. The script binds by
-        # EXISTENCE (048 — no active flag; the file IS the binding). Cheap when nothing changed: a stat.
+        # EXISTENCE (no active flag; the file IS the binding). Cheap when nothing changed: a stat.
         scripts = self._documents.get(document_id)
         if scripts is None or scripts.scripts_dir != scripts_dir:
             if scripts is not None and scripts.behavior is not None:
@@ -530,7 +528,8 @@ class ScriptEngine:
             # A vanished / half-saved / non-UTF8 file mid-edit — keep the cached script, never raise
             # into the frame loop (ValueError covers UnicodeDecodeError).
             return
-        if scripts.mtime == mtime:
+        # The body too: an edit saved within the filesystem's timestamp tick keeps the mtime.
+        if scripts.mtime == mtime and scripts.source == body:
             return
         # The old script's native hosts stop BEFORE the new one's module code runs, so a
         # library that holds something exclusive in `sb_load` can be loaded again.
@@ -653,13 +652,13 @@ class ScriptEngine:
     ) -> None:
         # Tick the LIVE script: it routes the returned dict across the document's passes and writes
         # each target pass's uniform_values before Pass.render() reads them. A pair in `stopped` (the
-        # user froze it for manual edit, 048) still ticks the script + counts as driven, but its WRITE
+        # user froze it for manual edit) still ticks the script + counts as driven, but its WRITE
         # is skipped so the manual value sticks. A runtime/shape error freezes the uniform at last-good
         # and records a ScriptError; the frame always continues.
         scripts = self._documents.get(document_id)
         if scripts is None or scripts.behavior is None:
             # No script, so nothing feeds a pass: a slot a removed script filled must not
-            # outlive it (110 D4).
+            # outlive it.
             for render_pass in document.passes.values():
                 render_pass.pending_textures = {}
                 render_pass.pending_instances = {}
@@ -708,7 +707,7 @@ class ScriptEngine:
         sample_times: tuple[float, ...],
         fps: int,
     ) -> ScriptProbe:
-        # Synchronous copilot feedback (043): compile verdict from the ALREADY-LIVE state (the caller
+        # Synchronous copilot feedback: compile verdict from the ALREADY-LIVE state (the caller
         # reloaded the file at write time — no reload here, which would mutate live state), then an
         # ISOLATED dry-tick. ONE fresh script is stepped CONTINUOUSLY through the export-clock frames so
         # self.* accumulates (an integrator animates correctly); every write lands in a per-call sink,
@@ -736,7 +735,7 @@ class ScriptEngine:
         fps: int,
     ) -> ScriptProbe:
 
-        # Compile every pass FIRST. 066 D1 forbids compiling from inside the FRAME LOOP; this is a
+        # Compile every pass FIRST. Compiling from inside the FRAME LOOP is forbidden; this is a
         # synchronous agent call on the main thread, the same context `_scriptable_uniforms_for`
         # already compiles in. Without it a probe of a document whose passes have never rendered
         # holds every key and hands the agent three false facts at once — an empty driven set (the
@@ -812,11 +811,11 @@ class ScriptEngine:
                 texture_samples.append((want[frame], dict(texture_stats)))
 
         # A driven key's shape failure and a skipped key's refusal (a sampler/block, an unknown
-        # pass) are both "this key names something and it did not work" — one list. Since 102
-        # D1/D2 every non-landing key carries an error EXCEPT the two silent reasons
+        # pass) are both "this key names something and it did not work" — one list. Every
+        # non-landing key carries an error EXCEPT the two silent reasons
         # (`held_uncompiled`, `engine_owned`), which `_warn` records nowhere -- a skipped key
-        # with no error is now exactly one of those two, never an ordinary orphan (102's blast
-        # radius: `orphan_keys` goes empty in ordinary authoring).
+        # with no error is exactly one of those two, never an ordinary orphan
+        # (`orphan_keys` goes empty in ordinary authoring).
         per_key = [
             (pass_name, name, err)
             for pass_name, name in sorted(seen_driven | seen_skipped)
@@ -855,9 +854,9 @@ class ScriptEngine:
     ) -> dict[str, dict[str, moderngl.Uniform | moderngl.UniformBlock]]:
         # One active-uniform map per READY pass, built once per tick. A pass that has never
         # attempted a compile is absent from the map: `get_active_uniforms` would compile it from
-        # inside the tick, which 066 D1 forbids -- its keys go through `_warn` as
-        # `held_uncompiled` (silent, 102 D1). A pass that HAS compiled and simply does not
-        # declare the name warns as `no_such_uniform` (102 D2 reverses 079 D5's silence there).
+        # inside the tick, which is forbidden -- its keys go through `_warn` as
+        # `held_uncompiled` (silent). A pass that HAS compiled and simply does not
+        # declare the name warns as `no_such_uniform`.
         return {
             pass_name: {u.name: u for u in render_pass.get_active_uniforms()}
             for pass_name, render_pass in document.passes.items()
@@ -876,7 +875,7 @@ class ScriptEngine:
         skipped: set[tuple[str, str]],
         scripts: "DocumentScripts | None",
     ) -> None:
-        # THE single path every non-landing key flows through (102 D1). It consults
+        # THE single path every non-landing key flows through. It consults
         # SILENT_KEY_FAIL_REASONS -- the only branch on WHICH reason anywhere in this class --
         # and every other site here just names a reason and calls this. `skipped` always gets
         # the pair (silent or not): it is the stale-clear's "touched this tick" bookkeeping, not
@@ -890,9 +889,9 @@ class ScriptEngine:
         errors[(document_id, pass_name, name)] = ScriptError(
             name, "runtime", message, pass_name=pass_name
         )
-        # Edge-triggered (102 D3): fire only when the reason CHANGES, so a key stuck in one
+        # Edge-triggered: fire only when the reason CHANGES, so a key stuck in one
         # failure warns once and one oscillating between two reasons warns on each transition.
-        # `scripts` is None for `dry_run`'s isolated tick (102 D3b) -- no live DocumentScripts to
+        # `scripts` is None for `dry_run`'s isolated tick -- no live DocumentScripts to
         # mutate, so the probe never fires the callback and never inherits or leaves edge state.
         if scripts is not None and scripts.last_warned.get(pair) != reason:
             scripts.last_warned[pair] = reason
@@ -918,7 +917,7 @@ class ScriptEngine:
         texture_stats_sink: dict[tuple[str, str], TextureStats] | None,
         scripts: "DocumentScripts | None",
     ) -> None:
-        # ONE key at ONE pass that declares it, by the uniform's TYPE (110 D1): a value uniform
+        # ONE key at ONE pass that declares it, by the uniform's TYPE: a value uniform
         # takes the coercion, a script-fed sampler takes a field, anything else (a block, an
         # image, a sampler other than a single sampler2D) is refused. Each pass succeeds or
         # fails on its own.
@@ -981,7 +980,7 @@ class ScriptEngine:
         scripts: "DocumentScripts | None",
         texture_stats_sink: dict[tuple[str, str], TextureStats] | None,
     ) -> None:
-        # Route ONE field at ONE sampler (110 D3-D6). The pair is the script's whether or not the
+        # Route ONE field at ONE sampler. The pair is the script's whether or not the
         # field validates, so it is driven either way; a refused one also warns (and so is
         # skipped, which is what puts it on the strip) and holds the last good frame at the draw.
         # A STOPPED pair puts nothing in the slot, so the sampler reads its own source.
@@ -1064,7 +1063,7 @@ class ScriptEngine:
             return
         errors.pop(key, None)
         last_good[pair] = coerced
-        # Play/stop (048): a STOPPED uniform's value is NOT written (the manual value sticks); the
+        # Play/stop: a STOPPED uniform's value is NOT written (the manual value sticks); the
         # script still ran + the pair still counts as driven (so the row keeps its play/stop button).
         if not is_stopped:
             if values_sink is not None:
@@ -1099,12 +1098,12 @@ class ScriptEngine:
         # `values_sink` (the dry-run path): every uniform-value WRITE lands there, keyed by the (pass,
         # name) pair, + the freeze-fallback READ consults it, so the LIVE document is never written.
         # None = the live tick (write each target pass).
-        # `scripts` (102 D3b): the LIVE DocumentScripts, whose `last_warned` is the edge-trigger
+        # `scripts`: the LIVE DocumentScripts, whose `last_warned` is the edge-trigger
         # state `_warn` reads and updates. None for `tick_export` and `dry_run` -- both tick an
         # ISOLATED behavior instance, and edge state living on the live document is exactly what
-        # 063 forbids a probe from mutating. Passing None makes `_warn` skip the callback and the
+        # a probe must never mutate. Passing None makes `_warn` skip the callback and the
         # state write rather than fabricate a throwaway edge history per call.
-        # `population_stats_sink` (103 D1/D2, dry-run only): this tick's population STATISTICS, one
+        # `population_stats_sink`: this tick's population STATISTICS, one
         # entry per pass that named `@instances`, reduced from the real columns right where they are
         # validated -- the raw arrays never leave this function. Value = (count, {column: (dtype,
         # shape, min, max)}, verdict); verdict "" = validated clean, else the refusal reason or
@@ -1113,7 +1112,7 @@ class ScriptEngine:
         behavior_key = (document_id, "", _SCRIPT_FILE)
         # Every per-key row this document carries is REBUILT each tick: dropped here, so what the
         # phases below write is what stands and a key the script fixed simply is not written
-        # again. Clearing by "was the pair TOUCHED this tick" instead was subtly wrong — the
+        # again. Clearing only the pairs TOUCHED this tick is not used because the
         # pass-free slot `(document_id, "", key)` holds two namespaces (a bare uniform name no
         # pass declares, and a block naming a pass that does not exist), so rewriting
         # `{"blur": {...}}` as `{"blur": 1.0}` touched the pair from the bare path, suppressing
@@ -1162,14 +1161,14 @@ class ScriptEngine:
         driven: set[tuple[str, str]] = set()
         skipped: set[tuple[str, str]] = set()
 
-        # 069 D3: the VALUE's type dispatches — a dict is a pass block, anything else broadcasts. Not
+        # The VALUE's type dispatches — a dict is a pass block, anything else broadcasts. Not
         # "is the key a pass name", which a pass called u_brush would make ambiguous. Broadcasts run
         # FIRST and blocks SECOND, in two phases rather than one loop, so "specific over general" holds
         # regardless of the author's insertion order (a dict preserves it, and it is not a precedence
         # the author meant to express).
-        # A None value means "leave this one to me": the stub, the API block and 059's spec all
-        # tell the author that a key mapped to None stays MANUAL, and it did not — it reached
-        # coercion, failed as "not a number" and counted as driven. Dropped here, beside the
+        # A None value means "leave this one to me": the stub and the API block
+        # tell the author that a key mapped to None stays MANUAL, so it is dropped here (it would
+        # otherwise fail coercion as "not a number" and count as driven), beside the
         # engine-owned drop, so both the bare and the block path get it.
         broadcasts = {
             k: v for k, v in raw.items() if not isinstance(v, dict) and v is not None
@@ -1182,8 +1181,8 @@ class ScriptEngine:
         # A reserved key is pulled OUT of its block before anything else looks at it. The
         # `@` cannot begin a GLSL identifier or a pass name, so the namespace is decidable
         # -- and it has to be taken here, because a bare uniform name reaching the same
-        # point warns as a normal orphan (102 D2), which is wrong for engine vocabulary. A
-        # mistyped `@instance` now WARNS (102 D2 relaxes the old hard error) rather than
+        # point warns as a normal orphan, which is wrong for engine vocabulary. A
+        # mistyped `@instance` WARNS rather than
         # rendering a blank frame with an empty error strip.
         populations: dict[str, dict[str, Any]] = {}
         if population_stats_sink is not None:
@@ -1228,7 +1227,7 @@ class ScriptEngine:
                 render_pass = document.passes.get(pass_name)
                 fields = getattr(render_pass, "entity_fields", ())
                 if not fields:
-                    # Split per 102 D1: `active_by_pass` distinguishes a pass that has
+                    # `active_by_pass` distinguishes a pass that has
                     # NEVER attempted a compile (absent from the map -- `held_uncompiled`,
                     # silent) from one that HAS compiled and simply declares no `flat in`
                     # (`instances_without_fields`, warns). Without `active_by_pass` the two
@@ -1236,7 +1235,7 @@ class ScriptEngine:
                     if pass_name in active_by_pass:
                         # The engine is the only producer that can decide this state: the
                         # draw sees a pass with no entity fields and cannot tell a
-                        # population was offered and dropped (102 D4's third producer).
+                        # population was offered and dropped.
                         if render_pass is not None:
                             render_pass.last_outcome = InstancedOutcome(
                                 pass_name, "no_fields"
@@ -1345,7 +1344,7 @@ class ScriptEngine:
         texture_driven: set[tuple[str, str]] = set()
 
         for name, value in broadcasts.items():
-            # An engine-owned key (u_time…) is the OTHER silent exemption (102 D1): the renderer
+            # An engine-owned key (u_time…) is the OTHER silent exemption: the renderer
             # owns that slot and a script can't be expected to avoid naming it.
             if name in self._engine_driven:
                 self._warn(
@@ -1365,10 +1364,10 @@ class ScriptEngine:
                 if name in active
             )
             if not declaring:
-                # NOWHERE DECLARED, with some pass compiled: `no_such_uniform` (102 D2 reverses
-                # 079 D5's silence here). NOWHERE DECLARED because no pass has compiled at all
+                # NOWHERE DECLARED, with some pass compiled: `no_such_uniform`.
+                # NOWHERE DECLARED because no pass has compiled at all
                 # yet: `held_uncompiled` (silent) -- indistinguishable from a real orphan without
-                # compiling a not-ready pass, which 066 D1 forbids from inside the tick.
+                # compiling a not-ready pass, which is forbidden inside the tick.
                 self._warn(
                     document_id=document_id,
                     pass_name="",
@@ -1449,7 +1448,7 @@ class ScriptEngine:
                     continue
                 if name not in active:
                     # The pass compiles and does not declare this name: the same shape as a
-                    # broadcast orphan, and since 102 D2 it warns instead of 079 D5's silence.
+                    # broadcast orphan, and it warns.
                     self._warn(
                         document_id=document_id,
                         pass_name=pass_name,
@@ -1480,20 +1479,18 @@ class ScriptEngine:
                     scripts=scripts,
                 )
 
-        # The dry-run never writes the live slots (063), as for populations above.
+        # The dry-run never writes the live slots, as for populations above.
         if values_sink is None:
             for pass_name, render_pass in document.passes.items():
                 render_pass.pending_textures = textures.get(pass_name, {})
 
-        # An omitted-after-failing key's stale error: clear any key TOUCHED last frame (driven OR a
-        # bad/skipped key) whose error this tick did not re-record (decision 8 — no zombie; an
-        # omitted real key keeps its last value).
-        #
-        # "Touched" is not enough on its own. The pass-free slot `(document_id, "", key)` holds
-        # two different namespaces — a bare uniform name no pass declares, and a block naming a
-        # pass that does not exist — so rewriting `{"blur": {...}}` as `{"blur": 1.0}` touches the
-        # pair from the bare path, which suppressed the clear, while never writing the slot to
-        # overwrite it. The old error then stood forever, on the strip and in the copilot's probe.
+        # No error outlives the tick that recorded it: every per-key row was dropped at the top
+        # of this tick (`stale_rows` above), so an error shows only if a phase re-recorded it,
+        # and an omitted real key keeps its last value. Clearing by the pairs touched last frame
+        # is not used because the pass-free slot `(document_id, "", key)` holds two namespaces
+        # (a bare uniform name no pass declares, and a block naming a pass that does not exist).
+        # The set bookkeeping below only feeds `script_driven_uniforms` and the next tick's
+        # play/stop gating.
         last_driven.clear()
         last_driven.update(driven)
         last_skipped.clear()
@@ -1508,7 +1505,7 @@ class ScriptEngine:
                 scripts.last_warned.pop(pair, None)
 
     def release_all(self) -> None:
-        """Stop every native host a live script started and delete its buffers (feature 109)."""
+        """Stop every native host a live script started and delete its buffers."""
         for scripts in self._documents.values():
             if scripts.behavior is not None:
                 scripts.behavior.release()

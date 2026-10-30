@@ -82,7 +82,7 @@ _MAIN_WINDOW_FLAGS = (
 
 
 def _file_pick_patterns(file_kinds: tuple[str, ...]) -> list[str]:
-    # pfd filter pair [label, "*.png *.jpg ..."] for the requested kinds (feature 052).
+    # pfd filter pair [label, "*.png *.jpg ..."] for the requested kinds.
     exts: list[str] = []
     if "image" in file_kinds or "video" in file_kinds:
         exts += MEDIA_EXTENSIONS
@@ -93,7 +93,7 @@ def _file_pick_patterns(file_kinds: tuple[str, ...]) -> list[str]:
 
 
 def _pump_file_gate(app: App) -> None:
-    # MAIN-THREAD per-frame poll (feature 052). While the copilot worker blocks on a bind_media file
+    # MAIN-THREAD per-frame poll. While the copilot worker blocks on a bind_media file
     # pick, open the native picker and poll it across LIVE frames (the app never freezes), then do the
     # bind on main and answer the gate with a path-free result. A pick landing after Stop is dropped
     # by gate.answer_file's _file_current guard.
@@ -163,7 +163,7 @@ def run(app: App) -> None:
 
 
 def planned_set_mode(app: App) -> tuple[bool, bool]:
-    """Which set this frame plans and renders while a popup is open (090 D10, 091 D11):
+    """Which set this frame plans and renders while a popup is open:
     `(examples_planned, import_project_tab)`. The Examples popup, or the import dialog on its
     Examples tab, plans the examples; the import dialog on its project tab plans the ordinary
     set, since its cards blit the project documents' live canvases. Every other popup
@@ -188,7 +188,7 @@ def _tick_frame_state(app: App) -> list[str] | None:
     return on None -- that is what the early `return` did when this was inline.
     """
     # ----------------------------------------------------------------
-    # A project switch requested from the Projects modal (084 D5). Consumed HERE, before any
+    # A project switch requested from the Projects modal. Consumed HERE, before any
     # drawing: the switch releases every GL object, and a popup body runs after the editor panel
     # and the document image have already pushed their textures into this frame's draw list.
     pending = app.pending_project_switch
@@ -240,7 +240,7 @@ def _tick_frame_state(app: App) -> list[str] | None:
         reload_document_if_changed(app, name, ui_document)
 
     # ----------------------------------------------------------------
-    # Tick the CPU-script engine (feature 040) BEFORE render: hot-reload changed scripts, then
+    # Tick the CPU-script engine BEFORE render: hot-reload changed scripts, then
     # compute scripted uniform values for exactly the documents this frame renders (the
     # document-render block below draws this same set). Matching that set keeps a scripted
     # uniform animating identically live and in export.
@@ -252,9 +252,9 @@ def _tick_frame_state(app: App) -> list[str] | None:
         else 1.0 / app.app_state.global_target_fps
     )
     app.last_tick_time = now
-    # The frame's render set (066 D2): the current document; with "Render all" on, every
+    # The frame's render set: the current document; with "Render all" on, every
     # document that already had its first render; plus AT MOST ONE not-yet-rendered document.
-    # A first render pays the document's pass compiles (loading compiles nothing, 066 D1), so
+    # A first render pays the document's pass compiles (loading compiles nothing), so
     # admitting first renders one per frame bounds the frame cost instead of stalling frame 0
     # on every compile — a tile waits in the grid's stale wash until its turn.
     tick_documents = (
@@ -282,7 +282,7 @@ def _tick_frame_state(app: App) -> list[str] | None:
             tick_documents.append(pending_first)
 
     # ----------------------------------------------------------------
-    # The PLANNED set (090 D10): while the Examples popup is open its documents REPLACE the
+    # The PLANNED set: while the Examples popup is open its documents REPLACE the
     # normal set — `ui.py`'s render block is `if not any_popup_open(): ... elif EXAMPLES: ...`,
     # so no `tick_documents` document renders behind it, and an interval computed for a
     # document nothing draws would be read by nothing.
@@ -300,7 +300,7 @@ def _tick_frame_state(app: App) -> list[str] | None:
 
     # ----------------------------------------------------------------
     # Step 3 — costs refresh from the last complete profile's `document:<id>` spans. THE one
-    # write site (090 D7): the render sites open the span and write nothing, so a cost has one
+    # write site: the render sites open the span and write nothing, so a cost has one
     # home and the plan reads it a frame fresher than any render-site write could be.
     _refresh_document_costs(app)
 
@@ -308,7 +308,7 @@ def _tick_frame_state(app: App) -> list[str] | None:
     # Steps 4 and 5 — resolve each planned document's size and resample what changed. Before
     # the plan, because `k` must be computed from the cost at the size actually rendered; before
     # any draw, because every reallocation and release must happen while this frame's draw list
-    # is still empty (the 084 D5 hazard).
+    # is still empty.
     _resolve_resolutions(app, planned_documents, planned)
 
     # ----------------------------------------------------------------
@@ -324,7 +324,7 @@ def _tick_frame_state(app: App) -> list[str] | None:
     )
 
     # ----------------------------------------------------------------
-    # Step 7 — the script ticks for exactly the documents that RENDER this frame (093 W6):
+    # Step 7 — the script ticks for exactly the documents that RENDER this frame:
     # what a tick computes is consumed by a render, and its dt spans the frames between two
     # renders (`session.tick`). The cursor's previous position re-anchors at the position
     # this tick saw, so the next tick's stroke starts where this render's ended; the
@@ -379,7 +379,7 @@ def _rendering_this_frame(
 
 
 def renders_this_frame(app: App, document_id: str) -> bool:
-    """Whether the plan admits `document_id` on this frame (090 D6).
+    """Whether the plan admits `document_id` on this frame.
 
     The one reader of an interval and its phase, so the feedback advance and the render gate
     cannot disagree about which frames a document draws on.
@@ -484,12 +484,12 @@ def _update_and_draw(app: App) -> None:
     # ----------------------------------------------------------------
     # Drain copilot worker events into the chat render-state (no GL; single-writer).
     app.copilot.pump_events()
-    _pump_file_gate(app)  # feature 052: serve a mid-turn bind_media file pick
+    _pump_file_gate(app)  # serve a mid-turn bind_media file pick
     # A True->False transition means a turn just completed — persist it (a completed turn
     # is the durable unit, so a later crash never loses it) + re-focus the input, which was
     # disabled (unfocusable) for the whole turn so the on-send focus latch was lost.
     if app.copilot_turn_active and not app.copilot.state.in_flight:
-        app.copilot.seal_checkpoint()  # finalize the turn's rollback snapshot (feature 020·30)
+        app.copilot.seal_checkpoint()  # finalize the turn's rollback snapshot
         app.copilot.save_conversation(app.paths.copilot_conversation_path)
         app.copilot_focus_pending = True
     app.copilot_turn_active = app.copilot.state.in_flight
@@ -543,7 +543,7 @@ def _update_and_draw(app: App) -> None:
                 ui_document.document.first_render_done or ui_document is pending_example
             ):
                 continue
-            # The popup's own set IS the displayed set while it is open (090 D10), so its
+            # The popup's own set IS the displayed set while it is open, so its
             # documents take the same interval gate the normal set does.
             if not renders_this_frame(app, example_id):
                 continue
@@ -614,10 +614,10 @@ def _update_and_draw(app: App) -> None:
             # button (a reserved region the floating chat anchors above, never covers).
             editor_height = split_region.y - _COPILOT_BAR_H
             with imgui_ctx.begin_group():
-                # A latched focus request targets the editor child itself (067): the one-shot
+                # A latched focus request targets the editor child itself: the one-shot
                 # grab must precede its begin_child, and code.draw clears the flag once this
                 # has consumed it. Gated on no-popup — a background focus grab force-closes an
-                # open modal (imgui-ui skill §8).
+                # open modal.
                 if app.editor_focus_requested and not app.any_popup_open():
                     imgui.set_next_window_focus()
                 with imgui_ctx.begin_child(
@@ -787,7 +787,7 @@ class ViewerGeometry:
 
     The box's height is the panel's WIDTH at `VIEWER_BOX_ASPECT`, capped by the room above
     the control panel's minimum -- so it moves only when the splitter moves, never with the
-    document's aspect (093 W7, his call); the picture is centered in the box, and its
+    document's aspect; the picture is centered in the box, and its
     overlays anchor to the picture.
     """
 
@@ -799,7 +799,7 @@ class ViewerGeometry:
 
 # The viewer box's shape: the width the splitter gives the panel, at this aspect, is its
 # height. The default document shape, so a new document fills the box; a taller document is
-# fitted inside it. His to tune after seeing it.
+# fitted inside it.
 VIEWER_BOX_ASPECT: float = aspect_ratio(DEFAULT_ASPECT)
 
 
@@ -835,7 +835,7 @@ def _draw_document_image(app: App, control_panel_min_height: float) -> ViewerGeo
 
     if app.current_document_id in app.ui_documents:
         ui_document = app.ui_documents[app.current_document_id]
-        # The document's own SHAPE, never the live canvas's (090 D2): under Auto the live size
+        # The document's own SHAPE, never the live canvas's: under Auto the live size
         # is derived from this region, so reading it back here would close a loop on itself and
         # let the shape drift a rounding step every frame.
         image_aspect = aspect_ratio(ui_document.document.shape_aspect())
@@ -884,8 +884,7 @@ def _draw_document_image(app: App, control_panel_min_height: float) -> ViewerGeo
                 imgui.color_convert_float4_to_u32(COLOR.VIEWER_BORDER),
                 thickness=1.0,
             )
-        # Feed the cursor over the preview into the script tick as context.mouse (feature 042; the
-        # button and the previous position are 069's). image_with_bg submits no interactive item,
+        # Feed the cursor over the preview into the script tick as context.mouse. image_with_bg submits no interactive item,
         # so hit-test the captured rect explicitly.
         hit = item_normalized_mouse(
             img_min,
@@ -942,7 +941,7 @@ def _current_document_fps(app: App) -> int | None:
 
 
 def _document_titles(app: App) -> dict[str, str]:
-    """id -> title for the panel's `document:` rows (090 D7).
+    """id -> title for the panel's `document:` rows.
 
     The spans are keyed by ID so nothing is matched through a title; this is what turns an id
     back into the name a 280-px panel can show, and two same-titled documents stay two rows.

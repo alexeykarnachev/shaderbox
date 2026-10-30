@@ -1,4 +1,4 @@
-"""The graph canvas's per-document state and the pure pieces of its gestures (092 D2, D13).
+"""The graph canvas's per-document state and the pure pieces of its gestures.
 
 Transient: nothing here is persisted, and nothing off-draw writes it. What IS persisted -- a
 pass's position -- reaches disk only through `ProjectSession.set_pass_positions`, and the
@@ -24,7 +24,7 @@ from shaderbox.ui_primitives import InlineInput
 
 Position = tuple[float, float]
 # A wire's identity anywhere on the canvas: the consumer pass and the sampler the wire
-# terminates at. A sampler has one source (072), so the pair names one wire in the whole
+# terminates at. A sampler has one source, so the pair names one wire in the whole
 # document, and it is what `App.unwire` takes.
 WireId = tuple[str, str]
 
@@ -33,7 +33,7 @@ WireId = tuple[str, str]
 class GraphViewState:
     """What the graph canvas keeps between frames, beyond the library's own.
 
-    The library owns the geometry, the hover and the in-flight gesture (098);
+    The library owns the geometry, the hover and the in-flight gesture;
     of the camera it owns only the zoom, since panning is the host's. What is
     left here is what shaderbox decides: which scope the tabs are showing,
     which passes are selected, and the Group prompt. The hit rects, the hover
@@ -75,7 +75,7 @@ def node_size(port_count: int, box: bool) -> tuple[float, float]:
 
 
 def ports_of(document: Document, wiring: Wiring) -> dict[str, list[Port]]:
-    """Every pass's input ports (092 D1), from its compiled program and its wiring row."""
+    """Every pass's input ports, from its compiled program and its wiring row."""
     return {
         name: node_ports(
             sampler_names(render_pass),
@@ -103,7 +103,7 @@ def group_names_in_order(order: Iterable[str], groups: dict[str, str]) -> list[s
     return seen
 
 
-# ---- the scoped picture (092 D4, D5) --------------------------------------------------------
+# ---- the scoped picture --------------------------------------------------------
 
 
 def _ghost_column(
@@ -153,7 +153,7 @@ def _group_scope(
 
     A feeder ghost goes to the LEFT of every member and a reader ghost to the
     right, so no wire runs backward through the picture. A pass that both
-    feeds and reads the group is drawn in both columns (092 D4) -- one node
+    feeds and reads the group is drawn in both columns -- one node
     per direction, which is what keeps the reading left-to-right.
     """
     members = [name for name in order if groups.get(name, "") == scope]

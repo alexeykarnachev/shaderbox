@@ -95,7 +95,7 @@ def _draw_grid(app: App) -> str:
             ui_document_example,
             border,
             preview_size,
-            # An example still queued for its first render (066 D2) has nothing drawn yet.
+            # An example still queued for its first render has nothing drawn yet.
             stale=not ui_document_example.document.first_render_done,
         )
         if result.clicked:
@@ -115,7 +115,7 @@ def _draw_description_slot(app: App, selected: str) -> None:
         else:
             imgui.push_text_wrap_pos(
                 0.0
-            )  # imgui.text clips long strings; wrap at the edge (/imgui-ui)
+            )  # imgui.text clips long strings; wrap at the edge
             desc = app.example_description(selected)
             imgui.text(desc if desc else "(no description)")
             imgui.pop_text_wrap_pos()

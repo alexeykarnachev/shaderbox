@@ -1,5 +1,5 @@
 """A document packs into the library's node model and its events come back
-as pass names (feature 098).
+as pass names.
 
 The adapter is the only module that knows both sides, so the checks here are
 about the mapping: a wire's endpoints index what was PACKED, and an event
@@ -402,8 +402,7 @@ def test_a_state_ring_carries_its_colour_all_the_way_to_the_pixels(
     LUMINANCE, so pure red and pure blue render byte-identical and this
     palette's purple selection and yellow accent land 0.654 against 0.635 --
     not a distinction anyone makes. Measured in the shape stream, which is
-    also where an earlier version of this check went wrong by reading the
-    column beside it.
+    also where reading the column beside it gives the wrong answer.
 
     So this asserts PIXELS as well as the packed spec: two runs differing
     only in the ring's colour must differ on screen, and a spec-only
@@ -448,11 +447,10 @@ def test_a_state_ring_carries_its_colour_all_the_way_to_the_pixels(
 def test_the_output_is_marked_in_the_title_not_a_second_ring() -> None:
     """The document's output is a PROPERTY, so it survives every state.
 
-    It used to be a concentric second ring, which meant a hovered output
-    node wore two marks and the two had to stay mutually legible against
-    three interaction states -- an unsatisfiable constraint that produced
-    a selection colour nobody wanted. In the title it is unaffected by
-    what the pointer is doing, which is the point.
+    It is not a concentric second ring: a hovered output node would then
+    wear two marks that had to stay mutually legible against three
+    interaction states. In the title it is unaffected by what the pointer
+    is doing, which is the point.
     """
     order = ["a", "b"]
     ports: dict[str, list[Port]] = {"a": [], "b": []}

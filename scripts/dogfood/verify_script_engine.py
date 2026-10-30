@@ -6,7 +6,7 @@ scripted uniform, renders the document at two distinct `t` values, and asserts t
 determinism, (b) proves EXPORT-STATE ISOLATION — a live-warmed integrator's export frame matches a
 cold-start render via the `exporting` seam, NOT the warmed live value — and (c) breaks the script and
 confirms the frame still renders (frozen, non-crashing). NOT an LLM scenario — scripts are hand-placed
-(the copilot write-behavior tool is feature 043); this is a deterministic harness assertion.
+(the copilot's write-behavior tool is separate); this is a deterministic harness assertion.
 
 Run: `uv run python scripts/dogfood/verify_script_engine.py` (exit 0 = pass).
 """
@@ -33,7 +33,7 @@ def _seed_scripted_document(project_dir: Path, body: str) -> None:
     document = project_dir / "documents" / "scripted"
     passes = document / PASSES_DIR_NAME
     passes.mkdir(parents=True, exist_ok=True)
-    # 065 moved a document's shaders into `passes/<name>.frag.glsl`; the loader reads nothing else,
+    # A document's shaders live in `passes/<name>.frag.glsl`; the loader reads nothing else,
     # so a shader at the document root produces a document with no passes at all.
     (passes / pass_shader_name("main")).write_text(_SHADER, encoding="utf-8")
     (document / "document.json").write_text(
@@ -48,7 +48,7 @@ def _seed_scripted_document(project_dir: Path, body: str) -> None:
     )
     scripts = document / "scripts"
     scripts.mkdir(exist_ok=True)
-    # One script per document (048): the document script `script.py` drives u_wave via a dict return. Binds by
+    # One script per document: the document script `script.py` drives u_wave via a dict return. Binds by
     # existence (no activate step).
     (scripts / "script.py").write_text(body, encoding="utf-8")
 
@@ -91,10 +91,10 @@ def main() -> int:
     _seed_scripted_document(h.project_dir, _PURE)
     h.session.load(h.project_dir)
     h.session.set_current_document_id("scripted")
-    # One script per document (048): the script binds by existence — no activate step. The driven set
+    # One script per document: the script binds by existence — no activate step. The driven set
     # is the script's LAST-TICK keys (dynamic), so it is only known after a tick. Follow the LIVE
     # frame order — tick, render, tick — because a pass that has never attempted a compile is HELD
-    # for its first tick (069: the engine never compiles from inside the frame loop), so the first
+    # for its first tick (the engine never compiles from inside the frame loop), so the first
     # render is what makes it readable and the second tick is what drives it.
     h.session.reload_scripts()
     document = h.session.ui_documents["scripted"].document
@@ -125,7 +125,7 @@ def main() -> int:
 
     # Export-state isolation: warm a stateful integrator on the LIVE instance, then export — the
     # export frame must match a cold-start export, NOT the warmed live value (the fresh-per-export
-    # instance seam, feature 041 decision 11).
+    # instance seam).
     _seed_scripted_document(h.project_dir, _INTEGRATOR)
     h.session.reload_scripts()
     p_cold = h.export_at(0.0, "scripted")
@@ -160,13 +160,13 @@ def main() -> int:
 
     # Break the script -> the frame must still render (frozen, non-crashing) + record an error. The
     # raw throw fires inside update() before the dict is built, so it is a behavior-level error under
-    # the sentinel key (document, "script.py") — not a per-key (document, "u_wave") shape error (048: one
+    # the sentinel key (document, "script.py") — not a per-key (document, "u_wave") shape error (one
     # object, one coherent failure).
     _seed_scripted_document(h.project_dir, _BROKEN)
     h.session.reload_scripts()
     p_broken = h.render_at(3.0, "scripted")
     assert p_broken, "a broken script crashed the render instead of freezing"
-    # The sentinel key is (document, pass, name) since 069, with "" as the absent-pass marker: a
+    # The sentinel key is (document, pass, name), with "" as the absent-pass marker: a
     # behavior-level failure belongs to no pass.
     assert (
         "scripted",

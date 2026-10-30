@@ -1,4 +1,4 @@
-"""Copilot turn-rollback checkpoints (feature 020·30) — the TurnCheckpoint capture + the
+"""Copilot turn-rollback checkpoints — the TurnCheckpoint capture + the
 CheckpointStore lifecycle (seal/prune/clear) + the persisted-index rehydrate round-trip.
 Pure: no GL, no App. Document snapshots use a fake `save_into` (the real one is UIDocument.save)."""
 
@@ -44,7 +44,7 @@ def test_snapshot_document_is_first_touch_only(tmp_path: Path) -> None:
 
 
 def test_snapshot_does_not_rebind_live_source(tmp_path: Path) -> None:
-    # Regression for the post-impl blocker: UIDocument.save rebinds the live document's source.path to the
+    # UIDocument.save rebinds the live document's source.path to the
     # dir it writes. The capture MUST pass rebind=False (here: a save_into that leaves the live path
     # alone) so the snapshot holds pre-edit bytes AND the live document keeps pointing at its real dir
     # — else a later edit writes the snapshot and Revert restores the edit.
@@ -161,7 +161,7 @@ def test_clear_deletes_everything(tmp_path: Path) -> None:
     store.seal()
     store.clear()
     assert store.sealed_ids() == []
-    assert not tmp_path.exists()  # the whole checkpoints root is gone (decision 4)
+    assert not tmp_path.exists()  # the whole checkpoints root is gone
 
 
 # ---- RevertResult.as_notice: a revert that did not happen must not read as one ----
@@ -175,9 +175,6 @@ def test_a_lib_revert_that_failed_does_not_read_as_nothing_to_restore() -> None:
     False and the notice read "nothing to restore for that turn" -- while the assistant's
     edit was still live on disk. Asserting the opposite of the truth is worse than
     silence, because the user stops looking.
-
-    Falsifier: drop the `unrestorable`/`failed_restores` append from either lib loop in
-    `revert.py` and this reads "nothing to restore" again.
     """
     nothing = RevertResult()
     assert not nothing.touched_anything
@@ -199,9 +196,7 @@ def test_a_lib_revert_that_failed_does_not_read_as_nothing_to_restore() -> None:
 def test_the_notice_tells_a_missing_snapshot_apart_from_a_failed_restore() -> None:
     """Two reasons, two remedies: a retry helps a failed restore and never a missing one.
 
-    Falsifier: fold `failed_restores` back into one "(no snapshot)" clause -- a file the
-    app DID try to restore is then reported as one it never captured, which sends the
-    user looking for a checkpoint that exists.
+    A file the app DID try to restore is never reported as one it never captured.
     """
     both = RevertResult(
         unrestorable=["Document A", "lib:noise.glsl"],
@@ -229,10 +224,7 @@ def test_a_lib_with_no_snapshot_is_not_reported_as_a_failed_restore(
 
     This drives the real loop rather than hand-building a RevertResult: a
     hand-built one cannot tell the two branches apart, because it IS the thing the
-    branches produce. A first version of this test did exactly that and passed with the
-    branches merged back together.
-
-    Falsifier: append to `failed_restores` in the `text is None` branch.
+    branches produce.
     """
     root = tmp_path / "checkpoints"
     cp = TurnCheckpoint(turn_id="t1", root=root)

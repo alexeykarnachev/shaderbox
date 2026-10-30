@@ -1,4 +1,4 @@
-"""Help content is GENERATED from the code it documents (feature 055), so these pin the generators
+"""Help content is GENERATED from the code it documents, so these pin the generators
 rather than the prose: a new engine uniform or a new command category must not ship undocumented.
 GL-free (no App, no imgui)."""
 
@@ -28,7 +28,7 @@ def test_engine_uniform_section_lists_each_uniform() -> None:
 
 
 def test_every_user_facing_instanced_name_is_documented() -> None:
-    # 104 D4: `instanced.USER_FACING_NAMES` is the partition the engine grew so this gate could
+    # `instanced.USER_FACING_NAMES` is the partition the engine grew so this gate could
     # exist at all -- documenting `sb_instanced` (ENGINE_INTERNAL_NAMES) would be the opposite
     # of that decision. `documented_instanced_names()` reads back what help_content actually
     # covers, so a name added to USER_FACING_NAMES without prose fails here rather than
@@ -37,7 +37,7 @@ def test_every_user_facing_instanced_name_is_documented() -> None:
 
 
 def test_engine_internal_instanced_names_are_absent_from_every_section() -> None:
-    # The other half of D4: sb_instanced and a_corner must NEVER appear, so the partition
+    # The other half of the partition: sb_instanced and a_corner must NEVER appear, so the partition
     # cannot erode by someone helpfully "completing" the vocabulary section later.
     #
     # Contact proof for the silence: help_sections() is asserted non-trivial (title, snippet
@@ -91,8 +91,7 @@ _PROSE_CHORD = re.compile(r"`((?:Ctrl|Alt|Shift)\+[^`]+|F[0-9]{1,2})`")
 def test_no_help_prose_quotes_a_chord_the_table_does_not_bind() -> None:
     # The generated shortcuts table follows COMMAND_SPECS for free, so a chord move updates it
     # silently — but a chord typed into a section BODY does not move with it, and the user
-    # reads that body. 069 W-E shipped `Ctrl+P` for the library one commit after the chord
-    # became Alt+L. Every hand-written chord must be one the table currently binds.
+    # reads that body. A body can say `Ctrl+P` after the chord moved. Every hand-written chord must be one the table currently binds.
     bound = {
         chord_to_str(spec.default_chord) for spec in COMMAND_SPECS if spec.default_chord
     }

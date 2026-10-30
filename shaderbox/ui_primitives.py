@@ -48,7 +48,7 @@ def faint_hline(
 
 
 # ---------------------------------------------------------------------------
-# The button system (079 D12) — FOUR tiers, picked by the action's role, never by how
+# The button system — FOUR tiers, picked by the action's role, never by how
 # it looks. Every button in the app is one of them; a site that wants a fifth is a
 # design question, not a new primitive.
 #
@@ -187,9 +187,9 @@ def chip_button(
 
 
 def play_stop_toggle(id_: str, playing: bool, *, tooltip: str = "") -> bool:
-    """The per-uniform / whole-document play/stop control (feature 048). A small word button — `stop`
+    """The per-uniform / whole-document play/stop control. A small word button — `stop`
     (accent) when the script is driving the slot, `play` (dim) when stopped — clearer than an
-    ambiguous icon (/imgui-ui §1: use words for icon-ambiguous controls). Returns True on click; the
+    ambiguous icon (use words for icon-ambiguous controls). Returns True on click; the
     caller flips the stopped state. SAME slot for both states; the label + color carry the state."""
     label, color = ("stop", COLOR.ACCENT_PRIMARY) if playing else ("play", COLOR.FG_DIM)
     imgui.push_style_color(imgui.Col_.button, COLOR.TRANSPARENT)
@@ -430,8 +430,7 @@ def anchored_note(
 
     The size is MEASURED and set, never auto-resized: imgui sizes an auto-resize window from
     the PREVIOUS frame's content, so a note whose text changes while it is open draws one frame
-    inside the old note's size — the blink the maintainer saw moving `K` from symbol to symbol
-    (079 D1).
+    inside the old note's size, a blink when moving `K` from symbol to symbol.
     """
     padding = imgui.get_style().window_padding
     # The WIDTH text wraps at, which is the note's content width. `push_text_wrap_pos` below
@@ -506,7 +505,7 @@ def anchored_note(
 
 
 def _note_picture_size(texture: moderngl.Texture, width: float) -> tuple[float, float]:
-    # The note's content width, aspect preserved (079 D13): a thumbnail-sized picture in a
+    # The note's content width, aspect preserved: a thumbnail-sized picture in a
     # note this wide reads as a swatch rather than as the texture.
     tex_w, tex_h = texture.size
     return (width, width * tex_h / tex_w if tex_w else width)
@@ -1050,8 +1049,7 @@ def markdown_text(text: str, bold_font: imgui.ImFont) -> None:
 def small_caption(font: imgui.ImFont, text: str) -> None:
     """Dim caption in a smaller font (column labels, inline readouts).
 
-    `font.legacy_size` is the rasterized size push_font wants (conventions.md
-    ## Known quirks)."""
+    `font.legacy_size` is the rasterized size push_font wants."""
     imgui.push_font(font, font.legacy_size)
     imgui.text_colored(COLOR.FG_DIM, text)
     imgui.pop_font()

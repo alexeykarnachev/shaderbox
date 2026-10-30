@@ -1,6 +1,6 @@
-"""Every tracked `document.json` is in the 090 shape, and carries the mode it is meant to.
+"""Every tracked `document.json` is in the current shape, and carries the mode it is meant to.
 
-The shape is `resolution_mode` + `aspect` + `resolution` (090 revision 1): the aspect is what an
+The shape is `resolution_mode` + `aspect` + `resolution`: the aspect is what an
 Auto document renders by, the pair is what Fixed renders at and what a switch to Fixed seeds
 from, and the two are kept consistent so neither mode opens on a shape the other never had.
 
@@ -8,8 +8,8 @@ Without this gate a document missed by the sweep loads at `DEFAULT_CANVAS_SIZE` 
 SILENCE: `_load_ui_state` fills a missing key from the model's default and never raises, so a
 forgotten file renders at a 64-pixel canvas and nothing anywhere says why.
 
-The domain is `git ls-files`, not a directory walk. A local run writes documents under the
-untracked `projects/documents/`, and a walk would fail red on the maintainer's box over a file
+The domain is `git ls-files`, not a directory scan. A local run writes documents under the
+untracked `projects/documents/`, and a scan would fail red on a developer's box over a file
 that does not exist in the repository at all.
 """
 
@@ -51,8 +51,6 @@ def test_git_tracks_the_documents_this_gate_expects() -> None:
 
 @pytest.mark.parametrize("path", _tracked_document_jsons())
 def test_a_tracked_document_carries_the_new_resolution_keys(path: str) -> None:
-    # Falsifier: leave one file's top-level `canvas_size` in place, or drop either key from its
-    # `ui_state`, and this names that file.
     data = json.loads((_ROOT / path).read_text())
     assert "canvas_size" not in data, (
         f"{path} still carries the top-level canvas_size 090 D1 replaced"
@@ -80,7 +78,7 @@ def test_a_tracked_document_carries_the_new_resolution_keys(path: str) -> None:
 def test_a_tracked_document_carries_the_mode_it_is_meant_to(path: str) -> None:
     # The mode per file, not merely that the key exists: shipping the pixel-dependent example
     # as Auto renders it at whatever region shows it, and its JFA and cascade iteration counts
-    # follow pixel counts. Falsifier: flip one file's mode and this names it.
+    # follow pixel counts.
     ui_state = json.loads((_ROOT / path).read_text())["ui_state"]
     expected = "fixed" if any(f in path for f in _FIXED_DOCUMENTS) else "auto"
     assert ui_state["resolution_mode"] == expected, (

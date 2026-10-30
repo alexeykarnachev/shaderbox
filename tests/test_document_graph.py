@@ -1,7 +1,6 @@
-"""A document draws its passes in order, feeds each one's inputs, and accumulates feedback (065
-stage 3).
+"""A document draws its passes in order, feeds each one's inputs, and accumulates feedback.
 
-These are the spec's engine checks 2-6 and 8-9. Each renders real pixels through a real GL context
+Each renders real pixels through a real GL context
 rather than inspecting the plan: stage 1 already asserts the ORDER, so what is left to prove is
 that the order is what actually draws and that a producer's texture reaches its consumer.
 
@@ -75,7 +74,7 @@ def _document(
     size: tuple[int, int] = (8, 8),
     wiring: dict[str, dict[str, str]] | None = None,
 ) -> Document:
-    """`wiring` is the explicit source per sampler (072): these shaders name their samplers by
+    """`wiring` is the explicit source per sampler: these shaders name their samplers by
     ROLE (`u_src`, `u_a`), which no pass name derives, so each wire is a `PassSource` row; a
     `u_prev` needs none, the name rule reads it."""
     doc = Document(gl=gl, canvas_size=size)
@@ -98,7 +97,7 @@ def _document(
 
 
 def _red_of(canvas: Canvas) -> int:
-    # Through texture_to_rgba8, not a raw byte read: a graph entry's default target is f2 (D9),
+    # Through texture_to_rgba8, not a raw byte read: a graph entry's default target is f2,
     # and reading a float target as uint8 truncates the buffer and yields a plausible wrong value.
     return int(texture_to_rgba8(canvas.texture)[0][0][0])
 
@@ -117,7 +116,6 @@ def _red(doc: Document) -> int:
 
 
 def test_a_two_pass_chain_shows_b_reads_a(gl_ctx: moderngl.Context) -> None:
-    # Check 2. Falsifier: the output equals A's own image (0.8 -> 204), meaning B never sampled A.
     doc = _document(
         gl_ctx,
         {"a": _CONST % "0.8", "b": _HALVE},
@@ -132,7 +130,7 @@ def test_a_two_pass_chain_shows_b_reads_a(gl_ctx: moderngl.Context) -> None:
 def test_a_diamond_feeds_both_branches_from_one_ancestor(
     gl_ctx: moderngl.Context,
 ) -> None:
-    # Check 3's rendered half: base -> {left, right} -> out. base draws ONCE (stage 1 asserts the
+    # The rendered half of the graph-order check: base -> {left, right} -> out. base draws ONCE (an earlier test asserts the
     # order; this asserts the order is what draws), and both halves reach the sum.
     doc = _document(
         gl_ctx,
@@ -153,7 +151,7 @@ def test_a_diamond_feeds_both_branches_from_one_ancestor(
 
 
 def test_a_feedback_pass_accumulates_once_per_frame(gl_ctx: moderngl.Context) -> None:
-    # Check 4. The falsifier is a value advancing at 2x: the live loop renders a document TWICE
+    # A value advancing at 2x would show it: the live loop renders a document TWICE
     # per frame, so a swap tied to the render CALL rather than the frame doubles the rate.
     doc = _document(
         gl_ctx,
@@ -186,7 +184,7 @@ def test_feedback_starts_black(gl_ctx: moderngl.Context) -> None:
 def test_a_cycle_reports_per_pass_and_still_draws_the_output(
     gl_ctx: moderngl.Context,
 ) -> None:
-    # Check 5: loud, per pass, and NOT a hang. The output still shows its own shader rather than
+    # Loud, per pass, and NOT a hang. The output still shows its own shader rather than
     # going blank, so a mis-wire is visible as an error rather than as a black preview.
     doc = _document(
         gl_ctx,
@@ -203,7 +201,6 @@ def test_a_cycle_reports_per_pass_and_still_draws_the_output(
 def test_an_unfilled_input_reads_black_and_the_document_renders(
     gl_ctx: moderngl.Context,
 ) -> None:
-    # Check 6. Falsifier: an exception, or the DEFAULT IMAGE appearing instead of black.
     doc = _document(
         gl_ctx,
         {"blur": _HALVE},
@@ -234,7 +231,7 @@ def test_only_the_passes_the_output_needs_are_drawn(gl_ctx: moderngl.Context) ->
 
 
 def test_the_output_pass_is_what_renders(gl_ctx: moderngl.Context) -> None:
-    # Check 9: a document whose output is NOT the last-authored pass. Picking the wrong one gives
+    # A document whose output is NOT the last-authored pass. Picking the wrong one gives
     # a visibly different image.
     graph = PassGraph(
         output="a",
@@ -272,7 +269,7 @@ def test_an_external_canvas_overrides_only_the_output_target(
 def test_a_pass_target_config_applies_to_its_own_canvas(
     gl_ctx: moderngl.Context,
 ) -> None:
-    # D9: per-pass target configuration is what makes an accumulate chain work, so a pass built
+    # Per-pass target configuration is what makes an accumulate chain work, so a pass built
     # from a graph entry gets that entry's format rather than the document's default.
     graph = PassGraph(
         output="out",
@@ -309,9 +306,8 @@ def test_a_documents_source_lands_on_its_only_pass(gl_ctx: moderngl.Context) -> 
 def test_two_exports_of_a_feedback_document_are_identical(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
-    # Check 8, with live frames rendered in between. D10: a feedback target is export state the
-    # same way a stateful script is, so an export starts cold. Falsifier: the second file differs,
-    # meaning the export inherited however long the app happened to have been running.
+    # With live frames rendered in between. A feedback target is export state the
+    # same way a stateful script is, so an export starts cold.
     doc = _document(
         gl_ctx,
         {"trail": _ACCUMULATE},
@@ -331,7 +327,7 @@ def test_two_exports_of_a_feedback_document_are_identical(
 def test_an_export_does_not_inherit_the_live_history(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
-    # The falsifier for the check above: without the cold start both files would still MATCH each
+    # Without the cold start both files would still MATCH each
     # other while both being wrong, so pin the value too. One export frame => one accumulate step.
     doc = _document(
         gl_ctx,
@@ -389,7 +385,7 @@ def test_begin_frame_without_a_number_advances_every_call(
 def test_editing_one_pass_recompiles_only_that_pass(
     gl_ctx: moderngl.Context, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Check 7 (D8). The observable is a COUNT, not an eyeball: recompiling every pass on every
+    # The observable is a COUNT, not an eyeball: recompiling every pass on every
     # edit renders the identical picture, and only shows up as a hitch — measured at ~1.3 ms per
     # program, so sixteen passes is a ~21 ms stall on each keystroke-save.
     doc = _document(
@@ -448,8 +444,6 @@ def test_a_pass_scale_shrinks_its_target(gl_ctx: moderngl.Context) -> None:
 
 
 def test_a_scaled_pass_keeps_its_size_across_frames(gl_ctx: moderngl.Context) -> None:
-    # Falsifier for a resize that runs every frame: a set_size call reallocates, so a canvas that
-    # is re-sized each frame drops a feedback pass's history silently.
     graph = PassGraph(
         output="out",
         passes={
@@ -473,7 +467,7 @@ def test_a_scaled_pass_keeps_its_size_across_frames(gl_ctx: moderngl.Context) ->
 
 def test_a_resize_moves_every_pass_together(gl_ctx: moderngl.Context) -> None:
     # `canvas_size` is what every non-output pass scales FROM, so a resize that only touches the
-    # output canvas leaves the rest of the graph sizing off the old dimensions. The falsifier is
+    # output canvas leaves the rest of the graph sizing off the old dimensions. What decides it is
     # the field, not the textures: render() re-derives the others from it every frame, which is
     # exactly why a stale field is silent.
     graph = PassGraph(
@@ -504,7 +498,7 @@ def test_a_resize_moves_every_pass_together(gl_ctx: moderngl.Context) -> None:
     doc.release()
 
 
-# --- 068: iterated passes -------------------------------------------------------------
+# --- iterated passes -------------------------------------------------------------
 
 # Writes the iteration index normalized by the total, so ONE read proves the engine both ran the
 # loop and fed the right pair of uniforms.
@@ -529,7 +523,6 @@ void main() { fs_color = vec4(texture(u_prev, vs_uv).r + 0.1, 0.0, 0.0, 1.0); }
 
 
 def test_an_iterated_pass_runs_every_iteration(gl_ctx: moderngl.Context) -> None:
-    # Falsifier: with the loop not run, the last (only) draw is iteration 0 and this reads 0.0.
     graph = PassGraph(output="counter", passes={"counter": PassEntry(iterations=4)})
     doc = _document(gl_ctx, {"counter": _ITERATION_INDEX}, graph)
     doc.begin_frame(0)
@@ -548,7 +541,7 @@ def test_iterations_default_to_one_draw(gl_ctx: moderngl.Context) -> None:
 
 
 def test_feedback_advances_once_per_iteration(gl_ctx: moderngl.Context) -> None:
-    # The D5 check, and the one that fails loudest if the swap stays per-frame: 8 iterations of
+    # The check that fails loudest if the swap stays per-frame: 8 iterations of
     # +0.1 reach 0.8, while a per-FRAME swap leaves every iteration reading black and lands 0.1.
     graph = PassGraph(
         output="acc",
@@ -564,8 +557,7 @@ def test_an_iterated_output_pass_lands_its_last_iteration_on_the_canvas(
     gl_ctx: moderngl.Context,
 ) -> None:
     # An iterated OUTPUT pass advances by swapping its own canvas, so only the LAST iteration may
-    # aim at the external target. Falsifier: aim every iteration there and the swap never touches
-    # what was written -- the chain stalls at one step (0.1 -> 26) instead of reaching 0.8.
+    # aim at the external target.
     graph = PassGraph(
         output="acc",
         passes={"acc": PassEntry(iterations=8)},
@@ -581,11 +573,10 @@ def test_an_iterated_output_pass_lands_its_last_iteration_on_the_canvas(
 def test_an_iterated_feedback_chain_keeps_advancing_across_frames(
     gl_ctx: moderngl.Context,
 ) -> None:
-    # Every other 068 engine test renders ONE frame, so the multi-frame region -- where the
+    # Every other iterated-pass test renders ONE frame, so the multi-frame region -- where the
     # per-frame swap in `begin_frame` composes with the N-1 per-iteration swaps -- held by luck
     # of parity rather than by assertion. Three frames of +0.1 x 3 iterations must reach 0.9,
     # and each frame must add exactly 3 steps.
-    # Falsifier: a parity bug in the swap composition makes frame 2 restart or double-count.
     graph = PassGraph(
         output="acc",
         passes={"acc": PassEntry(iterations=3)},
@@ -615,7 +606,7 @@ class _NotificationRecorder:
 class _AppStub:
     def __init__(self) -> None:
         self.notifications = _NotificationRecorder()
-        # The picker's commit is DEFERRED into this dict (090 D4/R2); the frame tick applies it.
+        # The picker's commit is DEFERRED into this dict; the frame tick applies it.
         self.pending_resolution: dict[str, tuple[int, int]] = {}
 
 
@@ -626,7 +617,7 @@ def _ui_document(doc: Document) -> UIDocument:
 def test_a_ui_resize_moves_every_pass_together(gl_ctx: moderngl.Context) -> None:
     # The UI's own path, not Document.set_canvas_size directly (its sibling above): the
     # Document tab wrote render_pass.canvas.set_size, which leaves canvas_size stale and every
-    # OTHER pass sizing off the old dimensions (069 findings #2/#3).
+    # OTHER pass sizing off the old dimensions.
     graph = PassGraph(
         output="out",
         passes={
@@ -646,7 +637,7 @@ def test_a_ui_resize_moves_every_pass_together(gl_ctx: moderngl.Context) -> None
     app = _AppStub()
     ui_document = _ui_document(doc)
     _apply_canvas_size(app, ui_document, (32, 32))
-    # The picker parks the pair; the frame tick is what applies it (090 D4/R2), so the resize is
+    # The picker parks the pair; the frame tick is what applies it, so the resize is
     # driven here the way step 4 drives it.
     assert app.pending_resolution[ui_document.id] == (32, 32)
     doc.set_canvas_size(app.pending_resolution[ui_document.id])
@@ -688,9 +679,7 @@ def test_feedback_is_read_from_the_wiring_not_the_allocation_cache(
     gl_ctx: moderngl.Context,
 ) -> None:
     # The feedback set comes from the WIRING's own declaration: present BEFORE any render, and
-    # still present right after a reset. Falsifier: derive it from `_feedback` — that dict is
-    # filled on demand during render() and emptied by reset_feedback, so it would be empty
-    # before the first frame and empty again the instant a reset runs.
+    # still present right after a reset.
     doc = _document(
         gl_ctx,
         {"trail": _ACCUMULATE},
@@ -707,7 +696,7 @@ def test_feedback_is_read_from_the_wiring_not_the_allocation_cache(
     assert plan_passes(doc.effective_wiring())[0].feedback == {"trail"}
     doc.release()
 
-    # A decision for black on `u_prev` is what makes a `u_prev` pass NOT feedback (072).
+    # A decision for black on `u_prev` is what makes a `u_prev` pass NOT feedback.
     plain = _document(
         gl_ctx,
         {"trail": _ACCUMULATE},

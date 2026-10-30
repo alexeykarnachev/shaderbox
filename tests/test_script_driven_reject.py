@@ -1,10 +1,10 @@
-"""The copilot set_uniform must REJECT a script-driven uniform (feature 040, decision 5): a
+"""The copilot set_uniform must REJECT a script-driven uniform: a
 behavior script computes its value each frame, so a set would be silently overwritten next tick.
 Mirrors the engine-driven reject. Pure: the reject branch touches no GL, so the real set_uniform
 method is bound onto a light stub (the test_content_editing __get__ idiom) with a synchronous
 bridge; no GL context needed.
 
-Since 069 the driven set is (pass, name) pairs and the gate asks the OUTPUT pass's pair — so the
+The driven set is (pass, name) pairs and the gate asks the OUTPUT pass's pair — so the
 stub carries a real `render_pass.source.path`, which is where the output pass's NAME comes from.
 """
 
@@ -60,8 +60,8 @@ def _uniform(name: str) -> Any:
 
 
 def test_set_uniform_rejects_script_driven() -> None:
-    # One script per document (048): a driven uniform's reject points at the script edit TOOLS, never
-    # at the file's path (059 D2 — the agent gets handles, not implementation detail).
+    # One script per document: a driven uniform's reject points at the script edit TOOLS, never
+    # at the file's path (the agent gets handles, not implementation detail).
     stub = _stub({("main", "u_wave")}, [_uniform("u_wave")])
     set_uniform = CopilotBackend.set_uniform.__get__(stub)
     result = set_uniform("u_wave", 0.5, "n0")
@@ -84,8 +84,7 @@ def test_set_uniform_does_not_reject_a_non_script_uniform() -> None:
 
 def test_set_uniform_does_not_reject_a_uniform_driven_on_another_pass() -> None:
     # The tool addresses the OUTPUT pass, so a uniform of the same NAME driven on a sibling pass is
-    # a legitimate manual edit here (069). Falsifier: test the name against the whole document's
-    # pairs — this goes red with the script-driven reject.
+    # a legitimate manual edit here.
     stub = _stub({("paint", "u_wave")}, [_uniform("u_wave")])
     set_uniform = CopilotBackend.set_uniform.__get__(stub)
     result = set_uniform("u_wave", 0.5, "n0")

@@ -73,7 +73,7 @@ class Symbol:
         return self.insert_text or self.name
 
 
-# The order candidates sort in (079 D2), the document's own vocabulary before the language's:
+# The order candidates sort in, the document's own vocabulary before the language's:
 # the buffer's own names, the engine's uniforms, the script's, the samplers, the library, the
 # language. Python's kinds parallel GLSL's — what the script itself defines first, the API next,
 # the language last. Names inside a tier sort alphabetically, so a tie here is deliberate. It
@@ -112,5 +112,5 @@ _KIND_RANK: dict[SymbolKind, int] = {
 
 
 def kind_rank(kind: SymbolKind) -> int:
-    """Where a kind sorts among candidates (079 D2). Lower comes first; ties sort by name."""
+    """Where a kind sorts among candidates. Lower comes first; ties sort by name."""
     return _KIND_RANK[kind]

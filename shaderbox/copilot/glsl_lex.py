@@ -217,13 +217,12 @@ def _grow_span_over_comments(
     src: str, start: int, end: int, old_str: str
 ) -> tuple[int, int]:
     # Extend [start, end) over the source comment lines old_str quotes at its leading/trailing edge,
-    # so _splice REPLACES them instead of leaving the file's originals beside new_str's copies (the
-    # comment-duplication bug). Grows ONLY over comments old_str actually reproduces, matched in
+    # so _splice REPLACES them instead of leaving the file's originals beside new_str's copies.
+    # Grows ONLY over comments old_str actually reproduces, matched in
     # order against the immediately-adjacent source lines — never swallows an unquoted comment.
     # LONE single-line (// or one-line /* */) comments only: a MULTI-LINE /* */ block at the edge is
     # not grown (so a block-comment-led edit can still duplicate). Agents emit // section comments,
-    # never multi-line blocks, so it's parked; extend _comment_line_above/below to walk a block if it
-    # ever fires.
+    # never multi-line blocks, so _comment_line_above/below stay single-line.
     for want in reversed(_edge_comments(old_str, leading=True)):
         above = _comment_line_above(src, start)
         if above is None or above[1] != want:

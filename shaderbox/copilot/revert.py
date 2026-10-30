@@ -10,7 +10,7 @@ from shaderbox.paths import DOCUMENT_SCRIPT_BASENAME
 from shaderbox.shader_lib.file_ops import ShaderLibFileManager
 from shaderbox.ui_models import UIDocument, load_document_from_dir
 
-# Turn-rollback restore orchestration (feature 020·30). The capture/data half lives in
+# Turn-rollback restore orchestration. The capture/data half lives in
 # checkpoint.py; this is the App-free restore half — it mutates the LIVE ui_documents dict + GL +
 # editor sessions through injected callbacks (never imports App). App owns the thin
 # notification/persist wrappers (revert_turn / recover_deleted_document) and delegates here.
@@ -76,7 +76,7 @@ class RevertExecutor:
 
     def _reload_document_in_place(self, document_id: str) -> None:
         # Reload-and-replace a document STILL in ui_documents from its (just-restored) on-disk dir, so the
-        # live Document / GL program / uniform_values all reflect disk (feature 020·30). Release the
+        # live Document / GL program / uniform_values all reflect disk. Release the
         # stale Document's GL, load fresh, then push the restored text into any OPEN editor session
         # (its source.path — documents/<id>/shader.frag.glsl — is stable across the reload, so the
         # session is reused, not dropped; matches the mtime-watcher's external-change resync).
@@ -96,7 +96,7 @@ class RevertExecutor:
 
     def restore_checkpoint(self, turn_id: str) -> RevertResult:
         # MAIN THREAD (the chat's Revert button, gated on not-in-flight). Rewind every document this
-        # turn touched to its pre-turn state (feature 020·30): reload-and-replace edited/uniform
+        # turn touched to its pre-turn state: reload-and-replace edited/uniform
         # documents, delete-to-trash created ones, restore deleted ones, rewrite reverted libs +
         # invalidate consumers, restore the pre-switch current document.
         result = RevertResult()
@@ -118,7 +118,7 @@ class RevertExecutor:
                 if document_id in ui_documents:
                     self._reload_document_in_place(document_id)
                 else:
-                    # A later turn deleted it -> re-create from the snapshot (decision 11).
+                    # A later turn deleted it -> re-create from the snapshot.
                     ui_documents[document_id] = load_document_from_dir(dst)
             except Exception as e:
                 logger.warning(
@@ -188,7 +188,7 @@ class RevertExecutor:
 
     def _revert_created_script(self, document_id: str) -> bool:
         # Reverse a scripts/script.py the turn CREATED on a document that had none: delete the file +
-        # reload the document so the live engine drops the script (binding is by file existence, 048).
+        # reload the document so the live engine drops the script (binding is by file existence).
         # Path-absent-graceful — a document also snapshotted this turn already restored to no-script.
         path = (
             self._get_documents_dir()
@@ -204,7 +204,7 @@ class RevertExecutor:
 
     def _revert_lib_file(self, ws_address: str, pre_edit_source: str) -> bool:
         # Rewrite a lib file to its pre-turn bytes AND invalidate consumer documents (a byte-only
-        # rewrite leaves them compiled against the reverted-away source — feature 020·30 decision 2).
+        # rewrite leaves them compiled against the reverted-away source).
         files = self._get_shader_lib_files()
         rel = strip_lib_prefix(ws_address)
         path = files.resolve_copilot_path(rel)
@@ -216,7 +216,7 @@ class RevertExecutor:
     def _revert_created_lib(self, ws_address: str) -> bool:
         # Reverse a lib FILE the turn created: invalidate consumers (while the path still
         # resolves) then delete it to trash. A byte-rewrite to empty would leave a dead file
-        # that breaks every document calling its function (feature 020·30).
+        # that breaks every document calling its function.
         files = self._get_shader_lib_files()
         rel = strip_lib_prefix(ws_address)
         path = files.resolve_copilot_path(rel)

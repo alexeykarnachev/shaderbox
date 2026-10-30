@@ -1,6 +1,6 @@
-"""104 D3/D8: the graph canvas marks an instanced pass in its node TITLE.
+"""The graph canvas marks an instanced pass in its node TITLE.
 
-104 D2a is explicit that this is not the imgui badge item 7 is: `graph_canvas/render.py`'s
+This is not an imgui badge: `graph_canvas/render.py`'s
 `Node` struct is a fixed-layout ctypes binding to a vendored, compiled `libgraph_canvas.so`
 this repo has no source for, so a new struct field is not buildable here. The title string
 follows the library's own existing precedent -- the OUTPUT pass's `->` mark -- costing

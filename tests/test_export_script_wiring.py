@@ -92,8 +92,7 @@ _PASS_BLOCK_SCRIPT = (
 
 def test_an_export_drives_a_non_output_pass(app: Any, tmp_path: Path) -> None:
     # A pass block addressing a NON-output pass must drive it during an export, not only live: the
-    # export ticks a fresh instance through the same routing. Falsifier: route an export to the
-    # output pass alone — the exported pixel stays black.
+    # export ticks a fresh instance through the same routing.
     document_id = app.current_document_id
     document = app.ui_documents[document_id].document
     app.session.add_pass(document_id, "seed")
@@ -137,8 +136,7 @@ def test_export_mouse_is_down_false_and_prev_equals_current(
     app: Any, tmp_path: Path
 ) -> None:
     # An export is DETERMINISTIC: a script gated on the button paints nothing, and one reading
-    # prev-to-current sees a zero-length capsule rather than a jump from the origin. Falsifier:
-    # default down=True, or wire the live cursor into the export context — both halves go red.
+    # prev-to-current sees a zero-length capsule rather than a jump from the origin.
     assert EXPORT_MOUSE.down is False
     assert (EXPORT_MOUSE.prev_x, EXPORT_MOUSE.prev_y) == (
         EXPORT_MOUSE.x,

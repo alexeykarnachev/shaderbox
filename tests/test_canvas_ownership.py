@@ -1,10 +1,9 @@
-"""Every canvas a Document owns agrees with its graph entry, after every operation (096 W-4).
+"""Every canvas a Document owns agrees with its graph entry, after every operation.
 
-Six canvas defects in one week were one class: a canvas's configuration -- size, dtype, filter,
-wrap -- is decided in several places, and each place knows about some canvases but not all. The
-gap that let all six through is measurable: before this file, deleting `filter=` and `wrap=` from
-`resample_canvas` -- which resets every canvas in the document on every resize -- passed the
-whole suite.
+A canvas's configuration -- size, dtype, filter,
+wrap -- is decided in several places, and each place knows about some canvases but not all. A defect
+in this class is a resample that drops `filter=` and `wrap=`, which resets every canvas in the
+document on every resize.
 
 The check itself is `tests/canvas_invariants.py`. This file drives it over the operations that
 change a canvas, and the two rules below are what keep it from going vacuous:
@@ -84,7 +83,7 @@ def _document(gl: moderngl.Context) -> Document:
     """`helper` carries the non-default corner and is NOT the output; `main` reads it.
 
     The scaled pass is off-output on purpose: that is the arrangement every sizing defect in this
-    feature needed, and it is what a promotion then breaks.
+    area needed, and it is what a promotion then breaks.
     """
     document = Document(gl=gl, canvas_size=_CANVAS)
     for render_pass in list(document.passes.values()):
@@ -276,8 +275,7 @@ def test_a_render_repairs_a_pass_born_at_the_wrong_size(
 
     A pass IN the output chain whose canvas disagrees with its entry: nothing else has conformed
     it, so the fix-up branch is the only thing that can. Asserting after a render on an already
-    conformed document exercises nothing -- a canary raised inside that branch was never reached
-    by the earlier shape of this test.
+    conformed document exercises nothing -- a canary raised inside that branch is never reached.
     """
     document = _document(gl_ctx)
     # Put `helper` back at full size behind the document's back, as a birth would.
@@ -318,7 +316,7 @@ def test_an_export_canvas_carries_the_output_passs_format(
 
     The canvas is captured from inside the real call rather than rebuilt here: a test that
     constructs its own copy asserts a fact about `Canvas.__init__` and passes with the defect
-    present -- measured, F1 reintroduced verbatim survived exactly that shape.
+    present -- reintroducing the defect verbatim survives exactly that shape.
     """
     document = _document(gl_ctx)
     loud = TargetConfig(dtype="f4", filter_linear=False, wrap=True)
@@ -363,7 +361,7 @@ def test_an_export_canvas_carries_the_output_passs_format(
 def test_a_self_reading_output_exports_a_chain_that_advances(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
-    """The frozen export (F6), judged on the DECODED VIDEO.
+    """The frozen export, judged on the DECODED VIDEO.
 
     An output pass reading its own previous frame advanced correctly in the viewer and exported
     a video where every frame held the same accumulated value. The last iteration drew into the
@@ -445,7 +443,7 @@ def test_the_settings_label_shows_the_size_the_canvas_has(
 ) -> None:
     # The fifth copy of the sizing rule, and the only one that was wrong: it applied `scale` with
     # no output exemption, so an output pass carrying a stored scale was shown a size its texture
-    # did not have. Display-only, and still the rule this feature exists to keep in one shape.
+    # did not have. Display-only, and still the rule that must stay in one shape.
     scaled = TargetConfig(scale=0.5)
 
     assert displayed_target_size(scaled, (256, 256), is_output=False) == (128, 128)
@@ -518,11 +516,10 @@ def test_deleting_a_feedback_pass_leaves_no_stranded_history(
 def test_the_checker_sees_a_resample_that_drops_filter_and_wrap(
     gl_ctx: moderngl.Context,
 ) -> None:
-    """The mutation the whole suite used to survive.
+    """A resample that drops `filter=` and `wrap=` is caught by the battery above.
 
-    `resample_canvas` copies the old canvas's format forward. Deleting `filter=` and `wrap=`
-    resets every canvas in the document to LINEAR and clamp on every resize, silently. This is
-    the falsifier that proves the battery above is not vacuous -- it must be SEEN to fail.
+    `resample_canvas` copies the old canvas's format forward; without them every canvas in the
+    document resets to LINEAR and clamp on every resize, silently.
     """
     document = _document(gl_ctx)
     original = Document.resample_canvas
@@ -551,9 +548,9 @@ def test_the_checker_sees_a_resample_that_drops_filter_and_wrap(
 def test_a_canvas_receives_the_targeted_pass_not_the_graph_output(
     gl_ctx: moderngl.Context,
 ) -> None:
-    # `canvas=` and `target=` compose: the caller gets whichever pass the call rendered. The blit
-    # used to be gated on the GRAPH output, so asking for any other pass handed back an untouched
-    # canvas and no error -- which a blank-canvas assert alone would not catch, since a canvas
+    # `canvas=` and `target=` compose: the caller gets whichever pass the call rendered. A blit
+    # gated on the GRAPH output would hand back an untouched canvas and no error for any other
+    # pass -- which a blank-canvas assert alone would not catch, since a canvas
     # that received nothing and one that received a black picture read the same. So the canvas is
     # PRE-FILLED with a colour no pass draws, and the received picture is then compared against
     # both passes: it must be the helper's and not the output's.

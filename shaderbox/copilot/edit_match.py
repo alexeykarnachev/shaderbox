@@ -90,8 +90,8 @@ def _indent_levels(lines: list[str]) -> tuple[tuple[int, str], ...]:
 def script_match_spans(src: str, old_str: str) -> list[tuple[int, int, int]]:
     # Match old_str against the script source, returning (start, end, indent_shift) per occurrence.
     # FAST PATH: an exact substring (the common case — most edits are verbatim). FALLBACK: the
-    # indent-aware structural match, so a re-typed leading indent still lands (the 043 breakout
-    # 6-vs-8-space miss). `indent_shift` = the matched region's leading indent minus old_str's, so the
+    # indent-aware structural match, so a re-typed leading indent still lands (a 6-vs-8-space
+    # miss). `indent_shift` = the matched region's leading indent minus old_str's, so the
     # splice can re-indent new_str onto the real column. Empty old_str matches nothing.
     if not old_str:
         return []

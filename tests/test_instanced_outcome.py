@@ -1,11 +1,10 @@
-"""Who decides what a pass's draw did, and where it lands (102 D4, D4a, D4b, D6, I5).
+"""Who decides what a pass's draw did, and where it lands.
 
 `InstancedOutcome` has three producers (`instanced_outcome.py`'s own docstring): `Pass.render`
 / `_upload_instances` for `drew` / `empty` / `fullscreen` / `refused`; `Pass.compile` for
-`compile_failed` / `stale_program`; the script engine for `no_fields`, which is NOT this flow's
-to test (`scripting/engine.py` belongs to another flow). Each gate here is scoped to exactly
-the producer this flow owns, per the spec's own warning against a gate on `render`'s return
-claiming all eight states -- that gate could see at most five and would narrow its own domain.
+`compile_failed` / `stale_program`; the script engine for `no_fields`, which is tested with the script engine.
+Each gate here is scoped to exactly the producers above: a gate on `render`'s return
+claiming all eight states could see at most five and would narrow its own domain.
 """
 
 import dataclasses
@@ -60,8 +59,6 @@ def _population(n: int) -> dict[str, np.ndarray]:
 
 
 def test_a_populated_draw_reports_drew_with_the_count() -> None:
-    """Break: stop setting `last_outcome` on the draw path and this reads `not_compiled`
-    (the constructor default) forever, which is exactly I2/I3's silence returning."""
     render_pass = _entity_pass(moderngl.create_standalone_context())
     render_pass.compile()
     render_pass.render(u_time=0.0, instances=_population(3))
@@ -70,7 +67,7 @@ def test_a_populated_draw_reports_drew_with_the_count() -> None:
 
 
 def test_zero_entities_reports_empty_not_fullscreen() -> None:
-    """I3: zero entities clears the canvas today with no signal. A population that IS
+    """Zero entities clears the canvas today with no signal. A population that IS
     present but has zero rows must report `empty`, never `fullscreen` -- the two look the
     same on an unconditional black clear but mean opposite things about the script."""
     render_pass = _entity_pass(moderngl.create_standalone_context())
@@ -81,7 +78,7 @@ def test_zero_entities_reports_empty_not_fullscreen() -> None:
 
 
 def test_no_population_reports_fullscreen() -> None:
-    """I2: an instanced pass whose script sent nothing this frame draws fullscreen with no
+    """An instanced pass whose script sent nothing this frame draws fullscreen with no
     signal today. `pending_instances` defaults to `{}`, which is exactly this case."""
     render_pass = _entity_pass(moderngl.create_standalone_context())
     render_pass.compile()
@@ -91,10 +88,10 @@ def test_no_population_reports_fullscreen() -> None:
 
 
 def test_empty_and_fullscreen_are_the_same_picture_but_different_states() -> None:
-    """The pair the spec names as worth the most care: both leave the canvas cleared with
+    """The pair that needs the most care: both leave the canvas cleared with
     nothing drawn (an unconditional black clear precedes both paths), so pixels alone
     cannot tell them apart -- the outcome TYPE is the only thing that does, which is the
-    entire reason 102 D4 exists rather than a render-time log line."""
+    entire reason this type exists rather than a render-time log line."""
     gl = moderngl.create_standalone_context()
     empty_pass = _entity_pass(gl)
     empty_pass.compile()
@@ -117,9 +114,7 @@ def test_empty_and_fullscreen_are_the_same_picture_but_different_states() -> Non
 
 
 def test_a_validation_failure_reports_refused_with_the_reason() -> None:
-    """A population that does not match what the shader declares. Break: drop the `detail=`
-    kwarg and this still reports `refused` but with an empty reason -- the assertion on
-    `detail` catches that, not just the state."""
+    """A population that does not match what the shader declares."""
     render_pass = _entity_pass(moderngl.create_standalone_context())
     render_pass.compile()
     render_pass.render(
@@ -136,8 +131,7 @@ def test_a_validation_failure_reports_refused_with_the_reason() -> None:
 def test_the_engine_refused_sentinel_also_reports_refused() -> None:
     """The OTHER refused path: `Pass._upload_instances` receiving the engine's
     `REFUSED_POPULATION` sentinel directly, distinct from the pass's own validation
-    failure above. Both land on the same STATE (the research's I2/I3 separation is about
-    (b) vs (e), not about the two refusal causes), each with its own `detail`."""
+    failure above. Both land on the same STATE, each with its own `detail`."""
     from shaderbox.scripting.keys import REFUSED_POPULATION
 
     render_pass = _entity_pass(moderngl.create_standalone_context())
@@ -147,13 +141,12 @@ def test_the_engine_refused_sentinel_also_reports_refused() -> None:
     assert render_pass.last_outcome.detail
 
 
-# --- `Pass.compile`: compile_failed, stale_program (I5) -------------------------------------
+# --- `Pass.compile`: compile_failed, stale_program -------------------------------------
 
 
 def test_a_first_ever_compile_failure_reports_compile_failed() -> None:
     """No program ever existed, so there is nothing stale to draw -- `compile_failed`, not
-    `stale_program`. Break: swap the ternary in `_fail_compile` and this reads
-    `stale_program` on a pass that has never once compiled."""
+    `stale_program`."""
     render_pass = Pass(gl=moderngl.create_standalone_context(), canvas_size=(16, 16))
     render_pass.release_program(_BROKEN_FRAGMENT)
     render_pass.compile()
@@ -162,18 +155,16 @@ def test_a_first_ever_compile_failure_reports_compile_failed() -> None:
 
 
 def test_a_failed_recompile_reports_stale_program_and_still_draws_the_old_one() -> None:
-    """I5: a failed recompile keeps the old fields and the old program (`compile()` never
+    """A failed recompile keeps the old fields and the old program (`compile()` never
     touches `self.program` until it has a NEW one to swap in), so the pass draws the
     PREVIOUS shader under the new error. Every production caller invalidates first
     (`release_program`), which nulls `self.program` before the retry -- so replicating the
     research's measurement means mutating `.source` directly, the same way `watch.py`'s
     lib-reload path and a future caller could, and calling `compile()` again in place.
     Pins both halves: the STATE, and that the stale picture really does keep rendering --
-    which is the decision this wave takes on the stale-FIELDS half: the old program (and
-    therefore its fields) is left exactly as it was, only the OUTCOME becomes visible.
-    Break: after a recompile failure, either report `compile_failed` (losing the
-    distinction from a first-ever failure) or drop the still-valid program (which would
-    turn the canvas black instead of stale) and this fails."""
+    the old program (and therefore its fields) is left exactly as it was, only the OUTCOME
+    becomes visible.
+    """
     gl = moderngl.create_standalone_context()
     render_pass = Pass(gl=gl, canvas_size=(16, 16))
     render_pass.release_program(_FULLSCREEN_FRAGMENT)
@@ -203,23 +194,19 @@ def test_a_failed_recompile_reports_stale_program_and_still_draws_the_old_one() 
 
 
 def test_a_pass_that_never_rendered_reports_not_compiled() -> None:
-    """Frame one of every document: nothing has attempted a compile yet. Break: change the
-    constructor default and every fresh document reports something other than the one
-    healthy state that means 'nothing has happened yet'."""
+    """Frame one of every document: nothing has attempted a compile yet."""
     render_pass = Pass(gl=moderngl.create_standalone_context(), canvas_size=(16, 16))
     assert render_pass.last_outcome.state == "not_compiled"
 
 
-# --- D6: `_instances_error` has no reader after deletion -------------------------------------
+# --- `_instances_error` has no reader after deletion -------------------------------------
 
 
 def test_instances_error_has_no_reader_left_in_the_repo() -> None:
-    """Grep-based per the spec's own gate recipe (D6). Scoped to the attribute-access
+    """Grep-based. Scoped to the attribute-access
     SPELLING (`self._instances_error` / `.​_instances_error`) rather than the bare word, so
-    `instanced_outcome.py`'s own docstring -- which legitimately narrates I4's history as
-    the reason this type exists -- does not read as a false positive. Break: reintroduce
-    `self._instances_error = ...` or a read of it anywhere under `shaderbox/` and this
-    fails."""
+    `instanced_outcome.py`'s own docstring -- which legitimately narrates the history
+    that is the reason this type exists -- does not read as a false positive."""
     repo_root = Path(__file__).resolve().parent.parent
     result = subprocess.run(
         ["grep", "-rn", r"\._instances_error", str(repo_root / "shaderbox")],
@@ -229,7 +216,7 @@ def test_instances_error_has_no_reader_left_in_the_repo() -> None:
     assert result.stdout == "", f"a reader survived deletion: {result.stdout}"
 
 
-# --- D4a / D4b: `Document.instanced_outcomes` and per-iteration aggregation -----------------
+# --- `Document.instanced_outcomes` and per-iteration aggregation -----------------
 
 
 def _document(
@@ -250,8 +237,7 @@ def test_instanced_outcomes_carries_the_real_pass_name(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
     """`Pass` itself does not know its name (it is keyed by the Document's dict), so
-    `last_outcome.pass_name` is empty at the source -- `Document` must rewrap it. Break:
-    store `render_pass.last_outcome` directly into the dict and this reads ''."""
+    `last_outcome.pass_name` is empty at the source -- `Document` must rewrap it."""
     document = _document(tmp_path, gl_ctx)
     document.render()
     assert "main" in document.instanced_outcomes
@@ -263,7 +249,7 @@ def test_an_iterated_pass_reports_only_its_last_iteration(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """102 D4b: this wave's decision is LAST WINS -- every iteration draws into the same
+    """The decision is LAST WINS -- every iteration draws into the same
     canvas (the chain advances by swapping BETWEEN iterations, not per-frame), so the last
     iteration is what the canvas a reader would see actually shows. Proven here by forcing
     each of three iterations to a DIFFERENT, distinguishable state and asserting only the

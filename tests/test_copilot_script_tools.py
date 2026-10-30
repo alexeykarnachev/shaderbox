@@ -1,4 +1,4 @@
-"""read_script / write_script handler messages (feature 043), over the fake caps. The engine probe
+"""read_script / write_script handler messages, over the fake caps. The engine probe
 is exercised in test_script_dry_run.py; here the tool LAYER — that each ScriptWriteResult shape
 becomes the right agent-facing fact (compile error, the loud drives-0 no-op, the motion verdict, the
 orphan/per-key lines), and that read_script surfaces the stub."""
@@ -214,10 +214,9 @@ def _uniform(name: str) -> Any:
 
 
 def test_pass_views_marks_driven_only_on_the_pass_that_declares_it() -> None:
-    # The site 069 W-G genuinely fixes: _pass_views loops every pass against ONE document-scoped
-    # driven set, so before the pass filter a uniform driven on `paint` was marked
-    # `<driven by script.py>` on every pass declaring that NAME. Falsifier: keep the document-scoped
-    # set (drop the per-pass filter) — the composite assertion goes red.
+    # _pass_views loops every pass against ONE document-scoped
+    # driven set, so before the pass filter a uniform driven on `paint` was marked `<driven by
+    # script.py>` on every pass declaring that NAME.
     u = _uniform("u_wave")
     document = types.SimpleNamespace(
         passes={
@@ -225,7 +224,7 @@ def test_pass_views_marks_driven_only_on_the_pass_that_declares_it() -> None:
             "composite": _fake_pass("composite", [u]),
         },
         graph=types.SimpleNamespace(passes={}, output="composite"),
-        # `_pass_views` reads the effective wiring (069 D9, 072), which a real Document derives
+        # `_pass_views` reads the effective wiring, which a real Document derives
         # from its compiled programs; this stub has no GL, so it hands back an empty wiring.
         effective_wiring=lambda: {},
     )

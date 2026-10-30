@@ -18,7 +18,7 @@ from shaderbox.paths import copilot_trace_dir
 # Opened lazily and re-opened after close — the App lifecycle calls release() at every _init.
 #
 # Beside the file, every event also goes to the session's listeners as the STRUCTURED
-# (kind, fields) pair — the seam an observer (the dogfooding station) records from, so it never
+# (kind, fields) pair — the seam an observer records from, so it never
 # parses the transcript back. Listeners run on the emitting (worker) thread.
 
 TraceListener = Callable[[str, dict[str, Any]], None]

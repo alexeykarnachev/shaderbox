@@ -1,4 +1,4 @@
-"""Loading compiles nothing (066 D1): a pass compiles when something first needs its program.
+"""Loading compiles nothing: a pass compiles when something first needs its program.
 
 Pins the three halves of the decision: `load_from_dir` leaves every pass's program None while
 the tuned uniform VALUES still land in `uniform_values` (they never needed a program), a
@@ -117,13 +117,13 @@ def test_a_broken_source_is_attempted_once(
 
 
 # ----------------------------------------------------------------
-# The first-render sweep (069 W-C): every pass draws once, one pass per frame, and the steady
+# The first-render sweep: every pass draws once, one pass per frame, and the steady
 # state still draws only the output chain.
 
 
 def _bloom_with_output(tmp_path: Path, output: str) -> Any:
     # `blur` reaches scene+bright+blur, leaving `trail` and `composite` off the output chain —
-    # the tiles finding #36 saw as black rectangles until they were clicked.
+    # the tiles that showed as black rectangles until they were clicked.
     document_dir = tmp_path / "document"
     shutil.copytree(_BLOOM, document_dir)
     document = load_document_from_dir(document_dir).document

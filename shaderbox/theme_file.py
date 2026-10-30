@@ -59,10 +59,9 @@ class Theme:
         -- a root the theme never declares, and a name that is not a capture name at all.
 
         The second is stated as what a capture name IS (`_CAPTURE_NAME`) rather than as a
-        list of malformed shapes, because the list is never complete: an earlier version
-        rejected an EMPTY segment and still let `@variable.parameter ` through, whose
-        trailing space is not empty, so the walk missed every parent and returned the
-        root's colour -- `#ebdbb2` where `#83a598` was asked for.
+        list of malformed shapes, because the list is never complete: a name such as
+        `@variable.parameter ` has a trailing space that is not an EMPTY segment, so the
+        parent lookup would miss every parent and return the root's colour.
         """
         if _CAPTURE_NAME.fullmatch(name) is None:
             raise ThemeError(f"{self.name}: {name!r} is not a capture name")

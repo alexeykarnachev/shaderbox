@@ -1,8 +1,8 @@
-"""Buffer formatting (078 D9, D11): one formatter per tab kind, the maintainer's own nvim
-settings, shipped with the app.
+"""Buffer formatting: one formatter per tab kind, shipped with the app.
 
-Python is `ruff format --line-length 88`; GLSL and the lib files are `clang-format` with the
-style the nvim config falls back to when no `.clang-format` file is near. Both are binary
+Python is `ruff format --line-length 88`; GLSL and the lib files are `clang-format` with
+the inline `GLSL_STYLE` below (LLVM base, 4-space indent), passed on the command line
+rather than read from a `.clang-format` file. Both are binary
 wheels the app depends on, called by subprocess over stdin; a formatter that is missing at
 runtime raises, it never quietly returns the text unchanged. A leaf: no GL, no App.
 """

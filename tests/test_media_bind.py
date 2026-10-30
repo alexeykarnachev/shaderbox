@@ -1,4 +1,4 @@
-"""Media binding (feature 052 slice 2): the FILE-gate slot, the corollary-1 no-path-leak guarantee,
+"""Media binding: the FILE-gate slot, the corollary-1 no-path-leak guarantee,
 and the bind/unbind behavior. The gate tests are pure (threads, no GL); the bind tests use a
 standalone context + a stub (the test_cross_project_tools pattern), so they run without glfw."""
 

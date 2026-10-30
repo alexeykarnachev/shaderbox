@@ -1,6 +1,6 @@
-"""Auto-analyze a dogfood run from its trace transcripts + dump JSONs (feature 027).
+"""Auto-analyze a dogfood run from its trace transcripts + dump JSONs.
 
-Drive a scenario by hand (the `/dogfood` skill), then point this at the run's data dir to
+Drive a scenario by hand, then point this at the run's data dir to
 extract — WITHOUT reading logs by hand — tool coverage, per-turn iteration/token/cost stats,
 recovery sequences, and the token-growth shape. Emits a machine-readable JSON + a paste-ready
 markdown block, and (with --template/--report-out) fills the {{AUTO:...}} slots in
@@ -18,7 +18,7 @@ Usage:
     uv run python scripts/dogfood/analyze.py scripts/dogfood/runs/data-XXXX
     uv run python scripts/dogfood/analyze.py <data_dir> --json-out a.json --md-out a.md
     uv run python scripts/dogfood/analyze.py <data_dir> \
-        --template scripts/dogfood/REPORT_TEMPLATE.md --report-out ai_docs/features/NNN_*.md
+        --template scripts/dogfood/REPORT_TEMPLATE.md --report-out report.md
 
 Default (no flags): the markdown block to stdout, the JSON to stderr.
 """
@@ -443,7 +443,7 @@ def _find_recoveries(turns: list[Turn]) -> tuple[list[Recovery], list[ToolAttemp
     errored: list[ToolAttempt] = []
 
     # "broke" = a hard failure (ok=False) OR an edit that applied but compiled WITH errors (the
-    # _applied_result quirk: ok=True yet broken — the todo.md broken-compile-thrash class). "clean" =
+    # _applied_result quirk: ok=True yet broken — the broken-compile-thrash class). "clean" =
     # ok and not applied-with-errors. A broke edit followed (same turn) by ANY later clean
     # document-mutating edit is a recovery — the agent commonly self-corrects with a DIFFERENT edit tool
     # (create_document-broke -> replace_lines-clean), so pairing on the same tool name undercounts.

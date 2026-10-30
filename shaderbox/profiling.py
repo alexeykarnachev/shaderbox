@@ -1,4 +1,4 @@
-"""The frame profiler: a tree of CPU and GPU spans for one frame (feature 088).
+"""The frame profiler: a tree of CPU and GPU spans for one frame.
 
 A `Profiler` opens a root per frame and hands back a `FrameProfile`; `cpu(name)` and
 `gpu(name)` are context managers that push a `Span` under whatever span is open. A span's
@@ -173,7 +173,7 @@ class Profiler:
             self._drop()
 
     def _drop(self) -> None:
-        """Forget everything, ring included -- the ring's one eviction rule (D2)."""
+        """Forget everything, ring included, the ring's one eviction rule."""
         self._ring = {}
         self._pending = {}
         self._gpu_spans = {}

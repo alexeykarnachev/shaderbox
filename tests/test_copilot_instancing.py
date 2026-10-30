@@ -1,6 +1,6 @@
-"""Feature 103: the copilot learns instancing.
+"""The copilot learns instancing.
 
-C1's two false verdicts, broken and watched to fail before believed: the shipped Entity Flock
+Two false verdicts are pinned: the shipped Entity Flock
 (20000 entities, orbiting, `@instances` only -- no scalar uniform) must not read as "drives 0
 uniforms", and adding one CONSTANT scalar beside the population must not read as "values
 UNCHANGED across t (STATIC)" with no honest word about the population that IS moving.
@@ -48,7 +48,7 @@ void main() {
 """
 
 # The flock AS SHIPPED: 20000 entities orbiting via context.t, ONLY `@instances` -- no scalar
-# uniform driven at all. This is exactly the C1 shape: probe.driven is empty.
+# uniform driven at all. This is the shape that used to read as driving nothing: probe.driven is empty.
 _FLOCK_SCRIPT = """
 import numpy as np
 from shaderbox.scripting import ScriptBehavior, ScriptContext
@@ -105,16 +105,14 @@ def _flock_document(
     return document, engine
 
 
-# ---- (a) sb_instanced is not script-drivable (D4a) ----
+# ---- (a) sb_instanced is not script-drivable ----
 
 
 def test_sb_instanced_is_engine_driven() -> None:
-    # Break by removing it from ENGINE_DRIVEN_UNIFORMS and watching a script "drive" it
-    # cleanly instead of being silently overwritten every frame.
     assert MODE_UNIFORM in ENGINE_DRIVEN_UNIFORMS
 
 
-# ---- gate: the shipped flock must not report "drives 0 uniforms" (C1, case 1) ----
+# ---- gate: the shipped flock must not report "drives 0 uniforms" ----
 
 
 def test_the_shipped_flock_does_not_report_drives_zero_uniforms(
@@ -138,7 +136,7 @@ def test_the_shipped_flock_does_not_report_drives_zero_uniforms(
     assert "swarm" in facts
 
 
-# ---- gate: the flock + one constant scalar must not report a blanket STATIC (C1, case 2) ----
+# ---- gate: the flock + one constant scalar must not report a blanket STATIC ----
 
 
 def test_the_flock_plus_a_constant_scalar_does_not_report_a_blanket_static(
@@ -171,7 +169,7 @@ def test_the_flock_plus_a_constant_scalar_does_not_report_a_blanket_static(
     assert "ANIMATING" in combined
 
 
-# ---- gate: "not validated" is never a false zero (D2's conditional-validation case) ----
+# ---- gate: "not validated" is never a false zero ----
 
 
 def test_a_population_reaching_an_uncompiled_pass_reports_not_validated(
@@ -179,7 +177,7 @@ def test_a_population_reaching_an_uncompiled_pass_reports_not_validated(
 ) -> None:
     # A pass whose fragment source fails to compile has no entity_fields -- engine.py's
     # "if not fields:" branch. The statistics sink must say "not validated", never a false
-    # zero-entity report (103 D2).
+    # zero-entity report.
     broken_fragment = "#version 460 core\nBROKEN SYNTAX HERE\n"
     document, engine = _flock_document(tmp_path, gl_ctx, _FLOCK_SCRIPT, broken_fragment)
     probe = engine.dry_run(

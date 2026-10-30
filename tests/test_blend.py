@@ -1,15 +1,8 @@
-"""Blend mode: per-pass GL state chosen from `TargetConfig.blend` (102 D5).
-
-Gates I6 and I7. `Pass.render`'s instanced draw hardcodes `enable(BLEND); blend_func = ONE,
-ONE` -- another flow (F-core, rewriting `Pass.render`) owns replacing that with
-`blend.blend_func_for(self.target.blend)`. Until that lands, every mode draws additive, and
-the tests below that require a mode to be DISTINGUISHABLE from additive are expected to fail
--- they are the contract's own regression guard, not a claim this worktree's code is done.
-See the module docstring's XFAIL note beside each such test.
+"""Blend mode: per-pass GL state chosen from `TargetConfig.blend`.
 
 The fixture needs TWO OVERLAPPING entities: over the unconditional black clear, a single
 non-overlapping sprite renders identically under every mode, because the operation is only
-observable in the overlap (101 research, I6).
+observable in the overlap.
 """
 
 from pathlib import Path
@@ -85,12 +78,9 @@ def test_every_blend_mode_draws_something_in_the_overlap(
 def test_opaque_overlap_does_not_double(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
-    """I6's measurement: additive doubles a constant-color overlap (0.5 + 0.5 = 1.0); opaque
+    """Additive doubles a constant-color overlap (0.5 + 0.5 = 1.0); opaque
     must not -- the second sprite REPLACES the first, so the overlap reads the same red as
     a single sprite alone, not the sum.
-
-    Expected to FAIL until core.py reads `self.target.blend` instead of the hardcoded
-    `ONE, ONE` -- see the module docstring.
     """
     solo_pass = Pass(
         gl=gl_ctx,
@@ -119,9 +109,8 @@ def test_opaque_overlap_does_not_double(
 def test_additive_overlap_still_doubles(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
-    """The control for the test above: additive is SUPPOSED to double the overlap (100's
-    original, unchanged behaviour) -- if this one also stopped doubling, the fix broke the
-    default mode rather than adding a new one.
+    """The control for the test above: additive is SUPPOSED to double the overlap
+    -- if this one also stopped doubling, the default mode is broken.
     """
     center = _center_pixel(_overlapping_pass(gl_ctx, tmp_path, "additive"))
     assert float(center[0]) == pytest.approx(1.0, abs=1e-3), (
@@ -132,12 +121,8 @@ def test_additive_overlap_still_doubles(
 def test_opaque_and_additive_are_distinguishable_in_the_overlap(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
-    """The direct falsifier for 'the control shows but every mode draws the same picture':
-    two modes, same fixture, different overlap result.
-
-    Expected to FAIL until core.py reads `self.target.blend`; today both draw additive and
-    this assertion is exactly what would catch that.
-    """
+    """Two blend modes on the same fixture give different overlap results, so the mode
+    control changes what is drawn."""
     opaque_red = float(_center_pixel(_overlapping_pass(gl_ctx, tmp_path, "opaque"))[0])
     additive_red = float(
         _center_pixel(_overlapping_pass(gl_ctx, tmp_path, "additive"))[0]

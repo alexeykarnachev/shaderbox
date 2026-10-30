@@ -1,4 +1,4 @@
-"""The deferred-op "Rendering..." cue timing (feature 020·20 D3). A deferred render op is PARKED by
+"""The deferred-op "Rendering..." cue timing. A deferred render op is PARKED by
 drain() (cue pending, op not run), then run by run_deferred_render() at the post-swap + gl.finish
 firing point so the cue covers the frozen frame, then cleared. This is the same firing point the
 Render/Share tabs' RenderDefer uses — one place all render encodes freeze the loop, after the cue is

@@ -156,7 +156,7 @@ def test_render_for_cleans_up_on_render_failure(
 
 
 # ---------------------------------------------------------------------------
-# 090 D5 (revision 1) -- an export resolves its source from `export_source_size`: the stored
+# An export resolves its source from `export_source_size`: the stored
 # pair under Fixed, the LIVE canvas under Auto, where the document carries no pair. The Render
 # tab's own W x H still decides the file on the `preset=None` path.
 # ---------------------------------------------------------------------------
@@ -173,7 +173,7 @@ def _last_source_size() -> tuple[int, int]:
 def _record_source_sizes(monkeypatch: pytest.MonkeyPatch) -> None:
     """Record the canvas each export actually rendered into.
 
-    The size the frame was DRAWN at is the thing D5 moves; the file's own size is a resize
+    The size the frame was DRAWN at is what the export source size sets; the file's own size is a resize
     downstream of it, and on the `preset=None` path it is the Render tab's number either way.
     """
     _SOURCE_SIZES.clear()
@@ -199,10 +199,8 @@ def _auto_document(gl: moderngl.Context, size: tuple[int, int]) -> Document:
 def test_an_auto_export_renders_at_the_live_size(
     gl_ctx: moderngl.Context, tmp_path: Path, shape: str | None
 ) -> None:
-    # Under Auto the document stores NO size (090 revision 1), so `RenderShape.NATIVE` and
+    # Under Auto the document stores NO size, so `RenderShape.NATIVE` and
     # `resolve_dims`'s FREE fall-through mean the LIVE canvas -- what the user is looking at.
-    # Falsifier: resolve from anything else (a stored pair, a constant) and the None and NATIVE
-    # cases stop tracking the size the viewer put the document at.
     document = _auto_document(gl_ctx, (640, 480))
     document.set_canvas_size((320, 180))  # what the viewer put it at
     assert document.render_pass.canvas.texture.size == (320, 180)
@@ -256,8 +254,7 @@ def test_the_publish_gate_resolves_from_the_same_source_the_export_does(
     # The gate answers "would a render now produce this artifact?", so it must resolve from the
     # size a render WOULD use. Under Auto that is the live canvas, so an artifact rendered at
     # the old size stops matching once the viewer resizes -- correct, and why the Render button
-    # sits beside it. A FIXED document's gate is immune to the viewer entirely. Falsifier:
-    # resolve the gate from anything but `export_source_size` and one of the two halves flips.
+    # sits beside it. A FIXED document's gate is immune to the viewer entirely.
     from shaderbox.exporters.base import RenderedArtifact
     from shaderbox.exporters.youtube import YouTubeExporter
 
@@ -295,9 +292,9 @@ def test_the_publish_gate_resolves_from_the_same_source_the_export_does(
 def test_the_render_tabs_own_size_still_lands_on_disk(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
-    # D5 moved the SOURCE size to `resolution` and left `resolution_details` alone: the Render
-    # tab's W x H is still what the file comes out at, through the PIL resize. Falsifier:
-    # overwrite `resolution_details` from `resolution` and this exports 1920x1080. Note
+    # The SOURCE size comes from `resolution`, leaving `resolution_details` alone: the Render
+    # tab's W x H is still what the file comes out at, through the PIL resize.
+    # Note
     # `test_render_media_preset_none_byte_identical` above passes either way, so no existing
     # gate catches it.
     document = _auto_document(gl_ctx, (1920, 1080))
@@ -330,11 +327,9 @@ void main() { fs_color = vec4(texture(u_trail, vs_uv).r, 0.0, 1.0, 1.0); }
 def test_a_scaled_feedback_pass_survives_an_off_size_export(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
-    # The untested territory D5 names: non-output passes size from `target_size(canvas_size)`
+    # Non-output passes size from `target_size(canvas_size)`
     # while the OUTPUT frame is captured at the export size, so a scale=0.5 feedback pass inside
-    # an off-size export is the case where the two could disagree. Falsifier: size the feedback
-    # canvas from the export target and the sampler reads a mismatched texture, which shows up
-    # as a blank or a wrongly-scaled contribution.
+    # an off-size export is the case where the two could disagree.
     document = Document(gl=gl_ctx, canvas_size=(64, 64))
     document.resolution = (64, 64)
     document.passes[DEFAULT_PASS_NAME].release()
@@ -377,8 +372,7 @@ def test_a_scaled_feedback_pass_survives_an_off_size_export(
     # And it drew at the DOCUMENT's scale, not the export target's: a non-output pass sizes
     # from `target_size(canvas_size)` while the OUTPUT frame is captured at the export size.
     # The picture cannot see this on its own -- a smooth gradient resampled 16 -> 32 by the
-    # sampler looks the same -- so the size is the assertion. Falsifier: size the pass from
-    # the export canvas and the trail comes back at 16x16, a quarter of the pixels it owes.
+    # sampler looks the same -- so the size is the assertion.
     assert document.passes["trail"].canvas.texture.size == (32, 32)
     assert document.passes["show"].canvas.texture.size == (64, 64)
     document.release()

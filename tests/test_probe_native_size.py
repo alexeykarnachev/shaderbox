@@ -1,10 +1,8 @@
 """The copilot's probe renders the document at ITS OWN size and downscales, so `u_resolution`
-inside the output pass is the document's, not the probe's. Before this the output pass was drawn
-straight into a 64px probe canvas while its inputs stayed native, and an iterated output pass
-(a cascade reading its own previous run) sampled off-grid on its last run.
-
-Falsifier: a shader that writes `u_resolution.x` into red reads the native width; a probe-sized
-canvas would read ~64."""
+inside the output pass is the document's, not the probe's. Drawing the output pass straight into a
+64px probe canvas while its inputs stay native would make an iterated output pass (a cascade
+reading its own previous run) sample off-grid on its last run.
+"""
 
 import re
 from typing import Any

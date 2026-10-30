@@ -1,4 +1,4 @@
-"""The child process a native library runs in (feature 109).
+"""The child process a native library runs in.
 
 Started by `native_library.py` as `python -I -S <this file>`, by PATH, so no package `__init__` runs
 and nothing from site-packages loads: the host imports the standard library and nothing

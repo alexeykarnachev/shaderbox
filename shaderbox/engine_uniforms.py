@@ -19,7 +19,7 @@ ENGINE_UNIFORM_TYPES: dict[str, str] = {
     "u_pass_iteration": "float",
     "u_pass_iterations": "float",
 }
-# `sb_instanced` (103 D4a) is a THIRD kind: it lives only in the GENERATED vertex stage of an
+# `sb_instanced` is a THIRD kind: it lives only in the GENERATED vertex stage of an
 # instanced pass (`instanced.py::generate_vertex_source`), never in an author's fragment source,
 # so it does not belong in ENGINE_UNIFORM_TYPES (that dict backs the "must still be declared"
 # prompt line, which would be wrong for a uniform an author never writes). It still has to be in

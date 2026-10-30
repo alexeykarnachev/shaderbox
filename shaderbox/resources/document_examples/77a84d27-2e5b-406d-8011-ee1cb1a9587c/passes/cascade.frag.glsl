@@ -81,7 +81,7 @@ void main() {
 
         if (hit.a < 0.5 && level < u_pass_iterations - 1.0) {
             // THE MERGE. Get this wrong and the picture still looks like global illumination
-            // while being numerically far off -- it happened during 063 (every direction read
+            // while being numerically far off -- it has happened (every direction read
             // the wrong slot, 30% error, convincing shadows). The published article's own
             // snippet mixes two different quantities here; this is the corrected form.
             //

@@ -1,4 +1,4 @@
-"""The viewer's channel view (073 W-C): Color / Alpha / RGB, default unchanged.
+"""The viewer's channel view: Color / Alpha / RGB, default unchanged.
 
 The Alpha and RGB views are separate blits, so the output texture that feedback reads and
 exports sample is never touched; the view cycles through one command and persists with the
@@ -32,7 +32,7 @@ def test_every_view_has_a_label() -> None:
 
 
 def test_every_label_is_within_the_control_budget() -> None:
-    # The chip is a control label: one or two words (imgui-ui § 2).
+    # The chip is a control label: one or two words.
     for label in CHANNEL_VIEW_LABELS.values():
         assert len(label.replace("+", " ").split()) <= 2, label
 
@@ -57,8 +57,8 @@ def test_the_alpha_view_is_the_alpha_channel_as_grayscale(app: Any) -> None:
     # A 2x1 texture: left texel dim red at full alpha, right texel bright green at none.
     # The view must show the ALPHA (white / black), never the color, and leave the source
     # untouched. Every channel differs from alpha in at least one texel, so a blit reading
-    # the wrong one cannot pass: red 64/0 and alpha 255/0 were both 255/0 under the earlier
-    # fixture, which let `.r` stand in for `.a` unnoticed.
+    # the wrong one cannot pass: red 64/0 and alpha 255/0 would both be 255/0 in a fixture that
+    # let `.r` stand in for `.a` unnoticed.
     source = app.alpha_view._gl.texture(
         (2, 1), 4, data=bytes([64, 0, 0, 255, 0, 255, 128, 0]), dtype="f1"
     )
@@ -81,7 +81,7 @@ def test_the_alpha_view_is_the_alpha_channel_as_grayscale(app: Any) -> None:
 
 
 def test_the_rgb_view_ignores_alpha_entirely(app: Any) -> None:
-    # The maintainer's report: a shader writing `vec4(background, 0.0)` showed only the
+    # A shader writing `vec4(background, 0.0)` showed only the
     # checker in every view, because the compositing ones are honouring an alpha of 0. The
     # RGB view answers what color is THERE. Same 2x1 source as the alpha test: left opaque
     # red, right TRANSPARENT green -- the green must come through at full strength, and the
@@ -115,9 +115,6 @@ def test_a_view_blit_magnifies_with_the_source_pass_filter(app: Any) -> None:
     pass's own. Alpha and RGB render through a blit first, and a blit canvas that kept its own
     default made `smooth` do nothing in those two views -- the setting was applied to a texture
     the blit only ever samples 1:1, while the magnification happened on the blit's output.
-
-    Falsifier: drop the filter copy from `ChannelBlit.render` and the NEAREST case below comes
-    back LINEAR.
     """
     import moderngl
 

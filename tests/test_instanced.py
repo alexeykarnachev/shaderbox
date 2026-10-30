@@ -374,8 +374,7 @@ def test_a_population_outgrowing_its_buffers_frees_the_vao_it_replaces(
 
     `_upload_instances` drops `self.vao` so the next frame rebuilds it over the new
     buffers. The two other sites that retire a live VAO -- `invalidate` and `compile` --
-    release it first; this one did not, so every growth orphaned one. Falsifier: delete
-    the release and keep the `self.vao = None`, which is the code as it stood.
+    release it first; this one did not, so every growth orphaned one.
 
     GL hands released names back out, so the rebuilt VAO landing on the SAME name is what
     proves the old one was freed rather than forgotten. Comparing the objects would not:

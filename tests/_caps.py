@@ -1,4 +1,4 @@
-"""A fully-populated CopilotCapabilities fake for tests (feature 020).
+"""A fully-populated CopilotCapabilities fake for tests.
 
 CopilotCapabilities is a Protocol (production passes CopilotBackend); the fake is a frozen
 dataclass of Callable fields — positional-only protocol methods are satisfied by Callable

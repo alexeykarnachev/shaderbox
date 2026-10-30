@@ -7,7 +7,7 @@ the worker without ever blocking process exit. `TelegramExporter` layers an asyn
 top (python-telegram-bot forces async); `YouTubeExporter` calls its blocking client
 directly. That difference lives in the subclass's `_worker_main`, not here.
 
-Teardown contract (`conventions.md`): push STOP to release the worker, `join(timeout)`, and
+Teardown contract: push STOP to release the worker, `join(timeout)`, and
 on a timeout ABANDON the survivor rather than block shutdown forever. Abandoning is only
 safe because the thread is a **daemon** — a non-daemon survivor is re-joined by interpreter
 `_shutdown` and hangs the process for as long as it stays blocked.

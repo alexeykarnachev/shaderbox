@@ -1,4 +1,4 @@
-"""The one read-only object every behavior's `update` receives (features 041 + 042)."""
+"""The one read-only object every behavior's `update` receives."""
 
 from dataclasses import dataclass, field
 
@@ -29,7 +29,7 @@ class MouseState:
 
 
 # The fixed cursor an EXPORTED render sees, so a video is deterministic regardless of where the
-# live cursor was (feature 042). Injected by the export-isolation seam, never the live App.
+# live cursor was. Injected by the export-isolation seam, never the live App.
 # `down` is False and prev equals the position: a script gated on the button paints nothing in an
 # export, and one reading prev-to-current sees a zero-length capsule rather than a jump.
 EXPORT_MOUSE = MouseState(0.5, 0.5, False, 0.5, 0.5)

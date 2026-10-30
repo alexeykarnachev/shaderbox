@@ -1,4 +1,4 @@
-"""Pixel primitives for judging dogfood renders (feature 057).
+"""Pixel primitives for judging dogfood renders.
 
 NUMBERS OUT, never a verdict: every function returns a measurement (a centroid, a diff, a run
 list) and nothing asserts — the judgment stays with the human reading the report. PIL + numpy
@@ -41,12 +41,11 @@ def lit_fraction(im: np.ndarray, thresh: int = 13) -> float:
 
     The number the cross-scene diagnostic is read off: render model A's shader on model B's
     known-good scene and vice versa, and the pair says whether a dark result is the shader's
-    fault or the scene's. It decided three debugging rounds in the 077 comparison ("luna cascade
-    on this scene lights 95%, this cascade on luna scene 14% -- the shader, not the scene") and
-    lived only in the driver's notes until now. The default threshold is deliberately low: this
+    fault or the scene's. Example: "luna cascade on this scene lights 95%, this cascade on luna scene 14% -- the
+    shader, not the scene". The default threshold is deliberately low: this
     asks whether light ARRIVED, not whether it is bright.
 
-    Deliberately untested (081 D15): a pure function over an array, with no caller to regress.
+    Deliberately untested: a pure function over an array, with no caller to regress.
     """
     return float((im.max(axis=2) >= thresh).mean())
 

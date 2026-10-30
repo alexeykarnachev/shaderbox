@@ -1,4 +1,4 @@
-"""A `Pass` compiles and renders on its own, with no `Document` above it (065 stage 2).
+"""A `Pass` compiles and renders on its own, with no `Document` above it.
 
 The point of the split is that the unit which owns a shader, a program, a target and a set of
 uniforms is constructible and drawable alone. Everything here builds a bare `Pass` — never a
@@ -101,7 +101,7 @@ def test_a_target_config_shapes_the_pass_target(gl_ctx: moderngl.Context) -> Non
 
 
 def test_clamp_is_the_default_wrap(gl_ctx: moderngl.Context) -> None:
-    # moderngl defaults repeat_x/y to True, which is wrong for a feedback border (D9), so the
+    # moderngl defaults repeat_x/y to True, which is wrong for a feedback border, so the
     # unset field has to actively turn it off rather than inherit the library's choice.
     render_pass = _pass(gl_ctx, target=TargetConfig())
     assert not render_pass.canvas.texture.repeat_x
@@ -110,7 +110,7 @@ def test_clamp_is_the_default_wrap(gl_ctx: moderngl.Context) -> None:
 
 
 def test_no_target_config_keeps_the_eight_bit_canvas(gl_ctx: moderngl.Context) -> None:
-    # TargetConfig's f2 default (D9) belongs to a pass IN A GRAPH. Applying it to every
+    # TargetConfig's f2 default belongs to a pass IN A GRAPH. Applying it to every
     # unconfigured pass would silently reformat the canvas every export path reads as 8-bit.
     render_pass = _pass(gl_ctx)
     assert render_pass.target is None
@@ -120,7 +120,7 @@ def test_no_target_config_keeps_the_eight_bit_canvas(gl_ctx: moderngl.Context) -
 
 def test_two_passes_are_independent(gl_ctx: moderngl.Context) -> None:
     # The split's real claim: N passes coexist, each with its own program, target and uniforms.
-    # One file, one CompileUnit — the container 064 could not give.
+    # One file, one CompileUnit — the container a lone shader file could not give.
     a = _pass(gl_ctx, _RED, size=(8, 8))
     b = _pass(gl_ctx, _TIME, size=(4, 4))
     a.render(u_time=0.0)

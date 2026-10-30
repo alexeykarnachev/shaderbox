@@ -513,7 +513,7 @@ class YouTubeExporter(Exporter):
     ) -> bool:
         if artifact is None:
             return False
-        # The same source size the export itself resolves from (090 D5): the stored pair under
+        # The same source size the export itself resolves from: the stored pair under
         # Fixed, the live canvas under Auto. Reading anything else here disarms publish on an
         # artifact that does match what a render would now produce.
         expected: tuple[int, int] = resolve_dims(
@@ -561,7 +561,7 @@ class YouTubeExporter(Exporter):
             )
 
     def _handle_connect(self) -> None:
-        # The google SDK imports lazily behind this seam (066 D3) — first Connect pays it,
+        # The google SDK imports lazily behind this seam — first Connect pays it,
         # here on the worker thread, never the app start.
         from shaderbox.exporters import youtube_api
 

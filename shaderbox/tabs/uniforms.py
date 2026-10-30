@@ -9,8 +9,8 @@ from shaderbox.ui_primitives import standard_button, text_chip, text_tab_row
 from shaderbox.util import format_auto_value, get_uniform_hash
 from shaderbox.widgets.uniform import draw_ui_uniform, uniform_name_label
 
-# The uniforms panel, its own tab since 083: on the Document tab it shared the space with the pass
-# strip and had too little of it. What a pass IS stays on the Document tab (the strip, its six
+# The uniforms panel, its own tab, apart from the pass
+# strip on the Document tab. What a pass IS stays on the Document tab (the strip, its six
 # verbs, the canvas fields); what its uniforms are SET TO lives here.
 
 
@@ -51,9 +51,9 @@ def _draw_pass_selector(app: App, document_id: str) -> None:
 
 
 def _draw_instanced_badge(app: App, document_id: str) -> None:
-    # 104 D3/D4: a capability badge is per-PASS, read from entity_fields (populated from the
-    # FLATTENED source at compile, 104 D3) -- so a `flat in` spliced in from a `lib:` include
-    # marks here even though the open shader tab shows no such line. A CHIP (104 D2b), not a
+    # A capability badge is per-PASS, read from entity_fields (populated from the
+    # FLATTENED source at compile) -- so a `flat in` spliced in from a `lib:` include
+    # marks here even though the open shader tab shows no such line. A CHIP, not a
     # button: ui_primitives.text_chip, STATE_INFO to match the auto-uniform block's own tone
     # above rather than a new colour invented for one row.
     panel_pass = app.panel_pass(document_id)
@@ -77,7 +77,7 @@ def draw(app: App) -> None:
 
     active_uniform_hashes = []
     auto_hashes = []
-    # The PANEL pass, not the output: the sliders belong to the pass being edited (065).
+    # The PANEL pass, not the output: the sliders belong to the pass being edited.
     panel_pass_name = app.panel_pass_name(document_id)
     for uniform in app.panel_pass(document_id).get_active_uniforms():
         if (

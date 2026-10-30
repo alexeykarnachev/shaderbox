@@ -1,7 +1,7 @@
-"""Invariant: every tool is fully carded at its single definition site (feature 029).
+"""Invariant: every tool is fully carded at its single definition site.
 
-One test kills three drift classes: a missing label (the old _TOOL_VERBS gap), a missing
-gate prompt on an always-gated tool (the old _GATE_PROMPTS gap), and the dogfood analyzer's
+One test kills three drift classes: a missing label (`_TOOL_VERBS`), a missing
+gate prompt on an always-gated tool (`_GATE_PROMPTS`), and the dogfood analyzer's
 coverage list going stale on a tool add/remove. Plus the structural gate/credential
 invariants and the publish precheck handoffs (all counts derived from the registry, never
 literals).
@@ -35,7 +35,7 @@ def test_every_tool_fully_carded() -> None:
 
 
 def test_dead_tool_names_absent_from_copilot_sources() -> None:
-    # 039 removed replace_lines/insert_after. A surviving mention anywhere in the
+    # replace_lines/insert_after no longer exist. A surviving mention anywhere in the
     # package — a tool description, a prompt bullet, a guard/nudge/hint string, even a
     # comment — silently steers the model into a nonexistent tool; this pins the
     # rewording forever. (scripts/ is excluded: the dogfood analyzer's HISTORICAL_TOOLS
@@ -107,7 +107,7 @@ def test_publish_prechecks_hand_off_until_ready() -> None:
 
 def test_delete_gate_prompt_shows_document_name() -> None:
     # The confirm card asks with the document's NAME (resolved via the project map with
-    # read_shader's prefix rule), short — no trash/recover tail (034 F01).
+    # read_shader's prefix rule), short — no trash/recover tail.
     registry = build_registry(
         minimal_caps(
             document_tree=lambda: [
@@ -146,7 +146,7 @@ def test_delete_precheck_fails_fast_on_empty_or_unknown_target() -> None:
     assert registry.precheck("delete_document", {"document": "a1b2"}) is None
 
 
-# ---- lazy tool catalogue (feature 052 slice 0) ----
+# ---- lazy tool catalogue ----
 
 
 def test_lazy_tools_demoted_but_reachable() -> None:

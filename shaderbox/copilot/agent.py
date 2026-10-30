@@ -101,7 +101,7 @@ _COMPILE_THRASH_NUDGE = (
 )
 
 # Tools that change what the CURRENT document renders — a turn that ran one of these ok produced a
-# visual result (053 slice B). Structural ops (rename/delete/switch/canvas-size) are excluded.
+# visual result. Structural ops (rename/delete/switch/canvas-size) are excluded.
 _RENDER_AUTHORING_TOOLS = frozenset(
     {"edit_shader", "write_shader", "set_uniform", "edit_script", "write_script"}
 )
@@ -218,14 +218,14 @@ class AgentError:
     message: str
     summary: TurnSummary = field(default_factory=TurnSummary)
     # Usage stats for the errored turn — errored spend must still reach the session
-    # cost accounting (033; None on session-level fallback errors with no run).
+    # cost accounting (None on session-level fallback errors with no run).
     stats: TurnStats | None = None
 
 
 @dataclass(frozen=True)
 class AgentCancelled:
     summary: TurnSummary = field(default_factory=TurnSummary)
-    # Cancelled turns still billed their iterations (033) — None on pre-stream cancels.
+    # Cancelled turns still billed their iterations — None on pre-stream cancels.
     stats: TurnStats | None = None
 
 
@@ -442,7 +442,7 @@ def _tool_message(tool_call_id: str, content: str) -> LLMMessage:
 
 
 # The decline a tool result carries when the USER answered -- at the gate, or by a deny already
-# given this turn (085). One template because the model must read the same fact on both paths:
+# given this turn. One template because the model must read the same fact on both paths:
 # two literals drift, and a drift here is a vocabulary the model has to learn twice.
 _DECLINE_MSG = (
     "error: user declined — the {name} did NOT happen. "
@@ -478,7 +478,7 @@ def build_gate(registry: ToolRegistry, name: str, args: dict) -> GateRequest:
             kind=GateKind.CONFIG, prompt=prompt, secret_field=tool.secret_field
         )
     if not registry.requires_gate(name) and registry.locks_source(name):
-        # The session's source lock is what stopped this call, not the tool's own policy (083).
+        # The session's source lock is what stopped this call, not the tool's own policy.
         # A two-answer card, and a prompt that names the lock rather than the tool's danger --
         # the tool is ordinary; the LOCK is why we are asking.
         return GateRequest(
@@ -518,7 +518,7 @@ def run_turn(
     rendered = render_blocks(build_blocks(context, history, user_text))
     messages = [m for rb in rendered for m in rb.messages]
     built_len = len(messages)  # everything past it is this turn's tool exchange
-    loaded_tools: set[str] = set()  # lazily-loaded tools, turn-scoped (feature 052 §0)
+    loaded_tools: set[str] = set()  # lazily-loaded tools, turn-scoped
     specs = registry.assemble_specs(
         loaded_tools
     )  # eager core (sorted); grows on load_tools
@@ -527,7 +527,7 @@ def run_turn(
     total_tool_calls = 0
     consecutive_failed_edits = 0  # self-correction cap (reset on any other outcome)
     no_action_retried = False  # the zero-call retry fires at most once a turn
-    # One DENY on a source-lock gate answers for the whole turn (085): every later locked call is
+    # One DENY on a source-lock gate answers for the whole turn: every later locked call is
     # declined without asking. Turn-scoped by living here -- the next turn is born without it.
     source_deny_latched = False
     consecutive_compile_failures = 0  # applies-but-broken thrash counter
@@ -563,10 +563,10 @@ def run_turn(
 
     def stream_final_reply(cause: str) -> "Iterator[AgentEvent]":
         # One extra NO-TOOLS stream so a forced turn-end still ends with the model addressing the
-        # USER (3/10 round-3 turns ended silent — feature 033). `cause` names the engine limit so
-        # the closing reply owns the stop, not the user (feature 050); a turn that authored a
-        # render also carries ONE fresh measurement of it, so the summary is not written blind
-        # (058). Appends nothing durable; usage folds into the turn total.
+        # USER. `cause` names the engine limit so
+        # the closing reply owns the stop, not the user; a turn that authored a
+        # render also carries ONE fresh measurement of it, so the summary is not written blind.
+        # Appends nothing durable; usage folds into the turn total.
         nonlocal usage
         nudge = _final_reply_nudge(
             cause, splice_facts_legend(_forced_reply_facts(registry, ran))
@@ -689,7 +689,7 @@ def run_turn(
                 if cancel.is_set():
                     # Per-delta cancel: a Stop / release during a SLOW stream is responsive here,
                     # not only at the iteration top — else the worker rides the request timeout
-                    # (043 hang). The partial text/tool-calls are discarded; the loop's top-of-
+                    # (a hang). The partial text/tool-calls are discarded; the loop's top-of-
                     # iteration cancel check below returns the cancelled terminal.
                     break
                 match ev:
@@ -750,7 +750,7 @@ def run_turn(
             return
 
         if cancel.is_set():
-            # The stream broke out on a mid-delta cancel (043) — terminate the turn now with the
+            # The stream broke out on a mid-delta cancel — terminate the turn now with the
             # accumulated summary + spend, before executing any partial tool calls.
             tr.event("turn_cancelled", iteration=iteration)
             yield AgentCancelled(
@@ -959,7 +959,7 @@ def run_turn(
                         break
                 continue
             if tc.name == LOAD_TOOLS_NAME:
-                # Meta-tool (feature 052 §0): intercept BEFORE execute — it mutates the turn's tools=
+                # Meta-tool: intercept BEFORE execute — it mutates the turn's tools=
                 # set (engine state), not project state. Add the valid lazy names to the loaded set +
                 # rebuild specs so the NEXT iteration's stream carries them.
                 raw = args.get("names", [])

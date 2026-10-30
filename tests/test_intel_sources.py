@@ -1,4 +1,4 @@
-"""The intel module's pure sources (078 W-A): the buffer read as text, the script read
+"""The intel module's pure sources: the buffer read as text, the script read
 statically. Neither touches GL or the App."""
 
 import ast
@@ -145,16 +145,14 @@ def test_every_kind_is_a_distinct_string() -> None:
 def test_every_kind_has_a_color() -> None:
     """Every kind has a colour, a rank and a class, and the class DRAWS that colour.
 
-    ONE palette and no language filter. An earlier version checked each kind against its
-    own language's palette, because slots 7/8/9 meant different things in a shader and in
-    a script; a class now means one thing everywhere, so the filter is gone -- and its
-    absence is what proves the roles actually unified rather than being renamed.
+    ONE palette and no language filter: a class means one thing in a shader and in a
+    script alike, which is what proves the roles unified rather than being renamed.
     """
     palette = editor_palette()
     ceiling = sum(1 for slot in Slot if slot.name.startswith("SYNTAX_"))
     for kind in SymbolKind:
         assert len(kind_color(kind)) == 4
-        assert kind_rank(kind) >= 0  # 079 D2: every kind sorts somewhere
+        assert kind_rank(kind) >= 0  # every kind sorts somewhere
         cls = kind_slot(kind)
         assert 0 <= cls <= ceiling, kind
         if cls:
@@ -164,9 +162,8 @@ def test_every_kind_has_a_color() -> None:
 
 
 def test_the_fragment_output_is_scanned_and_the_near_misses_are_not() -> None:
-    # 079 D11: the one name a shader WRITES gets its own color, so it has to be found without
-    # catching what merely looks like it. Falsifier: match `out` anywhere and `inout` plus the
-    # local named `out_thing` come back as fragment outputs.
+    # the one name a shader WRITES gets its own color, so it has to be found without
+    # catching what merely looks like it.
     text = (
         "layout(location = 0) out vec4 fragColor;\n"
         "out vec3 second;\n"
@@ -184,7 +181,7 @@ def test_the_fragment_output_is_scanned_and_the_near_misses_are_not() -> None:
 def test_the_output_variable_reads_orange_and_sorts_with_the_buffers_own_names() -> (
     None
 ):
-    # The CAPTURE, not a hex and not a class number (079 D11's "generalizable across
+    # The CAPTURE, not a hex and not a class number ("generalizable across
     # themes"). The class is derived from the capture's colour, so pinning the number here
     # would make this test the thing that breaks when a capture is added ahead of it --
     # what matters is that the library draws it in the colour the popup does, which the
@@ -198,13 +195,13 @@ def test_an_empty_literal_offers_no_declaration() -> None:
     # `uniform float[0] u_x;` does not compile, and the shader side offers a returned key's
     # declaration as a one-click insertion — so an empty literal must name no shape at all. A
     # one-element one neither: `float u_x[1]` has array length 1, which the coercion drives as
-    # a scalar and so refuses the list. Falsifier: return `float[0]` or `float[1]` again.
+    # a scalar and so refuses the list.
     assert _literal_type(ast.parse("[]", mode="eval").body) is None
     assert _literal_type(ast.parse("[1.0]", mode="eval").body) is None
 
 
 def test_a_value_infers_the_type_a_literal_would_have() -> None:
-    # The maintainer's case: a script returning a VARIABLE parses to no shape, so `uniform `
+    # A script returning a VARIABLE parses to no shape, so `uniform `
     # never offered the name and the uniform read as "does not autocomplete". The value knows.
     assert glsl_type_of_value([0.1, 0.2, 0.3, 0.4]) == "vec4"
     assert glsl_type_of_value(0.5) == "float"
@@ -220,9 +217,8 @@ def test_a_value_infers_the_type_a_literal_would_have() -> None:
     # A sequence the COERCION would refuse names no type either, so the completion never seeds a
     # declaration the next tick rejects: bools are not numbers to it.
     assert glsl_type_of_value([True, False]) is None
-    # A numpy scalar IS a number, at every width. This used to split on whether the type
-    # happened to subclass `float` -- f8 passed and f4 did not -- which made the same
-    # expression name a type over one array and nothing over another.
+    # A numpy scalar IS a number, at every width: f8 and f4 both name a
+    # type, whether or not the numpy type subclasses `float`.
     assert glsl_type_of_value([np.float32(1.0), np.float32(2.0)]) == "vec2"
     assert glsl_type_of_value(np.array([1.0, 2.0, 3.0, 4.0])) == "vec4"
 

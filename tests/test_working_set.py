@@ -1,10 +1,10 @@
-"""Working-set scratchpad (feature 020·29).
+"""Working-set scratchpad.
 
 Three layers:
-- the prompt-assembly pieces (the D10 trim reserve, the working-set render) — pure, GL-free;
-- the loop splice (D11 trace==stream payload equality, the live per-iteration injection) — driven
+- the prompt-assembly pieces (the trim reserve, the working-set render) — pure, GL-free;
+- the loop splice (trace==stream payload equality, the live per-iteration injection) — driven
   through a recording fake client;
-- the App-side machinery (D9 intra-batch line-edit guard, the rebuild coherence, current-union,
+- the App-side machinery (intra-batch line-edit guard, the rebuild coherence, current-union,
   gone-document skip, lib-consumer invalidation) — against a real headless App with the bridge inlined.
 """
 
@@ -36,7 +36,7 @@ from shaderbox.copilot.trace import TraceLog
 from tests._caps import minimal_caps
 from tests.test_copilot_loop import _fake_context, _tool_call
 
-# ---- D10: the trim reserve (pure) ----
+# ---- the trim reserve (pure) ----
 
 
 def _big_history(turns: int) -> list[LLMMessage]:
@@ -50,7 +50,7 @@ def _big_history(turns: int) -> list[LLMMessage]:
 
 def test_trim_reserves_scratchpad_headroom() -> None:
     # A near-budget history + the scratchpad reserve must leave room: the trimmed prompt + a large
-    # working set stays under max_input_tokens (D10). Without the reserve the trim would fill to the
+    # working set stays under max_input_tokens. Without the reserve the trim would fill to the
     # budget and every stream would overflow by the scratchpad size.
     history = _big_history(200)  # ~400k chars ~= 100k tok, well over budget
     built = build_messages(_fake_context(), history, "do it")
@@ -116,7 +116,7 @@ def test_render_working_set_document_and_lib() -> None:
 
 def test_render_working_set_carries_script_section() -> None:
     # A scripted document renders a SCRIPT sub-section + its error line; a driven uniform row shows the
-    # marker, not a phantom value (feature 043 D6/D7a). The marker itself is built backend-side
+    # marker, not a phantom value. The marker itself is built backend-side
     # (_format_uniforms); here we verify the working-set RENDER carries the script fields it's given.
     scripted = WorkingSetView(
         address="7f3a",
@@ -131,14 +131,14 @@ def test_render_working_set_carries_script_section() -> None:
     )
     body = (render_working_set([scripted], [])[0].content) or ""
     assert "Drift SCRIPT ===" in body
-    assert "scripts/script.py" not in body  # 059 D2: no filesystem path in the header
+    assert "scripts/script.py" not in body  # no filesystem path in the header
     assert "class Behavior(ScriptBehavior)" in body
     assert "script.py:2: bad" in body
     assert "u_center vec2 = <driven by script.py>" in body
 
 
 def test_render_working_set_names_evicted_members() -> None:
-    # D3: a member the size cap dropped is named LOUDLY — a source that silently vanishes from the
+    # A member the size cap dropped is named LOUDLY — a source that silently vanishes from the
     # block leaves the agent editing from a remembered copy (the stale-copy class).
     plain = WorkingSetView(
         address="7f3a",
@@ -156,7 +156,7 @@ def test_render_working_set_names_evicted_members() -> None:
 
 def test_render_working_set_no_script_adds_zero_bytes() -> None:
     # A script-LESS document (script_listing="") must add NO SCRIPT sub-section — the gate that keeps the
-    # 4-of-5-documents-unscripted case from bloating the context (feature 043 D6).
+    # 4-of-5-documents-unscripted case from bloating the context.
     plain = WorkingSetView(
         address="7f3a",
         name="Plain",
@@ -170,7 +170,7 @@ def test_render_working_set_no_script_adds_zero_bytes() -> None:
     assert "SCRIPT" not in body  # zero script bytes for an unscripted document
 
 
-# ---- D11 + the live per-iteration splice (recording fake client) ----
+# ---- the live per-iteration splice (recording fake client) ----
 
 
 class _RecordingClient:
@@ -195,7 +195,7 @@ class _RecordingClient:
 
 
 class _RecordingTrace(TraceLog):
-    # Captures the `messages` payload of each llm_request event (D11 trace fidelity).
+    # Captures the `messages` payload of each llm_request event.
     def __init__(self) -> None:
         self.llm_request_messages: list[list[LLMMessage]] = []
 
@@ -205,7 +205,7 @@ class _RecordingTrace(TraceLog):
 
 
 def test_scratchpad_spliced_onto_every_stream() -> None:
-    # The live working-set block rides the BOTTOM of EVERY iteration's stream payload (020·29 D2);
+    # The live working-set block rides the BOTTOM of EVERY iteration's stream payload;
     # the durable list never holds it (it's re-rendered fresh, one copy per iteration).
     sentinel = "WS-SENTINEL-LINE"
     render = lambda: [LLMMessage(role="user", content=sentinel)]  # noqa: E731
@@ -235,7 +235,7 @@ def test_scratchpad_spliced_onto_every_stream() -> None:
 
 
 def test_trace_payload_equals_stream_payload() -> None:
-    # D11: the messages+scratchpad spliced into the llm_request TRACE event must equal what was
+    # The messages+scratchpad spliced into the llm_request TRACE event must equal what was
     # STREAMED, every iteration — else the transcript records zero source reaching the model.
     sentinel = "WS-SENTINEL-LINE"
     render = lambda: [LLMMessage(role="user", content=sentinel)]  # noqa: E731
@@ -266,7 +266,7 @@ def test_trace_payload_equals_stream_payload() -> None:
 
 
 def test_batch_begin_called_once_per_batch() -> None:
-    # run_turn calls batch_begin once before each tool-call batch (D9 reset signal).
+    # run_turn calls batch_begin once before each tool-call batch (the reset signal).
     calls = {"n": 0}
 
     def batch_begin() -> None:
@@ -309,14 +309,14 @@ def test_read_adds_to_working_set_and_rebuild_shows_live_source(app: Any) -> Non
 
 
 def test_current_document_unioned_into_rebuild(app: Any) -> None:
-    # The current document is an implicit working-set member even if no read/edit added it (D1).
+    # The current document is an implicit working-set member even if no read/edit added it.
     app.session._copilot_working_set = []
     views, _evicted = app.copilot_backend.read_working_set()
     assert any(v.is_current for v in views)
 
 
 def test_intra_batch_rewrite_guard_rejects(app: Any) -> None:
-    # D9: a whole-file rewrite of a target the batch already mutated is rejected BEFORE any GL work
+    # A whole-file rewrite of a target the batch already mutated is rejected BEFORE any GL work
     # (the reject path is GL-free — it never reaches the persist), mutating nothing. Pre-seed the
     # per-batch set with the current document's full id to model "a prior edit this batch changed the
     # content the rewrite was composed from".
@@ -333,10 +333,10 @@ def test_intra_batch_rewrite_guard_rejects(app: Any) -> None:
 
 
 def test_substring_edit_never_d9_rejected(app: Any) -> None:
-    # A substring edit is NOT gated by D9 even when the target is batch-mutated (it matches by text).
+    # A substring edit is NOT gated by the rewrite guard even when the target is batch-mutated (it matches by text).
     app.copilot_backend._batch_mutated = {app.current_document_id}
     res = app.copilot_backend.apply_shader_edit("zzz-no-such-token", "x", False, "")
-    # A genuine no-match (matches==0, hint), NOT a D9 unresolved reject.
+    # A genuine no-match (matches==0, hint), NOT an unresolved reject.
     assert not res.unresolved
 
 
@@ -353,7 +353,7 @@ def test_unknown_edit_target_rejects_as_unresolved(app: Any) -> None:
     assert res.unresolved and "no document" in res.unresolved_reason
 
 
-# ---- lazy load_tools injection (feature 052 slice 0) ----
+# ---- lazy load_tools injection ----
 
 
 class _ToolsRecordingClient:
@@ -379,7 +379,7 @@ class _ToolsRecordingClient:
 
 def test_load_tools_injects_lazy_tool_into_next_stream() -> None:
     # iteration 0 carries the eager core (no bind_media); the model calls load_tools(["bind_media"]);
-    # iteration 1's tools= now includes bind_media (§0 turn-scoped injection).
+    # iteration 1's tools= now includes bind_media (turn-scoped injection).
     client = _ToolsRecordingClient(
         [
             _tool_call("c1", "load_tools", '{"names": ["bind_media"]}'),

@@ -1,4 +1,4 @@
-"""The C boundary to libgraph_canvas.so holds (feature 098).
+"""The C boundary to libgraph_canvas.so holds.
 
 Every check here is one a plausible-looking mistake would break. The layout
 proof is the important one: it caught a real disagreement the first time it ran

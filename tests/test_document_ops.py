@@ -1,4 +1,4 @@
-"""Document file ops (feature 052 slice 3): rename / set_canvas_size / duplicate.
+"""Document file ops: rename / set_canvas_size / duplicate.
 
 Two layers: the `app`-fixture tests drive the real production backend (glfw — skipped on a
 display-less box, run in CI); the standalone-context tests bind the real backend methods to a stub

@@ -1,4 +1,4 @@
-"""Feature 056 slice B: the edit brakes cover the SCRIPT tools too. The streak key is a
+"""The edit brakes cover the SCRIPT tools too. The streak key is a
 (kind, target) tuple (a document's GLSL and its script.py are two files), a clean whole-file write
 resets its OWN kind, a broken script edit counts as broken, and one write_script per document per
 batch. Deterministic — scripted fake client + a stubbed backend, no GL."""
@@ -118,8 +118,6 @@ def test_clean_write_script_resets_the_script_streak() -> None:
 
 
 def test_script_edits_still_hit_the_hard_stop_without_a_write() -> None:
-    # The counterpart falsifier: without the reset the same run force-ends, so the test above is
-    # not passing for want of a working brake.
     config = replace(COPILOT_CONFIG, clean_edit_soft_streak=2, clean_edit_hard_streak=3)
     events, _trace = _run(
         [_EDIT_SCRIPT] * 5 + [_DONE],
@@ -360,8 +358,8 @@ def test_an_alternating_pair_of_repeated_calls_is_churn_too() -> None:
 
 
 def test_a_sweep_touching_many_files_once_is_not_churn() -> None:
-    # hy4-preview on the station: a dead-code sweep over seven files, every edit an unchanged
-    # frame by nature, was stopped by the brake at six. Unchanged frames count per file.
+    # A dead-code sweep over seven files, every edit an unchanged frame by nature, must not be
+    # stopped by the brake at six. Unchanged frames count per file.
     config = replace(
         COPILOT_CONFIG,
         clean_edit_soft_streak=0,
@@ -387,10 +385,9 @@ def test_a_sweep_touching_many_files_once_is_not_churn() -> None:
 
 
 def test_broken_script_edits_force_end_the_turn_at_the_hard_streak() -> None:
-    # 082 F3: the nudge above latches on compile_nudge_sent, so it fires ONCE and nothing escalates.
-    # A sweep turn spent fourteen edit_script calls on one indentation error -- nine of them after
-    # the nudge -- and only max_iterations stopped it, costing more than the six turns before it.
-    # Every other brake family has a soft and a hard half; this one had only the soft.
+    # The nudge above latches on compile_nudge_sent, so it fires ONCE and nothing escalates.
+    # Without a hard half, repeated edit_script calls on one indentation error are stopped only by
+    # max_iterations. Every other brake family has a soft and a hard half.
     config = replace(
         COPILOT_CONFIG, max_compile_failures=2, compile_failure_hard_streak=3
     )

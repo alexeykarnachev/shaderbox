@@ -1,8 +1,7 @@
-"""Native libraries from a script (feature 109): the gates the spec's Verification section names.
+"""Native libraries from a script: the host process, its buffers, its lifecycle and the engine hooks.
 
 The fixture library is C, compiled at test time with the system `cc` against the shipped
-header. With no compiler every test here is SKIPPED, which is not a pass. Each test's
-docstring names the break it must catch.
+header. With no compiler every test here is SKIPPED, which is not a pass.
 """
 
 import contextlib
@@ -238,7 +237,7 @@ def _settle_reload(lib: NativeLibrary, export: str = "constant") -> dict[str, ob
 
 
 def test_results_and_arguments_cross(owner: NativeOwner) -> None:
-    """Scalars and a buffer go in, named results come back. Break: drop results -> {}."""
+    """Scalars and a buffer go in, named results come back."""
     lib = _open(owner)
     buf = _buffer(owner, lib)
     assert lib.call("fill", buf=buf, value=2.5) == {
@@ -252,9 +251,9 @@ def test_results_and_arguments_cross(owner: NativeOwner) -> None:
 
 
 def test_crash_is_isolated_and_buffers_survive(owner: NativeOwner) -> None:
-    """Gate 1. The library writes a pattern, then crashes: the test process lives, the error
+    """The library writes a pattern, then crashes: the test process lives, the error
     is `crashed` naming the export, and the pattern reads back through the array and through
-    a fresh map of the buffer's file. Break: load the library in-process -- this process dies."""
+    a fresh map of the buffer's file."""
     lib = _open(owner)
     buf = _buffer(owner, lib)
     lib.call("fill", buf=buf, value=3.0)
@@ -270,9 +269,10 @@ def test_crash_is_isolated_and_buffers_survive(owner: NativeOwner) -> None:
 
 
 def test_a_crash_is_not_reported_as_a_timeout(owner: NativeOwner) -> None:
-    """Gate 2. Under a 0.5 s deadline a crash is `crashed`, seen well inside it. Break: drop
-    PR_SET_DUMPABLE in the host. That break shows only where `core_pattern` pipes to a handler
-    that holds the dying process (apport, systemd-coredump); elsewhere this passes either way."""
+    """Under a 0.5 s deadline a crash is `crashed`, seen well inside it.
+
+    The test discriminates only where `core_pattern` pipes to a handler that holds the dying
+    process (apport, systemd-coredump); elsewhere it passes either way."""
     lib = _open(owner, timeout=0.5)
     start = time.monotonic()
     with pytest.raises(NativeError) as raised:
@@ -282,7 +282,6 @@ def test_a_crash_is_not_reported_as_a_timeout(owner: NativeOwner) -> None:
 
 
 def test_a_hang_is_stopped_at_the_deadline(owner: NativeOwner) -> None:
-    """Gate 3. Break: remove the kill -- the bounded wait in `_stop` leaves the pid alive."""
     lib = _open(owner, timeout=0.2)
     pid = lib.pid
     assert pid is not None
@@ -297,9 +296,8 @@ def test_a_hang_is_stopped_at_the_deadline(owner: NativeOwner) -> None:
 def test_a_dead_host_stays_dead_until_something_changes(
     lib_dir: Path, owner: NativeOwner
 ) -> None:
-    """Gate 4. After a crash, calls raise without starting a host; a changed file brings one
-    back once it settles, and so does `revive` (what reset does). Break: restart on every call
-    (a pid appears); separately, drop `revive` (the last call raises)."""
+    """After a crash, calls raise without starting a host; a changed file brings one
+    back once it settles, and so does `revive` (what reset does)."""
     lib = _open(owner)
     with pytest.raises(NativeError):
         lib.call("boom")
@@ -320,8 +318,8 @@ def test_a_dead_host_stays_dead_until_something_changes(
 def test_reload_runs_new_code_and_keeps_buffers(
     lib_dir: Path, owner: NativeOwner
 ) -> None:
-    """Gate 5. A nonzero pattern survives the swap and the new constant lands. Break:
-    reallocate buffers on reload -- the pattern is gone (a zero pattern would hide that)."""
+    """A nonzero pattern survives the swap and the new constant lands. The pattern is
+    nonzero because a zero pattern would hide a reallocation on reload."""
     lib = _open(owner)
     buf = _buffer(owner, lib)
     buf[:] = 7.0
@@ -338,9 +336,8 @@ def test_reload_runs_new_code_and_keeps_buffers(
 def test_an_in_place_overwrite_does_not_reach_the_live_host(
     lib_dir: Path, owner: NativeOwner
 ) -> None:
-    """Gate 6. Overwrite the library IN PLACE (same inode) and call before the settle window:
-    the live host still runs the old code. Break: load in place -- the host returns the new
-    constant or dies."""
+    """Overwrite the library IN PLACE (same inode) and call before the settle window:
+    the live host still runs the old code."""
     lib = _open(owner)
     assert lib.call("constant") == {"k": 111}
     other = _build(lib_dir / "other" / f"fix{_EXT}", ("-DK=222",))
@@ -362,9 +359,7 @@ def test_an_in_place_overwrite_does_not_reach_the_live_host(
 def test_the_abi_is_proven_entry_by_entry(
     tmp_path: Path, edit: tuple[str, str], named: str
 ) -> None:
-    """Gate 7. Each altered header is refused, naming what differs. Break: compare struct
-    sizes only (the field swap passes), or only the names the library reports (the removed
-    entry passes)."""
+    """Each altered header is refused, naming what differs."""
     header = (_NATIVE_DIR / "shaderbox_native.h").read_text()
     old, new = edit
     assert old in header
@@ -389,7 +384,6 @@ def test_the_abi_is_proven_entry_by_entry(
 
 
 def test_a_library_without_the_contract_is_named(tmp_path: Path) -> None:
-    """Gate 7. Break: skip the `sb_abi` check -- the load succeeds."""
     _build(tmp_path / f"plain{_EXT}", source="int plain(void) { return 1; }\n")
     with pytest.raises(NativeError) as raised:
         _open(NativeOwner(tmp_path), "plain")
@@ -397,9 +391,8 @@ def test_a_library_without_the_contract_is_named(tmp_path: Path) -> None:
 
 
 def test_released_buffers_are_safe_and_pages_are_reserved(owner: NativeOwner) -> None:
-    """Gate 9. Writing an array after its handle is released does not kill the process, and a
-    buffer's pages are reserved when it is made. Break: back arrays by SharedMemory.buf (the
-    write segfaults); separately, replace posix_fallocate with ftruncate (the file is sparse)."""
+    """Writing an array after its handle is released does not kill the process, and a
+    buffer's pages are reserved when it is made."""
     lib = _open(owner)
     buf = _buffer(owner, lib, 1 << 16)
     key = owner.buffers[0].key
@@ -417,8 +410,6 @@ def test_released_buffers_are_safe_and_pages_are_reserved(owner: NativeOwner) ->
 
 
 def test_only_the_handles_own_buffers_pass(owner: NativeOwner, lib_dir: Path) -> None:
-    """Gate 13. Break: accept a buffer by its base chain -- the slice passes and the library
-    would write from the file's start."""
     lib = _open(owner)
     other = _open(NativeOwner(lib_dir))
     buf = _buffer(owner, lib)
@@ -437,8 +428,6 @@ def test_only_the_handles_own_buffers_pass(owner: NativeOwner, lib_dir: Path) ->
 
 
 def test_errors_name_what_went_wrong(owner: NativeOwner, lib_dir: Path) -> None:
-    """Gates 11-12. Break: ignore the return value (no `failed`); reorder the lookup (the
-    listed order changes)."""
     lib = _open(owner)
     with pytest.raises(NativeError) as raised:
         lib.call("silent")
@@ -464,8 +453,6 @@ def test_errors_name_what_went_wrong(owner: NativeOwner, lib_dir: Path) -> None:
 
 
 def test_the_host_imports_only_the_stdlib(owner: NativeOwner) -> None:
-    """Gate 14. Break: start the host through multiprocessing from a parent whose __main__
-    imports the app -- numpy, moderngl and shaderbox appear."""
     modules = _open(owner).info()["modules"]
     roots = {name.split(".")[0] for name in modules}
     assert roots.isdisjoint({"shaderbox", "numpy", "moderngl", "glfw", "imgui_bundle"})
@@ -487,9 +474,8 @@ def _wait_for(lines: list[str], text: str) -> bool:
 
 
 def test_library_stdout_cannot_corrupt_the_protocol(owner: NativeOwner) -> None:
-    """Gate 15. The export writes a well-formed fake reply to stdout; it reaches the log, and
-    the real reply is what returns. Break: leave the protocol on fd 1 -- the fake frame is
-    read as the reply, or the call is `crashed` with "protocol corrupted"."""
+    """The export writes a well-formed fake reply to stdout; it reaches the log, and
+    the real reply is what returns."""
     lines, sink = _captured_log()
     try:
         assert _open(owner).call("shout") == {"k": 5}
@@ -499,8 +485,8 @@ def test_library_stdout_cannot_corrupt_the_protocol(owner: NativeOwner) -> None:
 
 
 def test_unflushed_printf_reaches_the_log(owner: NativeOwner) -> None:
-    """D12a. A library's printf is fully buffered on a pipe and the host dies by SIGKILL, so
-    the host flushes C stdio after every call. Break: drop that flush."""
+    """A library's printf is fully buffered on a pipe and the host dies by SIGKILL, so
+    the host flushes C stdio after every call."""
     lines, sink = _captured_log()
     try:
         _open(owner).call("chatty")
@@ -510,15 +496,14 @@ def test_unflushed_printf_reaches_the_log(owner: NativeOwner) -> None:
 
 
 def test_printf_before_a_crash_is_in_the_crash_message(owner: NativeOwner) -> None:
-    """D12a. The host makes C stdout unbuffered, so output written just before a crash is not
-    lost with the process. Break: drop the setvbuf -- the line dies in the buffer."""
+    """The host makes C stdout unbuffered, so output written just before a crash is not
+    lost with the process."""
     with pytest.raises(NativeError) as raised:
         _open(owner).call("printcrash")
     assert "last words" in str(raised.value)
 
 
 def test_a_final_line_without_newline_is_logged(owner: NativeOwner) -> None:
-    """D12a. Break: drop the emit of the unterminated remainder at EOF."""
     lines, sink = _captured_log()
     try:
         lib = _open(owner)
@@ -532,9 +517,8 @@ def test_a_final_line_without_newline_is_logged(owner: NativeOwner) -> None:
 def test_long_output_without_newlines_is_logged_as_it_streams(
     owner: NativeOwner,
 ) -> None:
-    """D12a. Output with no newline (a progress bar) is logged in capped pieces while it
-    streams, so the reader holds at most one piece. Break: drop the cap -- nothing is logged
-    until the host exits, and the whole stream sits in the reader's memory."""
+    """Output with no newline (a progress bar) is logged in capped pieces while it
+    streams, so the reader holds at most one piece."""
     lines, sink = _captured_log()
     try:
         lib = _open(owner, timeout=10.0)
@@ -548,7 +532,7 @@ def test_long_output_without_newlines_is_logged_as_it_streams(
 
 def test_names_must_be_clean_utf8(owner: NativeOwner) -> None:
     """A surrogate or a NUL in an export or argument name is refused in the parent, and the
-    host keeps running. Break: drop the name checks -- the host dies, or a NUL truncates."""
+    host keeps running."""
     lib = _open(owner)
     for export, args in (
         ("con\ud800", {}),
@@ -564,8 +548,7 @@ def test_names_must_be_clean_utf8(owner: NativeOwner) -> None:
 def test_a_failed_load_is_retried_after_a_pause(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """D6 at `native()`. A transient failure heals without a file change. Break: memoize a
-    failure until the file changes."""
+    """At `native()`, a transient failure heals without a file change."""
     _build(tmp_path / f"fix{_EXT}", ("-DLOAD_FAIL",))
     monkeypatch.setattr(native_library, "RETRY_SECONDS", 0.2)
     started: list[Path] = []
@@ -591,9 +574,8 @@ def test_a_failed_load_is_retried_after_a_pause(
 def test_releasing_buffers_never_waits_for_a_busy_host(
     owner: NativeOwner, lib_dir: Path
 ) -> None:
-    """D3. While another thread is in a call, a phase's buffers are released at once and the
-    host keeps their mappings until it stops. Break: wait for the lock -- the release blocks
-    on every buffer."""
+    """While another thread is in a call, a phase's buffers are released at once and the
+    host keeps their mappings until it stops."""
     lib = _open(owner, timeout=1.0)
     instance = NativeOwner(lib_dir)
     with owning(instance):
@@ -616,8 +598,8 @@ def _call_ignoring(lib: NativeLibrary, export: str) -> None:
 def test_released_buffers_are_unmapped_by_a_live_host(
     owner: NativeOwner, lib_dir: Path
 ) -> None:
-    """D3. A module-level handle outlives an instance's buffers; their pages return only when
-    the host unmaps them. Break: drop the unmap request -- the host keeps the mapping."""
+    """A module-level handle outlives an instance's buffers; their pages return only when
+    the host unmaps them."""
     lib = _open(owner)
     instance = NativeOwner(lib_dir)
     with owning(instance):
@@ -631,8 +613,7 @@ def test_released_buffers_are_unmapped_by_a_live_host(
 def test_a_failed_load_is_not_retried_until_the_file_changes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """D6 at `native()`. A broken library named in `update` must not start a host per frame.
-    Break: drop the failure memo -- every call starts one."""
+    """At `native()`, a broken library named in `update` must not start a host per frame."""
     _build(tmp_path / f"fix{_EXT}", ("-DLOAD_FAIL",))
     started: list[Path] = []
     real_start = NativeLibrary._start
@@ -654,8 +635,7 @@ def test_a_failed_load_is_not_retried_until_the_file_changes(
 
 
 def test_stopping_a_host_does_not_wait_for_its_children(owner: NativeOwner) -> None:
-    """D12. A process the library started keeps the host's stderr open. Break: close the
-    readers' streams in `_stop` -- the close waits for that pipe's EOF, three seconds here."""
+    """A process the library started keeps the host's stderr open."""
     lib = _open(owner)
     lib.call("spawn_bg")
     start = time.monotonic()
@@ -664,8 +644,8 @@ def test_stopping_a_host_does_not_wait_for_its_children(owner: NativeOwner) -> N
 
 
 def test_a_parent_killed_mid_call_leaves_no_host(lib_dir: Path) -> None:
-    """D12. A host busy in a call never reads its request pipe's EOF, so it watches for its
-    parent. Break: drop the watchdog -- the hung host outlives the parent."""
+    """A host busy in a call never reads its request pipe's EOF, so it watches for its
+    parent."""
     script = textwrap.dedent(
         f"""
         import os, signal, threading, time
@@ -689,7 +669,6 @@ def test_a_parent_killed_mid_call_leaves_no_host(lib_dir: Path) -> None:
 
 
 def test_sb_load_failure_and_hang_are_load_errors(tmp_path: Path) -> None:
-    """Gate 16. Break: ignore sb_load's return; drop the deadline on loading."""
     _build(tmp_path / "fail" / f"fix{_EXT}", ("-DLOAD_FAIL",))
     with pytest.raises(NativeError) as raised:
         _open(NativeOwner(tmp_path / "fail"))
@@ -704,8 +683,7 @@ def test_sb_load_failure_and_hang_are_load_errors(tmp_path: Path) -> None:
 def test_a_missing_file_keeps_the_running_host(
     lib_dir: Path, owner: NativeOwner
 ) -> None:
-    """Gate 16. A linker between unlink and create leaves no file. Break: treat a missing file
-    as changed -- the reload fails and the handle dies."""
+    """A linker between unlink and create leaves no file."""
     lib = _open(owner)
     (lib_dir / f"fix{_EXT}").unlink()
     lib.call("constant")
@@ -714,8 +692,8 @@ def test_a_missing_file_keeps_the_running_host(
 
 
 def test_handles_memoize_and_refuse_outside_a_script(owner: NativeOwner) -> None:
-    """Gate 16. Same name, same phase, same handle; a released handle and a thread's
-    `native()` each say what happened. Break: no memo (two handles, two hosts)."""
+    """Same name, same phase, same handle; a released handle and a thread's
+    `native()` each say what happened."""
     first = _open(owner)
     assert _open(owner) is first
 
@@ -738,8 +716,8 @@ def test_handles_memoize_and_refuse_outside_a_script(owner: NativeOwner) -> None
 
 
 def test_a_killed_parent_leaves_no_host(lib_dir: Path) -> None:
-    """Gate 16. An idle host whose parent dies exits, through either of two paths: EOF on its
-    request pipe, or the parent watchdog. Break: drop both -- the host outlives the parent."""
+    """An idle host whose parent dies exits, through either of two paths: EOF on its
+    request pipe, or the parent watchdog."""
     script = textwrap.dedent(
         f"""
         import os, signal, sys
@@ -761,9 +739,7 @@ def test_a_killed_parent_leaves_no_host(lib_dir: Path) -> None:
 
 
 def test_debug_handles_have_no_deadline(owner: NativeOwner, lib_dir: Path) -> None:
-    """Open question 2: a debug handle's call is not stopped, except under a probe's cap.
-    Break: keep the deadline under debug (the hang ends at 2 s); separately, let debug escape
-    the probe cap."""
+    """A debug handle's call is not stopped, except under a probe's cap."""
     with owning(owner):
         lib = native("fix", debug=True, timeout=0.2)
     outcome: list[NativeError] = []
@@ -885,8 +861,7 @@ def _assert_released(pids: list[int], files: list[str]) -> None:
 
 
 def test_reload_releases_the_old_script(tmp_path: Path) -> None:
-    """Gate 8 (reload). Holding the old behavior, so the finalizer cannot stand in. Break:
-    drop the release in `engine.reload`."""
+    """Holding the old behavior, so the finalizer cannot stand in."""
     engine, old = _engine(tmp_path)
     module, instance = _hosts(old)
     files = _files(old)
@@ -900,8 +875,6 @@ def test_reload_releases_the_old_script(tmp_path: Path) -> None:
 
 
 def test_reset_releases_the_instance_and_keeps_the_module(tmp_path: Path) -> None:
-    """Gate 8 (reset). Break: release the module phase on reset (its pid goes), or keep the
-    instance phase (its pid stays)."""
     engine, behavior = _engine(tmp_path)
     module, instance = _hosts(behavior)
     instance_owner = behavior._instance_owner
@@ -925,7 +898,6 @@ def test_reset_releases_the_instance_and_keeps_the_module(tmp_path: Path) -> Non
     ],
 )
 def test_document_and_engine_teardown_release(tmp_path: Path, site: str) -> None:
-    """Gate 8 (drop, engine release, project load). Break: drop the release at that site."""
     engine, behavior = _engine(tmp_path)
     module, instance = _hosts(behavior)
     files = _files(behavior)
@@ -952,7 +924,6 @@ def test_document_and_engine_teardown_release(tmp_path: Path, site: str) -> None
 def test_probes_release_their_fresh_script(
     tmp_path: Path, site: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Gate 8 (dry run, completion probe). Break: drop the `finally: release()` there."""
     engine, live = _engine(tmp_path)
     made: list[PythonBehavior] = []
     original = engine.fresh_behavior_for
@@ -983,7 +954,6 @@ def test_probes_release_their_fresh_script(
 def test_an_export_releases_its_fresh_script(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Gate 8 (export). Break: drop the release in `_make_export_isolation`."""
     engine, _ = _engine(tmp_path)
     made: list[PythonBehavior] = []
     original = engine.fresh_behavior_for
@@ -1011,7 +981,6 @@ def test_an_export_releases_its_fresh_script(
 
 
 def test_reset_revives_a_crashed_module_handle(tmp_path: Path) -> None:
-    """D6 through the engine. Break: drop `revive` from `PythonBehavior.reset`."""
     engine, behavior = _engine(tmp_path)
     module_lib = next(iter(behavior._module_owner.libraries.values()))
     with pytest.raises(NativeError):
@@ -1022,8 +991,7 @@ def test_reset_revives_a_crashed_module_handle(tmp_path: Path) -> None:
 
 
 def test_reload_stops_the_old_hosts_before_the_new_script_loads(tmp_path: Path) -> None:
-    """A library that holds something exclusive in `sb_load` loads again after a script edit.
-    Break: build the new behavior before releasing the old -- `device busy`."""
+    """A library that holds something exclusive in `sb_load` loads again after a script edit."""
     lock = tmp_path / "device.lock"
     scripts = tmp_path / "scripts"
     _build(scripts / f"fix{_EXT}", (f'-DLOCKFILE="{lock.as_posix()}"',))
@@ -1049,8 +1017,7 @@ def test_reload_stops_the_old_hosts_before_the_new_script_loads(tmp_path: Path) 
 
 
 def test_a_fresh_script_cannot_touch_the_live_buffers(tmp_path: Path) -> None:
-    """Gate 10. A fresh behavior's native calls write its own buffer, never the live one.
-    Break: share handles across behaviors -- the live buffer changes."""
+    """A fresh behavior's native calls write its own buffer, never the live one."""
     engine, live = _engine(tmp_path)
     document = _FakeDocument()
     engine.tick(
@@ -1072,7 +1039,6 @@ def test_a_fresh_script_cannot_touch_the_live_buffers(tmp_path: Path) -> None:
 def test_an_uncaught_native_error_is_a_script_error_on_the_call_line(
     tmp_path: Path,
 ) -> None:
-    """Gate 11. Break: let NativeError escape the tick, or lose the user's line."""
     script = _SCRIPT.replace(
         'self.lib.call("fill", buf=self.buf, value=context.frame + 1.0)',
         'self.lib.call("silent")',
@@ -1094,7 +1060,6 @@ def test_an_uncaught_native_error_is_a_script_error_on_the_call_line(
 
 
 def test_the_shipped_c_example_builds_and_loads(tmp_path: Path) -> None:
-    """Gate 17. Break: rename a table entry in the header -- the load refuses it."""
     assert _CC is not None
     subprocess.run(
         [
@@ -1116,7 +1081,6 @@ def test_the_shipped_c_example_builds_and_loads(tmp_path: Path) -> None:
     _ODIN is None, reason="no odin compiler: the Odin example is SKIPPED"
 )
 def test_the_shipped_odin_example_builds_and_loads(tmp_path: Path) -> None:
-    """Gate 17. Break: rename a table entry in the Odin binding -- the load refuses it."""
     assert _ODIN is not None
     subprocess.run(
         [

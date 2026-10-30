@@ -68,9 +68,6 @@ def test_a_modal_with_a_content_region_does_not_overflow(
 ) -> None:
     """The content region is sized from `modal_footer_height`, which is the same number the
     footer occupies -- so the modal at its own size has nothing to scroll.
-
-    Falsifier: restore the hand reservation (`list_h = -imgui.get_frame_height_with_spacing()`
-    in `help.py`, with the row drawn after a `SPACE.MD` spacer) -- the overflow comes back.
     """
     getattr(app, opener)()
     assert app.modal is modal_id
@@ -80,7 +77,7 @@ def test_a_modal_with_a_content_region_does_not_overflow(
 def _open_auto_modal(app: Any, modal_id: ModalId) -> None:
     if modal_id is ModalId.CONFIRM:
         # A title long enough to wrap: the height a one-line confirm needs is too short for
-        # it, which is the shape the maintainer saw on the Reset confirm.
+        # it, which is the shape the Reset confirm has.
         app.request_confirm(
             ConfirmRequest(
                 title="Reset a document whose name is long enough to wrap the question?",
@@ -119,9 +116,6 @@ def test_an_auto_sized_modal_never_overflows(
     remembers under its label: the Reset confirm opened at a persisted 132px, its wrapped
     question pushing the buttons under a scrollbar. Measured: a RESIZABLE confirm against a
     60px entry overflows by 32px on every frame after the first; AUTO sizes to its 92.
-
-    Falsifier: in `modal_window`'s AUTO branch, seed `size` with `Cond_.first_use_ever` in
-    place of the constraint and the auto-resize flag.
     """
     label = BY_ID[modal_id].label
     imgui.load_ini_settings_from_memory(f"[Window][{label}]\nPos=10,10\nSize=381,60\n")

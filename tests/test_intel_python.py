@@ -1,4 +1,4 @@
-"""The jedi-backed Python side of the intel module (078 D10), on the real stub."""
+"""The jedi-backed Python side of the intel module, on the real stub."""
 
 from shaderbox.intel.python import python_completions, python_lookup, python_spans
 from shaderbox.intel.symbols import SymbolKind
@@ -102,8 +102,6 @@ def test_a_definition_takes_the_kind_treesitter_would_give_it() -> None:
     wins, so it ends at `@constructor` (orange) having passed through `@function.method`
     (green) -- reading the list top-down gives the wrong answer, which is how it was
     coloured green before.
-
-    Falsifier: drop the `_CONSTRUCTOR_NAMES` branch and `__init__` comes back green.
     """
     source = "\n".join(
         [
@@ -137,7 +135,7 @@ def test_a_definition_takes_the_kind_treesitter_would_give_it() -> None:
 
 
 def test_a_parameter_and_a_base_class_take_the_captures_nvim_uses() -> None:
-    """The two the maintainer reported as mismatched: a signature's parameter names and
+    """The two that were mismatched: a signature's parameter names and
     the names inside the inheritance brackets.
 
     nvim gives a parameter `@variable.parameter` (blue) and a base class `@type` (yellow);

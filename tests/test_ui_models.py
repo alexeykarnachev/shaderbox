@@ -1,4 +1,4 @@
-"""`UIDocumentState`'s persisted shape under the 069 pass-qualified stop set.
+"""`UIDocumentState`'s persisted shape under the pass-qualified stop set.
 
 The rule this pins is the NO-MIGRATION one: a stale `list[str]` `stopped_uniforms` from before the
 reshape must drop to `[]`, costing the user that one setting and nothing else — never be
@@ -25,9 +25,7 @@ from tests.conftest import restart_app
 
 
 def test_a_stale_string_stopped_set_drops_to_empty() -> None:
-    # Falsifier: any migration code in this path that reinterprets a bare string as a pair — the
-    # first assertion goes red. This is what makes the no-migration rule mechanical rather than a
-    # promise.
+    # This is what makes the no-migration rule mechanical rather than a promise.
     state = _load_ui_state({"stopped_uniforms": ["u_x"], "all_stopped": True}, "doc")
 
     assert state.stopped_uniforms == []
@@ -36,7 +34,6 @@ def test_a_stale_string_stopped_set_drops_to_empty() -> None:
 
 
 def test_a_well_formed_pair_round_trips() -> None:
-    # Falsifier: a field type that cannot hold the pair — the round trip loses it.
     state = _load_ui_state(
         {"stopped_uniforms": [{"pass_name": "paint", "name": "u_x"}]}, "doc"
     )
@@ -49,8 +46,7 @@ def test_a_well_formed_pair_round_trips() -> None:
 
 def test_an_empty_stopped_set_is_valid_under_the_pair_shape() -> None:
     # Every tracked document.json on disk holds `[]` (or omits the key), so the reshape changes no
-    # bytes and the first launch after it logs no salvage line. Falsifier: a field type that
-    # rejects the empty list.
+    # bytes and the first launch after it logs no salvage line.
     assert _load_ui_state({"stopped_uniforms": []}, "doc").stopped_uniforms == []
     assert _load_ui_state({}, "doc").stopped_uniforms == []
     assert UIDocumentState().stopped_uniforms == []
@@ -58,17 +54,16 @@ def test_an_empty_stopped_set_is_valid_under_the_pair_shape() -> None:
 
 def test_an_unknown_key_is_pruned_and_the_rest_survives() -> None:
     # The unknown-key filter and the per-key salvage are ONE path; a change to either must keep the
-    # sibling keys. Falsifier: drop the whole state on an unknown key.
+    # sibling keys.
     state: Any = _load_ui_state({"gone_field": 1, "all_stopped": True}, "doc")
     assert state.all_stopped is True
 
 
-# ---- the editor's open tabs, persisted (093 W2-2) -------------------------------------------
+# ---- the editor's open tabs, persisted -------------------------------------------
 
 
 def test_the_open_tabs_round_trip_through_the_app_state(tmp_path: Path) -> None:
-    # W2-2: the whole point of the field -- what the last session had open is what reopens.
-    # Falsifier: drop the field from `UIAppState` and the loaded state carries `[]`.
+    # What the last session had open is what reopens.
     state = UIAppState()
     assert state.editor_tabs == []
     assert state.active_tab_path == ""
@@ -92,8 +87,7 @@ def test_the_open_tabs_round_trip_through_the_app_state(tmp_path: Path) -> None:
 
 def test_one_malformed_tab_record_costs_only_itself(tmp_path: Path) -> None:
     # The persistence rule this repo learned the expensive way: a bad row costs that row, never
-    # the file. `drop_invalid` descends into a list of models for exactly this. Falsifier: let
-    # the list validate as a whole and the two good tabs go with the bad one.
+    # the file. `drop_invalid` descends into a list of models for exactly this.
     path = tmp_path / "app_state.json"
     path.write_text(
         json.dumps(
@@ -114,12 +108,11 @@ def test_one_malformed_tab_record_costs_only_itself(tmp_path: Path) -> None:
 
 
 def test_a_record_whose_file_or_document_is_gone_is_dropped(tmp_path: Path) -> None:
-    """W2-2: a restored tab must still address something.
+    """A restored tab must still address something.
 
     A tab at a deleted pass would eat its own edits, and a tab of a document this project no
     longer holds has nothing to draw. A lib tab carries no document id and so passes that
-    clause trivially. Falsifier: return the records unfiltered -- a fresh clone of the project
-    reopens tabs onto files that were never copied.
+    clause trivially.
     """
     records = [
         TabRecord(path="/live/a.glsl", kind="shader", document_id="d1"),
@@ -140,7 +133,7 @@ def test_a_record_whose_file_or_document_is_gone_is_dropped(tmp_path: Path) -> N
 
 
 def test_the_live_tabs_mirror_into_records_in_order() -> None:
-    # The save half. Falsifier: mirror a set -- the order the user arranged is lost.
+    # The save half.
     tabs = [
         EditorTab(path=Path("/x.glsl"), kind="shader", document_id="d1"),
         EditorTab(path=Path("/y.json"), kind="graph", document_id="d2"),
@@ -161,8 +154,7 @@ def test_a_closed_editor_stays_closed_across_a_restart(
     `editor_tabs == []` reaches the launch from two different histories -- a project opened
     for the first time, and one whose tabs the user closed -- and only the first earns the
     fallback that opens the current document's shader. `tabs_persisted` is what tells them
-    apart. Falsifier: drop the flag from the `_init` condition and the reopened app carries a
-    shader tab.
+    apart.
     """
     while app.editor_tabs:
         app.close_tab(0)
@@ -174,7 +166,7 @@ def test_a_closed_editor_stays_closed_across_a_restart(
 
 def test_a_first_open_still_lands_on_a_shader(app: Any, tmp_path: Path) -> None:
     # The other half of the same branch: a project with no saved tab set is the case the
-    # fallback exists for. Falsifier: drop the fallback and a first open shows a blank editor.
+    # fallback exists for.
     app.save()
 
     state_file = app.project_dir / "app_state.json"

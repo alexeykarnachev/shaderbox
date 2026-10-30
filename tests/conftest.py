@@ -1,6 +1,6 @@
 """Shared test fixtures. The `app` fixture builds a real headless App against a THROWAWAY tmp
 project (never the tracked projects/dev sandbox — tests must not read or mutate it), seeded with
-ONLY the starter document (066 D4 — the fixture diet): most tests need one loadable current
+ONLY the starter document (keeps fixtures light): most tests need one loadable current
 document, and the example library still loads from resources regardless of the project seed. A
 test that needs a second project document calls `seed_extra_document`."""
 
@@ -70,12 +70,11 @@ def gl_ctx() -> Iterator["moderngl.Context"]:
 def restart_app(app: Any) -> Any:
     """Reopen `app`'s own project the way a project switch does, and return the same App.
 
-    A test asking "does this survive a restart?" used to tear the App down and build a second
-    one, which a per-test fixture could afford and a reused one cannot — `shutdown()` destroys
+    A test asking "does this survive a restart?" cannot tear the App down and build a second
+    one: `shutdown()` destroys
     the process's imgui context and every later test in that worker dies on it. `_init` is the
-    restore path either way: it releases the outgoing project, re-reads `app_state.json` and
-    rebuilds the tabs from the records, which is precisely what the second App was being built
-    to prove.
+    restore path: it releases the outgoing project, re-reads `app_state.json` and
+    rebuilds the tabs from the records, which is what such a test needs to prove.
     """
     app._init(app.project_dir, persist_pointer=False)
     app.copilot.bridge.run_on_main = lambda fn, timeout=None, defer=False: fn()
@@ -169,8 +168,8 @@ def app(
     a = _app_process
     monkeypatch.setenv("SHADERBOX_DATA_DIR", os.environ["SHADERBOX_DATA_DIR"])
     # A module that also takes `gl_ctx` leaves ITS standalone context current, and every GL
-    # allocation below would land there (or fail, once it is released). `App.__init__` used to
-    # re-make the window current on every build; reusing one App means the fixture does it.
+    # allocation below would land there (or fail, once it is released). `App.__init__` makes the
+    # window current only on build; reusing one App means the fixture does it.
     glfw.make_context_current(a.window)
     moderngl.init_context()
     # NOT "auto", which the app uses. Under auto, moderngl frees a dropped GL object from its

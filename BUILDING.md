@@ -6,16 +6,12 @@ frozen binary. This file is never shipped in the bundle.
 
 ## Cut a release
 
-The full release procedure (sanitize → commit/push `dev` → promote to `master` → auto-pick the semver
-bump → `make release` → gated `build.sh` → butler upload → page sync → land clean on `dev`) is the
-**`/ship` skill** (`.claude/skills/ship/SKILL.md`) — the single canonical home for the flow. Invoke it
-with "ship" / "release" / "publish" / `/ship`.
-
-The individual tools it drives: `make release VERSION=x.y.z` (bumps `pyproject.toml`, commits, tags —
-does NOT build/push), `./build.sh` (gated: `make check` + `make smoke`, refuses a dirty tree;
-`--allow-dirty` skips only the dirty-tree guard), `yes | ./upload-itch.sh` (butler push to both
-channels; needs `itch-config` + `butler login`). Semver bump policy: `ai_docs/conventions.md ##
-Design decisions`.
+1. Commit and push `dev`, then promote it to `master`.
+2. `make release VERSION=x.y.z` bumps `pyproject.toml`, commits and tags. It does not build or push.
+3. `./build.sh` runs `make check` and `make smoke`, refuses a dirty tree (`--allow-dirty` skips only
+   that guard) and writes both archives to `dist/`.
+4. `yes | ./upload-itch.sh` pushes both channels with butler; it needs `itch-config` and
+   `butler login`.
 
 ## Building on / for Windows
 
@@ -23,6 +19,8 @@ Design decisions`.
 the two vendored native libraries, and both platform builds of each are committed side by side
 (`libeditor.{so,dll}`, `libgraph_canvas.{so,dll}`). Each archive keeps its own and the build aborts
 if one is missing. The zipper is `scripts/zip_bundle.py`, so no `zip` binary is needed.
+Files the repo keeps only for tests and vendoring (`DEV_ONLY_RESOURCES` in `build.sh`) are
+left out, and the launchers install with `uv sync --no-dev`, so a user gets no test or lint tools.
 
 On Windows everything runs from **Git Bash** with GNU `make` on `PATH` (`winget install
 ezwinports.make`): `uv sync`, `make gates`, `./build.sh`, `make run-bundle`. A bare `uv sync`

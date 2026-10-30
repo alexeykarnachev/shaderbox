@@ -1,4 +1,4 @@
-"""Copilot conversation persistence (feature 022) — the ConversationStore round-trip,
+"""Copilot conversation persistence — the ConversationStore round-trip,
 fail-soft load, and archive. Pure: no GL, no App."""
 
 import json
@@ -31,7 +31,7 @@ def _populated_state() -> ChatState:
 
 
 def _history() -> list[LLMMessage]:
-    # NL-only history (feature 020·28): user + one engine-derived assistant turn-summary. No tool msgs.
+    # NL-only history: user + one engine-derived assistant turn-summary. No tool msgs.
     return [
         LLMMessage(role="user", content="add a uniform"),
         LLMMessage(
@@ -108,7 +108,7 @@ def test_incompatible_schema_fails_soft(tmp_path: Path) -> None:
 
 
 def test_pre_v5_tool_paired_store_fails_soft_to_empty(tmp_path: Path) -> None:
-    # feature 020·28: an old store whose history carries tool_call_id / tool_calls hits extra="forbid"
+    # An old store whose history carries tool_call_id / tool_calls hits extra="forbid"
     # on _HistoryModel -> ValidationError -> empty chat (NL-only by construction, no migration).
     path = tmp_path / "conversation.json"
     path.write_text(
@@ -156,7 +156,7 @@ def test_unknown_role_survives_round_trip(tmp_path: Path) -> None:
 
 
 def test_result_widget_round_trips(tmp_path: Path) -> None:
-    # A tool_status card's result widget (feature 020·21) survives a save/load round-trip.
+    # A tool_status card's result widget survives a save/load round-trip.
     state = ChatState()
     state.messages = [
         Message(
@@ -218,7 +218,7 @@ def test_unknown_widget_kind_fails_soft(tmp_path: Path) -> None:
 
 
 def test_turn_snippet_round_trips(tmp_path: Path) -> None:
-    # F06: a turn_snippet's step list + its own stats survive a save/load round-trip.
+    # A turn_snippet's step list + its own stats survive a save/load round-trip.
     state = ChatState()
     state.messages = [
         Message(role="user", text="add a uniform", turn_id="turn_0001"),
@@ -250,7 +250,7 @@ def test_turn_snippet_round_trips(tmp_path: Path) -> None:
 
 
 def test_pre_v9_snippet_fields_default(tmp_path: Path) -> None:
-    # A pre-F06 (v8) file has no steps / snippet_stats keys — they must default (empty / None),
+    # A pre-v9 file has no steps / snippet_stats keys — they must default (empty / None),
     # not raise. A persisted tool_status line still loads as a plain message.
     path = tmp_path / "conversation.json"
     path.write_text(
@@ -452,7 +452,7 @@ def test_pre_recover_v1_file_loads_soft(tmp_path: Path) -> None:
 
 
 def test_gate_outcome_round_trip_and_pre_v10_default(tmp_path: Path) -> None:
-    # The structured outcome (034 F03) survives the round trip; a pre-v10 file
+    # The structured outcome survives the round trip; a pre-v10 file
     # (outcome baked into text) loads with gate_outcome="" and renders as plain text.
     state = ChatState()
     state.messages = [

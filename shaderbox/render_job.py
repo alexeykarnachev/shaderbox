@@ -1,6 +1,6 @@
 """Document render-to-file: the GL render job behind BOTH the Share tab and the copilot's render
 tools. UI-free on purpose — it lives here, not in `tabs/`, because the headless copilot core
-(`copilot/backend.py`) and the dogfood harness drive it with no imgui in the process.
+(`copilot/backend.py`) drives it with no imgui in the process.
 
 `render_to` owns the render try/except + partial-file cleanup + artifact construction; the caller
 mints the path (`render_for` a scratch uuid, the copilot a renders-dir name), so this stays

@@ -31,7 +31,7 @@ class ProfileRow:
     `number` is the formatted readout and `color` the hue it draws in. `starts_tree` marks
     the row the panel puts a gap above, so the draw reads the boundary off the row rather
     than recounting the plan's leading rows. `tooltip`, where a row has one, carries what the
-    compact number left out -- a throttled document's own milliseconds (090 D9c).
+    compact number left out -- a throttled document's own milliseconds.
     """
 
     depth: int
@@ -59,7 +59,7 @@ def profile_rows_plan(
 
     A `document:<id>` span is rendered through `titles` and, when `plan` throttles it, reads as
     its effective fps, its interval and its share of wall time rather than as a millisecond
-    count (090 D7/D9c); `budget` is the share of wall time all documents together may take,
+    count; `budget` is the share of wall time all documents together may take,
     which that percentage is measured against. The match is by ID: two documents sharing a
     title are two rows with their own numbers, which matching through a title could not
     express.
@@ -114,7 +114,7 @@ def _document_row(
 ) -> ProfileRow:
     """One `document:<id>` span's row: its title, and its plan numbers where it is throttled."""
     document_id = document_id_of_span(span.name) or span.name
-    # A profile is two frames behind (088 D2), so a document closed on frame N still has a span
+    # A profile is two frames behind, so a document closed on frame N still has a span
     # on N+1 and N+2 while the title map no longer carries its id. A 36-character uuid clips
     # hard in a 280-px panel, so the fallback is a short handle rather than the whole id.
     title = titles.get(document_id) or document_id[:_CLOSED_DOCUMENT_ID_CHARS]
@@ -125,7 +125,7 @@ def _document_row(
             depth, title, span.count, f"{ms:.2f} ms", load_color(ms / budget_ms)
         )
     document_fps = plan.document_fps.get(document_id, 0.0)
-    # The share of WALL TIME this document takes at its own rate (D9c: cost x document fps),
+    # The share of WALL TIME this document takes at its own rate (cost x document fps),
     # against the budget all documents together may take. A converged one sits at ~100 %.
     share = ms * document_fps / 1e3
     ratio = share / budget if budget > 0.0 else 0.0
@@ -174,8 +174,7 @@ def _profile_number(
     """The number half of a profiler row: right-aligned at the panel edge, in `number_font`.
 
     Separate from the label so every authored string in this panel stays one word -- a
-    label-plus-number-plus-unit string is six, over the caption budget in
-    `ai_docs/conventions.md`.
+    label-plus-number-plus-unit string is six, over the caption budget.
     """
     imgui.push_font(number_font, number_font.legacy_size)
     width = imgui.calc_text_size(value).x
@@ -245,9 +244,9 @@ def fps_overlay(
     of the detail panel, so opening it never shifts the pill.
 
     `profile` is the last frame whose GPU queries have been read back (two frames behind
-    live, 088 D2); `None` draws the headline alone, which is the first frame after opening.
+    live); `None` draws the headline alone, which is the first frame after opening.
 
-    `document_fps` is the current document's own rate where the throttle gave it one (090 D9b):
+    `document_fps` is the current document's own rate where the throttle gave it one:
     the chip then carries both numbers, since the UI's fps alone says nothing about how often
     the document the user is watching actually redraws. `None` draws today's single number.
     `plan` / `titles` / `budget` go to the panel's rows.

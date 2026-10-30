@@ -1,4 +1,4 @@
-"""Host-side completion policy (073 W-B, re-based on the intel index in 078 W-A): WHAT the code
+"""Host-side completion policy: WHAT the code
 panel offers and WHEN.
 
 The editor library owns the popup and the word prefix; the host owns the vocabulary and the
@@ -120,7 +120,7 @@ def _python_words(context: CompletionContext) -> Sequence[Symbol]:
 
 # Where a Python completion makes sense: after a dot (member access, prefix may be empty) or
 # inside an identifier. A MEMBER site is a dot whose left neighbor is a name or a closing
-# bracket (079 D4) — `\w` alone treats a float literal's dot as one, and jedi answers `1.` with
+# bracket — `\w` alone treats a float literal's dot as one, and jedi answers `1.` with
 # the keywords that can follow an expression.
 PYTHON_SITE = re.compile(r"(?:(?<!\d)[A-Za-z_]\w*|[)\]}])\.\w*$|\w+$")
 
@@ -211,7 +211,7 @@ def eligible_providers(context: CompletionContext) -> list[CompletionProvider]:
 
 def offer(context: CompletionContext) -> list[Symbol]:
     """The candidates to push: every eligible provider's matches, without repeats of the
-    inserted text, sorted by kind then name (079 D2); empty means cancel.
+    inserted text, sorted by kind then name; empty means cancel.
 
     A vector's members are the one kind that keeps the order its provider generated. Their
     names are a fixed positional vocabulary, so alphabetical is not a weaker ordering but a

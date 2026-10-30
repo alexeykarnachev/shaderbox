@@ -46,8 +46,7 @@ def test_a_copy_that_lands_says_nothing_and_a_failed_one_says_why(
 def test_every_clipboard_write_goes_through_the_one_helper() -> None:
     """`pyperclip.copy` is called in exactly one place.
 
-    Falsifier: inline a `pyperclip.copy(...)` at any widget again. That is how the four
-    spellings arose, and each new one silently opts out of reporting.
+    A widget that calls it directly would silently opt out of reporting.
     """
     callers = sorted(
         path.relative_to(_SRC).as_posix()
@@ -73,8 +72,6 @@ def test_a_bubble_copy_reaches_the_clipboard_without_an_app(
     every copilot reply doing nothing at all, and neither sibling test above can see it:
     one drives the helper directly and the other only greps the AST for `pyperclip.copy`.
     A silence gate has to prove it made contact.
-
-    Falsifier: move `app is not None` back up into the `if`.
     """
     landed: list[str] = []
     monkeypatch.setattr(pyperclip, "copy", landed.append)

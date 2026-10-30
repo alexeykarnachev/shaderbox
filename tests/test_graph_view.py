@@ -1,4 +1,4 @@
-"""The graph canvas's gesture verbs on `App` (092 D12-D16), driven headlessly.
+"""The graph canvas's gesture verbs on `App`, driven headlessly.
 
 Every write the canvas makes goes through one of these, so each refusal is asserted here
 without a window: the cycle drop, the media drop, the unwire, the drag commit, Group and
@@ -50,8 +50,6 @@ def test_drop_wire_writes_the_read_and_refuses_the_loop(app: Any) -> None:
         app.session, "set_sampler_source", wraps=app.session.set_sampler_source
     ) as write:
         refusal = app.drop_wire(document_id, "c", "a", "u_src")
-    # Falsifier: refuse only when the culprit is an endpoint -- `plan_passes` names `a` for a
-    # drop whose endpoints are `c` and `a`, and the whole-list check is what refuses it.
     assert "passes form a cycle" in refusal
     assert write.call_count == 0, "a refused drop wrote"
     assert "u_src" not in document.passes["a"].uniform_values or not isinstance(
@@ -70,8 +68,6 @@ def test_drop_wire_refuses_a_media_bound_port_and_keeps_the_texture(app: Any) ->
         app.session, "set_sampler_source", wraps=app.session.set_sampler_source
     ) as write:
         refusal = app.drop_wire(document_id, "a", "c", "u_src")
-    # Falsifier: call `set_sampler_source` unconditionally, which runs `try_to_release` on
-    # the bound texture -- the one irreversible write a canvas gesture could make.
     assert "bound to media" in refusal
     assert write.call_count == 0
     assert document.passes["c"].uniform_values["u_src"] is bound
@@ -139,7 +135,7 @@ def test_dissolve_of_nothing_and_leave_group_write_as_they_should(app: Any) -> N
 
 
 def test_the_widget_makes_no_session_write_of_its_own() -> None:
-    # 092 D12: every write goes through an App verb, so its refusal is testable here. The
+    # Every write goes through an App verb, so its refusal is testable here. The
     # strip's menu is shared with the canvas, so it is held to the same rule.
     for module in (pass_graph, pass_list):
         source = Path(module.__file__).read_text(encoding="utf-8")
@@ -163,7 +159,7 @@ def _frames(app: Any, n: int) -> None:
 
 
 # ----------------------------------------------------------------
-# The canvas's own gestures (093), driven through the real frame loop. Three mechanics every
+# The canvas's own gestures, driven through the real frame loop. Three mechanics every
 # test here obeys, each measured on this imgui build: a key event queued in the same batch as
 # a mouse-button event reaches `is_key_pressed` one frame LATER than the button, so a `_frames`
 # call separates them; a move and a release arriving in one frame read as a click, so they are
@@ -190,8 +186,7 @@ def test_a_dragged_int_uniform_survives_the_next_render(app: Any) -> None:
     which re-seeds the uniform to 0 -- so an unshaped write does not merely
     fail, it destroys what was there.
 
-    Measured before the fix: dragging from 34 wrote 34.45 and the next
-    frame read 0. Asserted after a real render, because the write itself
+    Without it, dragging from 34 writes 34.45 and the next frame reads 0. Asserted after a real render, because the write itself
     looks fine and only the render is where the value dies.
     """
     document_id = app.current_document_id

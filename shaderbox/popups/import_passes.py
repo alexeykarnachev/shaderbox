@@ -1,10 +1,10 @@
-"""The import dialog (091 D10): another document's passes, copied into this one as a group.
+"""The import dialog: another document's passes, copied into this one as a group.
 
 One modal in the `ModalId` mutex. Pick a source on one of two tabs (the project's other
 documents, the shipped examples), name the group (it also prefixes the passes), and decide
 each ENTRY POINT of the source -- a pass that reads no other pass of it: kept as it is, or fed
-by one of this document's passes, whose own readers are then handed to the bundle's output
-(D6). The plan is recomputed every frame the body draws, so the button and its message never
+by one of this document's passes, whose own readers are then handed to the bundle's output.
+The plan is recomputed every frame the body draws, so the button and its message never
 lag the field.
 
 No field takes keyboard focus on open or on selection: a focused `input_text` writes its own
@@ -93,7 +93,7 @@ def _draw_body(app: App) -> bool:
 def _draw_tabs(app: App, draft: ImportDraft) -> None:
     # imgui owns the selection and takes a programmatic one only through `set_selected`, a
     # frame after the request; until then the read-back would write the old tab straight
-    # back over the draft (/imgui-ui §8).
+    # back over the draft.
     pending = draft.tab_select_pending
     if imgui.begin_tab_bar("##import_tabs"):
         for label, examples_tab in (("This project", False), ("Examples", True)):

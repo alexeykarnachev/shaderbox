@@ -1,7 +1,7 @@
-"""How often each displayed document renders, and what size an Auto one renders at (090).
+"""How often each displayed document renders, and what size an Auto one renders at.
 
 Leaf: `math` and `dataclasses` only. No GL, no imgui, no `App`, no `Document` — the policy as
-pure data, the shape `profile_rows_plan` set (088 D5), so every rule here is testable without a
+pure data, the shape `profile_rows_plan` set, so every rule here is testable without a
 window.
 
 `plan_render_set` is the whole throttle rule. The current document draws on the shared GPU
@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 MAX_INTERVAL: int = 60
 
 # Frames a recomputed interval must hold before it is applied. The cost input is read two
-# frames late (088 D2), so a shorter window would flip `k` on a number the ring has not
+# frames late, so a shorter window would flip `k` on a number the ring has not
 # finished reporting; four frames is <= 66 ms of reaction at 60 fps.
 INTERVAL_HYSTERESIS_FRAMES: int = 4
 
@@ -33,7 +33,7 @@ AUTO_RESIZE_DEAD_BAND: float = 0.05
 # new size every frame, so the stability clause cannot fire mid-drag; ~130 ms at 60 fps.
 AUTO_RESIZE_STABLE_FRAMES: int = 8
 
-# The profiler span key that joins a measurement to a document (090 D7). One home for both ends
+# The profiler span key that joins a measurement to a document. One home for both ends
 # of the wire: the render sites write it, `_refresh_document_costs` and the FPS panel read it
 # back, and a prefix changed at one end alone would leave the panel silently treating every
 # document row as an ordinary span.
@@ -54,7 +54,7 @@ def document_id_of_span(name: str) -> str | None:
 
 @dataclass(frozen=True)
 class CostRecord:
-    """What one document cost the frame that measured it, two frames back (088 D2).
+    """What one document cost the frame that measured it, two frames back.
 
     The policy reads `gpu_ms` alone; `cpu_ms` rides along so a CPU throttle later is a policy
     change rather than new plumbing.

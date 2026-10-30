@@ -1,4 +1,4 @@
-"""moderngl renderer for graph_canvas's two vertex streams (feature 098).
+"""moderngl renderer for graph_canvas's two vertex streams.
 
 Generic: it knows the library's geometry and nothing about passes or
 documents, so it lifts into another project with `ffi.py` and the vendored

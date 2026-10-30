@@ -1,11 +1,11 @@
-"""CPU-script engine (feature 041, redesigned by 048 to ONE script per document) — pure, no GL. A
+"""CPU-script engine (ONE script per document) — pure, no GL. A
 SimpleNamespace stands in for moderngl.Uniform (the coercion/shape logic is GL-free; the GL write
 reaching the GPU is verified in test_script_engine_gl.py). Covers the single-document script contract:
 state accumulates, state resets on edit + manual reset, export-instance isolation (live state never
 poisons the export, the live instance is not poisoned), the typed outputs (bare scalar / Vec*/Array/
 Text) coercing, errors-as-data at the user line, the (path, mtime) cache, scoped determinism, the
 soft (document,name) skip for orphan/sampler keys, the silent engine-owned-key drop, script_status, and
-the 048 play/stop model (a stopped uniform's WRITE is skipped while the script keeps ticking; export
+the play/stop model (a stopped uniform's WRITE is skipped while the script keeps ticking; export
 always plays).
 """
 
@@ -60,7 +60,7 @@ class _FakePass:
 
 class _FakeDocument:
     # The ScriptTarget slice: passes by name. A bare uniform list builds the one-pass document most
-    # tests want (069's broadcast rule means their `{"u_x": ...}` scripts need no edit); a dict of
+    # tests want (the broadcast rule means their `{"u_x": ...}` scripts need no edit); a dict of
     # name -> uniforms builds a multi-pass one.
     def __init__(
         self,
@@ -78,7 +78,7 @@ class _FakeDocument:
 
 
 def _write_script(tmp: Path, body: str) -> Path:
-    # The document script file (048): documents/<id>/scripts/script.py — ONE class driving many uniforms
+    # The document script file: documents/<id>/scripts/script.py — ONE class driving many uniforms
     # via a dict return. There is no per-uniform file anymore; this is the only script on a document.
     scripts_dir = tmp / "scripts"
     scripts_dir.mkdir(exist_ok=True)
@@ -114,7 +114,7 @@ _INTEGRATOR = _script(
     init_body="        self.v = 0.0\n",
     update_body="        self.v += context.dt\n        return {'u_x': self.v}\n",
 )
-# A two-uniform integrator: one accumulator drives both u_x and u_y (the headline 048 goal).
+# A two-uniform integrator: one accumulator drives both u_x and u_y.
 _TWO_INTEGRATOR = _script(
     init_body="        self.v = 0.0\n",
     update_body=(
@@ -124,7 +124,7 @@ _TWO_INTEGRATOR = _script(
 )
 
 
-# ---- output types coerce (falsifier: a wrong-shape write or a None hold) ----
+# ---- output types coerce ----
 
 
 def test_scalar_output_coerces(tmp_path: Path) -> None:
@@ -132,7 +132,6 @@ def test_scalar_output_coerces(tmp_path: Path) -> None:
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
     eng.tick("n0", document, _ctx(0.0))
-    # Falsifier: a bare float not coerced/written -> KeyError or != 0.5.
     assert abs(document.uniform_values["u_x"] - 0.5) < 1e-9
 
 
@@ -144,7 +143,6 @@ def test_vec2_output_coerces(tmp_path: Path) -> None:
     document = _FakeDocument([_u("u_off", dim=2)])
     eng = _engine(tmp_path, document)
     eng.tick("n0", document, _ctx(0.0))
-    # Falsifier: a Vec2 not shaped to a 2-tuple.
     assert document.uniform_values["u_off"] == (0.3, 0.7)
 
 
@@ -156,7 +154,6 @@ def test_vec3_output_coerces(tmp_path: Path) -> None:
     document = _FakeDocument([_u("u_color", dim=3)])
     eng = _engine(tmp_path, document)
     eng.tick("n0", document, _ctx(0.0))
-    # Falsifier: a Vec3 not shaped to a 3-tuple.
     assert document.uniform_values["u_color"] == (0.1, 0.2, 0.3)
 
 
@@ -168,7 +165,6 @@ def test_vec4_output_coerces(tmp_path: Path) -> None:
     document = _FakeDocument([_u("u_q", dim=4)])
     eng = _engine(tmp_path, document)
     eng.tick("n0", document, _ctx(0.0))
-    # Falsifier: a Vec4 not shaped to a 4-tuple.
     assert document.uniform_values["u_q"] == (0.1, 0.2, 0.3, 0.4)
 
 
@@ -180,7 +176,6 @@ def test_array_output_coerces(tmp_path: Path) -> None:
     document = _FakeDocument([_u("u_vals", dim=1, n=4)])
     eng = _engine(tmp_path, document)
     eng.tick("n0", document, _ctx(0.0))
-    # Falsifier: an Array not coerced to the float[4] sequence.
     assert tuple(document.uniform_values["u_vals"]) == (1.0, 2.0, 3.0, 4.0)
 
 
@@ -193,7 +188,6 @@ def test_text_output_coerces(tmp_path: Path) -> None:
     eng = _engine(tmp_path, document)
     eng.tick("n0", document, _ctx(0.0))
     value = document.uniform_values["u_text"]
-    # Falsifier: a Text not codepoint-encoded + null-padded to the uint[8] cap.
     assert value[0] == ord("H") and value[1] == ord("i")
     assert len(value) == 8
 
@@ -208,7 +202,6 @@ def test_vec2_array_chunks_into_rows(tmp_path: Path) -> None:
     document = _FakeDocument([_u("u_pts", dim=2, n=3)])
     eng = _engine(tmp_path, document)
     eng.tick("n0", document, _ctx(0.0))
-    # Falsifier: the flat list not chunked into dim-tuples.
     assert document.uniform_values["u_pts"] == [(0.0, 1.0), (2.0, 3.0), (4.0, 5.0)]
 
 
@@ -221,7 +214,6 @@ def test_int_scalar_rounds(tmp_path: Path) -> None:
     eng = _engine(tmp_path, document)
     eng.tick("n0", document, _ctx(0.0))
     val = document.uniform_values["u_n"]
-    # Falsifier: a float written into an int uniform (or no round).
     assert val == 3 and isinstance(val, int)
     assert ("n0", "main", "u_n") not in eng.errors
 
@@ -232,7 +224,6 @@ def test_uint_scalar_rounds(tmp_path: Path) -> None:
     eng = _engine(tmp_path, document)
     eng.tick("n0", document, _ctx(0.0))
     val = document.uniform_values["u_count"]
-    # Falsifier: a float into a uint uniform.
     assert val == 4 and isinstance(val, int)
 
 
@@ -244,7 +235,6 @@ def test_ivec2_rounds_components(tmp_path: Path) -> None:
     document = _FakeDocument([_u("u_iv", dim=2, gl_type=_GL_INT_VEC2)])
     eng = _engine(tmp_path, document)
     eng.tick("n0", document, _ctx(0.0))
-    # Falsifier: ivec components not rounded to ints.
     assert document.uniform_values["u_iv"] == (1, 3)
     assert all(isinstance(v, int) for v in document.uniform_values["u_iv"])
 
@@ -257,11 +247,10 @@ def test_int_array_rounds_each(tmp_path: Path) -> None:
     document = _FakeDocument([_u("u_arr", dim=1, n=3, gl_type=_GL_INT)])
     eng = _engine(tmp_path, document)
     eng.tick("n0", document, _ctx(0.0))
-    # Falsifier: an int[] not rounded element-wise (round-half-to-even).
     assert tuple(document.uniform_values["u_arr"]) == (1, 3, 4)
 
 
-# ---- stateful contract (falsifier: self.* not persisted across frames) ----
+# ---- stateful contract ----
 
 
 def test_state_accumulates(tmp_path: Path) -> None:
@@ -270,13 +259,12 @@ def test_state_accumulates(tmp_path: Path) -> None:
     eng = _engine(tmp_path, document)
     for i in range(5):
         eng.tick("n0", document, _ctx(i / 60, dt=1.0, frame=i))
-    # Falsifier: != 5.0 means self.v reset each frame (no instance persistence).
     assert document.uniform_values["u_x"] == 5.0
 
 
 def test_state_resets_on_edit(tmp_path: Path) -> None:
     # Accumulate, then edit the file -> mtime change -> a recompile makes a FRESH instance ->
-    # state back to baseline. Falsifier: u_x stays at the accumulated 3.0 (no fresh instance).
+    # state back to baseline.
     path = _write_script(tmp_path, _INTEGRATOR)
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
@@ -292,8 +280,7 @@ def test_state_resets_on_edit(tmp_path: Path) -> None:
 
 
 def test_manual_reset_clears_state(tmp_path: Path) -> None:
-    # reset(document_id) re-runs __init__ on the live script (no recompile). Falsifier: u_x stays at
-    # the accumulated 4.0 (reset didn't re-instantiate).
+    # reset(document_id) re-runs __init__ on the live script (no recompile).
     _write_script(tmp_path, _INTEGRATOR)
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
@@ -305,12 +292,12 @@ def test_manual_reset_clears_state(tmp_path: Path) -> None:
     assert document.uniform_values["u_x"] == 1.0
 
 
-# ---- export isolation (falsifier: the export sees live state, or live state is poisoned) ----
+# ---- export isolation ----
 
 
 def test_export_instance_isolated_from_live(tmp_path: Path) -> None:
     # Accumulate on the LIVE instance, then a FRESH export instance ticks from a clean __init__ —
-    # the export value must NOT inherit live state. Falsifier: export == live (== 10.0).
+    # the export value must NOT inherit live state.
     _write_script(tmp_path, _INTEGRATOR)
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
@@ -329,8 +316,7 @@ def test_export_instance_isolated_from_live(tmp_path: Path) -> None:
 
 def test_export_does_not_poison_live_instance(tmp_path: Path) -> None:
     # The mirror guarantee: ticking the export instance must NOT advance the LIVE one. Tick the
-    # export several times; the live instance keeps its own state. Falsifier: the live value jumps
-    # after the export ticks (a shared instance).
+    # export several times; the live instance keeps its own state.
     _write_script(tmp_path, _INTEGRATOR)
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
@@ -352,7 +338,7 @@ def test_export_does_not_poison_live_instance(tmp_path: Path) -> None:
 
 def test_export_tick_does_not_touch_live_errors(tmp_path: Path) -> None:
     # A live binding has a recorded shape error; ticking a FRESH export instance (which writes to a
-    # throwaway errors sink) must NOT clear the live error. Falsifier: the live error vanishes.
+    # throwaway errors sink) must NOT clear the live error.
     _write_script(
         tmp_path,
         _script(
@@ -386,7 +372,6 @@ def test_compile_error_keys_on_sentinel(tmp_path: Path) -> None:
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
     err = eng.errors[("n0", "", "script.py")]
-    # Falsifier: not a compile error keyed on the sentinel.
     assert err.kind == "compile"
 
 
@@ -399,8 +384,8 @@ def test_no_subclass_is_compile_error(tmp_path: Path) -> None:
 
 def test_a_wrong_import_names_the_right_module(tmp_path: Path) -> None:
     # A wrong `from shaderbox import ScriptBehavior` must name `shaderbox.scripting`, so the
-    # reader self-corrects instead of grepping fruitlessly (043 dogfood). The import gate's own
-    # message does this now; before the gate it was the appended steer.
+    # reader self-corrects instead of grepping fruitlessly The import gate's own
+    # message does this.
     _write_script(
         tmp_path,
         "from shaderbox import ScriptBehavior\n"
@@ -418,8 +403,7 @@ def test_a_missing_import_of_a_scripting_type_names_the_import_line(
 ) -> None:
     # The other half: a script that USES `Vec3` without importing it. The engine injects the
     # names as a fallback, so this only surfaces where the injection cannot help — an eager
-    # annotation on a name the user misspelled. Falsifier: drop the hint and the message is a
-    # bare NameError with no route to the import line.
+    # annotation on a name the user misspelled.
     from shaderbox.scripting.behavior import _import_hint
 
     assert "from shaderbox.scripting import ScriptContext" in _import_hint(
@@ -471,7 +455,6 @@ def test_raising_init_is_compile_error(tmp_path: Path) -> None:
     )
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
-    # Falsifier: a raising __init__ surfaces as anything but a frozen compile error.
     assert eng.errors[("n0", "", "script.py")].kind == "compile"
 
 
@@ -504,8 +487,7 @@ def test_reset_recovers_a_once_failing_init(tmp_path: Path) -> None:
 
 def test_raw_runtime_throw_freezes_all_at_last_good(tmp_path: Path) -> None:
     # A raw update() exception freezes EVERY name the script drove last frame (one object = one
-    # coherent state) AND records under the sentinel at the CORRECT user line. Falsifier: a name
-    # advances past last-good, or the error isn't keyed on the sentinel at the user line.
+    # coherent state) AND records under the sentinel at the CORRECT user line.
     path = _write_script(
         tmp_path,
         _script(update_body="        return {'u_x': 0.3, 'u_y': 0.6}\n"),
@@ -540,7 +522,7 @@ def test_an_error_line_is_the_editors_0_based_line(tmp_path: Path) -> None:
     # pushes it straight to `add_marker`, and the strip adds the +1 for the human-facing
     # "Line N". Python hands out 1-based numbers from both `SyntaxError.lineno` and traceback
     # frames, so an unconverted one puts the band on the line BELOW the broken code, which is
-    # what the maintainer saw with "'{' was never closed".
+    # the "'{' was never closed" error.
     source = (
         "class Behavior(ScriptBehavior):\n"
         "    def update(self, context) -> dict:\n"
@@ -568,7 +550,7 @@ def test_runtime_error_records_deepest_user_line(tmp_path: Path) -> None:
     document.uniform_values["u_x"] = 0.0
     eng = _engine(tmp_path, document)
     eng.tick("n0", document, _ctx(0.0))
-    # Falsifier: the recorded line isn't the deepest user frame, e.g. -1 or the caller's.
+    # -1 or the caller's.
     assert eng.errors[("n0", "", "script.py")].line == 2
 
 
@@ -589,7 +571,6 @@ def test_user_raised_builtin_exception_keeps_its_real_error(tmp_path: Path) -> N
 
 def test_non_dict_return_is_clean_sentinel_error(tmp_path: Path) -> None:
     # A script that returns a non-dict is a behavior-level failure under the sentinel — not a crash.
-    # Falsifier: tick raises, or the error keys per-uniform instead of the sentinel.
     _write_script(tmp_path, _script(update_body="        return 0.5\n"))  # a bare float
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
@@ -604,8 +585,7 @@ def test_a_none_value_inside_a_pass_block_hands_the_uniform_back_too(
 ) -> None:
     # The block half of the same rule. It shipped ungated: deleting the block-path drop passed
     # the whole suite, so the commit's "both paths get it" was true of the code and untrue of
-    # what held it there. Falsifier: drop the `if v is not None` from the block comprehension
-    # and a manual uniform goes red and reads as driven.
+    # what held it there.
     _write_script(
         tmp_path, _script(update_body="        return {'main': {'u_x': None}}\n")
     )
@@ -620,11 +600,10 @@ def test_a_none_value_inside_a_pass_block_hands_the_uniform_back_too(
 
 
 def test_a_none_value_hands_the_uniform_back_to_the_user(tmp_path: Path) -> None:
-    # The stub, the copilot's API block and 059's spec all tell the author that a key mapped to
+    # The stub, the copilot's API block and the spec all tell the author that a key mapped to
     # None "stays MANUAL". It did not: None reached coercion, failed as "not a number" and still
     # counted as driven, so the panel showed a red row for the one gesture that means "leave this
     # one to me". The value is unchanged either way; what changes is that the state is now clean.
-    # Falsifier: let None through to coercion again and the error row comes back.
     path = _write_script(tmp_path, _script(update_body="        return {'u_x': 0.4}\n"))
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
@@ -643,8 +622,7 @@ def test_a_none_value_hands_the_uniform_back_to_the_user(tmp_path: Path) -> None
 
 
 def test_per_key_shape_mismatch_freezes_only_that_key(tmp_path: Path) -> None:
-    # A per-KEY coercion mismatch freezes ONLY that key; siblings still write. Falsifier: the
-    # sibling u_a is also frozen, or the error keys on the sentinel instead of (document, u_b).
+    # A per-KEY coercion mismatch freezes ONLY that key; siblings still write.
     _write_script(
         tmp_path,
         _script(
@@ -677,9 +655,8 @@ def test_array_wrong_length_freezes(tmp_path: Path) -> None:
 
 
 def test_nan_inf_freezes_and_records(tmp_path: Path) -> None:
-    # A non-finite value is no longer written silently (a black-frame footgun that also poisons
-    # last-good) — it freezes at last-good + records a runtime ScriptError. Falsifier: inf is
-    # written, or no error recorded.
+    # A non-finite value is not written silently (a black-frame footgun that also poisons
+    # last-good) — it freezes at last-good + records a runtime ScriptError.
     path = _write_script(tmp_path, _script(update_body="        return {'u_x': 0.3}\n"))
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
@@ -698,9 +675,9 @@ def test_nan_inf_freezes_and_records(tmp_path: Path) -> None:
 
 
 def test_array_accepts_nested_vec_rows(tmp_path: Path) -> None:
-    # Feature 054: `Array` now AUTO-FLATTENS a list of Vec/tuple rows (the natural sim form) instead
-    # of raising the old flatten-hint TypeError -- a `vec2[2]` built as `[(x0,y0),(x1,y1)]` drives
-    # the uniform correctly. Falsifier: the uniform freezes / the value isn't the flattened rows.
+    # `Array` AUTO-FLATTENS a list of Vec/tuple rows (the natural sim form) instead
+    # of raising a flatten-hint TypeError -- a `vec2[2]` built as `[(x0,y0),(x1,y1)]` drives
+    # the uniform correctly.
     _write_script(
         tmp_path,
         _script(
@@ -725,9 +702,9 @@ def test_array_accepts_nested_vec_rows(tmp_path: Path) -> None:
 
 
 def test_a_key_no_pass_declares_warns(tmp_path: Path) -> None:
-    # 102 D2 reverses 079 D5: a BARE key naming no active uniform on ANY pass now WARNS
+    # A BARE key naming no active uniform on ANY pass WARNS
     # (`no_such_uniform`) with an error row — and still claims no ownership in
-    # script_driven_uniforms. Falsifier: u_ghost written, driven, or no error row for it.
+    # script_driven_uniforms.
     _write_script(
         tmp_path,
         _script(update_body="        return {'u_a': 0.5, 'u_ghost': 0.9}\n"),
@@ -744,10 +721,8 @@ def test_a_key_no_pass_declares_warns(tmp_path: Path) -> None:
 
 
 def test_a_bare_sampler_key_errors_like_a_pass_block_one(tmp_path: Path) -> None:
-    # A number is no field, and the BROADCAST path must refuse it the way the block path does:
-    # it once went silent there while the block form errored. Since 110 a refused field is still
-    # the script's (D6), so the pair is driven AND warns. Falsifier: route a sampler only in the
-    # block loop, and the bare form reports nothing and drives nothing.
+    # A number is no field, and the BROADCAST path must refuse it the way the block path does.
+    # A refused field is still the script's, so the pair is driven AND warns.
     _write_script(tmp_path, _script(update_body="        return {'u_tex': 1.0}\n"))
     document = _FakeDocument([_u("u_a"), _u("u_tex", gl_type=_GL_SAMPLER_2D)])
     eng = _engine(tmp_path, document)
@@ -761,8 +736,8 @@ def test_a_bare_sampler_key_errors_like_a_pass_block_one(tmp_path: Path) -> None
 def test_a_pass_block_key_that_pass_does_not_declare_warns(
     tmp_path: Path,
 ) -> None:
-    # 102 D2 through the block phase: the pass compiles and simply has no such uniform yet, and
-    # that now warns (`no_such_uniform`). Falsifier: no error row, or the key written.
+    # Through the block phase: the pass compiles and simply has no such uniform yet, and
+    # that warns (`no_such_uniform`).
     _write_script(
         tmp_path,
         _script(update_body="        return {'main': {'u_a': 0.5, 'u_ghost': 0.9}}\n"),
@@ -779,8 +754,7 @@ def test_a_pass_block_key_that_pass_does_not_declare_warns(
 def test_a_number_for_a_sampler_warns_and_stays_driven(tmp_path: Path) -> None:
     # A key naming a sampler inside a PASS BLOCK with a value that is no field records a soft
     # (document, pass, name) error on the strip (it is in `skipped`, which feeds `soft_errors`)
-    # and stays driven, so the row keeps its play/stop button (110 D6). Falsifier: leave a
-    # refused field out of the texture-driven set, or out of `skipped`.
+    # and stays driven, so the row keeps its play/stop button.
     _write_script(
         tmp_path,
         _script(update_body="        return {'u_a': 0.5, 'main': {'u_tex': 0.1}}\n"),
@@ -805,7 +779,6 @@ def test_a_soft_error_persists_while_the_script_keeps_producing_it(
     # The other half of the stale-clear: a row must survive every tick the script keeps earning
     # it. A first attempt at clearing the zombie row asked whether the key was REWRITTEN this
     # tick, which a re-recorded error is not — so the row oscillated on and off frame by frame.
-    # Falsifier: clear on anything other than "the tick did not write it" and this alternates.
     _write_script(
         tmp_path, _script(update_body="        return {'blur': {'u_x': 1.0}}\n")
     )
@@ -824,10 +797,9 @@ def test_a_pass_name_error_clears_when_the_key_becomes_a_bare_one(
     # as `{"blur": 1.0}` touched the pair from the BARE path, which suppressed the stale-clear,
     # while never writing the slot to overwrite it — so the "no pass named 'blur'" error stood
     # forever, on the strip and in the copilot's probe. A real `blur` uniform (rather than an
-    # orphan name) keeps this test isolated to the stale-clear mechanism: since 102 D2 a bare
-    # orphan now warns too, which would leave an error present for the WRONG reason and hide a
-    # regression in the clear. Falsifier: clear on "touched this tick" again rather than on
-    # "re-recorded this tick", and the pass-name error survives the rewrite.
+    # orphan name) keeps this test isolated to the stale-clear mechanism: a bare
+    # orphan warns too, which would leave an error present for the WRONG reason and hide a
+    # regression in the clear.
     path = _write_script(
         tmp_path, _script(update_body="        return {'blur': {'u_x': 1.0}}\n")
     )
@@ -850,7 +822,7 @@ def test_a_pass_name_error_clears_when_the_key_becomes_a_bare_one(
 
 def test_a_bad_key_error_clears_when_the_key_is_fixed(tmp_path: Path) -> None:
     # Once the bad key stops being returned (the user fixes the typo), its soft error is cleared on
-    # the next tick. Falsifier: the zombie error persists.
+    # the next tick.
     path = _write_script(
         tmp_path,
         _script(update_body="        return {'u_a': 0.5, 'main': {'u_tex': 0.1}}\n"),
@@ -874,8 +846,7 @@ def test_a_bad_key_error_clears_when_the_key_is_fixed(tmp_path: Path) -> None:
 
 def test_engine_owned_key_dropped_silently(tmp_path: Path) -> None:
     # A script naming an engine-owned uniform (u_time) SILENTLY drops the key — no false ownership
-    # AND no soft error (the renderer owns that slot). Falsifier: u_time is driven, a soft error
-    # appears, or the renderer's value is overwritten.
+    # AND no soft error (the renderer owns that slot).
     _write_script(
         tmp_path,
         _script(update_body="        return {'u_a': 0.5, 'u_time': 9.0}\n"),
@@ -902,7 +873,6 @@ def test_cache_no_recompile_when_mtime_unchanged(tmp_path: Path) -> None:
     eng = _engine(tmp_path, document)
     first = eng._documents["n0"].behavior
     eng.reload("n0", tmp_path / "scripts")  # nothing changed
-    # Falsifier: a fresh script object means an unnecessary recompile.
     assert eng._documents["n0"].behavior is first
 
 
@@ -925,7 +895,6 @@ def test_script_binds_by_existence(tmp_path: Path) -> None:
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
     eng.tick("n0", document, _ctx(0.0))
-    # Falsifier: the script didn't bind despite script.py existing on disk.
     assert eng.has_script("n0")
     assert ("main", "u_x") in eng.script_driven_uniforms("n0")
 
@@ -943,8 +912,7 @@ def test_removed_script_drops_script(tmp_path: Path) -> None:
 
 
 def test_no_script_file_is_no_op_tick(tmp_path: Path) -> None:
-    # A document dir with no script.py: reload binds nothing, tick is a no-op. Falsifier: tick raises
-    # or invents a driven uniform.
+    # A document dir with no script.py: reload binds nothing, tick is a no-op.
     (tmp_path / "scripts").mkdir(exist_ok=True)
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
@@ -957,8 +925,7 @@ def test_no_script_file_is_no_op_tick(tmp_path: Path) -> None:
 
 
 def test_t_pure_script_is_deterministic(tmp_path: Path) -> None:
-    # A context.t-pure update is identical across dt (the scoped-determinism guarantee). Falsifier: a
-    # different dt at the same t yields a different value.
+    # A context.t-pure update is identical across dt (the scoped-determinism guarantee).
     _write_script(
         tmp_path,
         "import math\n"
@@ -1013,7 +980,6 @@ def test_script_status_reflects_driven_count(tmp_path: Path) -> None:
     eng.tick("n0", document, _ctx(0.0, dt=1.0, frame=0))
     status = eng.script_status("n0")
     assert status is not None
-    # Falsifier: a wrong driven_count, or a phantom sentinel/soft error on a clean script.
     assert status.driven_count == 2
     assert status.sentinel_error is None
     assert status.soft_errors == []
@@ -1021,7 +987,7 @@ def test_script_status_reflects_driven_count(tmp_path: Path) -> None:
 
 def test_script_status_reflects_sentinel_and_soft_errors(tmp_path: Path) -> None:
     # A script with a sampler key: driven_count counts only the real driven uniform; the sampler
-    # surfaces in soft_errors. Falsifier: the bad key inflates driven_count or is missing from soft.
+    # surfaces in soft_errors.
     _write_script(
         tmp_path,
         _script(update_body="        return {'u_a': 0.5, 'main': {'u_tex': 0.1}}\n"),
@@ -1073,7 +1039,7 @@ def test_non_utf8_file_does_not_crash_reload(tmp_path: Path) -> None:
 
 def test_unreadable_rewrite_mid_edit_keeps_cached_script(tmp_path: Path) -> None:
     # A reload that races a half-saved / non-UTF8 rewrite at a changed mtime keeps the prior script
-    # rather than crashing the frame loop. Falsifier: reload raises, or the cached script is dropped.
+    # rather than crashing the frame loop.
     path = _write_script(tmp_path, _SCALAR)
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
@@ -1104,8 +1070,8 @@ def test_import_math_works(tmp_path: Path) -> None:
 
 
 def test_explicit_import_line_resolves(tmp_path: Path) -> None:
-    # 048 decision 8: the stub emits a real `from shaderbox.scripting import ...`; it must RESOLVE
-    # inside the exec'd script. Falsifier: the import raises an opaque compile-freeze.
+    # The stub emits a real `from shaderbox.scripting import ...`; it must RESOLVE
+    # inside the exec'd script.
     _write_script(
         tmp_path,
         "from shaderbox.scripting import ScriptBehavior, ScriptContext\n"
@@ -1166,9 +1132,8 @@ def test_is_scriptable_gate() -> None:
 def test_script_stub_compiles_runs_and_drives_nothing_by_default(
     tmp_path: Path,
 ) -> None:
-    # The 048 stub: an empty-dict default (a fresh script drives nothing) with commented examples.
-    # It must compile + run without error AND drive no uniform. Falsifier: the stub errors, or it
-    # drives a uniform by default (a non-empty live body).
+    # The stub: an empty-dict default (a fresh script drives nothing) with commented examples.
+    # It must compile + run without error AND drive no uniform.
     uniforms = [
         _u("u_s"),
         _u("u_v2", dim=2),
@@ -1189,8 +1154,7 @@ def test_script_stub_compiles_runs_and_drives_nothing_by_default(
 
 def test_the_stub_imports_the_whole_scripting_surface(tmp_path: Path) -> None:
     # The importable surface is two names, whatever the document declares: a script returns plain
-    # Python, so there are no value types to import. Falsifier: emit a value type in the import
-    # line and it names something a script cannot import.
+    # Python, so there are no value types to import.
     body = script_stub_for({"main": [_u("u_v3", dim=3), _u("u_a", n=4)]})
     import_line = next(
         line for line in body.splitlines() if "from shaderbox.scripting import" in line
@@ -1206,11 +1170,10 @@ def test_the_stub_imports_the_whole_scripting_surface(tmp_path: Path) -> None:
 def test_stopped_uniform_write_skipped_but_still_driven_and_sibling_advances(
     tmp_path: Path,
 ) -> None:
-    # The core stopped-skip canary (decision 4/5): tick with stopped={'u_x'} ->
-    #   - u_x is NOT written (stays the pre-tick manual value),
-    #   - u_x IS still in script_driven_uniforms (last_driven — keeps its PLAY button),
-    #   - the script's OTHER driven uniform u_y IS written (the script ticked, it just skipped one write).
-    # Falsifier: u_x changed, OR u_x absent from driven, OR u_y not advanced.
+    # The core stopped-skip canary: tick with stopped={'u_x'} -> - u_x is NOT written
+    # (stays the pre-tick manual value), - u_x IS still in script_driven_uniforms (last_driven — keeps its
+    # PLAY button), - the script's OTHER driven uniform u_y IS written (the script ticked, it just skipped
+    # one write).
     _write_script(tmp_path, _TWO_INTEGRATOR)
     document = _FakeDocument([_u("u_x"), _u("u_y")])
     document.uniform_values["u_x"] = 0.42  # the user's frozen manual value
@@ -1231,9 +1194,8 @@ def test_stopped_uniform_write_skipped_but_still_driven_and_sibling_advances(
 
 
 def test_stopped_script_keeps_ticking_then_resumes_advanced(tmp_path: Path) -> None:
-    # Decision 5: the script keeps TICKING while a uniform is stopped, so on resume the value jumps
-    # to the value the integrator reached WHILE stopped — NOT the value at stop time. Falsifier: the
-    # resumed value equals the stop-instant value (the script stopped advancing).
+    # The script keeps TICKING while a uniform is stopped, so on resume the value jumps
+    # to the value the integrator reached WHILE stopped — NOT the value at stop time.
     _write_script(tmp_path, _INTEGRATOR)
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
@@ -1258,9 +1220,8 @@ def test_stopped_script_keeps_ticking_then_resumes_advanced(tmp_path: Path) -> N
 
 
 def test_export_always_plays_a_live_stopped_uniform(tmp_path: Path) -> None:
-    # Decision 5 + export-isolation: tick_export forwards NO stopped set, so an export writes the
-    # SCRIPT value even for a uniform stopped in the live preview. Falsifier: the export freezes the
-    # stopped manual value (tick_export leaked the live stopped set).
+    # Export isolation: tick_export forwards NO stopped set, so an export writes the
+    # SCRIPT value even for a uniform stopped in the live preview.
     _write_script(tmp_path, _INTEGRATOR)
     document = _FakeDocument([_u("u_x")])
     eng = _engine(tmp_path, document)
@@ -1282,7 +1243,7 @@ def test_export_always_plays_a_live_stopped_uniform(tmp_path: Path) -> None:
     assert export_document.uniform_values["u_x"] == 1.0
 
 
-# ---- 069 D3: routing across passes ----
+# ---- routing across passes ----
 
 
 def _two_pass() -> _FakeDocument:
@@ -1303,8 +1264,8 @@ def _two_pass() -> _FakeDocument:
         ("{'u_a': 1.0}", {"paint": {"u_a": 1.0}, "composite": {"u_a": 1.0}}, None, ""),
         # bare key, ONE pass declares it -> that pass only; the sibling is untouched
         ("{'u_b': 1.0}", {"paint": {"u_b": 1.0}, "composite": {}}, None, ""),
-        # bare key, NO pass declares it -> nothing written, WARNS (102 D2 reverses 079 D5:
-        # a normal authoring step now still gets a row, not silence)
+        # bare key, NO pass declares it -> nothing written, WARNS (a normal
+        # authoring step still gets a row, not silence)
         (
             "{'u_z': 1.0}",
             {"paint": {}, "composite": {}},
@@ -1318,7 +1279,7 @@ def _two_pass() -> _FakeDocument:
             None,
             "",
         ),
-        # pass block, NOT declared on that pass -> nothing written, WARNS (102 D2)
+        # pass block, NOT declared on that pass -> nothing written, WARNS
         (
             "{'composite': {'u_b': 1.0}}",
             {"paint": {}, "composite": {}},
@@ -1341,10 +1302,9 @@ def test_the_routing_table(
     error_key: tuple[str, str, str] | None,
     error_fragment: str,
 ) -> None:
-    # The (bare, nested) x (declared in one pass, in two, in none) matrix (069 D3; the undeclared
-    # rows now WARN, 102 D2). Falsifier: route every key to one pass (the pre-069 output-only
-    # behavior) — rows 1/2/4 go red on the write side, rows 3/5/6 on the error side, so no
-    # single wrong implementation passes the table.
+    # The (bare, nested) x (declared in one pass, in two, in none) matrix (the undeclared
+    # rows WARN). Rows 1/2/4 pin the write side and rows 3/5/6 the error side, so no single
+    # wrong implementation passes the table.
     _write_script(tmp_path, _script(update_body=f"        return {returned}\n"))
     document = _two_pass()
     eng = _engine(tmp_path, document)
@@ -1359,8 +1319,7 @@ def test_the_routing_table(
 
 def test_a_pass_block_beats_a_broadcast_on_that_pass(tmp_path: Path) -> None:
     # Specific over general, and INDEPENDENT of the author's insertion order — that is what the
-    # two-phase (broadcasts, then blocks) shape buys. Falsifier: collapse the phases into one loop
-    # over raw.items(); the second half goes red because insertion order then decides the winner.
+    # two-phase (broadcasts, then blocks) shape buys.
     for returned in (
         "{'u_a': 1.0, 'paint': {'u_a': 2.0}}",
         "{'paint': {'u_a': 2.0}, 'u_a': 1.0}",
@@ -1374,9 +1333,7 @@ def test_a_pass_block_beats_a_broadcast_on_that_pass(tmp_path: Path) -> None:
 
 
 def test_an_unknown_pass_names_the_pass_and_lists_the_real_ones(tmp_path: Path) -> None:
-    # One key's failure must not cost its siblings (the freeze-granularity rule). Falsifier: raise on
-    # an unknown pass instead of recording — the sibling half goes red (nothing is driven) and the
-    # message half with it.
+    # One key's failure must not cost its siblings (the freeze-granularity rule).
     _write_script(
         tmp_path,
         _script(update_body="        return {'nope': {'u_a': 1.0}, 'u_b': 3.0}\n"),
@@ -1393,9 +1350,8 @@ def test_an_unknown_pass_names_the_pass_and_lists_the_real_ones(tmp_path: Path) 
 
 def test_a_not_yet_compiled_pass_is_held_not_errored(tmp_path: Path) -> None:
     # A pass that has NEVER attempted a compile is skipped for the tick with NO error — else the
-    # first frame of a multi-pass document sprays orphan errors that clear a frame later (066 D1 is
-    # what forbids compiling one from inside the tick). Falsifier: treat a not-ready pass as absent;
-    # the no-error assertion goes red.
+    # first frame of a multi-pass document sprays orphan errors that clear a frame later (compiling one from
+    # inside the tick is forbidden).
     _write_script(
         tmp_path, _script(update_body="        return {'paint': {'u_a': 1.0}}\n")
     )
@@ -1413,9 +1369,8 @@ def test_a_not_yet_compiled_pass_is_held_not_errored(tmp_path: Path) -> None:
 
 
 def test_coerce_one_rejects_a_dict(tmp_path: Path) -> None:
-    # The invariant D3's value-type dispatch rests on, made a CHECKED property of the coercion atom
-    # rather than an inspection of normalize_output. Falsifier: delete the isinstance(value, dict)
-    # branch — the direct call goes red immediately.
+    # The invariant the value-type dispatch rests on, made a CHECKED property of the coercion atom
+    # rather than an inspection of normalize_output.
     with pytest.raises(_RuntimeScriptError) as excinfo:
         coerce_one({"x": 1}, _u("u_a"), "u_a")
     assert "PASS BLOCK" in excinfo.value.error.message
@@ -1439,8 +1394,7 @@ def test_coerce_one_rejects_a_dict(tmp_path: Path) -> None:
 
 def test_the_stub_has_one_block_per_pass() -> None:
     # One commented block per pass, each listing that pass's own scriptable uniforms, plus the
-    # bare-key rule. Falsifier: emit only the first pass's block — the composite/u_b assertions go
-    # red; the ast.parse half falsifies emitting comment text that is not valid Python.
+    # bare-key rule.
     body = script_stub_for(
         {
             "paint": [_u("u_a"), _u("u_b")],
@@ -1449,7 +1403,6 @@ def test_the_stub_has_one_block_per_pass() -> None:
         }
     )
     # DOUBLE quotes, matching the bare-key example in the same stub and the design note's snippet.
-    # Falsifier: emit `!r` (single quotes) — the stub would be quoted two ways in one block.
     assert '"paint": {' in body
     assert '"composite": {' in body
     assert '"empty": {' in body
@@ -1468,17 +1421,15 @@ def test_the_stub_has_one_block_per_pass() -> None:
 
 
 def test_a_document_with_no_scriptable_uniforms_keeps_the_bare_return() -> None:
-    # Falsifier: emit a block per pass unconditionally — an empty document would grow comment blocks
-    # naming nothing.
     body = script_stub_for({"paint": [], "composite": []})
     assert "return {}" in body
 
 
 def test_a_bad_key_reaches_the_strip_and_not_the_console(tmp_path: Path) -> None:
-    # #29's own last sentence: a bad key becomes a VISIBLE strip error, not a console line. The sink
+    # A bad key becomes a VISIBLE strip error, not a console line. The sink
     # must be a real loguru one — this repo logs through loguru, which does not propagate into the
     # stdlib tree pytest's caplog reads, so a caplog assertion would pass vacuously with the
-    # logger.warning still in place. Falsifier: restore the logger.warning; the first half goes red.
+    # logger.warning still in place.
     records: list[str] = []
     handle = logger.add(lambda m: records.append(str(m)), level="WARNING")
     try:
@@ -1500,8 +1451,7 @@ def test_a_bad_key_reaches_the_strip_and_not_the_console(tmp_path: Path) -> None
 
 
 def test_a_stopped_pair_freezes_only_that_pass(tmp_path: Path) -> None:
-    # The defect the pass-qualified stop set exists to prevent. Falsifier: key the stopped set by
-    # NAME — paint freezes too and the first assertion goes red.
+    # The defect the pass-qualified stop set exists to prevent.
     _write_script(tmp_path, _INTEGRATOR.replace("u_x", "u_a"))
     document = _two_pass()
     eng = _engine(tmp_path, document)
@@ -1520,11 +1470,9 @@ def test_a_stopped_pair_freezes_only_that_pass(tmp_path: Path) -> None:
 
 
 def test_a_broadcast_is_held_for_a_not_yet_compiled_pass(tmp_path: Path) -> None:
-    # The hold is the BROADCAST's too, not only the pass block's (069 round 3). A never-rendered
+    # The hold is the BROADCAST's too, not only the pass block's. A never-rendered
     # two-pass document must produce NO strip row on frame 0 and drive on frame 1 — "absent because
     # it has not compiled yet" and "absent because no pass declares it" are different answers.
-    # Falsifier: drop the not_ready check in the broadcast phase; frame 0 records
-    # `no pass declares 'u_a'` and the strip shows the orphan the hold exists to prevent.
     _write_script(tmp_path, _script(update_body="        return {'u_a': 1.0}\n"))
     document = _FakeDocument({"paint": [_u("u_a")], "composite": [_u("u_a")]})
     for render_pass in document.passes.values():
@@ -1548,11 +1496,11 @@ def test_a_broadcast_is_held_for_a_not_yet_compiled_pass(tmp_path: Path) -> None
 def test_an_undeclared_key_warns_whatever_the_passes_are_doing(
     tmp_path: Path,
 ) -> None:
-    # 102 D2 reverses 079 D5 across every reason a READY pass can fail to declare the key: a
+    # Every reason a READY pass can fail to declare the key: a
     # compile that failed (ready but declaring nothing) and a pass that compiles and simply
-    # does not have it now both WARN as `no_such_uniform` -- `active_by_pass` includes any
+    # does not have it both WARN as `no_such_uniform` -- `active_by_pass` includes any
     # `script_ready` pass regardless of whether its uniform set is empty, so the reason is
-    # decidable without recompiling. Falsifier: either case drops back to silent.
+    # decidable without recompiling.
     _write_script(tmp_path, _script(update_body="        return {'u_wave': 1.0}\n"))
     broken = _FakeDocument({"main": []})  # ready, declaring nothing = a failed compile
     eng = _engine(tmp_path, broken)
@@ -1575,8 +1523,7 @@ def test_an_undeclared_key_warns_whatever_the_passes_are_doing(
 def _ready(program: object | None, error_raw: str) -> bool:
     # `Pass.script_ready` bound onto a light stub (the __get__ idiom the backend tests already use):
     # the property reads only these two attributes, so no GL context is needed. A GL-gated pin would
-    # leave the expression unverified on a display-less box, which is where the inverted form shipped
-    # green during the spec's own round 2.
+    # leave the expression unverified on a display-less box.
     stub = types.SimpleNamespace(
         program=program, compile_unit=types.SimpleNamespace(error_raw=error_raw)
     )
@@ -1584,10 +1531,9 @@ def _ready(program: object | None, error_raw: str) -> bool:
 
 
 def test_script_ready_matches_its_truth_table() -> None:
-    # The wave spec's three rows, asserted on the expression itself. `script_ready` is the NEGATION
+    # Three rows, asserted on the expression itself. `script_ready` is the NEGATION
     # of the guard `get_active_uniforms` tests before compiling, and writing that guard verbatim
-    # inverts the member — which is exactly what round 2 caught in the spec.
-    # Falsifier: invert to `program is None and not error_raw`; all three rows go red.
+    # inverts the member
     assert (
         _ready(None, "") is False
     )  # never attempted -> HELD, no compile from the tick
@@ -1599,8 +1545,8 @@ def test_script_ready_matches_its_truth_table() -> None:
 
 def test_script_ready_never_compiles() -> None:
     # It is a pure read: a stub whose attributes raise if anything tries to build a program proves
-    # the property triggers no compile, which is what makes 066 D1 hold by construction rather than
-    # by an engine-side exception handler. Falsifier: have the property call get_active_uniforms.
+    # the property triggers no compile -- by construction rather than by an
+    # engine-side exception handler.
     calls: list[str] = []
 
     class _Probe:
@@ -1630,7 +1576,7 @@ def _run_script(tmp_path: Path, body: str) -> ScriptError | None:
 
 def test_a_script_imports_the_stdlib_and_the_scripting_types(tmp_path: Path) -> None:
     # The gate narrows ONE package path; everything else a script could import before still
-    # imports. Falsifier: gate the root builtins instead and `import math` goes red.
+    # imports.
     error = _run_script(
         tmp_path,
         "import math\n"
@@ -1646,8 +1592,7 @@ def test_a_script_imports_the_stdlib_and_the_scripting_types(tmp_path: Path) -> 
 
 def test_a_script_cannot_import_the_app_or_its_modules(tmp_path: Path) -> None:
     # `shaderbox.app`, `shaderbox.core` and `ProjectSession` were all reachable from a script.
-    # They are the app's machinery, not the scripting interface. Falsifier: drop the import gate
-    # and every one of these compiles clean.
+    # They are the app's machinery, not the scripting interface.
     for module in (
         "shaderbox",
         "shaderbox.app",
@@ -1671,8 +1616,8 @@ def test_a_script_cannot_import_the_app_or_its_modules(tmp_path: Path) -> None:
 def test_the_scripting_package_offers_a_script_only_its_user_types(
     tmp_path: Path,
 ) -> None:
-    # The package holds the engine, the probe and the stub generator beside the user's types.
-    # A script gets the types. Falsifier: gate the module path alone and `ScriptEngine` imports.
+    # The package holds the engine, the probe and the stub generator beside the user's types. A
+    # script gets the types.
     for name in ("ScriptEngine", "ScriptProbe", "PythonBehavior", "script_stub_for"):
         error = _run_script(
             tmp_path,
@@ -1687,8 +1632,7 @@ def test_the_scripting_package_offers_a_script_only_its_user_types(
 
 
 def test_importing_the_module_itself_says_to_import_the_names(tmp_path: Path) -> None:
-    # `import shaderbox.scripting` would bind the whole module, engine included. Falsifier: allow
-    # a bare import and the module object is a script's back door to everything in it.
+    # `import shaderbox.scripting` would bind the whole module, engine included.
     error = _run_script(
         tmp_path,
         "import shaderbox.scripting\n"

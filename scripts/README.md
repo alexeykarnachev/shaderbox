@@ -108,5 +108,5 @@ cheatsheet.
 If the launcher doesn't work, set it up yourself:
 
 - Install uv: https://docs.astral.sh/uv/
-- `uv sync`
-- `uv run python ./shaderbox/ui.py`
+- `uv sync --no-dev`
+- `uv run --no-dev python ./shaderbox/ui.py`

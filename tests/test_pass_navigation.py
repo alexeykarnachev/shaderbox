@@ -1,5 +1,4 @@
-"""Next / previous pass (073 W-D): the strip's drawn order, wrapping, and the rule W3-3 set
-for clicks -- the walk moves the OUTPUT and opens no shader tab."""
+"""Next / previous pass: the strip's drawn order, wrapping; it moves the OUTPUT and opens no shader tab."""
 
 from typing import Any
 
@@ -23,7 +22,6 @@ def test_step_from_an_unknown_current_lands_on_the_first_tile() -> None:
 def test_the_commands_walk_the_strip_and_open_no_tab(
     app: Any, monkeypatch: Any
 ) -> None:
-    # Falsifier: point the two callbacks back at `ensure_shader_tab` and `opened` fills.
     document_id = app.current_document_id
     assert app.session.add_pass(document_id, "bright") == ""
     document = app.ui_documents[document_id].document
@@ -52,9 +50,6 @@ def test_the_commands_walk_the_strip_and_open_no_tab(
 def test_open_shader_takes_the_worked_on_pass_not_the_output(app: Any) -> None:
     """A shader belongs to a PASS, so `Open shader` resolves the way `Pass settings` does:
     through `panel_pass`, the pass being worked on.
-
-    Falsifier: point the callback back at a bare `ensure_shader_tab(document_id)` and the tab
-    lands on the output instead.
     """
     document_id = app.current_document_id
     assert app.session.add_pass(document_id, "bright") == ""
@@ -80,7 +75,7 @@ def test_open_shader_reaches_a_pass_while_another_shader_is_open(app: Any) -> No
 
     `panel_pass` falls through to the ACTIVE TAB when no pass was picked, so a pick that
     cleared the record left the command resolving to the shader already on screen -- it
-    looked like the hotkey did nothing. Falsifier: clear the pick in `choose_output` again.
+    looked like the hotkey did nothing.
     """
     document_id = app.current_document_id
     assert app.session.add_pass(document_id, "bright") == ""

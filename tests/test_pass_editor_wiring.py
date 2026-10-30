@@ -1,10 +1,10 @@
-"""Opening a pass shows THAT pass, and saving it writes THAT pass (065).
+"""Opening a pass shows THAT pass, and saving it writes THAT pass.
 
 The pass list's `open` button opened the right tab all along — the tab carries the pass's own path
 — but everything downstream resolved "the current document's shader" as `document.render_pass`,
 which is the OUTPUT. That was the same file for a document's whole history until a second pass
-existed, so the assumption had never been wrong before and nothing observed it. The symptom the
-maintainer saw: every pass row opened the same source.
+existed, so the assumption had never been wrong before and nothing observed it. The symptom:
+every pass row opened the same source.
 
 Each test here names one consumer of the active tab and pins it to the tab's PATH.
 """
@@ -190,7 +190,7 @@ def test_an_explicit_focus_request_focuses_the_editor(app: Any) -> None:
 
 
 def test_pass_for_tab_matches_by_path_not_output(app: Any) -> None:
-    # The 065 bug's falsifier (sweep finding): resolving "the document's output
+    # Resolving "the document's output
     # pass" instead of matching the TAB's path gave every pass tab the output's
     # errors/chrome. Each tab must resolve its OWN pass.
     document_id = _two_pass(app)
@@ -242,7 +242,7 @@ def test_jumping_to_a_lib_declaration_still_opens_a_lib_tab(app: Any) -> None:
 
 
 def test_selecting_a_document_opens_no_shader_tab(app: Any) -> None:
-    # W3-3's rule ("no click opens a shader tab") applied to the document tile (093 W7): a
+    # No click opens a shader tab, including the document tile: a
     # switch changes the current document and leaves the editor's tabs exactly as they were.
     # The context menu's `Open shader` and the Pass menu are the ways to a shader.
     other = seed_extra_document(app, "other-000-4000-8000-000000000001")

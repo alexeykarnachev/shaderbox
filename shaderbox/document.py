@@ -1,11 +1,8 @@
-"""The document: what you open, save, export -- and the passes it renders through (065).
+"""The document: what you open, save, export -- and the passes it renders through.
 
 A document owns its passes, the script hook the engine ticks, and export. One pass is its
 output. Everything about ONE shader -- source, program, target, uniforms, compile, draw --
 belongs to `core.Pass`, one layer down.
-
-Stage 2 of 065: the split is made, and a document still holds exactly one pass. Stage 3 gives it
-the graph.
 """
 
 import base64
@@ -215,7 +212,7 @@ def load_document_metadata(path: Path) -> dict[str, Any]:
 
 
 def _uniforms_by_pass(metadata: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    # `uniforms` is keyed by pass name, then by uniform name: each pass owns its uniforms (D4),
+    # `uniforms` is keyed by pass name, then by uniform name: each pass owns its uniforms,
     # so two passes may legitimately both declare `u_tex` with different values.
     uniforms = metadata.get("uniforms")
     if not isinstance(uniforms, dict):
@@ -224,8 +221,8 @@ def _uniforms_by_pass(metadata: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 def _feedback_rows(metadata: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    # `feedback` is keyed by pass name: the newest frame of each feedback history at save time
-    # (089 D4). Guarded per key the way `_uniforms_by_pass` is -- `document.json`'s top level is
+    # `feedback` is keyed by pass name: the newest frame of each feedback history at save time.
+    # Guarded per key the way `_uniforms_by_pass` is -- `document.json`'s top level is
     # a raw dict with no model behind it, so a malformed entry costs that pass its history.
     rows = metadata.get(FEEDBACK_DIR_NAME)
     if not isinstance(rows, dict):
@@ -239,7 +236,7 @@ def _load_uniform_value(gl: moderngl.Context, document_dir: Path, value: Any) ->
     if not isinstance(value, dict):
         return value
 
-    # A sampler's SOURCE (072): a pass by name, or an explicit black. An undecided sampler
+    # A sampler's SOURCE: a pass by name, or an explicit black. An undecided sampler
     # writes no row at all, so there is no "auto" shape to read.
     if "pass" in value:
         if not isinstance(value["pass"], str):
@@ -273,8 +270,8 @@ def _load_uniform_value(gl: moderngl.Context, document_dir: Path, value: Any) ->
 def sampler_names(render_pass: Pass) -> list[str]:
     """The `sampler2D` uniforms a COMPILED pass declares; empty while its program is None.
 
-    Reads the program rather than `get_active_uniforms()`, which COMPILES a never-attempted pass
-    (066 D1) -- asking that here would compile the whole document on frame one. The render
+    Reads the program rather than `get_active_uniforms()`, which COMPILES a never-attempted pass;
+    asking that here would compile the whole document on frame one. The render
     path brings passes online incrementally through its first-render sweep; a consumer that
     needs every program at once (the import dialog, the graph canvas) calls
     `compile_pending_passes` first.
@@ -310,7 +307,7 @@ class Document:
         self.canvas_size: tuple[int, int] = clamp_canvas_size(
             as_canvas_size(canvas_size) or DEFAULT_CANVAS_SIZE
         )
-        # What the loader and the Document tab set (090 D1, revision 1). Under AUTO the document
+        # What the loader and the Document tab set. Under AUTO the document
         # owns an ASPECT and the live canvas is the viewer region fitted to it; under FIXED the
         # `resolution` pair IS the live size. Each is meaningful in one mode, and a mode switch
         # seeds the other from the live canvas so the picture never jumps.
@@ -341,26 +338,26 @@ class Document:
         self._frame: int = -1
         # The script's own tick bookkeeping: how many ticks since playback started and the
         # document time at the last one, from which the next tick's dt is derived. A tick is a
-        # render (093 W6), so under the throttle these run slower than the UI frame.
+        # render, so under the throttle these run slower than the UI frame.
         self.script_frame: int = -1
         self.script_time: float | None = None
         self._graph_errors: list[GraphError] = []
-        # What each pass's draw did on the last `render()`, by pass name (102 D4a) -- the
+        # What each pass's draw did on the last `render()`, by pass name -- the
         # surface a per-frame UI reads, including the live instance COUNT `describe()`
-        # carries (104 D3). Only passes `render()` actually reached this frame are keyed;
+        # carries. Only passes `render()` actually reached this frame are keyed;
         # a pass off the current output's chain keeps no entry rather than a stale one.
         self._instanced_outcomes: dict[str, InstancedOutcome] = {}
-        # Loading compiles nothing (066 D1), so the first render pays the pass compiles. The
-        # live loop reads this to admit first renders one document per frame (066 D2); set on
+        # Loading compiles nothing, so the first render pays the pass compiles. The
+        # live loop reads this to admit first renders one document per frame; set on
         # ATTEMPT, not success, so a broken document cannot hog the budget forever — but only
         # for an OWN-canvas render: a probe/export into a foreign canvas leaves the pass
         # canvases (what the grid tile shows) unwritten, so it must not consume the budget.
         self.first_render_done: bool = False
-        # The CPU-script engine tick (feature 041), injected by ProjectSession at load. Fired
+        # The CPU-script engine tick, injected by ProjectSession at load. Fired
         # ONLY from the export loops below (per frame), NEVER from render() — the live path ticks
         # once via session.tick() in ui.py, so firing it in render() would double-tick the frame.
         self.on_pre_render: Callable[[float, float, int], None] | None = None
-        # Export-time script isolation (feature 041), injected by ProjectSession at load. render_media
+        # Export-time script isolation, injected by ProjectSession at load. render_media
         # enters it around EVERY export so a stateful script ticks from a FRESH per-export instance
         # (not the live-warmed one) — structural, so no export caller can forget to isolate. Default
         # nullcontext when no session injects it (a bare Document / no scripts). Document stays engine-free:
@@ -375,7 +372,7 @@ class Document:
 
     @property
     def render_pass(self) -> Pass:
-        """The output pass — what the preview shows and what export renders (D10).
+        """The output pass — what the preview shows and what export renders.
 
         Falls back to any pass when the graph's `output` names none that exists, so a document
         with a stale output still previews rather than raising in the frame loop.
@@ -397,16 +394,16 @@ class Document:
 
     @property
     def graph_errors(self) -> list[GraphError]:
-        """Wiring errors from the last render — a cycle, or a pass an input names (D7)."""
+        """Wiring errors from the last render — a cycle, or a pass an input names."""
         return list(self._graph_errors)
 
     @property
     def instanced_outcomes(self) -> dict[str, InstancedOutcome]:
-        """What each pass's draw did on the last `render()`, by pass name (102 D4a).
+        """What each pass's draw did on the last `render()`, by pass name.
 
         An iterated pass reports its LAST iteration only: every iteration draws into the
         same canvas, swapping it between turns, so the last one is what the canvas -- and
-        therefore any reader of this dict -- actually shows (102 D4b).
+        therefore any reader of this dict -- actually shows.
         """
         return dict(self._instanced_outcomes)
 
@@ -456,7 +453,7 @@ class Document:
         return aspect_of(self.resolution)
 
     def export_source_size(self) -> tuple[int, int]:
-        """The size an export renders its source frame at (090 D5, revision 1).
+        """The size an export renders its source frame at.
 
         Under FIXED that is the stored `resolution` -- the number the user set, which no panel
         can move. Under AUTO the document stores no size at all, so it is the LIVE canvas: what
@@ -502,7 +499,7 @@ class Document:
         Never release-then-allocate (`Canvas.set_size`): a canvas whose content matters must be
         readable while the replacement is being written. The rescale is the sampler's own
         filter -- `copy_framebuffer` between differently-sized framebuffers copies 1:1 into a
-        corner, with no GL error (090 D4, measured).
+        corner, with no GL error (measured).
         """
         if old.texture.size == size:
             return old
@@ -535,7 +532,7 @@ class Document:
         `render_pass.canvas` directly leaves this field stale, so the rest of the graph sizes off
         the old dimensions and the output samples mismatched targets.
 
-        Both the live canvas and each history are RESAMPLED (090 D4): resampling the history
+        Both the live canvas and each history are RESAMPLED: resampling the history
         alone loses the picture one frame later, since a blanked live canvas is what the next
         `_swap_feedback` trades into the history. `_feedback_generation` carries over unchanged
         -- it tracks FORMAT changes, and a resample changes no format.
@@ -625,7 +622,7 @@ class Document:
             # sweep drew once and never again would otherwise alternate between its two
             # canvases every frame, strobing a tile that should hold still. A pass that has
             # never drawn has no new history at all, which is what keeps a loaded seed
-            # (089 D5) out of the live slot on the first frame.
+            # out of the live slot on the first frame.
             if render_pass is not None and (
                 render_pass.drawn_frame < 0 or render_pass.drawn_frame != previous_frame
             ):
@@ -636,7 +633,7 @@ class Document:
         """Exchange `name`'s live canvas with its history, so reads see what writes just made.
 
         The one place the swap happens: per frame from `begin_frame`, and between iterations of
-        an iterated pass (068 D5). A pass with no feedback history is a no-op, which is what lets
+        an iterated pass. A pass with no feedback history is a no-op, which is what lets
         the iteration loop call it unconditionally.
         """
         previous = self._feedback.get(name)
@@ -670,7 +667,7 @@ class Document:
     def reset_feedback(self) -> None:
         """Drop every feedback history, so the next frame starts from black.
 
-        Export enters this (D10); a live Reset comes through `reset`, which also restarts the
+        Export enters this; a live Reset comes through `reset`, which also restarts the
         clock.
         """
         for canvas in self._feedback.values():
@@ -701,7 +698,7 @@ class Document:
             target
         ):
             # `==` here would drop the feedback trail on a blend-only change: blend is
-            # draw state and reallocates nothing (102 D5). The pass still ADOPTS the new
+            # draw state and reallocates nothing. The pass still ADOPTS the new
             # config -- it is the drop that must not happen, not the adoption.
             render_pass.set_target(target)
             return
@@ -738,13 +735,13 @@ class Document:
     def _seed_feedback(
         self, document_dir: Path, rows: dict[str, dict[str, Any]]
     ) -> None:
-        """Rebuild each feedback history from the frame the last save wrote (089 D5).
+        """Rebuild each feedback history from the frame the last save wrote.
 
         The expected SIZE is computed from the graph, never read off the live canvas: at load
         every pass's canvas sits at the document's full `canvas_size` and a non-output pass
         takes its `scale` only inside `render`, so a history checked against the live canvas
         would be rejected for every scaled pass. A stored size that DISAGREES is resampled to
-        that expectation rather than dropped (090 D4) -- under Auto the size a save wrote is
+        that expectation rather than dropped -- under Auto the size a save wrote is
         whatever the panel was then. dtype and component count stay strict rejections: they are
         format, and nothing can rescale a format. A file that will not read costs that pass its
         history and nothing else.
@@ -796,7 +793,7 @@ class Document:
             self._feedback_generation[name] = render_pass.target_generation
 
     def feedback_passes(self) -> list[str]:
-        """The passes holding a feedback history — exactly what a save persists (089 D4)."""
+        """The passes holding a feedback history — exactly what a save persists."""
         return list(self._feedback)
 
     def newest_frame(self, name: str) -> Canvas | None:
@@ -851,8 +848,8 @@ class Document:
         """The pass `uniform` of `pass_name` reads from, or None when it reads no pass.
 
         The same resolution the renderer binds with (`effective_wiring`), unless a script feeds
-        the sampler a field this frame, which the draw binds instead and this does not see
-        (110 D7). A `NoSource`, a texture the user bound and a name matching no pass all answer
+        the sampler a field this frame, which the draw binds instead and this does not see.
+        A `NoSource`, a texture the user bound and a name matching no pass all answer
         None; a user-bound texture is the caller's next question.
         """
         return self.effective_wiring().get(pass_name, {}).get(uniform)
@@ -866,13 +863,13 @@ class Document:
         return self.passes[source].canvas.texture
 
     def effective_wiring(self) -> dict[str, dict[str, str]]:
-        """Which pass each sampler of each pass reads: pass -> uniform -> pass (072).
+        """Which pass each sampler of each pass reads: pass -> uniform -> pass.
 
         Every pass is a key, so the planner orders all of them. A COMPILED pass answers over the
         samplers its program declares, each from its value (an absent value is undecided, so the
         name rule decides); a row for a sampler the program no longer declares is not a read. A
         pass that has not compiled answers with its explicit `PassSource` rows only: an explicit
-        wire is never lost to lazy compilation (066 D1), and only the NAME rule waits for the
+        wire is never lost to lazy compilation, and only the NAME rule waits for the
         program, because asking for the samplers would compile the whole document on frame one.
         """
         names = set(self.passes)
@@ -898,8 +895,8 @@ class Document:
         """Compile every pass `target` needs, by discovery: a never-compiled pass's name-wired
         inputs are unknown until its program exists, so the chain is walked compile by compile
         before it is planned. The whole output chain compiles on the frame that first draws it,
-        which is what an explicit wire always cost (066 D1's budget is about passes OFF the
-        chain, which the first-render sweep still admits one per frame). A pass whose compile
+        which is what an explicit wire always cost (passes OFF the chain are a separate
+        budget, which the first-render sweep still admits one per frame). A pass whose compile
         already failed keeps its errors; only `invalidate` re-arms an attempt.
         """
         names = set(self.passes)
@@ -931,7 +928,7 @@ class Document:
                     render_pass.uniform_values[uniform] = PassSource(new)
 
     def wiring_if_renamed(self, old: str, new: str) -> dict[str, dict[str, str]]:
-        """The wiring this document would have after `rename_pass(old, new)` (092 D18): the
+        """The wiring this document would have after `rename_pass(old, new)`: the
         pass re-keyed under `new` AND every explicit `PassSource(old)` renamed, since the real
         rename does both -- a key swap alone drops those rows. Both are undone in a `finally`,
         so a compile raising inside the read cannot leave the document re-keyed.
@@ -973,7 +970,7 @@ class Document:
         call rendered. The graph output still decides which pass keeps full size, so a `target`
         below it is served at its own scaled size and the blit resamples.
 
-        `profiler` decides what this render reports to (088 D3): the live loop passes its own,
+        `profiler` decides what this render reports to: the live loop passes its own,
         every other caller takes the null default, so an export's passes never land in whatever
         live frame they ran inside.
         """
@@ -1012,7 +1009,7 @@ class Document:
                 wanted = self.canvas_size_for(name)
                 if render_pass.canvas.texture.size != wanted:
                     render_pass.canvas.set_size(wanted)
-            # An iterated pass draws N times HERE, inside its one turn in the order (068 D1) --
+            # An iterated pass draws N times HERE, inside its one turn in the order --
             # never by appearing N times in `order`, which would mean weakening the draw-once
             # invariant that exists to catch a bug reading as slow rather than wrong.
             #
@@ -1027,7 +1024,7 @@ class Document:
                     # The textures the wiring fills: a pass's live canvas, or the consumer's own
                     # feedback history for a self-read. A sampler the wiring does not fill keeps its
                     # own value -- a texture the user bound, or a source, which `Pass.render` binds
-                    # black (065 D3), never a picture.
+                    # black, never a picture.
                     inputs: dict[str, moderngl.Texture] = {}
                     for uniform, source_name in wiring.get(name, {}).items():
                         if source_name == name:
@@ -1040,7 +1037,7 @@ class Document:
                         iteration=iteration,
                         iterations=entry.iterations,
                     )
-                    # Overwritten on every iteration, last one standing (102 D4b): every
+                    # Overwritten on every iteration, last one standing: every
                     # iteration draws into the same canvas, so the last is what a reader of
                     # `instanced_outcomes` sees whether it looks now or between iterations.
                     self._instanced_outcomes[name] = InstancedOutcome(
@@ -1050,8 +1047,8 @@ class Document:
                         detail=render_pass.last_outcome.detail,
                     )
                     if not last:
-                        # Swap BETWEEN iterations so the next one reads what this one just wrote
-                        # (068 D5). `begin_frame` swaps once per FRAME, which is right for a
+                        # Swap BETWEEN iterations so the next one reads what this one just wrote.
+                        # `begin_frame` swaps once per FRAME, which is right for a
                         # frame-to-frame trail and would leave every iteration reading the same
                         # stale texture -- the chain would never advance. No-op unless this pass
                         # actually reads itself.
@@ -1069,12 +1066,12 @@ class Document:
         """Read a document: its graph, every pass file, and each pass's uniforms.
 
         `canvas_size` is the effective LIVE size the caller already resolved from the
-        persisted mode (090 D1): the size decides how every pass and every feedback seed is
+        persisted mode: the size decides how every pass and every feedback seed is
         allocated, so it has to be known before the first `Pass` is built. Nothing here reads
         `document.json`'s `ui_state` -- one reader per concept, and that one is
         `ui_models.load_document_from_dir`.
 
-        A pass file that cannot be read costs THAT pass, never the document (D14), and a
+        A pass file that cannot be read costs THAT pass, never the document, and a
         malformed `graph.json` costs the wiring, never the passes — an unwired document still
         opens with its shaders intact, which is what makes it fixable.
         """
@@ -1266,13 +1263,13 @@ class Document:
         self, details: MediaDetails, preset: RenderPreset | None = None
     ) -> MediaDetails:
         # Every export funnels through here (Render tab / Share scratch / copilot tools), so the
-        # script-isolation bracket lives here ONCE — no export caller can bypass it (feature 041).
+        # script-isolation bracket lives here ONCE — no export caller can bypass it.
         with self.export_isolation():
-            # D10: a feedback target is the same class of state as a stateful script, so it is
+            # A feedback target is the same class of state as a stateful script, so it is
             # reset HERE rather than per export path — otherwise the same document exports
             # differently depending on how long the app has been open.
             self.reset_feedback()
-            # ONE source size for every branch (090 D5): the stored pair under Fixed, the live
+            # ONE source size for every branch: the stored pair under Fixed, the live
             # canvas under Auto, where the document has no pair to read.
             # `resolution_details` is untouched either way: the Render tab's W x H still
             # decides what lands on disk, through the PIL resize and ffmpeg's -s.
@@ -1329,7 +1326,7 @@ class Document:
 
 
 def offered_entry_points(document: Document) -> list[str]:
-    """The entry points an import offers for `document` (091 D3): the roots of its wiring
+    """The entry points an import offers for `document`: the roots of its wiring
     minus every pass whose compile failed -- such a pass has an UNKNOWN wiring, not an empty
     one, so it is copied as it is rather than offered as an input."""
     broken = {

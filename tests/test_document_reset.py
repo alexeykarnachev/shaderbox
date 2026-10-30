@@ -1,4 +1,4 @@
-"""Reset restarts a document whole: its clock, its script instance, its histories (071 W-C).
+"""Reset restarts a document whole: its clock, its script instance, its histories.
 
 Every check here reads the CONSUMER: the pixel a live render produces from `u_time`, the value
 the script wrote from `context.t` and from its own `self` state, the command table's callback. The
@@ -66,8 +66,7 @@ def test_a_live_render_counts_from_the_document_clock(app: Any) -> None:
 
 
 def test_an_explicit_u_time_ignores_the_document_clock(app: Any) -> None:
-    # Export and the probe pass their own clock; a live reset must not bend it. Falsifier: resolve
-    # the origin for every render, not only for the live (None) case.
+    # Export and the probe pass their own clock; a live reset must not bend it.
     document = _install(app, _CLOCK_SRC)
     document.reset()
     document.render(u_time=5.0)
@@ -100,8 +99,7 @@ def test_reset_restarts_the_script_and_its_clock(app: Any) -> None:
 
 
 def test_reset_drops_the_feedback_histories(app: Any) -> None:
-    # The funnel must call the history reset, not only restart the clock. Falsifier: drop the
-    # `reset_feedback()` call from `Document.reset`.
+    # The funnel must call the history reset, not only restart the clock.
     document = app.ui_documents[app.current_document_id].document
     document._feedback["phantom"] = Canvas(size=(4, 4))  # released by the reset
     before = document.time_origin
@@ -115,9 +113,8 @@ def test_the_command_reaches_the_funnel_without_asking(
 ) -> None:
     """F6 and the menu item restart the current document on the spot.
 
-    The confirm was removed once Reset left its red button: it destroys nothing on disk and
-    nothing a re-run does not rebuild. Falsifier: route `RESET_DOCUMENT`'s callback back
-    through `request_confirm` -- the funnel below stops being reached.
+    Reset asks no confirmation: it destroys nothing on disk and nothing a re-run does not
+    rebuild.
     """
     seen: list[str] = []
     monkeypatch.setattr(

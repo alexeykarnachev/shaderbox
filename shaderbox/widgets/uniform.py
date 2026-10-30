@@ -85,7 +85,7 @@ def _locate_uniform_declaration(app: App, name: str) -> tuple[Path, int] | None:
     # The active editor first (it carries unsaved edits); then every file in the document's
     # compile unit, so a uniform declared in a resolved lib file is jump-reachable. The
     # NON-creating getter: this is reachable while a session-less tab (the graph) is active,
-    # and the creating one would open a GLSL editor over that tab's own file (093 T1).
+    # and the creating one would open a GLSL editor over that tab's own file.
     session = app.get_current_session_if_exists()
     if session is not None:
         line = find_uniform_declaration_line(session.editor.get_text(), name)
@@ -109,9 +109,9 @@ def _begin_ctrl(
 
     Call after the chip; positions the cursor at the control column and sets
     the next item's width. The control's own imgui label must be hidden (##).
-    `count_suffix` (text/array `len/cap`) renders dim in the name column (045 B6 —
-    out of the trailing column the play/stop button now owns). `playing` colors the
-    name `STATE_INFO` blue — the at-a-glance "the script drives this" cue (048).
+    `count_suffix` (text/array `len/cap`) renders dim in the name column
+    (the trailing column belongs to the play/stop button). `playing` colors the
+    name `STATE_INFO` blue — the at-a-glance "the script drives this" cue.
     """
     imgui.same_line(_NAME_X)
     name_color = COLOR.STATE_INFO if playing else None
@@ -119,8 +119,8 @@ def _begin_ctrl(
         app, name, SIZE.UNIFORM_NAME_W, text_color=name_color, accent=name_color
     )
     if count_suffix:
-        # Right-anchor the caption against the control column (047 F13), so it never overlaps the
-        # input: a long name used to push a flowed caption past _CTRL_X (same_line to a smaller
+        # Right-anchor the caption against the control column, so it never overlaps the
+        # input: a long name would push a flowed caption past _CTRL_X (same_line to a smaller
         # offset is a no-op), so the control drew over it. Placing it caption-width left of _CTRL_X
         # keeps it dim in the name column's tail and clear of the control.
         caption_w = imgui.calc_text_size(count_suffix).x
@@ -142,7 +142,7 @@ def draw_input_type_selector(ui_uniform: UIUniform) -> None:
 
 
 def _count_suffix(ui_uniform: UIUniform, current_value: UniformValue) -> str:
-    # The text/array len/cap caption (045 B6): shown dim in the name column now the trailing column
+    # The text/array len/cap caption: shown dim in the name column now the trailing column
     # is the script pill's. Empty for every other input type.
     cap = ui_uniform.array_length
     if ui_uniform.input_type == "text" and isinstance(current_value, Sequence):
@@ -159,7 +159,7 @@ def _count_suffix(ui_uniform: UIUniform, current_value: UniformValue) -> str:
 def _draw_play_stop(
     app: App, pass_name: str, name: str, *, driven: bool, playing: bool
 ) -> None:
-    # The trailing per-row play/stop affordance (048): drawn ONLY for a uniform the script TARGETS
+    # The trailing per-row play/stop affordance: drawn ONLY for a uniform the script TARGETS
     # (driven — playing OR stopped); a never-scripted MANUAL uniform shows nothing. `stop` (accent)
     # when playing, `play` (dim) when stopped — the toggle flips the document-scoped stopped state.
     # Disabled while the whole document is stopped: a per-uniform play is meaningless then (nothing
@@ -222,7 +222,7 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
         return
 
     panel_pass = app.panel_pass(app.current_document_id)
-    # The script drives a uniform ON A PASS (069 D3), so every driven/stopped question is asked
+    # The script drives a uniform ON A PASS, so every driven/stopped question is asked
     # about the pass the panel is showing; `Pass` carries its source path, not its name.
     panel_pass_name = pass_name_of(panel_pass.source.path)
     current_value: UniformValue = panel_pass.uniform_values[ui_uniform.name]
@@ -230,7 +230,7 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
     name = ui_uniform.name
     hidden = f"##{name}"
 
-    # Play/stop state (048): a uniform the script TARGETS is `driven` (playing OR stopped); PLAYING =
+    # Play/stop state: a uniform the script TARGETS is `driven` (playing OR stopped); PLAYING =
     # driven and not stopped (the engine writes it each tick). The value widget stays EDITABLE while
     # playing — grabbing it AUTO-STOPS (below), so the manual edit sticks instead of snapping back.
     document_id = app.current_document_id
@@ -284,12 +284,12 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
             new_value = str_to_unicode(text, ui_uniform.array_length)
 
     elif ui_uniform.input_type == "texture":
-        # The row is where a sampler's SOURCE is chosen (072): a pass, black, the name rule, or
+        # The row is where a sampler's SOURCE is chosen: a pass, black, the name rule, or
         # a file. Under the combo, what it reads: the pass's live thumbnail, the bound media, or
         # the black swatch every unfilled sampler binds.
         document = app.ui_documents[document_id].document
         passes = sorted(document.passes)
-        # One flat list (079 D6): `none`, the passes, `file...` — no auto row and no captions.
+        # One flat list: `none`, the passes, `file...` — no auto row and no captions.
         # `AutoSource` stays the VALUE a fresh sampler holds; the closed control shows what it
         # resolves to, so the user reads the pass it reads and picking one writes it explicitly.
         pass_rows: list[ComboRow] = [
@@ -319,7 +319,7 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
         )
         changed = picked is not None and picked != index
         if changed and playing:
-            # A pick is a manual edit of a driven sampler (048), and neither pick site is the
+            # A pick is a manual edit of a driven sampler, and neither pick site is the
             # trailing item the generic auto-stop below looks at.
             app.set_uniform_stopped(document_id, panel_pass_name, name, True)
             playing = False
@@ -339,7 +339,7 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
         source_pass = document.sampler_source(panel_pass_name, name)
         script_texture = panel_pass.script_textures.get(name)
         if name in panel_pass.pending_textures:
-            # The draw binds the script's field over the source this frame (110 D4); the combo
+            # The draw binds the script's field over the source this frame; the combo
             # above still shows the source, which is what binds once the script lets go. A
             # refused field draws its last good frame, or black when there is none.
             refused = panel_pass.pending_textures[name] is REFUSED_TEXTURE
@@ -410,7 +410,7 @@ def draw_ui_uniform(app: App, ui_uniform: UIUniform) -> None:
             fn = getattr(imgui, f"drag_float{ui_uniform.dimension}")
             new_value = fn(hidden, list(current_value), change_speed)[1]
 
-    # Auto-stop on grab (048 D6): `is_item_activated()` fires ONCE when the user grabs the value
+    # Auto-stop on grab: `is_item_activated()` fires ONCE when the user grabs the value
     # widget (not per drag-frame). Gated on `playing` — only a PLAYING uniform auto-stops. The
     # texture branch's trailing item is a caption, never activated, so its picks stop the pair
     # themselves. The manual edit then applies + sticks (the slot is no longer written by the tick).

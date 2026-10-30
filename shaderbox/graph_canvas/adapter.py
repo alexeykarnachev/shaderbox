@@ -1,4 +1,4 @@
-"""shaderbox's document mapped onto graph_canvas's node model (feature 098).
+"""shaderbox's document mapped onto graph_canvas's node model.
 
 The shaderbox-specific half of the binding: `ffi.py` and `render.py` know the C
 ABI and the geometry and nothing else, and this module is the only one that
@@ -188,7 +188,7 @@ def _title_of(node: "CanvasNode", output: str, instanced: frozenset[str]) -> str
     also the one mark that survives a node being hovered, selected and
     failing at once, which a colour cannot.
 
-    104 D2a/D2b: the graph canvas is a custom GPU renderer reading a vendored,
+    The graph canvas is a custom GPU renderer reading a vendored,
     compiled `libgraph_canvas.so` through a fixed ctypes `Node` struct -- adding a
     badge FIELD there means owning and rebuilding that library's C source, which
     this repo does not have. The title string costs neither an FFI change nor a
@@ -206,7 +206,7 @@ def _title_of(node: "CanvasNode", output: str, instanced: frozenset[str]) -> str
 def _border_scale_of(name: str, output: str) -> float:
     """The border's WIDTH, which hover and selection do not change.
 
-    093 G7 is explicit: "No size change anywhere. No dot grows on hover, no
+    The design rule is explicit: "No size change anywhere. No dot grows on hover, no
     node grows, no card lifts" -- a highlight changes colour, never size,
     and the design names ImNodeFlow's growing socket radius as the thing it
     declines. The switchover shipped 2.2 selected and 1.8 hovered, which is
@@ -463,7 +463,7 @@ def pack_nodes(
     through to the canvas rather than being swallowed by something that does
     nothing.
 
-    `instanced` is keyed by `pass_key` like `failing` (104 D3/D8): a pass's
+    `instanced` is keyed by `pass_key` like `failing`: a pass's
     entity fields are read from its FLATTENED compiled source, so a `flat in`
     spliced in from a `lib:` include marks here even when the shader tab open
     on screen shows no such line -- which is why the mark exists at all.

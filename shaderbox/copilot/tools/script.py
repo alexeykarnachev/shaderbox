@@ -15,7 +15,7 @@ from shaderbox.copilot.tools.base import (
     ToolDefinition,
 )
 
-# The document script authoring surface (feature 043): read_script / write_script. Mirrors shader_tools —
+# The document script authoring surface: read_script / write_script. Mirrors shader_tools —
 # thin handlers calling a capability closure that owns the bridge round-trip + the dry-run probe.
 
 

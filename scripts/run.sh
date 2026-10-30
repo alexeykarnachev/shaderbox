@@ -49,11 +49,11 @@ if [ ! -d ".venv" ]; then
     echo "First run: downloading Python dependencies (~500 MB, incl. a Python runtime)."
     echo "Needs internet + ~1 GB free disk. Happens once; may take a few minutes — please wait..."
     echo
-    uv sync || fail "Dependency install failed. See the messages above; check your internet connection and disk space."
+    uv sync --no-dev || fail "Dependency install failed. See the messages above; check your internet connection and disk space."
 
     echo "Dependencies installed successfully!"
     echo
 fi
 
 echo "Starting ShaderBox..."
-uv run python ./shaderbox/ui.py || fail "ShaderBox exited with an error. See the traceback above."
+uv run --no-dev python ./shaderbox/ui.py || fail "ShaderBox exited with an error. See the traceback above."

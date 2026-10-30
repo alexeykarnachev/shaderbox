@@ -1,4 +1,4 @@
-"""The script engine's soft errors, adapted into the shared bottom strip (069 W-G).
+"""The script engine's soft errors, adapted into the shared bottom strip.
 
 `tabs/code.py` has two adapters: the SCRIPT tab shows every soft error whatever pass it names (the
 script is one file and its author wants all of them), and a SHADER tab shows only the errors naming
@@ -43,7 +43,6 @@ _BARE_ORPHAN = ScriptError(
 
 
 def test_the_script_tab_shows_every_soft_error_with_its_pass() -> None:
-    # Falsifier: filter the script tab to one pass — the second row disappears.
     rows = _script_errors_for(
         _app(
             _status([("paint", "u_brsh", _PAINT_ORPHAN), ("", "u_brsh", _BARE_ORPHAN)])
@@ -58,8 +57,7 @@ def test_the_script_tab_shows_every_soft_error_with_its_pass() -> None:
 
 def test_a_shader_tab_shows_only_its_own_pass_errors() -> None:
     # The asymmetry is deliberate: a bare key is a claim about the whole DOCUMENT, so it belongs on
-    # the document's own script tab and on no shader tab. Falsifier: drop the pass filter — the
-    # composite tab grows rows that are not about it.
+    # the document's own script tab and on no shader tab.
     app = _app(
         _status([("paint", "u_brsh", _PAINT_ORPHAN), ("", "u_brsh", _BARE_ORPHAN)])
     )
@@ -78,8 +76,7 @@ def test_a_shader_tab_shows_only_its_own_pass_errors() -> None:
 
 def test_a_shader_tab_script_row_points_at_the_script_file() -> None:
     # The row carries the SCRIPT path, not the shader's, because that is where the fix is — which is
-    # also why the click branch must open it first. Falsifier: carry `tab.path`; the row would jump
-    # into the shader, and `_apply_markers` would line-fill the wrong file.
+    # also why the click branch must open it first.
     rows = _script_errors_for_pass(
         _app(_status([("paint", "u_brsh", _PAINT_ORPHAN)])),
         _tab("passes/paint.frag.glsl"),
@@ -89,7 +86,7 @@ def test_a_shader_tab_script_row_points_at_the_script_file() -> None:
 
 
 def test_no_script_means_no_rows() -> None:
-    # A document with no script.py has no status at all. Falsifier: assume a status exists.
+    # A document with no script.py has no status at all.
     app = types.SimpleNamespace(
         session=types.SimpleNamespace(
             get_script_status=lambda _id: None,

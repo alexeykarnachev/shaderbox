@@ -80,7 +80,7 @@ def get_uniform_hash(
 ) -> int:
     """The key of `u`'s UI row, scoped to the pass that declares it.
 
-    `pass_name` is part of the key because each pass owns its uniforms (D4) while the rows live
+    `pass_name` is part of the key because each pass owns its uniforms while the rows live
     in ONE dict per document: without it, two passes declaring the same name and shape share a
     row, so setting one pass's `u_gain` to a color picker retypes the other's.
     """

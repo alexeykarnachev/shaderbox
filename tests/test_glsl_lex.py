@@ -1,4 +1,4 @@
-"""Unit tests for the GLSL lexer + token matcher (feature 020 · 13).
+"""Unit tests for the GLSL lexer + token matcher.
 
 Pure — no GL, no App. This is the primary verification surface for edit_shader's
 whitespace-invariant matcher; the adversarial reject tables (numbers, wrong-region) are
@@ -102,7 +102,7 @@ def test_number_reject_table() -> None:
 
 
 def test_raw_text_honesty_numbers_differ() -> None:
-    # I3: 1.0 and 1.00 are different lexemes (raw differs) — must not match.
+    # 1.0 and 1.00 are different lexemes (raw differs) — must not match.
     assert glsl_lex("1.0")[0].raw != glsl_lex("1.00")[0].raw
     assert not token_match("x = 1.0;", "1.00")
     assert not token_match("x = 1.00;", "1.0")
@@ -122,7 +122,7 @@ def test_token_match_whitespace_invariance_preserves_source_bytes() -> None:
 
 
 def test_token_match_ambiguous_whitespace_variants() -> None:
-    # I4: an old_str matching two whitespace-variant regions -> 2 spans (caller's >1 rule).
+    # An old_str matching two whitespace-variant regions -> 2 spans (caller's >1 rule).
     src = "a = 1;\na  =  1;"
     spans = token_match(src, "a = 1;")
     assert len(spans) == 2
@@ -223,7 +223,7 @@ def test_guard_no_comment_in_span_never_fires() -> None:
     assert span_drops_comment(src, s, e, old) is False
 
 
-# --- feature 050: leading-comment span-grow (the duplicate-comment spiral root) ---
+# --- leading-comment span-grow (the duplicate-comment spiral root) ---
 
 _DUP_SRC = (
     "void main() {\n"
@@ -311,7 +311,7 @@ def test_block_comment_not_grown_known_limit() -> None:
 def test_splice_drops_the_replacement_indent_where_the_line_already_has_it() -> None:
     # A token span starts at the first token, after the line's indent. A model that copies the
     # block types its own indent on line one; laid on top of the column already there it doubled
-    # the indent on the FIRST line only (078 #18). The line's indent is kept, the replacement's
+    # the indent on the FIRST line only. The line's indent is kept, the replacement's
     # first-line indent is dropped, the later lines keep theirs.
     src = "void main() {\n    vec3 color = vec3(1.0);\n}\n"
     spans = token_match(src, "vec3 color = vec3(1.0);")

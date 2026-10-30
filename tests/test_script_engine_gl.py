@@ -1,4 +1,4 @@
-"""GL-integration test for the CPU-script engine (feature 041, redesigned by 048 to ONE document script):
+"""GL-integration test for the CPU-script engine (ONE document script):
 a script drives a scalar + a vec2 (one stateful class, dict return), then renders on a real GL context,
 asserting the computed values reach document.uniform_values, that the rendered pixel CHANGES between two t
 values (the value reaches the GPU), that a shape-mismatch freezes + records a ScriptError, that int
@@ -42,7 +42,7 @@ def _document(gl: moderngl.Context, src: str = _SRC) -> Document:
 
 
 def _write_script(scripts_dir: Path, body: str) -> None:
-    # The document script file (048): documents/<id>/scripts/script.py — the only script on a document.
+    # The document script file: documents/<id>/scripts/script.py — the only script on a document.
     scripts_dir.mkdir(parents=True, exist_ok=True)
     (scripts_dir / "script.py").write_text(body, encoding="utf-8")
 
@@ -75,8 +75,7 @@ _RAMP_SCRIPT = (
 
 def test_script_value_reaches_gpu(gl_ctx: moderngl.Context, tmp_path: Path) -> None:
     # One script drives a float + a vec2: both reach document.uniform_values AND the scripted u_wave
-    # changes the rendered pixel between two t values. Falsifier: px_a[0] == px_b[0] (u_wave never
-    # reached the GPU) or the uniforms aren't written.
+    # changes the rendered pixel between two t values.
     scripts_dir = tmp_path / "scripts"
     _write_script(scripts_dir, _WAVE_SCRIPT)
     document = _document(gl_ctx)
@@ -111,11 +110,11 @@ void main() {
 
 
 def test_render_clock_honors_passed_u_time(gl_ctx: moderngl.Context) -> None:
-    # The 043 polish render-clock invariant (the consumer side of _render_facts_for(document, t=mid[0])):
+    # The render-clock invariant (the consumer side of _render_facts_for(document, t=mid[0])):
     # a u_time-reading shader rendered at an EXPLICIT t produces the frame for THAT t, not wall-clock 0.
     # The corroborating script-probe render passes t=mid[0]; if Document.render ignored it (or the caller
     # rendered at wall-clock 0 while injecting t=0.5 values), the agent would get a frame that never
-    # existed. Falsifier: px at t=pi/2 == px at t=0 -> u_time didn't reach the GPU at the passed t.
+    # existed.
     document = _document(gl_ctx, _UTIME_SRC)
     document.render(u_time=0.0)
     px_t0 = _pixel(document)
@@ -131,8 +130,7 @@ def test_script_shape_mismatch_freezes_and_records(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
     # A vec3 into a float uniform: the per-key coercion mismatch freezes the uniform at its seeded
-    # value + records a (document, name) runtime error — never corrupts the GPU write. Falsifier: u_wave
-    # changes off the seed, or no error recorded.
+    # value + records a (document, name) runtime error — never corrupts the GPU write.
     scripts_dir = tmp_path / "scripts"
     _write_script(
         scripts_dir,
@@ -159,11 +157,10 @@ def test_script_shape_mismatch_freezes_and_records(
 def test_render_media_auto_enters_export_isolation(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
-    # The structural guarantee (feature 041): render_media ITSELF enters document.export_isolation, so a
+    # The structural guarantee: render_media ITSELF enters document.export_isolation, so a
     # caller cannot forget to isolate. Inject an isolation factory + a LIVE hook, warm the live
     # integrator, then call the real export entry (render_media) and assert the factory was entered
     # exactly once AND the export pre-render fired a FRESH instance (not the warmed live one).
-    # Falsifier: entered != 1, or the exported frame-0 value equals the warmed live value.
     scripts_dir = tmp_path / "scripts"
     _write_script(scripts_dir, _RAMP_SCRIPT)
     document = _document(gl_ctx)
@@ -229,7 +226,7 @@ def test_script_int_uniforms_reach_gpu_not_popped(
     # The review-swarm bug: a script returning a float for an int/uint/ivec uniform passed coercion
     # but moderngl raised on write, render swallowed it, and uniform_values.pop'd the value EVERY
     # frame — silently. A naive "didn't raise" check passes while broken; assert the value is RETAINED
-    # in uniform_values after render() (NOT popped). Falsifier: a value missing post-render.
+    # in uniform_values after render() (NOT popped).
     scripts_dir = tmp_path / "scripts"
     _write_script(
         scripts_dir,
@@ -263,8 +260,7 @@ def test_script_drives_two_uniforms_to_gpu_and_export_clean(
 ) -> None:
     # One document script drives a float + a vec2 from a single stateful instance: both reach the GPU,
     # the scripted u_wave changes the rendered pixel, and a FRESH export instance renders cold (the
-    # headline 048 goal — one script per document, export-isolated). Falsifier: px_warm == px_cold (the
-    # value never reached the GPU) or the export inherited live state.
+    # headline goal — one script per document, export-isolated).
     scripts_dir = tmp_path / "scripts"
     _write_script(scripts_dir, _RAMP_SCRIPT)
     document = _document(gl_ctx)
@@ -320,9 +316,8 @@ void main() { fs_color = vec4(u_wave, texture(u_seed, vs_uv).r, 0.0, 1.0); }
 def test_a_broadcast_reaches_both_passes_on_the_gpu(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
-    # The whole point of 069 W-G: a bare key drives EVERY pass declaring the uniform, and the write
-    # reaches the GPU on the NON-output pass too. Falsifier: route to the output pass only — the
-    # `seed` pixel does not change.
+    # A bare key drives EVERY pass declaring the uniform, and the write
+    # reaches the GPU on the NON-output pass too.
     scripts_dir = tmp_path / "scripts"
     _write_script(
         scripts_dir,

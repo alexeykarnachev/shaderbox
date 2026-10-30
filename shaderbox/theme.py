@@ -173,7 +173,7 @@ class _ColorBag:
     TAG: tuple[float, float, float, float] = _P["blue_b"]
     FAVS: tuple[float, float, float, float] = _P["yellow_b"]
 
-    # A pass group's outline on the strip (091 D8), one hue per group by `group_tint`. Four
+    # A pass group's outline on the strip, one hue per group by `group_tint`. Four
     # because the palette has no fifth hue clear of every outline and chip these tiles carry;
     # aqua_n is an accent's pressed shade, which never draws as an outline.
     GROUP_TINTS: tuple[tuple[float, float, float, float], ...] = (
@@ -184,14 +184,14 @@ class _ColorBag:
     )
     GROUP_FILL_ALPHA: float = 0.10
 
-    # The graph canvas (098): the two colours shaderbox decides and the
+    # The graph canvas: the two colours shaderbox decides and the
     # library draws with. Everything about HOW a node is drawn -- its
     # rounding, its wire curve, its hit boxes, its zoom clamp -- belongs to
     # the library now and the tokens for those are gone. GRAPH_EDGE and
     # GRAPH_HOVER are fixed roles drawn beside STATE_ERROR wires, so both
     # are excluded from the group tints below.
     GRAPH_EDGE: tuple[float, float, float, float] = _P["gray"]
-    # The node canvas's three PORT ROLES (098): what a row's background says
+    # The node canvas's three PORT ROLES: what a row's background says
     # a row IS -- takes a wire in, sends one out, or both. The library mixes
     # each 35% toward the node surface for the row and lifts it for the wire
     # that leaves it, so these are the colours BEFORE that, and they are read
@@ -214,7 +214,7 @@ class _ColorBag:
     #
     # The engine's blue is `kind_color(ENGINE_UNIFORM)`, where the rest of
     # the app already keeps it, and it reaches the row as an override.
-    # The exclusive hover cue (093): a neutral, because every chromatic palette hue is an
+    # The exclusive hover cue: a neutral, because every chromatic palette hue is an
     # accent primary, a state hue, a group tint or SELECT, and three of those meet on one wire.
     GRAPH_HOVER: tuple[float, float, float, float] = _P["fg_0"]
 
@@ -330,7 +330,7 @@ class SIZE:
 
     PANEL_CTRL_MINH: int = 600
 
-    # The graph canvas (092 D7, 098): what shaderbox still measures, which
+    # The graph canvas: what shaderbox still measures, which
     # is only the LAYOUT -- a node's size, so `rank_layout` can place one
     # that has never been placed, and the gaps between them. The drawing is
     # the library's and its metrics are its own.
@@ -390,8 +390,8 @@ class SIZE:
 
 
 assert SIZE.GRAPH_NODE_W - SIZE.GRAPH_THUMB == 2 * SIZE.GRAPH_THUMB_INSET, (
-    "theme invariant: the graph card's picture keeps one inset on its top and both sides "
-    "(093 W3-1); change the three tokens together."
+    "theme invariant: the graph card's picture keeps one inset on its top and both sides"
+    "; change the three tokens together."
 )
 
 
@@ -404,7 +404,7 @@ class SPACE:
 
 
 # The share of a frame budget at which a measured number stops reading as healthy, and the
-# share at which it has spent the whole budget. Both are the panel's knees (089 D7).
+# share at which it has spent the whole budget. Both are the panel's knees.
 LOAD_WARN_RATIO: float = 0.5
 LOAD_ERROR_RATIO: float = 1.0
 
@@ -419,7 +419,7 @@ def load_color(ratio: float) -> tuple[float, float, float, float]:
 
 
 # A throttled document's wall-time share, over the allowance the plan gave it, at which the row
-# stops reading as converged (090 D9c). Distinct knees from `load_color`'s: a document AT its
+# stops reading as converged. Distinct knees from `load_color`'s: a document AT its
 # allowance is the healthy converged state the throttle aims for, where `load_color` reads 1.0
 # as the error band.
 THROTTLE_WARN_RATIO: float = 1.0
@@ -540,7 +540,7 @@ def _set_colors(
 ) -> None:
     """Map every relevant ImGuiCol_* slot to a gruvbox palette token.
 
-    Slot names verified against imgui-bundle 1.92.801's pyi stub; pre-1.91 names
+    Slot names verified against the imgui-bundle 1.92.801 pyi stub; pre-1.91 names
     (nav_highlight, tab_active, tab_unfocused*) are renamed in Dear ImGui 1.91+ and
     absent on purpose. Uses `Style.set_color_(idx, ImVec4Like)` — the C++ `Colors[]`
     array isn't exposed as a Python attribute.

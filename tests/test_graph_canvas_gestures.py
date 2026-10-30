@@ -1,4 +1,4 @@
-"""The canvas's gestures, driven through the library headlessly (feature 098).
+"""The canvas's gestures, driven through the library headlessly.
 
 The old canvas published its hit rects on the view state and the tests aimed
 at those. The library owns the hit-testing now, so a test aims by ASKING it:
@@ -382,7 +382,7 @@ def test_the_pointer_reads_as_claimed_over_a_node_and_free_over_the_background()
     `Result.flags` bit 0 alone does NOT answer this: it is measured low while
     the pointer sits on a node body, because it is computed from the hover's
     port field and a body hover leaves that unset. `pointer_is_claimed` reads
-    the per-node flags too. The falsifier is the body hover, so that is what
+    the per-node flags too. The body hover is the case that tells, so that is what
     this aims at -- a point that also hits a port passes either way.
     """
     canvas = _canvas()
@@ -429,7 +429,7 @@ def test_a_wheel_notch_zooms_about_the_pointer() -> None:
 
 
 def test_each_pin_on_a_node_gets_its_own_point_in_pushed_order() -> None:
-    """The falsifier for `pin_point` ignoring the attribute index.
+    """`pin_point` must honour the attribute index.
 
     A GESTURE cannot decide this and it is worth being explicit about why: a
     wire only has to start on some pin of the right node, so an ignored index

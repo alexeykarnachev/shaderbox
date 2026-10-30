@@ -118,7 +118,7 @@ def output_declarations(text: str) -> tuple[UniformDeclaration, ...]:
     """Every `out <type> <name>;` the buffer declares, in source order.
 
     The fragment output is the one name a shader writes rather than reads, which is why it gets
-    its own color (079 D11). `gl_FragColor` is the builtin spelling and is not declared, so the
+    its own color. `gl_FragColor` is the builtin spelling and is not declared, so the
     caller adds it.
     """
     code = _strip_comments(text)

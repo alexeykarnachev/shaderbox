@@ -1,4 +1,4 @@
-"""The shader-library picker's inline inputs commit when focus leaves them (069 D11).
+"""The shader-library picker's inline inputs commit when focus leaves them.
 
 A rename / new-file / new-dir input holds a REQUEST that has not happened yet, so an Enter-only
 commit silently discards the work of anyone who clicks away instead of pressing Enter. Driven
@@ -32,10 +32,10 @@ def _run_frames(
     cancel_on: int | None = None,
 ) -> None:
     # The five-frame recipe: focus, a REAL keystroke, then a focus move. Without the keystroke
-    # only `is_item_deactivated` fires, never the after-edit form D11 rests on.
+    # only `is_item_deactivated` fires, never the after-edit form.
     #
     # `cancel_on` makes the row's `x` button report a click on that frame. imgui's hover test
-    # never fires for a synthetic mouse in a headless context (/imgui-ui § 0), so the click is
+    # never fires for a synthetic mouse in a headless context, so the click is
     # injected at the button rather than at the mouse — the drawn function still runs its own
     # real branches, in their real order, against a real deactivate. The stub sits on
     # `ui_primitives`, where `name_input_row` draws the `x`.

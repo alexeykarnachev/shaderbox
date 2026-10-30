@@ -48,7 +48,7 @@ class CopilotContext:
     )
     script_api: str  # generated SCRIPT API block (the Python side of a document script)
     conventions: str
-    # READ_ONLY only (086): the source-writing tools are absent from `tools=`, and this is what
+    # READ_ONLY only: the source-writing tools are absent from `tools=`, and this is what
     # tells the model WHY -- without it the model has silently lost an ability and answers an edit
     # request with confusion instead of the reason.
     source_read_only: bool = False

@@ -1,7 +1,7 @@
-"""Editing any pass file on disk reloads that pass (065 stage 6).
+"""Editing any pass file on disk reloads that pass.
 
-The watcher used to poll ONE shader per document and treat `sources[0]` as its root, returning
-early. With N pass files that misses every pass but the output's — you would edit a file, see
+The watcher must poll EVERY pass file, not one shader per document with `sources[0]` as its root.
+Polling only the root misses every pass but the output's — you would edit a file, see
 nothing happen, and have no error to explain it. These drive the real watcher against real files.
 """
 
@@ -64,7 +64,7 @@ def _chain_document(gl: moderngl.Context, root: Path) -> UIDocument:
 
 
 def _red(document: Document) -> int:
-    # Through texture_to_rgba8: a graph entry's default target is f2 (D9), and a raw byte read of
+    # Through texture_to_rgba8: a graph entry's default target is f2, and a raw byte read of
     # a float target truncates the buffer to a plausible wrong value.
     return int(texture_to_rgba8(document.render_pass.canvas.texture)[0][0][0])
 
@@ -78,8 +78,8 @@ def test_editing_a_non_output_pass_reloads_it(
     before = _red(ui_document.document)
 
     source_a = ui_document.document.passes["a"].source.path
-    os.utime(source_a, (0, 0))  # make the mtime differ for sure
     source_a.write_text(_CONST % "0.4")
+    os.utime(source_a, (0, 0))  # make the mtime differ for sure
     reload_document_if_changed(app, "doc", ui_document)
     ui_document.document.render(u_time=0.0)
 
@@ -95,8 +95,8 @@ def test_editing_the_output_pass_still_reloads(
     ui_document = _chain_document(gl_ctx, tmp_path)
     app = _FakeApp()
     source_b = ui_document.document.passes["b"].source.path
-    os.utime(source_b, (0, 0))
     source_b.write_text(_HALVE % "0.25")
+    os.utime(source_b, (0, 0))
     reload_document_if_changed(app, "doc", ui_document)
     ui_document.document.render(u_time=0.0)
     assert _red(ui_document.document) == pytest.approx(51, abs=2)  # 0.8 * 0.25
@@ -143,6 +143,7 @@ def test_the_watcher_identifies_a_root_by_path_not_by_index(
     # Both look changed on disk, so a positional rule takes the decoy and a path rule
     # takes the root. What was SYNCED is what tells the two apart.
     root.write_text(root.read_text() + "\n// touched\n")
+    os.utime(root, (0, 0))
     app = _FakeApp()
     _reload_pass_if_changed(app, "doc", render_pass)  # type: ignore[arg-type]
 
@@ -170,8 +171,8 @@ def test_a_single_pass_document_still_hot_reloads(
 
     app = _FakeApp()
     source = ui_document.document.render_pass.source.path
-    os.utime(source, (0, 0))
     source.write_text(_CONST % "0.0")
+    os.utime(source, (0, 0))
     reload_document_if_changed(app, "solo", ui_document)
     ui_document.document.render(u_time=0.0)
     assert _red(ui_document.document) == 0
@@ -181,14 +182,14 @@ def test_a_single_pass_document_still_hot_reloads(
 def test_a_pass_keeps_its_own_program_across_a_siblings_reload(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
-    # D8's structural half: reloading one pass must not drop another's program, or every edit
+    # Structurally: reloading one pass must not drop another's program, or every edit
     # pays for a full document rebuild.
     ui_document = _chain_document(gl_ctx, tmp_path)
     other: Pass = ui_document.document.passes["b"]
     program_before = other.program
     source_a = ui_document.document.passes["a"].source.path
-    os.utime(source_a, (0, 0))
     source_a.write_text(_CONST % "0.2")
+    os.utime(source_a, (0, 0))
     reload_document_if_changed(_FakeApp(), "doc", ui_document)
     assert other.program is program_before
     ui_document.document.release()

@@ -1,4 +1,4 @@
-"""The graph canvas as an imgui-hosted panel (feature 098).
+"""The graph canvas as an imgui-hosted panel.
 
 The seam between the library and the app: it feeds imgui's pointer into
 `gc_frame`, renders the result into an FBO, presents that FBO with

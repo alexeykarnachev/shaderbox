@@ -1,8 +1,7 @@
-"""Credential survival across a retired field (feature 060). `IntegrationsStore` is extra="forbid",
-so an unrecognized key in integrations.json used to hard-fail load() into all-empty defaults — and
-App.save() then wrote those empties over the real OpenRouter / Telegram / YouTube tokens on quit.
-A removed feature's leftover key (058's vision_* is the live example) must cost the user that
-setting, never their credentials. Pure: no GL, no network; SHADERBOX_DATA_DIR redirects the store."""
+"""Credential survival across a retired field. `IntegrationsStore` is extra="forbid",
+so an unrecognized key in integrations.json must not hard-fail load() into all-empty defaults,
+which App.save() would then write over the real OpenRouter / Telegram / YouTube tokens on quit.
+A removed feature's leftover key must cost the user that setting, never their credentials. Pure: no GL, no network; SHADERBOX_DATA_DIR redirects the store."""
 
 import json
 from pathlib import Path
@@ -29,7 +28,7 @@ def _write(path: Path, payload: dict[str, object]) -> None:
 
 
 def test_retired_nested_key_does_not_wipe_credentials(store_path: Path) -> None:
-    # The 058 shape: vision_* retired from CopilotIntegration, still present on an older machine.
+    # vision_* retired from CopilotIntegration, still present on an older machine.
     _write(
         store_path,
         {
@@ -76,8 +75,7 @@ def test_retired_key_inside_a_pack_entry_does_not_wipe_credentials(
     store_path: Path,
 ) -> None:
     # `telegram.packs` is a list[PackEntry], and PackEntry forbids extras too — so the pruner has to
-    # descend into LIST elements, not just nested dicts. Falsifier: drop the list branch from
-    # _drop_unknown and the bot token below comes back empty.
+    # descend into LIST elements, not just nested dicts.
     _write(
         store_path,
         {
@@ -98,7 +96,7 @@ def test_pruner_covers_every_nested_model_shape_in_the_store() -> None:
     # _drop_unknown handles two shapes: a bare nested model and list[Model]. If a field ever lands
     # with a shape it does NOT walk (dict[str, Model], tuple[Model, ...], Model | None), a retired
     # key under it would again fail-soft the whole store to empty credentials — silently, because
-    # every other test here would still pass. Falsifier: add such a field and this goes red.
+    # every other test here would still pass.
     covered: set[type | None] = {None, list}
     unhandled: list[str] = []
 

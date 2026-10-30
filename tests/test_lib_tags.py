@@ -101,8 +101,8 @@ def test_a_malformed_row_costs_that_row_not_the_store(
     monkeypatch: Any, tmp_path: Path
 ) -> None:
     # This store lives in app_data_dir — outside git, no backup — and ProjectSession.__init__
-    # loads it unguarded, so a bad row used to raise TypeError straight out of startup (the
-    # except clause only caught OSError/JSONDecodeError). A bad row must cost that row only.
+    # loads it unguarded, so a bad row would raise TypeError straight out of startup (the
+    # except clause only catches OSError/JSONDecodeError). A bad row must cost that row only.
     _isolate_app_data(monkeypatch, tmp_path)
     (tmp_path / "shader_lib_tags.json").write_text(
         json.dumps({"SB_good": ["noise"], "SB_null": None, "SB_int": 7})

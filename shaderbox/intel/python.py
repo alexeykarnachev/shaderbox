@@ -1,4 +1,4 @@
-"""The document script read by jedi (078 D10): completion candidates and `K` answers for
+"""The document script read by jedi: completion candidates and `K` answers for
 Python, in-process, synchronous. The caller decides the thread; this module only turns a
 (text, cursor) into symbols. The context fields carry the engine's own gloss, since jedi has
 no docstring for a dataclass field."""
@@ -160,7 +160,7 @@ def python_lookup(text: str, line: int, column: int) -> Symbol | None:
 
 
 # `self` and `cls` mean the same thing wherever they appear, so they are name-keyed facts and
-# ride the word table (105 D2): no parser, no positions, nothing to go stale on an edit.
+# ride the word table: no parser, no positions, nothing to go stale on an edit.
 _SELF_NAMES: frozenset[str] = frozenset({"self", "cls"})
 
 # The two names treesitter's python grammar draws as `@constructor` rather than
@@ -275,7 +275,7 @@ def _annotation_spans(node: BaseNode) -> list[SpanSymbol]:
 
 
 def _decorator_and_annotation_spans(module: NodeOrLeaf) -> list[SpanSymbol]:
-    """The two cases jedi cannot answer (105 D7).
+    """The two cases jedi cannot answer.
 
     MEASURED: `get_names` reports a decorator's `@property` and a bare reference to
     `property` identically -- both `type="statement"`, `is_definition()` false, same
@@ -305,8 +305,8 @@ def python_spans(text: str) -> tuple[SpanSymbol, ...]:
     """Every positional distinction a script's colouring needs, from one parso parse.
 
     MEASURED on the 123-line flock script: 6.63 ms, against 7.46 ms for jedi's `get_names`
-    alone -- so all three positional cases cost LESS than the one producer an earlier
-    estimate was sized against. `parso.parse` recovers from broken text rather than raising,
+    alone -- so all three positional cases cost LESS than the one producer an estimate
+    could be sized against. `parso.parse` recovers from broken text rather than raising,
     which matters because a buffer mid-edit is normally unparseable: an unclosed paren, a
     dangling `def`, a half-typed annotation and an unterminated string all measured between
     6.26 and 6.74 ms and kept the whole file's structure. A 4x buffer costs 24.9 ms."""

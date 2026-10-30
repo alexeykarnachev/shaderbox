@@ -1,5 +1,5 @@
-"""The import dialog's state and frame behavior (091 D10): the draft's resets, the busy guard,
-the per-frame plan, the Escape wire, and the unbordered tile keeping its padding (D7).
+"""The import dialog's state and frame behavior: the draft's resets, the busy guard,
+the per-frame plan, the Escape wire, and the unbordered tile keeping its padding.
 
 App-driven where the state is the subject, frame-driven where the question is what a drawn
 frame reads. A second frame-driving App in one process hits the torn-down font atlas, so the
@@ -25,8 +25,8 @@ def _multi_pass_example(app: Any) -> str:
 
 
 def test_the_draft_resets_on_source_change_and_on_close(app: Any) -> None:
-    # Verification 15. Falsifier: keep `handovers` across a source change and the plan
-    # rejects a pair that reads nobody, so the Import button stays dead with a stale message.
+    # A stale `handovers` would make the plan reject a pair that reads nobody and leave the
+    # Import button dead with a stale message.
     app.open_import_passes()
     assert app.modal is ModalId.IMPORT_PASSES
     draft = app.import_draft
@@ -60,12 +60,12 @@ def test_the_draft_resets_on_source_change_and_on_close(app: Any) -> None:
 
 
 def test_escape_reaches_the_close_funnel(app: Any) -> None:
-    """Verification 15's wire: a bare `app.modal = None` would leave the draft populated.
+    """Escape closes through the funnel: a bare `app.modal = None` would leave the draft populated.
 
     The registry row is what carries the cleanup now, so the structural half asserts the
     row's `on_close` IS `App.close_import_passes` -- a lambda that forgot to call it would
     fail here. The funnel is then driven for real, so a row that parses but does nothing
-    fails too. Falsifier: drop `on_close` from `import_passes.MODAL`.
+    fails too.
     """
     modal = BY_ID[ModalId.IMPORT_PASSES]
     assert modal.on_close is not None, (
@@ -84,8 +84,7 @@ def test_escape_reaches_the_close_funnel(app: Any) -> None:
 
 
 def test_the_busy_guard_refuses_the_palette_route(app: Any, monkeypatch: Any) -> None:
-    # Verification 16. Falsifier: delete the guard; the strip button's `begin_disabled`
-    # passes the suite either way.
+    # The strip button's `begin_disabled` is not enough; the palette route needs the guard too.
     pushed: list[str] = []
     monkeypatch.setattr(
         app.notifications, "push", lambda text, *a, **k: pushed.append(text)
@@ -104,8 +103,8 @@ def _pump(app: Any) -> None:
 
 
 def test_the_plan_is_recomputed_every_frame(app: Any) -> None:
-    # Verification 17. Falsifier: compute the plan on selection only and the second frame
-    # still reports the stale rejection. Holds because no field is auto-focused (D10).
+    # Computing the plan on selection only would leave the second frame reporting the stale
+    # rejection. Holds because no field is auto-focused.
     app.open_import_passes()
     app.select_import_source(_multi_pass_example(app), True)
     draft = app.import_draft
@@ -123,8 +122,7 @@ def test_the_plan_is_recomputed_every_frame(app: Any) -> None:
 
 
 def test_an_unbordered_tile_keeps_its_padding(app: Any, monkeypatch: Any) -> None:
-    # Verification 18. Falsifier: pass `ChildFlags_.none` instead of
-    # `always_use_window_padding` and the content origin moves from (8, 8) to (0, 0).
+    # Without `always_use_window_padding` the content origin moves from (8, 8) to (0, 0).
     offsets: list[tuple[float, float]] = []
     real = imgui.get_cursor_screen_pos
 

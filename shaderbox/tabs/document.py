@@ -79,7 +79,7 @@ def canvas_choice_groups(
     the model accepts stays reachable.
 
     Reads `uniform_values`, never `get_active_uniforms()`: the latter compiles a
-    never-attempted pass (066 D1), which on the Document tab's every frame would compile the
+    never-attempted pass, which on the Document tab's every frame would compile the
     whole graph.
     """
     by_aspect: dict[tuple[int, int], list[CanvasChoice]] = {
@@ -199,7 +199,7 @@ def _switch_resolution_mode(
 ) -> None:
     """Change the mode, seeding the field the new mode reads from the live canvas.
 
-    A switch must never jump the picture (revision 1 D3): Auto -> Fixed takes the size the
+    A switch must never jump the picture: Auto -> Fixed takes the size the
     document is rendering at right now, so the canvas keeps its pixels; Fixed -> Auto takes
     that size's reduced ratio, so the shape survives and only the sizing rule changes.
     """
@@ -233,7 +233,7 @@ def _draw_canvas_caption(app: App, ui_document: UIDocument) -> None:
 
     Under Auto the control names a RATIO, so this is the live pixel size; under Fixed the
     control names a SIZE, so this is its aspect. Each mode shows the other half of the same
-    fact. It sits on the CAPTION row (his call) rather than under the control: a line below the
+    fact. It sits on the CAPTION row rather than under the control: a line below the
     combo read as a second field, and the caption row is where a label belongs.
     """
     document = ui_document.document
@@ -248,14 +248,14 @@ def _draw_canvas_caption(app: App, ui_document: UIDocument) -> None:
 def _apply_canvas_size(
     app: App, ui_document: UIDocument, size: tuple[int, int]
 ) -> None:
-    """Commit the picker's W x H as the document's stored `resolution` (090 D5).
+    """Commit the picker's W x H as the document's stored `resolution`.
 
     The write is DEFERRED, never applied in place: this runs inside the draw phase, after
     `_draw_document_image` pushed the output texture into this frame's draw list, and a resize
     releases that texture and every feedback history with it. Step 4 of the next
     `_tick_frame_state` consumes `pending_resolution` through the same path Auto takes, where
     every release precedes any draw — the shape `pending_project_switch` uses for the same
-    084 D5 hazard.
+    hazard.
     """
     w, h = clamp_canvas_size(size)
     if (w, h) == ui_document.ui_state.resolution:
@@ -312,8 +312,7 @@ def _draw_script_toggle(app: App) -> None:
 
     The bare word needs that label HERE and not on a uniform row: there the toggle sits at the
     end of the row of the uniform it stops, which is its subject, while on this row it had no
-    neighbor at all and read as a loose `stop` (his finding). The `open` summoners it used to
-    sit beside are gone (093 W8) -- opening a script is a verb, and verbs live on the
+    neighbor at all and read as a loose `stop`. Opening a script is a verb, and verbs live on the
     document's context menu, the Document menu and their chords. What cannot live there is a
     STATE the user watches while a shader runs, so the toggle stays, and is absent when the
     document has no script. The caller's copilot-turn bracket covers it (a write races the
@@ -336,8 +335,8 @@ def _draw_script_toggle(app: App) -> None:
 
 
 def _draw_passes(app: App, document_id: str) -> None:
-    # A plain caption over the strip: the graph's summoner is on the document's context menu
-    # (093 W8), so this row names the tiles and nothing else. The add / import row sits under
+    # A plain caption over the strip: the graph's summoner is on the document's context menu,
+    # so this row names the tiles and nothing else. The add / import row sits under
     # them, inside its own copilot-turn bracket.
     imgui.begin_disabled(app.copilot_turn_active)
     small_caption(app.font_12, "Passes")

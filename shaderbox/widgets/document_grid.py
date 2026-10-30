@@ -48,7 +48,7 @@ def document_menu_items(app: App, document_id: str) -> None:
 
     Every item takes `document_id`, never the current document: a right-click does not select
     the tile it opens on, so a verb routed through the current-document command would act on
-    the wrong document (093 W8). The chords are the hints the same verbs carry in the Document
+    the wrong document. The chords are the hints the same verbs carry in the Document
     menu, where they act on the current one. Delete confirms and Reset does not -- one moves a
     directory to the trash, the other restarts a clock.
     """
@@ -73,7 +73,7 @@ def draw_document_preview_grid(app: App, width: float, height: float) -> None:
         child_flags=imgui.ChildFlags_.borders,
         window_flags=imgui.WindowFlags_.no_nav_inputs,
     ):
-        # Document create/switch/delete are frozen while a copilot turn runs (§15 A); disable the
+        # Document create/switch/delete are frozen while a copilot turn runs; disable the
         # affordances so the freeze is visible (the verbs also hard-refuse, for non-grid paths).
         imgui.begin_disabled(app.copilot_turn_active)
         if standard_button(command_label(CommandId.NEW_DOCUMENT)):
@@ -111,7 +111,7 @@ def draw_document_preview_grid(app: App, width: float, height: float) -> None:
                 selected=id == app.current_document_id,
                 # Mirrors the render gate in ui.py: with "Render all" off, a non-current
                 # document stops ticking and its texture is a photograph of the past — and a
-                # document still waiting for its first render (066 D2) has none at all.
+                # document still waiting for its first render has none at all.
                 stale=(
                     not app.app_state.is_render_all_documents
                     and id != app.current_document_id

@@ -1,4 +1,4 @@
-"""The load-bearing 020·28 invariant: a committed NL turn-summary is actually RECEIVED by the agent on a
+"""A committed NL turn-summary is actually RECEIVED by the agent on a
 LATER turn (not merely built). Every other test checks the summary's content in isolation; this drives two
 turns through a real CopilotSession and asserts the second turn's LLM request carries the first turn's
 summary (target name + new value) in its messages. Without this, "source-fidelity traded for resolvability"
@@ -75,7 +75,7 @@ def test_second_turn_receives_first_turn_summary(tmp_path: Path) -> None:
         get_source_lock=lambda: SourceLock.ASK,
         set_project_source_lock=lambda _lock: None,
     )
-    # This turn calls set_uniform, which the source lock (083) confirms. The subject here is the
+    # This turn calls set_uniform, which the source lock confirms. The subject here is the
     # NL turn-summary, not gating, and there is no UI to answer -- so unlock rather than script a
     # gate answer that would make the test about two things.
     session.set_source_lock(SourceLock.ALLOW)

@@ -1,4 +1,4 @@
-"""The post-condition every canvas reachable from a Document must satisfy (096 W-0).
+"""The post-condition every canvas reachable from a Document must satisfy.
 
 Six canvas defects in one week were one class: a canvas's configuration -- size, dtype, filter,
 wrap -- is decided in several places, and each place knows about some canvases but not all. This

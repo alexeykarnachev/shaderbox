@@ -1,4 +1,4 @@
-"""The one thread that talks to jedi (078 D10).
+"""The one thread that talks to jedi.
 
 jedi is not safe to call from two threads at once, so every Python request goes through this
 worker and the frame thread never constructs a `Script` itself; the warm-up is the first job
@@ -49,7 +49,7 @@ class PythonRequest:
         )
 
     def matches_text(self, path: Path, revision: int) -> bool:
-        """The caret-blind predicate (105 D4). A completion is an answer about a CARET, so a
+        """The caret-blind predicate. A completion is an answer about a CARET, so a
         moved caret invalidates it; spans are a property of the TEXT, and dropping a span set
         because the caret moved would throw away a correct answer on every arrow key."""
         return self.path == path and self.revision == revision
@@ -100,7 +100,7 @@ class PythonWorker:
                 self._wake.wait()
             if self._closed:
                 return None
-            # SPANS goes LAST (105 D3a). Insertion order would let a spans job sit in front
+            # SPANS goes LAST. Insertion order would let a spans job sit in front
             # of the completion job for the same burst, and MEASURED they cost the same --
             # 8.17 ms against 8.19 ms on the flock script -- so a shipped feature's latency
             # would double on every keystroke that also asked for colour. Completion is what

@@ -55,18 +55,18 @@ def test_reopen_after_release_blocks_and_answers() -> None:
 def test_ask_racing_cancel_all_never_blocks_forever(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Lost-wakeup (feature 060). ask() used to check _shutdown, then build its pending, then
-    # publish it to _current. A cancel_all() landing in THAT window swept two empty slots,
-    # released nothing, and latched _shutdown — and the worker went on to block on an event
-    # nobody would ever set. The copilot stayed latched: on a project switch _ensure_worker saw
-    # the thread still alive, so every later turn was queued and silently never ran.
-    # Publishing and checking the latch now happen under one lock, so cancel_all either sweeps
+    # Lost-wakeup. ask() checks _shutdown, builds its pending, then publishes it to _current.
+    # A cancel_all() landing in THAT window would sweep two empty slots, release nothing, and
+    # latch _shutdown, and the worker would block on an event nobody would ever set; on a
+    # project switch _ensure_worker would see the thread still alive and every later turn would
+    # be queued and silently never run.
+    # Publishing and checking the latch happen under one lock, so cancel_all either sweeps
     # the published slot or latches before the slot exists (and ask() returns cancelled).
     #
     # The real window is a few instructions wide, so a plain thread race won't find it. This
     # drives the exact interleaving: cancel_all() is forced to complete while ask() is between
-    # its check and its publish. Falsifier: drop the lock from ask()/cancel_all() and this hangs
-    # until the join times out with the worker still alive.
+    # its check and its publish; without the lock this hangs until the join times out with the
+    # worker still alive.
     gate = GateChannel()
     answered: list[GateResponse] = []
     fired = threading.Event()
@@ -102,8 +102,7 @@ def test_reusable_cancel_all_racing_ask_never_blocks_forever(
 ) -> None:
     # The Stop button calls cancel_all(reusable=True) (session.py) — no _shutdown latch, so nothing
     # incidentally rescues a worker whose slot was published after the sweep. The whole sweep must
-    # therefore run under the lock, not just the latch. Falsifier: narrow the `with self._lock:` in
-    # cancel_all back to the `_shutdown.set()` line and this join expires with the worker alive.
+    # therefore run under the lock, not just the latch.
     gate = GateChannel()
     answered: list[GateResponse] = []
     fired = threading.Event()
@@ -134,10 +133,9 @@ def test_reusable_cancel_all_racing_ask_never_blocks_forever(
 def test_ask_file_racing_cancel_all_never_blocks_forever(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # ask_file is the FILE-gate twin of ask (feature 052) and carries the identical
-    # sample-build-publish shape, so it needs the identical guard — a race test that covers only
-    # one of a symmetric pair is the narrowed-domain checker CLAUDE.md warns about. Falsifier:
-    # remove the generation re-check from ask_file and this join expires with the worker alive.
+    # ask_file is the FILE-gate twin of ask and carries the identical
+    # sample-build-publish shape, so it needs the identical guard, so it gets its own race test: without the
+    # generation re-check in ask_file this join expires with the worker alive.
     gate = GateChannel()
     answered: list[GateResponse] = []
     fired = threading.Event()

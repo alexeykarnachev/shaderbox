@@ -1,4 +1,4 @@
-"""User-tunable copilot limits (034 F12): store fields <-> live config seam."""
+"""User-tunable copilot limits: store fields <-> live config seam."""
 
 import threading
 from dataclasses import fields, replace

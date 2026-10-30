@@ -1,4 +1,4 @@
-"""The pass verbs (065 stage 7, D15; 072).
+"""The pass verbs.
 
 Add / delete / rename / set output / set a sampler's source / set target / set run count, driven
 through the headless `ProjectSession` rather than through the panel — the panel is a caller, and
@@ -7,7 +7,7 @@ these are what it calls. Each verb mutates the live document AND saves, so `pass
 every test reloads from disk to prove it.
 
 Rename is the one that has to be transactional: the file, every sampler naming the pass, the output
-choice and the open editor tab move together. D3 makes a half-done rename SILENT — an edge left
+choice and the open editor tab move together. A half-done rename is SILENT — an edge left
 pointing at the old name just reads black.
 """
 
@@ -111,7 +111,7 @@ def test_add_pass_rejects_a_duplicate_or_unusable_name(app: Any) -> None:
     # The trailing newline is the one this list was missing, and it is the one that hurt:
     # `$` matches before it, so the guard's `re.match` accepted `f"{existing}\n"` as a
     # SECOND pass beside `existing` -- a name the collision check above cannot see, written
-    # to disk as `passes/<name>\n.frag.glsl`. Falsifier: `fullmatch` back to `match`.
+    # to disk as `passes/<name>\n.frag.glsl`.
     for bad in (
         "",
         "2fast",
@@ -135,9 +135,8 @@ def test_the_last_pass_may_not_go_and_both_surfaces_ask_one_predicate(
     refuses, or worse, let both drift the same way toward a zero-pass document that
     `render_pass` cannot draw.
 
-    Falsifier: hardcode either consumer back to its own `len(...)` spelling. Breaking
-    the predicate must fail BOTH, which is the only thing consolidation buys -- pinning
-    one surface leaves the other free.
+    Breaking the predicate must fail BOTH consumers -- pinning one surface leaves the other
+    free.
     """
     document_id = _document_id(app)
     document = app.ui_documents[document_id].document
@@ -215,7 +214,7 @@ def test_rename_moves_the_file_the_edges_and_the_output(app: Any) -> None:
     document = app.ui_documents[document_id].document
     assert "producer" not in document.passes and "scene" in document.passes
     assert document.graph.output == "scene"
-    # The source follows: this is the half D3 makes silent if it is missed.
+    # The source follows: this is the half that is silent if it is missed.
     assert document.passes["consumer"].uniform_values["u_src"] == PassSource("scene")
     assert not app.session.paths.pass_shader_for(document_id, "producer").exists()
     assert app.session.paths.pass_shader_for(document_id, "scene").is_file()
@@ -269,7 +268,7 @@ def test_wiring_is_a_closed_set(app: Any) -> None:
 
 def test_a_none_source_persists_and_an_auto_source_forgets_it(app: Any) -> None:
     # A `NoSource` is a DECISION -- this sampler reads black -- and it must survive a reload,
-    # or the name rule (069 D9) re-wires what the user un-wired. `AutoSource` returns the
+    # or the name rule re-wires what the user un-wired. `AutoSource` returns the
     # sampler to undecided, which writes no row.
     document_id = _document_id(app)
     app.session.add_pass(document_id, "src")
@@ -311,9 +310,6 @@ def test_a_target_change_drops_the_feedback_history(app: Any) -> None:
     next `begin_frame` swaps it into the live slot -- so the change appears to do nothing for
     a pass that reads `u_prev`. Pinned at the SESSION verb because that is what the settings
     modal calls; the Document-level rule has its own test in test_gl_lifetime_guards.py.
-
-    Falsifier: point the session verb back at `document.passes[name].set_target(target)` and
-    the history survives the change.
     """
     document_id = _document_id(app)
     document = app.ui_documents[document_id].document
@@ -371,7 +367,7 @@ def test_a_saved_document_survives_a_full_round_of_verbs(
     app: Any, tmp_path: Path
 ) -> None:
     # The composite check: build a real two-pass chain through the verbs alone, then reload and
-    # render it. Falsifier: any verb that mutates the live document without saving.
+    # render it.
     document_id = _document_id(app)
     app.session.add_pass(document_id, "scene")
     app.session.add_pass(document_id, "composite")
@@ -481,7 +477,7 @@ def test_set_pass_iterations_writes_persists_and_rejects(app: Any) -> None:
 
 
 # ----------------------------------------------------------------
-# The gear's name field and the add-pass input (069 W-C).
+# The gear's name field and the add-pass input.
 
 
 def _imgui_frame(body: Callable[[], None]) -> None:
@@ -495,7 +491,7 @@ def _imgui_frame(body: Callable[[], None]) -> None:
 
 
 def test_the_gear_body_survives_a_rename_mid_frame(app: Any) -> None:
-    # #17: the body indexed `document.passes[name]` with the name the rename had just retired,
+    # The body indexed `document.passes[name]` with the name the rename had just retired,
     # so the frame that performed the rename raised KeyError. The rename is driven the way a
     # person drives it — focus the field, type, click away — through the REAL _draw_name.
     document_id = _document_id(app)
@@ -563,8 +559,8 @@ def test_a_rejected_rename_snaps_the_buffer_back(
 
 
 def test_add_pass_activates_the_new_pass(app: Any) -> None:
-    # #28 / D10: a created pass is what the document SHOWS — tab, output and gear together.
-    # 078 D5: the pass is made from the settings modal's draft, by `Create` alone.
+    # A created pass is what the document SHOWS — tab, output and gear together.
+    # The pass is made from the settings modal's draft, by `Create` alone.
     document_id = _document_id(app)
     before_output = app.ui_documents[document_id].document.graph.output
     opened: list[str] = []
@@ -613,14 +609,14 @@ def test_closing_the_gear_on_a_retired_pass_stays_silent(
 
 
 # ----------------------------------------------------------------
-# The strip: what a tile shows, and which graph it plans (069 W-D).
+# The strip: what a tile shows, and which graph it plans.
 
 
 def test_the_strip_draws_a_picture_a_name_and_its_reads(
     app: Any, monkeypatch: Any
 ) -> None:
-    # Under the name, a chip per pass the tile reads (070): never the uniform, never an
-    # arrow -- the `u_x <- y` sublines 069 #19 rejected were cut at the tile's width. A
+    # Under the name, a chip per pass the tile reads: never the uniform, never an
+    # arrow -- the `u_x <- y` sublines were cut at the tile's width. A
     # stored edge on a sampler the program no longer declares (`u_old`, the shape a rename
     # leaves behind) binds nothing, so it is no chip.
     document_id = _document_id(app)
@@ -656,7 +652,7 @@ def test_the_strip_draws_a_picture_a_name_and_its_reads(
 
 
 def test_the_chips_follow_the_wiring() -> None:
-    # The wiring already excludes a missing source and an undeclared sampler (072); the chips
+    # The wiring already excludes a missing source and an undeclared sampler; the chips
     # add strip order, one chip per source, and `prev` last.
     wiring = {"a": {}, "b": {"u_a": "a", "u_again": "a", "u_prev": "b"}}
     reads = pass_list._reads
@@ -723,7 +719,7 @@ def test_the_strip_orders_a_name_wired_document_topologically(app: Any) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 091 -- import another document's passes as a group
+# import another document's passes as a group
 # ---------------------------------------------------------------------------
 
 _BLOOM_FIXTURE = Path(__file__).parent / "fixtures" / "bloom_chain"
@@ -794,8 +790,7 @@ def test_import_hands_the_fed_passs_readers_to_the_bundle(
 ) -> None:
     # Verification 5, the insertion case. `grade` is built as a bare Pass with no save in
     # between, so it reaches the import with no program: the reader is only visible once the
-    # host compiles, which is the import's job (D6). Falsifier: compute the host wiring
-    # without compiling and `grade.u_main` is never a reader, so the handover is rejected.
+    # host compiles, which is the import's job.
     document_id = _document_id(app)
     document = app.ui_documents[document_id].document
     path = app.session.paths.pass_shader_for(document_id, "grade")
@@ -844,8 +839,7 @@ def test_a_handover_on_a_broken_host_pass_is_rejected_by_name(
 
 def test_a_rendered_import_reads_its_bundle(app: Any, tmp_path: Path) -> None:
     # Verification 4, through the app fixture's context: the host's `main` renders 0.5 red, a
-    # two-pass source halves its entry point, and the imported output reads 0.25 red. Falsifier:
-    # drop the materialization and `fx_halve.u_scene` reads black, so the output is 0.
+    # two-pass source halves its entry point, and the imported output reads 0.25 red.
     document_id = _document_id(app)
     document = app.ui_documents[document_id].document
     document.passes["main"].release_program(_CONST_HALF)
@@ -875,8 +869,7 @@ def test_a_rendered_import_reads_its_bundle(app: Any, tmp_path: Path) -> None:
 
 
 def test_import_leaves_the_shipped_example_byte_identical(app: Any) -> None:
-    # Verification 6. Falsifier: save the SOURCE's UIDocument too and the resources dir is
-    # rewritten in the working tree.
+    # Verification 6.
     example_id = next(
         i for i, u in app.ui_document_examples.items() if len(u.document.passes) > 1
     )
@@ -930,8 +923,7 @@ def test_a_merged_ui_row_survives_the_save(app: Any, tmp_path: Path) -> None:
 def test_a_broken_source_pass_is_imported_as_is_and_named(
     app: Any, tmp_path: Path
 ) -> None:
-    # Verification 8. Falsifiers: swallow the compile failure and the user gets a bundle with a
-    # silently black member; treat its empty wiring as a root and the dialog grows a row.
+    # Verification 8.
     document_dir = tmp_path / "broken_bloom"
     shutil.copytree(_BLOOM_FIXTURE, document_dir)
     (document_dir / PASSES_DIR_NAME / "blur.frag.glsl").write_text("not glsl at all")
@@ -950,9 +942,7 @@ def test_a_broken_source_pass_is_imported_as_is_and_named(
 def test_a_torn_import_writes_nothing(
     app: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A bound asset whose file is gone cannot be copied. Falsifier: copy values inside the
-    # write loop and the passes written before the failure stay on disk, come back on the next
-    # load as ungrouped passes, and the exception escapes into the frame loop.
+    # A bound asset whose file is gone cannot be copied.
     document_id = _document_id(app)
     media_id = next(
         i
@@ -982,7 +972,7 @@ def test_a_torn_import_writes_nothing(
 
 
 def test_the_group_survives_rename_and_goes_with_delete(app: Any) -> None:
-    # Verification 9, the verbs' half. Falsifier: `_graph_renamed` rebuilt from PassEntry().
+    # Verification 9, the verbs' half.
     document_id = _document_id(app)
     app.session.add_pass(document_id, "glow")
     assert app.session.set_pass_group(document_id, "glow", "fx") == ""
@@ -998,7 +988,7 @@ def test_the_group_survives_rename_and_goes_with_delete(app: Any) -> None:
 
 
 # ----------------------------------------------------------------
-# Positions on the graph canvas (092 D6): one writer, one save per gesture, stripped on import.
+# Positions on the graph canvas: one writer, one save per gesture, stripped on import.
 
 
 def _count_saves(app: Any, monkeypatch: Any) -> list[int]:
@@ -1020,7 +1010,6 @@ def test_set_pass_positions_saves_once_for_the_whole_set(
     for name in ("p1", "p2", "p3"):
         assert app.session.add_pass(document_id, name) == ""
     saves = _count_saves(app, monkeypatch)
-    # Falsifier: loop a single-position verb -- the count becomes three.
     assert (
         app.session.set_pass_positions(
             document_id, {"p1": (0.0, 0.0), "p2": (100.0, 0.0), "p3": None}
@@ -1045,8 +1034,6 @@ def test_a_position_survives_every_other_pass_verb(app: Any) -> None:
     assert app.session.add_pass(document_id, "p") == ""
     assert app.session.set_pass_positions(document_id, {"p": (7.0, 9.0)}) == ""
     document = app.ui_documents[document_id].document
-    # Falsifier: rebuild the entry from `PassEntry()` in any verb (the `with_target` bug
-    # `test_graph_edits_preserve_fields_they_do_not_name` was written for).
     assert app.session.set_pass_target(document_id, "p", TargetConfig(dtype="f4")) == ""
     assert app.session.set_pass_iterations(document_id, "p", 2) == ""
     assert app.session.set_pass_group(document_id, "p", "g") == ""
@@ -1058,7 +1045,6 @@ def test_a_position_survives_every_other_pass_verb(app: Any) -> None:
 
 
 def test_import_passes_leaves_every_position_none(app: Any, tmp_path: Path) -> None:
-    # Falsifier: the entry copy that carried the source's coordinates verbatim.
     document_id = app.current_document_id
     bloom = _load_bloom(tmp_path)
     bloom.document.graph = bloom.document.graph.with_positions(
@@ -1073,7 +1059,7 @@ def test_import_passes_leaves_every_position_none(app: Any, tmp_path: Path) -> N
 
 
 def test_no_session_verb_but_one_accepts_a_position() -> None:
-    # 092 D19's structural form: the copilot cannot be handed a coordinate it would have to
+    # The copilot cannot be handed a coordinate it would have to
     # synthesize, because no entry point but the placement verb names one.
     accepting = [
         name
@@ -1085,7 +1071,7 @@ def test_no_session_verb_but_one_accepts_a_position() -> None:
 
 
 # ----------------------------------------------------------------
-# One namespace for passes and groups, and the rename guard (092 D17, D18).
+# One namespace for passes and groups, and the rename guard.
 
 
 def test_set_pass_groups_saves_once_and_refuses_a_pass_name(
@@ -1099,7 +1085,6 @@ def test_set_pass_groups_saves_once_and_refuses_a_pass_name(
     assert saves[0] == 1
     entries = app.ui_documents[document_id].document.graph.passes
     assert {entries[n].group for n in ("p1", "p2", "p3")} == {"trio"}
-    # Falsifier: validate per pass inside the loop, leaving a partial write behind.
     assert (
         app.session.set_pass_groups(document_id, ["p1", "p2"], "p3")
         == "a pass and a group cannot share a name"
@@ -1125,9 +1110,7 @@ def test_add_pass_and_rename_refuse_a_name_a_group_carries(app: Any) -> None:
 
 
 def test_every_group_writing_entry_point_shares_one_validator(app: Any) -> None:
-    # 092 D17: the domain is every entry point that writes a group, enumerated here.
-    # Falsifier: the check on `set_pass_groups` alone -- `plan_import` then imports a bundle
-    # under a group name a pass carries, and the root draws two entities with one name.
+    # The domain is every entry point that writes a group, enumerated here.
     document_id = app.current_document_id
     assert app.session.add_pass(document_id, "taken") == ""
     collision = "a pass and a group cannot share a name"
@@ -1159,7 +1142,6 @@ def test_rename_pass_refuses_the_cycle_it_would_create(app: Any) -> None:
     document.passes["comp"].compile()
     old_path = document.passes["comp"].source.path
     refusal = app.session.rename_pass(document_id, "comp", "final")
-    # Falsifier: delete the guard -- the rename succeeds and the plan reports the cycle.
     assert "passes form a cycle" in refusal, refusal
     assert old_path.exists(), "a refused rename moved the file"
     assert not app.session.paths.pass_shader_for(document_id, "final").exists()
@@ -1183,7 +1165,7 @@ def test_wiring_if_renamed_leaves_the_document_as_it_found_it(app: Any) -> None:
     assert wiring["sink"] == {"u_src": "src2"}, "the explicit row follows the rename"
     assert list(document.passes) == keys_before
     assert document.passes["sink"].uniform_values["u_src"] == value_before
-    # Falsifier: drop the restore. Also after a read that raises.
+    # Also after a read that raises.
     with (
         pytest.raises(RuntimeError),
         mock.patch.object(

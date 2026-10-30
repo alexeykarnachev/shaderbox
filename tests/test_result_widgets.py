@@ -1,4 +1,4 @@
-"""The structured-result-widget channel (feature 020·21): tool producers emit a TERSE fact (no
+"""The structured-result-widget channel: tool producers emit a TERSE fact (no
 url/path in the model-facing message) plus a structured widget in the payload; the agent extracts
 the widget without the raw target ever reaching the model. These pin the single most important
 property of the feature — the URL/path must NOT leak into the LLM-visible message string."""

@@ -1,4 +1,4 @@
-"""Feature 056 slices C3 + E: what the USER is shown. A torn stream is not an incompatible model,
+"""What the USER is shown. A torn stream is not an incompatible model,
 a cancelled turn's screen keeps what history keeps, an all-empty turn still persists an assistant
 message, and a precheck handoff is a visible neutral card. Bare objects — no app fixture, no GL,
 no LLM."""
@@ -72,7 +72,7 @@ def test_torn_stream_is_not_diagnosed_as_an_incompatible_model() -> None:
 
 
 def test_precheck_handoff_is_a_visible_neutral_card() -> None:
-    # A deflected publish (no credentials) used to yield NOTHING — the user saw an empty step.
+    # A deflected publish (no credentials) must yield a visible step, not nothing.
     events = list(
         run_turn(
             _FakeClient(

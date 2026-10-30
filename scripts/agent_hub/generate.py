@@ -1,6 +1,6 @@
 """Generate the agent-hub page: the full, holistic report on the copilot.
 
-The maintainer's communication hub: one static page carrying the ENTIRE agent surface (system
+The communication hub: one static page carrying the ENTIRE agent surface (system
 prompt verbatim, conventions, every tool signature, every config knob with its doc comment, the
 context-assembly model) plus every dogfood run's dialogue, media and verdicts. Regenerate with
 `uv run python scripts/agent_hub/generate.py`; output is `scripts/agent_hub/site/` (gitignored —

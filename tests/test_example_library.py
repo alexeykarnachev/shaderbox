@@ -1,4 +1,4 @@
-"""Example-library mechanics (features 020·22 + 051) — the agent sees/reads/greps/instantiates
+"""Example-library mechanics  — the agent sees/reads/greps/instantiates
 shipped examples via the EXISTING read_shader/grep using an `example:` address, and the default
 starter is just-an-example. GL-free parts (the catalogue/resolve/edit-reject addressing) are
 unit-tested directly; the GL-marshalled read/grep/create paths run against a real headless App with
@@ -62,7 +62,7 @@ def test_resolve_source_distinguishes_example_from_document(app: Any) -> None:
 def test_shipped_examples_read_clean_without_joining_working_set(app: Any) -> None:
     for t in app.copilot_backend.example_catalog():
         views = app.copilot_backend.read_shaders([t.example_id])
-        # One view per pass (081 D1): a multi-pass example's OUTPUT pass is its presentation
+        # One view per pass: a multi-pass example's OUTPUT pass is its presentation
         # step, so returning it alone hid the technique the example exists to show.
         assert views, t.example_id
         for v in views:
@@ -115,8 +115,6 @@ def test_opening_an_example_leaves_no_tab_outside_the_project(app: Any) -> None:
     # out of a draw call, so it takes the whole frame down rather than showing a bad label.
     # Saving first rebinds every pass into the project, so the tab opens on a project path.
     #
-    # Falsifier: swap the two lines in create_document_from_example and the tab below points at
-    # shaderbox/resources/document_examples/... instead.
     before = set(app.ui_documents)
     app.create_document_from_example(EXAMPLE_ORDER[-1])
     created = (set(app.ui_documents) - before).pop()
@@ -147,7 +145,7 @@ def gl_ctx() -> Iterator[moderngl.Context]:
 def test_every_shipped_example_loads_compiles_and_renders(
     gl_ctx: moderngl.Context, example_id: str
 ) -> None:
-    """065 check 15, the half that does not need a display: the shipped set is what a new user
+    """The half of the example-library check that does not need a display: the shipped set is what a new user
     opens first, and it is the highest-probability breakage of any change to loading or the graph.
 
     Driven from `EXAMPLE_ORDER` rather than a listdir, so an example added to the roster and not
@@ -235,10 +233,10 @@ def test_the_entity_example_still_looks_like_a_flock_after_thirty_seconds(
 ) -> None:
     """An example is documentation, and a simulation's late state is what a reader sees.
 
-    The first version collapsed: every per-frame increment exceeded the speed cap, so
-    the clamp rewrote velocity to pure tangential and the flock converged onto two
-    one-pixel rings -- coverage 39% to 2%, peak brightness 6.7 to 219. Frame one looked
-    right the whole time, which is why this walks the clock instead.
+    A per-frame increment above the speed cap collapses the flock: the clamp rewrites
+    velocity to pure tangential and it converges onto two one-pixel rings -- coverage 39%
+    to 2%, peak brightness 6.7 to 219. Frame one looks right throughout, which is why this
+    walks the clock instead.
     """
     app.create_document_from_example(_ENTITY_EXAMPLE_ID)
     document_id = app.current_document_id

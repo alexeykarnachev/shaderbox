@@ -1,4 +1,4 @@
-"""parse_shader_errors driver-format coverage (033 review fix)."""
+"""parse_shader_errors driver-format coverage."""
 
 from pathlib import Path
 

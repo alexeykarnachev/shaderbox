@@ -1,4 +1,4 @@
-"""Documentation (F1) — the shader contract, natively rendered (feature 055).
+"""Documentation (F1) — the shader contract, natively rendered.
 
 Section list on the left, prose + a GLSL snippet on the right; the lib-picker shape. A reading
 surface: nothing here writes into a buffer.

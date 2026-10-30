@@ -1,7 +1,6 @@
-"""A script drives a sampler2D (feature 110).
+"""A script drives a sampler2D.
 
-The gates of `ai_docs/features/110_script_textures/01_spec.md ## Verification`, numbered as
-there. Fixtures render once before the first tick, so the pass is compiled and no key is
+Fixtures render once before the first tick, so the pass is compiled and no key is
 `held_uncompiled`. Every field differs from anything else the sampler could bind: the wired
 pass draws `_SRC_COLOUR`, an unfilled sampler reads black, and fields hold no black texel
 unless a gate says so.
@@ -1058,7 +1057,7 @@ def test_an_exported_frame_carries_the_field(app: Any, tmp_path: Path) -> None:
     assert abs(red - round(0.75 * 255)) <= 1, red
 
 
-# ---- post-implementation review: the fixes it asked for ----------------------------------
+# ---- fake-engine helpers and further cases ----------------------------------
 
 
 def _fake_engine(

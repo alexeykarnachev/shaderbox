@@ -49,9 +49,7 @@ def test_a_write_that_lands_says_saved(app: Any) -> None:
 
 
 def test_a_write_the_copilot_blocks_does_not_claim_a_save(app: Any) -> None:
-    """Falsifier: push "Saved" unconditionally again.
-
-    The lock warning must still arrive -- asserting only the absence of "Saved" would
+    """The lock warning must still arrive -- asserting only the absence of "Saved" would
     pass against a handler that fell silent altogether, which is a different bug.
     """
     _open_a_shader_tab(app)

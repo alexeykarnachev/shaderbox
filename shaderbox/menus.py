@@ -1,4 +1,4 @@
-"""The menu bar and the one primitive every command-bearing menu item goes through (093/17).
+"""The menu bar and the one primitive every command-bearing menu item goes through.
 
 The bar is a RENDER of `COMMAND_SPECS`: one top-level menu per `CommandCategory` in
 `CATEGORY_ORDER`, one item per spec in table order, its label the spec's
@@ -61,7 +61,7 @@ def target_menu_item(
 
     The twin of `command_menu_item`: that one fires the command's own callback, which acts on
     the current document or `panel_pass`. A context menu opens on a specific tile, and a
-    right-click does not select it (093 W8), so those menus call their verb with that target
+    right-click does not select it, so those menus call their verb with that target
     and use this to draw the item. The HINT always comes from the table, so a rebind reaches
     every surface -- which is the half a hand-rolled item loses.
 
@@ -79,7 +79,7 @@ def command_menu_item(app: App, command_id: CommandId) -> bool:
     """One command as a menu item: its label, its bound chord as the hint, its scope as the
     enabled test. Fires the command's callback on a click and returns whether it fired.
 
-    A destructive command's callback opens the confirm modal (093 W4), so the item itself is
+    A destructive command's callback opens the confirm modal, so the item itself is
     plain and every surface confirms the same way.
     """
     spec = SPEC_BY_ID[command_id]
@@ -107,7 +107,7 @@ def draw_menu_bar(app: App) -> None:
                     if spec.separator_before:
                         imgui.separator()
                     command_menu_item(app, spec.id)
-        # The open project's name, right-aligned and dim (084 D8): the one piece of chrome no
+        # The open project's name, right-aligned and dim: the one piece of chrome no
         # modal covers, and the only place the app says which project it is in. Text, not a
         # button — the File menu's `Projects` already owns the click.
         label = f"project {app.project_dir.name}"

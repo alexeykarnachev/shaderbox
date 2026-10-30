@@ -5,7 +5,7 @@ per iteration: the built tiers, then the within-turn tool exchange, then the liv
 plus the `tools=` block beside the messages. `breakdown_request` measures every one of those
 at the moment the request is assembled and keeps each part's text, so a run's record can show
 both the map (sizes) and the territory (what the block actually said). Emitted by `run_turn` as
-the `context_breakdown` trace event; the dogfooding station is its consumer.
+the `context_breakdown` trace event.
 """
 
 import json

@@ -1,4 +1,4 @@
-"""ctypes binding for the vendored libeditor.so (feature 067).
+"""ctypes binding for the vendored libeditor.so.
 
 Leaf module: no imgui, no moderngl. Derived from the editor repo's
 `examples/python/editor_widget.py` (the reference binding), adapted to repo
@@ -90,7 +90,7 @@ class Mode(IntEnum):
     # RAISES on an unknown value, so a missing member is a crash on the first `R`, not a
     # stale reading.
     REPLACE = 4
-    # `Ctrl+V`: a rectangular selection. Appended upstream at 5aa51cd, same as REPLACE was --
+    # `Ctrl+V`: a rectangular selection. Appended upstream, same as REPLACE was --
     # and the same crash if omitted. Its selection is NOT `ed_selection`, which names two
     # corners and says nothing about the columns between them; see `block_selection`.
     VISUAL_BLOCK = 5
@@ -865,7 +865,7 @@ class Editor:
 
     def set_leader(self, key: str) -> None:
         """vim's `mapleader`; "" unsets it. A leader consumes nothing on its own — it
-        arms, and the next key decides (editor da8a850)."""
+        arms, and the next key decides."""
         self._lib.ed_set_leader(self._h, ord(key) if key else 0)
 
     def get_leader(self) -> str:

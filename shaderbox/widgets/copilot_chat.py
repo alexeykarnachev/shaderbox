@@ -63,7 +63,7 @@ def should_grab_chat_focus(
 ) -> bool:
     """Whether the chat window should `set_next_window_focus()` this frame. A background
     window grabbing focus EVERY frame while a popup is open dismisses that popup (imgui
-    reads it as a close; /imgui-ui §8) — so the focus-pending / mid-turn latch must yield
+    reads it as a close) — so the focus-pending / mid-turn latch must yield
     while any popup owns focus."""
     return (focus_pending or in_flight) and not any_popup_open
 
@@ -156,7 +156,7 @@ def draw(app: App) -> None:
         if not app.integrations_store.copilot.openrouter_key:
             # Drain the pending-focus latch the transcript would otherwise consume — the gate
             # has no input box to focus, so left set it re-grabs focus every frame (which a modal
-            # reads as a dismiss; /imgui-ui §8).
+            # reads as a dismiss).
             app.copilot_focus_pending = False
             unconnected_gate(
                 not_connected_msg="Copilot is not set up.",
@@ -249,7 +249,7 @@ def _draw_transcript(app: App) -> None:
     _draw_input_splitter(app, avail_y)
 
     in_flight = state.in_flight
-    # One-shot, never every frame (/imgui-ui §7.5).
+    # One-shot, never every frame.
     if app.copilot_focus_pending:
         imgui.set_keyboard_focus_here(0)
         app.copilot_focus_pending = False
@@ -342,7 +342,7 @@ def _draw_message(
 
 def _collapsed_steps(steps: list[StepRecord]) -> list[tuple[str, str, bool]]:
     # (range_label, tool_name, ok) rows for the hover breakdown. Consecutive identical
-    # steps (same tool, same outcome) collapse into one "4-13" row (034 F05).
+    # steps (same tool, same outcome) collapse into one "4-13" row.
     rows: list[tuple[str, str, bool]] = []
     i = 0
     while i < len(steps):
@@ -366,7 +366,7 @@ def _tooltip_stat_row(label: str, value: str, label_w: float, value_color) -> No
 
 
 def _draw_snippet_tooltip(registry: ToolRegistry, msg: Message) -> None:
-    # The designed hover breakdown (034 F09): per-step rows carrying the square bar's color
+    # The hover breakdown: per-step rows carrying the square bar's color
     # language (a small ok/fail swatch + the human verb), then a stats block with the token
     # in/out split + cost. No per-call tokens — usage is billed per LLM iteration (F06
     # decision A), so context/reply/cost are the turn totals.
@@ -591,7 +591,7 @@ def _draw_pending_action(app: App, msg: Message, idx: int) -> None:
 
 
 def _draw_lock_choices(app: App, idx: int) -> None:
-    # The card asks about THIS call; the horizon is the mode on the top bar (086), which is why
+    # The card asks about THIS call; the horizon is the mode on the top bar, which is why
     # there is no "for this session" answer here to keep in step with it.
     if primary_button(f"Allow##gate_lock_allow_{idx}"):
         app.copilot.answer_gate_lock(LockAnswer.ALLOW)

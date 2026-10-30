@@ -1,4 +1,4 @@
-"""The engine-derived NL turn-summary (feature 020·28): history is NL-only, so each committed turn
+"""The engine-derived NL turn-summary: history is NL-only, so each committed turn
 collapses to one summary that MUST preserve four facts (each a real corpus failure moment): the new value
 of a mutation (dial-back), the agent's stated assumption (correction), the irreversible-action ledger with
 identity (don't re-publish on continue), and the failure note (why-did-that-fail). Pure: scripted fake

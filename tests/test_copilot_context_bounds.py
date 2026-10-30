@@ -1,4 +1,4 @@
-"""Feature 056 slice D: the working set is bounded and turn-scoped. The per-turn reset is a
+"""The working set is bounded and turn-scoped. The per-turn reset is a
 CAPABILITY called at the one choke point (so a session driven without the App resets too), and the
 add seam is a true LRU with a loud eviction record. Bare objects — no app fixture, no GL."""
 
@@ -25,7 +25,7 @@ def _add(stub: types.SimpleNamespace) -> Any:
     return ProjectSession._copilot_ws_add.__get__(stub)
 
 
-# ---- D1: the reset rides the session, not the App ----
+# ---- the reset rides the session, not the App ----
 
 
 def test_enqueue_turn_resets_the_working_set(tmp_path: Path) -> None:
@@ -61,7 +61,7 @@ def test_reset_clears_the_eviction_record_too() -> None:
     assert stub._copilot_working_set_evicted == []
 
 
-# ---- D3: the LRU + the loud eviction ----
+# ---- the LRU + the loud eviction ----
 
 
 def test_add_seam_evicts_the_least_recently_touched() -> None:

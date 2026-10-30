@@ -62,7 +62,7 @@ class ShaderLibIndex:
                 continue
             sources[path] = source
             for fn in _extract_functions(source):
-                # Duplicate name: first wins (sorted walk → deterministic).
+                # Duplicate name: first wins (sorted order → deterministic).
                 if fn.name not in functions:
                     functions[fn.name] = fn
         return cls(functions=functions, sources=sources)

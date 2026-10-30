@@ -2,7 +2,7 @@
 
 Every google auth/apiclient import lives here, and `youtube.py` imports this module inside
 the worker functions that use it — so the SDK's import cost rides the first Connect/upload
-on the worker thread, never the app start (066 D3). SDK exceptions never cross the seam:
+on the worker thread, never the app start. SDK exceptions never cross the seam:
 each is mapped to one of the typed exceptions below, message already user-facing.
 """
 

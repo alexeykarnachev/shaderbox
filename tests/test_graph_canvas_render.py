@@ -1,4 +1,4 @@
-"""The moderngl renderer draws what the library emits (feature 098).
+"""The moderngl renderer draws what the library emits.
 
 Every test here pins a defect that shipped once during this feature's
 implementation, because all three rendered something plausible rather than
@@ -52,7 +52,7 @@ def test_the_shape_format_describes_the_struct_exactly(
 
 
 def test_every_instance_reads_its_own_row(gl_ctx: moderngl.Context) -> None:
-    """The falsifier for the stride bug. Two instances carrying distinct
+    """A widened instance stride is caught here. Two instances carrying distinct
     markers must come back distinct; under a widened stride the second reads
     into the first's tail and the values shift by a field."""
     renderer = CanvasRenderer(gl=gl_ctx)
@@ -101,7 +101,7 @@ void main() {
 def test_a_run_offset_draws_that_run_and_not_the_head_of_the_stream(
     gl_ctx: moderngl.Context,
 ) -> None:
-    """The falsifier for the base-instance bug: a host that drops the offset
+    """The base-instance offset is honoured: a host that drops the offset
     redraws instances 0..n instead of the run's own, which is DIM rather than
     broken because the head of the stream is the grid.
 
@@ -230,11 +230,9 @@ def test_the_body_survives_every_viewport(
     draws one lights a large share of the viewport. Under the stride bug
     this fell to a few hundred pixels.
 
-    Swept, because that bug hid at one viewport and showed at another -- the
-    instance count decides how far past the buffer the walk runs, and a
-    single size proves nothing. A separate one-size copy of this body stood
-    beside it until the review: strictly weaker, failing only where the
-    sweep already failed, so its size was folded in here instead.
+    Swept over viewport sizes, because that bug hid at one viewport and showed at another -- the
+    instance count decides how far past the buffer the read runs, and a
+    single size proves nothing.
     """
     renderer = CanvasRenderer(gl=gl_ctx)
     panel = CanvasPanel(renderer)

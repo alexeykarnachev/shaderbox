@@ -1,9 +1,8 @@
 """Every modal is one registry row, closes the same way, and ends in the same action row.
 
-The rulebook's modal chrome (`.claude/skills/imgui-ui/SKILL.md` §7.1, §7.3) is prose that
-four modals had already drifted from: one body inverted the `keep_open` name, three had no
-`SPACE.MD` spacer above the action row, and the copilot's revert confirm closed itself inside
-its body instead of returning a bool. Prose does not hold a shape; this does.
+The modal chrome rules are one name for the keep-open flag, a `SPACE.MD` spacer above the
+action row, and a body that returns a bool instead of closing itself. Prose does not hold a
+shape; this does.
 
 The domain is the REGISTRY (`popups.registry.MODALS`), paired against `ModalId` so a member
 with no `Modal` and a `Modal` with no member both fail. Each modal's LEAF bodies are the
@@ -134,10 +133,7 @@ def _label_of(call: ast.Call) -> str:
 
 
 def test_every_modal_id_has_exactly_one_registry_row() -> None:
-    """The structural half: the enum and the registry are the same set, one row each.
-
-    Falsifier: add a `ModalId` member with no `Modal` -- or a second `Modal` for one id.
-    """
+    """The structural half: the enum and the registry are the same set, one row each."""
     ids = [modal.id for modal in MODALS]
     assert len(ids) == len(set(ids)), f"a ModalId appears twice in MODALS: {ids}"
     assert set(ids) == set(ModalId), (
@@ -148,10 +144,7 @@ def test_every_modal_id_has_exactly_one_registry_row() -> None:
 
 
 def test_every_registry_row_has_leaf_bodies_listed() -> None:
-    """A modal the table does not name is one nothing below checks.
-
-    Falsifier: drop a `Modal` from `MODALS` -- the id/registry pairing above goes red first.
-    """
+    """A modal the table does not name is one nothing below checks."""
     assert set(_BODIES) == set(ModalId), (
         f"_BODIES misses {sorted(set(ModalId) - set(_BODIES))}; "
         f"names retired ids {sorted(set(_BODIES) - set(ModalId))}"
@@ -167,8 +160,6 @@ def test_every_dispatcher_override_lives_in_its_own_modules_module() -> None:
     row, so every clause below passes on the wrong function while that modal's real chrome
     goes unchecked. The row's own `Modal.body` names the owning module, so no second table is
     needed.
-
-    Falsifier: point the `PASS_SETTINGS` override at `help._draw_body`.
     """
     assert set(_DISPATCHER_LEAVES) <= set(ModalId), (
         f"an override names a retired id: {sorted(set(_DISPATCHER_LEAVES) - set(ModalId))}"
@@ -191,11 +182,7 @@ def test_every_dispatcher_override_lives_in_its_own_modules_module() -> None:
 def test_every_body_binds_and_returns_keep_open(
     modal_id: ModalId, body: FunctionType
 ) -> None:
-    """§7.3: one name for the flag, never inverted.
-
-    Falsifier: rename `keep_open` to `ok` in one modal -- or point the pass-settings override
-    at its own DISPATCHER, which binds no such local.
-    """
+    """One name for the flag, never inverted."""
     node = _body_ast(body)
     bound = {
         target.id
@@ -225,10 +212,8 @@ def test_every_body_binds_and_returns_keep_open(
 def test_every_body_ends_in_a_close_or_cancel_row(
     modal_id: ModalId, body: FunctionType
 ) -> None:
-    """§7.1: the dismiss control is a `standard_button` labelled Close or Cancel, and it is
+    """The dismiss control is a `standard_button` labelled Close or Cancel, and it is
     the LAST one in the body -- the bottom action row, never mid-body.
-
-    Falsifier: drop the Close row from one modal.
     """
     calls = _close_calls(_body_ast(body))
     assert calls, f"{modal_id.value}::{body.__name__} draws no standard_button at all"
@@ -243,11 +228,9 @@ def test_every_body_ends_in_a_close_or_cancel_row(
 def test_the_action_row_is_drawn_inside_modal_footer(
     modal_id: ModalId, body: FunctionType
 ) -> None:
-    """§7.1: the action row is `ui_primitives.modal_footer()`, which owns the `SPACE.MD`
+    """The action row is `ui_primitives.modal_footer()`, which owns the `SPACE.MD`
     spacer -- one primitive, so the room the content reserves and the room the row occupies
     are the same number.
-
-    Falsifier: draw one modal's row after a hand-written `imgui.dummy((0, SPACE.MD))`.
     """
     node = _body_ast(body)
     close = _close_calls(node)[-1]
@@ -268,8 +251,6 @@ def test_sizing_follows_whether_the_body_sizes_its_own_content(
     A modal that sizes a content region needs a height to size it against, so it is
     RESIZABLE or FIXED. The row's own body and a named `size` function count along with
     the leaves: Examples measures its grid against the footer in `_size`.
-
-    Falsifier: declare the confirm row RESIZABLE, or the Help row AUTO.
     """
     row = BY_ID[modal_id]
     functions = [row.body, *_BODIES[modal_id]]
@@ -294,8 +275,6 @@ def test_no_body_measures_the_footer_by_hand(
 ) -> None:
     """A body asks `modal_footer_height()` for the room its footer needs; a frame height it
     measures itself is the reservation that disagreed with what the footer drew.
-
-    Falsifier: restore `list_h = -imgui.get_frame_height_with_spacing()` in `help.py`.
     """
     offenders = _hand_reservations(_body_ast(body))
     assert not offenders, (
@@ -337,9 +316,7 @@ def test_no_module_but_the_owners_writes_the_mutex(
     """The mutex is the registry's field to clear: any other module that writes it closes
     around the per-modal cleanup the funnel owns.
 
-    A hand-written close is how the emoji picker leaked its `emoji_pick_target`. Falsifier:
-    put `app.modal = None` back in `help.py` -- or in `tabs/document.py`, beside its Reset
-    button.
+    A hand-written close is how the emoji picker leaked its `emoji_pick_target`.
     """
     written = [
         node.lineno
@@ -354,10 +331,7 @@ def test_no_module_but_the_owners_writes_the_mutex(
 
 
 def test_ui_draws_the_registry_once_and_imports_no_popup_draw() -> None:
-    """R2: one `draw_modal(app)` call, and no per-modal draw function imported.
-
-    Falsifier: re-add `draw_help(app)` and its import -- the import half goes red.
-    """
+    """One `draw_modal(app)` call, and no per-modal draw function imported."""
     tree = ast.parse((_PKG / "ui.py").read_text(encoding="utf-8"))
     imported = {
         alias.name
@@ -381,10 +355,8 @@ def test_ui_draws_the_registry_once_and_imports_no_popup_draw() -> None:
 
 
 def test_app_is_not_a_client_of_the_popups_layer() -> None:
-    """R2: the registry is a LEAF -- it imports `app.py`, so `app.py` importing anything
+    """The registry is a LEAF -- it imports `app.py`, so `app.py` importing anything
     under `shaderbox.popups` is the cycle that forces a banned escape.
-
-    Falsifier: `from shaderbox.popups.confirm import ConfirmRequest` in `app.py`.
     """
     tree = ast.parse((_PKG / "app.py").read_text(encoding="utf-8"))
     offenders = [
@@ -400,7 +372,7 @@ def test_app_is_not_a_client_of_the_popups_layer() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Deletions — the roster's old five places are gone
+# Deletions — the roster has one home
 # ---------------------------------------------------------------------------
 
 _RETIRED: tuple[str, ...] = (
@@ -414,10 +386,7 @@ _RETIRED: tuple[str, ...] = (
 
 @pytest.mark.parametrize("name", _RETIRED)
 def test_a_retired_name_is_gone_from_the_tree(name: str) -> None:
-    """The five-place roster and the submenu confirm are deleted, not merely unused.
-
-    Falsifier: leave any one of them behind anywhere in `shaderbox/` or `tests/`.
-    """
+    """The five-place roster and the submenu confirm are deleted, not merely unused."""
     roots = (_PKG, _PKG.parent / "tests", _PKG.parent / "scripts" / "smoke.py")
     offenders: list[str] = []
     for root in roots:

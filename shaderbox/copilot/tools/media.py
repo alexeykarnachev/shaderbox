@@ -10,7 +10,7 @@ from shaderbox.copilot.tools.base import (
     ToolDefinition,
 )
 
-# Texture/media tools (feature 052 slice 2). bind_media opens the USER's OS file picker (its own FILE
+# Texture/media tools. bind_media opens the USER's OS file picker (its own FILE
 # gate — the model never types a path); unbind_media resets a sampler to the default image.
 
 _UNIFORM_DESC = "the sampler2D uniform's name (e.g. u_tex) — see the working-set row"

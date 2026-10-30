@@ -1,4 +1,4 @@
-"""The confirm modal, and the close funnel every modal reaches (093 W4).
+"""The confirm modal, and the close funnel every modal reaches.
 
 Two questions, two rigs. The confirm's own behavior is asked of REAL frames -- the modal that
 names its target, the one decision per frame, the Enter that does not fire on the appearing
@@ -29,7 +29,7 @@ from shaderbox.widgets import copilot_chat
 
 # This module drives real frames, so it gets its own worker: the imgui font atlas is per
 # PROCESS and a second App that renders a full frame in one interpreter dies on a texture the
-# first released (`conventions.md ## Known quirks`).
+# first released.
 pytestmark = pytest.mark.xdist_group("gl_frames_confirm")
 
 
@@ -58,8 +58,6 @@ def test_enter_confirms_but_never_on_the_appearing_frame(app: Any) -> None:
     """A keyboard menu activation shares its frame with the press that opened the modal (the
     bar draws before the popup block), so the appearing frame declines.
 
-    Falsifier: drop `not imgui.is_window_appearing()` -- the Enter that opened the menu item
-    fires the verb instantly, and the first assertion below goes red.
     """
     ran: list[int] = []
     app.request_confirm(_request(lambda: ran.append(1)))
@@ -85,7 +83,6 @@ def test_the_verb_runs_once_when_the_button_and_enter_land_together(
     """The body draws the button and reads the key in the same pass, so a click while Enter
     is also pressed must still be ONE decision.
 
-    Falsifier: give the Enter branch its own `if` -- the spy counts two.
     """
     ran: list[int] = []
     app.request_confirm(_request(lambda: ran.append(1)))
@@ -108,8 +105,7 @@ def test_the_verb_runs_once_when_the_button_and_enter_land_together(
 
 
 def test_escape_cancels_and_runs_nothing(app: Any) -> None:
-    """Esc closes through the funnel, which nulls the request. Falsifier: run `on_confirm`
-    from the modal's `on_close`."""
+    """Esc closes through the funnel, which nulls the request."""
     ran: list[int] = []
     app.request_confirm(_request(lambda: ran.append(1)))
     assert close_modal(app) is True
@@ -118,8 +114,7 @@ def test_escape_cancels_and_runs_nothing(app: Any) -> None:
 
 
 def test_cancel_closes_and_runs_nothing(app: Any, monkeypatch: Any) -> None:
-    """The Cancel button's path, driven through a real frame. Falsifier: return `keep_open`
-    from the Cancel branch."""
+    """The Cancel button's path, driven through a real frame."""
     ran: list[int] = []
     app.request_confirm(_request(lambda: ran.append(1)))
     _pump(app)
@@ -150,8 +145,7 @@ def _request(on_confirm: Any) -> ConfirmRequest:
 
 
 def test_the_pass_delete_verb_asks_then_deletes(app: Any) -> None:
-    """The pass survives the request and goes on the confirm. Falsifier: call
-    `session.delete_pass` from `delete_pass_confirmed` -- the first assertion goes red."""
+    """The pass survives the request and goes on the confirm."""
     document_id = app.current_document_id
     name = next(iter(app.ui_documents[document_id].document.passes))
     assert app.session.add_pass(document_id, "other") == ""
@@ -172,10 +166,7 @@ def test_the_pass_delete_verb_asks_then_deletes(app: Any) -> None:
 
 
 def test_the_pass_delete_confirm_through_the_real_modal(app: Any) -> None:
-    """The whole path, frame-driven: the tile's verb, the modal, the Enter, the pass gone.
-
-    Falsifier: drop the `on_confirm` call from the confirm body -- the pass survives Enter.
-    """
+    """The whole path, frame-driven: the tile's verb, the modal, the Enter, the pass gone."""
     document_id = app.current_document_id
     name = next(iter(app.ui_documents[document_id].document.passes))
     assert app.session.add_pass(document_id, "other") == ""
@@ -210,8 +201,7 @@ def test_reset_asks_nothing_and_restarts_at_once(app: Any) -> None:
     """Reset is the one document verb with NO confirm.
 
     It destroys nothing on disk and nothing the document cannot rebuild by running again, so
-    the question had no answer worth giving. Falsifier: route it back through
-    `request_confirm` -- the call below stops reaching the funnel and leaves a modal open.
+    the question had no answer worth giving.
     """
     target = app.current_document_id
     with mock.patch.object(
@@ -225,11 +215,7 @@ def test_reset_asks_nothing_and_restarts_at_once(app: Any) -> None:
 
 
 def test_reset_targets_the_document_it_is_given(app: Any) -> None:
-    """A tile's Reset restarts THAT document, not whichever one is current.
-
-    Falsifier: give `reset_document` the current id -- the non-current target below stops
-    reaching the funnel.
-    """
+    """A tile's Reset restarts THAT document, not whichever one is current."""
     other_id = app.create_document_from_example(STARTER_EXAMPLE_ID)
     app.select_document(other_id)
     target = next(i for i in app.ui_documents if i != other_id)
@@ -257,11 +243,7 @@ def test_the_chat_clear_verb_asks_first(app: Any) -> None:
 
 
 def test_the_chats_clear_button_asks_first(app: Any, monkeypatch: Any) -> None:
-    """The chat's own Clear control routes through the confirming verb.
-
-    Falsifier: call `app.copilot_clear_chat()` from the button -- the transcript and its
-    checkpoints go on one click.
-    """
+    """The chat's own Clear control routes through the confirming verb."""
     real_danger = copilot_chat.danger_button
 
     def clicking(label: str, *args: Any, **kwargs: Any) -> bool:
@@ -285,8 +267,7 @@ def test_the_chats_clear_button_asks_first(app: Any, monkeypatch: Any) -> None:
 
 
 def test_the_revert_glyph_asks_before_reverting(app: Any) -> None:
-    """`open_copilot_revert` builds the request with the message's own head. Falsifier:
-    revert inside the opener -- the verb spy counts one before the confirm."""
+    """`open_copilot_revert` builds the request with the message's own head."""
     msg = Message(role="user", text="make the blur wider", turn_id="t1")
     with mock.patch.object(app, "revert_turn", wraps=app.revert_turn) as verb:
         app.open_copilot_revert(msg)
@@ -300,11 +281,7 @@ def test_the_revert_glyph_asks_before_reverting(app: Any) -> None:
 
 
 def test_the_lib_tree_delete_asks_through_its_menu(app: Any, monkeypatch: Any) -> None:
-    """The tree's Delete item routes through `request_confirm` with the trash line.
-
-    Falsifier: call `shader_lib_files.delete_file` from the item -- the file is gone with
-    no confirm.
-    """
+    """The tree's Delete item routes through `request_confirm` with the trash line."""
     victim = shader_lib_root() / "confirm_probe.glsl"
     victim.write_text("float SB_probe() { return 1.0; }\n", encoding="utf-8")
 
@@ -363,8 +340,6 @@ def test_a_confirm_from_inside_the_picker_leaves_the_picker_below(
     is trashed and the user is back in the picker, with the rename it had armed still armed
     and `close_lib_picker` never run.
 
-    Falsifier: open the confirm unstacked (`request_confirm` without `stacked=True`) --
-    `app.modal` is None after the confirm and the picker is gone.
     """
     victim = shader_lib_root() / "stacked_probe.glsl"
     victim.write_text("float SB_stacked() { return 1.0; }\n", encoding="utf-8")
@@ -400,10 +375,7 @@ def test_a_confirm_from_inside_the_picker_leaves_the_picker_below(
 
 
 def test_escape_on_a_stacked_confirm_returns_to_the_picker(app: Any) -> None:
-    """Cancelling lands the user back in the picker with nothing trashed.
-
-    Falsifier: have `close_modal` write `None` rather than `app.modal_below`.
-    """
+    """Cancelling lands the user back in the picker with nothing trashed."""
     victim = shader_lib_root() / "stacked_cancel_probe.glsl"
     victim.write_text("float SB_cancel() { return 1.0; }\n", encoding="utf-8")
     app.open_shader_lib_picker()
@@ -422,8 +394,6 @@ def test_a_stacked_confirm_leaves_the_chat_focus_capture_alone(app: Any) -> None
     stacked over it: a stacked open reads `copilot_focused` mid-draw, where it is False by
     construction, so re-capturing would send a chat user back to the editor.
 
-    Falsifier: drop the `stacked` branch from `_open_modal` -- the flag reads False after the
-    confirm.
     """
     victim = shader_lib_root() / "focus_probe.glsl"
     victim.write_text("float SB_focus() { return 1.0; }\n", encoding="utf-8")
@@ -446,8 +416,6 @@ def test_the_lib_tree_delete_item_asks_from_inside_the_open_picker(
     """The real menu item, submitted from inside the picker's own body: the file survives the
     click and the confirm stacks over the picker.
 
-    Falsifier: call `shader_lib_files.delete_file` from the item -- the file is gone with no
-    confirm.
     """
     victim = shader_lib_root() / "menu_probe.glsl"
     victim.write_text("float SB_menu() { return 1.0; }\n", encoding="utf-8")
@@ -468,10 +436,7 @@ def test_the_lib_tree_delete_item_asks_from_inside_the_open_picker(
 
 
 def test_the_lib_tree_dir_delete_asks_through_its_menu(app: Any) -> None:
-    """The directory item's own confirm, which had no test at all.
-
-    Falsifier: call `shader_lib_files.delete_dir` from `_confirm_dir_delete`.
-    """
+    """The directory item's own confirm, which had no test at all."""
     victim = shader_lib_root() / "confirm_probe_dir"
     victim.mkdir(exist_ok=True)
 
@@ -527,8 +492,6 @@ def test_every_row_that_owns_state_carries_a_cleanup() -> None:
     """The parametrized test below derives its cases from the rows that HAVE an `on_close`,
     so a row that loses one would silently drop its own case. This pins the set instead.
 
-    Falsifier: drop `on_close` from `emoji_picker.MODAL` -- the picker's cleanup then never
-    runs and no case is left to notice.
     """
     assert {modal.id for modal in _WITH_CLEANUP} == set(_CLEANUP_METHOD), (
         f"rows with on_close: {sorted(m.id.value for m in _WITH_CLEANUP)}; "
@@ -542,12 +505,7 @@ def test_every_row_that_owns_state_carries_a_cleanup() -> None:
     ids=[modal_id.value for modal_id in sorted(_CLEANUP_METHOD)],
 )
 def test_the_funnel_runs_each_rows_cleanup(app: Any, modal_id: ModalId) -> None:
-    """Every row with an `on_close` runs its cleanup exactly once through the funnel.
-
-    Falsifier: drop `on_close` from one row -- the spy on its `App` method reads 0, and the
-    state the cleanup owns (the emoji target, the import draft, the picker's rename) survives
-    a close.
-    """
+    """Every row with an `on_close` runs its cleanup exactly once through the funnel."""
     assert BY_ID[modal_id].on_close is not None
     method = _CLEANUP_METHOD[modal_id]
     _OPENERS[modal_id](app)
@@ -565,11 +523,7 @@ def test_the_funnel_runs_each_rows_cleanup(app: Any, modal_id: ModalId) -> None:
     ids=[modal.id.value for modal in _WITH_ESC_OWNER],
 )
 def test_an_armed_inline_input_declines_escape(app: Any, modal_id: ModalId) -> None:
-    """Esc belongs to the armed input, whose own cancel runs later in the same frame.
-
-    Falsifier: drop `owns_esc` from one row -- Esc then closes the whole modal out from
-    under a half-typed name.
-    """
+    """Esc belongs to the armed input, whose own cancel runs later in the same frame."""
     modal = BY_ID[modal_id]
     assert modal.owns_esc is not None
     _OPENERS[modal_id](app)
@@ -586,9 +540,7 @@ def test_the_lib_pickers_close_button_works_with_a_rename_armed(
     """A Close the user CLICKED is forced: the armed rename cannot refuse a dismissal.
 
     Driven through the REAL `draw_modal`, with the picker's own Close button reporting the
-    click -- the whole point is that the funnel's `forced` flag reaches this path. Falsifier:
-    drop `forced` from `draw_modal`'s call to `close_modal` -- the Close button goes dead
-    and the picker the user dismissed stays on screen.
+    click -- the whole point is that the funnel's `forced` flag reaches this path.
     """
     app.open_shader_lib_picker()
     app.shader_lib_files.begin_file_rename(shader_lib_root() / "probe.glsl")
@@ -622,8 +574,7 @@ def test_escape_reaches_the_funnel_through_the_hotkey_dispatch(app: Any) -> None
     """The WIRE the funnel hangs from: `hotkeys._handle_escape` calls `close_modal`.
 
     Driven through a real frame with Esc pressed, since the funnel being correct says
-    nothing about whether anything calls it. Falsifier: replace the `close_modal(app)` call
-    in `_handle_escape` with `pass` -- Esc then dismisses nothing, on every modal.
+    nothing about whether anything calls it.
     """
     app.open_emoji_picker(lambda glyph: None)
     app.emoji_picker_query = "smi"
@@ -643,11 +594,7 @@ def test_escape_reaches_the_funnel_through_the_hotkey_dispatch(app: Any) -> None
 
 
 def test_the_confirm_modal_needs_no_popup_import_in_app() -> None:
-    """R4's payload type lives in `ui_models.py`, which is what keeps the registry a leaf.
-
-    Falsifier: move `ConfirmRequest` into `popups/confirm.py` -- `app.py` must then import
-    the popups layer, which `test_modal_chrome` rejects.
-    """
+    """R4's payload type lives in `ui_models.py`, which is what keeps the registry a leaf."""
     source = (
         Path(__file__).resolve().parent.parent / "shaderbox/popups/confirm.py"
     ).read_text(encoding="utf-8")

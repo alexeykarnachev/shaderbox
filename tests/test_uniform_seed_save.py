@@ -82,16 +82,15 @@ def test_save_seeds_scalar_uniforms_without_render(
 def test_save_skips_default_sampler_and_reload_reseeds(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
-    # Feature 052, 072: an UNDECIDED sampler is NOT persisted -- save writes no row for it, so it
-    # never reads back as "bound" on reload. Load's seed re-establishes `AutoSource`. Falsifier:
-    # a row for `u_image` in meta that reloads as something other than undecided.
+    # An UNDECIDED sampler is NOT persisted -- save writes no row for it, so it
+    # never reads back as "bound" on reload. Load's seed re-establishes `AutoSource`.
     document = _document_from_source(gl_ctx, _SAMPLER_SRC)
     ui_document = UIDocument(document=document, id="sampler")
     ui_document.save(tmp_path)  # must not raise
     assert not (tmp_path / "sampler" / "media" / "main" / "u_image.png").exists()
     reloaded, meta = Document.load_from_dir(tmp_path / "sampler", gl=gl_ctx)
     assert "u_image" not in meta["uniforms"]["main"]  # default sampler skipped
-    reloaded.render()  # compiles + seeds on first need (066 D1)
+    reloaded.render()  # compiles + seeds on first need
     assert isinstance(
         reloaded.render_pass.uniform_values["u_image"], AutoSource
     )  # re-seeded to undecided
@@ -119,7 +118,7 @@ def test_save_persists_user_bound_sampler(
 
 
 def test_sampler_awareness_row_default_vs_bound(gl_ctx: moderngl.Context) -> None:
-    # Feature 052 slice 1: the working-set uniform row shows a sampler's binding, NOT a source path.
+    # The working-set uniform row shows a sampler's binding, NOT a source path.
     document = _document_from_source(gl_ctx, _SAMPLER_SRC)
     document.render_pass.seed_uniform_values()
     default_rows = _format_uniforms(document.render_pass, set(), {})
@@ -144,10 +143,9 @@ def test_seed_skips_engine_uniforms(gl_ctx: moderngl.Context) -> None:
 
 
 def test_release_frees_uniform_held_resources(gl_ctx: moderngl.Context) -> None:
-    # Document.release() used to free only the program + canvas, leaking every texture (and, for a
-    # Video, an open capture) parked in uniform_values — one leak per reload, and the file watcher
-    # reloads on every external document.json touch. Falsifier: drop the uniform_values loop from
-    # Document.release and the bound Image keeps a live texture below.
+    # Document.release() must free every texture (and, for a Video, an open capture) parked in
+    # uniform_values as well as the program + canvas — otherwise each reload leaks, and the file
+    # watcher reloads on every external document.json touch.
     document = _document_from_source(gl_ctx, _SAMPLER_SRC)
     document.render_pass.seed_uniform_values()
     image = Image(np.zeros((8, 8, 3), dtype=np.uint8))

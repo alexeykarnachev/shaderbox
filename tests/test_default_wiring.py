@@ -1,4 +1,4 @@
-"""An input uniform's NAME is its default wire, resolved at render time (069 W-D, D9; 072).
+"""An input uniform's NAME is its default wire, resolved at render time.
 
 A sampler called `u_<pass>` reads that pass without anyone choosing it; `u_prev` reads the
 pass's own previous frame; an explicit `NoSource` means BLACK and survives a reload, because the
@@ -133,7 +133,7 @@ def test_u_df_beside_df_renders_without_the_gear(
     assert document.effective_wiring()["edge"] == {"u_df": "df"}
     # The PICTURE, not merely a non-black one: `edge` passes `df`'s texel straight through, so
     # the two canvases must agree. Asserting brightness alone cannot tell the distance field from
-    # the seeded default PHOTO an unbound sampler used to fall through to -- both are non-black.
+    # the seeded default PHOTO an unbound sampler would fall through to -- both are non-black.
     drawn = np.asarray(texture_to_rgba8(document.passes["edge"].canvas.texture))[
         :, :, :3
     ]
@@ -152,7 +152,7 @@ def test_u_df_beside_df_renders_without_the_gear(
 def test_an_unresolved_sampler_renders_black(
     gl: moderngl.Context, tmp_path: Path
 ) -> None:
-    # 065 D3: an input the graph does not fill reads BLACK. Left unbound the sampler falls
+    # An input the graph does not fill reads BLACK. Left unbound the sampler falls
     # through to its own seeded default photo, which is what makes the gear's `auto: none` and
     # the copilot's `reads BLACK` false about the same sampler in the same frame.
     document_dir = tmp_path / "document"
@@ -234,10 +234,10 @@ def test_an_uncompiled_pass_contributes_no_auto_edge_and_compiles_nothing(
     # program: nothing reads anything yet.
     assert document.effective_wiring() == {name: {} for name in document.passes}
     # (b): asking the program is not asking `get_active_uniforms()`, which would compile the
-    # whole document on frame one and invert 066 D1.
+    # whole document on frame one and compile in the frame loop.
     assert all(p.program is None for p in document.passes.values())
 
-    # An explicit row is visible BEFORE the compile (072 D3): a wire is never lost to lazy
+    # An explicit row is visible BEFORE the compile: a wire is never lost to lazy
     # compilation, only the name rule waits.
     document.passes["composite"].uniform_values["u_extra"] = PassSource("scene")
     assert document.effective_wiring()["composite"] == {"u_extra": "scene"}
@@ -279,8 +279,8 @@ def _frame(body: Any) -> None:
 def test_the_row_shows_three_distinct_states(
     app: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The sampler's row on the uniforms panel is where its source is chosen (072 D7). 079 D6
-    # flattened the list to `none` / the passes / `file...`: `AutoSource` is still the VALUE a
+    # The sampler's row on the uniforms panel is where its source is chosen. The list is
+    # flat (`none` / the passes / `file...`); `AutoSource` is still the VALUE a
     # fresh sampler holds, but the control shows what it RESOLVES to, so the row reads as the
     # pass it reads rather than as a rule the user has to decode.
     document_id = app.current_document_id

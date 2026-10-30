@@ -1384,7 +1384,6 @@ all = [
     { name = "google-api-python-client" },
     { name = "google-auth-oauthlib" },
     { name = "imageio", extra = ["ffmpeg"] },
-    { name = "imageio-ffmpeg" },
     { name = "jedi" },
     { name = "openai" },
     { name = "opencv-python-headless" },
@@ -1404,7 +1403,6 @@ telegram = [
 ]
 video = [
     { name = "imageio", extra = ["ffmpeg"] },
-    { name = "imageio-ffmpeg" },
     { name = "opencv-python-headless" },
 ]
 youtube = [
@@ -1433,7 +1431,6 @@ requires-dist = [
     { name = "google-api-python-client", marker = "extra == 'youtube'", specifier = ">=2.197.0" },
     { name = "google-auth-oauthlib", marker = "extra == 'youtube'", specifier = ">=1.4.0" },
     { name = "imageio", extras = ["ffmpeg"], marker = "extra == 'video'", specifier = ">=2.37.3" },
-    { name = "imageio-ffmpeg", marker = "extra == 'video'", specifier = ">=0.6.0" },
     { name = "imgui-bundle", specifier = ">=1.92.801" },
     { name = "jedi", marker = "extra == 'editor'", specifier = ">=0.20.0" },
     { name = "loguru", specifier = ">=0.7.3" },

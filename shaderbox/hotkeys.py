@@ -34,7 +34,8 @@ def process_hotkeys(app: App) -> None:
 def dispatch_commands(app: App) -> None:
     # In-frame, before the editor child draws, so ESC's defocus is consumed this frame.
     # The editor drain runs FIRST: chords it consumes are struck from this frame's
-    # registry dispatch (feature 067 — the one guard against Ctrl+R double-dispatch).
+    # registry dispatch. That ordering is the one guard against a chord such as Ctrl+R
+    # firing twice.
     _drain_editor_input(app)
     _dispatch_registry(app)
     _handle_escape(app)
@@ -54,7 +55,7 @@ def _drain_editor_input(app: App) -> None:
     if session is None:
         return
     editor = session.editor
-    # Clipboard <-> register unification (editor commit 4befeaf): ONE slot, so
+    # Clipboard <-> register unification: ONE slot, so
     # `p` pastes what the OS clipboard holds and a `yy` is Ctrl+V-able anywhere.
     # Synced at the drain boundaries against the ACTIVE session's own register
     # (registers are per-handle — an app-global "last seen" left a switched-to
@@ -72,7 +73,7 @@ def _drain_editor_input(app: App) -> None:
         _collect_host_command(editor, commands)
         if event.code == KeyCode.ESCAPE:
             # Esc is vim's modal key — the editor owns it UNCONDITIONALLY while
-            # focused (maintainer decision, 067 manual pass); the glfw filter
+            # focused; the glfw filter
             # already keeps the press away from imgui. Defocus lives on
             # the mouse, never on Esc.
             editor.key(KeyCode.ESCAPE)
@@ -93,7 +94,7 @@ def _drain_editor_input(app: App) -> None:
             # it and open nothing, because get_session sets host_completion(True) on every
             # handle, so this branch needs no keymap check: code.draw makes the offer.
             # Only when the popup is CLOSED — with the host's popup up the keymap advances
-            # the selection itself (editor 3f3a11b), and queuing an offer here would re-push
+            # the selection itself, and queuing an offer here would re-push
             # the list and reset that selection to zero on every press.
             if (
                 event.text == "n"
@@ -122,7 +123,7 @@ def _collect_binding(editor: Editor, fired: list[int]) -> None:
 
 def _serve_leader_bindings(app: App, fired: list[int]) -> None:
     # The `<leader>` sequences the editor claimed for us this frame, as the command ids we
-    # registered (editor da8a850). Dispatched after the whole feed rather than mid-loop: a
+    # registered. Dispatched after the whole feed rather than mid-loop: a
     # command may open a popup or close the tab, and the remaining keys are for the editor
     # that was focused when they were typed.
     for claimed in fired:
@@ -133,7 +134,7 @@ def _serve_leader_bindings(app: App, fired: list[int]) -> None:
 
 def _is_lookup_key(editor: Editor, event: KeyEvent) -> bool:
     # vim's K runs keywordprg, an external program; the host is that program. The library
-    # leaves K unbound in normal and visual mode (editor 469eec4), so it arrives unconsumed.
+    # leaves K unbound in normal and visual mode, so it arrives unconsumed.
     return (
         event.code == KeyCode.CHAR
         and event.text == "K"
@@ -150,7 +151,7 @@ def _collect_host_command(editor: Editor, commands: list[HostCommand]) -> None:
 
 
 def _serve_host_command(app: App, session: EditorSession, command: HostCommand) -> None:
-    # The ex commands whose OBJECT the host owns (editor c5fabc8): :w saves,
+    # The ex commands whose OBJECT the host owns: :w saves,
     # :q closes the tab (refusing on unsaved changes unless forced, as vim
     # does), :wq/:x both. A path argument names a host feature we don't have.
     if command.arg:
@@ -268,7 +269,7 @@ def _handle_reserved_chord(app: App, editor: Editor, event: KeyEvent) -> bool:
         # app command fires mid-typing.
     else:
         # NORMAL/VISUAL, unconsumed by the keymap. The six scrolls are keymap
-        # motions in BOTH modes as of editor 3f3a11b (visual extends the
+        # motions in BOTH modes (visual extends the
         # selection), so they never reach here; what lands is the rest.
         if ch in ("n", "j"):
             editor.key(KeyCode.DOWN)
@@ -299,7 +300,7 @@ def _handle_clipboard(app: "App | None", editor: Editor, event: KeyEvent) -> boo
     # never reaches the editor. The synthesized CHAR carries the uppercase text with the
     # shift bit set.
     #
-    # BARE Ctrl+V is the editor's, as blockwise visual (editor 5aa51cd) -- and as it is in
+    # BARE Ctrl+V is the editor's, as blockwise visual -- and as it is in
     # vim, where Ctrl+Shift+V is the terminal's paste. Claiming it here would leave the mode
     # unreachable: this function returning True is the whole decision, since ed_key never sees
     # the event.
@@ -338,7 +339,7 @@ def _handle_clipboard(app: "App | None", editor: Editor, event: KeyEvent) -> boo
 def spec_eligible(app: App, spec: CommandSpec, chord: int, popup_open: bool) -> bool:
     # Whether this spec may dispatch this frame. The consumed-chord test is the
     # one guard against a focused-editor Ctrl+R both redoing and opening the
-    # script tab (feature 067); the rest are the scope/popup gates.
+    # script tab; the rest are the scope/popup gates.
     if chord == 0 or chord in app.editor_consumed_chords:
         return False
     if spec.scope == CommandScope.EDITOR and not app.editor_focused:

@@ -29,7 +29,6 @@ dependencies = [
 # Video encode/decode: the exporters and the video texture source.
 video = [
     "imageio[ffmpeg]>=2.37.3",
-    "imageio-ffmpeg>=0.6.0",
     "opencv-python-headless>=4.11.0.86",
 ]
 # The LLM copilot.
@@ -70,64 +69,6 @@ dev = [
     "pytest-forked>=1.6.0",
     "pytest-xdist>=3.8.0",
     "pytest-timeout>=2.4.0",
-]
-
-[tool.ruff]
-target-version = "py312"
-line-length = 88
-extend-exclude = ["ai_docs/", "shaderbox/resources/editor/abi_probe.py"]
-
-[tool.ruff.lint]
-# Cyrillic glyph data/docs legitimately contain Cyrillic letters (gen_glyphs.py).
-allowed-confusables = ["А", "В", "Е", "К", "М", "Н", "О", "Р", "С", "Т", "Х", "а", "е", "о", "с"]
-select = [
-    "E",  # pycodestyle errors
-    "F",  # pyflakes
-    "I",  # isort
-    "UP", # pyupgrade
-    "B",  # flake8-bugbear
-    "C4", # flake8-comprehensions
-    "SIM", # flake8-simplify
-    "TID", # flake8-tidy-imports
-    "PTH", # flake8-use-pathlib
-    "RUF", # ruff-specific rules
-]
-ignore = [
-    "E501",  # line too long, handled by formatter
-]
-
-[tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["F401"]  # unused imports
-"scripts/agent_hub/generate.py" = ["RUF001"]
-
-[tool.ruff.lint.isort]
-known-first-party = ["shaderbox"]
-
-[tool.pytest.ini_options]
-# -ra names every failed test in the trailing summary; xfail_strict makes an unexpected pass a
-# failure rather than a quiet xpass.
-addopts = "-ra"
-testpaths = ["tests"]
-# A per-test deadline: xdist otherwise waits forever on a worker that hung. `thread`, since
-# the signal method fires only in the main thread, which is not where a GL call blocks.
-timeout = 60
-timeout_method = "thread"
-xfail_strict = true
-# Each module that drives real frames carries its own `xdist_group`, so no two share a
-# process: the imgui font atlas is process-global and dies with the App that built it.
-markers = ["xdist_group: pin a test to one xdist worker (see the gl_frames group)"]
-
-[tool.pyright]
-venvPath = "."
-venv = ".venv"
-pythonVersion = "3.12"
-include = ["shaderbox", "scripts", ".claude/skills", "dogfood"]
-exclude = [
-    "shaderbox/resources/editor/abi_probe.py",
-    "scripts/dogfood/runs",
-    "scripts/agent_hub/generate.py",
-    "scripts/dogfood/drive.py",
-    "scripts/dogfood/verify_script_engine.py",
 ]
 
 [tool.uv]

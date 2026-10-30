@@ -41,7 +41,7 @@ from shaderbox.copilot.tools.base import mask_secret
 from shaderbox.copilot.tools.registry import build_registry
 from shaderbox.copilot.trace import TraceListener, TraceLog, new_trace_log
 
-# A resolved SOURCE_LOCK card's outcome token (083), the same slot "Yes"/"No" use.
+# A resolved SOURCE_LOCK card's outcome token, the same slot "Yes"/"No" use.
 _LOCK_OUTCOMES: dict[LockAnswer, str] = {
     LockAnswer.DENY: "No",
     LockAnswer.ALLOW: "Yes",
@@ -106,7 +106,7 @@ class CopilotSession:
         self.caps = caps
         self.client = client
         self._get_project_slug = get_project_slug
-        # The PROJECT's persisted mode (086). A callable, like the slug and the checkpoints root,
+        # The PROJECT's persisted mode. A callable, like the slug and the checkpoints root,
         # so the session reads the current project's value without holding App state: a project
         # switch loads the incoming app_state before it resets the conversation, so this returns
         # the new project's mode by then, while a Clear returns the unchanged current one.
@@ -126,7 +126,7 @@ class CopilotSession:
         # through the one writer here, or a session draws one mode over a registry enforcing
         # another.
         self.set_source_lock(get_source_lock())
-        # Per-turn rollback checkpoints (feature 020·30). Built lazily: the project dir isn't
+        # Per-turn rollback checkpoints. Built lazily: the project dir isn't
         # known at session construction (App sets it later), and reset_conversation rebuilds it
         # for the project we switch INTO. None until first accessed via `checkpoints`.
         self._checkpoints: CheckpointStore | None = None
@@ -351,7 +351,7 @@ class CopilotSession:
                 return
 
     def set_source_lock(self, lock: SourceLock) -> None:
-        """MAIN THREAD. The ONE writer of the source lock (083), and it writes THREE copies
+        """MAIN THREAD. The ONE writer of the source lock, and it writes THREE copies
         together: `state.source_lock` is what the chat's chip draws (main-thread-only, like the
         rest of ChatState), `registry.source_lock` is what the gate and the tool filter read on
         the worker, and the project's persisted copy is what a reset re-seeds from. Nothing else
@@ -411,7 +411,7 @@ class CopilotSession:
             return
         # daemon=True so a worker blocked in a stalled stream past release()'s join timeout is ABANDONED
         # (the convention's stated teardown intent), not joined forever by interpreter _shutdown — that
-        # join is what hung the headless/dogfood process (043). release() already cancels the bridge +
+        # join would hang a headless process. release() already cancels the bridge +
         # gate + sets _cancel before the join, so the worker has been told to stop before we abandon it.
         self._worker = threading.Thread(
             target=self._run_worker, name="copilot-worker", daemon=True
@@ -565,17 +565,17 @@ class CopilotSession:
     def seal_checkpoint(self) -> None:
         # MAIN THREAD, at turn-done (the ui.py copilot_turn_active True->False transition):
         # finalize the active checkpoint + persist its index, then prune any checkpoint whose
-        # user Message is gone (retention, decision 14).
+        # user Message is gone (retention).
         self.checkpoints.seal()
         live = {m.turn_id for m in self.state.messages if m.turn_id}
         self.checkpoints.prune_to(live)
 
     def clear_checkpoints(self) -> None:
-        # Clear-the-chat: delete every snapshot outright (decision 4), no archive.
+        # Clear-the-chat: delete every snapshot outright, no archive.
         self.checkpoints.clear()
 
     def note_revert(self, text: str) -> None:
-        # MAIN THREAD, idle (Revert is gated on not-in-flight, decision 12): record a revert as a
+        # MAIN THREAD, idle (Revert is gated on not-in-flight): record a revert as a
         # plain NL message in BOTH the transcript and the worker's replay history, so the agent's
         # next turn sees that its earlier edits were undone (keeps history coherent with disk).
         self.state.messages.append(Message(role="tool_status", text=text))

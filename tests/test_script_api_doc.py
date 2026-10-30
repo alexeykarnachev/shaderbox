@@ -1,4 +1,4 @@
-"""Feature 059 D3: the generated SCRIPT API block. Drift pins — each test goes red when the Python
+"""The generated SCRIPT API block. Drift pins — each test goes red when the Python
 script surface changes without the block following it.
 
 `vars(cls)` is the introspection, deliberately not `inspect.getmembers`: getmembers leaks `tuple`'s
@@ -35,7 +35,7 @@ def _flat(text: str) -> str:
 
 def test_ctx_gloss_keys_are_exactly_the_dataclass_fields() -> None:
     # A new `context` field is undocumented until someone writes its gloss — in BOTH renderings, the
-    # prompt's terse one and the `K` note's prose (079 D3).
+    # prompt's terse one and the `K` note's prose.
     assert set(_CONTEXT_GLOSS) == set(ScriptContext.__dataclass_fields__)
     assert set(_CONTEXT_HELP) == set(ScriptContext.__dataclass_fields__)
 
@@ -82,7 +82,7 @@ def test_every_stub_kind_type_name_has_a_value_shape_gloss() -> None:
 
 
 def test_the_instances_value_shape_is_documented_outside_stub_kinds_domain() -> None:
-    # 103 D5: `_stub_kind` dispatches on `moderngl.Uniform`, so the reserved `@instances` key --
+    # `_stub_kind` dispatches on `moderngl.Uniform`, so the reserved `@instances` key --
     # which is popped OUT of a script's returned dict before anything ever reaches a
     # `moderngl.Uniform` (`engine.py::_tick_script`) -- is outside its domain BY CONSTRUCTION. The
     # test above enumerating from `_stub_kind`'s own AST can therefore never see this shape drift;
@@ -168,8 +168,7 @@ def test_api_doc_reaches_only_for_the_gl_free_half_of_the_package() -> None:
 def test_the_advertised_import_is_one_the_gate_accepts() -> None:
     # Three lists must agree or the app tells the user (and the copilot) to write an import that
     # raises: the names the prompt advertises, the names the engine injects, and the names the
-    # script import gate lets through. Falsifier: advertise a name the gate refuses — a script
-    # written from the prompt block then fails to compile.
+    # script import gate lets through.
     advertised = set(_IMPORT_NAMES.split(", "))
     assert advertised <= _INJECTED_NAMES, (
         f"the prompt advertises {sorted(advertised - _INJECTED_NAMES)}, which a script cannot "

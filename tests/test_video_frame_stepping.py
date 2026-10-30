@@ -1,6 +1,6 @@
 """A video uniform closes a small gap by decoding forward, not by seeking.
 
-`Video.update` used to demand an exact +1 gap and take a random-access seek for anything
+`Video.update` must not demand an exact +1 gap and take a random-access seek for anything
 else — including a +2. A seek costs ~50x a forward grab, and the cost is self-reinforcing:
 the seek lengthens the frame, the longer frame skips a video frame, and the wider gap forces
 the next seek. Below the video's own fps that tips from ~0% to ~100% of updates, and the
@@ -70,7 +70,7 @@ def test_the_frame_shown_matches_what_a_seek_would_give(gl, gap: int) -> None:
 
 
 def test_a_small_gap_does_not_seek(gl) -> None:
-    # The regime that used to spiral: the app running at half the video's frame rate, so
+    # The regime that can spiral: the app running at half the video's frame rate, so
     # every update lands a +2 gap.
     video = Video(_VIDEO)
     counting = _CountingCapture(video._cap)

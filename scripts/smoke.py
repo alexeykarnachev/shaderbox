@@ -56,8 +56,7 @@ def _skip_exit_code() -> int:
 def _has_gpu_window() -> bool:
     # The GUI smoke drives a full glfw window backed by hardware GL. On a display-less box
     # (a Pi over SSH, a CI runner with no GPU) glfw can't create that window — skip the smoke
-    # loudly instead of crashing. Probe by actually trying: init + a hidden window. See
-    # ai_docs/todo.md "headless GL".
+    # loudly instead of crashing. Probe by actually trying: init + a hidden window.
     if not glfw.init():
         return False
     glfw.window_hint(glfw.VISIBLE, glfw.FALSE)
@@ -111,7 +110,7 @@ def _seed_tmp_project(root: Path) -> Path:
     for tid in EXAMPLE_ORDER:
         shutil.copytree(DOCUMENT_EXAMPLES_DIR / tid, documents / tid)
 
-    # A document script document (048 — one script per document): the engine ticks it every frame, so 200 clean
+    # A document script document (one script per document): the engine ticks it every frame, so 200 clean
     # frames prove the App-with-a-scripted-document loop doesn't crash. (Engine-correctness — values/
     # freeze/determinism/play-stop — is the pure-CPU unit test's job; smoke proves the App loop +
     # the binding + the stopped-skip wire.)
@@ -138,7 +137,7 @@ _TAB_FOCUS_FRAMES: dict[int, DocumentTab] = {
 
 def _check_invariants(app: App, frame_idx: int) -> None:
     # The "at most one modal open" mutex is structural — `app.modal` is one ModalId or None,
-    # so two modals can't be open at once by construction (feature 023, reshaped by 093 W4).
+    # so two modals can't be open at once by construction.
     assert app.modal is None or isinstance(app.modal, ModalId), (
         f"frame {frame_idx}: modal is not a ModalId ({app.modal!r})"
     )
@@ -148,7 +147,7 @@ def _check_invariants(app: App, frame_idx: int) -> None:
         f"frame {frame_idx}: current_document_id={app.current_document_id!r} not in "
         f"ui_documents={list(app.ui_documents.keys())}"
     )
-    # Feature 018: the registry must be populated + dispatched every frame (the
+    # The registry must be populated + dispatched every frame (the
     # cheatsheet overlay draws here too, exercising its no-assert path headlessly).
     assert app.effective_bindings, f"frame {frame_idx}: effective_bindings empty"
     assert app.active_document_tab in DocumentTab, (
@@ -181,8 +180,8 @@ def _arm_feedback_canary(app: App) -> Document:
         f"{document.passes[name].compile_unit.errors}"
     )
     # The shader declares `u_prev`, which under the default `AutoSource` resolves to the pass
-    # itself (072's name rule) — that IS the feedback wiring. An `inputs=` entry here was 065's
-    # shape; pydantic drops the unknown field silently, so it armed nothing.
+    # itself — that IS the feedback wiring. An `inputs=` entry would be dropped silently by
+    # pydantic as an unknown field, arming nothing.
     document.graph = PassGraph(output=name, passes={name: PassEntry()})
     document.reset_feedback()
     app.set_current_document_id(document_id)
@@ -204,11 +203,11 @@ def main() -> int:
         try:
             app = App(project_dir=project, headless=True)
             # An explicit-dir App is never a first run: the examples browser must NOT
-            # auto-open (feature 051 — the auto-open is gated on project_dir=None).
+            # auto-open (the auto-open is gated on project_dir=None).
             assert app.modal is None, (
                 f"popup auto-opened for an explicit-dir App ({app.modal!r})"
             )
-            # 048 D15: _init opens the restored current document's shader tab, so a non-empty
+            # _init opens the restored current document's shader tab, so a non-empty
             # project always has one.
             assert app.editor_tabs, (
                 "smoke: editor_tabs empty after _init — the restored current document's shader tab "
@@ -216,8 +215,8 @@ def main() -> int:
             )
             if app.ui_documents:
                 app.set_current_document_id(next(iter(app.ui_documents)))
-            # 069 W-E: nav is OFF app-wide (D4). Checked here for the same reason the
-            # old assertion was: get_io() reads are frame-context-sensitive mid-loop.
+            # Nav is OFF app-wide. Checked here because get_io() reads are
+            # frame-context-sensitive mid-loop.
             assert not (
                 imgui.get_io().config_flags & imgui.ConfigFlags_.nav_enable_keyboard
             ), "nav_enable_keyboard is set; D4 removed app-wide nav"
@@ -241,7 +240,7 @@ def main() -> int:
                 if frame_idx == 25:
                     app.open_pass_settings("smoke_pass")
                 if frame_idx == 35:
-                    # The modal's create mode (078 D5): a draft drawn for a few frames.
+                    # The modal's create mode: a draft drawn for a few frames.
                     app.open_add_pass()
                 if frame_idx == 40:
                     app.close_pass_settings()
@@ -267,14 +266,14 @@ def main() -> int:
                     assert multi, "smoke: no multi-pass document to draw the strip with"
                     app.set_current_document_id(multi)
                     # Two adjacent passes and one apart in one group, so the strip draws a
-                    # two-tile run, its label and the split-run path (091 D7).
+                    # two-tile run, its label and the split-run path.
                     for grouped in ("paint", "seed", "df"):
                         if grouped in app.ui_documents[multi].document.passes:
                             app.session.set_pass_group(multi, grouped, "smoke_group")
                     app.open_pass_settings(
                         sorted(app.ui_documents[multi].document.passes)[0]
                     )
-                # The graph canvas (092, 093): its own editor tab, drawn on the multi-pass
+                # The graph canvas: its own editor tab, drawn on the multi-pass
                 # document selected at frame 42 so it has nodes, a box (`smoke_group`), wires
                 # and a group tab to draw. None of it can be screenshotted here, so the frame
                 # loop executing every branch IS the check, plus the state asserts a draw-time
@@ -283,8 +282,8 @@ def main() -> int:
                     app.modal = None
                     app.pass_settings_name = ""
                     app.open_graph_for(multi)
-                    # 092 D6: opening the view must WRITE NOTHING. Falsifier: a canvas that
-                    # stores the rank layout on first sight.
+                    # Opening the view must WRITE NOTHING: no rank layout
+                    # stored on first sight.
                     graph_before = json.dumps(
                         app.ui_documents[multi].document.graph.model_dump(),
                         sort_keys=True,
@@ -333,8 +332,8 @@ def main() -> int:
                             multi
                         ].document.graph.passes.values()
                     ), "frame 47: Arrange left a pass unplaced"
-                    # The session-less teardown (093 T1): a graph tab holds no EditorSession,
-                    # so closing it must walk the same path a shader tab's close does and
+                    # The session-less teardown: a graph tab holds no EditorSession,
+                    # so closing it must take the same path a shader tab's close does and
                     # leave nothing behind.
                     app.close_editor_for_path(app.paths.graph_json_for(multi))
                     assert not any(t.kind == "graph" for t in app.editor_tabs), (
@@ -344,7 +343,7 @@ def main() -> int:
                 if frame_idx == 48:
                     # Back to the feedback canary's document, whose accumulation the tail asserts.
                     app.set_current_document_id(canary_id)
-                # Every settings tab is focused and then CHECKED two frames on (083). imgui owns
+                # Every settings tab is focused and then CHECKED two frames on. imgui owns
                 # the tab selection and honors `set_selected` the frame AFTER the request, so a
                 # same-frame assert reads the previous tab and passes whatever happened. Asserting
                 # the tab that actually DREW (ui.py commits it from the drawn item) is what catches
@@ -377,7 +376,7 @@ def main() -> int:
                 # (gate path) and the focus-pending latch is set, the exact state that re-grabbed
                 # focus every frame and dismissed the modal. The render must not crash; the
                 # focus-guard regression itself is asserted in tests/test_copilot_focus.py (a frame
-                # render can't read is_popup_open between frames without segfaulting). /imgui-ui §8.
+                # render can't read is_popup_open between frames without segfaulting).
                 if frame_idx == 100:
                     app.is_copilot_open = True
                     app.integrations_store.copilot.openrouter_key = ""
@@ -387,14 +386,14 @@ def main() -> int:
                 if frame_idx == 113:
                     app.modal = None
                     app.is_copilot_open = False
-            # Canary (048): the script must have BOUND + ticked (binding is by `script.py` existence).
+            # Canary: the script must have BOUND + ticked (binding is by `script.py` existence).
             engine = app.session.script_engine
             driven = engine.script_driven_uniforms("script_document")
             assert ("main", "u_a") in driven and ("main", "u_b") in driven, (
                 f"smoke: the document script did not bind/tick (driven={driven}) — script.py wasn't "
                 "discovered/bound"
             )
-            # Stopped-skip wire (048): stop u_a, tick once; its WRITE must be skipped (the manual
+            # Stopped-skip wire: stop u_a, tick once; its WRITE must be skipped (the manual
             # value sticks) while u_a stays driven AND the un-stopped u_b still advances. A dead
             # `stopped` wire would keep writing u_a and green-wash the play/stop model.
             script_document_obj = app.ui_documents["script_document"].document
@@ -422,7 +421,7 @@ def main() -> int:
                 f"smoke: the feedback pass advanced to {canary_red} over {N_FRAMES} frames — "
                 "the frame loop is not calling Document.begin_frame"
             )
-            # The editor drew (feature 067): the active session's last layout produced
+            # The editor drew: the active session's last layout produced
             # primitives INCLUDING at least one atlas Glyph (a missing atlas load
             # yields only Missing_Glyph kinds — a background-only frame is not text),
             # and the redraw gate fired at least once.

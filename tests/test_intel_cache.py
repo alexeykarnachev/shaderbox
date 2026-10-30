@@ -1,4 +1,4 @@
-"""The per-handle index cache (078 W-A): an entry belongs to the editor handle it was fed
+"""The per-handle index cache: an entry belongs to the editor handle it was fed
 into, so a handle recreated for the same path rebuilds and is fed again."""
 
 from pathlib import Path

@@ -6,7 +6,7 @@ from shaderbox.copilot.capabilities import CopilotCapabilities
 from shaderbox.copilot.tools.base import GatePolicy, ToolArgs, ToolDefinition
 
 # Read-side inspection tools: the agent looks WITHOUT mutating or producing a deliverable. The
-# read counterpart to the gated render/publish tools (feature 050).
+# read counterpart to the gated render/publish tools.
 
 
 class _ProbeRenderArgs(ToolArgs):

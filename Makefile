@@ -5,11 +5,9 @@
 run:
 	uv run python ./shaderbox/ui.py
 
-# Verify the BUILT bundle the way a NEW user would: build fresh, unzip, run the
-# launcher with a throwaway data dir — a true fresh first-run (starter document seeded,
-# no existing projects). Rebuilds via --allow-dirty so it tests CURRENT source (incl.
-# uncommitted work), never a stale dist/. SHADERBOX_DATA_DIR redirects the app's
-# project/state/log store away from the real one, so this never touches your projects.
+# Build the bundle from the current source (uncommitted work included), unzip it and run
+# the launcher as a first-time user would. SHADERBOX_DATA_DIR points the app's projects,
+# state and logs at a throwaway directory.
 ifeq ($(OS),Windows_NT)
 BUNDLE_PLATFORM := windows
 BUNDLE_LAUNCH := cmd //c run.bat
@@ -26,11 +24,7 @@ run-bundle:
 	unzip -q dist/shaderbox-$(BUNDLE_PLATFORM).zip -d "$$root"
 	cd "$$root/shaderbox-build-$(BUNDLE_PLATFORM)" && SHADERBOX_DATA_DIR="$$root/data" $(BUNDLE_LAUNCH)
 
-# Lint + format + typecheck. Run before declaring anything done.
-# Delegates to pre-commit (ruff fix, ruff format, pyright) — the single source of
-# truth for the check config is `.pre-commit-config.yaml`. Both ruff and pyright
-# block on failure.
-#
+# Lint, format and typecheck through pre-commit (`.pre-commit-config.yaml`).
 # The files are tracked plus untracked-not-ignored (`--all-files` would mean tracked only), so a
 # new module is checked before it is staged; NUL-separated, so any file name reaches the hooks
 # whole. The existence filter drops a tracked file deleted from the working tree.
@@ -39,53 +33,33 @@ check:
 		| xargs -0 sh -c 'for f; do [ -e "$$f" ] && printf "%s\0" "$$f"; done' _ \
 		| xargs -0 uv run pre-commit run --files
 
-# Unit tests. Pure logic (resolve_dims) + GL-backed render glue (render_for,
-# render_media) against a headless standalone moderngl context; app-fixture
-# modules skip without a display. The MESA overrides are LOAD-BEARING: the
-# shaders are #version 460 and compiling 460 on a bare llvmpipe 4.5 context
-# SEGFAULTS Mesa (the "GL segfault modules" class; same overrides the dogfood
-# harness sets). GLCONTEXT_LINUX_LIBGL avoids the libGL.so dev-symlink dlopen
-# failure on boxes without libgl-dev.
-# `-n 8`: measured, and the curve flattens there. Each worker is its OWN PROCESS with its
-# own glfw window and GL context, which is what makes this safe where `pytest-forked` is
-# not: a forked child inheriting the parent's X11 socket kills the connection (see
-# test_revert_executor.py). The `app` fixture builds one App per worker and reopens a
-# throwaway project per test through the project-switch path (097 W-1).
-# `--max-worker-restart=0`: a worker that dies is a FAILURE, reported now. Without it xdist
-# waits on the dead node forever -- one run sat 12 minutes behind a single defunct worker
-# (`[gw3] node down: Not properly terminated`) while the other seven idled at 2% CPU, and
-# nothing bounded it. With it, that same death is named in ~75s. The per-test deadline in
-# pyproject.toml is the other half: it turns a hang INTO the death this flag then reports.
-# PYTHONDONTWRITEBYTECODE: a break/restore loop (mutation-testing a gate) is the one
-# workflow that reliably desynchronises __pycache__ from the source, and a stale .pyc
-# makes a caught mutation look like a vacuous gate -- 098 nearly reported one that way.
-# Writing no bytecode removes the class rather than relying on remembering to clear it.
+# Unit tests. The MESA overrides are required: the shaders are #version 460, and compiling
+# 460 on a bare llvmpipe 4.5 context segfaults Mesa. GLCONTEXT_LINUX_LIBGL avoids the
+# libGL.so dev-symlink dlopen failure on boxes without libgl-dev.
+# Each xdist worker is its own process with its own glfw window and GL context, which is
+# what makes this safe where `pytest-forked` is not: a forked child inheriting the parent's
+# X11 socket kills the connection. `--max-worker-restart=0` makes a dead worker a failure
+# instead of a run that waits on it forever; the per-test deadline in pytest.ini turns a
+# hang into that death. PYTHONDONTWRITEBYTECODE keeps __pycache__ from going stale against a
+# source edited and restored in place.
 test:
 	env MESA_GL_VERSION_OVERRIDE=4.6 MESA_GLSL_VERSION_OVERRIDE=460 \
 		GLCONTEXT_LINUX_LIBGL=libGL.so.1 PYTHONDONTWRITEBYTECODE=1 \
 		uv run pytest tests/ -n 8 --dist loadgroup \
 		--max-worker-restart=0
 
-# Headless smoke test — runs ~200 frames of update_and_draw against a THROWAWAY tmp project
-# in an invisible glfw window. Catches import errors, callback dispatch failures,
-# popup state-machine crashes, released-texture binding errors. Doesn't catch
-# visual bugs. Useful after any refactor in ui.py / app.py / widgets/ / popups/ /
-# tabs/ / hotkeys.py before declaring done.
+# Headless smoke test: ~200 frames of update_and_draw against a throwaway project in an
+# invisible glfw window. Catches import errors, callback dispatch failures, popup
+# state-machine crashes and released-texture binding errors; not visual bugs.
 smoke:
 	uv run python scripts/smoke.py
 
-# The composed gate: check -> test -> smoke, cheapest first, stopping at the first
-# failure, one exit code for the lot. This target exists because a prose rule did not
-# hold: the repo twice announced a green gate that was red, once by reading a tool's
-# output instead of its status and once by capturing a pipe's exit code. So nothing
-# here is piped -- each gate redirects to a log and its status is read before anything
-# touches that log (make's shell is dash; `set -o pipefail` is not available anyway).
+# check -> test -> smoke, cheapest first, stopping at the first failure, one exit code for
+# the lot. Nothing here is piped: each step redirects to a log and its status is read before
+# anything touches that log (make's shell is dash, which has no `set -o pipefail`).
 #
-# `check` runs twice before it is believed. pre-commit exits non-zero whenever a hook
-# MODIFIED a file, which ruff's formatter and pyright's env bootstrap both legitimately
-# do on a first run -- so a first-run non-zero says "something changed", not "something
-# is wrong". A second run over the now-settled tree is the one that carries a verdict.
-# This is the rule `dev_flow.md ### make check` states in prose; here it is executable.
+# pre-commit exits non-zero whenever a hook modified a file, which pyright's env bootstrap
+# does on a first run, so a failing `check` that changed nothing is run once more.
 #
 # Three outcomes, not two. `scripts/smoke.py` exits 0 when it skips for want of a
 # display, which is the right contract for its direct callers but makes a skip
@@ -106,11 +80,8 @@ gates:
 	before=$$(git diff HEAD 2>/dev/null | md5sum; git status --porcelain 2>/dev/null | sort)
 	$(MAKE) --no-print-directory check >"$$log" 2>&1 || rc=$$?
 	if [ $$rc -ne 0 ]; then
-		# A first-run failure is only benign when the hooks changed NOTHING -- pyright's env
-		# bootstrap is the case that earns the retry. `ruff --fix` and `ruff-format` are
-		# file-rewriting hooks, so retrying unconditionally turned every auto-fixable
-		# violation into a GREEN gate with an uncommitted repair in the tree, and this repo
-		# shipped exactly that.
+		# Retried only when the hooks changed nothing: a retry after `ruff --fix` or
+		# `ruff-format` rewrote a file would pass over an unreviewed repair.
 		after=$$(git diff HEAD 2>/dev/null | md5sum; git status --porcelain 2>/dev/null | sort)
 		if [ "$$after" != "$$before" ]; then
 			echo "== gates: the hooks REWROTE files -- review and stage them, then re-run =="
@@ -121,8 +92,7 @@ gates:
 		fi
 	fi
 	if [ $$rc -ne 0 ]; then
-		# The log, on EVERY failing path -- a red gate with no diagnostic is worse than no
-		# gate, and deduplicating the verdict message once cost exactly that on the retry path.
+		# The log, on every failing path.
 		cat "$$log"
 		echo "== gates: FAILED at check (exit $$rc); test and smoke not run =="
 		status=$$rc
@@ -167,9 +137,8 @@ gates:
 	fi
 	exit $$status
 
-# Cut a release: bump pyproject version, commit, tag. Does NOT build or push
-# (./build.sh then ./upload-itch.sh stay separate). Semver bump policy lives in
-# conventions.md ## Design decisions. Usage: make release VERSION=x.y.z
+# Cut a release: bump the pyproject version, commit, tag. Does not build or push
+# (./build.sh then ./upload-itch.sh stay separate). Usage: make release VERSION=x.y.z
 release:
 	@set -e
 	if [ -z "$(VERSION)" ]; then echo "usage: make release VERSION=x.y.z"; exit 1; fi

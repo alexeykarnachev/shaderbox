@@ -32,15 +32,15 @@ class EmptyArgs(ToolArgs):
 
 # (ok, message_for_llm, payload_for_ui). Sync — handlers run on the worker thread.
 ToolHandler = Callable[[dict[str, Any]], tuple[bool, str, dict[str, Any] | None]]
-# A credential tool's handler (feature 020·19): receives the gate's typed secret as a SECOND
+# A credential tool's handler: receives the gate's typed secret as a SECOND
 # arg, kept out of `args` (which the trace + debug log print). It sets the secret via its
 # capability and returns a REDACTED message — that message is the only thing reaching LLM history.
 CredentialToolHandler = Callable[
     [dict[str, Any], str], tuple[bool, str, dict[str, Any] | None]
 ]
-# A pre-gate guard (feature 020·18): args -> a guided-handoff message, or None to proceed.
+# A pre-gate guard: args -> a guided-handoff message, or None to proceed.
 ToolPrecheck = Callable[[dict[str, Any]], str | None]
-# An ALWAYS-gated tool's confirm-card text (feature 029): args -> the arg-aware prompt the
+# An ALWAYS-gated tool's confirm-card text: args -> the arg-aware prompt the
 # engine (not the model) phrases. None on the definition => build_gate's generic line.
 GatePrompt = Callable[[dict[str, Any]], str]
 
@@ -54,14 +54,14 @@ def _json_schema_for(args_model: type[ToolArgs]) -> dict[str, Any]:
 
 
 def mask_secret(s: str) -> str:
-    # Redact a secret for any human-readable surface (feature 020·19): show the leading 6 chars
+    # Redact a secret for any human-readable surface: show the leading 6 chars
     # so two secrets are distinguishable, hide the rest. A Telegram token's prefix is the
     # public-ish bot id, so this never exposes the secret tail.
     return f"{s[:6]}…" if len(s) > 6 else "…"
 
 
 class GatePolicy(StrEnum):
-    # When a tool call must block on the user before running (§F4 / §2.3).
+    # When a tool call must block on the user before running.
     NONE = auto()  # single reversible edits / reads — flow free
     ALWAYS = auto()  # destructive ops + external publish — always confirm
 
@@ -72,22 +72,22 @@ class ToolDefinition:
     description: str
     args_model: type[ToolArgs]  # pydantic — schema + validation from one definition
     handler: ToolHandler | CredentialToolHandler
-    # Display labels (feature 029): present for the in-flight status pill ("Editing shader"),
+    # Display labels: present for the in-flight status pill ("Editing shader"),
     # past for the finished tool card + snippet hover ("Edited shader"). Display-only — `name`
     # stays the identity key on every durable surface (trace, StepRecord, ledger).
     label_live: str
     label_done: str
     mutating: bool  # gates the "what I did" note + the UI confirm
-    eager: bool  # True => carried in eager_specs() (turn-start tools=) (§4)
-    # One-line summary for the lazy-tool catalogue the model reads to decide what to `load_tools`
-    # (feature 052 slice 0). Only meaningful on a lazy (eager=False) tool; ignored for eager tools.
+    eager: bool  # True => carried in eager_specs() (turn-start tools=)
+    # One-line summary for the lazy-tool catalogue the model reads to decide what to `load_tools`.
+    # Only meaningful on a lazy (eager=False) tool; ignored for eager tools.
     catalog_summary: str = ""
     # SOURCE edit tools only (the shader and script edit/write pairs) — drives the
     # consecutive-failed-edits giveup cap. Deliberately NARROWER than `mutating`: a failed
     # render/publish must not trip the edit-retry cap.
     is_edit: bool = False
-    # The session source-lock's domain (083): this tool writes something in the maintainer's
-    # project that he would call "my code" — shader or script text, a uniform, a pass, a document.
+    # The session source-lock's domain: this tool writes something in the user's
+    # project that they would call "my code" — shader or script text, a uniform, a pass, a document.
     # WIDER than `is_edit` (which is only the edit/write pairs, for the retry cap) and NARROWER
     # than `mutating` (which also covers publishing and credentials). A locked session confirms
     # each of these once; the roster is pinned by a set-equality test, not by this comment.
@@ -95,12 +95,12 @@ class ToolDefinition:
     gate_policy: GatePolicy = GatePolicy.NONE
     # Confirm-card text for a gated call; None => the generic fallback line in build_gate.
     gate_prompt: GatePrompt | None = None
-    # The gate WIDGET (feature 020·19): CONFIRM = Yes/No, CREDENTIAL = a masked secret input.
+    # The gate WIDGET: CONFIRM = Yes/No, CREDENTIAL = a masked secret input.
     # Orthogonal to gate_policy (WHEN to gate vs WHICH widget). A CREDENTIAL tool's handler is a
     # CredentialToolHandler (gets the secret as a 2nd arg); secret_field is its marker/grep-anchor.
     gate_kind: GateKind = GateKind.CONFIRM
     secret_field: str = ""
-    # A pre-gate guard (feature 020·18): returns a guided-handoff message when the call CAN'T
+    # A pre-gate guard: returns a guided-handoff message when the call CAN'T
     # run (a publish with no credentials / no pack), else None. The loop runs it BEFORE the
     # gate, so a publish that can't proceed never pops a confirm. None => no precheck.
     precheck: ToolPrecheck | None = None

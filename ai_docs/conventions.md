@@ -1877,8 +1877,8 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   visits and is bounded by them. Revisit if a GL version this repo targets ever makes timer
   queries nestable, or if `Query` gains a release.
 - **The vendored graph-canvas binary (`shaderbox/resources/graph_canvas/`) is rebuilt from the
-  `graph_canvas` repo with `make ffi`, and a STALE copy lies convincingly.** Eight files ship
-  (feature 098): `libgraph_canvas.so`, `atlas.png`, `atlas.json`, and the five shaders -- the
+  `graph_canvas` repo with `make ffi`, and a STALE copy lies convincingly.** Eight files are vendored
+  (feature 098), the five shaders under `shaders/` only: `libgraph_canvas.so`, `atlas.png`, `atlas.json`, and the five shaders -- the
   four stage sources and `common.glsl`, which `render.py` prepends to each and which a copy
   that counted only the stages would leave stale
   under `shaders/`, which are used UNMODIFIED -- they are the shortest statement of the vertex
@@ -1897,7 +1897,7 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   refuses everything then accepts drags).
 
 - **The vendored editor binary (`shaderbox/resources/editor/`) rebuilds from a COMMITTED editor-repo
-  sha, never a dirty tree.** SEVEN files ship together (feature 067): `libeditor.so`, `atlas.png`,
+  sha, never a dirty tree.** SEVEN files are vendored together (feature 067), and only the binary and the atlas pair reach the bundle -- `build.sh` drops the rest as `DEV_ONLY_RESOURCES`: `libeditor.so`, `atlas.png`,
   `atlas.json`, `VERSION` (the sha), `vim_coverage.md`, `standard_keymap.md`, `abi_probe.py`
   (upstream's `ffi/probe.py`, the ABI signature table the binding is gated against). Upstream is
   `git@github.com:alexeykarnachev/editor.git` — named here because `VERSION` holds a sha and

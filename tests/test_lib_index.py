@@ -305,10 +305,9 @@ def test_user_shadowing_suppresses_lib_version(tmp_path: Path) -> None:
 
 
 def test_call_after_return_keyword_is_not_a_shadowing_def(tmp_path: Path) -> None:
-    # Regression: `return SB_foo(...)` must NOT read as a user definition of SB_foo. The old
-    # USER_FN_DEF_RE matched `<word> SB_foo(` and so saw `return` as a type, wrongly suppressing
-    # the lib splice — the function then failed to compile as "undefined" (a live copilot session
-    # hit exactly this with `return SB_palette_sunset(...)`).
+    # `return SB_foo(...)` must NOT read as a user definition of SB_foo. A pattern matching
+    # `<word> SB_foo(` would see `return` as a type, wrongly suppressing
+    # the lib splice — the function then fails to compile as "undefined".
     lib = tmp_path / "lib"
     idx = _make_lib(lib, {"palette.glsl": "vec3 SB_pal(float t) { return vec3(t); }\n"})
     root = _write(
@@ -318,7 +317,7 @@ def test_call_after_return_keyword_is_not_a_shadowing_def(tmp_path: Path) -> Non
     )
     flattened, sources, _smap, errors = resolve_usage(root, idx)
     assert errors == []
-    # The lib function MUST be spliced (it was wrongly treated as user-shadowed before the fix).
+    # The lib function MUST be spliced (it must not be treated as user-shadowed).
     assert "vec3 SB_pal(float t)" in flattened
     assert len(sources) == 2  # root + the lib file pulled in
     # And it's spliced BEFORE the call site (GLSL needs def-before-use).
@@ -365,7 +364,7 @@ def test_resolve_error_on_lib_cycle(tmp_path: Path) -> None:
 def test_typo_errors_with_closest_name_suggestion(tmp_path: Path) -> None:
     # User typoed `SB_perln` (no such function): the resolver errors at the user's
     # line with the closest catalogue name, instead of letting the driver emit a
-    # cryptic "undeclared identifier" (feature 033).
+    # cryptic "undeclared identifier".
     lib = tmp_path / "lib"
     idx = _make_lib(lib, {"x.glsl": "float SB_perlin() { return 0.0; }\n"})
     root = _write(tmp_path / "root.glsl", "void main() { float x = SB_perln(); }\n")
@@ -432,7 +431,7 @@ def test_user_defined_SB_function_is_not_unknown(tmp_path: Path) -> None:
 
 def test_user_prototype_SB_function_is_not_unknown(tmp_path: Path) -> None:
     # A forward DECLARATION (prototype; the body lands in a later edit) is legal
-    # GLSL and must not resolve-error (review cycle 3).
+    # GLSL and must not resolve-error.
     lib = tmp_path / "lib"
     idx = _make_lib(lib, {"x.glsl": "float SB_perlin() { return 0.0; }\n"})
     root = _write(

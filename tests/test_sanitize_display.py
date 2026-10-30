@@ -1,4 +1,4 @@
-"""The chat display sanitizer (020·20 D2 + 034 F11 Cyrillic pass-through) — pure text."""
+"""The chat display sanitizer — pure text."""
 
 from shaderbox.copilot.sanitize import sanitize_display
 

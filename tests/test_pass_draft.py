@@ -1,4 +1,4 @@
-"""The pass-settings modal's create mode (078 D5): a draft that becomes a pass only on
+"""The pass-settings modal's create mode: a draft that becomes a pass only on
 `Create`; closing the modal with a draft open makes nothing."""
 
 from typing import Any

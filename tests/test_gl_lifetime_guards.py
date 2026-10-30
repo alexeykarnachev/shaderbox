@@ -137,12 +137,12 @@ def test_snapshot_script_ignores_a_missing_script(tmp_path: Path) -> None:
 
 
 def test_document_release_frees_uniform_held_media(gl: moderngl.Context) -> None:
-    # The 060 fix, pinned from the other side: the uniform values own textures/captures, and
+    # The other side: the uniform values own textures/captures, and
     # every reload releases the document.
     document, _ = Document.load_from_dir(_EXAMPLE)
     # A texture is PUT there rather than hoped for. The shipped example this loads holds only
     # float uniforms, so the release loop below ran zero times and the test passed no matter
-    # what `Pass.release()` did -- found by a sweep, and it is the reason the assertion count is
+    # what `Pass.release()` did -- hence the assertion count is
     # asserted too.
     document.render_pass.uniform_values["u_probe"] = gl.texture((2, 2), 4)
     held = [
@@ -159,7 +159,7 @@ def test_document_release_frees_uniform_held_media(gl: moderngl.Context) -> None
         assert _released(texture), "a uniform-held texture outlived Document.release()"
 
 
-# --- feedback-history lifecycle (068 machinery, found by the repo-wide sweep) ---
+# --- feedback-history lifecycle ---
 
 
 def _feedback_document(gl: moderngl.Context) -> Document:
@@ -187,8 +187,7 @@ def _feedback_document(gl: moderngl.Context) -> Document:
 
 def test_dropping_a_pass_releases_its_feedback_history(gl: moderngl.Context) -> None:
     # The history is keyed by NAME and owned by the Document, so releasing the Pass does not
-    # release it. Falsifier: remove the drop_feedback call in delete_pass and the canvas stays
-    # in the dict, reachable by nothing, for the life of the document.
+    # release it.
     doc = _feedback_document(gl)
     assert "fb" in doc._feedback
     doc.drop_feedback("fb")
@@ -206,8 +205,6 @@ def test_a_target_format_change_never_leaves_the_pair_disagreeing(
     # what a shader reading `u_prev` depends on. Asserting a specific dtype would be asserting
     # which side of the swap won, which is not the property that matters.
     #
-    # Falsifier: drop the target_generation check in `_feedback_canvas` and the pair splits
-    # f1/f2 on the frame after the change.
     doc = _feedback_document(gl)
     assert doc._feedback["fb"].dtype == doc.passes["fb"].canvas.dtype
 
@@ -240,8 +237,6 @@ def test_a_target_change_takes_effect_on_the_very_next_frame(
 
     Toggled to NEAREST because `DEFAULT_FILTER_LINEAR` is True -- a test that asks for LINEAR
     here changes nothing and cannot fail.
-
-    Falsifier: drop the `drop_feedback` call from `Document.set_pass_target`.
     """
     doc = _feedback_document(gl)
     nearest = (moderngl.NEAREST, moderngl.NEAREST)
@@ -266,7 +261,7 @@ def test_a_target_change_takes_effect_on_the_very_next_frame(
 
 
 def _seeded_document(gl: moderngl.Context, tmp_path: Path) -> Document:
-    # A document whose history came off DISK (089), not from a render: the seed is allocated in
+    # A document whose history came off DISK, not from a render: the seed is allocated in
     # the loader, so nothing that releases a rendered history necessarily releases this one.
     doc = _feedback_document(gl)
     ui_document = UIDocument(document=doc)
@@ -329,8 +324,7 @@ def test_the_app_rebinds_the_default_context_to_its_window(
     # the first get_context(). A standalone fixture context that took that role leaves a wrapper
     # every later App would inherit: module-order-only failures (an export rendered garbage after
     # test_document_graph + test_default_wiring). App.__init__ therefore re-initializes the default
-    # to its own window. Falsifier: drop that init_context() call -- `after` is then the very
-    # object the stale fixture handed out.
+    # to its own window.
     after = moderngl.get_context()
     assert after is not stale_default_context
     assert app.ui_documents  # the App built its documents on the rebound context

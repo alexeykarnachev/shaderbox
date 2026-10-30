@@ -1,5 +1,5 @@
-"""Every command reaches every surface that lists commands (078). A command added to the enum
-without a spec, a handler, or a help line is the gap the maintainer asked to be gated: the
+"""Every command reaches every surface that lists commands. A command added to the enum
+without a spec, a handler, or a help line is a gap this gates: the
 quick help pane and the documentation modal's shortcuts both read the registry, so the gate is that the
 registry itself is complete."""
 

@@ -94,7 +94,7 @@ def test_pruning_is_a_fixed_point(gl, tmp_path: Path) -> None:
 
 
 def test_a_clean_example_loses_nothing(gl, tmp_path: Path) -> None:
-    # Falsifier for the prune itself: an over-broad rule would quietly strip live rows, and
+    # An over-broad prune rule would quietly strip live rows, and
     # "rows went away" looks the same as "rows were stale" without this side of the bound.
     document_dir = _copy(tmp_path, _EXAMPLES / "8d454b7b-bd48-49dc-aebe-58b9e31cfc28")
     before = _rows(document_dir)
@@ -202,7 +202,7 @@ void main() { fs_color = vec4(vs_uv * u_gain.xy, u_gain.z, 1.0); }
 
 
 def test_two_passes_sharing_a_uniform_name_get_a_row_each(gl, tmp_path: Path) -> None:
-    # A row holds the USER's chosen input type, and each pass owns its uniforms (D4). With the key
+    # A row holds the USER's chosen input type, and each pass owns its uniforms. With the key
     # built from the name and shape alone, `u_gain` in two passes was ONE row: setting one pass's
     # to a slider retyped the other's, with nothing in the UI saying why.
     document_dir = tmp_path / "document"

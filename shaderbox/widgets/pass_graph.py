@@ -1,11 +1,11 @@
-"""The graph canvas (092, 093, 098): a document's passes as nodes, drawn by the library.
+"""The graph canvas: a document's passes as nodes, drawn by the library.
 
 A node is a pass's live picture, its name and one input port per sampler its compiled program
 declares (`pass_graph.node_ports`); a wire is a read from the effective wiring. Nothing here
 is a second source of truth: positions are the pass entry's (or the rank layout's, for a pass
 never placed), edges are the wiring, ports are the program.
 
-The picture itself belongs to `graph_canvas` (098). Every frame the document is packed into
+The picture itself belongs to `graph_canvas`. Every frame the document is packed into
 the library's node model, `gc_frame` lays it out and resolves the pointer, and the two vertex
 streams are rendered into an FBO that `imgui.image` presents -- so the hit-testing, the
 gestures and the zoom are the library's, not an imgui item tree's. The PAN is the host's, as
@@ -102,7 +102,7 @@ def _positions(
 ) -> dict[str, tuple[float, float]]:
     """Place every pass on the canvas without writing anything.
 
-    A stored position wins; a pass never placed takes the rank layout's (092 D6); a drag in
+    A stored position wins; a pass never placed takes the rank layout's; a drag in
     flight overrides both through `overrides`.
     """
     entries = document.graph.passes
@@ -157,7 +157,7 @@ def _tab_row(
 
 
 def _group_prompt(app: App, document_id: str, view: GraphViewState) -> None:
-    """The name a Group asks for (092 D14): a small popup, the shared name row, Create."""
+    """The name a Group asks for: a small popup, the shared name row, Create."""
     if view.group_input.needs_focus and not imgui.is_popup_open("##graph_group"):
         imgui.open_popup("##graph_group")
     if not imgui.begin_popup("##graph_group"):
@@ -383,7 +383,7 @@ def _body_rows(
                     # frame, so a drag would appear to take and revert on
                     # the next tick. A script-driven one IS editable -- the
                     # edit auto-stops the script for that uniform, the same
-                    # rule the uniforms panel follows (048).
+                    # rule the uniforms panel follows.
                     color=None if kind is None else kind_color(kind),
                     editable=kind is not SymbolKind.ENGINE_UNIFORM,
                     # The SAME question the uniforms panel asks. Reading
@@ -421,7 +421,7 @@ def canvas_theme() -> Theme:
 
 
 def instanced_pass_keys(document: Document, order: Iterable[str]) -> frozenset[str]:
-    """Which passes draw one quad per entity, keyed like `failing` (104 D3).
+    """Which passes draw one quad per entity, keyed like `failing`.
 
     A function rather than an expression inside the draw so the derivation is reachable
     from a test: a review deleted the inline version and the whole suite stayed green,
@@ -441,7 +441,7 @@ def _library_canvas(
     document: Document,
     view: GraphViewState,
 ) -> None:
-    """The canvas interior, drawn by the graph_canvas library (098).
+    """The canvas interior, drawn by the graph_canvas library.
 
     imgui still owns the child, the menus and the tab row; what it no longer
     owns is the picture. The library is handed the whole graph every frame and
@@ -519,7 +519,7 @@ def _library_canvas(
             for name in order
             if document.passes[name].compile_unit.errors
         ),
-        # 104 D3/D8: entity_fields is populated at compile from the FLATTENED source
+        # entity_fields is populated at compile from the FLATTENED source
         # (core.Pass.compile), the same field the uniforms panel's badge reads -- one
         # fact, two surfaces.
         instanced=instanced_pass_keys(document, order),
@@ -743,7 +743,7 @@ def draw(app: App, document_id: str) -> None:
         return
     document = ui_document.document
     view = app.graph_view_for(document_id)
-    # Ports come from the compiled program (092 D1): the seam 091 uses before it plans. A
+    # Ports come from the compiled program: the seam used before planning. A
     # no-op once every pass has been attempted, so calling it per frame costs nothing.
     compile_pending_passes(document)
 
@@ -760,7 +760,7 @@ def draw(app: App, document_id: str) -> None:
 
     imgui.push_style_color(imgui.Col_.child_bg, COLOR.BG_APP)
     # No border: the editor pane the canvas fills is already framed, and a second frame one
-    # pixel inside it is the clutter the maintainer named. `always_use_window_padding` keeps
+    # pixel inside it is clutter. `always_use_window_padding` keeps
     # the inset `borders` implied, so the canvas geometry is unchanged.
     child_open = imgui.begin_child(
         "##pass_graph",

@@ -1,8 +1,7 @@
-"""Feature 105: the semantic colour a Python script gets and a lexer cannot supply.
+"""The semantic colour a Python script gets and a lexer cannot supply.
 
 Both halves ship. `self`, `cls` and the dunders are EDIT-INVARIANT and ride the word table;
-definitions, decorators and annotations are positional and go through `ed_set_spans`, which
-the `05f90ac` re-vendor brought across the ABI.
+definitions, decorators and annotations are positional and go through `ed_set_spans`.
 
 Every gate here exists because a cheaper one passes while the feature is broken. The enum
 gate in `test_intel_sources.py` walks `SymbolKind` and checks a colour, a rank and a slot per
@@ -79,17 +78,16 @@ def _spans_at(spans: tuple[SpanSymbol, ...], name: str) -> list[SpanSymbol]:
     return [span for span in spans if span.name == name]
 
 
-# --- the word table: the half that ships (D6) --------------------------------
+# --- the word table: the half that ships --------------------------------
 
 
 def test_self_and_the_dunders_get_a_kind() -> None:
-    # PY_SELF and PY_DUNDER are EMITTED, which the enum gate cannot see. Break by deleting
-    # the producer's branches and this fails while `test_every_kind_has_a_color` stays green.
+    # PY_SELF and PY_DUNDER are EMITTED, which the enum gate cannot see.
+    # Deleting the producer's branches fails this while `test_every_kind_has_a_color` stays green.
     classes = python_word_classes(SOURCE)
     assert classes["self"] == SymbolKind.PY_SELF
     assert classes["__init__"] == SymbolKind.PY_DUNDER
-    # A name that merely LOOKS like a dunder on one side is not one: the falsifier for a rule
-    # written as "starts with __".
+    # A name that merely LOOKS like a dunder on one side is not one: the
     assert "_line" not in classes
     assert python_word_classes("__init\nx__\n_x_\n") == {}
 
@@ -100,7 +98,7 @@ def test_cls_counts_and_a_plain_name_does_not() -> None:
 
 
 def test_a_script_tab_feeds_word_classes_at_all() -> None:
-    """THE D6 GATE. Break by removing the feed from `_python_feed_for` and `self` goes plain.
+    """A script tab feeds the word table: `self` is coloured once `_python_feed_for` feeds it.
 
     NOT "restore the guard": the guard that keeps `_glsl_index_for` off script tabs is
     correct and stays. It is the GLSL indexer it keeps out, and running that index on a
@@ -120,8 +118,6 @@ def test_a_script_tab_feeds_word_classes_at_all() -> None:
     line = _line_of(SOURCE, "self.seed = seed")
     column = SOURCE.split("\n")[line].index("self")
     assert editor.class_at(line, column) == kind_slot(SymbolKind.PY_SELF)
-    # The falsifier: a plain local on the same line reads back as no class, so the assertion
-    # above is about `self` and not about the library colouring everything.
     assert editor.class_at(line, SOURCE.split("\n")[line].index("seed = ")) == 0
     editor.close()
 
@@ -138,7 +134,7 @@ def test_the_word_feed_is_idempotent_on_a_still_buffer() -> None:
     editor.close()
 
 
-# --- the spans: computed now, pushed when the library lands the call (D7) -----
+# --- the spans: computed now, pushed when the library lands the call -----
 
 
 def test_a_definition_and_a_call_of_the_same_name_differ() -> None:
@@ -161,7 +157,7 @@ def test_a_definition_and_a_call_of_the_same_name_differ() -> None:
 def test_an_import_is_not_a_definition() -> None:
     # jedi's `get_names` reports an imported name as a definition AT ITS IMPORT SITE, so
     # `from dataclasses import dataclass` would colour `dataclass` as though the script
-    # defined it. Break by reading definitions off `get_names` instead of the parso tree.
+    # defined it.
     spans = python_spans(SOURCE)
     # Every DECLARING kind. A class and a constructor are definitions too; they draw in
     # different colours because treesitter gives them different captures, which is about
@@ -178,12 +174,12 @@ def test_an_import_is_not_a_definition() -> None:
 
 
 def test_a_decorator_and_a_bare_reference_to_it_differ() -> None:
-    """PY_DECORATOR is EMITTED, on the case that disproved the spec's earlier claim.
+    """PY_DECORATOR is EMITTED, though jedi cannot tell a decorator from a bare reference.
 
     MEASURED with jedi: `@property` and the bare `property` two functions down are
     byte-identical in every field `get_names` exposes -- both `type="statement"`,
-    `is_definition()` false, the same `description`. So this cannot be answered by the
-    producer the cost numbers were originally sized against, and the fixture contains both
+    `is_definition()` false, the same `description`. So this cannot be answered from
+    jedi's names alone, and the fixture contains both
     roles of the one name so a producer that cannot tell them apart fails here."""
     spans = python_spans(SOURCE)
     decorator_line = _line_of(SOURCE, "@property")
@@ -196,7 +192,7 @@ def test_a_decorator_and_a_bare_reference_to_it_differ() -> None:
 
 
 def test_an_annotation_and_an_ordinary_call_of_the_same_name_differ() -> None:
-    # The second half of D7's case, on `float`: an annotation on `dt` and `scale`, an
+    # The second half of that case, on `float`: an annotation on `dt` and `scale`, an
     # ordinary call in `return float(self.phase)`. jedi calls both a statement.
     spans = python_spans(SOURCE)
     floats = _spans_at(spans, "float")
@@ -207,8 +203,6 @@ def test_an_annotation_and_an_ordinary_call_of_the_same_name_differ() -> None:
 
 
 def test_a_decorators_arguments_are_not_the_decorator() -> None:
-    # The falsifier for "everything after the @ is a decorator": a decorator's ARGUMENTS are
-    # ordinary expressions and keep whatever colour they have anywhere else.
     text = "@register(order=3, key=helper)\ndef go() -> None:\n    pass\n"
     spans = python_spans(text)
     named = {span.name for span in spans if span.kind == SymbolKind.PY_DECORATOR}
@@ -229,11 +223,11 @@ def test_every_span_lands_on_the_text_it_names() -> None:
 
 
 def test_a_broken_buffer_still_answers() -> None:
-    """The unparseable buffer is the NORMAL state mid-edit, and D7's deferral trigger was
-    whether a second producer's cost there could be bounded. MEASURED on the flock script:
+    """The unparseable buffer is the NORMAL state mid-edit, and a second producer's
+    cost there has to be bounded. MEASURED on the flock script:
     clean 6.63 ms, and an unclosed paren, a dangling `def`, a half-typed annotation and an
     unterminated string all between 6.26 and 6.74 ms -- parso recovers rather than raising,
-    and keeps the whole file's structure. So all five cases ship rather than two deferring.
+    and keeps the whole file's structure. So all five cases are served.
     """
     for broken in (
         SOURCE + "\n    def ",
@@ -250,7 +244,7 @@ def test_a_broken_buffer_still_answers() -> None:
         ), broken[-40:]
 
 
-# --- staleness (D3b) ---------------------------------------------------------
+# --- staleness ---------------------------------------------------------
 
 
 def _spans_result(path: Path, revision: int, text: str = SOURCE) -> PythonResult:
@@ -329,23 +323,17 @@ def test_the_column_unit_is_codepoints_not_bytes() -> None:
     assert editor.class_at(target.line, target.column) == kind_slot(
         SymbolKind.PY_DEFINITION
     )
-    # The falsifier, on the line that actually holds the multi-byte characters: the byte
-    # column of the string's closing quote is not its codepoint column, and a span pushed at
-    # the byte column would land off the end of the line.
     first = text.split("\n")[0]
     assert len(first.encode()) != len(first), "the fixture must be multi-byte at all"
     editor.close()
 
 
 def test_a_stale_span_set_is_rejected_rather_than_misapplied() -> None:
-    """THE D3b GATE. The policy is DROP-AND-RE-REQUEST, and the library enforces it: a push
+    """The policy is DROP-AND-RE-REQUEST, and the library enforces it: a push
     carrying a revision the buffer has moved past returns 0, changes nothing, and leaves the
     previous set standing. There is no offset salvage, which is right -- a set computed
     before a newline was typed would put every span below it one row out, landing a
-    definition's colour on the WRONG word rather than on no word.
-
-    Break by passing the CURRENT revision instead of the one the text was read at: the stale
-    set applies, and the assertion that the old colour survived fails."""
+    definition's colour on the WRONG word rather than on no word."""
     editor = _python_editor()
     feed = PythonFeed(editor=editor)
     good_revision = editor.get_undo_index()
@@ -384,10 +372,9 @@ def test_a_stale_span_set_is_rejected_rather_than_misapplied() -> None:
 
 
 def test_an_applied_set_follows_an_edit() -> None:
-    """The regime the spec predicted WRONG, corrected by the library's own behaviour.
+    """An applied set follows an edit rather than dropping to plain.
 
-    105 D3 says colour "drops to PLAIN for the whole burst, then snaps back". It does not:
-    an applied set is anchored in the buffer, so an insert above it carries it down and the
+    An applied set is anchored in the buffer, so an insert above it carries it down and the
     characters it named keep their colour between the edit and the next debounced push. That
     changes the JUSTIFICATION for the debounce -- latency and head-of-line, not staleness."""
     editor = _python_editor()
@@ -405,8 +392,6 @@ def test_an_applied_set_follows_an_edit() -> None:
     assert editor.class_at(def_line + 1, def_col) == kind_slot(
         SymbolKind.PY_DEFINITION
     ), "an anchored span follows the text it coloured"
-    # The falsifier: the row it USED to be on is not still coloured, so the assertion above
-    # is about the span moving rather than about everything being coloured.
     assert editor.class_at(def_line, def_col) == 0
     editor.close()
 
@@ -415,10 +400,7 @@ def test_set_text_drops_the_spans_and_the_revision_moves_so_they_are_re_asked() 
     """`ed_set_text` DROPS the set -- the spans named characters of a text that is gone --
     where markers survive by line. The host needs no special case for it, and this is the
     measurement that says so: `ed_revision` RISES across the set, so `span_revision` no
-    longer matches and the debounced request fires again on the next idle frame.
-
-    Break by making the feed believe a span set survives a reload, and the class reads 0
-    forever after a file is loaded into an open tab."""
+    longer matches and the debounced request fires again on the next idle frame."""
     editor = _python_editor()
     feed = PythonFeed(editor=editor)
     before = editor.get_undo_index()
@@ -444,10 +426,8 @@ def test_a_class_outside_the_palette_is_refused() -> None:
     # against a wider palette than the build has learns it at the call instead of drawing
     # in a colour the library invented.
     #
-    # The ceiling is read from the mirrored enum rather than written here: it moved from 9
-    # to 15 when the library widened `Theme.syntax` to [16]Color, and a hardcoded 9 would
-    # have made this test the thing that fails on a re-vendor instead of the thing that
-    # verifies one.
+    # The ceiling is read from the mirrored enum rather than written here: a hardcoded
+    # count would go stale when the library widens `Theme.syntax`.
     editor = _python_editor()
     # Counted from the mirrored enum's NAMES, not from its values: `SYNTAX_1` is 14 and
     # `SYNTAX_8` is 25, so the values are not contiguous and subtracting two of them gives
@@ -465,7 +445,7 @@ def test_a_span_and_the_word_table_compose_on_one_buffer() -> None:
     """The two mechanisms cover one buffer and must not fight. The library's rule is that
     host spans WIN where they cover and the word table fills the identifiers the lexer left
     plain elsewhere -- so `self` keeps its colour under a span set that says nothing about
-    it, and this is the check that the split in D2 actually composes."""
+    it, and this is the check that the split actually composes."""
     editor = _python_editor()
     feed = PythonFeed(editor=editor)
     assert feed_python_word_classes(editor, feed, SOURCE)
@@ -490,11 +470,9 @@ def test_a_span_and_the_word_table_compose_on_one_buffer() -> None:
 
 
 def test_a_moved_caret_does_not_drop_a_span_answer() -> None:
-    """THE D4 GATE. The worker's existing predicate requires caret agreement, and spans are a
+    """The worker's existing predicate requires caret agreement, and spans are a
     property of the TEXT: an arrow key between the request and the answer would throw away a
-    correct set on every keystroke that moved the cursor without editing.
-
-    Break by making `matches_text` call `matches`: the caret disagrees and this fails."""
+    correct set on every keystroke that moved the cursor without editing."""
     path = Path("/tmp/script.py")
     request = PythonRequest(PythonRequestKind.SPANS, path, SOURCE, 4, 11, revision=7)
     assert request.matches_text(path, 7)
@@ -507,12 +485,11 @@ def test_a_moved_caret_does_not_drop_a_span_answer() -> None:
 
 
 def test_a_span_answer_moves_the_revision_the_panel_reads() -> None:
-    """THE D3 GATE, host side. The failure it exists for is invisible to any test that types
+    """The host side of the revision gate. The failure it exists for is invisible to any test that types
     and then asserts: the panel is a cached texture, the answer lands with the buffer IDLE,
     and nothing the editor reports has moved -- so the colour never appears at all.
 
-    Break by reverting `render_state`'s `class_feed_revision` member and the colour never
-    reaches the screen; break it here by not incrementing on acceptance and this fails."""
+    `render_state`'s `class_feed_revision` member is what moves the panel."""
     editor = _python_editor()
     feed = PythonFeed(editor=editor)
     before = feed.revision
@@ -554,21 +531,17 @@ def test_the_panel_redraws_for_a_feed_with_no_edit() -> None:
     assert feed_python_word_classes(editor, feed, SOURCE)
     after = state(feed.revision)
     assert should_redraw(before, after), "colour fed on a still buffer must repaint"
-    # The falsifier: EVERY other dimension is unchanged, so the redraw above is the feed's
-    # and not some editor state that happened to move. Without this the test would pass with
-    # `class_feed_revision` deleted, as long as anything else in the tuple had drifted.
+    # Without this the test would pass with `class_feed_revision` deleted, as long as
+    # anything else in the tuple had drifted.
     assert before[2:] == after[2:], "nothing but the feed revision may have moved"
     editor.close()
 
 
 def test_a_spans_job_never_delays_a_completion_job() -> None:
-    """THE D3a GATE. `PythonWorker._next` pops one request at a time on ONE thread, and
+    """`PythonWorker._next` pops one request at a time on ONE thread, and
     MEASURED a SPANS job costs 8.17 ms against a COMPLETE job's 8.19 ms on the flock script
     -- so a spans job popped first would double the latency of completion, a shipped feature,
-    on every keystroke that also asked for colour.
-
-    Break by restoring insertion order (`next(iter(self._pending))`) and this fails: SPANS
-    was submitted first, so it comes back first, and completion waits behind it."""
+    on every keystroke that also asked for colour."""
     worker = PythonWorker()
     try:
         path = Path("/tmp/s.py")
@@ -637,8 +610,7 @@ def test_a_syntax_class_means_one_thing_in_every_buffer() -> None:
 def test_each_new_kind_is_produced_by_something(kind: SymbolKind) -> None:
     """The gate the enum gate cannot be. `test_every_kind_has_a_color` walks `SymbolKind` and
     checks a colour, a rank and a slot -- and passes clean for a kind that NOTHING PRODUCES.
-    Break by deleting any one producer, leaving its colour and slot in place, and watch the
-    enum gate stay green while exactly this case fails."""
+    A producer deleted with its colour and slot left in place keeps the enum gate green."""
     produced = set(python_word_classes(SOURCE).values())
     produced |= {span.kind for span in python_spans(SOURCE)}
     assert kind in produced

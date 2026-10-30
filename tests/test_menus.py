@@ -1,11 +1,10 @@
-"""The menus feature (093/17): the bar is the command table, the object menus are one item
+"""The menus: the bar is the command table, the object menus are one item
 set each, the confirms go through a submenu, and no label has two spellings.
 
 Split by what each question needs. The bar and the item sets are asked of a REAL frame -- a
-menu that parses correctly and draws nothing is the failure this pass exists to prevent --
+menu that parses correctly and draws nothing is the failure these tests exist to catch --
 with the rig window pinned by `set_next_window_pos` / `set_next_window_size` so the aimed
-point lands inside it (an auto-sized rig reports no hover, and an earlier probe round read
-that as a library fact). The layering and one-spelling questions are pure source walks.
+point lands inside it (an auto-sized rig reports no hover). The layering and one-spelling questions are pure source walks.
 """
 
 import ast
@@ -137,13 +136,13 @@ def _open_every_menu(app: Any, spy: _ItemSpy) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# M1 — the bar IS the table
+# The bar IS the table
 # ---------------------------------------------------------------------------
 
 
 def test_the_bar_draws_exactly_the_tables_specs(app: Any, spy: _ItemSpy) -> None:
-    """Falsifier: hand-add one `imgui.menu_item` to `menus.draw_menu_bar` -- the label set
-    gains one the table does not carry."""
+    """A hand-added `imgui.menu_item` in `menus.draw_menu_bar` would add a label the table
+    does not carry."""
     drawn = set(_open_every_menu(app, spy))
     expected = {spec.label for spec in COMMAND_SPECS}
     assert drawn == expected, (
@@ -186,8 +185,7 @@ def test_every_item_sits_under_its_own_category(app: Any, spy: _ItemSpy) -> None
 
 def test_every_category_is_a_menu_and_every_spec_has_one() -> None:
     """The bar's structure IS the table's: one menu per category in enum order, each with
-    at least one item, every spec under exactly one of them. Falsifier: a category with no
-    spec -- an empty menu the bar would still draw."""
+    at least one item, every spec under exactly one of them, so no category is an empty menu."""
     assert list(CommandCategory) == CATEGORY_ORDER
     for category in CATEGORY_ORDER:
         assert any(spec.category is category for spec in COMMAND_SPECS), (
@@ -204,10 +202,9 @@ def test_a_separator_opens_a_group_never_a_menu() -> None:
 
 
 def test_the_palette_offers_every_in_palette_spec(app: Any) -> None:
-    """The palette needs no second step since 093 W4: a destructive verb's own callback
+    """The palette needs no second step: a destructive verb's own callback
     opens the confirm modal, so every `in_palette` spec is offered again.
 
-    Falsifier: filter the destructive specs back out of `_register_palette_commands`.
     """
     for spec in COMMAND_SPECS:
         offered = any(
@@ -226,7 +223,7 @@ def test_the_table_is_in_menu_order() -> None:
 
 
 # ---------------------------------------------------------------------------
-# M2 — menu_enabled, and the layering it forces
+# `menu_enabled`, and the layering it forces
 # ---------------------------------------------------------------------------
 
 
@@ -270,7 +267,7 @@ def _string_literals() -> list[tuple[str, int, str]]:
 
 
 def test_no_command_label_is_respelled_with_an_ellipsis() -> None:
-    """Falsifier: restore `Projects...` anywhere."""
+    """No command label is respelled with a trailing ellipsis."""
     labels = {spec.label for spec in COMMAND_SPECS}
     offenders = [
         (module, lineno, text)
@@ -282,7 +279,7 @@ def test_no_command_label_is_respelled_with_an_ellipsis() -> None:
 
 def test_no_button_respells_a_command_label_in_another_case() -> None:
     """A button that opens a command's surface takes `command_label`, so `add pass` beside
-    `Add pass` is two spellings of one verb. Falsifier: restore `add pass`."""
+    `Add pass` is two spellings of one verb."""
     by_lower = {spec.label.lower(): spec.label for spec in COMMAND_SPECS}
     offenders: list[tuple[str, int, str, str]] = []
     for path in sorted(_PKG.rglob("*.py")):
@@ -310,10 +307,7 @@ def test_no_button_respells_a_command_label_in_another_case() -> None:
 def test_the_pass_set_is_the_same_on_the_strip_and_the_node(
     app: Any, spy: _ItemSpy
 ) -> None:
-    """The node adds `Group` right after `Settings` and nothing else (M4's Items column).
-
-    Falsifier: add an item to one caller only, or move the slot's draw away from `Settings`.
-    """
+    """The node adds `Group` right after `Settings` and nothing else."""
     document_id = app.current_document_id
     name = next(iter(app.ui_documents[document_id].document.passes))
     assert app.session.add_pass(document_id, "other") == ""
@@ -336,10 +330,9 @@ def test_the_pass_set_is_the_same_on_the_strip_and_the_node(
 
 
 def test_an_ungrouped_pass_draws_one_separator_before_delete(app: Any) -> None:
-    """M4: a separator before `Leave group` only when grouped, before `Delete` always.
+    """A separator before `Leave group` only when grouped, before `Delete` always.
 
-    Falsifier: emit the first separator unconditionally -- an ungrouped pass (the common
-    case) then draws two adjacent rules with nothing between them.
+    An ungrouped pass (the common case) never draws two adjacent rules.
     """
     document_id = app.current_document_id
     document = app.ui_documents[document_id].document
@@ -385,11 +378,10 @@ def _adjacent_pairs(order: list[str]) -> list[str]:
 def test_a_documents_menu_carries_every_verb_on_that_document(
     app: Any, spy: _ItemSpy, monkeypatch: Any
 ) -> None:
-    """The tile menu is where a document's own verbs live (093 W8).
+    """The tile menu is where a document's own verbs live.
 
     The two summoners left the Document tab's panel rows for this menu, the Document menu and
-    their chords; Reset left the panel's red button for the same three. Falsifier: drop one
-    from `document_menu_items` -- the roster below names what is missing.
+    their chords; Reset left the panel's red button for the same three.
     """
     document_id = app.current_document_id
     revealed: list[str] = []
@@ -416,8 +408,7 @@ def test_a_tile_menus_verbs_target_that_tiles_document(
 
     A right-click does not select the tile it opens on (`document_grid.draw`), so the menu
     cannot route through the current-document commands. Driven by firing each item inside a
-    real frame, since a source walk passes on an item wired to the wrong verb. Falsifier:
-    point any item at its current-document form -- the id below stops matching.
+    real frame, since a source scan passes on an item wired to the wrong verb.
     """
     target = app.current_document_id
     other = app.create_document_from_example(STARTER_EXAMPLE_ID)
@@ -470,10 +461,7 @@ def _fire_menu_item(app: Any, document_id: str, label: str) -> None:
 
 
 def test_a_tile_menus_chord_hints_follow_the_binding(app: Any) -> None:
-    """A hinted item shows the BOUND chord, not the registry default.
-
-    Falsifier: hard-code the default in `command_hint` -- the rebind below stops showing.
-    """
+    """A hinted item shows the BOUND chord, not the registry default."""
     before = command_hint(app, CommandId.OPEN_GRAPH)
     app.effective_bindings[CommandId.OPEN_GRAPH] = _chord_of(app, CommandId.OPEN_SCRIPT)
     after = command_hint(app, CommandId.OPEN_GRAPH)
@@ -488,10 +476,7 @@ def _chord_of(app: Any, command_id: CommandId) -> int:
 def test_open_document_dir_is_what_the_current_document_verb_calls(
     app: Any, monkeypatch: Any
 ) -> None:
-    """M4: `open_current_document_dir` is the generalization's one-argument caller.
-
-    Falsifier: give the current-document verb its own body again -- the two paths then drift.
-    """
+    """`open_current_document_dir` is the generalization's one-argument caller."""
     seen: list[str] = []
     monkeypatch.setattr(app, "open_document_dir", lambda i: seen.append(i))
     app.open_current_document_dir()
@@ -507,9 +492,8 @@ def test_the_group_box_menu_is_open_and_dissolve(app: Any, spy: _ItemSpy) -> Non
 
 
 def test_the_canvas_menu_fires_the_add_pass_command(app: Any, monkeypatch: Any) -> None:
-    """M4: the canvas's two creation verbs are `command_menu_item` calls, so they carry the
-    table's label and fire the registered callback. Falsifier: call `app.open_add_pass()`
-    directly -- the label then drifts from the table."""
+    """The canvas's two creation verbs are `command_menu_item` calls, so they carry the
+    table's label and fire the registered callback."""
     source = (_PKG / "widgets/pass_graph.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
     canvas = next(
@@ -533,13 +517,13 @@ def test_the_canvas_menu_fires_the_add_pass_command(app: Any, monkeypatch: Any) 
 
 
 # ---------------------------------------------------------------------------
-# M5 — a destructive verb's menu item is plain; the confirm is the modal
+# A destructive verb's menu item is plain; the confirm is the modal
 # ---------------------------------------------------------------------------
 
 
 def test_the_lib_trees_armed_delete_is_gone() -> None:
-    """M5 retires `ShaderLibFileManager`'s two armed flags and the two hand-rolled red
-    pushes the tree drew around the flipped label."""
+    """`ShaderLibFileManager` holds no armed-delete flags and the tree draws no hand-rolled
+    red pushes around a flipped label."""
     from shaderbox.shader_lib.file_ops import ShaderLibFileManager
 
     annotations = set(ShaderLibFileManager.__init__.__code__.co_names)
@@ -549,7 +533,7 @@ def test_the_lib_trees_armed_delete_is_gone() -> None:
     assert not hasattr(ShaderLibFileManager, "arm_dir_delete")
 
     tree_source = (_PKG / "popups/lib_picker/tree.py").read_text(encoding="utf-8")
-    # The favorite star's own push stays (§10.3 keeps the inline star); the RED the tree
+    # The favorite star's own push stays (the inline star stays); the RED the tree
     # drew around a flipped Delete label is the confirm modal's now.
     assert "COLOR.STATE_ERROR" not in tree_source, (
         "the tree hand-rolls the error color again; the confirm modal owns the red"
@@ -581,13 +565,13 @@ def test_the_lib_delete_still_trashes_and_toasts(
 
 
 # ---------------------------------------------------------------------------
-# M6 — the document tile carries no button
+# The document tile carries no button
 # ---------------------------------------------------------------------------
 
 
 def test_the_document_tile_draws_no_delete_cross(app: Any, monkeypatch: Any) -> None:
-    """M6: the grid passes `deletable=False`, so `preview_cell` submits no `del_document_*`
-    item at all. Falsifier: flip it back -- the cross button is submitted again."""
+    """The grid passes `deletable=False`, so `preview_cell` submits no `del_document_*`
+    item at all."""
     crosses: list[str] = []
     real = ui_primitives.close_cross_button
 
@@ -606,17 +590,17 @@ def test_the_armed_document_delete_state_is_gone(app: Any) -> None:
 
 
 # ---------------------------------------------------------------------------
-# M7 — one name-input row
+# One name-input row
 # ---------------------------------------------------------------------------
 
 
 def test_the_name_row_commits_on_a_click_away_and_cancels_on_the_x(
     app: Any, monkeypatch: Any
 ) -> None:
-    """§7.5: a transaction that only Enter fires is discarded by the click that leaves the
+    """A transaction that only Enter fires is discarded by the click that leaves the
     field. The `x` is what deactivated the input, so its click must mean cancel, not commit.
 
-    imgui's hover test never fires for a synthetic mouse here (/imgui-ui §0), so the `x`
+    imgui's hover test never fires for a synthetic mouse here, so the `x`
     click is injected at the button; every other branch runs for real against a real
     deactivate.
     """
@@ -692,7 +676,7 @@ def test_a_focus_move_with_no_edit_commits_nothing(app: Any) -> None:
 
 
 def test_the_group_prompt_holds_one_inline_input(app: Any) -> None:
-    """M7: `GraphViewState.group_prompt` + `group_name` are replaced by one `InlineInput`;
+    """`GraphViewState` holds one `InlineInput` rather than `group_prompt` + `group_name`;
     a blank name still refuses to commit."""
     from shaderbox.widgets.graph_state import GraphViewState
 
@@ -726,7 +710,7 @@ def test_the_group_prompt_holds_one_inline_input(app: Any) -> None:
 
 
 # ---------------------------------------------------------------------------
-# M10 — no double gate on a disabled item
+# No double gate on a disabled item
 # ---------------------------------------------------------------------------
 
 
@@ -741,7 +725,7 @@ def test_the_last_pass_cannot_be_deleted_through_the_menu(app: Any) -> None:
 
 
 # ---------------------------------------------------------------------------
-# M4 — the verbs the items actually reach
+# The verbs the items actually reach
 # ---------------------------------------------------------------------------
 
 
@@ -817,10 +801,7 @@ class _MenuDriver:
 def test_the_pass_delete_item_opens_the_confirm_rather_than_deleting(
     app: Any, monkeypatch: Any
 ) -> None:
-    """The item ASKS: the pass survives the click and the confirm names it.
-
-    Falsifier: call `app.delete_pass` from the item -- the pass is gone with no confirm.
-    """
+    """The item ASKS: the pass survives the click and the confirm names it."""
     document_id = app.current_document_id
     name = next(iter(app.ui_documents[document_id].document.passes))
     assert app.session.add_pass(document_id, "other") == ""
@@ -839,8 +820,7 @@ def test_the_pass_delete_item_opens_the_confirm_rather_than_deleting(
 
 
 def test_the_document_delete_item_opens_the_confirm(app: Any, monkeypatch: Any) -> None:
-    """The document tile's Delete asks first, naming the document. Falsifier: call
-    `app.delete_document` from the item -- the document goes with no confirm."""
+    """The document tile's Delete asks first, naming the document."""
     document_id = app.current_document_id
     ui_name = app.ui_documents[document_id].ui_state.ui_name
     driver = _MenuDriver(
@@ -856,8 +836,7 @@ def test_the_document_delete_item_opens_the_confirm(app: Any, monkeypatch: Any) 
 
 
 def test_the_open_folder_item_reaches_the_app_verb(app: Any, monkeypatch: Any) -> None:
-    """`Open folder` runs `App.open_document_dir(id)`. Falsifier: replace the item's body
-    with `pass` -- the click then reaches nothing."""
+    """`Open folder` runs `App.open_document_dir(id)`."""
     document_id = app.current_document_id
     driver = _MenuDriver(
         lambda: document_grid.document_menu_items(app, document_id), monkeypatch
@@ -870,8 +849,7 @@ def test_the_open_folder_item_reaches_the_app_verb(app: Any, monkeypatch: Any) -
 
 
 def test_the_box_dissolve_item_reaches_the_app_verb(app: Any, monkeypatch: Any) -> None:
-    """The group box's `Dissolve` runs `App.dissolve_group(id, group)`. Falsifier: replace
-    the item's body with `pass`."""
+    """The group box's `Dissolve` runs `App.dissolve_group(id, group)`."""
     document_id = app.current_document_id
     name = next(iter(app.ui_documents[document_id].document.passes))
     app.session.set_pass_group(document_id, name, "bloom")
@@ -889,13 +867,8 @@ def test_the_box_dissolve_item_reaches_the_app_verb(app: Any, monkeypatch: Any) 
 def test_the_bars_delete_document_is_a_plain_item_that_confirms(
     app: Any, monkeypatch: Any
 ) -> None:
-    """R5: the bar's one destructive verb is a PLAIN item carrying its chord hint, and its
-    click opens the confirm rather than trashing the document.
-
-    Falsifier: point `DELETE_DOCUMENT`'s callback at an unconfirmed
-    `delete_document(self.current_document_id)` -- the label click then trashes the open
-    document on one pointer slip below `New document`.
-    """
+    """The bar's one destructive verb is a PLAIN item carrying its chord hint, and its
+    click opens the confirm rather than trashing the document."""
     spec = SPEC_BY_ID[CommandId.DELETE_DOCUMENT]
     document_id = app.current_document_id
     submenus: list[str] = []
@@ -926,7 +899,7 @@ def test_the_bars_delete_document_is_a_plain_item_that_confirms(
 
 
 # ---------------------------------------------------------------------------
-# M9 — the close funnel's per-branch CLEANUP, not just its dispatch
+# The close funnel's per-branch CLEANUP, not just its dispatch
 # ---------------------------------------------------------------------------
 
 
@@ -965,9 +938,6 @@ def test_each_registry_row_runs_its_own_cleanup(
     """The funnel's dispatch is gated structurally; the per-row cleanup was not, so both rows
     that carry more than a state write could be gutted with the suite green.
 
-    Falsifiers, one per case: drop the nulling from `close_emoji_picker` (the target dangles
-    at a dead caller); drop `on_close` from `settings.MODAL` (Esc silently discards the
-    user's edits).
     """
     open_it(app)
     assert app.modal is modal_id
@@ -986,8 +956,7 @@ def test_the_grids_new_document_button_reads_its_label_from_the_registry(
     """The button shows whatever `NEW_DOCUMENT` is called, rather than its own copy.
 
     The two strings agree today, so a hardcoded copy shows nothing until someone renames the
-    command and the button keeps the old word. Falsifier: hardcode the label again -- the
-    rename below stops reaching the button.
+    command and the button keeps the old word.
     """
     seen: list[str] = []
     real = document_grid.standard_button
@@ -1011,8 +980,7 @@ def test_no_context_menu_hand_rolls_a_label_a_command_owns() -> None:
     chord hint and its label cannot drift from the palette's.
 
     `menu_item_simple` takes no hint, so a command-backed verb drawn with it is a shortcut the
-    user cannot discover -- which is exactly how the pass menu's `Open shader` lost its hint.
-    Falsifier: draw any of those labels with `menu_item_simple` again and it is named here.
+    user cannot discover. Such verbs go through `command_menu_item`.
     """
     owned = {spec.label for spec in COMMAND_SPECS}
     offenders: list[tuple[str, str]] = []

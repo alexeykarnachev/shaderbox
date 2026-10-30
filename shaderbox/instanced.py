@@ -42,7 +42,7 @@ QUAD_VARYING = "vs_quad"
 # The partition, and `RESERVED_NAMES` derived as the union so the two cannot drift.
 # `RESERVED_NAMES` exists to REJECT an author's declaration -- a different question from
 # "should this name be documented", and nothing in the engine answered the second until
-# this split (104 D4). A gate asserting "every reserved name is documented" would
+# this split. A gate asserting "every reserved name is documented" would
 # otherwise demand documenting `sb_instanced`, which an author who declares it is refused
 # for, so the gate would enforce the opposite of the decision.
 #

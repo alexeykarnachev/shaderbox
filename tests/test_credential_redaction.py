@@ -1,4 +1,4 @@
-"""Credential redaction (security-critical, feature 020·19): the pasted token must never
+"""Credential redaction (security-critical): the pasted token must never
 appear in the handler's LLM-facing msg, the resolved-card text, the payload, or a
 persisted conversation round-trip — only the masked prefix. Pure: no GL, no network."""
 

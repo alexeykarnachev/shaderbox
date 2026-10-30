@@ -778,7 +778,7 @@ standalone smoke under `xvfb` needs them in the environment. A `skipped` smoke i
 The single canonical lint/typecheck command — delegates to `uv run pre-commit run --files` over
 tracked and untracked-not-ignored files (see `### make gates`):
 ruff fix, ruff format, then **pyright** (chosen over mypy on purpose — fewer false positives, less
-friction; `[tool.pyright]` in `pyproject.toml`, basic mode). `.pre-commit-config.yaml` is the source
+friction; `pyrightconfig.json`, basic mode; ruff in `ruff.toml`, pytest in `pytest.ini`). `.pre-commit-config.yaml` is the source
 of truth for the config. Run before declaring anything done. Both ruff and pyright **block on
 failure**, so a pyright error cannot reach a commit through the gate.
 
@@ -853,7 +853,7 @@ only USER channel — a GitHub release is a record and a dev-facing download, no
 **Clean-bundle invariant.** The bundle is an explicit allowlist (`shaderbox/` package +
 `pyproject.toml` / `uv.lock` / `.python-version` / `LICENSE` + the launcher + `scripts/README.md`).
 NO coding-agent or dev-flow files ship — `CLAUDE.md`, `ai_docs/`, `.claude/`, `Makefile`,
-`.pre-commit-config.yaml`, bytecode (`__pycache__` / `*.pyc`) are all excluded. `build.sh` strips
+`.pre-commit-config.yaml`, bytecode (`__pycache__` / `*.pyc`) are all excluded. Tool configuration lives outside the shipped `pyproject.toml` (`ruff.toml`, `pyrightconfig.json`, `pytest.ini`), files under `shaderbox/resources/` read only by tests or vendoring are listed in `build.sh`'s `DEV_ONLY_RESOURCES`, and the launchers install with `--no-dev`. `build.sh` strips
 bytecode and runs a verification gate that **aborts the build** if any forbidden pattern is found in
 the staged tree — so this is asserted, not assumed. When you add a file the app needs at runtime,
 add it to the `build.sh` allowlist (`ROOT_FILES` or under `shaderbox/`); when you add a new dev

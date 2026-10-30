@@ -1,4 +1,4 @@
-"""104 D3/D8: the uniforms panel marks an instanced pass with a chip.
+"""The uniforms panel marks an instanced pass with a chip.
 
 A real contrast pair -- one document, two passes, differing ONLY in whether the shader
 declares entity fields -- rather than two separate fixtures that could differ for any

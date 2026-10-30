@@ -1,5 +1,5 @@
 """The load bands: which state hue a measurement gets for its share of the frame budget
-(feature 089 D7), and the THROTTLE bands beside them (090 D9c).
+, and the THROTTLE bands beside them.
 
 GL-free -- both are pure functions of a ratio, and the plan they feed is pure too.
 The bands are pinned at their EDGES, because a band is exactly its two thresholds and a
@@ -23,7 +23,6 @@ from shaderbox.widgets.fps_panel import profile_rows_plan
 
 
 def test_the_bands_meet_at_their_thresholds() -> None:
-    # Falsifier: move either literal in `theme.py` and one of the four flips.
     assert load_color(0.49) is COLOR.STATE_OK
     assert load_color(0.5) is COLOR.STATE_WARN
     assert load_color(0.99) is COLOR.STATE_WARN
@@ -32,8 +31,7 @@ def test_the_bands_meet_at_their_thresholds() -> None:
 
 def test_a_row_over_the_budget_carries_the_error_hue() -> None:
     # The band reaches the panel through the plan, not only through the function: a span
-    # at 1.2x the budget is red on the row a reader sees. Falsifier: the plan colors its
-    # measured rows FG_MUTED, or divides by something other than the budget.
+    # at 1.2x the budget is red on the row a reader sees.
     root = Span("frame", cpu_ms=20.0, children=[Span("pass:slow", cpu_ms=20.0)])
     rows = profile_rows_plan(
         FrameProfile(root, 0, complete=True), fps=50, target_fps=60
@@ -46,7 +44,7 @@ def test_a_row_over_the_budget_carries_the_error_hue() -> None:
 
 def test_the_static_rows_carry_no_state_hue() -> None:
     # Color on this panel means "measured against the budget"; `budget`, `fps` and `target`
-    # are settings, so they stay muted. Falsifier: color them by anything.
+    # are settings, so they stay muted.
     rows = profile_rows_plan(None, fps=60, target_fps=60)
     assert [row.name for row in rows] == ["budget", "fps", "target"]
     assert all(row.color is COLOR.FG_MUTED for row in rows)
@@ -54,27 +52,25 @@ def test_the_static_rows_carry_no_state_hue() -> None:
 
 def test_throttle_color_reads_a_converged_document_as_healthy() -> None:
     # `throttle_color` exists because `load_color`'s knees are WRONG for a throttled document's
-    # row (090 D9c, closing correctness F10): `load_color` turns red at ratio 1.0, which is
+    # row: `load_color` turns red at ratio 1.0, which is
     # exactly where a converged document sits -- at its allowance, which is the state the
-    # throttle aims for. Falsifier: `return load_color(share_ratio)` and the first assertion
-    # goes red, reintroducing F10 verbatim.
+    # throttle aims for.
     assert throttle_color(1.0, False) is COLOR.STATE_OK
     assert throttle_color(1.2, False) is COLOR.STATE_WARN
     assert throttle_color(1.6, False) is COLOR.STATE_ERROR
 
 
 def test_a_missed_frame_reddens_a_document_inside_its_allowance() -> None:
-    # The clause the spec singles out: a document within its share while the UI frame still
+    # The clause that matters: a document within its share while the UI frame still
     # misses its target is what the reader must see. It is also the half a later edit is most
-    # likely to drop, since every share-only case passes without it. Falsifier: drop
-    # `frame_over_budget` from the condition and this returns STATE_OK.
+    # likely to drop, since every share-only case passes without it.
     assert throttle_color(0.2, True) is COLOR.STATE_ERROR
 
 
 def test_a_throttled_row_takes_the_throttle_bands_not_the_load_bands() -> None:
     # The band reaches the panel through the plan: a converged document (share == budget) draws
-    # GREEN on the row a reader sees, which is the whole claim F10 found false. Falsifier: color
-    # `_document_row`'s throttled branch with `load_color` and this row is red.
+    # GREEN on the row a reader sees, which is the whole point of the
+    # throttle bands.
     root = Span("frame", cpu_ms=10.0)
     root.children.append(Span("document:aaa", cpu_ms=50.0, gpu_ms=50.0))
     plan = RenderPlan(
@@ -115,14 +111,13 @@ def test_a_closed_documents_row_falls_back_to_a_short_handle() -> None:
 
 
 def test_group_tints_are_stable_and_collide_with_nothing() -> None:
-    # 091 D8. (a) pinned by VALUE at crc32 indices: `hash()` is salted per process, so under
+    # (a) pinned by VALUE at crc32 indices: `hash()` is salted per process, so under
     # it the pin is red on essentially every run rather than flaky green.
     assert group_tint("bloom") is COLOR.GROUP_TINTS[3]
     assert group_tint("radiance") is COLOR.GROUP_TINTS[2]
     assert group_tint("fx") is COLOR.GROUP_TINTS[0]
-    # (b) disjoint from every outline and chip these tiles carry, and no duplicate. Falsifier:
-    # put `purple_b` (COLOR.SELECT) in the tuple -- a check over accent primaries and state
-    # hues alone lets it through.
+    # (b) disjoint from every outline and chip these tiles carry, and no duplicate. Accent
+    # primaries, state hues and COLOR.SELECT (`purple_b`) are all excluded.
     excluded = {primary for primary, _active, _alpha in _ACCENTS.values()} | {
         COLOR.STATE_OK,
         COLOR.STATE_WARN,
@@ -131,19 +126,17 @@ def test_group_tints_are_stable_and_collide_with_nothing() -> None:
         COLOR.SELECT,
         COLOR.TAG,
         COLOR.FAVS,
-        # 092: a wire is drawn against a box border and beside a STATE_ERROR wire.
-        # Falsifier: `GRAPH_EDGE = COLOR.GROUP_TINTS[2]` imported clean before it joined.
+        # A wire is drawn against a box border and beside a STATE_ERROR wire.
         COLOR.GRAPH_EDGE,
-        # 093: the hover hue is drawn on the same wire and the same border.
+        # The hover hue is drawn on the same wire and the same border.
         COLOR.GRAPH_HOVER,
     }
     assert not set(COLOR.GROUP_TINTS) & excluded
     assert len(set(COLOR.GROUP_TINTS)) == len(COLOR.GROUP_TINTS)
     assert COLOR.GRAPH_EDGE != COLOR.STATE_ERROR
-    # (c) 093 S1: the hover hue meets three other cues on one wire and, as a node's halo,
-    # sits beside the output node's accent border. Break to try: the design record's own
-    # `blue_b` -- it IS the blue accent's primary, so the accent clause goes red while the
-    # three `!=` clauses all stay green, which is why they alone were not enough.
+    # (c) the hover hue meets three other cues on one wire and, as a node's halo,
+    # sits beside the output node's accent border, so it must not be an accent primary
+    # (the `!=` clauses alone would not catch that).
     assert COLOR.GRAPH_HOVER in _GROUP_TINT_EXCLUSIONS
     assert COLOR.GRAPH_HOVER not in {
         primary for primary, _active, _alpha in _ACCENTS.values()
