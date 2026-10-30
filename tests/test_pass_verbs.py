@@ -947,7 +947,9 @@ def test_a_broken_source_pass_is_imported_as_is_and_named(
     assert "bloom_blur" in document.passes and "bloom_composite" in document.passes
 
 
-def test_a_torn_import_writes_nothing(app: Any) -> None:
+def test_a_torn_import_writes_nothing(
+    app: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     # A bound asset whose file is gone cannot be copied. Falsifier: copy values inside the
     # write loop and the passes written before the failure stay on disk, come back on the next
     # load as ungrouped passes, and the exception escapes into the frame loop.
@@ -968,13 +970,10 @@ def test_a_torn_import_writes_nothing(app: Any) -> None:
         for v in p.uniform_values.values()
         if isinstance(v, MediaWithTexture)
     )
-    path = Path(bound.details.file_details.path)
-    moved = path.with_name(f"moved_{path.name}")
-    path.rename(moved)
-    try:
-        result = app.session.import_passes(document_id, source, "media", {}, set())
-    finally:
-        moved.rename(path)
+    # Pointed at a missing file rather than moving the shipped one, which other workers read.
+    gone = tmp_path / Path(bound.details.file_details.path).name
+    monkeypatch.setattr(bound.details.file_details, "path", str(gone))
+    result = app.session.import_passes(document_id, source, "media", {}, set())
     assert result.error and "copy" in result.error, result
     document = app.ui_documents[document_id].document
     assert not [n for n in document.passes if n.startswith("media_")]

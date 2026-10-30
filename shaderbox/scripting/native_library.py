@@ -1,9 +1,10 @@
-"""Native libraries from a script (feature 109): `native("name")` and what stands behind it.
+"""Native libraries from a script: `native("name")` and what stands behind it.
 
 A library the author built runs in a child host process (`native_host.py`), so a crash, an
 abort or a hang in it reaches the script as a `NativeError` while the app keeps running.
-Buffers are files mapped into both processes; the HANDLE owns them, so they outlive a host
-crash and a reload, and an array keeps its mapping alive for as long as anything holds it.
+Buffers are shared memory mapped into both processes (`native_host.map_shared`); the HANDLE
+owns them, so they outlive a host crash and a reload, and an array keeps its mapping alive
+for as long as anything holds it.
 
 Every handle and buffer belongs to an OWNER: the compiled script's module code, or one script
 instance. `PythonBehavior` sets the owner around each entry into user code, and releasing an
@@ -16,7 +17,6 @@ import contextlib
 import contextvars
 import ctypes
 import math
-import mmap
 import os
 import queue
 import re
@@ -81,7 +81,8 @@ class NativeError(Exception):
 
 @dataclass
 class _Buffer:
-    path: Path
+    # A file path on POSIX, a section name on Windows (`native_host.map_shared`).
+    key: str
     size: int
     dtype: str
     shape: tuple[int, ...]
@@ -232,6 +233,13 @@ def _scratch_dir() -> Path:
     return Path(tempfile.gettempdir())
 
 
+def _buffer_key() -> str:
+    name = f"{_FILE_PREFIX}{os.getpid()}-{uuid.uuid4().hex}"
+    if sys.platform == "win32":
+        return f"Local\\{name}"
+    return str(_scratch_dir() / f"{name}.buf")
+
+
 def _unlink(path: Path) -> None:
     with contextlib.suppress(OSError):
         path.unlink()
@@ -255,7 +263,7 @@ class _Resources:
 
     host: _Host | None = None
     copies: set[Path] = field(default_factory=set)
-    files: set[Path] = field(default_factory=set)
+    files: set[str] = field(default_factory=set)
 
     def stop_host(self) -> None:
         host = self.host
@@ -268,8 +276,8 @@ class _Resources:
 
     def close(self) -> None:
         self.stop_host()
-        for path in list(self.files):
-            _unlink(path)
+        for key in list(self.files):
+            _unlink(Path(key))
         self.files.clear()
 
 
@@ -459,14 +467,15 @@ class NativeLibrary:
     def forget_buffer(self, buffer: _Buffer) -> None:
         if self._buffers.get(id(buffer.array)) is buffer:
             del self._buffers[id(buffer.array)]
-        self._resources.files.discard(buffer.path)
-        _unlink(buffer.path)
+        self._resources.files.discard(buffer.key)
+        if sys.platform != "win32":
+            _unlink(Path(buffer.key))
         # The host maps a buffer on first use and keeps it; unmapping is what returns the
         # pages, since an unlinked file's memory lives as long as any mapping of it. A host
         # busy in another thread's call keeps the mapping until it stops instead.
         if self._resources.host is not None and self._lock.acquire(blocking=False):
             try:
-                self._request({"op": "unmap", "path": str(buffer.path)}, "unmapping")
+                self._request({"op": "unmap", "path": buffer.key}, "unmapping")
             finally:
                 self._lock.release()
 
@@ -548,34 +557,19 @@ class NativeLibrary:
                 "load", f"{self.path.name}: this handle has been released"
             )
         size = math.prod(dims) * np.dtype(normalized).itemsize
-        path = _scratch_dir() / f"{_FILE_PREFIX}{os.getpid()}-{uuid.uuid4().hex}.buf"
-        fd = os.open(
-            path, os.O_RDWR | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
-        )
+        key = _buffer_key()
         try:
-            try:
-                if sys.platform == "linux":
-                    # Reserve the pages now: a sparse file on a full tmpfs maps fine and then
-                    # kills this process with SIGBUS on the first write to an unbacked page.
-                    os.posix_fallocate(fd, 0, size)
-                else:
-                    os.ftruncate(fd, size)
-            except OSError as e:
-                os.close(fd)
-                fd = -1
-                _unlink(path)
-                raise NativeError(
-                    "load", f"cannot allocate a {size}-byte buffer: {e}"
-                ) from e
-            mapping = mmap.mmap(fd, size)
-        finally:
-            if fd >= 0:
-                os.close(fd)
+            mapping = native_host.map_shared(key, size, create=True)
+        except OSError as e:
+            raise NativeError(
+                "load", f"cannot allocate a {size}-byte buffer: {e}"
+            ) from e
         array = np.frombuffer(mapping, dtype=normalized).reshape(dims)
         owner = _OWNER.get()
-        record = _Buffer(path, size, normalized, dims, array, self)
+        record = _Buffer(key, size, normalized, dims, array, self)
         self._buffers[id(array)] = record
-        self._resources.files.add(path)
+        if sys.platform != "win32":
+            self._resources.files.add(key)
         if owner is not None and not owner.released:
             owner.buffers.append(record)
         return array
@@ -659,7 +653,7 @@ class NativeLibrary:
                 name,
                 native_host.SB_BUFFER,
                 {
-                    "path": str(record.path),
+                    "path": record.key,
                     "size": record.size,
                     "dtype": native_host.DTYPE_CODES[record.dtype],
                     "shape": list(record.shape),

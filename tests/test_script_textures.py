@@ -11,6 +11,7 @@ import hashlib
 import json
 import shutil
 import subprocess
+import sys
 import types
 from pathlib import Path
 from typing import Any, get_args
@@ -55,6 +56,9 @@ _HEAD = (
     "import numpy as np\n"
     "from shaderbox.scripting import ScriptBehavior, ScriptContext, native\n\n"
 )
+
+_CC = shutil.which("cc") or shutil.which("gcc")
+_LIB_EXT = ".dll" if sys.platform == "win32" else ".so"
 
 
 def _view(sampler: str) -> str:
@@ -504,7 +508,7 @@ SB_EXPORT int32_t stamp(sb_call *c) {
 """
 
 
-@pytest.mark.skipif(shutil.which("cc") is None, reason="needs a C compiler")
+@pytest.mark.skipif(_CC is None, reason="needs a C compiler")
 def test_a_native_buffer_reaches_the_pass_uncopied(
     gl_ctx: moderngl.Context, tmp_path: Path
 ) -> None:
@@ -523,12 +527,12 @@ def test_a_native_buffer_reaches_the_pass_uncopied(
     (scripts / "stamp.c").write_text(_STAMP_C)
     subprocess.run(
         [
-            "cc",
+            _CC,
             "-shared",
             "-fPIC",
             f"-I{RESOURCES_DIR / 'native'}",
             "-o",
-            str(scripts / "stamp.so"),
+            str(scripts / f"stamp{_LIB_EXT}"),
             str(scripts / "stamp.c"),
         ],
         check=True,

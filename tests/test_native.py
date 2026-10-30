@@ -6,10 +6,10 @@ docstring names the break it must catch.
 """
 
 import contextlib
+import ctypes
 import itertools
 import os
 import shutil
-import signal
 import subprocess
 import sys
 import textwrap
@@ -25,7 +25,7 @@ from loguru import logger
 
 from shaderbox.constants import RESOURCES_DIR
 from shaderbox.project_session import ProjectSession
-from shaderbox.scripting import ScriptContext, ScriptEngine, native_library
+from shaderbox.scripting import ScriptContext, ScriptEngine, native_host, native_library
 from shaderbox.scripting.behavior import PythonBehavior
 from shaderbox.scripting.native_library import (
     SETTLE_SECONDS,
@@ -39,6 +39,9 @@ from shaderbox.scripting.native_library import (
 _NATIVE_DIR = RESOURCES_DIR / "native"
 _CC = shutil.which("cc") or shutil.which("gcc")
 _EXT = ".dll" if sys.platform == "win32" else ".so"
+_FILE_MAP_READ = 4
+# What `os.kill(pid, 9)` leaves: SIGKILL on POSIX, TerminateProcess(9) on Windows.
+_KILLED_RC = 9 if sys.platform == "win32" else -9
 _ODIN = shutil.which("odin")
 
 pytestmark = pytest.mark.skipif(
@@ -60,7 +63,15 @@ SB_EXPORT int32_t sb_load(sb_call *c) { return sb_fail(c, "no license file"); }
 #ifdef LOAD_HANG
 SB_EXPORT int32_t sb_load(sb_call *c) { (void)c; for (;;) {} }
 #endif
-#ifdef LOCKFILE
+#if defined(LOCKFILE) && defined(_WIN32)
+#include <windows.h>
+SB_EXPORT int32_t sb_load(sb_call *c) {
+    HANDLE h = CreateFileA(LOCKFILE, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_ALWAYS,
+                           FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h == INVALID_HANDLE_VALUE) return sb_fail(c, "device busy");
+    return 0;
+}
+#elif defined(LOCKFILE)
 #include <fcntl.h>
 #include <sys/file.h>
 SB_EXPORT int32_t sb_load(sb_call *c) {
@@ -91,7 +102,14 @@ SB_EXPORT int32_t flood(sb_call *c) {
     return 0;
 }
 
+#ifdef _WIN32
+SB_EXPORT int32_t spawn_bg(sb_call *c) {
+    (void)c;
+    return system("start \"\" /b cmd /c \"ping -n 4 127.0.0.1 >nul\"") == 0 ? 0 : 1;
+}
+#else
 SB_EXPORT int32_t spawn_bg(sb_call *c) { (void)c; return system("sleep 3 &") == 0 ? 0 : 1; }
+#endif
 
 SB_EXPORT int32_t fill(sb_call *c) {
     sb_arg *b = sb_buf(c, "buf");
@@ -170,6 +188,19 @@ def _build(
     return out
 
 
+def _buffer_gone(key: str) -> bool:
+    """POSIX: the file is unlinked. Windows: no process holds the section any more."""
+    if sys.platform != "win32":
+        return not Path(key).exists()
+    kernel32 = ctypes.WinDLL("kernel32")
+    kernel32.OpenFileMappingW.restype = ctypes.c_void_p
+    handle = kernel32.OpenFileMappingW(_FILE_MAP_READ, False, key)
+    if not handle:
+        return True
+    kernel32.CloseHandle(ctypes.c_void_p(handle))
+    return False
+
+
 def _pid_gone(pid: int) -> bool:
     return not native_library._pid_alive(pid)
 
@@ -233,8 +264,9 @@ def test_crash_is_isolated_and_buffers_survive(owner: NativeOwner) -> None:
     assert "boom" in str(raised.value)
     assert "about to crash" in str(raised.value)
     assert buf.tolist() == [3.0] * 8
-    path = owner.buffers[0].path
-    assert np.fromfile(path, dtype="f4").tolist() == [3.0] * 8
+    record = owner.buffers[0]
+    fresh = native_host.map_shared(record.key, record.size, create=False)
+    assert np.frombuffer(fresh, dtype="f4").tolist() == [3.0] * 8
 
 
 def test_a_crash_is_not_reported_as_a_timeout(owner: NativeOwner) -> None:
@@ -370,13 +402,18 @@ def test_released_buffers_are_safe_and_pages_are_reserved(owner: NativeOwner) ->
     write segfaults); separately, replace posix_fallocate with ftruncate (the file is sparse)."""
     lib = _open(owner)
     buf = _buffer(owner, lib, 1 << 16)
-    path = owner.buffers[0].path
-    if hasattr(os, "posix_fallocate"):
-        assert path.stat().st_blocks * 512 >= buf.nbytes
+    key = owner.buffers[0].key
+    if sys.platform == "linux":
+        assert Path(key).stat().st_blocks * 512 >= buf.nbytes
     owner.release()
-    assert not path.exists()
+    if sys.platform != "win32":
+        # A Windows section lives exactly as long as a mapping; its name goes with the
+        # array, checked below.
+        assert _buffer_gone(key)
     buf[:] = 9.0
     assert float(buf[0]) == 9.0
+    del buf
+    assert _buffer_gone(key)
 
 
 def test_only_the_handles_own_buffers_pass(owner: NativeOwner, lib_dir: Path) -> None:
@@ -418,7 +455,12 @@ def test_errors_name_what_went_wrong(owner: NativeOwner, lib_dir: Path) -> None:
         _open(owner, "absent")
     assert raised.value.kind == "load"
     message = str(raised.value)
-    assert message.index("absent.so") < message.index("libabsent.so")
+    tried = [
+        pattern.format("absent")
+        for pattern in native_library._LIBRARY_PATTERNS[sys.platform]
+    ]
+    positions = [message.index(name) for name in tried]
+    assert positions == sorted(positions), message
 
 
 def test_the_host_imports_only_the_stdlib(owner: NativeOwner) -> None:
@@ -634,11 +676,11 @@ def test_a_parent_killed_mid_call_leaves_no_host(lib_dir: Path) -> None:
         print(lib.pid, flush=True)
         threading.Thread(target=lambda: lib.call("hang"), daemon=True).start()
         time.sleep(0.3)
-        os.kill(os.getpid(), signal.SIGKILL)
+        os.kill(os.getpid(), 9)
         """
     )
     run = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
-    assert run.returncode == -signal.SIGKILL
+    assert run.returncode == _KILLED_RC
     host_pid = int(run.stdout.strip())
     deadline = time.monotonic() + 3.0
     while not _pid_gone(host_pid) and time.monotonic() < deadline:
@@ -706,11 +748,11 @@ def test_a_killed_parent_leaves_no_host(lib_dir: Path) -> None:
         with owning(NativeOwner(Path({str(lib_dir)!r}))):
             lib = native("fix")
         print(lib.pid, flush=True)
-        os.kill(os.getpid(), signal.SIGKILL)
+        os.kill(os.getpid(), 9)
         """
     )
     run = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
-    assert run.returncode == -signal.SIGKILL
+    assert run.returncode == _KILLED_RC
     host_pid = int(run.stdout.strip())
     deadline = time.monotonic() + 3.0
     while not _pid_gone(host_pid) and time.monotonic() < deadline:
@@ -814,9 +856,9 @@ def _instance_buf(behavior: PythonBehavior) -> np.ndarray:
     return buf
 
 
-def _files(behavior: PythonBehavior) -> list[Path]:
+def _files(behavior: PythonBehavior) -> list[str]:
     owners = [behavior._module_owner, behavior._instance_owner]
-    return [b.path for o in owners if o is not None for b in o.buffers]
+    return [b.key for o in owners if o is not None for b in o.buffers]
 
 
 def _engine(
@@ -829,12 +871,17 @@ def _engine(
     return engine, behavior
 
 
-def _assert_released(pids: list[int], files: list[Path]) -> None:
+def _assert_released(pids: list[int], files: list[str]) -> None:
     assert pids, "the fixture started no host -- nothing to check"
     for pid in pids:
         assert _pid_gone(pid), f"host {pid} still runs"
-    for path in files:
-        assert not path.exists(), f"{path} was not deleted"
+    if sys.platform == "win32":
+        # A Windows section has no name apart from its mappings, and these callers still
+        # hold the arrays; that it goes with the last one is checked by
+        # test_released_buffers_are_safe_and_pages_are_reserved.
+        return
+    for key in files:
+        assert _buffer_gone(key), f"{key} was not released"
 
 
 def test_reload_releases_the_old_script(tmp_path: Path) -> None:
@@ -859,7 +906,7 @@ def test_reset_releases_the_instance_and_keeps_the_module(tmp_path: Path) -> Non
     module, instance = _hosts(behavior)
     instance_owner = behavior._instance_owner
     assert instance_owner is not None
-    instance_files = [b.path for b in instance_owner.buffers]
+    instance_files = [b.key for b in instance_owner.buffers]
     engine.reset("n0")
     _assert_released(instance, instance_files)
     assert all(not _pid_gone(pid) for pid in module)
@@ -979,7 +1026,7 @@ def test_reload_stops_the_old_hosts_before_the_new_script_loads(tmp_path: Path) 
     Break: build the new behavior before releasing the old -- `device busy`."""
     lock = tmp_path / "device.lock"
     scripts = tmp_path / "scripts"
-    _build(scripts / f"fix{_EXT}", (f'-DLOCKFILE="{lock}"',))
+    _build(scripts / f"fix{_EXT}", (f'-DLOCKFILE="{lock.as_posix()}"',))
     script = (
         'from shaderbox.scripting import ScriptBehavior, native\nLIB = native("fix")\n'
     )

@@ -26,12 +26,15 @@ feature; brief points at the superseder).
 <!-- Rewrite this block IN FULL each time it changes. Do NOT append. <=200 words. -->
 <!-- Date stamp = last edit of this block, not the date of the work it summarises. -->
 
-<!-- As of 2026-10-13. -->
-**Next: a showcase example for 109, Linux only -- a multi-fluid Navier-Stokes simulation in a
-native library.** Several fluids or gases with different properties (density, viscosity,
-diffusion, buoyancy) that push on and mix with each other. The physics is designed with the
-maintainer at the start of that session, and its first step is a spec. Windows gets its build
-later, on the Windows box, where 109's unmeasured Windows paths get their first run.
+<!-- As of 2026-10-30. -->
+**Next: a showcase example for 109 -- a multi-fluid Navier-Stokes simulation in a native
+library.** Several fluids or gases with different properties (density, viscosity, diffusion,
+buoyancy) that push on and mix with each other. The physics is designed with the maintainer at
+the start of that session, and its first step is a spec.
+
+**Windows builds and runs:** `make gates` and `build.sh` are green on the Windows box, both
+vendored libraries ship a `.dll` beside the `.so` (BUILDING.md), and 109's Windows paths now
+run, with buffers as named sections there (109 spec D3).
 
 **How the field reaches the screen is settled (110):** the solver writes a 109 buffer, the
 script returns it for a `sampler2D` (`{"<pass>": {"u_density": buf}}`, float32 or uint8,

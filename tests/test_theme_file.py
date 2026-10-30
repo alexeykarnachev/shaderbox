@@ -515,7 +515,9 @@ def test_the_app_only_invents_captures_treesitter_does_not_define() -> None:
     )
 
 
-def test_the_class_budget_counts_the_plain_class_too() -> None:
+def test_the_class_budget_counts_the_plain_class_too(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The ceiling assert must cover `_PLAIN_CLASS`, which is spent LAST and so is the
     class most likely to overflow.
 
@@ -570,13 +572,14 @@ def test_the_class_budget_counts_the_plain_class_too() -> None:
     )
 
     # Now make the MODULE resolve it, so its own assert is the thing under test.
-    written = theme_path("budget_probe")
-    written.write_text(text)
+    # A private theme dir, as in test_a_chrome_key_that_is_not_a_slot_is_refused.
+    monkeypatch.setattr(theme_file, "_THEME_DIR", tmp_path)
+    theme_path(DEFAULT_THEME).write_text(shipped)
+    theme_path("budget_probe").write_text(text)
     try:
         with pytest.raises(AssertionError, match="syntax classes"):
             set_theme("budget_probe")
     finally:
-        written.unlink()
         set_theme(DEFAULT_THEME)
 
     # And the app is left on a working theme rather than half-switched.

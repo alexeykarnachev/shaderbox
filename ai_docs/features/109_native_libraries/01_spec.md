@@ -107,9 +107,13 @@ swap.
   has neither: no tracker, the same code on every platform, and the mapping lives as long as
   any array does. The handle keeps every file until it is released, because a reload maps
   them again by path (a deleted file made the next host fail to map, measured). Release (D10)
-  stops the host and deletes the files; a mapped file that
-  cannot be deleted (Windows) is removed at the next app start by a sweep of files whose
-  name carries a pid no longer alive. Only arrays from `lib.buffer` may be passed as buffer
+  stops the host and deletes the files. **Windows has no file at all:** a mapped file cannot be
+  deleted there, even opened with `FILE_SHARE_DELETE` (measured: `Access is denied`), so
+  `native_host.map_shared` maps a pagefile-backed section named `Local\sbnative-<pid>-<uuid>`
+  instead. It commits its size at creation (the `posix_fallocate` analogue), the host opens it
+  by that name, and it disappears with its last mapping, a crashed process included. What
+  differs: the name lives as long as any array does, so the release tests check the host there
+  and leave the name to the test that drops the last array. Only arrays from `lib.buffer` may be passed as buffer
   arguments, and only as the EXACT object `lib.buffer` returned, checked by identity: a slice
   of a buffer is C-contiguous and resolves to the same mmap at a byte offset, so a check on
   the base chain would hand the library the file's start and it would write the wrong rows.
@@ -246,7 +250,10 @@ swap.
   pipe off fd 1 before loading the library (`os.dup` the original stdout for the protocol,
   then point fd 1 at stderr), so a library's `printf` cannot corrupt the protocol. On Windows
   it also calls `SetStdHandle(STD_OUTPUT_HANDLE, <stderr>)`, since a library writing through
-  `GetStdHandle` (as Odin's `core:os` does) bypasses the C runtime's fd 1 (unverified). The parent
+  `GetStdHandle` (as Odin's `core:os` does) bypasses the C runtime's fd 1 (unverified). The per-call flush on Windows calls `fflush(NULL)`
+  in each C runtime loaded into the host (`ucrtbase`, `msvcrt`), since the library's runtime is
+  not Python's; a fault caught by ctypes as `OSError` flushes, writes the error as one stderr
+  line and exits, so the library's last output stays the reported tail. The parent
   reads the host's stderr on a thread and logs each line with the library's name; the last
   lines ride along in a `crashed` message.
 
@@ -254,8 +261,8 @@ swap.
   process with a stdlib-only import set (D1); gate 14 asserts that set. On Windows a venv's
   `python.exe` may be a launcher that starts the real interpreter as a child, which would
   make `Popen.pid` and `kill` target the launcher; the implementation resolves the real
-  executable (`sys._base_executable`), or kills by the pid the host reports. Unverified on
-  Windows.
+  executable (`sys._base_executable`), or kills by the pid the host reports. On Windows the
+  whole `tests/test_native.py` suite passes, the killed-parent and pid-gone cases included.
 
 - **D14. The script surface grows by two names: `native` and `NativeError`.** They join
   `behavior.py::_INJECTED_NAMES`, `_build_globals`' injection, `scripting/__init__.py`'s

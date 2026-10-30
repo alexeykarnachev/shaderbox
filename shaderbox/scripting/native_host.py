@@ -122,6 +122,37 @@ _IONBF = 2
 _LIBC: ctypes.CDLL | None = None if sys.platform == "win32" else ctypes.CDLL(None)
 
 
+def map_shared(key: str, size: int, create: bool) -> mmap.mmap:
+    """Map a buffer both processes share, named by `key`.
+
+    POSIX: `key` is a file path, unlinked by its creator once released while any mapping
+    keeps the pages. Windows cannot delete a mapped file, so there `key` names a
+    pagefile-backed section, which has no file and dies with its last mapping. Creating
+    commits the whole size up front in both cases, so an exhausted memory store fails
+    here instead of at the first write.
+    """
+    if sys.platform == "win32":
+        return mmap.mmap(-1, size, tagname=key)
+    flags = os.O_RDWR | (os.O_CREAT | os.O_EXCL if create else 0)
+    fd = os.open(key, flags)
+    try:
+        if create:
+            try:
+                if sys.platform == "linux":
+                    # A sparse file on a full tmpfs maps fine and then kills the process
+                    # with SIGBUS on the first write to an unbacked page.
+                    os.posix_fallocate(fd, 0, size)
+                else:
+                    os.ftruncate(fd, size)
+            except OSError:
+                with contextlib.suppress(OSError):
+                    Path(key).unlink()
+                raise
+        return mmap.mmap(fd, size)
+    finally:
+        os.close(fd)
+
+
 def read_frame(stream: IO[bytes]) -> Any:
     """One length-prefixed JSON frame, or None at EOF."""
     head = stream.read(4)
@@ -222,11 +253,7 @@ class _Host:
         if cached is not None and len(cached[0]) == size:
             return cached[2]
         self.unmap(path)
-        fd = os.open(path, os.O_RDWR | getattr(os, "O_BINARY", 0))
-        try:
-            mapping = mmap.mmap(fd, size)
-        finally:
-            os.close(fd)
+        mapping = map_shared(path, size, create=False)
         anchor = ctypes.c_char.from_buffer(mapping)
         address = ctypes.addressof(anchor)
         self.maps[path] = (mapping, anchor, address)
@@ -335,11 +362,23 @@ class _Host:
         return {"ok": False, "kind": "load", "message": f"unknown op {op!r}"}
 
 
+# Windows C runtimes a library may have been linked against, found once each is loaded.
+_WINDOWS_RUNTIMES: dict[str, ctypes.CDLL] = {}
+
+
 def _flush_stdio() -> None:
     # C stdio buffers fully when fd 1 is a pipe, and a host is stopped with SIGKILL, so a
     # library's printf would otherwise never reach the log.
     if _LIBC is not None:
         _LIBC.fflush(None)
+        return
+    if sys.platform == "win32":
+        kernel32 = ctypes.WinDLL("kernel32")
+        for name in ("ucrtbase", "msvcrt"):
+            if name not in _WINDOWS_RUNTIMES and kernel32.GetModuleHandleW(name):
+                _WINDOWS_RUNTIMES[name] = ctypes.CDLL(name)
+        for runtime in _WINDOWS_RUNTIMES.values():
+            runtime.fflush(None)
 
 
 def _watch_parent() -> None:
