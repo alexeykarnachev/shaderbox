@@ -291,7 +291,16 @@ class _Host:
         call.results = ctypes.cast(self.results, ctypes.POINTER(SbArg))
         call.results_cap = RESULTS_CAP
 
-        rc = function(ctypes.byref(call))
+        try:
+            rc = function(ctypes.byref(call))
+        except OSError as e:
+            # Windows: ctypes turns a structured exception (an access violation) into
+            # OSError. The host dies as a crash does elsewhere, and the library's own last
+            # lines stay the tail the parent reports instead of a Python traceback.
+            _flush_stdio()
+            sys.stderr.write(f"{e}\n")
+            sys.stderr.flush()
+            os._exit(1)
         _flush_stdio()
 
         results: dict[str, Any] = {}

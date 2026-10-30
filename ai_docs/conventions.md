@@ -1885,8 +1885,9 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   contract, and a host writing its own re-derives the rotation and field rules by hand. Upstream is
   the maintainer's own `~/src/graph_canvas`. Rebuild: `make ffi` there (which also runs its probe
   and its leak gate), then copy them all -- the `.so` from the repo root, the
-  atlas pair from `assets/`, the shaders from `resources/shaders/`. The binary is linux-x86_64 only and `build.sh` strips it
-  from the Windows stage, exactly as it strips `libeditor.so`.
+  atlas pair from `assets/`, the shaders from `resources/shaders/`. Both platform builds are vendored side by side,
+  `libgraph_canvas.so` and `libgraph_canvas.dll`, from the same sha; the Windows one is built on a
+  Windows host exactly as the editor's is (below).
   **The failure to know about:** a stale `.so` reported every run's `first` as 0 while the run
   COUNTS still tiled both streams exactly. That reads precisely like a library bug -- the arithmetic
   is self-consistent -- and it is not. Re-vendor before reporting anything about run offsets.
@@ -1903,15 +1904,17 @@ mechanics live in the feature spec, SDK footguns in `## Known quirks`.)*
   nothing else said which repo it is a sha OF. Rebuild: in that repo at that sha,
   `odin build ffi -build-mode:shared -no-entry-point -out:libeditor.so`, copy the seven files,
   update `VERSION`. `VERSION` is the ONE place the current sha lives — a commit message names the
-  sha it vendored, so grepping the log finds every past one with no ordering; read the file. The
-  binary is linux-x86_64 only — `build.sh` strips it from the Windows stage and `verify_clean` aborts a
-  Windows bundle carrying it; a Windows `.dll` is a ship-time prerequisite. MEASURED (editor repo
-  feature 004, its commit b787987): the code is fully portable (`odin check` passes for
-  windows_amd64; `-build-mode:obj` emits complete COFF objects with all exports; no
-  platform-conditional code, no C links) but **Odin cannot cross-LINK from linux** ("Linking for
-  cross compilation ... not yet supported", compiler-level) — so the `.dll` is built ON a Windows
-  host with the same command, `-out:libeditor.dll`, at ship time, alongside the runtime verify
-  BUILDING.md already requires there. Two measured facts the
+  sha it vendored, so grepping the log finds every past one with no ordering; read the file. Both
+  platform builds are vendored side by side, `libeditor.so` and `libeditor.dll`, and BOTH come
+  from the sha in `VERSION`; each bundle keeps its own and `build.sh` refuses one missing it.
+  Odin cannot cross-link from Linux, so the `.dll` is built on a Windows host:
+  `odin build ffi -build-mode:shared -out:libeditor.dll` -- WITHOUT `-no-entry-point`, which on
+  Windows drops the C runtime and fails the link on `memset`/`memcpy`. The result imports only
+  `KERNEL32`, `bcrypt` and `ADVAPI32`, so a user needs no redistributable. A re-vendor done on
+  Linux therefore leaves the `.dll` behind; `tests/test_vendored_binaries.py` reads the export
+  table of both files on either host and fails when their APIs differ, which is what a stale
+  `.dll` looks like from Linux. A rebuild that keeps every export name passes it, so the
+  `.dll` is rebuilt at every re-vendor, not only when names change. Two measured facts the
   next rebuild must not "fix": the layout's glyph UVs address the atlas PNG top-row-first (an upload
   flip renders every glyph upside down), and `ed_revision` rises across `ed_set_text` (the dirty
   flag depends on it).

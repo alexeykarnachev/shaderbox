@@ -37,7 +37,8 @@ from shaderbox.scripting.native_library import (
 )
 
 _NATIVE_DIR = RESOURCES_DIR / "native"
-_CC = shutil.which("cc")
+_CC = shutil.which("cc") or shutil.which("gcc")
+_EXT = ".dll" if sys.platform == "win32" else ".so"
 _ODIN = shutil.which("odin")
 
 pytestmark = pytest.mark.skipif(
@@ -170,16 +171,12 @@ def _build(
 
 
 def _pid_gone(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return True
-    return False
+    return not native_library._pid_alive(pid)
 
 
 @pytest.fixture
 def lib_dir(tmp_path: Path) -> Path:
-    _build(tmp_path / "fix.so")
+    _build(tmp_path / f"fix{_EXT}")
     return tmp_path
 
 
@@ -279,7 +276,7 @@ def test_a_dead_host_stays_dead_until_something_changes(
             lib.call("constant")
         assert raised.value.kind == "crashed"
         assert lib.pid is None
-    _build(lib_dir / "fix.so", ("-DK=222",))
+    _build(lib_dir / f"fix{_EXT}", ("-DK=222",))
     assert _settle_reload(lib) == {"k": 222}
 
     with pytest.raises(NativeError):
@@ -298,7 +295,7 @@ def test_reload_runs_new_code_and_keeps_buffers(
     buf[:] = 7.0
     lib.call("first", buf=buf)
     assert buf[0] == 111.0
-    _build(lib_dir / "fix.so", ("-DK=222",))
+    _build(lib_dir / f"fix{_EXT}", ("-DK=222",))
     lib.call("first", buf=buf)
     time.sleep(SETTLE_SECONDS + 0.1)
     lib.call("first", buf=buf)
@@ -314,10 +311,10 @@ def test_an_in_place_overwrite_does_not_reach_the_live_host(
     constant or dies."""
     lib = _open(owner)
     assert lib.call("constant") == {"k": 111}
-    other = _build(lib_dir / "other" / "fix.so", ("-DK=222",))
-    inode = (lib_dir / "fix.so").stat().st_ino
-    shutil.copyfile(other, lib_dir / "fix.so")
-    assert (lib_dir / "fix.so").stat().st_ino == inode
+    other = _build(lib_dir / "other" / f"fix{_EXT}", ("-DK=222",))
+    inode = (lib_dir / f"fix{_EXT}").stat().st_ino
+    shutil.copyfile(other, lib_dir / f"fix{_EXT}")
+    assert (lib_dir / f"fix{_EXT}").stat().st_ino == inode
     assert lib.call("constant") == {"k": 111}
 
 
@@ -351,7 +348,7 @@ def test_the_abi_is_proven_entry_by_entry(
         header = header.replace(old, new)
     (tmp_path / "hdr").mkdir()
     (tmp_path / "hdr" / "shaderbox_native.h").write_text(header)
-    _build(tmp_path / "fix.so", header_dir=tmp_path / "hdr")
+    _build(tmp_path / f"fix{_EXT}", header_dir=tmp_path / "hdr")
     owner = NativeOwner(tmp_path)
     with pytest.raises(NativeError) as raised:
         _open(owner)
@@ -361,7 +358,7 @@ def test_the_abi_is_proven_entry_by_entry(
 
 def test_a_library_without_the_contract_is_named(tmp_path: Path) -> None:
     """Gate 7. Break: skip the `sb_abi` check -- the load succeeds."""
-    _build(tmp_path / "plain.so", source="int plain(void) { return 1; }\n")
+    _build(tmp_path / f"plain{_EXT}", source="int plain(void) { return 1; }\n")
     with pytest.raises(NativeError) as raised:
         _open(NativeOwner(tmp_path), "plain")
     assert "not a ShaderBox library" in str(raised.value)
@@ -527,7 +524,7 @@ def test_a_failed_load_is_retried_after_a_pause(
 ) -> None:
     """D6 at `native()`. A transient failure heals without a file change. Break: memoize a
     failure until the file changes."""
-    _build(tmp_path / "fix.so", ("-DLOAD_FAIL",))
+    _build(tmp_path / f"fix{_EXT}", ("-DLOAD_FAIL",))
     monkeypatch.setattr(native_library, "RETRY_SECONDS", 0.2)
     started: list[Path] = []
     real_start = NativeLibrary._start
@@ -594,7 +591,7 @@ def test_a_failed_load_is_not_retried_until_the_file_changes(
 ) -> None:
     """D6 at `native()`. A broken library named in `update` must not start a host per frame.
     Break: drop the failure memo -- every call starts one."""
-    _build(tmp_path / "fix.so", ("-DLOAD_FAIL",))
+    _build(tmp_path / f"fix{_EXT}", ("-DLOAD_FAIL",))
     started: list[Path] = []
     real_start = NativeLibrary._start
 
@@ -608,7 +605,7 @@ def test_a_failed_load_is_not_retried_until_the_file_changes(
         with pytest.raises(NativeError, match="no license file"):
             _open(owner)
     assert len(started) == 1
-    _build(tmp_path / "fix.so")
+    _build(tmp_path / f"fix{_EXT}")
     assert _open(owner).call("constant") == {"k": 111}
     assert len(started) == 2
     owner.release()
@@ -651,12 +648,12 @@ def test_a_parent_killed_mid_call_leaves_no_host(lib_dir: Path) -> None:
 
 def test_sb_load_failure_and_hang_are_load_errors(tmp_path: Path) -> None:
     """Gate 16. Break: ignore sb_load's return; drop the deadline on loading."""
-    _build(tmp_path / "fail" / "fix.so", ("-DLOAD_FAIL",))
+    _build(tmp_path / "fail" / f"fix{_EXT}", ("-DLOAD_FAIL",))
     with pytest.raises(NativeError) as raised:
         _open(NativeOwner(tmp_path / "fail"))
     assert raised.value.kind == "load"
     assert "no license file" in str(raised.value)
-    _build(tmp_path / "hang" / "fix.so", ("-DLOAD_HANG",))
+    _build(tmp_path / "hang" / f"fix{_EXT}", ("-DLOAD_HANG",))
     with pytest.raises(NativeError) as raised:
         _open(NativeOwner(tmp_path / "hang"), timeout=0.3)
     assert raised.value.kind == "timeout"
@@ -668,7 +665,7 @@ def test_a_missing_file_keeps_the_running_host(
     """Gate 16. A linker between unlink and create leaves no file. Break: treat a missing file
     as changed -- the reload fails and the handle dies."""
     lib = _open(owner)
-    (lib_dir / "fix.so").unlink()
+    (lib_dir / f"fix{_EXT}").unlink()
     lib.call("constant")
     time.sleep(SETTLE_SECONDS + 0.1)
     assert lib.call("constant") == {"k": 111}
@@ -792,7 +789,7 @@ class _FakeDocument:
 
 def _scripts_dir(tmp_path: Path, script: str = _SCRIPT) -> Path:
     scripts = tmp_path / "scripts"
-    _build(scripts / "fix.so")
+    _build(scripts / f"fix{_EXT}")
     (scripts / "script.py").write_text(script)
     return scripts
 
@@ -982,7 +979,7 @@ def test_reload_stops_the_old_hosts_before_the_new_script_loads(tmp_path: Path) 
     Break: build the new behavior before releasing the old -- `device busy`."""
     lock = tmp_path / "device.lock"
     scripts = tmp_path / "scripts"
-    _build(scripts / "fix.so", (f'-DLOCKFILE="{lock}"',))
+    _build(scripts / f"fix{_EXT}", (f'-DLOCKFILE="{lock}"',))
     script = (
         'from shaderbox.scripting import ScriptBehavior, native\nLIB = native("fix")\n'
     )
@@ -1060,7 +1057,7 @@ def test_the_shipped_c_example_builds_and_loads(tmp_path: Path) -> None:
             "-O1",
             f"-I{_NATIVE_DIR}",
             "-o",
-            str(tmp_path / "example.so"),
+            str(tmp_path / f"example{_EXT}"),
             str(_NATIVE_DIR / "example_c" / "example.c"),
         ],
         check=True,
@@ -1080,7 +1077,7 @@ def test_the_shipped_odin_example_builds_and_loads(tmp_path: Path) -> None:
             "build",
             str(_NATIVE_DIR / "example_odin"),
             "-build-mode:shared",
-            f"-out:{tmp_path / 'example.so'}",
+            f"-out:{tmp_path / f'example{_EXT}'}",
         ],
         check=True,
     )

@@ -131,9 +131,9 @@ def test_a_record_whose_file_or_document_is_gone_is_dropped(tmp_path: Path) -> N
     kept = tabs_from_records(
         records,
         frozenset({"d1"}),
-        lambda p: not str(p).startswith("/gone"),
+        lambda p: not p.as_posix().startswith("/gone"),
     )
-    assert [(str(t.path), t.kind) for t in kept] == [
+    assert [(t.path.as_posix(), t.kind) for t in kept] == [
         ("/live/a.glsl", "shader"),
         ("/live/lib.glsl", "lib"),
     ], kept
@@ -147,9 +147,9 @@ def test_the_live_tabs_mirror_into_records_in_order() -> None:
         EditorTab(path=Path("/z.glsl"), kind="lib"),
     ]
     assert [(r.path, r.kind, r.document_id) for r in tab_records(tabs)] == [
-        ("/x.glsl", "shader", "d1"),
-        ("/y.json", "graph", "d2"),
-        ("/z.glsl", "lib", ""),
+        (str(Path("/x.glsl")), "shader", "d1"),
+        (str(Path("/y.json")), "graph", "d2"),
+        (str(Path("/z.glsl")), "lib", ""),
     ]
 
 

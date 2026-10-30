@@ -17,9 +17,10 @@ from enum import IntEnum
 from pathlib import Path
 from typing import NamedTuple
 
-from shaderbox.constants import RESOURCES_DIR
+from shaderbox.constants import RESOURCES_DIR, SHARED_LIBRARY_SUFFIX
 
 EDITOR_RESOURCES_DIR: Path = RESOURCES_DIR / "editor"
+EDITOR_LIB_PATH: Path = EDITOR_RESOURCES_DIR / f"libeditor{SHARED_LIBRARY_SUFFIX}"
 
 _LIB: ctypes.CDLL | None = None
 
@@ -473,7 +474,7 @@ _SIG: dict[str, tuple[object, Sequence[object]]] = {
 def ensure_loaded() -> ctypes.CDLL:
     global _LIB
     if _LIB is None:
-        lib = ctypes.CDLL(str(EDITOR_RESOURCES_DIR / "libeditor.so"))
+        lib = ctypes.CDLL(str(EDITOR_LIB_PATH))
         for name, (restype, argtypes) in _SIG.items():
             fn = getattr(lib, name)
             fn.restype = restype

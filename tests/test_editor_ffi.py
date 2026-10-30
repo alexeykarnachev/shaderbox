@@ -3,8 +3,7 @@ and the redraw-gate domain. All headless — the .so needs no GL."""
 
 import ast
 import ctypes
-import shutil
-import subprocess
+import re
 from enum import IntEnum
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,6 +18,7 @@ from shaderbox.commands import SPEC_BY_ID, CommandId
 from shaderbox.editor import ffi
 from shaderbox.editor.ffi import (
     _SIG,
+    EDITOR_LIB_PATH,
     EDITOR_RESOURCES_DIR,
     ChromeFlag,
     Editor,
@@ -47,6 +47,7 @@ from shaderbox.hotkeys import _delete_word_back, _drain_editor_input, spec_eligi
 from shaderbox.intel.symbols import SymbolKind
 from shaderbox.shader_source import ShaderSource
 from shaderbox.syntax_colors import editor_palette, kind_slot
+from tests._exports import exported_functions
 
 
 @pytest.fixture(autouse=True)
@@ -1055,21 +1056,10 @@ def test_the_binding_mirrors_every_export_of_the_vendored_binary() -> None:
     # The mirror rule, in both directions: an unbound export is the rule's own
     # violation, a bound-but-absent name is the re-vendor regression, named here
     # instead of surfacing as an AttributeError out of the binding loop.
-    lib_path = EDITOR_RESOURCES_DIR / "libeditor.so"
-    if not lib_path.exists() or shutil.which("nm") is None:
-        pytest.skip("vendored binary or nm unavailable")
-    out = subprocess.run(
-        ["nm", "-D", "--defined-only", str(lib_path)],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
     exported = {
-        parts[2]
-        for line in out.splitlines()
-        if len(parts := line.split()) == 3
-        and parts[1] == "T"
-        and parts[2].startswith("ed_")
+        name
+        for name in exported_functions(EDITOR_LIB_PATH)
+        if re.match(r"^ed_\w+$", name)
     }
     assert exported == set(_SIG), (
         f"unbound: {sorted(exported - set(_SIG))}; "

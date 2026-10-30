@@ -19,11 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      # uv sync is the high-value gate: a dep that won't install on Windows must
-      # red the job. The Linux-built Windows bundle ships this same dep set.
       - run: uv sync
-      # Soft: glfw needs a GL context the GitHub Windows runner may lack, so a
-      # headless-smoke failure is logged but tolerated. Runtime is proven by the
-      # maintainer's manual test on a real Windows box (BUILDING.md).
+      # The hosted Windows runner may have no GL context.
       - run: uv run python scripts/smoke.py
         continue-on-error: true

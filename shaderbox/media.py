@@ -1,4 +1,3 @@
-import contextlib
 import shutil
 import subprocess
 from abc import ABC, abstractmethod
@@ -287,8 +286,11 @@ class Video(MediaWithTexture):
         ext = Path(self.details.file_details.path).suffix
         file_path = (dir / file_name_wo_ext).with_suffix(ext)
 
-        with contextlib.suppress(shutil.SameFileError):
-            shutil.copy2(self.details.file_details.path, file_path)
+        # Windows' copy2 goes through CopyFile2 and never raises SameFileError, so a copy
+        # onto itself fails on the share lock the open capture holds.
+        source = Path(self.details.file_details.path)
+        if not (file_path.exists() and file_path.samefile(source)):
+            shutil.copy2(source, file_path)
 
         return file_path
 

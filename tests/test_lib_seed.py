@@ -2,7 +2,10 @@
 
 import hashlib
 import json
+import sys
 from pathlib import Path
+
+import pytest
 
 from shaderbox.shader_lib.seed import reset_to_shipped, sync_shipped_lib
 
@@ -143,6 +146,11 @@ def test_empty_seed_dir_is_a_noop(tmp_path: Path) -> None:
     assert not (root / ".seed_manifest.json").exists()
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="a directory's mode bits do not stop writes on Windows, so chmod cannot make "
+    "the read-only root this drives; only a POSIX host runs it",
+)
 def test_readonly_root_is_fail_soft(tmp_path: Path) -> None:
     # A read-only lib root (PermissionError on the first write) must not raise —
     # the app starts with whatever lib state is on disk.

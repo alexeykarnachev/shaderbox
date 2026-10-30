@@ -11,6 +11,14 @@ from shaderbox.copilot.revert import RevertExecutor, _swap_in_snapshot
 from shaderbox.shader_lib.file_ops import ShaderLibFileManager
 
 
+def _dangling_symlink(link: Path, target: Path) -> None:
+    """A symlink to nothing, which makes copytree raise."""
+    try:
+        link.symlink_to(target)
+    except OSError as e:
+        pytest.skip(f"cannot create a symlink here (Windows needs Developer Mode): {e}")
+
+
 def test_swap_replaces_live_dir_with_snapshot(tmp_path: Path) -> None:
     snap = tmp_path / "snap"
     snap.mkdir()
@@ -32,7 +40,7 @@ def test_failed_copy_leaves_live_dir_intact(tmp_path: Path) -> None:
     snap.mkdir()
     (snap / "document.json").write_text("{}", encoding="utf-8")
     # A dangling symlink makes copytree raise (shutil.Error is an OSError subclass).
-    (snap / "torn").symlink_to(tmp_path / "missing-target")
+    _dangling_symlink(snap / "torn", tmp_path / "missing-target")
     dst = tmp_path / "documents" / "abc"
     dst.mkdir(parents=True)
     (dst / "document.json").write_text('{"from": "live"}', encoding="utf-8")
@@ -55,7 +63,7 @@ def test_restore_checkpoint_contains_a_failed_document_restore(tmp_path: Path) -
     assert active is not None
     snap_dir = active.turn_dir / "abc"
     snap_dir.mkdir(parents=True)
-    (snap_dir / "torn").symlink_to(tmp_path / "missing-target")
+    _dangling_symlink(snap_dir / "torn", tmp_path / "missing-target")
     active.snapshotted_documents["abc"] = "MyDocument"
     store.seal()
 

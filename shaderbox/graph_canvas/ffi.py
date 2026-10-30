@@ -22,10 +22,10 @@ from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
 
-from shaderbox.constants import RESOURCES_DIR
+from shaderbox.constants import RESOURCES_DIR, SHARED_LIBRARY_SUFFIX
 
 GRAPH_CANVAS_RESOURCES_DIR: Path = RESOURCES_DIR / "graph_canvas"
-_LIB_PATH: Path = GRAPH_CANVAS_RESOURCES_DIR / "libgraph_canvas.so"
+_LIB_PATH: Path = GRAPH_CANVAS_RESOURCES_DIR / f"libgraph_canvas{SHARED_LIBRARY_SUFFIX}"
 ATLAS_JSON_PATH: Path = GRAPH_CANVAS_RESOURCES_DIR / "atlas.json"
 ATLAS_PNG_PATH: Path = GRAPH_CANVAS_RESOURCES_DIR / "atlas.png"
 SHADERS_DIR: Path = GRAPH_CANVAS_RESOURCES_DIR / "shaders"
@@ -612,7 +612,7 @@ def _verify_layout(lib: ctypes.CDLL) -> None:
     """
     if lib.gc_abi_version() != ABI_VERSION:
         raise LayoutMismatch(
-            f"libgraph_canvas.so is ABI {lib.gc_abi_version()}, "
+            f"{_LIB_PATH.name} is ABI {lib.gc_abi_version()}, "
             f"this binding is {ABI_VERSION}"
         )
 

@@ -32,6 +32,7 @@ from pathlib import Path
 
 import moderngl
 import numpy as np
+from OpenGL.GL import GL_TEXTURE0, GL_TEXTURE_2D, glActiveTexture, glBindTexture
 from PIL import Image
 
 from shaderbox.graph_canvas.ffi import (
@@ -107,9 +108,6 @@ _GLYPH_STRIDE: int = _GLYPH_FLOATS * 4
 _ATLAS_UNIT: int = 0
 _IMAGE_UNIT: int = 1
 
-_GL_TEXTURE0: int = 0x84C0
-_GL_TEXTURE_2D: int = 0x0DE1
-
 
 def _bind_raw_texture(name: int, unit: int) -> None:
     """Bind a RAW GL texture name to a unit.
@@ -117,27 +115,10 @@ def _bind_raw_texture(name: int, unit: int) -> None:
     A run's `texture` is a name the host handed the library, not a moderngl
     object — the library takes a node's preview as a bare `uint32` and touches
     its lifetime not at all. moderngl has no call that binds one, so this goes
-    through the loaded GL directly.
+    through PyOpenGL against the context moderngl made current.
     """
-    gl = _gl_functions()
-    gl.glActiveTexture(_GL_TEXTURE0 + unit)
-    gl.glBindTexture(_GL_TEXTURE_2D, name)
-
-
-_GL_CACHE: ctypes.CDLL | None = None
-
-
-def _gl_functions() -> ctypes.CDLL:
-    """The process's already-loaded libGL, for the two calls moderngl lacks."""
-    global _GL_CACHE
-    if _GL_CACHE is None:
-        gl = ctypes.CDLL("libGL.so.1")
-        gl.glActiveTexture.argtypes = [ctypes.c_uint32]
-        gl.glActiveTexture.restype = None
-        gl.glBindTexture.argtypes = [ctypes.c_uint32, ctypes.c_uint32]
-        gl.glBindTexture.restype = None
-        _GL_CACHE = gl
-    return _GL_CACHE
+    glActiveTexture(int(GL_TEXTURE0) + unit)
+    glBindTexture(GL_TEXTURE_2D, name)
 
 
 def _source(name: str, shaders_dir: Path) -> str:

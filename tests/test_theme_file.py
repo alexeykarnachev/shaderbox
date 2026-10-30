@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from shaderbox import syntax_colors
+from shaderbox import syntax_colors, theme_file
 from shaderbox.editor.ffi import Slot
 from shaderbox.intel.symbols import SymbolKind
 from shaderbox.syntax_colors import (
@@ -743,21 +743,25 @@ def test_a_theme_that_names_no_chrome_keeps_the_apps_own() -> None:
     assert editor_palette()[Slot.BACKGROUND] == COLOR.BG_SURFACE
 
 
-def test_a_chrome_key_that_is_not_a_slot_is_refused() -> None:
+def test_a_chrome_key_that_is_not_a_slot_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A misspelled chrome key must fail rather than be dropped in silence.
 
     A slot the editor does not have is a typo, and a typo that vanishes leaves the theme
     saying one thing and the screen another -- the same failure the capture guard exists
     for.
     """
-    text = theme_path(DEFAULT_THEME).read_text() + "\n[chrome]\nnot_a_slot = bg0\n"
-    written = theme_path("chrome_probe")
-    written.write_text(text)
+    default = theme_path(DEFAULT_THEME).read_text()
+    # A private theme dir: one written beside the shipped themes is listed by every other
+    # test that walks `available_themes()` while it exists.
+    monkeypatch.setattr(theme_file, "_THEME_DIR", tmp_path)
+    theme_path(DEFAULT_THEME).write_text(default)
+    theme_path("chrome_probe").write_text(default + "\n[chrome]\nnot_a_slot = bg0\n")
     try:
         with pytest.raises(ThemeError, match="not an editor slot"):
             set_theme("chrome_probe")
     finally:
-        written.unlink()
         set_theme(DEFAULT_THEME)
 
 

@@ -554,7 +554,7 @@ class NativeLibrary:
         )
         try:
             try:
-                if hasattr(os, "posix_fallocate"):
+                if sys.platform == "linux":
                     # Reserve the pages now: a sparse file on a full tmpfs maps fine and then
                     # kills this process with SIGBUS on the first write to an unbacked page.
                     os.posix_fallocate(fd, 0, size)

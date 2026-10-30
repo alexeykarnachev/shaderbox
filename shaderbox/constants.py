@@ -1,5 +1,6 @@
 """Constants used throughout the shaderbox application."""
 
+import sys
 from importlib.resources import files
 from pathlib import Path
 
@@ -7,6 +8,9 @@ from pathlib import Path
 RESOURCES_DIR = Path(str(files("shaderbox.resources")))
 DOCUMENT_EXAMPLES_DIR = RESOURCES_DIR / "document_examples"
 SHADER_LIB_SEED_DIR = RESOURCES_DIR / "shader_lib"
+
+# The vendored native libraries ship one build per platform beside each other.
+SHARED_LIBRARY_SUFFIX = ".dll" if sys.platform == "win32" else ".so"
 
 # Authored display order for the examples browser — filesystem ctime isn't preserved
 # through git/zip/bundle. Examples not listed sort last. The first is the procedural

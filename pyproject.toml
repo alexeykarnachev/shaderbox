@@ -60,6 +60,8 @@ packages = ["shaderbox"]
 include = ["shaderbox/resources/**/*"]
 
 [dependency-groups]
+# The app runs on every extra; a default group is how a bare `uv sync` installs them.
+app = ["shaderbox[all]"]
 dev = [
     "pyright>=1.1.410",
     "pre-commit>=4.6.0",
@@ -73,9 +75,6 @@ dev = [
 [tool.ruff]
 target-version = "py312"
 line-length = 88
-# Research artifacts under ai_docs/ are preserved verbatim as evidence, not maintained as
-# source -- reformatting them to project style would obscure what was actually run. The
-# vendored ABI probe is upstream's bytes, compared byte-for-byte by the argtypes gate.
 extend-exclude = ["ai_docs/", "shaderbox/resources/editor/abi_probe.py"]
 
 [tool.ruff.lint]
@@ -99,7 +98,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]  # unused imports
-"scripts/agent_hub/generate.py" = ["RUF001"]  # Russian page copy trips the ambiguous-unicode check
+"scripts/agent_hub/generate.py" = ["RUF001"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["shaderbox"]
@@ -109,43 +108,27 @@ known-first-party = ["shaderbox"]
 # failure rather than a quiet xpass.
 addopts = "-ra"
 testpaths = ["tests"]
-# A per-test deadline, because a hung worker is otherwise UNBOUNDED: xdist waits forever on a
-# node that died, and the run sat for 12 minutes behind one defunct worker while the other seven
-# idled at 2% CPU. The slowest real test is ~6s, so 60s is ten times the worst case and can only
-# fire on a hang. `thread` rather than the signal method: the signal one fires only in the main
-# thread, which is not where a GL call blocks.
+# A per-test deadline: xdist otherwise waits forever on a worker that hung. `thread`, since
+# the signal method fires only in the main thread, which is not where a GL call blocks.
 timeout = 60
 timeout_method = "thread"
 xfail_strict = true
-# `make test` runs xdist with `--dist loadgroup`. Each module that drives real frames carries
-# its OWN `xdist_group`, so no two of them share a process: the imgui font atlas is
-# process-global and its GL texture is torn down with the App that built it, so a second
-# frame-driving module gets `glTexSubImage2D` against a dead binding. Without the groups these
-# tests are green only by luck of the worker split.
+# Each module that drives real frames carries its own `xdist_group`, so no two share a
+# process: the imgui font atlas is process-global and dies with the App that built it.
 markers = ["xdist_group: pin a test to one xdist worker (see the gl_frames group)"]
 
 [tool.pyright]
 venvPath = "."
 venv = ".venv"
 pythonVersion = "3.12"
-# `scripts/` and `.claude/skills/` hold standalone helpers invoked by hand, never imported by
-# `tests/` — so a package symbol they call could be renamed or deleted with every gate green.
-# Three had accumulated that way (079 final review). They are checked here now.
 include = ["shaderbox", "scripts", ".claude/skills", "dogfood"]
-# The vendored ABI probe is upstream's bytes, compared byte-for-byte by
-# tests/test_editor_ffi.py; house rules do not apply to it.
 exclude = [
     "shaderbox/resources/editor/abi_probe.py",
-    # Dogfood run artifacts: recorded copies of documents a model wrote during a run, kept as
-    # evidence. They are data, not this repo's code, and several predate API changes on purpose.
     "scripts/dogfood/runs",
-    # Three standalone scripts whose only findings are upstream-stub imprecision on working code:
-    # `generate.py` imports through a runtime `sys.path` insert pyright cannot follow;
-    # `drive.py` reads `__doc__`, typed optional though a module docstring is right there;
-    # `verify_script_engine.py` lists `Image.getdata()`, whose stub understates the real sequence.
     "scripts/agent_hub/generate.py",
     "scripts/dogfood/drive.py",
     "scripts/dogfood/verify_script_engine.py",
 ]
-# basic mode (default) — pyright over mypy here on purpose: fewer false positives,
-# less friction. Tighten to "standard"/"strict" later if it earns it.
+
+[tool.uv]
+default-groups = ["app", "dev"]

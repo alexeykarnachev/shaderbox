@@ -10,12 +10,21 @@ run:
 # no existing projects). Rebuilds via --allow-dirty so it tests CURRENT source (incl.
 # uncommitted work), never a stale dist/. SHADERBOX_DATA_DIR redirects the app's
 # project/state/log store away from the real one, so this never touches your projects.
+ifeq ($(OS),Windows_NT)
+BUNDLE_PLATFORM := windows
+BUNDLE_LAUNCH := cmd //c run.bat
+else
+BUNDLE_PLATFORM := linux
+BUNDLE_LAUNCH := ./run.sh
+endif
+
 run-bundle:
 	@set -e
 	./build.sh --allow-dirty
-	rm -rf /tmp/shaderbox-run-bundle /tmp/shaderbox-run-bundle-data
-	unzip -q dist/shaderbox-linux.zip -d /tmp/shaderbox-run-bundle
-	cd /tmp/shaderbox-run-bundle/shaderbox-build-linux && SHADERBOX_DATA_DIR=/tmp/shaderbox-run-bundle-data ./run.sh
+	root="$$(pwd)/dist/run-bundle"
+	rm -rf "$$root"
+	unzip -q dist/shaderbox-$(BUNDLE_PLATFORM).zip -d "$$root"
+	cd "$$root/shaderbox-build-$(BUNDLE_PLATFORM)" && SHADERBOX_DATA_DIR="$$root/data" $(BUNDLE_LAUNCH)
 
 # Lint + format + typecheck. Run before declaring anything done.
 # Delegates to pre-commit (ruff fix, ruff format, pyright) — the single source of

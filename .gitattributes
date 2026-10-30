@@ -1,0 +1,5 @@
+# One checkout on every host: a bundle built on Windows ships a run.sh that bash can
+# read, and cmd.exe gets the CRLF its label parser needs.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.ps1 text eol=crlf

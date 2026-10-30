@@ -7,6 +7,7 @@ pass draws `_SRC_COLOUR`, an unfilled sampler reads black, and fields hold no bl
 unless a gate says so.
 """
 
+import hashlib
 import json
 import shutil
 import subprocess
@@ -648,7 +649,7 @@ class _FakePass:
 
 
 def _lands_as_texture(tmp_path: Path, value_expr: str) -> bool:
-    scripts = tmp_path / value_expr.replace(" ", "")[:40].replace("/", "_")
+    scripts = tmp_path / hashlib.sha1(value_expr.encode()).hexdigest()[:12]
     scripts.mkdir(parents=True, exist_ok=True)
     (scripts / "script.py").write_text(
         _HEAD
