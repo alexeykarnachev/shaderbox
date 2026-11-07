@@ -266,8 +266,8 @@ class App:
         if not window:
             glfw.terminate()
             raise RuntimeError(
-                "Failed to create a window — your system may lack an OpenGL 3.3+ driver. "
-                "On Linux, install libgl1 + libglfw3; on Windows, update your GPU drivers."
+                "Failed to create a window — your system may lack an OpenGL 4.6 driver. "
+                "On Linux, install libgl1 (Mesa); on Windows, update your GPU drivers."
             )
 
         # The MAXIMIZED hint races the window manager on first map — some WMs ignore it and

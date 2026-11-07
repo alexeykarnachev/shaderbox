@@ -742,10 +742,10 @@ def _draw_copilot_bar(app: App, width: float) -> None:
         size=imgui.ImVec2(width, _COPILOT_BAR_H),
         window_flags=imgui.WindowFlags_.no_nav_inputs,
     ):
-        code_tab.draw_chrome(app)
         # Right-align the Copilot toggle — same label both states; the style carries state.
         label = "Copilot"
         btn_w = imgui.calc_text_size(label).x + 2.0 * float(SPACE.MD)
+        code_tab.draw_chrome(app, right_x=width - btn_w - 2.0 * float(SPACE.MD))
         imgui.same_line(width - btn_w - float(SPACE.MD))
         if toggle_button(label, active=app.is_copilot_open):
             app.toggle_copilot_open()

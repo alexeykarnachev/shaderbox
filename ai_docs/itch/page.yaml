@@ -16,7 +16,8 @@ description: |
   ShaderBox is a real-time GLSL fragment-shader playground. Write a shader in the
   built-in editor; ShaderBox reads its uniforms and auto-builds the sliders, color
   pickers, and inputs to drive them - no boilerplate UI code. It hot-reloads as you
-  type. An optional AI copilot edits your shaders in chat with live compile feedback.
+  type. Chain shaders into multi-pass graphs, drive them from Python or your own native
+  code, and let an optional AI copilot edit them in chat with live compile feedback.
   Export the result to an image, a video, a Telegram sticker set, or straight to
   your YouTube channel.
 
@@ -29,6 +30,16 @@ description: |
     turn is one-click revertable. Bring your own OpenRouter key.
   - Automatic UI from your uniforms - ShaderBox introspects the active uniforms and
     generates the matching controls: floats, vectors, colors, textures, arrays, and text.
+  - Multi-pass graphs - a document holds several passes, each its own shader and render
+    target. Name a sampler after a pass to read it, read your own previous frame for
+    feedback effects, iterate a pass several times a frame, and see and rewire the whole
+    pipeline as a node graph.
+  - Python scripting - a document's script drives its uniforms every frame (physics,
+    integrators, state), feeds numpy arrays to samplers as textures, and draws thousands
+    of entities as instanced quads in one call.
+  - Your own native code - when numpy is not fast enough, call a library you built in
+    C, Odin or anything that exports C. It runs in its own process, so a crash is a
+    script error instead of a dead app, and a rebuild is picked up live.
   - Reusable shader library - ships with a built-in SB_* standard library (SDF shapes
     and ops, noise, draw helpers, a full text stack) and grows with your own functions;
     call them by name from any shader and they just work, no include boilerplate. Press
@@ -40,8 +51,9 @@ description: |
   - Export anywhere - render to PNG images, MP4/WebM video, publish a Telegram sticker
     set, or upload to YouTube as a video or a Short (you connect your own account).
 
-  Grab the build below (Windows / Linux) and run the included launcher; see the bundled
-  README for first-run notes.
+  Grab the build below (Windows / Linux), unzip it and run run.bat or ./run.sh - nothing
+  to install first; the launcher fetches what it needs on the first start. See the
+  bundled README for first-run notes.
 
 # Max 10, ordered by discovery value. Must be itch canonical tags (custom game tags are rejected).
 tags:

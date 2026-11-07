@@ -889,6 +889,10 @@ Footguns (each cost a real failure this session):
   screenshot with its Move-up/down buttons; Delete fires a native confirm (`browser_handle_dialog`
   accept). They are binary, so they live in the repo (`docs/screenshots/`, `docs/branding/`), never
   in `page.yaml`.
+- **Screenshots are generated, not staged:** `uv run python scripts/screenshots.py` drives the real
+  app in a hidden window over the shipped examples and rewrites `docs/screenshots/` (1920x1080, a
+  fresh data dir, the measured FPS). Re-run it whenever the UI changed since the last release; the
+  hero (`hero_night_city.png`) is a render, not UI, and is kept by hand.
 - **Never hand-edit the live page outside `page.yaml`** — the next sync diffs from `page.yaml` and
   silently reverts a manual tweak. `page.yaml` is the only authoring surface; that's what makes the
   single-source-of-truth claim hold.

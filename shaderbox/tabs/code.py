@@ -44,6 +44,7 @@ from shaderbox.theme import (
 from shaderbox.ui_primitives import (
     anchored_note,
     draw_copyable_text,
+    elide_left,
     standard_button,
 )
 from shaderbox.util import format_auto_value
@@ -912,10 +913,10 @@ def _offer_completion(app: App, editor: Editor, tab: EditorTab, explicit: bool) 
         editor.complete_select(-1)
 
 
-def draw_chrome(app: App) -> None:
-    # Host things only: the active tab's file + dirty/compiled state + Open dir.
-    # The mode badge, the ruler and the `:`/`/`/`?` line are drawn by the library
-    # inside the editor rect.
+def draw_chrome(app: App, right_x: float) -> None:
+    # Host things only: the active tab's file + dirty/compiled state + Open dir, ending
+    # before `right_x` (window-local) where the bar's own button starts. The mode badge, the
+    # ruler and the `:`/`/`/`?` line are drawn by the library inside the editor rect.
     tab = app.active_tab
     if tab is None:
         imgui.text_colored(COLOR.FG_DIM, "No file open")
@@ -937,8 +938,25 @@ def draw_chrome(app: App) -> None:
             if full_file_path.is_relative_to(app.project_dir)
             else full_file_path
         )
+        # The path gives way first, from its left: the file name is the part worth keeping.
+        state = (
+            "(unsaved)"
+            if app.is_current_editor_dirty()
+            else "compiled"
+            if edited_pass is not None and not edited_pass.compile_unit.error_raw
+            else ""
+        )
+        spacing = imgui.get_style().item_spacing.x
+        open_label = command_label(CommandId.OPEN_DOCUMENT_DIR)
+        rest = (
+            (imgui.calc_text_size(state).x + spacing if state else 0.0)
+            + float(SPACE.LG)
+            + imgui.calc_text_size(open_label).x
+            + 2.0 * imgui.get_style().frame_padding.x
+        )
         copied = draw_copyable_text(
-            str(local_file_path), copy_value=str(full_file_path)
+            elide_left(str(local_file_path), right_x - imgui.get_cursor_pos_x() - rest),
+            copy_value=str(full_file_path),
         )
         if copied is not None:
             app.notifications.push(copied or "Copied to clipboard!")

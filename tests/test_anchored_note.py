@@ -11,8 +11,9 @@ from typing import Any
 from imgui_bundle import imgui
 
 from shaderbox.scripting.api_doc import API_NAMES, api_symbol_doc
+from shaderbox.tabs import code as code_tab
 from shaderbox.theme import SIZE
-from shaderbox.ui_primitives import anchored_note, ellipsize
+from shaderbox.ui_primitives import anchored_note, elide_left, ellipsize
 
 
 def _note_size(title: str, body: str, value: str = "") -> tuple[float, float]:
@@ -121,3 +122,28 @@ def test_a_note_anchored_low_flips_above_the_caret(app: Any) -> None:
         f"the note is {height:.0f}px tall with {screen - 40.0:.0f}px of room above it — "
         "it was capped to the room below instead of flipping"
     )
+
+
+def test_the_status_line_ends_before_the_copilot_button(app: Any) -> None:
+    # The file path gives way, from its left, so the bar's own button keeps its place on a
+    # narrow window. The budget is narrower than the path alone, so an unelided path cannot fit.
+    right_x = 360.0
+    imgui.new_frame()
+    imgui.begin("rig", flags=imgui.WindowFlags_.no_saved_settings)
+    imgui.set_window_size(imgui.ImVec2(1000.0, 200.0))
+    left = imgui.get_window_pos().x
+    path = str(app.active_tab.path)
+    assert imgui.calc_text_size(path).x > right_x
+    code_tab.draw_chrome(app, right_x=right_x)
+    end = imgui.get_item_rect_max().x - left
+    imgui.end()
+    imgui.end_frame()
+    assert end <= right_x, f"the status line ends at {end}, past {right_x}"
+
+
+def test_a_path_is_elided_from_its_left(app: Any) -> None:
+    imgui.new_frame()
+    text = "documents/0b0d16bb-f014-4a85-b155-6be74c33eded/passes/main.frag.glsl"
+    cut = elide_left(text, imgui.calc_text_size("main.frag.glsl").x * 2.0)
+    imgui.end_frame()
+    assert cut.startswith("...") and cut.endswith("main.frag.glsl")

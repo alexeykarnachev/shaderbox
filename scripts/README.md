@@ -2,8 +2,9 @@
 
 A real-time GLSL fragment-shader playground. Write a shader in the built-in editor;
 ShaderBox reads its uniforms and auto-builds the sliders, color pickers, and inputs to
-drive them. It hot-reloads as you type, an optional AI copilot edits your shaders in
-chat, and it exports to images, video, Telegram sticker sets, or YouTube.
+drive them. Chain shaders into multi-pass graphs, drive them from Python (or your own
+C/Odin library), let an optional AI copilot edit them in chat, and export to images,
+video, Telegram sticker sets, or YouTube.
 
 ## Install and run
 
@@ -53,14 +54,15 @@ ShaderBox opens on a starter shader ("UV Mango") rendering live.
 2. Press **Ctrl+S**. The render updates instantly — that's the hot-reload.
 3. The controls on the right are generated automatically from your shader's `uniform`
    declarations. Drag a slider and watch the image respond.
-4. Press **Ctrl+N** to start a new shader (an instant copy of the basic starter).
+4. Press **Ctrl+Shift+N** to start a new document from a template.
    Press **Alt+E** to browse the built-in examples and open an editable copy of one.
-5. Click **Open dir** to open the shader's folder in your file manager — edit the
+5. Click **Open folder** to open the document's folder in your file manager — edit the
    `.frag.glsl` in your own editor if you prefer; it hot-reloads on save.
+6. Press **Alt+G** on a multi-pass example (Radiance Cascades) to see its passes as a graph.
 
 ## The AI copilot (optional)
 
-Press **Ctrl+J** to open the copilot chat. It's an LLM agent that reads and edits your
+Press **Alt+J** to open the copilot chat. It's an LLM agent that reads and edits your
 shaders, sees compile errors the moment they happen, creates shaders, tweaks uniforms,
 renders previews, and can publish for you — every risky action (delete, render, publish)
 waits for your confirmation, and any turn can be reverted with one click.
@@ -77,21 +79,24 @@ cheatsheet.
 | Key | Action |
 |-----|--------|
 | Ctrl+S | Save + hot-reload the current shader |
-| Ctrl+N | New shader (copy of the starter) |
+| Ctrl+Shift+N | New document |
 | Alt+E | Examples browser |
-| Ctrl+O | Projects (new / duplicate / switch / delete) |
-| Ctrl+D | Delete the current shader |
-| Ctrl+P | Shader library picker |
+| Alt+O | Projects (new / duplicate / switch / delete) |
+| Alt+S | Settings |
+| Alt+G | Open the document's pass graph |
+| Alt+R | Open the document's Python script |
+| F5 | Play / stop the script |
+| Alt+A | Add a pass |
+| Alt+L | Shader library |
 | Ctrl+Shift+P | Command palette |
-| Ctrl+J | Toggle the AI copilot chat |
+| Ctrl+1 / 2 / 3 / 4 | Document / Uniforms / Render / Share panel |
+| Alt+J | Toggle the AI copilot chat |
+| F8 | Jump to the next compile error |
+| Ctrl+Tab | Next code tab |
+| Alt+D | Delete the current document |
 | F1 | Help |
 | Alt+/ | Keyboard cheatsheet |
-| Ctrl+Tab | Cycle focus region (editor / grid / panel) |
-| Ctrl+1 / 2 / 3 | Node / Render / Share tab |
-| F8 | Jump to next compile error |
 | Ctrl+Q | Quit |
-| Alt+S | Settings |
-| Esc | Unfocus the editor / close a popup |
 | Ctrl+scroll | Resize the editor font (hover the editor) |
 
 ## Manual install

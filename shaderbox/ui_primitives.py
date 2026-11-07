@@ -37,6 +37,23 @@ def ellipsize(text: str, max_width: float) -> str:
     return ellipsis if imgui.calc_text_size(ellipsis).x <= max_width else ""
 
 
+def elide_left(text: str, max_width: float) -> str:
+    """`ellipsize` from the other end: keeps the END, for a path whose file name matters."""
+    if imgui.calc_text_size(text).x <= max_width:
+        return text
+    ellipsis = "..."
+    lo, hi = 0, len(text)
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if imgui.calc_text_size(ellipsis + text[len(text) - mid :]).x <= max_width:
+            lo = mid
+        else:
+            hi = mid - 1
+    if lo > 0:
+        return ellipsis + text[len(text) - lo :]
+    return ellipsis if imgui.calc_text_size(ellipsis).x <= max_width else ""
+
+
 def faint_hline(
     dl: imgui.ImDrawList, x0: float, x1: float, y: float, alpha: float = 1.0
 ) -> None:
