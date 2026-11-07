@@ -25,7 +25,7 @@ description: |
   - Built-in syntax-highlighted GLSL editor - edit in-window, hit Ctrl+S to save and
     hot-reload instantly. External files also hot-reload on change.
   - AI copilot - chat with an LLM that reads and edits your shaders, sees compile
-    errors the moment they happen, creates nodes, tweaks uniforms, renders previews,
+    errors the moment they happen, creates documents and passes, tweaks uniforms, renders previews,
     and can even publish for you - every risky action waits for your confirm, and any
     turn is one-click revertable. Bring your own OpenRouter key.
   - Automatic UI from your uniforms - ShaderBox introspects the active uniforms and
@@ -43,7 +43,7 @@ description: |
   - Reusable shader library - ships with a built-in SB_* standard library (SDF shapes
     and ops, noise, draw helpers, a full text stack) and grows with your own functions;
     call them by name from any shader and they just work, no include boilerplate. Press
-    Ctrl+P to fuzzy-search, preview, and insert them, or manage your library files
+    Alt+L to fuzzy-search, preview, and insert them, or manage your library files
     right from the picker.
   - Image & video texture inputs - drop in media and sample it straight from your shader.
   - Built-in text rendering - an SDF segment-glyph shader for drawing text in your
