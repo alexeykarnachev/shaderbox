@@ -889,6 +889,10 @@ Footguns (each cost a real failure this session):
   screenshot with its Move-up/down buttons; Delete fires a native confirm (`browser_handle_dialog`
   accept). They are binary, so they live in the repo (`docs/screenshots/`, `docs/branding/`), never
   in `page.yaml`.
+- **A screenshot's Delete applies at once; its Move up/down lives in the form until Save** and is
+  lost on leaving the page. Aim each button through the screenshot holding a given image
+  (`.screenshot:has(img[src*="<id>"])`), never by index: the upload rows' "Delete file" buttons share
+  the name, so an index shifts between an exact and a substring match and lands on another shot.
 - **Screenshots are generated, not staged:** `uv run python scripts/screenshots.py` drives the real
   app in a hidden window over the shipped examples and rewrites `docs/screenshots/` (1920x1080, a
   fresh data dir, the measured FPS). Re-run it whenever the UI changed since the last release; the
