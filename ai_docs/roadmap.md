@@ -28,7 +28,7 @@ feature; brief points at the superseder).
 
 <!-- As of 2026-11-07. -->
 **Shipped: v0.30.1 to itch.io (both channels) and GitHub.** A clean-room run of the Linux bundle
-(stock Ubuntu 24.04/22.04 runtime libraries, no uv or Python, software Mesa) starts with no error.
+(stock Ubuntu runtime libraries, no uv or Python, software Mesa) starts with no error.
 `scripts/screenshots.py` regenerates the store and README screenshots from the real app.
 
 **Next: a showcase example for 109 -- a multi-fluid Navier-Stokes simulation in a native
